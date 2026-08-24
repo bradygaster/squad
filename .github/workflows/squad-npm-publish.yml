@@ -264,6 +264,10 @@ jobs:
     needs: [preflight, smoke-test, registry-check, publish-sdk]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      # Consumed by `bump-activation-pin` so the pin moves to the version this run
+      # actually published, rather than to whatever npm happens to report later.
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -385,6 +389,116 @@ jobs:
             sleep 15
           done
           echo "Registry propagation slow but package was published successfully"
+
+  # --- Issue #1825 ------------------------------------------------------
+  # Release-time half of the activation-pin guard.
+  #
+  # The literal in `workflows/shared/squad.md` decides which Squad CLI a brand-new
+  # repository installs during activation. Nothing about publishing used to touch it,
+  # so every release silently made it stale — it once ran 8 days behind and was caught
+  # only because someone happened to cold-start a throwaway repo (PR #1818).
+  #
+  # `.github/workflows/squad-cli-pin-drift.yml` is the daily backstop that *detects*
+  # that state. This job is the half that prevents it, by moving the pin in the same
+  # run that made the new version installable. Both halves are load-bearing: detection
+  # alone leaves a red build with no fix path, and prevention alone re-breaks the
+  # moment someone publishes out-of-band.
+  bump-activation-pin:
+    name: Bump activation pin to the published release
+    needs: publish-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          # The pin lives on the default branch, but releases are cut from `main`.
+          # Bumping a `main` checkout would edit a file `dev` never sees, and the next
+          # merge would quietly restore the stale value.
+          ref: dev
+          fetch-depth: 0
+
+      - name: Confirm the version is published and current
+        id: target
+        env:
+          TARGET: ${{ needs.publish-cli.outputs.version }}
+          NPM_PACKAGE: '@bradygaster/squad-cli'
+        run: |
+          set -euo pipefail
+
+          if [ -z "$TARGET" ]; then
+            echo "::error::publish-cli reported no version — refusing to guess which version to pin."
+            exit 1
+          fi
+
+          # Two independent sources, which is the whole point of #1825: the version this
+          # run published, and what npm now serves as `latest`. Checking only the repo
+          # would compare the pin against itself, and the repo's own manifest holds the
+          # next *unreleased* version — the E404 that PR #1818 had to fix by hand.
+          latest=""
+          for attempt in 1 2 3 4 5; do
+            latest="$(npm view "$NPM_PACKAGE" dist-tags.latest 2>/dev/null || true)"
+            if [ "$latest" = "$TARGET" ]; then
+              break
+            fi
+            echo "dist-tags.latest is '${latest:-<unset>}', waiting for '$TARGET' (attempt $attempt/5)..."
+            sleep 15
+          done
+
+          if [ "$latest" != "$TARGET" ]; then
+            echo "::error::npm dist-tags.latest is '${latest:-<unset>}', not the published '$TARGET'. Not moving the pin to a version new repositories would not receive."
+            exit 1
+          fi
+
+          echo "version=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Confirmed $NPM_PACKAGE@$TARGET is the published latest."
+
+      - name: Rewrite the pin
+        id: bump
+        env:
+          TARGET_VERSION: ${{ steps.target.outputs.version }}
+          PR_BODY_FILE: ${{ runner.temp }}/activation-pin-pr.md
+        run: node scripts/bump-activation-pin.mjs
+
+      - name: Open pull request
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.target.outputs.version }}
+          PR_BODY_FILE: ${{ runner.temp }}/activation-pin-pr.md
+        run: |
+          set -euo pipefail
+
+          # A pull request rather than a push: `dev` does not take direct pushes, and a
+          # version bump that lands unreviewed is exactly the kind of change that should
+          # be visible in history.
+          branch="chore/activation-pin-$TARGET"
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already exists — an earlier run already opened this bump."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+
+          # Named explicitly: the checkout is a full release tree, and `git add -A` here
+          # would sweep in anything the publish jobs left behind.
+          git add workflows/shared/squad.md docs/src/content/docs/guide/gh-aw.md
+          git commit -m "chore: pin Squad CLI activation to $TARGET
+
+          Refs #1825"
+          git push origin "$branch"
+
+          gh pr create \
+            --base dev \
+            --head "$branch" \
+            --title "chore: pin Squad CLI activation to $TARGET" \
+            --body-file "$PR_BODY_FILE"
+
   # --- Issues #1491 / #1497 ---------------------------------------------
   # After a stable release publishes to `latest`, ensure each package's
   # `insider` dist-tag is not left semver-lower than `latest`. Promotions run
