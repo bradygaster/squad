@@ -23,6 +23,15 @@ export function parseStructuredData(comment) {
   } catch (error) {
     throw new Error(`activation structured data is invalid JSON: ${error.message}`);
   }
+  if (ACTIVATION_ARTIFACTS.has(parsed.squad_artifact)) {
+    const bindingBlock = /Activation bindings:\s*```json\s*([\s\S]*?)```/i.exec(comment);
+    if (!bindingBlock) return parsed;
+    try {
+      parsed.bindings = JSON.parse(bindingBlock[1]);
+    } catch (error) {
+      throw new Error(`activation bindings are invalid JSON: ${error.message}`);
+    }
+  }
   return parsed;
 }
 

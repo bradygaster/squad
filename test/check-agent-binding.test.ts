@@ -73,9 +73,13 @@ function task({
 describe('deterministic post-activation agent binding guard (#1801)', () => {
   it('parses the last Structured data block from an activation comment', () => {
     const parsed = parseStructuredData(`
+Activation bindings:
+\`\`\`json
+[{"task":"6","issue":17,"epic":"2.1","epic_issue":6,"agent":"McManus","epic_agents":["mcmanus"],"label":"squad:mcmanus","epic_label":"squad:mcmanus"}]
+\`\`\`
 Structured data:
 \`\`\`json
-{"squad_artifact":"activated","schema_version":"1","origin_issue":1,"phases":[],"bindings":[{"task":"6","issue":17,"epic":"2.1","epic_issue":6,"agent":"McManus","epic_agents":["mcmanus"],"label":"squad:mcmanus","epic_label":"squad:mcmanus"}]}
+{"squad_artifact":"activated","schema_version":"1","origin_issue":1,"phases":[]}
 \`\`\`
 `);
     expect(parsed.bindings[0]).toMatchObject({ task: '6', issue: 17, agent: 'McManus' });
@@ -180,6 +184,19 @@ Structured data:
     )).toThrow('could not be parsed');
   });
 
+  it('fails closed when the activation bindings block is malformed', () => {
+    expect(() => parseStructuredData(`
+Activation bindings:
+\`\`\`json
+[{"task":
+\`\`\`
+Structured data:
+\`\`\`json
+{"squad_artifact":"activated","schema_version":"1","origin_issue":1,"phases":[]}
+\`\`\`
+`)).toThrow('activation bindings are invalid JSON');
+  });
+
   it('fails closed when a task or epic issue cannot be resolved', () => {
     const input = artifact([
       task({ issue: 99, agent: 'Kint', label: 'squad:kint', epicLabel: 'squad:kint' }),
@@ -266,11 +283,12 @@ Structured data:
     expect(workflow).not.toContain('issues: write');
   });
 
-  it('makes every binding item a complete task-to-epic mapping', () => {
+  it('specifies every binding item as a complete task-to-epic mapping', () => {
     const workflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8').replace(/\r\n/g, '\n');
-    expect(workflow).toMatch(
-      /required:\n\s+- issue\n\s+- task\n\s+- epic_issue\n\s+- epic\n\s+- agent\n\s+- epic_agents/,
-    );
+    expect(workflow).toContain('Activation bindings:');
+    expect(workflow).toContain('"task":"{plan # cell}"');
+    expect(workflow).toContain('"epic_issue":{created epic issue number}');
+    expect(workflow).toContain('"epic_agents":["{all distinct lowercased Agent cells');
   });
 
   it('fails closed on an incomplete envelope or mismatched origin issue', () => {
