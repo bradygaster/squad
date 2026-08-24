@@ -1120,9 +1120,15 @@ Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Ag
 
 `add-comment` with `data: {"squad_artifact":"implementation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate`.
+Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Next: `/squad plan validate`.
 
 Re-check every `Agent` against the Step 2 binding rule before posting.
+
+Do **not** emit a self-assessed validation section here. Validation is
+`/squad plan validate`'s artifact and uses its check vocabulary; a pass claimed
+by the skill that authored the plan is not evidence, and an earlier unspecified
+`Validation Pre-check` section is what let a plan certify its own invalid agent
+bindings (#1801).
 
 ##### Step 5: Update Lifecycle
 

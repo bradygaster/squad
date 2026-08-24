@@ -247,21 +247,30 @@ The issue body IS the intent. No special format required, but structured intents
 ```markdown
 ## Plan Validation
 
-### Result: ✅ PASS | ❌ FAIL
+### Result: <✅ PASS | ❌ FAIL>
 
 ### Checks
+
+One row per check in `squad-plan-validate` Step 2 — that numbered table is the
+sole check vocabulary. Do not invent check names, do not restate their pass
+thresholds here, and do not omit a row: a check absent from this table has not
+been run, and an omitted row is not a pass.
+
 | Check | Status | Detail |
 |-------|--------|--------|
-| All tasks map to an epic | ✅ | — |
-| No circular dependencies | ✅ | — |
-| Sizing within bounds (no >XL) | ✅ | — |
-| Agent assignments valid | ✅ | — |
-| Scope boundary respected | ✅ | — |
-| <check> | ❌ | <diagnostic> |
+| <check number and name from Step 2> | <✅ or ❌> | <diagnostic when ❌; — when ✅> |
 
 ### Diagnostics (if FAIL)
 - <Specific issue and suggested fix>
 ```
+
+> **Status cells are determined, never shipped.** An earlier revision of this
+> schema listed five check names each pre-filled `✅`, so the model was handed a
+> table in which the verdict was already `PASS` and asked to reproduce it. It did
+> — including on a run whose agent bindings were entirely invalid (#1801). A
+> concrete literal in a prompt gets copied verbatim (#1784); when that literal is
+> a verdict, the check clears itself. Every cell the model must determine uses
+> `<placeholder>` syntax, and `test/gh-aw-quality.test.ts` enforces it.
 
 ### 3.7 Acceptance Records
 
