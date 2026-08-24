@@ -23,78 +23,142 @@ function labels(entries: Record<number, string[]>) {
   ]));
 }
 
+function artifact(bindings: object[], phased = false) {
+  return {
+    squad_artifact: phased ? 'phases-activated' : 'activated',
+    schema_version: '1',
+    origin_issue: 1,
+    phases: phased ? [2] : [],
+    bindings,
+  };
+}
+
+function task({
+  task = '1',
+  issue,
+  epic = '2.1',
+  epicIssue = 6,
+  agent,
+  epicAgents = [agent],
+  label,
+  omission,
+  epicLabel,
+  epicOmission,
+}: {
+  task?: string;
+  issue: number;
+  epic?: string;
+  epicIssue?: number;
+  agent: string;
+  epicAgents?: string[];
+  label?: string;
+  omission?: string;
+  epicLabel?: string;
+  epicOmission?: string;
+}) {
+  return {
+    task,
+    issue,
+    epic,
+    epic_issue: epicIssue,
+    agent,
+    epic_agents: epicAgents,
+    ...(label ? { label } : {}),
+    ...(omission ? { omission_reason: omission } : {}),
+    ...(epicLabel ? { epic_label: epicLabel } : {}),
+    ...(epicOmission ? { epic_omission_reason: epicOmission } : {}),
+  };
+}
+
 describe('deterministic post-activation agent binding guard (#1801)', () => {
   it('parses the last Structured data block from an activation comment', () => {
-    const artifact = parseStructuredData(`
+    const parsed = parseStructuredData(`
 Structured data:
 \`\`\`json
-{"squad_artifact":"activated","schema_version":"1","origin_issue":1,"phases":[],"bindings":[{"kind":"task","task":"6","issue":17,"epic":"2.1","agent":"McManus","agents":["mcmanus"],"label":"squad:mcmanus"}]}
+{"squad_artifact":"activated","schema_version":"1","origin_issue":1,"phases":[],"bindings":[{"task":"6","issue":17,"epic":"2.1","epic_issue":6,"agent":"McManus","epic_agents":["mcmanus"],"label":"squad:mcmanus","epic_label":"squad:mcmanus"}]}
 \`\`\`
 `);
-    expect(artifact.bindings[0]).toMatchObject({ task: '6', issue: 17, agent: 'McManus' });
+    expect(parsed.bindings[0]).toMatchObject({ task: '6', issue: 17, agent: 'McManus' });
   });
 
   it('rejects the observed #1859 correspondence failure despite both agents being roster names', () => {
-    const artifact = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'task', task: '6', issue: 17, epic: '2.1', agent: 'McManus', agents: ['mcmanus'], label: 'squad:mcmanus' },
-      ],
-    };
-    expect(() => validateBindings(artifact, roster, labels({ 17: ['squad', 'squad:kint'] })))
-      .toThrow('expected squad:mcmanus, found squad:kint');
+    const input = artifact([
+      task({ task: '6', issue: 17, agent: 'McManus', label: 'squad:mcmanus', epicLabel: 'squad:mcmanus' }),
+    ]);
+    expect(() => validateBindings(input, roster, labels({
+      17: ['squad', 'squad:kint'],
+      6: ['squad', 'squad:mcmanus'],
+    }))).toThrow('expected squad:mcmanus, found squad:kint');
   });
 
   it('accepts multi-wave task numbers and checks each task against its own mapping', () => {
-    const artifact = {
-      squad_artifact: 'phases-activated', schema_version: '1', origin_issue: 1, phases: [2],
-      bindings: [
-        { kind: 'task', task: '2.1', issue: 21, epic: '2', agent: 'Kint', agents: ['kint'], label: 'squad:kint' },
-        { kind: 'task', task: '2.2', issue: 22, epic: '2', agent: 'McManus', agents: ['mcmanus'], label: 'squad:mcmanus' },
-      ],
-    };
-    expect(validateBindings(artifact, roster, labels({
+    const input = artifact([
+      task({
+        task: '2.1',
+        issue: 21,
+        epic: '2',
+        epicIssue: 20,
+        agent: 'Kint',
+        epicAgents: ['kint', 'mcmanus'],
+        label: 'squad:kint',
+        epicOmission: 'multi-owner',
+      }),
+      task({
+        task: '2.2',
+        issue: 22,
+        epic: '2',
+        epicIssue: 20,
+        agent: 'McManus',
+        epicAgents: ['kint', 'mcmanus'],
+        label: 'squad:mcmanus',
+        epicOmission: 'multi-owner',
+      }),
+    ], true);
+    expect(validateBindings(input, roster, labels({
+      20: ['squad'],
       21: ['squad', 'squad:kint'],
       22: ['squad', 'squad:mcmanus'],
-    }))).toEqual({ skipped: false, checked: 2 });
+    }))).toEqual({ skipped: false, checked: 2, epics: 1 });
   });
 
-  it('derives epic behavior from the distinct task-agent set', () => {
-    const singleOwner = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'epic', issue: 6, epic: '2.1', agents: ['mcmanus'], label: 'squad:mcmanus' },
-      ],
-    };
-    expect(validateBindings(singleOwner, roster, labels({ 6: ['squad', 'squad:mcmanus'] })).checked).toBe(1);
+  it('derives single- and multi-owner epic behavior from task bindings', () => {
+    const singleOwner = artifact([
+      task({ issue: 17, agent: 'McManus', label: 'squad:mcmanus', epicLabel: 'squad:mcmanus' }),
+    ]);
+    expect(validateBindings(singleOwner, roster, labels({
+      6: ['squad', 'squad:mcmanus'],
+      17: ['squad', 'squad:mcmanus'],
+    })).epics).toBe(1);
 
-    const multiOwner = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'epic', issue: 7, epic: '1.2', agents: ['kint', 'mcmanus'], omission_reason: 'multi-owner' },
-      ],
-    };
-    expect(validateBindings(multiOwner, roster, labels({ 7: ['squad'] })).checked).toBe(1);
+    const multiOwner = artifact([
+      task({ issue: 21, agent: 'Kint', epicAgents: ['kint', 'mcmanus'], label: 'squad:kint', epicOmission: 'multi-owner' }),
+      task({ issue: 22, agent: 'McManus', epicAgents: ['mcmanus', 'kint'], label: 'squad:mcmanus', epicOmission: 'multi-owner' }),
+    ]);
+    expect(validateBindings(multiOwner, roster, labels({
+      6: ['squad'],
+      21: ['squad', 'squad:kint'],
+      22: ['squad', 'squad:mcmanus'],
+    })).epics).toBe(1);
   });
 
-  it('rejects the observed #1860 summary/label inconsistencies', () => {
-    const falseSingleOwnerReport = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'epic', issue: 6, epic: '2.1', agents: ['mcmanus'], label: 'squad:mcmanus' },
-      ],
-    };
-    expect(() => validateBindings(falseSingleOwnerReport, roster, labels({ 6: ['squad'] })))
-      .toThrow('expected squad:mcmanus, found bare squad');
+  it('rejects the observed #1860 epic report/label inconsistencies', () => {
+    const falseSingleOwnerReport = artifact([
+      task({ issue: 17, agent: 'McManus', label: 'squad:mcmanus', epicLabel: 'squad:mcmanus' }),
+    ]);
+    expect(() => validateBindings(falseSingleOwnerReport, roster, labels({
+      6: ['squad'],
+      17: ['squad', 'squad:mcmanus'],
+    }))).toThrow('expected squad:mcmanus, found bare squad');
 
-    const omittedMultiOwnerReport = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'epic', issue: 7, epic: '1.2', agents: ['kint', 'mcmanus'] },
-      ],
-    };
-    expect(() => validateBindings(omittedMultiOwnerReport, roster, labels({ 7: ['squad'] })))
-      .toThrow('omission report must be multi-owner');
+    const omittedMultiOwnerReport = artifact([
+      task({ issue: 21, agent: 'Kint', epicAgents: ['kint', 'mcmanus'], label: 'squad:kint' }),
+      task({ issue: 22, agent: 'McManus', epicAgents: ['kint', 'mcmanus'], label: 'squad:mcmanus' }),
+    ]);
+    expect(() => validateBindings(omittedMultiOwnerReport, roster, labels({
+      6: ['squad'],
+      21: ['squad', 'squad:kint'],
+      22: ['squad', 'squad:mcmanus'],
+    }))).toThrow('epic_omission_reason must be multi-owner');
   });
 
   it.each([
@@ -107,8 +171,7 @@ Structured data:
       origin_issue: 1,
       phases: [],
       bindings,
-    }, roster, new Map()))
-      .toThrow('bindings are missing or empty');
+    }, roster, new Map())).toThrow('bindings are missing or empty');
   });
 
   it('fails closed when activation evidence has no parseable structured block', () => {
@@ -117,63 +180,117 @@ Structured data:
     )).toThrow('could not be parsed');
   });
 
-  it('fails closed when a binding issue cannot be resolved', () => {
-    const artifact = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'task', task: '1', issue: 99, epic: '1.1', agent: 'Kint', agents: ['kint'], label: 'squad:kint' },
-      ],
-    };
-    expect(() => validateBindings(artifact, roster, new Map())).toThrow('labels could not be resolved');
+  it('fails closed when a task or epic issue cannot be resolved', () => {
+    const input = artifact([
+      task({ issue: 99, agent: 'Kint', label: 'squad:kint', epicLabel: 'squad:kint' }),
+    ]);
+    expect(() => validateBindings(input, roster, new Map())).toThrow('labels could not be resolved');
   });
 
-  it('requires non-roster omissions to be reported and carry no agent label', () => {
-    const artifact = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        { kind: 'task', task: '3', issue: 30, epic: '1.2', agent: 'Reviewer', agents: ['reviewer'] },
-      ],
-    };
-    expect(() => validateBindings(artifact, roster, labels({ 30: ['squad'] })))
-      .toThrow('omission report must be non-roster');
+  it('requires non-roster omissions for both task and sole-owner epic', () => {
+    const missingReport = artifact([
+      task({ issue: 30, agent: 'Reviewer' }),
+    ]);
+    expect(() => validateBindings(missingReport, roster, labels({
+      6: ['squad'],
+      30: ['squad'],
+    }))).toThrow('omission_reason must be non-roster');
 
-    const reportedArtifact = {
-      squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [],
-      bindings: [
-        {
-          kind: 'task',
-          task: '3',
-          issue: 30,
-          epic: '1.2',
-          agent: 'Reviewer',
-          agents: ['reviewer'],
-          omission_reason: 'non-roster',
-        },
-      ],
-    };
-    expect(validateBindings(reportedArtifact, roster, labels({ 30: ['squad'] })).checked).toBe(1);
+    const reported = artifact([
+      task({
+        issue: 30,
+        agent: 'Reviewer',
+        omission: 'non-roster',
+        epicOmission: 'non-roster',
+      }),
+    ]);
+    expect(validateBindings(reported, roster, labels({
+      6: ['squad'],
+      30: ['squad'],
+    })).checked).toBe(1);
   });
 
-  it('wires a plain read-only workflow to the checker', () => {
+  it('maps the special @copilot assignment to squad:copilot', () => {
+    const input = artifact([
+      task({
+        issue: 40,
+        agent: '@copilot',
+        label: 'squad:copilot',
+        epicLabel: 'squad:copilot',
+      }),
+    ]);
+    expect(validateBindings(input, roster, labels({
+      6: ['squad', 'squad:copilot'],
+      40: ['squad', 'squad:copilot'],
+    })).checked).toBe(1);
+  });
+
+  it('uses the full epic agent set for phased activation', () => {
+    const input = artifact([
+      task({
+        issue: 50,
+        epicIssue: 60,
+        agent: 'Kint',
+        epicAgents: ['kint', 'mcmanus'],
+        label: 'squad:kint',
+        epicOmission: 'multi-owner',
+      }),
+    ], true);
+    expect(validateBindings(input, roster, labels({
+      50: ['squad', 'squad:kint'],
+      60: ['squad'],
+    })).epics).toBe(1);
+  });
+
+  it('rejects one epic identifier mapped to multiple epic issue numbers', () => {
+    const input = artifact([
+      task({ issue: 70, epicIssue: 60, agent: 'Kint', epicAgents: ['kint', 'mcmanus'], label: 'squad:kint', epicOmission: 'multi-owner' }),
+      task({ issue: 71, epicIssue: 61, agent: 'McManus', epicAgents: ['kint', 'mcmanus'], label: 'squad:mcmanus', epicOmission: 'multi-owner' }),
+    ]);
+    expect(() => validateBindings(input, roster, labels({
+      60: ['squad'],
+      61: ['squad'],
+      70: ['squad', 'squad:kint'],
+      71: ['squad', 'squad:mcmanus'],
+    }))).toThrow('maps to multiple epic issue numbers');
+  });
+
+  it('wires a plain read-only workflow to Node 22 and the checker', () => {
     const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'squad-agent-binding-check.yml'), 'utf8');
     expect(workflow).toContain('workflow_run:');
     expect(workflow).toContain('issues: read');
+    expect(workflow).toContain('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
+    expect(workflow).toContain('node-version: 22');
     expect(workflow).toContain('node scripts/check-agent-binding.mjs');
     expect(workflow).not.toContain('issues: write');
   });
 
+  it('makes every binding item a complete task-to-epic mapping', () => {
+    const workflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8').replace(/\r\n/g, '\n');
+    expect(workflow).toMatch(
+      /required:\n\s+- issue\n\s+- task\n\s+- epic_issue\n\s+- epic\n\s+- agent\n\s+- epic_agents/,
+    );
+  });
+
   it('fails closed on an incomplete envelope or mismatched origin issue', () => {
+    const binding = task({ issue: 1, epicIssue: 2, agent: 'Kint', label: 'squad:kint', epicLabel: 'squad:kint' });
     expect(() => validateBindings({
       squad_artifact: 'activated',
-      bindings: [{ kind: 'task', task: '1', issue: 1, epic: '1', agent: 'Kint', agents: ['kint'], label: 'squad:kint' }],
-    }, roster, labels({ 1: ['squad', 'squad:kint'] }))).toThrow('schema_version');
+      bindings: [binding],
+    }, roster, labels({
+      1: ['squad', 'squad:kint'],
+      2: ['squad', 'squad:kint'],
+    }))).toThrow('schema_version');
 
     expect(() => validateActivation({
       squad_artifact: 'activated',
       schema_version: '1',
       origin_issue: 8,
       phases: [],
-      bindings: [{ kind: 'task', task: '1', issue: 1, epic: '1', agent: 'Kint', agents: ['kint'], label: 'squad:kint' }],
-    }, roster, labels({ 1: ['squad', 'squad:kint'] }), 9)).toThrow('does not match comment issue');
+      bindings: [binding],
+    }, roster, labels({
+      1: ['squad', 'squad:kint'],
+      2: ['squad', 'squad:kint'],
+    }), 9)).toThrow('does not match comment issue');
   });
 });

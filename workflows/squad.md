@@ -79,19 +79,22 @@ safe-outputs:
         items:
           type: object
           properties:
-            kind:
-              type: string
-              enum: [task, epic]
             issue:
               type: integer
               minimum: 1
             task:
               type: string
+              minLength: 1
             epic:
               type: string
+              minLength: 1
+            epic_issue:
+              type: integer
+              minimum: 1
             agent:
               type: string
-            agents:
+              minLength: 1
+            epic_agents:
               type: array
               items:
                 type: string
@@ -99,11 +102,19 @@ safe-outputs:
               type: string
             omission_reason:
               type: string
+              enum: [non-roster]
+            epic_label:
+              type: string
+            epic_omission_reason:
+              type: string
+              enum: [multi-owner, non-roster]
           required:
-            - kind
             - issue
+            - task
+            - epic_issue
             - epic
-            - agents
+            - agent
+            - epic_agents
           additionalProperties: false
     required:
       - squad_artifact
@@ -1350,7 +1361,8 @@ Count expected issues before starting. If total > 50: recommend phased activatio
 3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
    provenance of the labels applied — the summary may name only values TG-2 emitted.
 4. For every `Agent` value, mint `squad:{agent}` only when its lowercased form matches
-   a certified `ROSTER_MEMBER:` name, or the value is exactly `@copilot`.
+   a certified `ROSTER_MEMBER:` name. The special value `@copilot` maps to the
+   existing `squad:copilot` routing label — never `squad:@copilot`.
 5. A value matching no certified name and not `@copilot` MUST NOT become a
    `squad:{agent}` label: apply only `squad` for that issue and record the value under a
    `Non-roster agent values` heading, naming the certified set it should come from.
@@ -1390,7 +1402,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 
 **2b. Create Epic Issues:** `create-issue` per epic (dedup by title `[Epic] {name}` if already exists from prior phase).
 - Title: `[Epic] {name}`
-- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct value → mint `squad:{that agent}`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
+- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct roster value → mint `squad:{that agent}`; exactly `@copilot` → mint `squad:copilot`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
 - Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
 - Parent: sub-issue of root intent issue
 - Milestone: assigned
@@ -1404,7 +1416,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 > **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one call → one verify, repeated per task.
 
 - Title: task title
-- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
+- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
 - Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
 - Parent: sub-issue of EPIC (not root)
 - Milestone: same as parent epic
@@ -1424,13 +1436,11 @@ Add `blockedBy` via API for tasks and epics. Graceful fallback. Never fail activ
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Every phase and full activation artifact MUST include a non-empty `bindings` array built only from successful `create-issue` results. Emit one task binding per created/recognized task:
+Every phase and full activation artifact MUST include a non-empty `bindings` array built only from successful `create-issue` results. Emit one binding per created/recognized task:
 
-`{"kind":"task","task":"{plan # cell}","issue":{created issue number},"epic":"{Epic cell}","agent":"{raw Agent cell}","agents":["{lowercased Agent cell}"],"label":"squad:{agent}"}`.
+`{"task":"{plan # cell}","issue":{created task issue number},"epic":"{Epic cell}","epic_issue":{created epic issue number},"agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{lowercased Agent cell}","epic_label":"squad:{sole lowercased epic task agent}"}`. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
 
-Emit one epic binding per created/recognized epic:
-
-`{"kind":"epic","issue":{created epic issue number},"epic":"{Epic identifier}","agents":["{distinct lowercased task agents}"],"label":"squad:{agent}"}` for a single roster owner, or omit `label` and set `"omission_reason":"multi-owner"` for multiple owners. For a task whose agent is not certified by TG-2, omit `label` and set `"omission_reason":"non-roster"`; for `@copilot`, use `"omission_reason":"copilot"`. Never omit a created issue from `bindings`, never infer an issue number, and never emit an empty array. The deterministic post-activation workflow treats missing, empty, malformed, or unresolved bindings as a failure.
+For a multi-owner epic, omit `epic_label` and set `"epic_omission_reason":"multi-owner"` on each of its task bindings. For a task whose agent is not certified by TG-2, omit `label` and set `"omission_reason":"non-roster"`; if that task is the epic's sole owner, likewise omit `epic_label` and set `"epic_omission_reason":"non-roster"`. Never omit a created task from `bindings`, never infer an issue number, and never emit an empty array. The deterministic post-activation workflow treats missing, empty, malformed, or unresolved bindings as a failure. The safe-output schema deliberately uses one uniform task-binding shape because gh-aw's data schema dialect does not support conditional `if`/`then` or `allOf`; the checker enforces activation-only presence and cross-row epic consistency.
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}],"bindings":[{this phase's bindings}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 

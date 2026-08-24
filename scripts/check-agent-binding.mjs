@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const ACTIVATION_ARTIFACTS = new Set(['activated', 'phases-activated']);
-const VALID_OMISSIONS = new Set(['multi-owner', 'non-roster', 'copilot']);
+const VALID_OMISSIONS = new Set(['multi-owner', 'non-roster']);
 
 function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -48,51 +48,63 @@ export function parseRoster(teamMarkdown) {
   return new Set(names);
 }
 
-function expectedBinding(binding, roster) {
+function expectedLabel(agent, roster) {
+  if (agent === '@copilot') return { label: 'squad:copilot', omission: null };
+  if (roster.has(agent)) return { label: `squad:${agent}`, omission: null };
+  return { label: null, omission: 'non-roster' };
+}
+
+function validateReportedOutcome(binding, prefix, expected) {
+  const labelKey = prefix ? `${prefix}_label` : 'label';
+  const omissionKey = prefix ? `${prefix}_omission_reason` : 'omission_reason';
+  if (binding[labelKey] !== expected.label && !(expected.label === null && binding[labelKey] === undefined)) {
+    throw new Error(
+      `issue #${binding.issue}: reported ${labelKey} ${binding[labelKey] ?? '(none)'} does not match ${expected.label ?? 'bare squad'}`,
+    );
+  }
+  if (binding[omissionKey] !== expected.omission && !(expected.omission === null && binding[omissionKey] === undefined)) {
+    throw new Error(
+      `issue #${binding.issue}: ${omissionKey} must be ${expected.omission ?? 'absent'}`,
+    );
+  }
+  if (binding[omissionKey] && !VALID_OMISSIONS.has(binding[omissionKey])) {
+    throw new Error(`issue #${binding.issue}: invalid ${omissionKey}`);
+  }
+}
+
+function validateTaskBinding(binding, roster) {
   if (!binding || typeof binding !== 'object' || !Number.isInteger(binding.issue) || binding.issue < 1) {
     throw new Error('binding has no valid issue number');
   }
-  if (!['task', 'epic'].includes(binding.kind)) throw new Error(`issue #${binding.issue}: invalid binding kind`);
+  if (!Number.isInteger(binding.epic_issue) || binding.epic_issue < 1) {
+    throw new Error(`issue #${binding.issue}: missing epic issue linkage`);
+  }
+  if (!normalize(binding.task)) throw new Error(`issue #${binding.issue}: binding has no plan task number`);
   if (!normalize(binding.epic)) throw new Error(`issue #${binding.issue}: missing epic linkage`);
-  if (!Array.isArray(binding.agents) || binding.agents.length === 0) {
-    throw new Error(`issue #${binding.issue}: agents must be a non-empty array`);
+  const agent = normalize(binding.agent);
+  if (!agent) throw new Error(`issue #${binding.issue}: binding has no agent`);
+  if (!Array.isArray(binding.epic_agents) || binding.epic_agents.length === 0) {
+    throw new Error(`issue #${binding.issue}: epic_agents must be a non-empty array`);
   }
+  const epicAgents = [...new Set(binding.epic_agents.map(normalize).filter(Boolean))].sort();
+  if (epicAgents.length !== binding.epic_agents.length || !epicAgents.includes(agent)) {
+    throw new Error(`issue #${binding.issue}: epic_agents are empty, duplicated, or exclude the task agent`);
+  }
+  const expected = expectedLabel(agent, roster);
+  validateReportedOutcome(binding, '', expected);
+  return { epicAgents, expected };
+}
 
-  const agents = [...new Set(binding.agents.map(normalize).filter(Boolean))];
-  if (agents.length !== binding.agents.length) {
-    throw new Error(`issue #${binding.issue}: agents contain empty or duplicate values`);
+function validateActualLabels(issue, labels, expected) {
+  if (!labels) throw new Error(`issue #${issue}: labels could not be resolved`);
+  if (!labels.has('squad')) throw new Error(`issue #${issue}: missing squad label`);
+  const actualAgentLabels = [...labels].filter(label => label.startsWith('squad:'));
+  const expectedAgentLabels = expected.label ? [expected.label] : [];
+  if (actualAgentLabels.length !== expectedAgentLabels.length || actualAgentLabels[0] !== expectedAgentLabels[0]) {
+    throw new Error(
+      `issue #${issue}: expected ${expected.label ?? 'bare squad'}, found ${actualAgentLabels.join(', ') || 'bare squad'}`,
+    );
   }
-
-  if (binding.kind === 'task') {
-    if (!normalize(binding.task)) throw new Error(`issue #${binding.issue}: task binding has no plan task number`);
-    const agent = normalize(binding.agent);
-    if (!agent || agents.length !== 1 || agents[0] !== agent) {
-      throw new Error(`issue #${binding.issue}: task agent does not match its agents array`);
-    }
-  }
-
-  let label = null;
-  let omission = null;
-  if (binding.kind === 'epic' && agents.length > 1) {
-    omission = 'multi-owner';
-  } else if (agents[0] === '@copilot') {
-    omission = 'copilot';
-  } else if (!roster.has(agents[0])) {
-    omission = 'non-roster';
-  } else {
-    label = `squad:${agents[0]}`;
-  }
-
-  if (binding.label !== label && !(label === null && binding.label === undefined)) {
-    throw new Error(`issue #${binding.issue}: reported label ${binding.label ?? '(none)'} does not match ${label ?? 'bare squad'}`);
-  }
-  if (binding.omission_reason !== omission && !(omission === null && binding.omission_reason === undefined)) {
-    throw new Error(`issue #${binding.issue}: omission report must be ${omission ?? 'absent'}`);
-  }
-  if (binding.omission_reason && !VALID_OMISSIONS.has(binding.omission_reason)) {
-    throw new Error(`issue #${binding.issue}: invalid omission reason`);
-  }
-  return label;
 }
 
 export function validateBindings(artifact, roster, labelsByIssue) {
@@ -116,24 +128,44 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
   }
 
   const seen = new Set();
+  const epics = new Map();
+  const epicIssuesByIdentifier = new Map();
   for (const binding of artifact.bindings) {
-    const expected = expectedBinding(binding, roster);
+    const { epicAgents, expected } = validateTaskBinding(binding, roster);
     if (seen.has(binding.issue)) throw new Error(`issue #${binding.issue}: duplicate binding`);
     seen.add(binding.issue);
+    validateActualLabels(binding.issue, labelsByIssue.get(binding.issue), expected);
 
-    const labels = labelsByIssue.get(binding.issue);
-    if (!labels) throw new Error(`issue #${binding.issue}: labels could not be resolved`);
-    if (!labels.has('squad')) throw new Error(`issue #${binding.issue}: missing squad label`);
-
-    const actualAgentLabels = [...labels].filter(label => label.startsWith('squad:'));
-    const expectedAgentLabels = expected ? [expected] : [];
-    if (actualAgentLabels.length !== expectedAgentLabels.length || actualAgentLabels[0] !== expectedAgentLabels[0]) {
-      throw new Error(
-        `issue #${binding.issue}: expected ${expected ?? 'bare squad'}, found ${actualAgentLabels.join(', ') || 'bare squad'}`,
-      );
+    const epicIdentifier = normalize(binding.epic);
+    const priorEpicIssue = epicIssuesByIdentifier.get(epicIdentifier);
+    if (priorEpicIssue !== undefined && priorEpicIssue !== binding.epic_issue) {
+      throw new Error(`epic ${epicIdentifier}: maps to multiple epic issue numbers`);
     }
+    epicIssuesByIdentifier.set(epicIdentifier, binding.epic_issue);
+
+    const epic = epics.get(binding.epic_issue) ?? {
+      epic: epicIdentifier,
+      agents: epicAgents,
+      bindings: [],
+    };
+    if (epic.epic !== epicIdentifier) {
+      throw new Error(`epic issue #${binding.epic_issue}: conflicting epic identifiers`);
+    }
+    if (epic.agents.join('\0') !== epicAgents.join('\0')) {
+      throw new Error(`epic issue #${binding.epic_issue}: inconsistent epic_agents sets`);
+    }
+    epic.bindings.push(binding);
+    epics.set(binding.epic_issue, epic);
   }
-  return { skipped: false, checked: seen.size };
+
+  for (const [epicIssue, epic] of epics) {
+    const expected = epic.agents.length > 1
+      ? { label: null, omission: 'multi-owner' }
+      : expectedLabel(epic.agents[0], roster);
+    for (const binding of epic.bindings) validateReportedOutcome(binding, 'epic', expected);
+    validateActualLabels(epicIssue, labelsByIssue.get(epicIssue), expected);
+  }
+  return { skipped: false, checked: seen.size, epics: epics.size };
 }
 
 async function fetchLabels(repo, issues, token) {
@@ -176,7 +208,7 @@ async function main() {
     const artifact = parseStructuredData(comment.body ?? '');
     if (!artifact || !ACTIVATION_ARTIFACTS.has(artifact.squad_artifact)) continue;
     const issues = Array.isArray(artifact.bindings)
-      ? artifact.bindings.map(binding => binding?.issue).filter(Number.isInteger)
+      ? artifact.bindings.flatMap(binding => [binding?.issue, binding?.epic_issue]).filter(Number.isInteger)
       : [];
     const labels = await fetchLabels(args.repo, [...new Set(issues)], token);
     const result = validateActivation(artifact, roster, labels, comment.issue);
