@@ -69,49 +69,25 @@ jobs:
 
       - name: Lint .github/workflows/*.yml
         run: |
-          # Why we skip machine-generated files:
+          # Every workflow here is linted, including DO-NOT-EDIT generated output
+          # (*.lock.yml from `gh aw compile`, agentics-maintenance.yml from gh-aw's
+          # code generators).
           #
-          # actionlint v1.7.12 is the current latest release and CANNOT be upgraded to fix
-          # these; the tool simply lags GitHub's evolving feature set.  Two known gaps:
+          # These files used to be skipped wholesale via a generated-header grep,
+          # because actionlint v1.7.12 — still the latest release, so this cannot be
+          # fixed by upgrading — reports errors against them for schema gaps rather
+          # than real defects. But skipping meant the artifact that actually runs got
+          # no lint at all, so a genuine defect in generated output was indistinguishable
+          # from the expected noise.
           #
-          #   • "copilot-requests: write" — a real, current GitHub Actions permission scope
-          #     used by GitHub's own gh-aw (Agentic Workflows) toolchain.
-          #   • "concurrency.queue: max" — a newer real Actions concurrency feature.
-          #
-          # The files that trigger these errors are DO-NOT-EDIT compiler output produced by
-          # gh-aw's `gh aw compile` toolchain (*.lock.yml files) or by gh-aw's own code
-          # generators (e.g. agentics-maintenance.yml).  They carry a header identifying them
-          # as generated and are validated upstream by gh-aw's own toolchain.  Editing them
-          # is NOT acceptable — they will be clobbered on the next compile/generate cycle.
-          #
-          # Detection strategy: skip any workflow whose first 5 lines contain "automatically
-          # generated" or "DO NOT EDIT".  This is header-based rather than filename-based so
-          # it automatically covers future gh-aw generated files without manual maintenance.
-          # Hand-authored workflows never carry such a header, so they always get linted.
+          # Those gaps are now suppressed by exact error message and scoped file path in
+          # .github/actionlint.yaml, so every other error class still fails this job.
+          # Each suppression was verified by compiling the sources and linting the emitted
+          # output against the pinned actionlint version (#1827); see that file for the
+          # rationale, and re-check the list whenever actionlint is upgraded.
 
-          echo "--- Linting .github/workflows/ (skipping DO-NOT-EDIT generated files) ---"
-          skipped=()
-          to_lint=()
-          for f in .github/workflows/*.yml; do
-            if head -5 "$f" | grep -qiE "(automatically generated|DO NOT EDIT)"; then
-              skipped+=("$f")
-            else
-              to_lint+=("$f")
-            fi
-          done
-
-          if [ ${#skipped[@]} -gt 0 ]; then
-            echo "⏭  Skipped (DO-NOT-EDIT generated files — validated by upstream toolchain):"
-            for f in "${skipped[@]}"; do echo "     $f"; done
-          fi
-
-          if [ ${#to_lint[@]} -gt 0 ]; then
-            echo "🔍 Linting ${#to_lint[@]} hand-authored workflow(s):"
-            for f in "${to_lint[@]}"; do echo "     $f"; done
-            actionlint "${to_lint[@]}"
-          else
-            echo "⚠️  No hand-authored workflows found to lint."
-          fi
+          echo "--- Linting .github/workflows/ ---"
+          actionlint .github/workflows/*.yml
 
       - name: Lint squad-cli template workflows
         run: |
