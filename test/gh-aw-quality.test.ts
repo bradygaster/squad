@@ -615,9 +615,28 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   const imports = extractImports(frontmatter);
   const squadContent = readText(SQUAD_WORKFLOW);
 
-  // gh-aw enforces a hard 100 KB prompt ceiling (102 400 bytes)
-  const GH_AW_PROMPT_CEILING_KB = 100;
-  const GH_AW_PROMPT_CEILING_BYTES = GH_AW_PROMPT_CEILING_KB * 1024;
+  // There is no hard gh-aw prompt ceiling, and this block used to assert one (#1842).
+  //
+  // The 102 400 figure previously cited here as "gh-aw enforces a hard 100 KB prompt
+  // ceiling" is `defaultRepoMemoryMaxFileSize` in gh-aw's pkg/workflow/repo_memory.go —
+  // a cap on repo-MEMORY files, unrelated to prompts. gh-aw's own guidance
+  // (.github/aw/token-optimization.md) treats prompt size as a cost/quality concern
+  // ("strip redundant instructions"), never as a byte limit.
+  //
+  // It also measured the wrong quantity. What reaches the model is the AMBIENT prompt:
+  // gh-aw strips every inline `## skill:` block during the setup/interpolation step
+  // (.github/aw/skills.md), and ~2/3 of this workflow plus two entire imports are such
+  // blocks. Summing raw source therefore counted ~65 KB that never enters the initial
+  // request, while ignoring the boilerplate gh-aw injects (xpia.md, markdown.md,
+  // safe_outputs_*.md). Both sides of the comparison were wrong, which left the gate
+  // reporting ~26 bytes of headroom and failing correct changes on byte count alone.
+  //
+  // The real budget is asserted canonically in "gh-aw: inline skill extraction" →
+  // "keeps the ambient prompt under 40 KB". The check below is only a source-GROWTH
+  // regression guard: it keeps unbounded authoring growth visible without pretending
+  // authored bytes are delivered bytes.
+  const SOURCE_GROWTH_BUDGET_KB = 160;
+  const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
     expect(imports, 'shared/squad-planning-ontology.md must be imported').toContain('shared/squad-planning-ontology.md');
@@ -634,7 +653,7 @@ describe('gh-aw: prompt budget & planning import regression', () => {
     ).not.toMatch(/cat .github\/workflows\/shared\/[\w-]*planning-[\w-]+\.md/);
   });
 
-  it(`combined prompt (workflow + all imports) is under ${GH_AW_PROMPT_CEILING_KB} KB`, () => {
+  it(`combined source (workflow + all imports) stays under ${SOURCE_GROWTH_BUDGET_KB} KB`, () => {
     let totalBytes = Buffer.byteLength(squadContent, 'utf8');
 
     for (const importPath of imports) {
@@ -646,26 +665,14 @@ describe('gh-aw: prompt budget & planning import regression', () => {
     }
 
     const totalKB = (totalBytes / 1024).toFixed(1);
-    const headroomKB = ((GH_AW_PROMPT_CEILING_BYTES - totalBytes) / 1024).toFixed(1);
 
     expect(
       totalBytes,
-      `Combined prompt is ${totalKB} KB — exceeds the gh-aw ${GH_AW_PROMPT_CEILING_KB} KB ceiling. Headroom: ${headroomKB} KB.`
-    ).toBeLessThan(GH_AW_PROMPT_CEILING_BYTES);
-  });
-
-  it('reports combined bytes and headroom', () => {
-    let totalBytes = Buffer.byteLength(squadContent, 'utf8');
-    for (const importPath of imports) {
-      const fullPath = join(WORKFLOWS_DIR, importPath);
-      if (existsSync(fullPath)) totalBytes += Buffer.byteLength(readText(fullPath), 'utf8');
-    }
-    const headroomBytes = GH_AW_PROMPT_CEILING_BYTES - totalBytes;
-    // Informational — log bytes/headroom; fail only if headroom < 5 KB (regression guard)
-    expect(
-      headroomBytes,
-      `Headroom too low: ${(headroomBytes / 1024).toFixed(1)} KB remaining of ${GH_AW_PROMPT_CEILING_KB} KB ceiling`
-    ).toBeGreaterThan(5 * 1024);
+      `Combined authored source is ${totalKB} KB, over the ${SOURCE_GROWTH_BUDGET_KB} KB growth guard. ` +
+        `This is NOT a gh-aw limit — it flags unbounded growth of the workflow and its imports. ` +
+        `Check "keeps the ambient prompt under 40 KB" first: if ambient is healthy, the growth is ` +
+        `in inline skills (loaded on demand) and raising this guard is legitimate.`
+    ).toBeLessThan(SOURCE_GROWTH_BUDGET_BYTES);
   });
 });
 
