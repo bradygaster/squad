@@ -130,4 +130,28 @@ describe('Squad CLI activation pin (#1825)', () => {
     expect(offenders, `expression interpolation inside run: blocks:\n${offenders.join('\n')}`)
       .toEqual([]);
   });
+
+  it('keeps its SC2016 suppression honest', () => {
+    const workflow = readFileSync(DRIFT_WORKFLOW, 'utf8');
+
+    // The issue-body builder disables SC2016 because shellcheck reads the markdown
+    // BACKTICKS in its printf format strings as command substitution and, correctly,
+    // reports that they will not expand inside single quotes. That is the intended
+    // behaviour — they are literal code spans in the rendered issue.
+    //
+    // But SC2016 also catches a real defect class: writing '$VAR' in single quotes
+    // while expecting expansion, which silently emits the literal text "$VAR". The
+    // suppression would hide that too. This test restores exactly that coverage, so
+    // the disable removes the false positives without removing the check.
+    //
+    // Values must reach printf as ARGUMENTS ("$PINNED"), never inside the format string.
+    const singleQuoted = [...workflow.matchAll(/'([^'\n]*)'/g)].map(m => m[1]);
+    const offenders = singleQuoted.filter(s => /\$[A-Za-z_{]/.test(s));
+
+    expect(
+      offenders,
+      'single-quoted literals containing a $expansion — these will emit the literal text, ' +
+        `not the value, and SC2016 is suppressed here so shellcheck will not say so:\n${offenders.join('\n')}`,
+    ).toEqual([]);
+  });
 });

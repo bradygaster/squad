@@ -104,6 +104,16 @@ jobs:
 
           # Built with printf rather than a heredoc: heredoc bodies must sit at column 0,
           # which terminates the YAML block scalar this script lives in.
+          #
+          # shellcheck disable=SC2016
+          # SC2016 ("expressions don't expand in single quotes") fires on the markdown
+          # BACKTICKS below -- shellcheck reads ` as command substitution, and inside
+          # single quotes it correctly notes it will not expand. That is exactly what we
+          # want: these are literal code spans in the issue body, not shell expansions.
+          # Every real value ($PINNED, $LATEST) is passed as a printf ARGUMENT, never
+          # interpolated into the format string. Scoped to this block, not the file, and
+          # `test/squad-cli-pin.test.ts` asserts no single-quoted literal here contains a
+          # `$name` expansion -- so this suppression cannot mask a genuine SC2016 defect.
           {
             printf '%s\n\n' 'The Squad CLI version pinned for new-repo activation is behind the published npm release.'
             printf '%s\n' '| | Version |'
