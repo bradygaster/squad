@@ -13,12 +13,25 @@
 | 2026-08-21 (review followup) | Two caveats rewritten to correctly describe fail-closed routing (empty comment / anchor-mismatch → `A: FAIL` → INCONCLUSIVE for #1812, not "scores green"); gate 3e (B) hardened against `gh api` fetch failure and empty-set collapse (SetEquals(∅,∅) → True); Phase 3c roster fetch guarded the same way; verdict-interpretation table gained a `(A) PASS, (B) INCONCLUSIVE` row | PR #1819 review by Flight + Coordinator — the caveats overstated the risk, the code understated one |
 | 2026-08-21 (review followup, 2nd pass) | Phase 0b fixture-freshness gate hardened: added third `UNREADABLE` state so double-`gh` failure no longer collapses into MATCH via `$null -eq $null`; Phase 0c post-condition updated to require both "all four MATCH" *and* "none UNREADABLE"; Phase 0d fix-presence check guarded (the `REM` sub-check inverts against an empty string — `.Contains(x)` returns False, which is the pass condition) | PR #1820 review by Coordinator — I claimed "exactly one 3c exposure and it's fixed" without enumerating; ten `2>$null` sites in file, the fixture-freshness gate was the higher-severity one I missed. Enumerated all ten before this pass |
 | 2026-08-21 (P0 + rule sweep) | **Phase 3b was structurally incapable of scoring** — `gh` has no `--arg` flag; the flag was consumed by `--jq` and `gh` exited 1 with empty stdout every run. The pass condition "every `squad:{x}` must be a lowercased roster Name" is universally quantified and **vacuously true over the empty set**, so a broken query would have written the passing values into the two `# dispositive` schema fields (`squad_devrel_present` / `squad_reviewer_present`). Rewrote the query to interpolate `$E4_START` in PowerShell, added an `$E4_START`-empty precheck (otherwise `select(.createdAt > "")` matches every issue and drags all 8 pre-existing contaminated issues into the FAIL evidence), added an `$LASTEXITCODE` + zero-row guard printing `3b labels extract: INCONCLUSIVE`, added an operator instruction to confirm rows returned (the guard Phase 3a already has), and stated that INCONCLUSIVE must not be recorded as `false` on the two dispositive fields. **House rule swept:** every `gh … 2>$null` call site in E4 (9 code sites: L395, L396, L448, L570, L588, L625, L649, L703, L716 in `cbf90813`; the L574 grep hit is a prose reference to the pattern, not a call — Flight's "10 sites" count included it) and E1 (2 code sites: L143, L147) is now followed by an explicit `$LASTEXITCODE` assertion. Null-guards test the symptom; the exit code tests the cause. Applied to cleared sites too — "cleared" meant *empty is readable by eye*, not *failure is detectable* | PR #1820 second-pass review (post-merge) by Flight — L625 was cleared as listing/echo but the pass condition below it is universally quantified over the returned rows, so the `--arg t` bug turned Phase 3b into a silent fail-open. This is a third instance of the "vacuously true over empty set" hazard already fixed at Phase 0b (`$null -eq $null`) and 3e (B) (`SetEquals(∅,∅)`). Also: **Do NOT retract or annotate the n=1 executed verdict at L24-60** — that PASS scored a different instrument (Condition 2's `labeled`-timeline-events query, which returned 15 events), not this broken 3b query. The exposure is prospective; the fix is prospective |
-
-> ⚠️ **The n=1 PASS below scored the procedure that stopped at `plan implementation`.** The
-> amended procedure (Phase 2 now includes `plan activate`; Phase 3 now includes a
-> roster-provenance gate) has **not yet been executed**. Any claim about #1812 requires a fresh
-> live run against the amended procedure — do not cite the n=1 record as evidence of the
-> provenance gate's behaviour.
+| 2026-08-24 (post-run corrections, #1861) | **Five procedures were stale or wrong, found by executing E4 end-to-end on the new fixture.** (1) **Phase 2 short path 5 → 8 commands** — the bold "do not continue to `plan validate` / `plan accept …`" instruction was false: `plan activate` hard-blocks without an `impl-accepted` artifact while reporting all six jobs `success`, so 3b/3c/3e were unreachable and only 3a scored. (2) **Phase 0b compared byte size** — `gh aw add` injects a `source:` provenance line into the top-level workflow only (+48 bytes, identical 1391-line counts), so a correctly-provisioned fixture read `STALE` forever and 0c could never clear it; now compares content modulo that line. (3) **§3b contamination table and its 🛑 "guaranteed false FAIL" warning described the deleted fixture** — the new one started with 12 labels and zero `squad:*`, inverting the guidance; missed when #1856 repointed the runbooks. (4) **§3a gained an explicit `Out-File` warning** — `Out-File` wraps at console width and split the roster name `Keaton` into `Ke`/`aton` mid-table, silently corrupting a roster check with no error. (5) E1's `action_required` section corrected (see that file). | #1861 — first full E4 execution against `octodemo/aspiregregator-squad-e2e`. Every correction is a measurement, not a review comment: runs `32772695400` (activate blocked), `32776872385` (accept blocked), `32776202217` (validate passed after `plan program revise`) |
+> ⚠️ **The n=1 PASS below scored the procedure that stopped at `plan implementation`.** It is
+> retained as an accurate record of what it measured, but it is **not** evidence about #1812 —
+> that gate did not exist when it ran.
+>
+> **The amended procedure has now been executed: 2026-08-24, n=1, against
+> `octodemo/aspiregregator-squad-e2e`.** Twelve `/squad` runs, all six jobs green on every one,
+> zero secrets and zero repository variables configured. Result: **3a PASS** (12/12 tasks bound
+> to roster Names, zero forbidden tokens including the dispositive `devrel`), **3c PASS**, and
+> **3b / 3e PARTIAL** — the two shortfalls are filed as #1859 (a task's `squad:{agent}` is bound
+> from its **epic owner** rather than the task's own `Agent` cell — 11/12 correct) and #1860
+> (the activation summary attributes `squad:{agent}` labels to issues that never received them,
+> and omits the required `Non-roster agent values` heading).
+>
+> Both defects passed every existing guard, because TG-2 and validation Check 10 verify
+> **membership** — that each `Agent` is *a* roster Name — and nothing verifies
+> **correspondence**, that the label on task *N* equals the accepted plan's `Agent` for task
+> *N*. A label can be simultaneously certified and wrong. That gap is the specification for
+> #1801.
 
 ---
 
@@ -431,9 +444,22 @@ via `gh api`, then `gh aw compile`.
 
 ### 0b. Establish the staleness baseline — compare, never hardcode
 
-> 🛑 **Compare source against fixture at run time. Do NOT hardcode an expected byte size.**
-> The fix for #1784 changes these sizes. A hardcoded expectation would itself become a
-> silent-success trap — it would pass against the wrong content.
+> 🛑 **Compare CONTENT, not byte size.** Three artifacts of provisioning make a byte-size
+> comparison report `STALE` **forever** on a healthy fixture, so the 0c refresh below can
+> never clear it:
+>
+> 1. `gh aw add` injects a provenance line into the **top-level workflow only**:
+>    ```
+>    source: bradygaster/squad/workflows/squad.md@dev
+>    ```
+> 2. Windows checkouts materialize CRLF; the contents API returns LF.
+> 3. `gh aw add` **strips the source file's trailing newline**.
+>
+> Measured 2026-08-24 on `octodemo/aspiregregator-squad-e2e`: raw `src=69913 /
+> fixture=69961` (+48 bytes). After normalizing (1) and (2) the main workflow *still* read
+> STALE at 1391 vs 1390 lines — artifact (3), a single empty trailing line. With all three
+> handled, `Compare-Object` returns nothing and all four surfaces read `MATCH`. The three
+> `shared/*` files are unaffected by (1) and match byte-for-byte.
 
 ```powershell
 $pairs = @(
@@ -443,41 +469,71 @@ $pairs = @(
   @{ src = "workflows/shared/squad-planning-policy.md";   dst = ".github/workflows/shared/squad-planning-policy.md" }
 )
 
+# Fetch decoded file content. Returns $null on any failure so the caller can
+# distinguish UNREADABLE from a real difference.
+function Get-AwText($repo, $path, $ref) {
+    $q = if ($ref) { "?ref=$ref" } else { "" }
+    $b64 = gh api "repos/$repo/contents/$path$q" --jq '.content' 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    if ([string]::IsNullOrWhiteSpace($b64)) { return $null }
+    try   { return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) }
+    catch { return $null }
+}
+
+# Drop the injected `source:` provenance line, normalize line endings, and trim
+# trailing whitespace, so the comparison judges substance only. Three separate
+# artifacts of `gh aw add` / checkout, each of which alone reports a false STALE:
+#   1. the injected `source:` line (top-level workflow only, +48 bytes)
+#   2. CRLF on Windows checkouts vs LF from the contents API
+#   3. `gh aw add` strips the source file's trailing newline
+# Measured 2026-08-24: with only (1) and (2) handled, the main workflow still read
+# STALE at src=1391 / fixture=1390 — a single empty trailing line. Adding TrimEnd()
+# takes all four surfaces to MATCH.
+function Get-AwNormalized($text) {
+    if ($null -eq $text) { return $null }
+    $lines = ($text -replace "`r`n", "`n") -split "`n" |
+        Where-Object { $_ -notmatch '^\s*source:\s*\S+/\S+\.md@' }
+    return ($lines -join "`n").TrimEnd()
+}
+
 foreach ($p in $pairs) {
-    $s = gh api "repos/$SOURCE/contents/$($p.src)?ref=dev" --jq '.size' 2>$null
-    $sExit = $LASTEXITCODE
-    $d = gh api "repos/$FIXTURE/contents/$($p.dst)"        --jq '.size' 2>$null
-    $dExit = $LASTEXITCODE
-    # UNREADABLE if either gh call failed OR either side didn't return a size. Do
-    # NOT collapse this into MATCH ($null -eq $null is $true — a double gh failure
-    # would print MATCH and green-light the whole run on an unverified fixture)
-    # and do NOT collapse into STALE either (STALE prescribes a refresh, which
-    # will not fix a broken credential and burns a cycle before anyone notices).
-    # Test the CAUSE (exit code) alongside the SYMPTOM (empty response): a null
-    # guard alone cannot distinguish "gh crashed" from "gh returned nothing",
-    # and only the first is fixable by re-authenticating.
+    $s = Get-AwNormalized (Get-AwText $SOURCE  $p.src "dev")
+    $d = Get-AwNormalized (Get-AwText $FIXTURE $p.dst $null)
+
+    # UNREADABLE if either side failed to fetch or decode. Do NOT collapse this
+    # into MATCH ($null -eq $null is $true — a double failure would print MATCH
+    # and green-light the whole run on an unverified fixture) and do NOT collapse
+    # into STALE either (STALE prescribes a refresh, which will not fix a broken
+    # credential and burns a cycle before anyone notices). Get-AwText already
+    # folded the exit code and the empty-payload case into a single $null.
     $state =
-      if ($sExit -ne 0 -or $dExit -ne 0 -or
-          [string]::IsNullOrWhiteSpace($s) -or [string]::IsNullOrWhiteSpace($d)) { "UNREADABLE" }
-      elseif ($s -eq $d) { "MATCH" }
-      else               { "STALE" }
-    Write-Host ("{0,-52} src={1,-7} fixture={2,-7} {3}" -f $p.dst, $s, $d, $state)
+      if ($null -eq $s -or $null -eq $d) { "UNREADABLE" }
+      elseif ($s -eq $d)                 { "MATCH" }
+      else                               { "STALE" }
+
+    $sn = if ($null -eq $s) { "n/a" } else { ($s -split "`n").Count }
+    $dn = if ($null -eq $d) { "n/a" } else { ($d -split "`n").Count }
+    Write-Host ("{0,-52} src={1,-7} fixture={2,-7} {3}" -f $p.dst, $sn, $dn, $state)
 }
 ```
 
-**Known-stale baseline measured 2026-08-21 (pre-fix), for reference only:**
+**Reference reading on a freshly provisioned fixture (2026-08-24, `octodemo/aspiregregator-squad-e2e`):**
 
-| File | `dev` | fixture | |
-|---|---|---|---|
-| `squad.md` (main) | 57,673 | 56,525 | STALE |
-| `shared/squad.md` | 6,840 | 6,688 | STALE |
-| `shared/squad-planning-ontology.md` | 16,839 | 16,420 | STALE |
-| `shared/squad-planning-policy.md` | 4,676 | 4,538 | STALE |
+| File | normalized | |
+|---|---|---|
+| `squad.md` (main) | 1,390 lines both sides | MATCH |
+| `shared/squad.md` | 153 lines both sides | MATCH |
+| `shared/squad-planning-ontology.md` | 429 lines both sides | MATCH |
+| `shared/squad-planning-policy.md` | 139 lines both sides | MATCH |
 
-All four were stale. Expect all four to read `MATCH` **after** a successful refresh — and
-none to read `UNREADABLE`. `UNREADABLE` is a fetch failure, not a fixture problem: fix the
-credential or network before refreshing (a refresh does not repair a broken `gh` auth, and
-running one will burn a cycle before anyone notices the readings were never taken).
+The historical byte-size table this replaced (measured 2026-08-21 against the now-deleted
+fixture, showing all four STALE) is no longer meaningful — it was comparing raw `.size`, which
+this section no longer does.
+
+Expect all four to read `MATCH` on a correctly provisioned fixture, and **none** to read
+`UNREADABLE`. `UNREADABLE` is a fetch failure, not a fixture problem: fix the credential or
+network before refreshing (a refresh does not repair a broken `gh` auth, and running one will
+burn a cycle before anyone notices the readings were never taken).
 
 ### 0c. Refresh both surfaces, then re-assert
 
@@ -598,25 +654,48 @@ If no: what seed shape would have been needed —
 
 ## Phase 2 — Run the short path
 
-**Run exactly these five commands, in this order, and stop.**
+**Run exactly these eight commands, in this order, and stop.**
 
 ```
 /squad research
 /squad triage
 /squad plan program
-/squad plan implementation      ← the #1784 leak site
-/squad plan activate            ← the #1812 provenance site; STOP HERE
+/squad plan implementation        ← the #1784 leak site (Phase 3a evidence)
+/squad plan validate
+/squad plan accept scope
+/squad plan accept implementation
+/squad plan activate              ← the #1812 provenance site (3b/3c/3e); STOP HERE
 ```
 
-> **Do not continue to `plan validate` / `plan accept …` / `implement`.** Those add ~27 min and
-> verify nothing additional for E4 — the `Agent` column is emitted at `plan implementation`
-> and the roster-provenance line is emitted at `plan activate`.
+> ⚠️ **This path was five commands until 2026-08-24.** It previously told you to skip
+> `plan validate` and `plan accept …` on the grounds that they "verify nothing additional
+> for E4". **That is false, and skipping them makes E4 unscoreable.** `plan activate` now
+> refuses to act without an accepted implementation plan:
+>
+> ```
+> 🤖 Squad — Plan Activate blocked
+> Result: No issues/milestones were created. Activation requires an `impl-accepted`
+> artifact (or a fully accepted `impl-phases-accepted` state), which doesn't exist yet.
+> ```
+>
+> It reports **all six jobs `success`** while creating nothing — so the run *looks* clean.
+> On the old five-command path, Phases 3b, 3c, and 3e have no artifact to read and only
+> 3a survives. Measured on run `32772695400`.
 
-**The ordering is mandatory, not stylistic.** The long path enforces preconditions: `plan
-program` on a fresh issue halts and tells you to run `triage` first; `triage` halts and demands
-`research` first; `plan activate` refuses to run without `plan accept` in later revisions, but
-at the time of writing runs directly after `plan implementation`. **Those halts are correct
-behaviour, not bugs** — but they cost ~12 min if you trip them.
+**The ordering is mandatory, not stylistic.** Each step enforces its predecessor: `plan
+program` on a fresh issue halts and demands `triage`; `triage` halts and demands `research`;
+`plan validate` must pass before `plan accept scope`; `accept implementation` halts and
+demands `accept scope` (measured on run `32776872385`); and `plan activate` halts without
+`impl-accepted`. **Every one of those halts is correct behaviour, not a bug** — each prints a
+lifecycle table and the exact command to run next, and none leaves a partial write behind.
+They cost ~8 min each if you trip them.
+
+> **`plan validate` can legitimately FAIL and still be working correctly.** On the reference
+> run it failed Check 6 because the program plan carried four unresolved decisions blocking
+> three epics — a real finding, not a defect. Resolve them with
+> `/squad plan program revise <feedback>` (ratifying the implementation plan's documented
+> fallback defaults is sufficient) and re-run `plan validate`. Budget one extra cycle for this;
+> a first-pass FAIL is the common case, not the exception.
 
 > ⚠️ **After each command, wait for all six pipeline jobs to complete** (`pre_activation`,
 > `activation`, `agent`, `detection`, `safe_outputs`, `conclusion`). **`agent ✅` is not
@@ -647,6 +726,14 @@ if ($LASTEXITCODE -ne 0) {
 
 The implementation plan is posted as a comment on the seed issue. Extract it verbatim:
 
+> 🛑 **Use `Set-Content`. Never substitute `Out-File`.** `Out-File` wraps output at the
+> console width, which splits long markdown table rows **mid-cell**. Measured on the
+> reference run: the roster name `Keaton` was written across two lines as `Ke` / `aton`,
+> which silently corrupted a roster-membership check downstream. There is no error — you
+> get a plausible-looking extract with one entry quietly truncated, and every check that
+> reads it inherits the corruption. `Set-Content` (and `[IO.File]::WriteAllText` for
+> non-pipeline writes) do not wrap. This applies to every extract in Phase 3, including 3e.
+
 ```powershell
 $ISSUE = <seed issue number>
 
@@ -674,14 +761,21 @@ silent-success trap. **Confirm the plan actually contains a task table first.**
 
 ### 3b. Minted labels — corroborating evidence
 
-> 🛑 **DO NOT check repo-global label existence. It is a guaranteed false FAIL.**
+> ⚠️ **Scope the check to the issues E4 itself created — but know why.**
 >
-> GitHub labels **persist once created**. `squad:lead`, `squad:devrel`, and `squad:reviewer`
-> **already exist in the fixture** — minted by E1 on 2026-08-19 and E3 on 2026-08-21. They will
-> still be there during E4 no matter how well the fix works. A check of the form
-> "does `squad:devrel` exist in this repo?" returns **true forever** and would fail a perfect run.
+> GitHub labels **persist once created**, so on a fixture that has already run E4 (or E1/E3),
+> a repo-global check of the form "does `squad:devrel` exist here?" returns **true forever**
+> and would fail an otherwise perfect run. Scoping by creation timestamp is what makes the
+> check meaningful across repeat runs on the same fixture.
 >
-> **Scope the check to the issues E4 itself created.**
+> **On a freshly copied fixture the opposite is true.** Measured 2026-08-24 on
+> `octodemo/aspiregregator-squad-e2e` immediately after provisioning: **12 labels, none of
+> them `squad:*`** — `bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`,
+> `help wanted`, `invalid`, `question`, `wontfix`, `.NET`, `dependencies`, `squad`. There is
+> no pre-existing contamination to filter, and repo-global absence *is* real evidence.
+>
+> Record which case you are in **before** Phase 2. The `$E4_START` cutoff below is correct
+> either way, so use it unconditionally.
 
 ```powershell
 # Record this BEFORE running Phase 2 — it is the cutoff for "new" issues.
@@ -699,7 +793,7 @@ $E4_START = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 # two `# dispositive` verdict fields (squad_devrel_present / squad_reviewer_present)
 # where `true` is the FAIL evidence. Interpolate $E4_START in PowerShell instead.
 if ([string]::IsNullOrWhiteSpace($E4_START)) {
-    Write-Host "3b labels extract: INCONCLUSIVE — `$E4_START not set. With an empty cutoff, ``select(.createdAt > `"`"`")`` matches every issue in the fixture and drags all pre-existing squad-labeled contamination (#6-9, #17-20 as of 2026-08-21) into the FAIL evidence. Record `$E4_START` BEFORE Phase 2 and re-run this cell. DO NOT record `false` on ``squad_devrel_present`` / ``squad_reviewer_present`` — the query never ran with a valid cutoff."
+    Write-Host "3b labels extract: INCONCLUSIVE — `$E4_START not set. With an empty cutoff, ``select(.createdAt > `"`"`")`` matches every issue in the fixture, dragging any pre-existing squad-labeled issues (see the contamination table below) into the FAIL evidence. Record `$E4_START` BEFORE Phase 2 and re-run this cell. DO NOT record `false` on ``squad_devrel_present`` / ``squad_reviewer_present`` — the query never ran with a valid cutoff."
 } else {
     $jq = ".[] | select(.createdAt > `"$E4_START`") | " +
           "[(.number|tostring), ([.labels[].name]|join(`",`")), (.title|.[0:50])] | " +
@@ -737,16 +831,25 @@ Every `squad:{x}` on a **newly created** issue must have `{x}` = a lowercased ro
 
 | Label | Minted by | On issues |
 |---|---|---|
-| `squad:lead` | E1 + E3 | #6, #7, #17, #18, #19 |
-| `squad:devrel` | E1 + E3 | #8, #20 |
-| `squad:reviewer` | **E1 only** | #9 |
+| _(none)_ | — | — |
 
-> ⚠️ **This table grows.** Every E4 run mints labels at `plan activate` (that step is now part
-> of E4 as of the 2026-08-21 amendment). **After running E4, append the newly-minted labels to
-> this table before the next run** — otherwise the second run's contamination filter is stale
-> and either passes labels it should catch or catches labels it should ignore. If unsure,
-> re-derive the table from the fixture: `gh label list --repo $FIXTURE` gives repo-global
-> presence; scope by issue via the same `E4_START`-cutoff query used above.
+**The current fixture `octodemo/aspiregregator-squad-e2e` started clean** (verified
+2026-08-24: 12 labels, zero `squad:*`). The table above previously listed `squad:lead` on
+#6/#7/#17-19, `squad:devrel` on #8/#20, and `squad:reviewer` on #9 — **all of that described
+the fixture that was deleted before this one was created**, and those issue numbers do not
+exist here. It was left stale when #1856 repointed the runbooks.
+
+> ⚠️ **This table grows.** Every E4 run mints labels at `plan activate`. **After running E4,
+> append the newly-minted labels to this table before the next run** — otherwise the next
+> run's contamination filter is stale and either passes labels it should catch or catches
+> labels it should ignore. If unsure, re-derive it from the fixture:
+> `gh label list --repo $FIXTURE` gives repo-global presence; scope by issue via the same
+> `E4_START`-cutoff query used above.
+>
+> **After the 2026-08-24 run, the fixture is dirty**: 20 issues and 4 minted labels
+> (`squad:kint`, `squad:mcmanus`, `squad:fenster`, `squad:hockney`). A clean re-test needs a
+> fresh copy of `bradygaster/Aspiregregator` — that template is read-only and must never be
+> modified.
 
 ### 3c. Roster cross-check
 

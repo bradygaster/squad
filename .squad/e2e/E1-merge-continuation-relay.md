@@ -58,16 +58,20 @@ Same trigger. Same inputs. Different result. This is the fix in action.
 
 These are **not Squad defects** but they DO prevent the loop from closing unattended.
 
-### 1. `action_required` Approval Gate
+### 1. `GITHUB_TOKEN`-authored PRs do not trigger workflows at all
 
-Worker-opened PRs are authored by `app/github-actions`. GitHub parks their `pull_request` workflow runs in `action_required` status pending manual approval. A human had to click **Approve** for PR #15 before CI would run.
+Worker-opened PRs are authored by `app/github-actions`. **GitHub suppresses workflow triggers entirely for events raised by the default `GITHUB_TOKEN`** — this exists to prevent recursive workflow loops.
 
-**The loop cannot close unattended until PR creation uses a PAT or GitHub App token instead of the default `GITHUB_TOKEN`.**
+> ⚠️ **Corrected 2026-08-24.** This section previously said such PRs are *parked* in `action_required` pending manual approval. **Measured false on fixture PR #4:** no `pull_request` run was created at all. The check rollup carried only `dynamic`-event checks (CodeQL, dependency submission) — there was nothing queued, nothing pending, and nothing to approve. The practical consequence is the same (the loop cannot close unattended), but the cause is different, and the distinction matters operationally: **you will search for a run ID that was never created.**
 
-Unblock command (for manual override during testing):
+**The loop cannot close unattended until PR creation uses a PAT or GitHub App token instead of the default `GITHUB_TOKEN`.** That remains the correct fix — it changes the actor, so the trigger fires normally.
+
+Manual override during testing — push an empty commit to the PR branch as a real user, which raises a `synchronize` event under your own identity:
 ```sh
-gh api -X POST "repos/<owner>/<repo>/actions/runs/<RUN_ID>/approve"
+git commit --allow-empty -m "trigger CI" && git push
 ```
+
+> The `actions/runs/<RUN_ID>/approve` API this section used to recommend **cannot apply here**: approval acts on an existing queued run, and in this failure mode no run exists. Keep it in mind only for the genuinely distinct `action_required` case (first-time outside contributors), which is not what worker PRs hit.
 
 ### 2. Detection-Job Hang
 
