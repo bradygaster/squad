@@ -16,3 +16,41 @@ paths:
       # SC2086 (info: quoting/word-splitting) and SC2034+ (warning: unused variables),
       # as well as all actionlint-native checks.
       - "SC2129"
+
+  # ---------------------------------------------------------------------------
+  # gh-aw generated output (#1827)
+  #
+  # These files are DO-NOT-EDIT compiler output — editing them is pointless
+  # because the next compile clobbers the change. They were previously skipped
+  # wholesale by squad-workflow-lint.yml, which meant the artifact that actually
+  # runs received no lint at all. Skipping and suppressing look similar but are
+  # not: a skip hides every future error class, while the scoped ignores below
+  # hide exactly the classes that were measured and explained.
+  #
+  # Every exemption here was verified empirically against actionlint v1.7.12 —
+  # the version this CI pins, and the current latest release — by compiling the
+  # workflow sources and linting the emitted output, rather than assumed. Each
+  # reported error fell into one of the classes below; none was a genuine defect
+  # in the generated YAML. See the PR for #1827 for the measurements.
+  #
+  # Re-check these on every actionlint upgrade. An exemption that outlives the
+  # schema gap it documents silently narrows the gate.
+  # ---------------------------------------------------------------------------
+  "**/*.lock.yml":
+    ignore:
+      # `copilot-requests: write` is a real, current Actions permission scope,
+      # emitted by GitHub's own gh-aw toolchain. actionlint's permission-scope
+      # list has not caught up, so it reports the scope as unknown.
+      - 'unknown permission scope "copilot-requests"'
+      # `concurrency.queue: max` is a newer real Actions concurrency feature that
+      # is absent from actionlint's workflow schema.
+      - 'unexpected key "queue" for "concurrency" section'
+
+  "**/agentics-maintenance.yml":
+    ignore:
+      # A `workflow_dispatch` choice input whose first option is '' — the
+      # "no operation selected" entry, matching the input's own `default: ''`.
+      # GitHub accepts it; actionlint's syntax check rejects any empty string.
+      # Emitted by gh-aw's pkg/workflow/maintenance_workflow.go, so it cannot be
+      # fixed here. Scoped to this filename so the check still applies elsewhere.
+      - "string should not be empty"
