@@ -24,9 +24,26 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const PIN_FILE = join(process.cwd(), 'workflows', 'shared', 'squad.md');
+const DOCS_FILE = join(
+  process.cwd(),
+  'docs',
+  'src',
+  'content',
+  'docs',
+  'guide',
+  'gh-aw.md',
+);
+const BUMP_SCRIPT = join(process.cwd(), 'scripts', 'bump-activation-pin.mjs');
+const PUBLISH_WORKFLOW = join(
+  process.cwd(),
+  '.github',
+  'workflows',
+  'squad-npm-publish.yml',
+);
 const DRIFT_WORKFLOW = join(
   process.cwd(),
   '.github',
@@ -153,5 +170,75 @@ describe('Squad CLI activation pin (#1825)', () => {
       'single-quoted literals containing a $expansion — these will emit the literal text, ' +
         `not the value, and SC2016 is suppressed here so shellcheck will not say so:\n${offenders.join('\n')}`,
     ).toEqual([]);
+  });
+
+  it('documents the same version in the published guide', () => {
+    const pin = effectivePin(readPinFile());
+    const docs = readFileSync(DOCS_FILE, 'utf8');
+
+    // A third copy of the version, in the page that tells people what activation
+    // installs. It is outside the workflow file, so neither the drift guard's npm
+    // comparison nor the two checks above ever looked at it — it could sit stale
+    // indefinitely while every other guard reported green.
+    const documented = docs.match(
+      /\|\s*`SQUAD_CLI_VERSION`[^|\n]*\|[^|\n]*\|\s*`([^`\n]+)`\s*\|/,
+    )?.[1];
+
+    expect(documented, 'gh-aw guide no longer states a SQUAD_CLI_VERSION default').toBeDefined();
+    expect(documented).toBe(pin);
+  });
+
+  it('can still find every place it has to rewrite', () => {
+    const pin = effectivePin(readPinFile());
+
+    // Runs the real bumper against the version already pinned. That is an identity
+    // rewrite, so it touches nothing — but it exercises all three patterns for real,
+    // which is the only way to prove they still match. A pattern that quietly stops
+    // matching turns the release-time bump into a no-op, and the whole failure mode
+    // #1825 describes is a guard that decays without saying anything.
+    const env = { ...process.env, TARGET_VERSION: pin as string };
+    delete env.GITHUB_OUTPUT;
+    delete env.PR_BODY_FILE;
+
+    const output = execFileSync(process.execPath, [BUMP_SCRIPT], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env,
+    });
+
+    expect(output).toContain('already');
+  });
+
+  it('wires the bump into the run that publishes', () => {
+    const workflow = readFileSync(PUBLISH_WORKFLOW, 'utf8');
+
+    // Prevention has to be attached to publishing itself. If the bump job is dropped,
+    // or stops depending on the publish that makes the version installable, the pin
+    // goes back to decaying silently and only the daily backstop notices — a day late,
+    // as a red build.
+    expect(workflow).toMatch(/bump-activation-pin:/);
+    expect(workflow).toMatch(/needs:\s*publish-cli/);
+    expect(workflow).toContain('scripts/bump-activation-pin.mjs');
+
+    // The bump must land where the pin lives. Releases are cut from `main`; a bump
+    // committed there would edit a file the default branch never sees.
+    expect(workflow).toMatch(/--base dev/);
+  });
+
+  it('never derives the pin from the unreleased in-repo manifest', () => {
+    const script = readFileSync(BUMP_SCRIPT, 'utf8');
+
+    const executable = script
+      .split(/\r?\n/)
+      .filter((l) => {
+        const t = l.trimStart();
+        return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*');
+      })
+      .join('\n');
+
+    // Same trap as the drift guard: `packages/squad-cli/package.json` holds the next
+    // unreleased version, so a bumper reading it would pin activation to something npm
+    // cannot install — reproducing PR #1818's breakage automatically, every release.
+    expect(executable).not.toMatch(/packages\/squad-cli\/package\.json/);
   });
 });
