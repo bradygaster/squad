@@ -47,7 +47,7 @@
     "@playwright/test": "^1.62.1",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.61.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "cspell": "^10.0.1",
     "eslint": "^10.8.1",
     "eslint-plugin-n": "^18.3.0",
