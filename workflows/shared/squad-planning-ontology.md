@@ -308,6 +308,15 @@ been run, and an omitted row is not a pass.
   | 1 | <title> | #NNN | S | <agent> |
 ```
 
+Activation safe-output data also carries a non-empty `bindings` array. Each task
+entry maps its plan task number and epic to the returned GitHub issue number and
+raw agent assignment. Each epic entry maps its epic identifier and returned issue
+number to the distinct agent set derived from its tasks. Entries record the label
+that was actually applied, or an `omission_reason` (`multi-owner`, `non-roster`,
+or `copilot`) when policy requires bare `squad`. This mapping is mandatory for
+`phases-activated` and `activated` artifacts so the post-activation checker can
+fail closed without matching model-authored titles.
+
 ---
 
 ## 4. Structured Artifact Registry

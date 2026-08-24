@@ -74,6 +74,37 @@ safe-outputs:
         items:
           type: integer
           minimum: 1
+      bindings:
+        type: array
+        items:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum: [task, epic]
+            issue:
+              type: integer
+              minimum: 1
+            task:
+              type: string
+            epic:
+              type: string
+            agent:
+              type: string
+            agents:
+              type: array
+              items:
+                type: string
+            label:
+              type: string
+            omission_reason:
+              type: string
+          required:
+            - kind
+            - issue
+            - epic
+            - agents
+          additionalProperties: false
     required:
       - squad_artifact
       - schema_version
@@ -1393,9 +1424,19 @@ Add `blockedBy` via API for tasks and epics. Graceful fallback. Never fail activ
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order.
+Every phase and full activation artifact MUST include a non-empty `bindings` array built only from successful `create-issue` results. Emit one task binding per created/recognized task:
 
-Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}]}` with an "All Phases Activated" heading.
+`{"kind":"task","task":"{plan # cell}","issue":{created issue number},"epic":"{Epic cell}","agent":"{raw Agent cell}","agents":["{lowercased Agent cell}"],"label":"squad:{agent}"}`.
+
+Emit one epic binding per created/recognized epic:
+
+`{"kind":"epic","issue":{created epic issue number},"epic":"{Epic identifier}","agents":["{distinct lowercased task agents}"],"label":"squad:{agent}"}` for a single roster owner, or omit `label` and set `"omission_reason":"multi-owner"` for multiple owners. For a task whose agent is not certified by TG-2, omit `label` and set `"omission_reason":"non-roster"`; for `@copilot`, use `"omission_reason":"copilot"`. Never omit a created issue from `bindings`, never infer an issue number, and never emit an empty array. The deterministic post-activation workflow treats missing, empty, malformed, or unresolved bindings as a failure.
+
+Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}],"bindings":[{this phase's bindings}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
+
+Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[],"bindings":[{all bindings}]}` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order.
+
+Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}],"bindings":[{bindings accumulated across every activated phase}]}` with an "All Phases Activated" heading.
 
 ##### Step 5: Update Lifecycle
 
