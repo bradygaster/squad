@@ -87,7 +87,7 @@ jobs:
             echo "✓ Existing squad team detected with roster entries — skipping init."
           else
             echo "No existing squad team found — running squad init."
-            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.12.0}" init --preset default --state-backend local
+            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}" init --preset default --state-backend local
           fi
 
       - name: Upload Squad state artifact
