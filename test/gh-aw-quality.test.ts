@@ -13,6 +13,7 @@ import { cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync
 import { join, dirname } from 'node:path';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
+import { POSIX_SHELL, NO_POSIX_SHELL_MESSAGE, requirePosixShell } from './posix-shell';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
@@ -21,13 +22,14 @@ const SHARED_DIR = join(WORKFLOWS_DIR, 'shared');
 const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces');
 
 /**
- * Some suites execute the workflow's own `bash`/`jq` snippets through
- * `shell: '/bin/sh'` to prove the shipped one-liners behave as documented.
- * That shell does not exist on a stock Windows dev box, so gate those suites
- * instead of reporting spurious ENOENT failures. CI runs on Linux, where they
- * always execute.
+ * Some suites execute the workflow's own `bash`/`jq` snippets through a POSIX
+ * shell to prove the shipped one-liners behave as documented.
+ *
+ * These suites used to gate on `existsSync('/bin/sh')`, which is absent on a
+ * stock Windows dev box — so 13 tests (28 assertions) silently skipped while the
+ * suite still reported green (#1833). Git for Windows ships a POSIX shell, so
+ * resolve that instead of skipping, and fail loudly when none can be found.
  */
-const HAS_POSIX_SHELL = existsSync('/bin/sh');
 
 afterAll(() => {
   rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
@@ -1626,7 +1628,14 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
 // the guard, preventing false TEAM_PRESENT in fresh repos.
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!HAS_POSIX_SHELL)('gh-aw: Team Guard roster-row detection — committed-HEAD git repo coverage (#1689 revision 3)', () => {
+describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo coverage (#1689 revision 3)', () => {
+  // A skipped behavioral suite is a permanently-green gate (#1833). Fail loudly
+  // instead of quietly reporting a pass for assertions that never executed.
+  it('resolves a POSIX shell, so the behavioral cases below actually run', () => {
+    expect(POSIX_SHELL, NO_POSIX_SHELL_MESSAGE).not.toBeNull();
+  });
+
+
   // Content shared across test cases
   const SCAFFOLD_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n`;
   const ONE_MEMBER_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n| Eecom | Core Dev | .squad/agents/eecom/charter.md | active |\n`;
@@ -1638,7 +1647,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('gh-aw: Team Guard roster-row detection — co
   function runCommittedRosterCheck(cwd: string): string {
     return execSync(
       `git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
-      { cwd, shell: '/bin/sh', encoding: 'utf8' }
+      { cwd, shell: requirePosixShell(), encoding: 'utf8' }
     ).trim();
   }
 
@@ -1798,7 +1807,13 @@ describe('gh-aw: Auto-Cast prompt hygiene (#1689 revision)', () => {
 // Test: Cast PR dedup jq filter — behavioral coverage (#1689 revision)
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!HAS_POSIX_SHELL)('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', () => {
+describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', () => {
+  // See #1833 — this suite skipped silently on Windows and still reported green.
+  it('resolves a POSIX shell, so the behavioral cases below actually run', () => {
+    expect(POSIX_SHELL, NO_POSIX_SHELL_MESSAGE).not.toBeNull();
+  });
+
+
   const squadContent = readText(SQUAD_WORKFLOW);
 
   // Extract the exact --jq expression from squad.md so this test stays in sync.
@@ -1811,7 +1826,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('gh-aw: Cast PR dedup jq filter behavioral cov
   function runJqFilter(jsonInput: string, filter: string): string {
     return execSync(
       `echo '${jsonInput.replace(/'/g, "'\\''")}' | jq -r '${filter}'`,
-      { shell: '/bin/sh', encoding: 'utf8' }
+      { shell: requirePosixShell(), encoding: 'utf8' }
     ).trim();
   }
 

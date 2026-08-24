@@ -21,31 +21,18 @@
 
 import { describe, it, expect, afterAll } from 'vitest';
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { POSIX_SHELL, requirePosixShell } from './posix-shell';
 
 const SQUAD_WORKFLOW = join(process.cwd(), 'workflows', 'squad.md');
 const workflow = readFileSync(SQUAD_WORKFLOW, 'utf8');
 
 /**
- * Resolve a POSIX shell. Checking only `/bin/sh` silently skips every behavioral
- * case on Windows, and a check that never runs is indistinguishable from a check
- * that always passes. Git ships a POSIX shell on Windows, so fall back to it.
+ * POSIX-shell resolution lives in `./posix-shell` so the gh-aw suites share one
+ * implementation — this file used to carry a verbatim third copy (#1833).
  */
-function resolvePosixShell(): string | null {
-  if (existsSync('/bin/sh')) return '/bin/sh';
-  if (process.platform !== 'win32') return null;
-  const roots = [
-    process.env['ProgramFiles'] ?? 'C:\\Program Files',
-    process.env['ProgramW6432'] ?? 'C:\\Program Files',
-    process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
-    join(process.env['LOCALAPPDATA'] ?? 'C:\\', 'Programs'),
-  ];
-  return roots.map(r => join(r, 'Git', 'bin', 'bash.exe')).find(existsSync) ?? null;
-}
-
-const POSIX_SHELL = resolvePosixShell();
 
 /** Pull the first fenced bash block that follows `heading`, dedented. */
 function bashBlockAfter(heading: string): string {
@@ -121,8 +108,7 @@ function makeRepo(committed: string | null, workingTree?: string): string {
  * must catch.
  */
 function runTG2(cwd: string): string {
-  if (!POSIX_SHELL) throw new Error('no POSIX shell resolved');
-  return execFileSync(POSIX_SHELL, ['-c', TG2_BLOCK], { cwd, encoding: 'utf8' }).replace(/\n+$/, '');
+  return execFileSync(requirePosixShell(), ['-c', TG2_BLOCK], { cwd, encoding: 'utf8' }).replace(/\n+$/, '');
 }
 
 const members = (out: string): string[] =>
@@ -186,7 +172,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     expect(TG2_BLOCK, 'TG-2 must read the committed HEAD revision of team.md').toMatch(/git show HEAD:\.squad\/team\.md/);
   });
 
-  it.skipIf(!POSIX_SHELL)('emits the committed cast verbatim (lowercased), not a preset', () => {
+  it('emits the committed cast verbatim (lowercased), not a preset', () => {
     const out = runTG2(makeRepo(CAST));
     expect(members(out), `expected the real cast from team.md; got:\n${out}`).toEqual([
       'keaton',
@@ -198,7 +184,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     expect(unreadable(out), `unexpected ROSTER_UNREADABLE on a readable roster:\n${out}`).toBeNull();
   });
 
-  it.skipIf(!POSIX_SHELL)('reads the Name column by header, not by position, when Role comes first', () => {
+  it('reads the Name column by header, not by position, when Role comes first', () => {
     const roleFirst = [
       '## Members',
       '',
@@ -216,7 +202,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     }
   });
 
-  it.skipIf(!POSIX_SHELL)('names the failure when the table has no Name column', () => {
+  it('names the failure when the table has no Name column', () => {
     const noName = [
       '## Members',
       '',
@@ -232,7 +218,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     );
   });
 
-  it.skipIf(!POSIX_SHELL)('reads committed HEAD, so an uncommitted preset scaffold cannot leak', () => {
+  it('reads committed HEAD, so an uncommitted preset scaffold cannot leak', () => {
     // The measured #1812 defect: a real cast is committed, but a preset team.md
     // sits in the working tree. TG-2 must certify the committed cast only.
     const out = runTG2(makeRepo(CAST, PRESET));
@@ -250,7 +236,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     }
   });
 
-  it.skipIf(!POSIX_SHELL)('names the failure when team.md is absent from HEAD', () => {
+  it('names the failure when team.md is absent from HEAD', () => {
     const out = runTG2(makeRepo(null));
     expect(members(out), `no roster may be emitted when team.md is absent; got:\n${out}`).toEqual([]);
     expect(unreadable(out), `expected a named "absent from HEAD" reason; got:\n${out}`).toBe(
@@ -258,7 +244,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     );
   });
 
-  it.skipIf(!POSIX_SHELL)('names the failure when there is no ## Members section', () => {
+  it('names the failure when there is no ## Members section', () => {
     const noSection = ['# Squad', '', 'Some prose but no members table.', ''].join('\n');
     const out = runTG2(makeRepo(noSection));
     expect(members(out), `no roster may be emitted without a ## Members section; got:\n${out}`).toEqual([]);
@@ -267,7 +253,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
     );
   });
 
-  it.skipIf(!POSIX_SHELL)('names the failure when ## Members has header and separator but no data rows', () => {
+  it('names the failure when ## Members has header and separator but no data rows', () => {
     const headerOnly = ['## Members', '', '| Name | Role |', '|------|------|', ''].join('\n');
     const out = runTG2(makeRepo(headerOnly));
     expect(members(out), `header/separator rows are not members; got:\n${out}`).toEqual([]);
@@ -285,7 +271,7 @@ describe('gh-aw: Team Guard TG-2 roster certification (#1812)', () => {
   // GitHub tables the trailing pipe already quarantines the CR into a post-pipe
   // field that is never read (measured). The strip is retained as defense-in-depth
   // for irregular tables; this test does not claim to prove it.
-  it.skipIf(!POSIX_SHELL)('parses a CRLF-authored team.md into the clean lowercased cast', () => {
+  it('parses a CRLF-authored team.md into the clean lowercased cast', () => {
     const crlf = [
       '## Members',
       '',
