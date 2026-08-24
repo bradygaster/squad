@@ -258,6 +258,7 @@ Structured data:
   it('wires a plain read-only workflow to Node 22 and the checker', () => {
     const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'squad-agent-binding-check.yml'), 'utf8');
     expect(workflow).toContain('workflow_run:');
+    expect(workflow).toContain('workflows: [Squad, Squad CI]');
     expect(workflow).toContain('issues: read');
     expect(workflow).toContain('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
     expect(workflow).toContain('node-version: 22');

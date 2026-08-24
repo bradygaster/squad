@@ -2,7 +2,9 @@ name: Squad Agent Binding Check
 
 on:
   workflow_run:
-    workflows: [Squad]
+    # "Squad" is the installed gh-aw workflow; "Squad CI" keeps this source
+    # repository's checker wired to a workflow that exists here.
+    workflows: [Squad, Squad CI]
     types: [completed]
 
 permissions:
