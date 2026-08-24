@@ -308,6 +308,19 @@ been run, and an omitted row is not a pass.
   | 1 | <title> | #NNN | S | <agent> |
 ```
 
+The activation artifact body also carries an `Activation bindings:` fenced JSON
+block containing a non-empty array. Each entry
+maps a plan task number and raw agent assignment to its returned task issue number,
+epic identifier, returned epic issue number, and the epic's complete distinct agent
+set from the full accepted plan (including other activation phases). It records both task and derived
+epic labels actually applied, or their omission reasons (`multi-owner` or
+`non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
+records the actual `squad:copilot` label. This mapping is mandatory for
+`phases-activated` and `activated` artifacts. It remains in the body rather than
+the safe-output `data` envelope because gh-aw expands nested data schemas beyond
+GitHub's expression-size limit. The post-activation checker can still
+fail closed without matching model-authored titles.
+
 ---
 
 ## 4. Structured Artifact Registry
