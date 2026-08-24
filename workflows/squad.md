@@ -1327,6 +1327,19 @@ Count expected issues before starting. If total > 50: recommend phased activatio
    `squad:{agent}` label MUST be applied across the created issues. Zero labels on a
    plan with roster owners is a binding failure, not a pass — report it, don't proceed
    silently.
+7. **Correspondence — the label must match *this* issue's own row.** Steps 4-6 certify the
+   *vocabulary*: that each value is a roster Name. They do not check that the right issue
+   received the right value. **A label can be simultaneously certified and wrong.** Before
+   each `create-issue` call, re-read the agent from that issue's own source — a task's own
+   `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
+   epic, or the previous call. Verify per issue; membership across the run is not evidence.
+8. **Report what was applied, not what was intended.** The activation summary may name a
+   `squad:{agent}` label for an issue only after that issue's `create-issue` call returned
+   successfully carrying it. Never state a label that was skipped, omitted, deferred, or
+   assumed. Whenever an `Agent` value did not become a label — multi-owner epic, uncertified
+   name, unavailable label — the `Non-roster agent values` heading is **required**, and must
+   name the value and the issue it applied to. Omitting the heading while omitting the label
+   reports a clean run that did not happen.
 
 Then verify labels `squad` and each roster-bound `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
 
@@ -1346,7 +1359,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 
 **2b. Create Epic Issues:** `create-issue` per epic (dedup by title `[Epic] {name}` if already exists from prior phase).
 - Title: `[Epic] {name}`
-- Labels: `squad` (0075ca), `squad:{agent}` (e4e669)
+- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct value → mint `squad:{that agent}`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
 - Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
 - Parent: sub-issue of root intent issue
 - Milestone: assigned
@@ -1360,7 +1373,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 > **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one call → one verify, repeated per task.
 
 - Title: task title
-- Labels: `squad` (0075ca), `squad:{agent}` (e4e669). No `size:*` labels unless policy says so.
+- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
 - Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
 - Parent: sub-issue of EPIC (not root)
 - Milestone: same as parent epic
