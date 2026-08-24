@@ -1,7 +1,7 @@
 # E1 — Merge-Continuation Relay: Evidence Record
 
 **Date:** 2026-08-21  
-**Fixture repo:** `bradygaster/aspiregregator-squad-e2e`  
+**Fixture repo (this run):** `bradygaster/aspiregregator-squad-e2e` — ⚠️ **retired.** Deleted 2026-08-24 along with every other test repo. The name is preserved here deliberately: this is an *evidence record*, and it must keep stating which repo actually produced the readings below. Re-runs target a different repo — see `$FIXTURE` in *PASS observation* below.  
 **Recorded by:** FIDO (Quality Owner)  
 **Session:** 70370e36-33b0-4786-bd72-4cf15518daa6
 
@@ -124,7 +124,7 @@ rule_d:
 
 **Cross-checks (completeness is not veracity).** Each of these must hold; otherwise the NOT VERIFIED verdict itself is invalid and the run scores **FAIL**:
 
-- `blocked_by_job_url` MUST target the fixture repo. Concretely: the URL path MUST contain `/<fixture-repo>/actions/runs/` where `<fixture-repo>` matches E1's fixture (as of 2026-08-21: `aspiregregator-squad-e2e`). A cancelled run from an unrelated repo satisfies the field type but does not support the claim.
+- `blocked_by_job_url` MUST target the fixture repo. Concretely: the URL path MUST contain `/<fixture-owner>/<fixture-repo>/actions/runs/`, where `<fixture-owner>/<fixture-repo>` is the `$FIXTURE` declared in *PASS observation* below (currently `octodemo/aspiregregator-squad-e2e`). A cancelled run from an unrelated repo satisfies the field type but does not support the claim. **Match on owner *and* name, not the bare name.** The repo name `aspiregregator-squad-e2e` was deliberately reused when the fixture moved orgs on 2026-08-24, so a name-only match cannot distinguish the current fixture from the retired one and would accept evidence from a repo that no longer exists.
 - `cancelled_at_utc` MUST fall within `[window_started_utc, window_ended_utc]`. A cancellation *before* the window opened wasn't blocking Rule D observation; a cancellation *after* the window closed didn't cause the NOT VERIFIED — the window already ended.
 - `blocked_by_step` MUST name a step visible on the linked run and MUST still be `in_progress` (not `completed`) at cancellation time. A step that had already returned before the run was cancelled didn't hang.
 
@@ -133,7 +133,9 @@ These cross-checks are the difference between "documented absence of signal" (th
 ### PASS observation (the mandatory extractions)
 
 ```powershell
-$FIXTURE = "bradygaster/aspiregregator-squad-e2e"
+$FIXTURE = "octodemo/aspiregregator-squad-e2e"   # re-run target (2026-08-24 onward). NOT the
+                                                 # repo named in this record's header — that one
+                                                 # was deleted. See the header note.
 $EPIC = <epic issue number>
 
 # The relay run's success timestamp — the start of the observation window.

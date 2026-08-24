@@ -24,8 +24,13 @@
 
 ## ✅ Executed — 2026-08-21 · verdict PASS (n=1)
 
-Run against fixture `bradygaster/aspiregregator-squad-e2e`, seed issue **#22**,
+Run against fixture `bradygaster/aspiregregator-squad-e2e` (⚠️ **retired** — deleted 2026-08-24;
+name kept because this block records what actually ran), seed issue **#22**,
 `$E4_START` = `2026-08-21T09:18:32Z`. **8 gates, 8 green, zero interventions, ~55 min.**
+
+> ⚠️ **Every issue number, run ID, and roster name in this block belongs to the retired fixture.**
+> They are historical readings, not re-run inputs. A re-run must re-derive all of them against the
+> current `$FIXTURE` (Phase 0). Reusing them would score a new run against a deleted repo's evidence.
 
 | # | Condition | Result |
 |---|---|---|
@@ -247,8 +252,8 @@ never been executed as a formal gate. Re-run required.
 
 ### The two leaked tokens are NOT equal evidence
 
-This is the most important thing in this document. Verified against the fixture roster
-(`.squad/team.md` in `bradygaster/aspiregregator-squad-e2e`):
+This is the most important thing in this document. Verified against the roster of the **retired**
+fixture (`.squad/team.md` in `bradygaster/aspiregregator-squad-e2e`, deleted 2026-08-24):
 
 | Roster | Name | Role |
 |---|---|---|
@@ -259,6 +264,24 @@ This is the most important thing in this document. Verified against the fixture 
 | | Kint | DevOps / Platform Engineer |
 
 String check on that file: `DevRel` → **False**. `devrel` → **False**.
+
+> 🛑 **RE-DERIVE this table before any re-run — do not inherit it.**
+> The current fixture (`octodemo/aspiregregator-squad-e2e`) is a *bare application repo*: it has no
+> `.squad/` directory at all, so it has no roster until Squad is activated on it (Phase 0). Casting
+> generates names, so the new roster will **not** be Keaton/McManus/Fenster/Hockney/Kint.
+>
+> The dispositive/ambiguous split below is **derived from roster contents, not fixed vocabulary**.
+> The rule that survives is the *reasoning*, not the *tokens*:
+>
+> - A leaked token is **dispositive** when it appears nowhere in the fixture's roster (no Name, no
+>   Role, no charter) — its only possible source is the prohibition text, so the model copied it.
+> - A leaked token is **ambiguous** when the roster's own Role column contains that word, because
+>   role-column derivation and prohibition-copying then produce the same string.
+>
+> So: re-read the new `.squad/team.md`, re-run the string checks, and re-classify each token. If the
+> new cast happens to include a role containing "Lead", `squad:lead` stays ambiguous; if it does not,
+> `squad:lead` *becomes* dispositive. Scoring a new run against the retired fixture's classification
+> would assert a fact about a repo that no longer exists.
 
 - **`squad:devrel` is dispositive.** "DevRel" appears **nowhere** in the fixture — not as a
   Name, not as a Role, not in any charter. Its **only** possible source is the prohibition text
@@ -345,11 +368,39 @@ labels on the fixture; that is expected fixture state change, not an interventio
 > from refresh mistakes, not from the code under test.
 
 ```powershell
-$FIXTURE = "bradygaster/aspiregregator-squad-e2e"
+$FIXTURE = "octodemo/aspiregregator-squad-e2e"
 $SOURCE  = "bradygaster/squad"
 $EVIDENCE = Join-Path ([Environment]::GetFolderPath('Desktop')) "squad-e4-$(Get-Date -Format 'yyyyMMdd')"
 New-Item -ItemType Directory -Force -Path $EVIDENCE | Out-Null
 ```
+
+> **Why octodemo.** Actions minutes for the `bradygaster` org were near exhaustion, so E-scenario
+> runs bill to `octodemo` instead (owner decision, 2026-08-24). The pristine, **read-only** origin
+> is `bradygaster/Aspiregregator` — copy it, never run against it, never modify it.
+
+### 0-pre. Provision the fixture — required when it has no `.squad/`
+
+> 🛑 **0a–0d below assume Squad is already installed in the fixture.** They *refresh* an activated
+> fixture; they cannot create one. On 2026-08-24 every prior test repo was deleted, so the current
+> fixture was recreated from `bradygaster/Aspiregregator` and is a **bare application repo**.
+
+Assert the starting state before choosing a path — do not assume:
+
+```powershell
+gh api "repos/$FIXTURE/contents/.squad" --jq '.[].name' 2>$null
+$squadExit = $LASTEXITCODE
+# 0   -> activated; skip to 0a and refresh normally.
+# !=0 -> 404 / absent; Squad has never been activated here. Run activation FIRST.
+#        Do NOT interpret a 404 as "clean" and proceed: 0b would then report UNREADABLE
+#        for all four files, which is the correct failure but wastes a cycle diagnosing it.
+```
+
+Until activation runs, the fixture has **no roster**, so E4's dispositive/ambiguous
+classification has nothing to bind to. Re-derive it after activation
+(see *The two leaked tokens are NOT equal evidence*).
+
+Activation also requires repo secrets to be present, which are **not** copied from the origin
+and cannot be recovered from the deleted fixture — they must be re-supplied by the operator.
 
 ### 0a. The four trap doors
 

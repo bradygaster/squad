@@ -47,7 +47,14 @@ The linter reads only fenced code blocks and skips comments, so a runbook may �
 
 ## Fixture
 
-All E-scenarios currently target `bradygaster/aspiregregator-squad-e2e`. Fixture-refresh procedure is embedded in E4's Phase 0. Do not point an E-scenario at a different fixture without first documenting why the existing fixture cannot express the scenario — a bent fixture proves less than an honest gap.
+All E-scenarios currently target `octodemo/aspiregregator-squad-e2e` (internal). Fixture-refresh procedure is embedded in E4's Phase 0. Do not point an E-scenario at a different fixture without first documenting why the existing fixture cannot express the scenario — a bent fixture proves less than an honest gap.
+
+**Fixture move, 2026-08-24 — the documented "why".** The previous fixture, `bradygaster/aspiregregator-squad-e2e`, was **deleted** along with every other test repo. The move was therefore forced, not preferential: the old fixture cannot express any scenario because it no longer exists. Two consequences that are easy to get wrong:
+
+- **The repo name was deliberately reused**, so a match on the bare name `aspiregregator-squad-e2e` no longer identifies the fixture uniquely. Evidence checks must match **owner and name** (E1's `blocked_by_job_url` cross-check was tightened for exactly this).
+- **The new fixture is a bare application repo.** It is a copy of `bradygaster/Aspiregregator` — the pristine, read-only origin, which must be copied and never run against or modified — and it has **no `.squad/` directory**, hence no roster, until Squad is activated on it. Every issue number, run ID, and roster name recorded in E1/E4 belongs to the retired fixture and must be **re-derived**, not find-and-replaced (see E4 Phase 0-pre).
+
+Runs bill to `octodemo` because the `bradygaster` org was near its Actions-minute limit.
 
 ## Related
 
