@@ -1,0 +1,147 @@
+# Squad CLI pin drift guard (#1825)
+#
+# `workflows/shared/squad.md` pins the Squad CLI version that new-repo activation
+# installs. That pin decays silently with every npm release: it was introduced
+# correct on 2026-08-07 referencing 0.11.0, 0.12.0 published on 2026-08-13, and the
+# pin then sat stale for 8 days with nobody touching it. `git log -S` shows the line
+# had been modified exactly once, ever — at introduction. It was caught only because
+# an agent happened to run a cold start against a throwaway repo (fixed in PR #1818).
+#
+# The pin itself is correct and stays: activation runs on an unrestricted-network job
+# and hands state to the sandboxed agent job, so a bad point release mid-hop is
+# expensive to debug. The absence of a drift mechanism was the defect, not the pin.
+#
+# This job compares the pin against the **published** npm dist-tag. It deliberately
+# does NOT read `packages/squad-cli/package.json`: that is the next unreleased version
+# (0.13.0 at time of writing) and resolves to E404 on npm, so automating from it would
+# drive straight into the failure PR #1818 just fixed. A guard that reads the same
+# source as the thing it guards is decoration (.squad/decisions.md:604) — so the two
+# sources here are independent by construction.
+#
+# On drift it opens an issue rather than only failing, so the alert arrives with a fix
+# path attached instead of an unexplained red run.
+
+name: Squad CLI Pin Drift
+
+on:
+  schedule:
+    # Daily at 07:15 UTC. Off the hour to avoid the scheduler's peak-minute backlog.
+    - cron: '15 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: squad-cli-pin-drift
+  cancel-in-progress: false
+
+jobs:
+  check-pin:
+    name: Compare activation pin against published npm release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.0
+
+      - name: Compare pin against npm dist-tag
+        id: compare
+        env:
+          PIN_FILE: workflows/shared/squad.md
+          NPM_PACKAGE: '@bradygaster/squad-cli'
+        run: |
+          set -euo pipefail
+
+          # The pin as activation actually resolves it: the literal fallback in
+          # `vars.SQUAD_CLI_VERSION || '<version>'`. Extracted with sed rather than a
+          # PCRE grep because the escaping stays readable, and an extractor nobody can
+          # read is an extractor nobody will notice has stopped matching.
+          pinned="$(sed -n "s/.*SQUAD_CLI_VERSION: .*|| '\([^']*\)'.*/\1/p" "$PIN_FILE" | head -1)"
+          if [ -z "$pinned" ]; then
+            echo "::error file=$PIN_FILE::Could not locate the SQUAD_CLI_VERSION pin. If the pin moved or changed shape, update this guard — a guard that silently stops finding its target is worse than no guard."
+            exit 1
+          fi
+
+          latest="$(npm view "$NPM_PACKAGE" dist-tags.latest 2>/dev/null || true)"
+          if [ -z "$latest" ]; then
+            echo "::error::Could not read dist-tags.latest for $NPM_PACKAGE from npm."
+            exit 1
+          fi
+
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "Pinned in $PIN_FILE : $pinned"
+          echo "Published npm latest : $latest"
+
+          if [ "$pinned" = "$latest" ]; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Activation pin matches the published release."
+          else
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Activation pin ($pinned) is behind the published release ($latest)."
+          fi
+
+      - name: Open drift issue
+        if: steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ steps.compare.outputs.pinned }}
+          LATEST: ${{ steps.compare.outputs.latest }}
+          TITLE: 'Squad CLI activation pin is behind the published release'
+        run: |
+          set -euo pipefail
+
+          # Only one open issue at a time: this runs daily, and a guard that files a
+          # duplicate every morning trains people to ignore it.
+          existing="$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "Drift issue already open: #$existing — not filing a duplicate."
+            exit 0
+          fi
+
+          # Built with printf rather than a heredoc: heredoc bodies must sit at column 0,
+          # which terminates the YAML block scalar this script lives in.
+          #
+          # shellcheck disable=SC2016
+          # SC2016 ("expressions don't expand in single quotes") fires on the markdown
+          # BACKTICKS below -- shellcheck reads ` as command substitution, and inside
+          # single quotes it correctly notes it will not expand. That is exactly what we
+          # want: these are literal code spans in the issue body, not shell expansions.
+          # Every real value ($PINNED, $LATEST) is passed as a printf ARGUMENT, never
+          # interpolated into the format string. Scoped to this block, not the file, and
+          # `test/squad-cli-pin.test.ts` asserts no single-quoted literal here contains a
+          # `$name` expansion -- so this suppression cannot mask a genuine SC2016 defect.
+          {
+            printf '%s\n\n' 'The Squad CLI version pinned for new-repo activation is behind the published npm release.'
+            printf '%s\n' '| | Version |'
+            printf '%s\n' '|---|---|'
+            printf '| Pinned in `workflows/shared/squad.md` | `%s` |\n' "$PINNED"
+            printf '| Published npm `dist-tags.latest` | `%s` |\n\n' "$LATEST"
+            printf 'New-repo activation installs `%s`, so anything that shipped in `%s` is missing from a cold start.\n\n' "$PINNED" "$LATEST"
+            printf '%s\n\n' '### Fix'
+            printf 'Update **both** literals in `workflows/shared/squad.md` to `%s`:\n\n' "$LATEST"
+            printf '%s\n' '1. the `Default is <version>.` line in the header comment'
+            printf '%s\n\n' '2. the `SQUAD_CLI_VERSION` fallback literal in the activation `env:` block'
+            printf '%s\n\n' '`test/squad-cli-pin.test.ts` fails if those two disagree, so they cannot be updated by halves.'
+            printf '%s\n' '> Do **not** copy the version from the CLI package manifest in this repo. That is the'
+            printf '%s\n\n' '> next *unreleased* version and resolves to E404 on npm — the exact failure PR #1818 fixed.'
+            printf '%s\n' 'Filed automatically by `.github/workflows/squad-cli-pin-drift.yml` (#1825).'
+          } > "$RUNNER_TEMP/drift-body.md"
+
+          gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/drift-body.md"
+
+      - name: Fail the run on drift
+        if: steps.compare.outputs.drift == 'true'
+        env:
+          PINNED: ${{ steps.compare.outputs.pinned }}
+          LATEST: ${{ steps.compare.outputs.latest }}
+        run: |
+          # Values pass through env rather than expression interpolation, per the
+          # shell-input contract in workflows/squad.md: interpolation splices text into
+          # the script before the shell parses it, so the quoting that would contain a
+          # hostile value never gets a chance to apply.
+          echo "::error::Activation pin $PINNED != published $LATEST. See the issue filed by the previous step."
+          exit 1
