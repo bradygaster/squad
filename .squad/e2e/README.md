@@ -29,6 +29,22 @@ The E-series numbering is **chronological in the operator's head, not a coverage
 - **The status column in this file is the source of truth for what has been executed and when.** Do not let a scenario document drift from its own `Status:` header.
 - **`windows-test-baseline.md` is intentionally here** despite not being an E-scenario. It sits with the E-scenarios because operators running E-scenarios need it. Its own header calls out that it is a human-interpretation runbook, not a procedure — do not let its file location seed the "so where are E2/E3/E5+?" question.
 
+## Runbook conventions — writing a gate that cannot pass while broken
+
+E-scenario commands are executed by a human operator, not by CI, so a command that **cannot run at all** can sit in a runbook indefinitely. That is a documentation bug right up until it meets a gate whose pass condition is universally quantified — *"every `squad:{x}` on a newly created issue must be a roster Name"*. Such a condition is **vacuously true over the empty set**. A broken command that returns nothing does not merely fail to inform the verdict; it writes the *passing* answer into it.
+
+E4 Phase 3b did exactly this (#1822). Two conventions follow, and neither is optional:
+
+- **A universally-quantified gate must assert its input set is non-empty before evaluating.** Zero rows is a distinct outcome from "all rows satisfied the predicate" and must be scored separately — as `INCONCLUSIVE`, never as a verdict value. Phase 3a had this instruction and was safe; 3b did not and was not.
+- **Never let an infrastructure failure reach a `# dispositive` field.** When a command's exit code is non-zero, or its cutoff variable is unset, report `INCONCLUSIVE` and stop. Recording the "clean" value because the query came back empty inverts the meaning of the gate.
+
+Two mechanizable halves of this are enforced by `test/e2e-runbook-hygiene.test.ts`, which lints every fenced command in this folder on each build:
+
+- **`gh` is never passed `--arg`.** It is a `jq` flag; `gh` has none. `--jq` consumes it as its expression and the rest degrade into stray positionals, so `gh` exits 1 with empty stdout rather than an obvious parse error. Interpolate the value in the host shell and pass one complete `--jq` expression.
+- **Every suppressed stderr is paired with an exit-code check.** Suppression is fine for transcript readability, but unpaired it converts a hard failure into an empty result that reads as a pass.
+
+The linter reads only fenced code blocks and skips comments, so a runbook may — and should — describe these hazards in prose without tripping its own gate.
+
 ## Fixture
 
 All E-scenarios currently target `bradygaster/aspiregregator-squad-e2e`. Fixture-refresh procedure is embedded in E4's Phase 0. Do not point an E-scenario at a different fixture without first documenting why the existing fixture cannot express the scenario — a bent fixture proves less than an honest gap.
