@@ -6,8 +6,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, isAbsolute } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { execSync } from 'node:child_process';
 
 import {
   detectLicense,
@@ -420,8 +421,16 @@ describe('setupConsultMode', () => {
   const PERSONAL_SQUAD = join(SETUP_ROOT, 'personal-squad');
 
   beforeEach(() => {
-    // Create fake project with git
-    mkdirSync(join(PROJECT_ROOT, '.git', 'info'), { recursive: true });
+    // A REAL, isolated repo — not a hand-made `.git` directory.
+    //
+    // A fabricated `.git/` is not a valid repository, so `git rev-parse` walked out of the
+    // fixture and answered for the enclosing squad checkout. Every run of these tests then
+    // appended the consult block to the developer's own .git/info/exclude, hiding .squad/
+    // in their working clone. That is the poisoning in #1817/#1826 (240 B template + 73 B
+    // block = the 313 B observed there), and CI never showed it because CI clones are
+    // discarded. `git init` keeps the write inside the fixture. (#1826)
+    mkdirSync(PROJECT_ROOT, { recursive: true });
+    execSync('git init --quiet', { cwd: PROJECT_ROOT, stdio: 'ignore' });
     // Create fake personal squad
     mkdirSync(PERSONAL_SQUAD, { recursive: true });
   });
@@ -575,6 +584,58 @@ describe('setupConsultMode', () => {
 
     expect(result.dryRun).toBe(true);
     expect(existsSync(join(PROJECT_ROOT, '.squad'))).toBe(false);
+  });
+
+  // --- exclude containment (#1826, root cause of #1817) ---------------------
+  //
+  // info/exclude is shared per-repository and untracked. If the path git resolves
+  // belongs to a main checkout or an outer repo, the write hides .squad/ in checkouts
+  // the caller never named, and nothing in the repo can undo it.
+
+  it('writes the exclude inside the project, never to an enclosing repo', async () => {
+    const result = await setupConsultMode({
+      projectRoot: PROJECT_ROOT,
+      personalSquadRoot: PERSONAL_SQUAD,
+    });
+
+    const rel = relative(PROJECT_ROOT, result.gitExclude);
+    expect(
+      rel.startsWith('..') || isAbsolute(rel),
+      `consult wrote to ${result.gitExclude}, outside ${PROJECT_ROOT}. ` +
+        `That is a different repository's exclude file.`,
+    ).toBe(false);
+  });
+
+  it('refuses when the project is a directory inside an outer repository', async () => {
+    // A fabricated `.git/` — byte-for-byte the shape the old fixture created. It satisfies
+    // the "is there a .git here" check but is not a valid repository, so `git rev-parse`
+    // walks up and answers for the enclosing repo. This is the exact route by which this
+    // suite used to write into the developer's own checkout.
+    const nested = join(SETUP_ROOT, 'not-a-repo');
+    mkdirSync(join(nested, '.git', 'info'), { recursive: true });
+
+    await expect(
+      setupConsultMode({ projectRoot: nested, personalSquadRoot: PERSONAL_SQUAD }),
+    ).rejects.toThrow(/not the root of its own git repository/);
+  });
+
+  it('refuses from a linked worktree, whose exclude lives in the main checkout', async () => {
+    // git keeps no per-worktree info/exclude: a file written under
+    // .git/worktrees/<id>/info/exclude is never read. So there is no worktree-local
+    // place to put this, and the only safe action is to refuse.
+    execSync('git -c user.email=t@t -c user.name=t commit --quiet --allow-empty -m init', {
+      cwd: PROJECT_ROOT,
+      stdio: 'ignore',
+    });
+    const linked = join(SETUP_ROOT, 'linked-wt');
+    execSync(`git worktree add --quiet --detach "${linked}"`, {
+      cwd: PROJECT_ROOT,
+      stdio: 'ignore',
+    });
+
+    await expect(
+      setupConsultMode({ projectRoot: linked, personalSquadRoot: PERSONAL_SQUAD }),
+    ).rejects.toThrow(/not the root of its own git repository/);
   });
 });
 
