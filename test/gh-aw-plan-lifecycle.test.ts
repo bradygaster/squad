@@ -315,18 +315,197 @@ describe('#1758.2: Implement dispatches leaf tasks, not epics', () => {
 // #1758.3 — validate precedes BOTH accept steps (ontology-consistent order)
 // ---------------------------------------------------------------------------
 
-describe('#1758.3: validate precedes both accept steps', () => {
-  /** Canonical command order from the ontology state-transition block. */
-  function ontologyCommandOrder(): string[] {
-    const blockMatch = ontology.match(/```\n(idle[\s\S]*?)```/);
-    const transitions = blockMatch![1];
-    return [...transitions.matchAll(/triggered_by:\s*(\/squad plan [\w ]+)/g)].map(m =>
-      m[1].trim(),
+interface OntologyTransition {
+  from: string;
+  to: string;
+  command: string;
+}
+
+const REQUIRED_LIFECYCLE_STATES = new Set([
+  'idle',
+  'researching',
+  'triaging',
+  'program_planning',
+  'implementation_planning',
+  'validating',
+  'scope_accepted',
+  'impl_accepted',
+  'activated',
+]);
+
+const PLANNING_SOURCE_STATES = new Set([
+  'triaging',
+  'program_planning',
+  'implementation_planning',
+  'validating',
+  'scope_accepted',
+  'impl_accepted',
+]);
+
+function ontologyTransitions(markdown: string): OntologyTransition[] {
+  const sectionMarker = '## 2. State Transition Table';
+  const sectionStart = markdown.indexOf(sectionMarker);
+  if (sectionStart === -1) {
+    throw new Error('Ontology State Transition Table section is missing');
+  }
+
+  const afterMarker = markdown.slice(sectionStart + sectionMarker.length);
+  const nextSection = afterMarker.search(/\n## \d+\./);
+  const section = nextSection === -1 ? afterMarker : afterMarker.slice(0, nextSection);
+  const fences = [...section.matchAll(/^```[^\r\n]*\n([\s\S]*?)^```[ \t]*$/gm)];
+  if (fences.length !== 1) {
+    throw new Error(
+      `Ontology State Transition Table must contain exactly one fenced block; found ${fences.length}`,
     );
   }
 
+  const records = fences[0][1]
+    .trim()
+    .split(/\n[ \t]*\n/)
+    .filter(Boolean);
+  if (records.length === 0) {
+    throw new Error('Ontology State Transition Table contains no transitions');
+  }
+
+  const transitions = records.map((record, index) => {
+    const match = record.match(
+      /^([a-z][a-z0-9_]*)\s*\u2192\s*([a-z][a-z0-9_]*)\n[ \t]+triggered_by:\s*(\/squad [^\n]+)\n[ \t]+requires:\s*([^\n]+)\n[ \t]+produces:\s*([^\n]+)$/,
+    );
+    if (!match) {
+      throw new Error(`Ontology transition ${index + 1} is malformed:\n${record}`);
+    }
+    return { from: match[1], to: match[2], command: match[3].trim() };
+  });
+
+  for (const [field, values] of [
+    ['source state', transitions.map(transition => transition.from)],
+    ['destination state', transitions.map(transition => transition.to)],
+    ['triggered_by command', transitions.map(transition => transition.command)],
+  ] as const) {
+    const duplicates = [...new Set(values.filter((value, index) => values.indexOf(value) !== index))];
+    if (duplicates.length > 0) {
+      throw new Error(`Ontology has duplicate ${field}(s): ${duplicates.join(', ')}`);
+    }
+  }
+
+  const states = new Set(transitions.flatMap(transition => [transition.from, transition.to]));
+  const missingStates = [...REQUIRED_LIFECYCLE_STATES].filter(state => !states.has(state));
+  if (missingStates.length > 0) {
+    throw new Error(`Ontology is missing required state(s): ${missingStates.join(', ')}`);
+  }
+  if (transitions[0].from !== 'idle') {
+    throw new Error(`Ontology transition sequence must start at "idle"; found "${transitions[0].from}"`);
+  }
+  if (transitions.at(-1)?.to !== 'activated') {
+    throw new Error(
+      `Ontology transition sequence must end at "activated"; found "${transitions.at(-1)?.to}"`,
+    );
+  }
+  for (let index = 0; index < transitions.length - 1; index += 1) {
+    if (transitions[index].to !== transitions[index + 1].from) {
+      throw new Error(
+        `Ontology transition sequence is disconnected: "${transitions[index].to}" is followed by ` +
+          `"${transitions[index + 1].from}"`,
+      );
+    }
+  }
+
+  return transitions;
+}
+
+function planningCommandOrder(markdown: string): string[] {
+  const transitions = ontologyTransitions(markdown);
+  const planningTransitions = transitions.filter(transition =>
+    PLANNING_SOURCE_STATES.has(transition.from),
+  );
+  const missingPlanningSources = [...PLANNING_SOURCE_STATES].filter(
+    state => !planningTransitions.some(transition => transition.from === state),
+  );
+  if (missingPlanningSources.length > 0) {
+    throw new Error(
+      `Ontology is missing planning transition(s) from: ${missingPlanningSources.join(', ')}`,
+    );
+  }
+
+  const nonPlanningCommands = planningTransitions.filter(
+    transition => !transition.command.startsWith('/squad plan '),
+  );
+  if (nonPlanningCommands.length > 0) {
+    throw new Error(
+      `Planning state(s) have non-planning triggered_by commands: ${nonPlanningCommands
+        .map(transition => `${transition.from}=${transition.command}`)
+        .join(', ')}`,
+    );
+  }
+
+  const commands = planningTransitions.map(transition => transition.command);
+  if (commands.length < 2) {
+    throw new Error('Planning transition extraction produced zero next-hint comparisons');
+  }
+  return commands;
+}
+
+function workflowPlanningNextHints(markdown: string, commands: string[]): string[] {
+  return commands.slice(0, -1).map(command => {
+    const skill = command.slice(1).replaceAll(' ', '-');
+    const block = skillBlock(markdown, skill);
+    const heading = /^##### Step \d+[a-z]?: Update Lifecycle\s*$/m.exec(block);
+    if (!heading) {
+      throw new Error(`Update Lifecycle step is missing for "${command}" (${skill})`);
+    }
+
+    const afterHeading = block.slice(heading.index + heading[0].length);
+    const nextHeading = afterHeading.search(/^##### |^## skill:/m);
+    const lifecycle = nextHeading === -1 ? afterHeading : afterHeading.slice(0, nextHeading);
+    const hints = [
+      ...lifecycle.matchAll(
+        /\bnext(?:\s+on\s+pass)?\s*(?:=|:)\s*`(\/squad [^`\r\n]+)`/gi,
+      ),
+    ].map(match => match[1].trim());
+    if (hints.length !== 1) {
+      throw new Error(
+        `Expected exactly one lifecycle next hint for "${command}" (${skill}); ` +
+          `found ${hints.length}: ${JSON.stringify(hints)}`,
+      );
+    }
+    return hints[0];
+  });
+}
+
+function assertPlanningNextHintsMatch(
+  ontologyMarkdown: string,
+  workflowMarkdown: string,
+): void {
+  const commands = planningCommandOrder(ontologyMarkdown);
+  const expectedHints = commands.slice(1);
+  const actualHints = workflowPlanningNextHints(workflowMarkdown, commands);
+  if (expectedHints.length === 0 || actualHints.length === 0) {
+    throw new Error('Planning next-hint guard made zero comparisons');
+  }
+
+  const mismatches = expectedHints.flatMap((expected, index) =>
+    actualHints[index] === expected
+      ? []
+      : [
+          `${commands[index]}: expected next hint "${expected}", ` +
+            `actual "${actualHints[index] ?? '<missing>'}"`,
+        ],
+  );
+  if (mismatches.length > 0 || actualHints.length !== expectedHints.length) {
+    throw new Error(
+      [
+        'Planning next-hints do not match ontology triggered_by order.',
+        ...mismatches,
+        `Expected hints: ${JSON.stringify(expectedHints)}`,
+        `Actual hints: ${JSON.stringify(actualHints)}`,
+      ].join('\n'),
+    );
+  }
+}
+
+describe('#1758.3: validate precedes both accept steps', () => {
   it('ontology sequences validate before accept scope before accept implementation', () => {
-    const order = ontologyCommandOrder();
+    const order = planningCommandOrder(ontology);
     const idx = (cmd: string) => order.indexOf(cmd);
     expect(idx('/squad plan validate')).toBeGreaterThan(-1);
     expect(idx('/squad plan validate')).toBeLessThan(idx('/squad plan accept scope'));
@@ -336,21 +515,94 @@ describe('#1758.3: validate precedes both accept steps', () => {
   });
 
   it('squad.md next-hints reproduce the ontology order', () => {
-    // program -> implementation -> validate -> accept scope -> accept implementation -> activate
-    expect(skillBlock(squad, 'squad-plan-program')).toMatch(
-      /next = `\/squad plan implementation`/,
+    expect(() => assertPlanningNextHintsMatch(ontology, squad)).not.toThrow();
+  });
+
+  it('accepts an informational language tag on the ontology fence', () => {
+    const taggedOntology = ontology.replace(
+      '## 2. State Transition Table\n\n```',
+      '## 2. State Transition Table\n\n```text',
     );
-    expect(skillBlock(squad, 'squad-plan-implementation')).toMatch(
-      /next = `\/squad plan validate`/,
+    expect(() => assertPlanningNextHintsMatch(taggedOntology, squad)).not.toThrow();
+  });
+
+  it('fails when ontology transitions reorder while pinned inequalities still hold', () => {
+    const reordered = ontology
+      .replace('triggered_by: /squad plan program', 'triggered_by: /squad plan __swap__')
+      .replace(
+        'triggered_by: /squad plan implementation',
+        'triggered_by: /squad plan program',
+      )
+      .replace('triggered_by: /squad plan __swap__', 'triggered_by: /squad plan implementation');
+    const order = planningCommandOrder(reordered);
+    expect(order.indexOf('/squad plan validate')).toBeLessThan(
+      order.indexOf('/squad plan accept scope'),
     );
-    expect(skillBlock(squad, 'squad-plan-validate')).toMatch(
-      /Next on pass: `\/squad plan accept scope`/,
+    expect(order.indexOf('/squad plan accept scope')).toBeLessThan(
+      order.indexOf('/squad plan accept implementation'),
     );
-    expect(skillBlock(squad, 'squad-plan-accept-scope')).toMatch(
-      /next = `\/squad plan accept implementation`/,
+    expect(() => assertPlanningNextHintsMatch(reordered, squad)).toThrow(
+      /expected next hint "\/squad plan program", actual "\/squad plan validate"/,
     );
-    expect(skillBlock(squad, 'squad-plan-accept-implementation')).toMatch(
-      /next = `\/squad plan activate`/,
+
+    const reorderedWorkflow = squad
+      .replace(
+        'state = Program Planned, next = `/squad plan implementation`.',
+        'state = Program Planned, next = `/squad plan validate`.',
+      )
+      .replace(
+        'state = Implementation planned, next = `/squad plan validate`.',
+        'state = Implementation planned, next = `/squad plan program`.',
+      );
+    expect(() => assertPlanningNextHintsMatch(reordered, reorderedWorkflow)).not.toThrow();
+  });
+
+  it.each([
+    {
+      name: 'an empty transition extraction',
+      malformedOntology: ontology.replace(/```\nidle[\s\S]*?```/, '```\n```'),
+      expectedError: /contains no transitions/,
+    },
+    {
+      name: 'a malformed transition record',
+      malformedOntology: ontology.replace(
+        '  produces: squad_artifact=validation',
+        '  emits: squad_artifact=validation',
+      ),
+      expectedError: /transition 5 is malformed/,
+    },
+    {
+      name: 'a duplicate triggered_by command',
+      malformedOntology: ontology.replace(
+        'triggered_by: /squad plan validate',
+        'triggered_by: /squad plan implementation',
+      ),
+      expectedError: /duplicate triggered_by command.*\/squad plan implementation/,
+    },
+    {
+      name: 'a missing required state',
+      malformedOntology: ontology.replaceAll('validating', 'reviewing'),
+      expectedError: /missing required state.*validating/,
+    },
+    {
+      name: 'a partial planning sequence',
+      malformedOntology: ontology.replace(
+        'triggered_by: /squad plan validate',
+        'triggered_by: /squad validate',
+      ),
+      expectedError: /non-planning triggered_by commands.*implementation_planning=\/squad validate/,
+    },
+  ])('fails closed for $name', ({ malformedOntology, expectedError }) => {
+    expect(() => assertPlanningNextHintsMatch(malformedOntology, squad)).toThrow(expectedError);
+  });
+
+  it('fails closed when a lifecycle step has ambiguous next hints', () => {
+    const ambiguousWorkflow = squad.replace(
+      'next = `/squad plan implementation`.',
+      'next = `/squad plan implementation`, next = `/squad plan validate`.',
+    );
+    expect(() => assertPlanningNextHintsMatch(ontology, ambiguousWorkflow)).toThrow(
+      /exactly one lifecycle next hint.*found 2/,
     );
   });
 
