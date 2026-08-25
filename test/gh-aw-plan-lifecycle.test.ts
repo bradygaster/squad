@@ -26,14 +26,15 @@ function readText(filePath: string): string {
 
 /** Slice a `## skill: \`name\`` block out of the workflow markdown. */
 function skillBlock(markdown: string, name: string): string {
-  const start = markdown.indexOf(`## skill: \`${name}\``);
+  const marker = `## skill: \`${name}\``;
+  const start = markdown.indexOf(marker);
   if (start === -1) throw new Error(`skill block "${name}" not found`);
-  const rest = markdown.slice(start + 1);
-  const nextSkillIdx = rest.indexOf('\n## skill: `');
-  const endMarkerIdx = rest.indexOf(`\n## end skill: \`${name}\``);
+  const bodyStart = start + marker.length;
+  const nextSkillIdx = markdown.indexOf('\n## skill: `', bodyStart);
+  const endMarkerIdx = markdown.indexOf(`\n## end skill: \`${name}\``, bodyStart);
   const candidates = [nextSkillIdx, endMarkerIdx].filter(index => index >= 0);
   const endIdx = candidates.length === 0 ? -1 : Math.min(...candidates);
-  return endIdx === -1 ? markdown.slice(start) : rest.slice(0, endIdx);
+  return endIdx === -1 ? markdown.slice(start) : markdown.slice(start, endIdx);
 }
 
 /** Slice a `## agent: \`name\`` block out of the workflow markdown. */
@@ -416,6 +417,11 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     );
   }
 
+  it('extracts the validation skill with its complete marker and no following skill', () => {
+    expect(validation).toMatch(/^## skill: `squad-plan-validate`/);
+    expect(validation).not.toContain('## skill: `squad-plan-accept-scope`');
+  });
+
   it('preserves structural checks 1-10 and augments them with five adversarial checks', () => {
     const checks = numberedChecks(validation);
     expect([...checks.keys()].slice(0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -437,12 +443,12 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
       '##### Load-bearing assumptions',
       '##### 30-day pre-mortem',
       '##### Alternative approach',
-      '##### Risk acceptance',
+      '##### Remaining risk acceptance',
     ]) {
       expect(factChecker, `Fact Checker must emit "${section}"`).toContain(section);
     }
     expect(validation).toMatch(/strongest credible opposition steelman/i);
-    expect(validation).toMatch(/falsifiable conditions/);
+    expect(validation).toMatch(/falsifiable\s+conditions/);
     expect(validation).toMatch(/exactly 30 days after execution begins/);
     expect(validation).toMatch(/materially different alternative approach/);
     expect(validation).toMatch(/explicitly\s+`ACCEPTED` with rationale and an accountable owner/);

@@ -1608,7 +1608,7 @@ the causal chain and observable warning signs.
 Sketch at least one materially different approach and compare its principal
 trade-offs with the chosen plan.
 
-##### Risk acceptance
+##### Remaining risk acceptance
 
 Name the remaining risks and the conditions, rationale, and accountable owner
 needed to accept or mitigate each one.
