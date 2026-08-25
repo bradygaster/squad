@@ -277,6 +277,36 @@ describe('#1608 — capability boundaries reflect real authority, not aspiration
     expect(byName.get('EECOM')).toContain('edit');
     expect(byName.get('Flight')).toContain('review');
     expect(byName.get('FIDO')).toContain('review');
+    expect(byName.get('Flight')).not.toContain('edit');
+  });
+
+  it('does not treat explicitly negated implementation as edit authority', () => {
+    const profile = buildTeamCapabilityProfile({
+      teamMarkdown: `## Members
+
+| Name | Role |
+|------|------|
+| Nori | Architecture Advisor |
+`,
+      charters: {
+        nori: `# Nori
+
+## Identity
+- **Role:** Architecture Advisor
+- **Expertise:** architecture guidance
+
+## What I Own
+- Reviews designs before implementation
+
+## Boundaries
+**I handle:** architecture review
+**I don't handle:** implementation
+`,
+      },
+    });
+
+    expect(profile.specialists[0]!.authority).toEqual(['review', 'advisory']);
+    expect(profile.capabilities.map((capability) => capability.id)).not.toContain('implement');
   });
 
   it('never over-claims authority for an agent with no charter evidence', () => {
@@ -491,6 +521,12 @@ describe('#1608 — sanitization of untrusted metadata', () => {
 
   it('removes zero-width and bidi-override characters', () => {
     expect(sanitizeMetadataText('a\u200Bb\u202Ec')).toBe('abc');
+  });
+
+  it('removes comment delimiters assembled by stripping invisible characters', () => {
+    const sanitized = sanitizeMetadataText('safe <!\u200B-- hidden --> tail');
+    expect(sanitized).toBe('safe tail');
+    expect(sanitized).not.toContain('<!--');
   });
 
   it('clamps long values without leaving a dangling escape', () => {

@@ -858,15 +858,19 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
   // Re-advertise the cast in .github/agents/squad.agent.md (#1608). Cast
   // composition just changed, so the generated Team Capabilities block is
-  // stale by definition. Best-effort — casting must not fail on this.
+  // stale by definition. Casting still succeeds if advertisement fails, but
+  // surface the error instead of silently leaving stale coordinator data.
   try {
     syncTeamCapabilities({
       squadDir,
       agentFile: join(teamRoot, '.github', 'agents', 'squad.agent.md'),
       storage,
     });
-  } catch {
-    // Non-fatal.
+  } catch (error) {
+    console.warn(
+      '[cast] Could not refresh .github/agents/squad.agent.md:',
+      error instanceof Error ? error.message : error,
+    );
   }
 
   return { teamRoot, membersCreated, filesCreated };

@@ -276,13 +276,17 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
   storage.writeSync(agentDest, agentContent);
   stampVersion(agentDest, cliVersion);
 
-  // Re-advertise the current cast to outer coordinators (#1608). Best-effort:
-  // an upgrade must never fail because capability rendering did.
+  // Re-advertise the current cast to outer coordinators (#1608). An upgrade
+  // still succeeds if rendering fails, but the stale-data risk is surfaced.
   if (options?.squadDir) {
     try {
       syncTeamCapabilities({ squadDir: options.squadDir, agentFile: agentDest, storage });
-    } catch {
-      // Non-fatal.
+    } catch (error) {
+      warn(
+        `Could not refresh squad.agent.md team capabilities: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 }

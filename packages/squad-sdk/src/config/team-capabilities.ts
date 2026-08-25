@@ -157,8 +157,8 @@ const INJECTION_PATTERNS: readonly RegExp[] = [
  * Make an untrusted metadata string safe to embed inside a markdown table
  * cell of the coordinator prompt.
  *
- * Neutralizes, in order: HTML comments and tags, invisible/bidi characters,
- * control characters, line breaks, code fences, table pipes, leading markdown
+ * Neutralizes, in order: invisible/bidi and control characters, HTML comments
+ * and tags, line breaks, code fences, table pipes, leading markdown
  * structure characters, and known prompt-injection phrasings. Finally clamps
  * the length so a hostile charter cannot blow the prompt budget.
  *
@@ -171,14 +171,18 @@ export function sanitizeMetadataText(raw: unknown, maxLength: number = MAX_SUMMA
 
   let text = normalizeEol(raw);
 
-  // HTML comments first — they can smuggle markers, canaries, or directives.
-  text = text.replace(/<!--[\s\S]*?-->/g, ' ');
-  text = text.replace(/<!--/g, ' ').replace(/-->/g, ' ');
-  // Then any remaining tag-shaped content.
-  text = text.replace(/<[^<>\n]{0,200}>/g, ' ');
-
+  // Remove invisible characters before parsing delimiters so `<!\u200B--`
+  // cannot become a live comment opener after the comment pass.
   text = text.replace(INVISIBLE_CHARS, '');
   text = text.replace(CONTROL_CHARS, ' ');
+
+  // HTML comments can smuggle markers, canaries, or directives.
+  text = text.replace(/<!--[\s\S]*?-->/g, ' ');
+  text = text.replace(/<!--/g, ' ').replace(/-->/g, ' ');
+  // Then remove tag-shaped content and escape residual opening brackets.
+  text = text.replace(/<[^<>\n]{0,200}>/g, ' ');
+  text = text.replace(/</g, '&lt;');
+
   text = text.replace(/[\n\r\t]+/g, ' ');
 
   for (const pattern of INJECTION_PATTERNS) {
@@ -220,7 +224,7 @@ interface CapabilityDefinition {
  */
 const CAPABILITY_VOCABULARY: readonly CapabilityDefinition[] = [
   { id: 'code-review', label: 'review code and pull requests', evidence: /\b(code\s+review|pr\s+review|review(?:er|s|ing)?|approval\s+gate|blocking\s+authority|go\/no-go)\b/i },
-  { id: 'implement', label: 'write and modify code', evidence: /\b(implement(?:s|ation)?|refactor(?:s|ing)?|develop(?:er|ment)?|engineer(?:ing)?|coding|write\s+code|bug\s*fix(?:es)?)\b/i },
+  { id: 'implement', label: 'write and modify code', evidence: /\b(implement(?:s|ed|ing)?|refactor(?:s|ed|ing)?|develop(?:er|s|ed|ing|ment)?|engineer(?:ing)?|coding|write\s+code|bug\s*fix(?:es)?)\b/i },
   { id: 'test', label: 'write and run tests', evidence: /\b(tests?|testing|qa\b|quality|coverage|e2e|regression)\b/i },
   { id: 'docs', label: 'write and maintain documentation', evidence: /\b(docs?|documentation|readme|devrel|technical\s+writ(?:er|ing)|changelog\s+prose)\b/i },
   { id: 'security-review', label: 'security and secrets review', evidence: /\b(security|secrets?|vulnerabilit(?:y|ies)|threat\s+model|supply\s+chain|pii)\b/i },
@@ -233,9 +237,17 @@ const CAPABILITY_VOCABULARY: readonly CapabilityDefinition[] = [
 
 const AUTHORITY_EVIDENCE: Readonly<Record<AgentAuthority, RegExp>> = {
   review: /\b(review(?:er|s|ing)?|approv(?:e|al|es)|blocking\s+authority|go\/no-go|gate(?:s|keeper)?|audit(?:s|ing)?|verif(?:y|ies|ication))\b/i,
-  edit: /\b(implement(?:s|ation)?|build(?:s|ing)?|write(?:s)?|author(?:s|ing)?|refactor(?:s|ing)?|maintain(?:s)?|engineer(?:ing)?|develop(?:s|ment)?|fix(?:es)?|own(?:s)?\s+the\s+code)\b/i,
+  edit: /\b(implement(?:s|ed|ing)?|build(?:s|ing)?|write(?:s)?|author(?:s|ing)?|refactor(?:s|ed|ing)?|maintain(?:s)?|engineer(?:ing)?|develop(?:s|ed|ing|ment)?|fix(?:es|ed|ing)?|own(?:s)?\s+the\s+code)\b/i,
   advisory: /\b(advis(?:e|es|ory)|recommend(?:s|ation)?|guidance|counsel|does\s+not\s+implement|reviews\s+not\s+creates)\b/i,
 };
+
+/** Explicitly negated implementation claims must not grant edit authority. */
+const NEGATED_EDIT_EVIDENCE =
+  /\b(?:(?:do|does|did)\s+not|(?:do|does|did)n['’]t|never)\s+(?:\w+\s+){0,3}(?:implement(?:s|ed|ing|ation)?|build(?:s|ing)?|write(?:s|ing)?|author(?:s|ing)?|refactor(?:s|ed|ing)?|maintain(?:s|ing)?|develop(?:s|ed|ing|ment)?|fix(?:es|ed|ing)?)\b/gi;
+
+function positiveEditEvidence(evidenceText: string): string {
+  return evidenceText.replace(NEGATED_EDIT_EVIDENCE, ' ');
+}
 
 // ---------------------------------------------------------------------------
 // Profile construction
@@ -310,7 +322,10 @@ function charterEvidence(charterMarkdown: string | undefined): {
 
 /** Determine which authority tokens an agent can actually evidence. */
 function deriveAuthority(evidenceText: string): AgentAuthority[] {
-  const found = AUTHORITY_ORDER.filter((token) => AUTHORITY_EVIDENCE[token].test(evidenceText));
+  const editEvidence = positiveEditEvidence(evidenceText);
+  const found = AUTHORITY_ORDER.filter((token) =>
+    AUTHORITY_EVIDENCE[token].test(token === 'edit' ? editEvidence : evidenceText),
+  );
   // Never claim nothing, and never claim more than the evidence supports.
   return found.length > 0 ? found : ['advisory'];
 }
@@ -365,7 +380,9 @@ export function buildTeamCapabilityProfile(input: TeamCapabilityInput = {}): Tea
     });
 
     for (const capability of CAPABILITY_VOCABULARY) {
-      if (!capability.evidence.test(evidenceText)) continue;
+      const capabilityEvidence =
+        capability.id === 'implement' ? positiveEditEvidence(evidenceText) : evidenceText;
+      if (!capability.evidence.test(capabilityEvidence)) continue;
       const bucket = capabilityAgents.get(capability.id) ?? [];
       bucket.push(sanitizeMetadataText(member.name, MAX_LABEL_LENGTH));
       capabilityAgents.set(capability.id, bucket);

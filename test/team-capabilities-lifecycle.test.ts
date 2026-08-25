@@ -7,6 +7,8 @@
  * Squad-owned (fully generated) rather than user-authored.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryStorageProvider } from '../packages/squad-sdk/src/storage/in-memory-storage-provider.js';
 import {
@@ -232,5 +234,21 @@ describe('#1608 — squad.agent.md is fully generated, not user-authored', () =>
     const entry = TEMPLATE_MANIFEST.find((t) => t.destination.endsWith('squad.agent.md'));
     expect(entry).toBeDefined();
     expect(entry!.overwriteOnUpgrade).toBe(true);
+  });
+});
+
+describe('#1608 — coordinator cast-composition procedures regenerate capabilities', () => {
+  const template = readFileSync(resolve(__dirname, '../.squad-templates/squad.agent.md'), 'utf8');
+
+  it('regenerates after adding a member', () => {
+    const section = template.split('### Adding Team Members')[1]?.split('### Removing Team Members')[0];
+    expect(section).toContain('squad upgrade');
+    expect(section).toContain('regenerate Team Capabilities');
+  });
+
+  it('regenerates after retiring a member', () => {
+    const section = template.split('### Removing Team Members')[1]?.split('### Plugin Marketplace')[0];
+    expect(section).toContain('squad upgrade');
+    expect(section).toContain('remove stale references');
   });
 });

@@ -1457,8 +1457,12 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       // Advertise the (possibly still empty) cast to outer coordinators (#1608).
       try {
         syncTeamCapabilities({ squadDir, agentFile, storage });
-      } catch {
-        // Never fail init because capability advertisement could not render.
+      } catch (error) {
+        warnings.push(
+          `Could not refresh squad.agent.md team capabilities: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     } else {
       warnings.push(`squad.agent.md template not found (${join(templatesDir || '.squad/templates', 'squad.agent.md.template')}) — Copilot agent file was not created or not refreshed`);
