@@ -353,7 +353,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
   });
 
   // ── S1 guards preserved (existing behavior) ───────────────────────────────
-  it('is a standalone workflow_dispatch worker, not yet wired into the dispatcher', () => {
+  it('is a standalone workflow_dispatch worker wired only through the dispatcher', () => {
     expect(depsWorkerFrontmatter).toMatch(/^on:\r?\n\s+bots: \["github-actions\[bot\]"\]\r?\n\s+workflow_dispatch:/m);
     expect(depsWorker).not.toContain('slash_command:');
     expect(depsWorkerFrontmatter).toContain('issue_number:');
@@ -361,7 +361,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     expect(depsWorker).toMatch(/^tools:\r?\n\s+edit:/m);
 
     const dispatcherDispatch = yamlBlock(dispatcherFrontmatter, 'dispatch-workflow');
-    expect(listInBlock(dispatcherDispatch, 'workflows')).not.toContain('squad-deps-worker');
+    expect(listInBlock(dispatcherDispatch, 'workflows')).toContain('squad-deps-worker');
   });
 
   it('declares Wave 1 extensionless manifest/lockfile basenames in allowed-files', () => {

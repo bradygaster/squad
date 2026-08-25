@@ -106,7 +106,7 @@ safe-outputs:
     max: 20
     target: "*"
   dispatch-workflow:
-    workflows: [squad-implement-worker, squad-review]
+    workflows: [squad-implement-worker, squad-deps-worker, squad-review]
     max: 3
 ---
 
@@ -855,14 +855,17 @@ Read-only team composition report.
 
 ## skill: `squad-implement`
 ---
-description: Dispatch implementation work to the squad-implement-worker workflow.
+description: Dispatch implementation work to the dependency or general worker.
 ---
 
-Implement mode dispatches an isolated implementation worker for a regular issue.
-When invoked on a parent (initiative or epic), it descends the sub-issue
+Implement mode dispatches an isolated worker for a regular issue. Explicit,
+dependency-only Wave 1 work routes to `squad-deps-worker`; every other task
+routes to `squad-implement-worker`, whose manifest protection remains unchanged.
+When invoked on a parent (initiative or epic), this mode descends the sub-issue
 hierarchy to the **leaf tasks** and dispatches workers for up to three currently
-unblocked leaf tasks. The worker relays merged implementation pull requests back
-to this mode so it can automatically refill the parent's available slots.
+unblocked leaf tasks. The general worker relays merged implementation pull
+requests back to this mode so it can automatically refill the parent's available
+slots.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
@@ -892,12 +895,50 @@ to this mode so it can automatically refill the parent's available slots.
 5. If the target has one or more open leaf descendants, treat the target as a
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.
-6. If the target has no open descendants (it is itself a leaf), call the
-   workflow-specific `squad_implement_worker` safe-output tool with `issue_number`
-   set to the target issue number.
-7. Post a comment linking the dispatched worker run. The worker performs
-   dependency, duplicate pull request, routing, implementation, and validation
-   checks.
+6. Classify every leaf with the **Dependency Route Decision** below.
+7. If the target has no open descendants (it is itself a leaf), call exactly the
+   workflow-specific tool selected by that decision with `issue_number` set to
+   the target issue number.
+8. Post a comment linking the dispatched worker run and naming the selected
+   worker. The worker performs dependency, duplicate pull request, routing,
+   implementation, and validation checks.
+
+##### Dependency Route Decision [MANDATORY — fail closed]
+
+Choose `squad_deps_worker` only when **all** of these statements are true:
+
+1. The issue explicitly asks to add, remove, or update package dependencies, or
+   to regenerate a dependency lockfile.
+2. Every repository edit required to complete the issue is limited to the Wave
+   1 dependency basenames authorized by `squad-deps-worker`:
+   `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`,
+   `pnpm-lock.yaml`, `Directory.Packages.props`, `go.mod`, and `go.sum`.
+3. The task does not require registry/install configuration, SDK/tool pins,
+   governance files, source code, tests, documentation, workflows, agent
+   instructions, or vendored/generated dependency content.
+
+Choose `squad_implement_worker` for every other task. This includes mixed-scope
+tasks, ambiguous dependency intent, unsupported ecosystems, ordinary source
+imports, issue bodies that only contain a `Depends on:` relationship, and prose
+that merely mentions a dependency. Never broaden or guess dependency intent.
+The general worker's compiled `fallback-to-issue` manifest protection is the
+fail-closed destination for any misclassified or mixed task.
+
+Before any `squad_deps_worker` dispatch, read `.squad/config.json` and apply this
+exact guard:
+
+- The file must be readable, valid JSON, and a top-level object. Otherwise post
+  a denial comment and do not dispatch.
+- Missing `squadDeps` key or exact string `"allow"` means allow.
+- Exact string `"deny"` means deny; cite
+  `.squad/config.json squadDeps: "deny"` in the comment.
+- Every other value, including any other string, boolean, number, `null`, array,
+  or object, means deny as unrecognized.
+
+Do not apply this config guard to `squad_implement_worker`; non-dependency tasks
+must continue to route through the general path even when dependency work is
+denied. The dependency worker repeats the guard so a direct human
+`workflow_dispatch` cannot bypass this dispatcher check.
 
 ##### Epic Dispatch
 
@@ -906,14 +947,14 @@ For each open leaf task in the target's descendant set:
 1. Parse its `Depends on:` line and check the state of every referenced issue.
 2. Exclude leaf tasks with any open dependency.
 3. Find leaf tasks that already have an open pull request whose branch starts
-   with `squad/implement-{leaf-number}-` or whose body closes that leaf task.
-   These are active implementation tasks.
+   with `squad/implement-{leaf-number}-` or `squad/deps-{leaf-number}-`, or whose
+   body closes that leaf task. These are active implementation tasks.
 4. Calculate `available-slots = max(0, 3 - active-implementation-count)`.
 5. Exclude active implementation tasks from the ready set.
 6. Sort ready leaf tasks by issue number and select at most `available-slots`.
 
-For each selected leaf task, call the workflow-specific `squad_implement_worker`
-safe-output tool with this input:
+For each selected leaf task, apply the **Dependency Route Decision**, then call
+exactly one selected workflow-specific safe-output tool with this input:
 
 ```json
 {
@@ -924,12 +965,15 @@ safe-output tool with this input:
 Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
 non-empty numeric `issue_number`. Emit exactly one workflow-specific dispatch
 per selected leaf task, and only report a leaf task as dispatched after the tool
-returns success.
+returns success. Never call both workers for one issue. If the dependency config
+guard denies a selected dependency task, leave that slot unused and report the
+denial; do not reroute it to the general worker.
 
 Post a comment on the target listing the dispatched leaf tasks, blocked leaf
-tasks, leaf tasks with existing implementation pull requests, and any ready leaf
-tasks deferred because all three slots are occupied. If no leaf task is ready or
-no slot is available, post the status summary and do not dispatch a workflow.
+tasks, the worker selected for each dispatch, dependency tasks denied by config,
+leaf tasks with existing implementation pull requests, and any ready leaf tasks
+deferred because all three slots are occupied. If no leaf task is ready or no
+slot is available, post the status summary and do not dispatch a workflow.
 
 **Always leave a visible next step.** Every Implement run against a parent ends
 with a comment on that parent — never a silent exit. Cover each terminal case:
