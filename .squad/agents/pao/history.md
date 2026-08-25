@@ -109,6 +109,6 @@ Completed full PRD based on research findings. **Document:** `docs/research/jsdo
 2. **`gh aw compile` demoted** from required step to troubleshooting note. Quick Start reduced from 6 to 5 steps. Lock files are generated automatically by `gh aw add`. Upgrading section left unchanged (correct there).
 3. **Restricted secrets callout added** in Setup immediately after the `gh aw add` block, with `--approve` flag workaround.
 
-**Decision record:** `.squad/decisions/inbox/pao-1761-gh-aw-path-verification.md`
+**Decision record:** `.squad/decisions.md` — “2026-08-21: gitignore placement — colocation over root rules.”
 
 **PR:** Closes #1761

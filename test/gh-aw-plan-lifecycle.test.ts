@@ -24,18 +24,63 @@ function readText(filePath: string): string {
   return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
 }
 
-/** Slice a `## skill: \`name\`` block out of the workflow markdown. */
+/** Include the skill heading and stop before its end marker, the next skill, or EOF. */
 function skillBlock(markdown: string, name: string): string {
   const marker = `## skill: \`${name}\``;
-  const start = markdown.indexOf(marker);
-  if (start === -1) throw new Error(`skill block "${name}" not found`);
-  const bodyStart = start + marker.length;
-  const nextSkillIdx = markdown.indexOf('\n## skill: `', bodyStart);
-  const endMarkerIdx = markdown.indexOf(`\n## end skill: \`${name}\``, bodyStart);
-  const candidates = [nextSkillIdx, endMarkerIdx].filter(index => index >= 0);
-  const endIdx = candidates.length === 0 ? -1 : Math.min(...candidates);
-  return endIdx === -1 ? markdown.slice(start) : markdown.slice(start, endIdx);
+  const endMarker = `## end skill: \`${name}\``;
+  const skillHeadings = [...markdown.matchAll(/^## skill:[^\r\n]*$/gm)];
+  const requested = skillHeadings.filter(match => match[0] === marker);
+  if (requested.length !== 1) {
+    throw new Error(`skill block "${name}" must appear exactly once; found ${requested.length}`);
+  }
+  const start = requested[0].index!;
+  const nextSkill = skillHeadings.find(match => match.index! > start);
+  const matchingEnds = [...markdown.matchAll(/^## end skill:[^\r\n]*$/gm)].filter(
+    match => match[0] === endMarker && match.index! > start,
+  );
+  if (matchingEnds.length > 1) {
+    throw new Error(`skill block "${name}" has duplicate end markers`);
+  }
+  const end = Math.min(nextSkill?.index ?? markdown.length, matchingEnds[0]?.index ?? markdown.length);
+  return markdown.slice(start, end);
 }
+
+describe('skillBlock', () => {
+  const adjacentSkills = [
+    '## skill: `requested`',
+    'requested content',
+    '## skill: `following`',
+    'following content',
+    '## end skill: `following`',
+    '## agent: `after-skills`',
+  ].join('\n');
+
+  it('includes the requested heading and content but excludes the following skill', () => {
+    const requested = skillBlock(adjacentSkills, 'requested');
+
+    expect(requested).toBe('## skill: `requested`\nrequested content\n');
+    expect(requested).not.toContain('## skill: `following`');
+    expect(requested).not.toContain('following content');
+    expect(skillBlock(adjacentSkills, 'following')).toBe(
+      '## skill: `following`\nfollowing content\n',
+    );
+    expect(skillBlock('## skill: `only`\nonly content', 'only')).toBe(
+      '## skill: `only`\nonly content',
+    );
+  });
+
+  it('fails closed when the requested marker is missing or duplicated', () => {
+    expect(() => skillBlock(adjacentSkills, 'missing')).toThrow(
+      'skill block "missing" must appear exactly once; found 0',
+    );
+    expect(() => skillBlock(`${adjacentSkills}\n## skill: \`requested\``, 'requested')).toThrow(
+      'skill block "requested" must appear exactly once; found 2',
+    );
+    expect(() => skillBlock(`${adjacentSkills}\n## end skill: \`following\``, 'following')).toThrow(
+      'skill block "following" has duplicate end markers',
+    );
+  });
+});
 
 /** Slice a `## agent: \`name\`` block out of the workflow markdown. */
 function agentBlock(markdown: string, name: string): string {

@@ -1657,26 +1657,6 @@ describe('gh-aw: dispatch_workflow schema static gate (#1772)', () => {
   const scriptPath = join(process.cwd(), 'scripts', 'check-workflow-input-interpolation.mjs');
   const fixturesDir = join(TEST_WORKSPACES_DIR, 'dispatch-schema-gate');
 
-  function runGate(scanDir: string): { exitCode: number; stderr: string; stdout: string } {
-    // The script resolves SCAN_DIRS relative to repo root via import.meta.url.
-    // We invoke it with a patched environment variable so the fixture directory is
-    // scanned instead of the real workflows directory.
-    const result = spawnSync(
-      process.execPath,
-      [scriptPath],
-      {
-        env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: scanDir },
-        encoding: 'utf8',
-        cwd: process.cwd(),
-      }
-    );
-    return {
-      exitCode: result.status ?? 1,
-      stderr: result.stderr ?? '',
-      stdout: result.stdout ?? '',
-    };
-  }
-
   function writeFixture(name: string, content: string): string {
     mkdirSync(fixturesDir, { recursive: true });
     const path = join(fixturesDir, name);

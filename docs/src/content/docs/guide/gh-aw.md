@@ -122,18 +122,15 @@ git commit -m "ci: add Squad agentic workflow"
 git push
 ```
 
-This stages everything `gh aw add` wrote — workflow source files and their
-compiled `.lock.yml` files under `.github/workflows/`, the agentic-workflows
-skill under `.github/skills/`, and the `.gitattributes` entry that marks lock
-files as generated. No need to update this command as Squad's shipped files
-evolve.
+This command stages `.gitattributes` and files under `.github/workflows/` and
+`.github/skills/`.
 
 > **Troubleshooting:** If the lock files are missing or you need to regenerate
 > them manually, run `gh aw compile`. This is only needed if something went wrong
 > during `gh aw add`.
 
 Downloaded workflow audit data is local diagnostic output and should not be
-committed. If a `.gitignore` is missing from your workflow logs directory, add:
+committed. If a `.gitignore` is missing from `.github/aw/logs/`, add one there:
 
 ```gitignore
 # Ignore all downloaded workflow logs
