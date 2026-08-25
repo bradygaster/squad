@@ -75,18 +75,33 @@ safe-outputs:
       - "**/go.mod"
       - "go.sum"
       - "**/go.sum"
-    # No manifest is excluded from protection yet -- Wave 1 exclusions land in a
-    # follow-up slice (S2). Until then this worker's manifest writes fall back to
-    # a review issue exactly like `squad-implement-worker`'s do, so nothing here
-    # can produce a manifest PR before S2 lands. Registry/install config
-    # (`NuGet.Config`, `bunfig.toml`, `.npmrc`, `.yarnrc.yml`), SDK/tool pins
-    # (`global.json`), and governance docs (`CODEOWNERS`, `SECURITY.md`,
-    # `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `DESIGN.md`,
-    # `AGENTS.md`) stay protected in every wave -- see issue #1748's Flight
-    # Decision comment (APPROVED -- IMPLEMENTATION-READY, 2026-08-25),
-    # "bunfig.toml ruling" and "Always-protected" list.
+    # Wave 1 protected-files exclusions (S2, issue #1748 Flight Decision comment,
+    # APPROVED -- IMPLEMENTATION-READY, 2026-08-25). Excluding a basename from
+    # `protected-files` allows the agent to produce a signed PR for that file;
+    # the exclusion is compiled into `.lock.yml` at `gh aw compile` time and
+    # cannot be changed at runtime. Only the exact Wave 1 basenames are excluded:
+    # npm/yarn/pnpm manifests and lockfiles, NuGet central package management,
+    # and Go modules. Registry/install config (`NuGet.Config`, `bunfig.toml`,
+    # `.npmrc`, `.yarnrc.yml`), SDK/tool pins (`global.json`), and governance
+    # docs (`CODEOWNERS`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`,
+    # `CODE_OF_CONDUCT.md`, `DESIGN.md`, `AGENTS.md`) stay protected in every
+    # wave -- see "bunfig.toml ruling" and "Always-protected" list in that
+    # Flight Decision comment.
     protected-files:
       policy: fallback-to-issue
+      exclude:
+        # Wave 1: npm/yarn/pnpm
+        - package.json
+        - package-lock.json
+        - yarn.lock
+        - pnpm-lock.yaml
+        - npm-shrinkwrap.json
+        # Wave 1: .NET — NuGet central package management only;
+        # NuGet.Config and global.json stay protected.
+        - Directory.Packages.props
+        # Wave 1: Go
+        - go.mod
+        - go.sum
     excluded-files:
       # Never authorize vendored or generated dependency content, even once a
       # manifest basename above is excluded from protection in a later slice.
@@ -99,8 +114,7 @@ safe-outputs:
       - "vendor/**"
       - "**/vendor/**"
       - "bin/**"
-      - "**/bin/Debug/**"
-      - "**/bin/Release/**"
+      - "**/bin/**"
       - "obj/**"
       - "**/obj/**"
       - ".github/workflows/**"
@@ -126,13 +140,14 @@ so that dependency-manifest authority never leaks into the general
 `squad-implement-worker` path: that worker's `protected-files` carries no
 manifest exclusions and is unchanged by this workflow's existence.
 
-This slice (S1) only scaffolds the worker and backfills the extensionless
-manifest/lockfile basenames (`go.mod`, `go.sum`, `yarn.lock`,
-`package-lock.json`, and related Wave 1 files) into `allowed-files`. No
-manifest is yet excluded from `protected-files`, so every manifest write still
-falls back to a review issue today -- identical to `squad-implement-worker`.
-Wave 1 `protected-files.exclude` entries, the `squadDeps` opt-out guard, and
-the `dependency-change` PR presentation rules are separate follow-up slices.
+This slice (S2) adds Wave 1 `protected-files.exclude` entries to the
+dependency worker. The Wave 1 basenames (`package.json`, `package-lock.json`,
+`yarn.lock`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`,
+`Directory.Packages.props`, `go.mod`, `go.sum`) are now excluded from
+`protected-files`, so the agent can produce a signed PR for those files.
+Registry/install config, SDK/tool pins, and governance docs remain protected.
+The `squadDeps` opt-out guard and `dependency-change` PR presentation rules
+are separate follow-up slices (S3+).
 
 ## Gather Context
 
