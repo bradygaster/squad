@@ -28,8 +28,9 @@ gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
 
 # 3. Add the Squad workflows to your repo
 gh aw add \
+  bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev
 
 # 4. Commit and push the workflow sources and generated files
 git add -- .gitattributes .github/workflows/ .github/skills/
@@ -82,12 +83,19 @@ approve their own pull requests.
 
 ```bash
 gh aw add \
+  bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev
 ```
 
-The single command installs the dedicated worker first, then the main workflow
-that dispatches it.
+Keep the dispatcher first. `gh aw add` discovers its implementation-worker and
+reviewer dependencies while compiling it; the explicit worker and reviewer
+entries then confirm the complete install surface without creating duplicates.
+The installed top-level workflow set is:
+
+- `squad.md` and `squad.lock.yml`
+- `squad-implement-worker.md` and `squad-implement-worker.lock.yml`
+- `squad-review.md` and `squad-review.lock.yml`
 
 > **Branch note:** `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
 
@@ -97,12 +105,11 @@ deterministic `.lock.yml` files — no separate compile step is needed.
 
 > **Restricted secrets prompt:** During `gh aw add`, you may see a safe-update-mode
 > warning listing new restricted secrets (`SQUAD_GITHUB_APP_PRIVATE_KEY`,
-> `SQUAD_GITHUB_TOKEN`). This is expected. Run with `--approve` to accept the changes:
+> `SQUAD_GITHUB_TOKEN`). This is expected. Review the changes, then approve them
+> during compilation:
 >
 > ```bash
-> gh aw add --approve \
->   bradygaster/squad/workflows/squad-implement-worker.md@dev \
->   bradygaster/squad/workflows/squad.md@dev
+> gh aw compile --approve
 > ```
 
 ### Commit the workflow files
@@ -210,6 +217,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Activation | `/squad plan activate` | Create GitHub issues from an accepted plan | Terminal step; creates real GitHub issues |
 | Activation | `/squad plan activate phase {N}` | Create GitHub issues for only Phase N | Use when accept didn't auto-activate |
 | Implementation | `/squad implement` | Implement an issue, or start the next ready wave of an epic | Dispatches an isolated implementation worker |
+| Review | `/squad review` | Independently review the current pull request | Advisory `COMMENT` or `REQUEST_CHANGES`; human approval remains mandatory |
 
 ### Where you can use slash commands
 
@@ -742,9 +750,9 @@ capability profiles.
 
 ---
 
-## Review lifecycle and current gaps
+## Review lifecycle
 
-### What review happens during and after `/squad implement`
+### What happens during and after `/squad implement`
 
 The implementation worker performs an internal self-review before opening a PR:
 
@@ -754,32 +762,60 @@ The implementation worker performs an internal self-review before opening a PR:
 4. **Diff review** — the worker reviews its own final diff against the issue acceptance criteria before calling `create-pull-request`
 5. **Protected-file guard** — changes to protected paths trigger a review request on the PR rather than a direct commit
 
-After the PR is opened, review follows the standard GitHub flow: human
-reviewers, required status checks (CI), and merge by a repository maintainer.
-If you configured `GH_AW_CI_TRIGGER_TOKEN`, implementation PRs will trigger
-your CI workflows automatically; without it, the default `GITHUB_TOKEN`-created
-PRs do not start other workflow runs.
+After the PR is opened, `squad-review` provides an independent advisory review.
+You can start it in either of these ways:
 
-### There is no separate `/squad review` command
+- **Manual:** Comment `/squad review` on a same-repository pull request. The main
+  Squad router relays the pull request number, current head SHA, and manual
+  origin to the isolated reviewer workflow.
+- **Automatic:** A same-repository pull request triggers review on
+  `ready_for_review` and `synchronize` when it has recognized Squad or Copilot
+  provenance. Fork pull requests are refused.
 
-Squad does not currently have a post-implementation review command. There is no
-`/squad review` slash command, and no workflow runs automatically to review PRs
-after `/squad implement` opens them.
+The reviewer classifies provenance in this priority order:
 
-This is a **current lifecycle gap**: the path from an open implementation PR to
-merge relies entirely on human review, your existing CI, and normal GitHub PR
-processes. If you have a squad member designated as a reviewer, you can ask
-them to review the PR in a Copilot Chat session, but that is not an automated
-Squad workflow.
+1. One validated `<!-- squad:implement issue=... run=... -->` worker marker and
+   its matching `squad/implement-*` branch
+2. A `squad/implement-*` branch when no marker-like text is present
+3. Author `copilot-swe-agent[bot]` or a `copilot/*` branch when no marker-like
+   text is present
+4. Unattributed
 
-The lifecycle today is:
+Malformed higher-priority evidence fails closed instead of falling through to a
+weaker classification. Automatic review refuses unattributed pull requests;
+manual review can continue as `Unattributed (manual)`. A
+`Squad-Review-Head: <SHA>` marker deduplicates review for an unchanged head, and
+per-PR concurrency cancels stale runs after a new push.
+
+### Advisory verdicts and reviewer independence
+
+The reviewer can add a bounded summary comment, inline review comments, and
+exactly one pull request review. It returns:
+
+- `REQUEST_CHANGES` for a concrete merge blocker, such as an acceptance-criteria
+  violation, unsafe authority expansion, protected-file violation, missing test,
+  or required-but-missing changeset
+- `COMMENT` when findings are advisory or no merge blocker is established
+
+The reviewer has no file-editing, workflow-dispatch, issue-creation,
+pull-request-creation, remediation, merge, or `APPROVE` authority. Its verdict
+does not replace branch protection, required status checks, or a human
+reviewer's approval. Human approval remains mandatory.
+
+The lifecycle is:
 
 ```
-/squad implement → implementation PR opened → human review + CI → merge → epic relay (next wave)
+/squad implement → implementation PR opened → advisory Squad review → human review + CI → merge → epic relay (next wave)
 ```
 
-If a dedicated automated review phase is added in a future release, it will
-appear as a new slash command in this guide.
+### Advisory fast path
+
+Because review is advisory, it is possible to merge without waiting for an
+automatic review or manually running `/squad review`. That fast path gives up an
+independent, head-SHA-specific check of the linked issue's acceptance criteria,
+Squad routing and charter compliance, protected-file boundaries, focused tests,
+and changeset coverage. Your repository's human approval and required checks
+still decide whether the pull request can merge.
 
 ---
 
@@ -941,8 +977,9 @@ To update your compiled workflow after pulling upstream changes:
 
 ```bash
 gh aw add \
+  bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev
 ```
 
 This re-compiles the workflow from source. If you have local customizations in your compiled `.github/workflows/squad-*.lock.yml`, they will be overwritten — keep customizations in the source `.md` files instead.

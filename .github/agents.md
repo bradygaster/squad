@@ -17,21 +17,25 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 - **GitHub CLI** (`gh`) installed and authenticated — [install guide](https://cli.github.com/)
 - **`gh aw` extension** available (ships with recent `gh` versions; run `gh aw --help` to verify)
 
-### Install the Squad workflow
+### Install the Squad workflows
 
 ```bash
-gh aw add bradygaster/squad/workflows/squad.md@dev
+gh aw add \
+  bradygaster/squad/workflows/squad.md@dev \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-review.md@dev
 ```
 
 This command:
 
-1. Fetches the Squad workflow definition from the source repository
-2. Compiles it into a GitHub Actions–compatible workflow
-3. Adds the workflow to your repository's `.github/` directory
+1. Fetches the Squad dispatcher, implementation worker, and advisory reviewer
+2. Compiles them into GitHub Actions–compatible workflows
+3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
 ### Verify installation
 
-After running the command, confirm the workflow appears in your repository's **Actions** tab. You should see a new workflow named "Squad" (or similar) listed and ready to trigger.
+After running the command, confirm the Squad, Squad Implement Worker, and Squad
+Review workflows appear in your repository's **Actions** tab.
 
 ### Try your first command
 
