@@ -233,6 +233,8 @@ async function main(): Promise<void> {
     console.log(`             Diagnostics: --log-level info|debug or --verbose`);
     console.log(`  ${BOLD}state-mcp${RESET}  MCP bridge exposing Squad runtime state tools`);
     console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
+    console.log(`  ${BOLD}health${RESET}     Validate team state for CI (team, registry, routing, backend, env)`);
+    console.log(`             Flags: --json (structured output for CI)`);
     console.log(`  ${BOLD}consult${RESET}    Enter consult mode with your personal squad`);
     console.log(`             Flags: --status, --check`);
     console.log(`  ${BOLD}extract${RESET}    Extract learnings from consult mode session`);
@@ -985,6 +987,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'health') {
+    const { runHealthCommand } = await import('./cli/commands/health.js');
+    const exitCode = await runHealthCommand(getSquadStartDir(), args.slice(1));
+    process.exit(exitCode);
+  }
+
   if (cmd === 'consult') {
     const { runConsult } = await import('./cli/commands/consult.js');
     await runConsult(getSquadStartDir(), args.slice(1));
@@ -1163,6 +1171,5 @@ main().catch(err => {
   }
   process.exit(1);
 });
-
 
 

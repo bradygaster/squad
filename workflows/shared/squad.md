@@ -48,7 +48,9 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-#   Default is 0.12.0.
+#   Default is '0.14.0' — the first release containing `squad health`.
+#   NOTE: This shared component becomes fully operational only after @bradygaster/squad-cli@0.14.0
+#   is published. Import this workflow only from refs that post-date that release.
 #
 # Optional model override:
 #   vars.SQUAD_MODEL
@@ -81,7 +83,7 @@ jobs:
 
       - name: Initialize Squad team
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.14.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
         run: |
           # Preserve committed cast state: if .squad/team.md already exists with
@@ -92,6 +94,13 @@ jobs:
             echo "No existing squad team found — running squad init."
             npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}" init --preset default --state-backend local
           fi
+
+      - name: Run Squad health check
+        env:
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.14.0' }}
+          GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+        run: |
+          npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}" health --json
 
       - name: Upload Squad state artifact
         if: success()
@@ -125,9 +134,10 @@ agent sandbox:
    activation job. This step optionally mints a GitHub App installation token (or
    uses a supplied PAT), checks whether `.squad/team.md` already exists with
    roster entries (preserving any previously committed cast), and only runs
-   `squad init` if no usable team is found. The resulting `.squad/` team state
-   plus `.github/agents/squad.agent.md` are uploaded as a `squad-state` artifact
-   — all inside the activation job with unrestricted egress.
+   `squad init` if no usable team is found. It then runs `squad health --json`
+   and uploads the resulting `.squad/` team state plus
+   `.github/agents/squad.agent.md` only when readiness checks pass — all inside
+   the activation job with unrestricted egress.
 
 2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
    into the workspace. The Squad CLI is never installed here; only the files it

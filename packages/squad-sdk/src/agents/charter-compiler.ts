@@ -264,6 +264,17 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     const styleMatch = identityContent.match(/\*\*Style:\*\*\s*(.+)/i);
     if (styleMatch) result.identity.style = styleMatch[1]!.trim();
   }
+
+  // Legacy charters identify the agent in the H1 instead of an Identity section.
+  if (!result.identity.name || !result.identity.role) {
+    const titleMatch = content.match(
+      /^#\s+(.+?)\s+(?:—|–|-)\s+(.+?)\s*$/m,
+    );
+    if (titleMatch) {
+      result.identity.name ??= titleMatch[1]!.trim();
+      result.identity.role ??= titleMatch[2]!.trim();
+    }
+  }
   
   // Extract ## What I Own section
   const ownershipMatch = content.match(/##\s+What I Own\s*\n([\s\S]*?)(?=\n##|\n---|$)/i);

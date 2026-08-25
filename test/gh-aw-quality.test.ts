@@ -2348,3 +2348,111 @@ describe('gh-aw: threat detection taxonomy — parse_error must not map to agent
     expect(signalBlock).toContain('agentic-detection-failed');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test: Shared bootstrap health-before-dispatch contract (#1605)
+//
+// The shared squad.md bootstrap must invoke `squad health --json` after init
+// and before any artifact upload or dispatch. Health failure must stop the
+// dispatch path visibly — no continue-on-error on the health step.
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () => {
+  const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
+
+  it('squad health --json appears in the shared bootstrap', () => {
+    expect(sharedContent).toMatch(/npx\s+--yes\s+"@bradygaster\/squad-cli@\$\{SQUAD_CLI_VERSION\}"\s+health\s+--json/);
+  });
+
+  it('health uses --json flag for structured CI output', () => {
+    expect(sharedContent).toMatch(/health --json/);
+  });
+
+  it('squad health --json appears after squad init (command ordering)', () => {
+    const initIdx = sharedContent.indexOf('init --preset default');
+    const healthIdx = sharedContent.indexOf('health --json');
+    expect(initIdx, 'squad init must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(healthIdx, 'squad health --json must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(healthIdx, 'health must come after init').toBeGreaterThan(initIdx);
+  });
+
+  it('squad health --json appears before upload-artifact (before dispatch)', () => {
+    const healthIdx = sharedContent.indexOf('health --json');
+    const uploadIdx = sharedContent.indexOf('upload-artifact');
+    expect(healthIdx, 'squad health --json must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(uploadIdx, 'upload-artifact must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(healthIdx, 'health must come before artifact upload').toBeLessThan(uploadIdx);
+  });
+
+  it('health step has no continue-on-error (fail-fast contract)', () => {
+    const lines = sharedContent.split('\n');
+    const healthLineIdx = lines.findIndex(l => l.includes('health --json'));
+    expect(healthLineIdx, 'health command must appear in the shared bootstrap').toBeGreaterThan(-1);
+
+    // Walk back to the "- name:" that opens this step.
+    let stepStart = healthLineIdx;
+    while (stepStart > 0 && !lines[stepStart].match(/^\s+-\s+name:/)) {
+      stepStart--;
+    }
+    // Walk forward to the next "- name:" or end of the pre-steps block.
+    let stepEnd = healthLineIdx + 1;
+    while (stepEnd < lines.length && !lines[stepEnd].match(/^\s+-\s+name:/) && !lines[stepEnd].match(/^steps:/)) {
+      stepEnd++;
+    }
+    const stepBlock = lines.slice(stepStart, stepEnd).join('\n');
+
+    expect(stepBlock, 'health step must contain the health command').toContain('health --json');
+    expect(
+      stepBlock,
+      'health step must NOT have continue-on-error: true — health failure must stop dispatch',
+    ).not.toMatch(/continue-on-error:\s*true/);
+  });
+
+  it('step ordering in pre-steps: init → health → upload', () => {
+    const preStepsStart = sharedContent.indexOf('pre-steps:');
+    expect(preStepsStart, 'pre-steps: block must exist in the shared bootstrap').toBeGreaterThan(-1);
+    const preStepsSection = sharedContent.slice(preStepsStart);
+
+    const initStepIdx = preStepsSection.indexOf('Initialize Squad team');
+    const healthStepIdx = preStepsSection.indexOf('Run Squad health check');
+    const uploadStepIdx = preStepsSection.indexOf('Upload Squad state artifact');
+
+    expect(initStepIdx, '"Initialize Squad team" step must exist').toBeGreaterThan(-1);
+    expect(healthStepIdx, '"Run Squad health check" step must exist').toBeGreaterThan(-1);
+    expect(uploadStepIdx, '"Upload Squad state artifact" step must exist').toBeGreaterThan(-1);
+
+    expect(healthStepIdx, 'health check must follow init').toBeGreaterThan(initStepIdx);
+    expect(healthStepIdx, 'health check must precede upload').toBeLessThan(uploadStepIdx);
+  });
+
+  it('health step uses the same CLI version mechanism as init', () => {
+    const lines = sharedContent.split('\n');
+    const healthLineIdx = lines.findIndex(l => l.includes('health --json'));
+    expect(healthLineIdx).toBeGreaterThan(-1);
+
+    const healthLine = lines[healthLineIdx];
+    expect(healthLine, 'health must use npx').toContain('npx');
+    expect(healthLine, 'health must reference squad-cli package').toContain('@bradygaster/squad-cli@');
+    expect(healthLine, 'health must use the SQUAD_CLI_VERSION variable').toContain('SQUAD_CLI_VERSION');
+  });
+
+  it('continue-on-error on the restore step does not shield health failure from stopping dispatch', () => {
+    // The agent-job restore step may carry continue-on-error: true — that is deliberate
+    // (it lets the agent-job body explain a missing artifact). The HEALTH step in the
+    // activation job must NOT carry it: activation-job failure blocks the agent job.
+    const lines = sharedContent.split('\n');
+    const restoreLineIdx = lines.findIndex(l => l.includes('Restore Squad state from activation artifact'));
+    expect(restoreLineIdx, 'restore step must exist').toBeGreaterThan(-1);
+
+    // Examine only the activation-job section (before the restore step).
+    const activationSection = lines.slice(0, restoreLineIdx).join('\n');
+    const healthStepStart = activationSection.lastIndexOf('Run Squad health check');
+    expect(healthStepStart, '"Run Squad health check" step must appear before the restore step').toBeGreaterThan(-1);
+
+    const healthStepBlock = activationSection.slice(healthStepStart);
+    expect(
+      healthStepBlock,
+      'health step in the activation job must not carry continue-on-error: true',
+    ).not.toMatch(/continue-on-error:\s*true/);
+  });
+});
