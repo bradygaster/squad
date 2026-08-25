@@ -101,16 +101,18 @@ The installed top-level workflow set is:
 
 This registers the Squad workflow in your repository's agentic workflow
 configuration and automatically compiles the workflow definitions into
-deterministic `.lock.yml` files — no separate compile step is needed.
+deterministic `.lock.yml` files. Under normal conditions, no separate compile
+step is needed.
 
-> **Restricted secrets prompt:** During `gh aw add`, you may see a safe-update-mode
-> warning listing new restricted secrets (`SQUAD_GITHUB_APP_PRIVATE_KEY`,
-> `SQUAD_GITHUB_TOKEN`). This is expected. Review the changes, then approve them
-> during compilation:
+> **Safe-update approval:** If `gh aw add` reports unapproved safe-update
+> changes for restricted secrets (`SQUAD_GITHUB_APP_PRIVATE_KEY`,
+> `SQUAD_GITHUB_TOKEN`), review those changes and complete the approval with:
 >
 > ```bash
 > gh aw compile --approve
 > ```
+>
+> This follow-up is only needed when the safe-update warning appears.
 
 ### Commit the workflow files
 

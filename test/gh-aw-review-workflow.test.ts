@@ -251,6 +251,9 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(GUIDE).toContain('no file-editing, workflow-dispatch, issue-creation,');
     expect(GUIDE).toContain('Human approval remains mandatory.');
     expect(GUIDE).toContain('Because review is advisory, it is possible to merge without waiting');
+    expect(GUIDE).toContain('This follow-up is only needed when the safe-update warning appears.');
+    expect(README).toContain('`gh aw add` compiles the workflows automatically.');
+    expect(README).toContain('run `gh aw compile --approve`');
   });
 
   it('enforces attribution priority and refuses malformed or unattributed automatic provenance', () => {
