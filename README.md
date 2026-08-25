@@ -533,12 +533,16 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 
 ### Install
 
+<!-- cspell:ignore agentics -->
+
 ```bash
 gh aw add \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
   bradygaster/squad/workflows/squad.md@dev
 gh aw compile
 git add -- \
+  .github/aw/ \
+  .github/skills/ \
   .github/workflows/ \
   .gitattributes
 git commit -m "Add Squad workflow"
@@ -546,6 +550,18 @@ git push
 ```
 
 > `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
+
+Review the complete generated diff before you commit:
+
+| Path | What gh-aw writes | Commit? |
+|------|-------------------|---------|
+| `.github/workflows/` | The Squad workflow sources, shared imports, compiled lock files, and `agentics-maintenance.yml` | Yes |
+| `.github/aw/actions-lock.json` | Pinned action versions and SHAs used by the compiled workflows | Yes |
+| `.github/skills/agentic-workflows/SKILL.md` | The agentic-workflows dispatcher skill | Yes |
+| `.gitattributes` | Marks compiled `.lock.yml` workflows as generated | Yes |
+| `.vscode/settings.json` | Enables GitHub Copilot for Markdown files in VS Code | Optional — commit only if you want to share this workspace setting |
+
+`agentics-maintenance.yml` is a second installed workflow. Squad configures pull requests to expire after 14 days, so this workflow runs scheduled expiration cleanup and also exposes manual maintenance operations. To omit it, create `.github/workflows/aw.json` with `{"maintenance": false}` before compiling. gh-aw then warns that expiration is disabled and removes the maintenance workflow.
 
 ### Slash commands
 
