@@ -3,7 +3,8 @@
  *
  * Guards the long-path planning lifecycle in `workflows/squad.md` against the
  * three defects tracked by #1758, the Owner/Agent cast-Name binding of #1759,
- * and the structural research contract of #1756.
+ * the structural research contract of #1756, and adversarial validation from
+ * #1757.
  *
  * These assertions target the workflow's structural contract (labeled sections,
  * ordering hints, binding rules) rather than incidental prose — a single
@@ -28,8 +29,22 @@ function skillBlock(markdown: string, name: string): string {
   const start = markdown.indexOf(`## skill: \`${name}\``);
   if (start === -1) throw new Error(`skill block "${name}" not found`);
   const rest = markdown.slice(start + 1);
-  const nextIdx = rest.indexOf('\n## skill: `');
-  return nextIdx === -1 ? markdown.slice(start) : rest.slice(0, nextIdx);
+  const nextSkillIdx = rest.indexOf('\n## skill: `');
+  const endMarkerIdx = rest.indexOf(`\n## end skill: \`${name}\``);
+  const candidates = [nextSkillIdx, endMarkerIdx].filter(index => index >= 0);
+  const endIdx = candidates.length === 0 ? -1 : Math.min(...candidates);
+  return endIdx === -1 ? markdown.slice(start) : rest.slice(0, endIdx);
+}
+
+/** Slice a `## agent: \`name\`` block out of the workflow markdown. */
+function agentBlock(markdown: string, name: string): string {
+  const marker = `## agent: \`${name}\``;
+  const start = markdown.indexOf(marker);
+  if (start === -1) throw new Error(`agent block "${name}" not found`);
+  const bodyStart = start + marker.length;
+  const rest = markdown.slice(bodyStart);
+  const nextH2 = rest.search(/\n## /);
+  return nextH2 === -1 ? rest : rest.slice(0, nextH2);
 }
 
 const squad = readText(SQUAD_WORKFLOW);
@@ -341,6 +356,142 @@ describe('#1758.3: validate precedes both accept steps', () => {
   it('validate no longer routes straight to accept implementation', () => {
     const block = skillBlock(squad, 'squad-plan-validate');
     expect(block).not.toMatch(/Next on pass: `\/squad plan accept implementation`/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1757 — validation owns an adversarial gate fed by Fact Checker DA evidence
+// ---------------------------------------------------------------------------
+
+describe('#1757: squad-plan-validate has adversarial teeth', () => {
+  const validation = skillBlock(squad, 'squad-plan-validate');
+  const factChecker = agentBlock(squad, 'fact-checker');
+  const adversarialChecks = [
+    'Opposition steelman',
+    'Load-bearing assumptions',
+    '30-day pre-mortem',
+    'Alternative approach',
+    'Remaining risk acceptance',
+  ];
+
+  function numberedChecks(block: string): Map<number, string> {
+    return new Map(
+      [...block.matchAll(/^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|/gm)].map(match => [
+        Number(match[1]),
+        match[2].trim(),
+      ]),
+    );
+  }
+
+  function hasSubstantiveAdversarialValidation(artifact: string): boolean {
+    const requiredSections = [
+      'Steelman of the opposition',
+      'Load-bearing assumptions',
+      '30-day pre-mortem',
+      'Alternative approach',
+      'Remaining risk acceptance',
+      'Validator Synthesis',
+    ];
+
+    const sectionsAreSubstantive = requiredSections.every((heading, index) => {
+      const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const next = requiredSections
+        .slice(index + 1)
+        .map(item => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+      const boundary = next ? `(?=\\n### (?:${next})|$)` : '$';
+      const body = artifact.match(new RegExp(`### ${escaped}\\n([\\s\\S]*?)${boundary}`))?.[1] ?? '';
+      return /\bWHAT:/i.test(body) && /\bWHY:/i.test(body) && /\bHOW:/i.test(body);
+    });
+    const checkNumbers = [...artifact.matchAll(/^\|\s*(\d+)\s*\|/gm)].map(match =>
+      Number(match[1]),
+    );
+
+    return (
+      sectionsAreSubstantive &&
+      checkNumbers.join(',') === '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16' &&
+      /### 30-day pre-mortem[\s\S]*\b30 days?\b/i.test(artifact) &&
+      /### Remaining risk acceptance[\s\S]*\bACCEPTED\b[\s\S]*\bowner:/i.test(artifact) &&
+      /### Validator Synthesis[\s\S]*\bvalidation decision:/i.test(artifact)
+    );
+  }
+
+  it('preserves structural checks 1-10 and augments them with five adversarial checks', () => {
+    const checks = numberedChecks(validation);
+    expect([...checks.keys()].slice(0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect([...checks.values()].slice(10, 15)).toEqual(adversarialChecks);
+    expect(checks.get(16)).toBe('Validator synthesis');
+  });
+
+  it('uses Fact Checker DA output as advisory evidence, never as the verdict owner', () => {
+    expect(validation).toMatch(/Use the `fact-checker` sub-agent exactly once/);
+    expect(validation).toMatch(/brief is input evidence, not a verdict/i);
+    expect(validation).toMatch(/Validation — not Fact Checker —[\s\S]*final verdict/);
+    expect(factChecker).not.toMatch(/^RESULT: (?:PASS|FAIL)$/m);
+    expect(factChecker).toMatch(/Never emit `RESULT: PASS`, `RESULT: FAIL`/);
+  });
+
+  it('requires all five DA elements with concrete semantic thresholds', () => {
+    for (const section of [
+      '##### Steelman of the opposition',
+      '##### Load-bearing assumptions',
+      '##### 30-day pre-mortem',
+      '##### Alternative approach',
+      '##### Risk acceptance',
+    ]) {
+      expect(factChecker, `Fact Checker must emit "${section}"`).toContain(section);
+    }
+    expect(validation).toMatch(/strongest credible opposition steelman/i);
+    expect(validation).toMatch(/falsifiable conditions/);
+    expect(validation).toMatch(/exactly 30 days after execution begins/);
+    expect(validation).toMatch(/materially different alternative approach/);
+    expect(validation).toMatch(/explicitly\s+`ACCEPTED` with rationale and an accountable owner/);
+  });
+
+  it('fails closed when adversarial evidence or verdict ownership is missing', () => {
+    expect(validation).toMatch(
+      /sub-agent is unavailable, errors, returns an empty brief,[\s\S]*force `RESULT: FAIL`/,
+    );
+    expect(validation).toMatch(/copied verdict,[\s\S]*cannot become `RESULT: PASS`/);
+    expect(validation).toMatch(/Structural PASS alone cannot produce overall PASS/);
+  });
+
+  it('distinguishes a neatly formatted bad plan from a genuinely validated plan', () => {
+    const validationHeader = [
+      '## ✅ Squad Plan Validation — PASSED',
+      'RESULT: PASS',
+      '| Check | Status | Details |',
+      '|---|---|---|',
+    ];
+    const structurallyValidBadPlan = [
+      ...validationHeader,
+      ...Array.from({ length: 10 }, (_, index) => `| ${index + 1} | ✅ | — |`),
+    ].join('\n');
+
+    const genuinelyValidatedPlan = [
+      ...validationHeader,
+      ...Array.from({ length: 16 }, (_, index) => `| ${index + 1} | ✅ | evidence |`),
+      '### Steelman of the opposition',
+      'WHAT: Replace the batch design with streaming. WHY: the latency target makes batching unsafe. HOW: prove the target with a prototype.',
+      '### Load-bearing assumptions',
+      'WHAT: queue ordering is stable. WHY: reordering breaks reconciliation. HOW: add an ordering probe before implementation.',
+      '### 30-day pre-mortem',
+      'WHAT: The rollout is reverted in 30 days. WHY: retries amplify duplicate writes. HOW: ship idempotency keys and alerts.',
+      '### Alternative approach',
+      'WHAT: Use a durable outbox. WHY: it narrows the consistency boundary. HOW: compare operational cost before choosing.',
+      '### Remaining risk acceptance',
+      'WHAT: delayed delivery. WHY: the queue can lag. HOW: ACCEPTED with bounded SLO; owner: EECOM.',
+      '### Validator Synthesis',
+      'WHAT: Structural and adversarial evidence align. WHY: the identified failure modes are bounded. HOW: validation decision: proceed.',
+    ].join('\n');
+
+    expect(hasSubstantiveAdversarialValidation(structurallyValidBadPlan)).toBe(false);
+    expect(hasSubstantiveAdversarialValidation(genuinelyValidatedPlan)).toBe(true);
+  });
+
+  it('keeps the sub-agent outside every skill block and uses safe nested headings', () => {
+    expect(squad).toContain('## end skill: `squad-plan-activate`\n\n## agent: `fact-checker`');
+    expect(factChecker).not.toMatch(/^## (?!agent:)/m);
   });
 });
 

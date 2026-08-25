@@ -1244,7 +1244,10 @@ Set Implementation Plan = `✅ Done`, state = Implementation planned, next = `/s
 description: Validate the implementation plan and emit a PASS/FAIL validation artifact.
 ---
 
-Readiness gate checking plan artifacts for structural issues.
+Readiness gate checking plan artifacts for structural integrity and adversarial viability.
+Validation owns the final `RESULT: PASS` or `RESULT: FAIL`. Fact Checker's
+Devil's Advocate mode supplies advisory evidence to this gate; it never owns or
+emits the validation verdict.
 
 **Acknowledge:** `🤖 Squad is validating the plan…`
 
@@ -1270,8 +1273,14 @@ Find the latest `program`, `implementation`, and `triage` artifacts. At minimum 
 | 8 | Orphaned items | Both | Triage items not in program |
 | 9 | Milestone gaps | Program | Epics not in any milestone |
 | 10 | Non-roster owner/agent | Both | An `Owner`/`Agent` value is absent from the roster (see below) |
+| 11 | Opposition steelman | Adversarial | The strongest credible counter-argument is absent, weakened, or unanswered |
+| 12 | Load-bearing assumptions | Adversarial | Assumptions whose failure invalidates the plan are missing, unfalsifiable, or lack impact |
+| 13 | 30-day pre-mortem | Adversarial | No concrete causal failure scenario explains how this plan fails within 30 days |
+| 14 | Alternative approach | Adversarial | No materially different approach is sketched with trade-offs against the chosen plan |
+| 15 | Remaining risk acceptance | Adversarial | A remaining risk lacks explicit acceptance with rationale and an accountable owner |
+| 16 | Validator synthesis | All evidence | The verdict is copied from advisory output, lacks independent synthesis, or advisory evidence is unavailable |
 
-Severity: ❌ Critical (blocks acceptance): 1–6, 8, 10. ⚠️ Warning: 7, 9, borderline 5.
+Severity: ❌ Critical (blocks acceptance): 1–6, 8, 10–16. ⚠️ Warning: 7, 9, borderline 5.
 
 ###### Check 10 — roster binding (the `Name` column is the sole source of truth)
 
@@ -1289,13 +1298,60 @@ Run mechanically; never accept a value because it "looks like" a teammate.
    Never report a value as a valid roster name unless TG-2 emitted it as a
    `ROSTER_MEMBER:`.
 
+###### Checks 11–15 — Fact Checker Devil's Advocate evidence
+
+Use the `fact-checker` sub-agent exactly once. Give it the complete latest
+program, implementation, and triage artifacts and request its Devil's Advocate
+brief. The brief is input evidence, not a verdict: Fact Checker is advisory and
+must not emit `RESULT: PASS`, `RESULT: FAIL`, or decide whether acceptance may
+proceed.
+
+Fail closed when the sub-agent is unavailable, errors, returns an empty brief,
+or omits any required evidence. Do not invent or silently backfill missing
+evidence. Report the affected check ❌ Critical and force `RESULT: FAIL`.
+
+Evaluate the returned evidence against the actual plan:
+
+1. **Check 11:** Require the strongest credible opposition steelman, not a
+   strawman. It must identify what the opposition would choose instead and why.
+2. **Check 12:** Require load-bearing assumptions stated as falsifiable
+   conditions, with the plan impact if each is untrue.
+3. **Check 13:** Require a concrete failure scenario exactly 30 days after
+   execution begins, including a causal chain and observable warning signs.
+4. **Check 14:** Require at least one materially different alternative approach
+   sketch with its principal trade-offs against the chosen plan.
+5. **Check 15:** Name every remaining risk and assign the validation gate's
+   disposition. PASS requires each remaining risk to be explicitly
+   `ACCEPTED` with rationale and an accountable owner, or eliminated by a plan
+   revision. `MITIGATION REQUIRED`, `REJECTED`, or an omitted disposition is
+   ❌ Critical.
+
+Each evidence item must state WHAT the challenge is, WHY it could invalidate or
+outperform the plan, and HOW the plan addresses it or consciously accepts it.
+A structurally clean plan with weak, generic, or missing adversarial evidence
+fails checks 11–15.
+
+###### Check 16 — validator synthesis and verdict ownership
+
+After scoring checks 1–15, independently synthesize the structural findings,
+Fact Checker evidence, plan responses, and remaining-risk dispositions. Explain
+why the whole plan should or should not proceed. Validation — not Fact Checker —
+then determines and emits the final verdict.
+
+Never forward an advisory conclusion as the gate decision. A Fact Checker
+verdict, a copied verdict, unavailable advisory evidence, or a verdict without
+this synthesis is Check 16 ❌ Critical and cannot become `RESULT: PASS`.
+
 ##### Step 3: Post Result
 
 `add-comment` with `data: {"squad_artifact":"validation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`. Keep `RESULT: PASS` or `RESULT: FAIL` in the human-readable body.
 
-Structure: `## ✅/❌ Squad Plan Validation — PASSED/FAILED` → Validated artifacts + timestamp → Results table (Check|Status|Details) → Issues Found (Critical ❌ then Warnings ⚠️ with fix instructions) → Summary (counts + verdict) → Next action.
+Structure: `## ✅/❌ Squad Plan Validation — PASSED/FAILED` → Validated artifacts + timestamp → Results table (Check|Status|Details; all checks 1–16) → Adversarial Evidence (Steelman of the opposition; Load-bearing assumptions; 30-day pre-mortem; Alternative approach; Remaining risk acceptance, each with WHAT/WHY/HOW) → Validator Synthesis (independent reasoning across structural and adversarial evidence) → Issues Found (Critical ❌ then Warnings ⚠️ with fix instructions) → Summary (counts + validator-owned verdict) → Next action.
 
 Rules: any ❌ = FAILED heading+verdict. Warnings alone ≠ failure.
+Structural PASS alone cannot produce overall PASS. Overall PASS requires checks
+1–16 to have run, complete adversarial evidence, explicit remaining-risk
+acceptance, and validator-owned synthesis.
 
 ##### Step 4: Update Lifecycle
 
@@ -1515,3 +1571,49 @@ Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version
 
 Phase: `🔄 Phase {N} of {total} activated`. Next: accept/activate next phase.
 Full/last: `✅ Done`, state = Activated. Terminal — no next action needed.
+
+## end skill: `squad-plan-activate`
+
+## agent: `fact-checker`
+---
+description: "Produces advisory Devil's Advocate evidence for plan validation"
+model: inherited
+---
+
+Operate only in Fact Checker's Devil's Advocate mode. Review the complete
+program, implementation, and triage artifacts supplied by the parent validator.
+Challenge the plan rigorously but constructively. Every finding states WHAT the
+challenge is, WHY it could invalidate or outperform the plan, and HOW the plan
+could address it.
+
+Return exactly these five evidence sections:
+
+##### Steelman of the opposition
+
+Give the strongest credible counter-argument and say what its advocates would
+choose instead. Never substitute an easy-to-dismiss strawman.
+
+##### Load-bearing assumptions
+
+List falsifiable assumptions whose failure would invalidate the plan, and state
+the plan impact of each failure.
+
+##### 30-day pre-mortem
+
+Describe a concrete failure exactly 30 days after execution begins, including
+the causal chain and observable warning signs.
+
+##### Alternative approach
+
+Sketch at least one materially different approach and compare its principal
+trade-offs with the chosen plan.
+
+##### Risk acceptance
+
+Name the remaining risks and the conditions, rationale, and accountable owner
+needed to accept or mitigate each one.
+
+This brief is advisory evidence only. Never emit `RESULT: PASS`, `RESULT: FAIL`,
+or a final recommendation to accept/reject the plan. If an artifact or required
+analysis is unavailable, write `EVIDENCE UNAVAILABLE: {reason}` in the affected
+section instead of fabricating content.
