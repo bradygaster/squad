@@ -240,7 +240,7 @@ function buildRoutingHintsTable(rows: RoutingRow[]): string {
   // Limit to 15 routing hints to keep the section concise
   const shown = rows.slice(0, 15);
   for (const row of shown) {
-    lines.push(`| ${row.workType} | ${row.agent} |`);
+    lines.push(`| ${sanitizeField(row.workType)} | ${sanitizeField(row.agent)} |`);
   }
 
   return lines.join('\n');
@@ -260,7 +260,7 @@ function buildSpecialistTable(members: ActiveMember[]): string {
   ];
 
   for (const m of members) {
-    lines.push(`| ${m.name} | ${m.role} | ${m.status} |`);
+    lines.push(`| ${sanitizeField(m.name)} | ${sanitizeField(m.role)} | ${sanitizeField(m.status)} |`);
   }
 
   return lines.join('\n');
