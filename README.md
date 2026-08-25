@@ -537,8 +537,9 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 
 ```bash
 gh aw add \
+  bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -547,6 +548,9 @@ git add -- \
 git commit -m "Add Squad workflow"
 git push
 ```
+
+`gh aw add` compiles the workflows automatically. If it reports unapproved
+safe-update changes, review them and run `gh aw compile --approve`.
 
 > `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
 
