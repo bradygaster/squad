@@ -179,3 +179,4 @@ jobs:
         env:
           NUGET_TEMP_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key "${NUGET_TEMP_KEY}" --skip-duplicate
+core.error('Missing semicolon', {file: 'app.js', startLine: 1})
