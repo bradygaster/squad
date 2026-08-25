@@ -176,6 +176,8 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     expect(excludeList, '.npmrc must NOT be in exclude').not.toContain('.npmrc');
     expect(excludeList, '.yarnrc.yml must NOT be in exclude').not.toContain('.yarnrc.yml');
     expect(excludeList, 'README.md must NOT be in deps worker exclude').not.toContain('README.md');
+    // Exact cardinality: no unlisted entries allowed
+    expect(excludeList.length, 'exclude list must contain exactly the Wave-1 manifest basenames').toBe(WAVE_1_MANIFEST_BASENAMES.length);
   });
 
   // ── T2: always-protected basenames absent from exclude, present in compiled ─
@@ -351,18 +353,23 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
      * specified contract check fails. Returns true if the mutation is correctly
      * detected (i.e. the validator rejects it), false if the mutation goes
      * undetected (test should fail).
+     *
+     * The validator receives the exclude list AND the mutated frontmatter so
+     * that tests asserting scalar values (e.g. policy) can parse them from the
+     * same pipeline-produced output rather than re-applying the mutation
+     * independently.
      */
     function applyMutationAndValidate(
       mutationDescription: string,
       mutateFrontmatter: (fm: string) => string,
-      validator: (excludeList: string[]) => void,
+      validator: (excludeList: string[], mutatedFm: string) => void,
     ): void {
       const mutatedFm = mutateFrontmatter(depsWorkerFrontmatter);
       const protectedFiles = yamlBlock(mutatedFm, 'protected-files');
       const excludeList = listInBlock(protectedFiles, 'exclude');
       let caught = false;
       try {
-        validator(excludeList);
+        validator(excludeList, mutatedFm);
       } catch {
         caught = true;
       }
@@ -413,8 +420,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
       applyMutationAndValidate(
         'relax policy to allowed',
         fm => fm.replace('policy: fallback-to-issue', 'policy: allowed'),
-        _excludeList => {
-          const mutatedFm = depsWorkerFrontmatter.replace('policy: fallback-to-issue', 'policy: allowed');
+        (_excludeList, mutatedFm) => {
           const mutatedProtected = yamlBlock(mutatedFm, 'protected-files');
           const policy = scalarInBlock(mutatedProtected, 'policy');
           expect(policy, 'policy must be fallback-to-issue').toBe('fallback-to-issue');
