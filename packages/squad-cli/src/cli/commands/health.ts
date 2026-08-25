@@ -395,7 +395,12 @@ function backendMatches(
   backend: StateBackend,
   configured: StateBackendType,
 ): boolean {
-  if (configured === 'local') return backend.name === 'local';
+  // `external-stub` is a documented placeholder that the SDK deliberately
+  // resolves to the local worktree backend, so a local resolution is the
+  // expected outcome rather than a silent fallback.
+  if (configured === 'local' || configured === 'external-stub') {
+    return backend.name === 'local';
+  }
   return backend.name === configured;
 }
 

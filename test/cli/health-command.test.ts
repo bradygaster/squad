@@ -549,8 +549,32 @@ describe('state backend readiness', () => {
     expect(serialized).not.toContain('example.invalid');
   });
 
-  it('fails closed when an explicitly configured backend cannot be checked', () => {
+  it('accepts the external-stub placeholder resolving to the local backend', () => {
     writeSquad('config.json', '{"stateBackend":"external-stub"}');
+    mockResolveStateBackend.mockReturnValue({ name: 'local' });
+
+    const result = check(runSquadHealth(squadDir, repoRoot), 'state-backend');
+
+    expect(
+      result.status,
+      'external-stub is a documented placeholder that the SDK resolves to the ' +
+        'local backend, so a local resolution must not fail readiness',
+    ).toBe('pass');
+  });
+
+  it('accepts the deprecated external alias resolving to the local backend', () => {
+    writeSquad('config.json', '{"stateBackend":"external"}');
+    mockResolveStateBackend.mockReturnValue({ name: 'local' });
+
+    expect(
+      check(runSquadHealth(squadDir, repoRoot), 'state-backend').status,
+      'the deprecated "external" alias resolves to external-stub, which the SDK ' +
+        'implements with the local backend',
+    ).toBe('pass');
+  });
+
+  it('fails closed when an explicitly configured backend cannot be checked', () => {
+    writeSquad('config.json', '{"stateBackend":"two-layer"}');
     mockResolveStateBackend.mockReturnValue({ name: 'local' });
 
     expect(

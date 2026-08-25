@@ -90,7 +90,15 @@ jobs:
         run: |
           # Preserve committed cast state: if .squad/team.md already exists with
           # roster entries, skip init to avoid overwriting a merged cast (#1657).
-          if [ -f ".squad/team.md" ] && grep -q '^[|]' <(sed -n '/^## Members/,/^## /p' .squad/team.md | tail -n +2); then
+          # Only data rows count as roster entries: a scaffolded team.md carries
+          # the table header and separator, and treating those as a cast skips
+          # init, leaving a team the readiness check then rejects (#1605).
+          if [ -f ".squad/team.md" ] && awk '
+            /^## Members/ { in_members = 1; next }
+            /^## / { in_members = 0 }
+            in_members && /^\|/ && !/^\|[[:space:]]*Name[[:space:]]*\|/ && /[[:alnum:]]/ { found = 1 }
+            END { exit found ? 0 : 1 }
+          ' .squad/team.md; then
             echo "✓ Existing squad team detected with roster entries — skipping init."
           else
             echo "No existing squad team found — running squad init."

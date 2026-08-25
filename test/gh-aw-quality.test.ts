@@ -11,6 +11,7 @@
 import { afterAll, describe, it, expect } from 'vitest';
 import { cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 import { POSIX_SHELL, NO_POSIX_SHELL_MESSAGE, requirePosixShell } from './posix-shell';
@@ -2454,5 +2455,87 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
       healthStepBlock,
       'health step in the activation job must not carry continue-on-error: true',
     ).not.toMatch(/continue-on-error:\s*true/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Uncast scaffolds must still initialize before the health gate (#1605)
+//
+// The activation job skips `squad init` when `.squad/team.md` already lists
+// roster entries. A scaffolded team.md carries only the table header and the
+// separator row, and counting those as a roster skips init — which, now that
+// readiness runs before dispatch, fails the activation job and blocks every
+// agent instead of casting the team.
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
+  const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
+
+  function initStepScript(): string {
+    const lines = sharedContent.split('\n');
+    const start = lines.findIndex((l) => l.includes('Initialize Squad team'));
+    expect(start, '"Initialize Squad team" step must exist').toBeGreaterThan(-1);
+    let end = start + 1;
+    while (end < lines.length && !/^\s+-\s+name:/.test(lines[end])) end++;
+    return lines.slice(start, end).join('\n');
+  }
+
+  /** Runs the step's roster guard against a team.md fixture. */
+  function skipsInit(teamContent: string): boolean {
+    const dir = mkdtempSync(join(tmpdir(), 'squad-roster-guard-'));
+    try {
+      const teamPath = join(dir, 'team.md');
+      writeFileSync(teamPath, teamContent);
+      const script = initStepScript();
+      const guard = script.match(/if \[ -f "\.squad\/team\.md" \] && ([\s\S]*?); then/)?.[1];
+      expect(
+        guard,
+        'roster guard must remain extractable from the "Initialize Squad team" step',
+      ).toBeDefined();
+
+      const result = spawnSync(
+        requirePosixShell(),
+        ['-c', (guard as string).replace(/\.squad\/team\.md/g, teamPath)],
+        { encoding: 'utf8' },
+      );
+      return result.status === 0;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const HEADER = '## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n';
+
+  it('keeps the roster guard runnable in a plain POSIX shell', () => {
+    // The fixtures below execute the guard through `requirePosixShell()`, which is
+    // `/bin/sh` on Linux. Process substitution is a bash extension, so a guard that
+    // used it would fail there for the wrong reason and make the fixtures below
+    // report on shell support instead of roster semantics.
+    expect(
+      initStepScript(),
+      'roster guard must not use bash-only process substitution',
+    ).not.toContain('<(');
+  });
+
+  it('runs init for a scaffolded team.md that has no cast members', () => {
+    expect(
+      skipsInit(`${HEADER}\n## Project Context\n`),
+      'header and separator rows are not roster entries — skipping init here leaves ' +
+        'an uncast team that fails readiness and blocks every dispatch',
+    ).toBe(false);
+  });
+
+  it('preserves a committed cast rather than re-running init', () => {
+    expect(
+      skipsInit(`${HEADER}| Flight | Lead | \`.squad/agents/flight/charter.md\` | ✅ Active |\n\n## Project Context\n`),
+      'a team.md with real roster rows must still skip init (#1657)',
+    ).toBe(true);
+  });
+
+  it('ignores roster-shaped rows outside the Members section', () => {
+    expect(
+      skipsInit(`## Coordinator\n\n| Name | Role | Notes |\n|------|------|-------|\n| Squad | Coordinator | Routes work. |\n\n${HEADER}\n`),
+      'only the Members table describes the cast; the Coordinator table is always present',
+    ).toBe(false);
   });
 });
