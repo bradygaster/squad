@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -287,6 +287,8 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
         '**/node_modules/**',
         'vendor/**',
         '**/vendor/**',
+        'bin/**',
+        '**/bin/**',
         '.github/workflows/**',
         '**/.github/workflows/**',
         '.github/agents/**',
@@ -297,6 +299,19 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
         '**/.squad/**',
       ]),
     );
+  });
+
+  // ── T8b: nested bin output coverage (Finding A fix) ───────────────────────
+  it('**/bin/** covers arbitrary nested bin output (e.g. src/App/bin/Staging/package.json) (T8b)', () => {
+    const excludedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'excluded-files'), 'excluded-files');
+    // **/bin/** matches any path containing a "bin" directory component,
+    // including src/App/bin/Staging/package.json. This replaces the former
+    // **/bin/Debug/** and **/bin/Release/** entries which only covered two
+    // named configurations and left arbitrary build outputs unprotected.
+    expect(excludedFiles, '**/bin/** must be in excluded-files to cover nested bin output').toContain('**/bin/**');
+    expect(excludedFiles, 'top-level bin/** must be preserved').toContain('bin/**');
+    expect(excludedFiles, '**/bin/Debug/** must not appear (superseded by **/bin/**)').not.toContain('**/bin/Debug/**');
+    expect(excludedFiles, '**/bin/Release/** must not appear (superseded by **/bin/**)').not.toContain('**/bin/Release/**');
   });
 
   // ── T6 authored: package-lock.json is in allowed-files AND exclude ─────────
@@ -428,22 +443,78 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
       );
     });
 
-    it('detects: Wave-1 exclusion leaked into general worker (package.json added to implement-worker exclude)', () => {
-      const generalProtected = yamlBlock(generalWorkerFrontmatter, 'protected-files');
-      const generalExclude = listInBlock(generalProtected, 'exclude');
-      // Simulate the mutation: check our assertion would catch it
-      const mutatedExclude = [...generalExclude, 'package.json'];
-      let caught = false;
-      try {
+    it(
+      'detects: Wave-1 exclusion leaked into general worker — compiled contract catches package.json in implement-worker exclude',
+      () => {
+        // Mutate the actual squad-implement-worker.md source on disk and run it
+        // through the real gh-aw compile pipeline. The compiled contract (T7
+        // compiled) requires package.json to remain in protected_files; if the
+        // exclude list is ever widened to include package.json the compiled
+        // protected_files will drop it and this assertion throws -- proving the
+        // guard turns red on a genuine source mutation rather than a hand-built
+        // local array.
+        const workspace = mkdtempSync(resolve(tmpdir(), 'implement-worker-mutation-'));
+        compileWorkspaces.push(workspace);
+        const workflowDir = resolve(workspace, '.github', 'workflows');
+        mkdirSync(workflowDir, { recursive: true });
+        cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
+
+        // Inject package.json into the general worker's protected-files.exclude.
+        const generalWorkerPath = resolve(workflowDir, 'squad-implement-worker.md');
+        const originalSource = read('workflows/squad-implement-worker.md');
+        const mutatedSource = originalSource.replace(
+          /^(\s+- README\.md)\s*$/m,
+          '$1\n        - package.json',
+        );
+        writeFileSync(generalWorkerPath, mutatedSource, 'utf-8');
+
+        // Run the actual gh-aw compile pipeline on the mutated source.
+        execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+        execFileSync(
+          'gh',
+          ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
+          { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+        );
+
+        // Parse the compiled safe-output config (same extraction as compileWorker()).
+        const compiled = readFileSync(
+          resolve(workflowDir, 'squad-implement-worker.lock.yml'),
+          'utf8',
+        );
+        const lines = compiled.split(/\r?\n/);
+        const configStart = lines.findIndex(
+          line => line.includes('/safeoutputs/config.json') && line.includes('<<'),
+        );
+        const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
+        const configEnd = delimiter
+          ? lines.findIndex((line, idx) => idx > configStart && line.trim() === delimiter)
+          : -1;
+        const safeOutputs = JSON.parse(
+          lines.slice(configStart + 1, configEnd).join('\n'),
+        ) as Record<string, Record<string, unknown>>;
+        const compiledProtectedFiles = (
+          safeOutputs.create_pull_request?.protected_files ?? []
+        ) as string[];
+
+        // With package.json in the exclude list, the compiler removes it from
+        // protected_files. The T7-compiled contract asserts it MUST be present;
+        // wrapping that assertion here proves the compiled guard catches the leak.
+        let caught = false;
+        try {
+          expect(
+            compiledProtectedFiles,
+            'package.json must remain in compiled protected_files of general worker',
+          ).toContain('package.json');
+        } catch {
+          caught = true;
+        }
         expect(
-          mutatedExclude,
-          'package.json must not be excluded on the general path',
-        ).not.toContain('package.json');
-      } catch {
-        caught = true;
-      }
-      expect(caught, 'mutation "leak package.json into general worker exclude" should be detected').toBe(true);
-    });
+          caught,
+          'compiled mutation "leak package.json into general worker exclude" must be detected by T7-compiled contract',
+        ).toBe(true);
+      },
+      20000,
+    );
 
     it('detects: vendored-content exclusion removed (node_modules removed from excluded-files)', () => {
       // The YAML stores the value as `- "node_modules/**"` (quoted); match that form.
