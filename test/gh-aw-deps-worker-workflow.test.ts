@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // #1748 slice S2: `squad-deps-worker.md` gains Wave 1 `protected-files.exclude`
@@ -301,17 +301,45 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     );
   });
 
-  // ── T8b: nested bin output coverage (Finding A fix) ───────────────────────
+  // ── T8b: nested bin output coverage (Finding A fix) ───────────────────────────────────────────────
   it('**/bin/** covers arbitrary nested bin output (e.g. src/App/bin/Staging/package.json) (T8b)', () => {
     const excludedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'excluded-files'), 'excluded-files');
-    // **/bin/** matches any path containing a "bin" directory component,
-    // including src/App/bin/Staging/package.json. This replaces the former
-    // **/bin/Debug/** and **/bin/Release/** entries which only covered two
-    // named configurations and left arbitrary build outputs unprotected.
+
+    // Structural pattern assertions — verify the exact literal patterns are present.
     expect(excludedFiles, '**/bin/** must be in excluded-files to cover nested bin output').toContain('**/bin/**');
     expect(excludedFiles, 'top-level bin/** must be preserved').toContain('bin/**');
     expect(excludedFiles, '**/bin/Debug/** must not appear (superseded by **/bin/**)').not.toContain('**/bin/Debug/**');
     expect(excludedFiles, '**/bin/Release/** must not appear (superseded by **/bin/**)').not.toContain('**/bin/Release/**');
+
+    // Isolate only the bin-related patterns from the configured excluded-files
+    // so that path evaluations below test only the bin exclusion and are not
+    // confounded by unrelated patterns (node_modules, vendor, .squad, etc.).
+    const binPatterns = excludedFiles.filter(p => /\bbin\b/.test(p));
+    expect(binPatterns.length, 'at least two bin patterns must be present (bin/** and **/bin/**)').toBeGreaterThanOrEqual(2);
+
+    // Evaluate representative paths using Node’s built-in path.matchesGlob
+    // (available since Node 22.5.0, the project’s minimum runtime).
+    // This is a production-equivalent standard implementation with glob
+    // semantics appropriate for workflow excluded-files patterns — not a
+    // hand-written string matcher that merely mirrors expected strings.
+    const isExcludedByBin = (filePath: string): boolean =>
+      binPatterns.some(pattern => matchesGlob(filePath, pattern));
+
+    // Positive: paths containing a "bin" directory component must be excluded.
+    expect(isExcludedByBin('bin/Staging/package.json'),
+      'bin/Staging/package.json must be excluded by bin/**').toBe(true);
+    expect(isExcludedByBin('src/App/bin/Staging/package.json'),
+      'src/App/bin/Staging/package.json must be excluded by **/bin/**').toBe(true);
+    expect(isExcludedByBin('a/b/c/bin/x86/Release/out.dll'),
+      'deeply nested bin output (a/b/c/bin/x86/…) must be excluded by **/bin/**').toBe(true);
+
+    // Negative: normal dependency manifests outside generated directories must
+    // NOT be matched by the bin patterns alone — guards against accidentally
+    // denying legitimate manifest paths.
+    expect(isExcludedByBin('package.json'),
+      'package.json must NOT be excluded by the bin patterns').toBe(false);
+    expect(isExcludedByBin('src/package.json'),
+      'src/package.json must NOT be excluded by the bin patterns').toBe(false);
   });
 
   // ── T6 authored: package-lock.json is in allowed-files AND exclude ─────────
