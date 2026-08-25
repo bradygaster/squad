@@ -12,7 +12,10 @@
  *  - Prompt budget: generated block must not exceed a reasonable byte ceiling
  */
 
-import { describe, it, expect } from 'vitest';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, describe, it, expect } from 'vitest';
 import {
   sanitizeField,
   sanitizeBlock,
@@ -35,6 +38,31 @@ import {
 
 function makeAgentMdWithMarkers(content = TEAM_CONTEXT_DEFAULT): string {
   return `# Squad Coordinator\n\n${TEAM_CONTEXT_BEGIN}\n${content}\n${TEAM_CONTEXT_END}\n\n## Init Mode\n`;
+}
+
+// ── Filesystem helpers for refresh-path tests ─────────────────────────────
+// These are used only in the filesystem round-trip test suite below.
+// Files land in test/.agent-ctx-tmp/ and are cleaned up in afterAll.
+
+const _testTmpBase = join(dirname(fileURLToPath(import.meta.url)), '.agent-ctx-tmp');
+const _tmpDirs: string[] = [];
+
+afterAll(() => {
+  for (const d of _tmpDirs) {
+    rmSync(d, { recursive: true, force: true });
+  }
+  rmSync(_testTmpBase, { recursive: true, force: true });
+});
+
+function makeTempSquadDir(teamMd?: string, routingMd?: string): string {
+  mkdirSync(_testTmpBase, { recursive: true });
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const dir = join(_testTmpBase, id);
+  mkdirSync(dir, { recursive: true });
+  if (teamMd !== undefined) writeFileSync(join(dir, 'team.md'), teamMd, 'utf8');
+  if (routingMd !== undefined) writeFileSync(join(dir, 'routing.md'), routingMd, 'utf8');
+  _tmpDirs.push(dir);
+  return dir;
 }
 
 // ── sanitizeField ─────────────────────────────────────────────────────────
@@ -617,5 +645,104 @@ describe('refreshTeamContextInAgentFile', () => {
         '/nonexistent/squad.agent.md',
       ),
     ).not.toThrow();
+  });
+});
+
+// ── extractBlockTimestamp round-trip ──────────────────────────────────────
+// These prove the regex correctly handles ISO timestamps with fractional
+// milliseconds — the old [^.]+ pattern stopped at the first dot and caused
+// the entire match to fail, making extractBlockTimestamp return undefined.
+
+describe('extractBlockTimestamp round-trip', () => {
+  it('round-trips an ISO timestamp with fractional milliseconds (.963Z)', () => {
+    const ts = '2026-08-25T10:19:28.963Z';
+    const members: ActiveMember[] = [{ name: 'CONTROL', role: 'TypeScript', status: '✅ Active' }];
+    const block = generateAWTeamContextBlock(members, [], ts);
+    const agentMd = makeAgentMdWithMarkers(block);
+    // Old regex [^.]+ would return undefined here; fixed regex (.+?) returns ts
+    expect(extractBlockTimestamp(agentMd)).toBe(ts);
+  });
+
+  it('round-trips an ISO timestamp without fractional seconds (no dot before Z)', () => {
+    const ts = '2026-01-01T00:00:00Z';
+    const members: ActiveMember[] = [{ name: 'X', role: 'Dev', status: '✅ Active' }];
+    const block = generateAWTeamContextBlock(members, [], ts);
+    const agentMd = makeAgentMdWithMarkers(block);
+    expect(extractBlockTimestamp(agentMd)).toBe(ts);
+  });
+});
+
+// ── _computeTeamContextRefresh (filesystem round-trip with populated team) ─
+// These tests write a real team.md, build content via buildAndInjectTeamContext
+// (which reads it from disk), then extract the timestamp from the built content
+// and feed it back into _computeTeamContextRefresh — proving the full
+// extract→compare path without pre-handing an already-known timestamp to a helper.
+
+describe('_computeTeamContextRefresh (filesystem round-trip with populated team)', () => {
+  const FRACTIONAL_TS = '2026-08-25T10:19:28.963Z';
+
+  it('no-op: populated team.md with fractional timestamp — extract+refresh proves no write', () => {
+    const squadDir = makeTempSquadDir(TYPICAL_TEAM_MD);
+    const initial = makeAgentMdWithMarkers();
+
+    // Build agent file content from real filesystem team.md
+    const built = buildAndInjectTeamContext(squadDir, initial, FRACTIONAL_TS);
+
+    // The full ISO timestamp (including .963Z) must survive the round-trip
+    const extracted = extractBlockTimestamp(built);
+    expect(extracted).toBe(FRACTIONAL_TS);
+
+    // Refresh with the extracted timestamp; different nowTimestamp but same team.md
+    // → semantic content unchanged → shouldWrite must be false
+    const result = _computeTeamContextRefresh(squadDir, built, extracted, '2099-12-31T23:59:59.000Z');
+    expect(result.shouldWrite).toBe(false);
+    expect(result.content).toBe(built);
+  });
+
+  it('write: adding a member is detected; result contains new member and fresh timestamp', () => {
+    const oneMemMd =
+      `## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n` +
+      `| EECOM | Core Dev | x | ✅ Active |\n`;
+    const squadDir = makeTempSquadDir(oneMemMd);
+    const initial = makeAgentMdWithMarkers();
+
+    const built = buildAndInjectTeamContext(squadDir, initial, FRACTIONAL_TS);
+    expect(built).toContain('EECOM');
+
+    // Mutate team.md to add a second member
+    writeFileSync(
+      join(squadDir, 'team.md'),
+      oneMemMd + `| CONTROL | TypeScript | y | ✅ Active |\n`,
+      'utf8',
+    );
+
+    const newTs = '2099-01-01T00:00:00.000Z';
+    const result = _computeTeamContextRefresh(squadDir, built, FRACTIONAL_TS, newTs);
+
+    expect(result.shouldWrite).toBe(true);
+    expect(result.content).toContain('CONTROL');
+    // The fresh timestamp (not the original fractional one) must be embedded
+    expect(extractBlockTimestamp(result.content)).toBe(newTs);
+  });
+});
+
+// ── Locale-independent sort ───────────────────────────────────────────────
+
+describe('generateAWTeamContextBlock sort stability (locale-independent)', () => {
+  it('specialist table order is stable with plain string comparison, not localeCompare', () => {
+    // Use lowercase names whose plain-string sort order matches obvious ASCII order:
+    // alpha < mango < zeta regardless of locale
+    const members: ActiveMember[] = [
+      { name: 'zeta', role: 'Dev', status: '✅ Active' },
+      { name: 'alpha', role: 'QA', status: '✅ Active' },
+      { name: 'mango', role: 'Ops', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    const alphaIdx = block.indexOf('| alpha');
+    const mangoIdx = block.indexOf('| mango');
+    const zetaIdx = block.indexOf('| zeta');
+    expect(alphaIdx).toBeGreaterThan(-1);
+    expect(alphaIdx).toBeLessThan(mangoIdx);
+    expect(mangoIdx).toBeLessThan(zetaIdx);
   });
 });
