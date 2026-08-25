@@ -7,7 +7,7 @@
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -238,7 +238,7 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
   return true;
 }
 
-function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean, options?: { dryRun?: boolean }): void {
+function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean, options?: { dryRun?: boolean; squadDir?: string }): void {
   let agentContent = storage.readSync(agentSrc) ?? '';
   if (mcpConfigMode === 'agent-frontmatter') {
     agentContent = injectMcpFrontmatter(agentContent, isGitHub, cliVersion);
@@ -249,8 +249,11 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
     const existing = (storage.readSync(agentDest) ?? '').replace(/\r\n/g, '\n');
     // Strip the version stamp before comparing (version line changes every upgrade)
     const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
-    const normalizedExisting = stripVersion(existing);
-    const normalizedTemplate = stripVersion(agentContent.replace(/\r\n/g, '\n'));
+    // Strip the generated Team Capabilities block too (#1608) — it is machine
+    // written on every cast change and must not read as a user customization.
+    const normalize = (s: string) => stripTeamCapabilitiesBlock(stripVersion(s));
+    const normalizedExisting = normalize(existing);
+    const normalizedTemplate = normalize(agentContent.replace(/\r\n/g, '\n'));
 
     if (normalizedExisting !== normalizedTemplate && normalizedExisting.trim().length > 0) {
       const backupPath = agentDest + '.local-backup';
@@ -272,6 +275,16 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
 
   storage.writeSync(agentDest, agentContent);
   stampVersion(agentDest, cliVersion);
+
+  // Re-advertise the current cast to outer coordinators (#1608). Best-effort:
+  // an upgrade must never fail because capability rendering did.
+  if (options?.squadDir) {
+    try {
+      syncTeamCapabilities({ squadDir: options.squadDir, agentFile: agentDest, storage });
+    } catch {
+      // Non-fatal.
+    }
+  }
 }
 
 /**
@@ -1122,7 +1135,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     const templatesDir = getTemplatesDir();
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (storage.existsSync(agentSrc)) {
-      writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { dryRun: true });
+      writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { dryRun: true, squadDir: squadDirInfo.path });
     }
     const filesToUpgrade = TEMPLATE_MANIFEST.filter(f => f.overwriteOnUpgrade && f.source !== 'squad.agent.md.template');
     if (filesToUpgrade.length > 0) {
@@ -1163,7 +1176,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (storage.existsSync(agentSrc)) {
       storage.mkdirSync(path.dirname(agentDest), { recursive: true });
-      writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
+      writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { squadDir: squadDirInfo.path });
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
     } else {
@@ -1190,7 +1203,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
 
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
-  writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
+  writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { squadDir: squadDirInfo.path });
 
   const fromLabel = oldVersion === '0.0.0' || !oldVersion ? 'unknown' : oldVersion;
   success(`upgraded coordinator from ${fromLabel} to ${cliVersion}`);

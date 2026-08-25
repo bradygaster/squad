@@ -20,6 +20,7 @@ import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
 import { addSquadStateGitignoreBlock, removeSquadStateGitignoreBlock } from './gitignore-state.js';
+import { syncTeamCapabilities } from './team-capabilities.js';
 
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
@@ -1453,6 +1454,12 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       agentContent = stampVersionInContent(agentContent, version);
       await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
+      // Advertise the (possibly still empty) cast to outer coordinators (#1608).
+      try {
+        syncTeamCapabilities({ squadDir, agentFile, storage });
+      } catch {
+        // Never fail init because capability advertisement could not render.
+      }
     } else {
       warnings.push(`squad.agent.md template not found (${join(templatesDir || '.squad/templates', 'squad.agent.md.template')}) — Copilot agent file was not created or not refreshed`);
     }
