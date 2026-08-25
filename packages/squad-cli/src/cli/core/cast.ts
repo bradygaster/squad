@@ -15,6 +15,7 @@ import {
   type CastMember as EngineCastMember,
   type AgentRole as EngineAgentRole,
 } from '@bradygaster/squad-sdk/casting';
+import { refreshTeamContextInAgentFile } from './agent-context.js';
 
 // ── RAI Policy Template ────────────────────────────────────────────
 
@@ -853,6 +854,14 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   // Sync new agents into squad.config.ts (if present)
   for (const member of allMembers) {
     await addAgentToConfig(teamRoot, member.name.toLowerCase(), member.role);
+  }
+
+  // Refresh the AW coordinator team context in squad.agent.md
+  const agentMdPath = join(teamRoot, '.github', 'agents', 'squad.agent.md');
+  try {
+    refreshTeamContextInAgentFile(squadDir, agentMdPath);
+  } catch {
+    // Non-fatal: squad.agent.md may not exist in the project yet (e.g. pre-init)
   }
 
   return { teamRoot, membersCreated, filesCreated };

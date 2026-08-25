@@ -18,6 +18,7 @@ import { getPackageVersion, stampVersion, readInstalledVersion } from './version
 import { resolveSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
 export { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import { refreshTeamContextInAgentFile } from './agent-context.js';
 
 const storage = new FSStorageProvider();
 
@@ -249,8 +250,14 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
     const existing = (storage.readSync(agentDest) ?? '').replace(/\r\n/g, '\n');
     // Strip the version stamp before comparing (version line changes every upgrade)
     const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
-    const normalizedExisting = stripVersion(existing);
-    const normalizedTemplate = stripVersion(agentContent.replace(/\r\n/g, '\n'));
+    // Strip auto-generated team context block before comparing (injected by cast/upgrade,
+    // differs from template by design — not a user customization)
+    const stripTeamContext = (s: string) =>
+      s.replace(/<!-- SQUAD_TEAM_CONTEXT_BEGIN -->[\s\S]*?<!-- SQUAD_TEAM_CONTEXT_END -->/g,
+        '<!-- SQUAD_TEAM_CONTEXT_BEGIN --><!-- SQUAD_TEAM_CONTEXT_END -->');
+    const normalize = (s: string) => stripTeamContext(stripVersion(s));
+    const normalizedExisting = normalize(existing);
+    const normalizedTemplate = normalize(agentContent.replace(/\r\n/g, '\n'));
 
     if (normalizedExisting !== normalizedTemplate && normalizedExisting.trim().length > 0) {
       const backupPath = agentDest + '.local-backup';
@@ -1164,6 +1171,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     if (storage.existsSync(agentSrc)) {
       storage.mkdirSync(path.dirname(agentDest), { recursive: true });
       writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
+      refreshTeamContextInAgentFile(squadDirInfo.path, agentDest);
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
     } else {
@@ -1191,6 +1199,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
   writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
+  refreshTeamContextInAgentFile(squadDirInfo.path, agentDest);
 
   const fromLabel = oldVersion === '0.0.0' || !oldVersion ? 'unknown' : oldVersion;
   success(`upgraded coordinator from ${fromLabel} to ${cliVersion}`);
