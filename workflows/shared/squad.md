@@ -5,7 +5,10 @@
 #
 # This is the DISTRIBUTION version of the bootstrap, living under workflows/shared/
 # so users can pull it via:
-#   gh aw add bradygaster/squad/workflows/squad.md@latest
+#   gh aw add \
+#     bradygaster/squad/workflows/squad.md@dev \
+#     bradygaster/squad/workflows/squad-implement-worker.md@dev \
+#     bradygaster/squad/workflows/squad-review.md@dev
 #
 # Design credit: adapted from Peli de Halleux's proven gh-aw integration in
 # github/gh-aw. Original:

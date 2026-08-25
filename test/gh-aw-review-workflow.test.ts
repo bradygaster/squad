@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REVIEWER = read('workflows/squad-review.md');
 const ROUTER = read('workflows/squad.md');
+const GUIDE = read('docs/src/content/docs/guide/gh-aw.md');
+const README = read('README.md');
+const AGENT_GUIDE = read('.github/agents.md');
+const DEMO = read('docs/demo-agentic-sdlc-walkthrough.md');
+const SHARED_BOOTSTRAP = read('workflows/shared/squad.md');
 const REVIEWER_FRONTMATTER = frontmatter(REVIEWER);
 const ROUTER_FRONTMATTER = frontmatter(ROUTER);
 const compileWorkspaces: string[] = [];
@@ -67,6 +72,13 @@ function provenanceRows(workflow: string): string[] {
   const section = workflow.match(/## Provenance decision tree\n([\s\S]*?)(?=\n## )/)?.[1] ?? '';
   return [...section.matchAll(/^\|\s*([1-4])\s*\|\s*([^|]+)\|\s*([^|]+)\|$/gm)]
     .map(match => `${match[1]}:${match[2].trim()}:${match[3].trim()}`);
+}
+
+function installOrders(markdown: string): string[][] {
+  const uncommented = markdown.replace(/^#\s?/gm, '');
+  return [...uncommented.matchAll(/gh aw add \\\n((?:\s+bradygaster\/squad\/workflows\/[^\n]+\n?)+)/g)]
+    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@dev/g)]
+      .map(match => match[1]));
 }
 
 function assertReviewerContract(workflow: string): void {
@@ -170,6 +182,78 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(relayPayload.issue_number).toBeUndefined();
     expect(relay).not.toContain('"pr_number"');
     expect(relay).toContain('Never call the generic');
+  });
+
+  it('materializes the documented install as complete source and lock pairs', () => {
+    const installOrder = installOrders(GUIDE)[0];
+    expect(installOrder).toEqual([
+      'squad.md',
+      'squad-implement-worker.md',
+      'squad-review.md',
+    ]);
+
+    const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-install-'));
+    compileWorkspaces.push(workspace);
+    const workflowDir = resolve(workspace, '.github', 'workflows');
+    mkdirSync(workflowDir, { recursive: true });
+    cpSync(resolve(ROOT, 'workflows', 'shared'), resolve(workflowDir, 'shared'), { recursive: true });
+    for (const name of installOrder) {
+      cpSync(resolve(ROOT, 'workflows', name), resolve(workflowDir, name));
+    }
+    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    for (const name of installOrder) {
+      execFileSync(
+        'gh',
+        ['aw', 'compile', name.slice(0, -3), '--strict', '--approve', '--no-check-update'],
+        { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+      );
+    }
+
+    const installed = readdirSync(workflowDir, { withFileTypes: true })
+      .filter(entry => entry.isFile())
+      .map(entry => entry.name)
+      .sort();
+    expect(installed).toEqual([
+      'squad-implement-worker.lock.yml',
+      'squad-implement-worker.md',
+      'squad-review.lock.yml',
+      'squad-review.md',
+      'squad.lock.yml',
+      'squad.md',
+    ]);
+  }, 30000);
+
+  it('keeps all consumer install surfaces on the coherent three-workflow order', () => {
+    for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
+      const orders = installOrders(surface);
+      expect(orders.length).toBeGreaterThan(0);
+      for (const order of orders) {
+        expect(order).toEqual([
+          'squad.md',
+          'squad-implement-worker.md',
+          'squad-review.md',
+        ]);
+      }
+    }
+    expect(DEMO).toContain("gh-aw guide's install command");
+    expect(DEMO).not.toContain('gh aw add bradygaster/squad/workflows/squad.md@latest');
+  });
+
+  it('documents advisory review without claiming enforcement or remediation', () => {
+    expect(GUIDE).toContain('| Review | `/squad review` |');
+    expect(GUIDE).not.toContain('/squad review fix');
+    expect(GUIDE).not.toContain('Review lifecycle and current gaps');
+    expect(GUIDE).not.toContain('There is no separate `/squad review` command');
+    expect(GUIDE).toContain('`ready_for_review` and `synchronize`');
+    expect(GUIDE).toContain('`Squad-Review-Head: <SHA>`');
+    expect(GUIDE).toContain('`COMMENT`');
+    expect(GUIDE).toContain('`REQUEST_CHANGES`');
+    expect(GUIDE).toContain('no file-editing, workflow-dispatch, issue-creation,');
+    expect(GUIDE).toContain('Human approval remains mandatory.');
+    expect(GUIDE).toContain('Because review is advisory, it is possible to merge without waiting');
+    expect(GUIDE).toContain('This follow-up is only needed when the safe-update warning appears.');
+    expect(README).toContain('`gh aw add` compiles the workflows automatically.');
+    expect(README).toContain('run `gh aw compile --approve`');
   });
 
   it('enforces attribution priority and refuses malformed or unattributed automatic provenance', () => {
