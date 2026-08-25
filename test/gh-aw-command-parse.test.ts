@@ -366,7 +366,7 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       }
     );
 
-    it.each(['research', 'status', 'plan'])(
+    it.each(['research', 'status', 'review', 'plan'])(
       'classifies open mode %j as bypassing authorization',
       mode => {
         expect(
