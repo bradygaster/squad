@@ -147,6 +147,11 @@ describe('gh-aw advisory Squad reviewer', () => {
     const routerDispatch = yamlBlock(ROUTER_FRONTMATTER, 'dispatch-workflow');
     const reviewTrigger = yamlBlock(REVIEWER_FRONTMATTER, 'on');
     const relay = ROUTER.match(/## skill: `squad-review-relay`([\s\S]*?)(?=\n## skill:)/)?.[1] ?? '';
+    const relayPayload = JSON.parse(relay.match(/```json\n([\s\S]*?)\n```/)?.[1] ?? '{}') as {
+      workflow_name?: string;
+      inputs?: Record<string, string>;
+      issue_number?: string;
+    };
 
     expect(listInBlock(routerDispatch, 'workflows')).toContain('squad-review');
     expect(ROUTER).toContain('| `/squad review` | Review Relay |');
@@ -154,9 +159,16 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(REVIEWER).not.toContain('slash_command:');
     expect(reviewTrigger).toMatch(/workflow_dispatch:\n\s+inputs:/);
     expect(reviewTrigger).toMatch(/pull_request:\n\s+types: \[ready_for_review, synchronize\]/);
-    expect(relay).toContain('"workflow_name": "squad-review"');
-    expect(relay).toContain('"request_origin": "manual"');
-    expect(relay).toContain('"expected_head_sha": "{current-head-sha}"');
+    expect(relayPayload).toEqual({
+      workflow_name: 'squad-review',
+      inputs: {
+        issue_number: '{pull-request-number}',
+        expected_head_sha: '{current-head-sha}',
+        request_origin: 'manual',
+      },
+    });
+    expect(relayPayload.issue_number).toBeUndefined();
+    expect(relay).not.toContain('"pr_number"');
     expect(relay).toContain('Never call the generic');
   });
 
@@ -186,7 +198,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     const concurrency = yamlBlock(REVIEWER_FRONTMATTER, 'concurrency');
 
     expect(concurrency).toContain(
-      'group: "squad-review-${{ github.event.inputs.pr_number || github.event.pull_request.number || github.run_id }}"',
+      'group: "squad-review-${{ github.event.inputs.issue_number || github.event.pull_request.number || github.run_id }}"',
     );
     expect(concurrency).toContain('cancel-in-progress: true');
     expect(REVIEWER_FRONTMATTER).not.toMatch(/^\s+forks:/m);

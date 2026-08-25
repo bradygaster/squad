@@ -1,12 +1,12 @@
 ---
 name: Squad Review
-run-name: "Squad review — PR #${{ github.event.inputs.pr_number || github.event.pull_request.number }}"
+run-name: "Squad review — PR #${{ github.event.inputs.issue_number || github.event.pull_request.number }}"
 description: Independently reviews agent-authored pull requests without editing or remediating
 private: false
 on:
   workflow_dispatch:
     inputs:
-      pr_number:
+      issue_number:
         description: Pull request number to review
         required: true
         type: string
@@ -34,7 +34,7 @@ permissions:
   issues: read
   pull-requests: read
 concurrency:
-  group: "squad-review-${{ github.event.inputs.pr_number || github.event.pull_request.number || github.run_id }}"
+  group: "squad-review-${{ github.event.inputs.issue_number || github.event.pull_request.number || github.run_id }}"
   cancel-in-progress: true
 network:
   allowed:
@@ -48,13 +48,13 @@ tools:
 safe-outputs:
   add-comment:
     max: 1
-    target: "${{ github.event.inputs.pr_number || github.event.pull_request.number }}"
+    target: "${{ github.event.inputs.issue_number || github.event.pull_request.number }}"
   create-pull-request-review-comment:
     max: 10
-    target: "${{ github.event.inputs.pr_number || github.event.pull_request.number }}"
+    target: "${{ github.event.inputs.issue_number || github.event.pull_request.number }}"
   submit-pull-request-review:
     max: 1
-    target: "${{ github.event.inputs.pr_number || github.event.pull_request.number }}"
+    target: "${{ github.event.inputs.issue_number || github.event.pull_request.number }}"
     allowed-events: [COMMENT, REQUEST_CHANGES]
 ---
 
@@ -71,7 +71,7 @@ this workflow.
 ## Trigger and target gate
 
 1. Resolve the pull request number from
-   `${{ github.event.inputs.pr_number || github.event.pull_request.number }}`.
+   `${{ github.event.inputs.issue_number || github.event.pull_request.number }}`.
    If it is absent or not a positive integer, call `noop` and stop.
 2. Fetch the pull request from `${{ github.repository }}` and record its current
    40-character lowercase head SHA.

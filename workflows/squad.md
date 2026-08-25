@@ -766,7 +766,7 @@ Use only the typed `dispatch-workflow` safe-output. Never call the generic
 {
   "workflow_name": "squad-review",
   "inputs": {
-    "pr_number": "{pull-request-number}",
+    "issue_number": "{pull-request-number}",
     "expected_head_sha": "{current-head-sha}",
     "request_origin": "manual"
   }
