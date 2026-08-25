@@ -135,14 +135,39 @@ export interface RoutingRow {
 // ── Parsers ────────────────────────────────────────────────────────────────
 
 /**
+ * Normalized status values that explicitly signal a member is no longer active.
+ * Matched case-insensitively as whole words so "reactivated" is not excluded.
+ *
+ * Strategy: blacklist-based filtering. Only the patterns below are excluded;
+ * all other status values — including custom, unknown, or empty — are retained
+ * so that non-standard teams are not silently dropped from context generation.
+ */
+const INACTIVE_STATUS_RE = /\b(?:retired|disabled|inactive|alumni)\b/i;
+
+/**
+ * Returns `true` when a status value should be treated as active (member
+ * appears in the generated AW team context block).
+ *
+ * Unknown or custom statuses are intentionally retained — the contract is
+ * "exclude known-inactive" not "include only known-active", which prevents
+ * silently dropping valid members from custom teams.
+ */
+function isActiveStatus(status: string): boolean {
+  return !INACTIVE_STATUS_RE.test(status);
+}
+
+/**
  * Extract active members from a team.md `## Members` table.
  *
  * Parses lines of the form:
  *   | Name | Role | Charter | Status |
  *
  * Rules:
- *  - Only rows with status that includes "Active", "Silent", "Monitor", "RAI",
- *    or any emoji status are included (skips headers and separators)
+ *  - Rows whose status explicitly signals retirement, deactivation, or alumni
+ *    status (case-insensitive: "retired", "disabled", "inactive", "alumni") are
+ *    excluded; all other statuses — including the built-in active forms
+ *    ("Active", "Silent", "Monitor", "RAI", "Coding Agent") and any custom or
+ *    unknown status — are retained so non-standard teams are not silently dropped
  *  - Coordinator row ("Squad | Coordinator") is excluded
  *  - Rows are returned in the order they appear (source-stable);
  *    generateAWTeamContextBlock applies alphabetical sort for deterministic output
@@ -174,7 +199,7 @@ export function parseTeamMdMembers(content: string): ActiveMember[] {
     const role = sanitizeField(cells[1] ?? '');
     const status = sanitizeField(cells[3] ?? cells[2] ?? '✅ Active');
 
-    if (name && role) {
+    if (name && role && isActiveStatus(status)) {
       members.push({ name, role, status });
     }
   }
@@ -280,15 +305,15 @@ function buildCapabilityBoundaries(members: ActiveMember[]): string {
     if (/test|qa|quality/.test(r)) roleLabels.push('test authoring');
     if (/security|auth/.test(r)) roleLabels.push('security audit');
     if (/docs|devrel|writer|handbook/.test(r)) roleLabels.push('documentation');
-    if (/devops|infra|platform|ci|booster/.test(r)) roleLabels.push('CI/CD configuration');
-    if (/sdk|capcom/.test(r)) roleLabels.push('SDK integration');
-    if (/typescript|control/.test(r)) roleLabels.push('TypeScript engineering');
-    if (/runtime|core|eecom/.test(r)) roleLabels.push('runtime implementation');
+    if (/devops|infra|platform|ci/.test(r)) roleLabels.push('CI/CD configuration');
+    if (/sdk/.test(r)) roleLabels.push('SDK integration');
+    if (/typescript/.test(r)) roleLabels.push('TypeScript engineering');
+    if (/runtime|core/.test(r)) roleLabels.push('runtime implementation');
     if (/observ|telemetry|aspire/.test(r)) roleLabels.push('observability');
-    if (/release|surgeon/.test(r)) roleLabels.push('release management');
+    if (/release/.test(r)) roleLabels.push('release management');
     if (/distribution|network/.test(r)) roleLabels.push('package distribution');
     if (/ux|design|inco|tui|dsky|vox/.test(r)) roleLabels.push('UI/UX implementation');
-    if (/review|flight/.test(r)) roleLabels.push('code review');
+    if (/review/.test(r)) roleLabels.push('code review');
   }
 
   // Always include core capabilities (apply to any Squad team)

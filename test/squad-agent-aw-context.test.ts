@@ -239,9 +239,8 @@ describe('parseTeamMdMembers', () => {
   it('sanitizes names that contain Markdown injection', () => {
     const md = `## Members\n\n| ## Injected | Hacker | x | ✅ Active |\n`;
     const members = parseTeamMdMembers(md);
-    if (members.length > 0) {
-      expect(members[0]?.name).not.toContain('##');
-    }
+    expect(members.length).toBe(1);
+    expect(members[0]?.name).not.toContain('##');
   });
 
   it('handles a minimal single-member team', () => {
@@ -257,6 +256,86 @@ describe('parseTeamMdMembers', () => {
     const members1 = parseTeamMdMembers(md);
     const members2 = parseTeamMdMembers(md);
     expect(members1.map(m => m.name)).toEqual(members2.map(m => m.name));
+  });
+});
+
+// ── parseTeamMdMembers — status filtering ─────────────────────────────────
+// Verifies blacklist-based exclusion of known-inactive statuses while
+// retaining custom/unknown statuses and all built-in active forms.
+
+describe('parseTeamMdMembers status filtering', () => {
+  /** Build a minimal Members section with one row per entry. */
+  function makeStatusMd(rows: Array<{ name: string; status: string }>): string {
+    const header =
+      '## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n';
+    const body = rows.map(r => `| ${r.name} | Dev | x | ${r.status} |\n`).join('');
+    return header + body;
+  }
+
+  it.each([
+    ['✅ Active', 1],
+    ['Active', 1],
+    ['Silent', 1],
+    ['🔇 Silent', 1],
+    ['Monitor', 1],
+    ['RAI', 1],
+    ['Coding Agent', 1],
+    ['custom-status-xyz', 1], // unknown: retained, not silently dropped
+    ['Retired', 0],
+    ['Disabled', 0],
+    ['Inactive', 0],
+    ['Alumni', 0],
+  ])('status %j → member count %i', (status, expectedCount) => {
+    const md = makeStatusMd([{ name: 'Agent', status }]);
+    const members = parseTeamMdMembers(md);
+    expect(members.length).toBe(expectedCount);
+  });
+
+  it('excludes multiple retired/disabled members while keeping active ones', () => {
+    const md = makeStatusMd([
+      { name: 'Active1', status: '✅ Active' },
+      { name: 'Retired1', status: 'Retired' },
+      { name: 'Active2', status: 'Silent' },
+      { name: 'Disabled1', status: 'Disabled' },
+      { name: 'Active3', status: 'Monitor' },
+      { name: 'Inactive1', status: 'Inactive' },
+    ]);
+    const members = parseTeamMdMembers(md);
+    expect(members.length).toBe(3);
+    const names = members.map(m => m.name);
+    expect(names).toContain('Active1');
+    expect(names).toContain('Active2');
+    expect(names).toContain('Active3');
+    expect(names).not.toContain('Retired1');
+    expect(names).not.toContain('Disabled1');
+    expect(names).not.toContain('Inactive1');
+  });
+
+  it('unknown custom status is retained (not silently dropped)', () => {
+    const md = makeStatusMd([{ name: 'CustomAgent', status: 'Provisioning' }]);
+    const members = parseTeamMdMembers(md);
+    expect(members.length).toBe(1);
+    expect(members[0]?.name).toBe('CustomAgent');
+  });
+
+  it('rows with no status column default to included (treated as active)', () => {
+    // 2-cell rows have no status cell; status defaults to "✅ Active"
+    const md = `## Members\n\n| Solo | Dev |\n`;
+    const members = parseTeamMdMembers(md);
+    expect(members.length).toBe(1);
+    expect(members[0]?.name).toBe('Solo');
+  });
+
+  it('filtering is deterministic: same input always yields same result', () => {
+    const md = makeStatusMd([
+      { name: 'A', status: '✅ Active' },
+      { name: 'B', status: 'Retired' },
+      { name: 'C', status: 'Monitor' },
+    ]);
+    const r1 = parseTeamMdMembers(md).map(m => m.name);
+    const r2 = parseTeamMdMembers(md).map(m => m.name);
+    expect(r1).toEqual(r2);
+    expect(r1).toEqual(['A', 'C']);
   });
 });
 
@@ -298,9 +377,8 @@ describe('parseRoutingMd', () => {
   it('sanitizes cells containing pipe characters', () => {
     const md = `| Work Type | Agent | Examples |\n|---|---|---|\n| do | this | a \u007C b |\n`;
     const rows = parseRoutingMd(md);
-    if (rows.length > 0) {
-      expect(rows[0]?.examples).not.toContain('|');
-    }
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.examples).not.toContain('|');
   });
 });
 
@@ -456,6 +534,57 @@ describe('generateAWTeamContextBlock', () => {
     const block = generateAWTeamContextBlock(members, [], maliciousTs);
     // The attack text following --> should have been stripped along with the -->
     expect(block).not.toContain('injected-attack-text');
+  });
+});
+
+// ── Capability boundary portability ───────────────────────────────────────
+// Verifies that capability derivation uses only generic role keywords, never
+// hardcoded default cast names, so any custom team gets correct output.
+
+describe('generateAWTeamContextBlock capability portability', () => {
+  it('custom/unknown role produces valid boundaries with static cannot-section intact', () => {
+    const members: ActiveMember[] = [
+      { name: 'CustomAgent', role: 'Mystery Role', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    expect(block).toContain('✅ **Can:**');
+    expect(block.toLowerCase()).toContain('deploy to production');
+    expect(block.toLowerCase()).toContain('default branch');
+  });
+
+  it('generic TypeScript role derives capability without requiring "control" in role text', () => {
+    const members: ActiveMember[] = [
+      { name: 'AnyAgent', role: 'TypeScript engineer', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    expect(block.toLowerCase()).toContain('typescript engineering');
+  });
+
+  it('generic SDK role derives capability without requiring "capcom" in role text', () => {
+    const members: ActiveMember[] = [
+      { name: 'AnyAgent', role: 'SDK developer', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    expect(block.toLowerCase()).toContain('sdk integration');
+  });
+
+  it('generic CI/CD role derives capability without requiring "booster" in role text', () => {
+    const members: ActiveMember[] = [
+      { name: 'AnyAgent', role: 'CI/CD platform engineer', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    expect(block.toLowerCase()).toContain('ci/cd configuration');
+  });
+
+  it('can-capabilities line contains none of the default cast names', () => {
+    const members: ActiveMember[] = [
+      { name: 'X', role: 'Lead Developer', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    const capLine = block.split('\n').find(l => l.includes('✅ **Can:**')) ?? '';
+    for (const castName of ['booster', 'capcom', 'control', 'eecom', 'flight', 'surgeon']) {
+      expect(capLine.toLowerCase()).not.toContain(castName);
+    }
   });
 });
 
