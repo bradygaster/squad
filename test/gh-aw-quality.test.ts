@@ -1276,6 +1276,11 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       `printf '%s\\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\\r$/,"")}' | grep -F -- '/squad'`,
       `body="\${SQUAD_TRIGGER_BODY-}"`,
       `printf '%s\\n' "$body" | tr -d '\\r' | grep -n -i -m 3 -F -- '/squad'`,
+      // `--` ends printf's option parsing; the format slot is still the literal that
+      // follows it, so the body remains an argument. The `--` handling added for the
+      // bypass below must not turn this sanctioned form red.
+      `printf -- '%s\\n' "$body"`,
+      `printf -- '%s\\n' "$GITHUB_EVENT_ISSUE_BODY"`,
       `bash -c 'set +o histexpand; export PATH="$PATH"'`,
       `source "\${RUNNER_TEMP}/gh-aw/actions/resolve_docker_socket_gid.sh"`,
       `awk -v n=3 'BEGIN { print n }'`,
@@ -1287,6 +1292,204 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
         'worthless as one that is always green (2026-08-20 test bar). Tighten the ' +
         'detectors in gh-aw-shell-contract.ts.'
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: scanner-level regressions in the shell contract gate (#1834)
+// ---------------------------------------------------------------------------
+//
+// The gate above proves the CONTRACT holds against the real workflow. These tests
+// prove the DETECTOR holds — that the scanner actually observes what its own doc
+// comments claim it observes. Three bypasses were found by review after the gate
+// landed; each is a case where the gate reported green because the detector never
+// looked, which is the same "unmeasured is indistinguishable from clean" failure
+// mode the gate itself exists to eliminate.
+//
+// These are pure unit tests over the exported scanner: no `gh aw`, no compile, so
+// the proof that the detector can see each bypass is never skippable.
+
+describe('gh-aw: shell contract detector regressions (#1834)', () => {
+  const scan = (text: string) => scanShellLines([{ line: 1, text }], 'regression');
+  const tokensFor = (text: string) => scan(text).map(v => v.token);
+
+  describe('BODY_VAR matches multi-segment carrier names', () => {
+    // The doc comment promised "any `*_BODY` / `*_TITLE` variable", but the pattern
+    // allowed only ONE `[A-Za-z0-9]+` segment before the suffix. Event-carrier env
+    // vars are conventionally multi-segment SCREAMING_SNAKE, so the *unenforced*
+    // shape was the idiomatic one — every detector went blind on it.
+    const multiSegment = [
+      'SQUAD_EVENT_BODY',
+      'GITHUB_EVENT_ISSUE_BODY',
+      'GITHUB_EVENT_COMMENT_BODY',
+      'SQUAD_EVENT_ISSUE_TITLE',
+      'GITHUB_EVENT_PULL_REQUEST_TITLE',
+    ];
+
+    for (const name of multiSegment) {
+      it(`taints $${name} in printf's format slot`, () => {
+        expect(
+          tokensFor(`printf "$${name}"`),
+          `$${name} is a *_BODY/*_TITLE carrier the scanner claims to taint, but a ` +
+            `single-segment-only pattern let it reach printf's format slot unflagged.`
+        ).toContain('UNTRUSTED_PRINTF_FORMAT');
+      });
+
+      it(`taints $${name} in a command string`, () => {
+        expect(tokensFor(`eval "\${${name}-}"`)).toContain('UNTRUSTED_COMMAND_STRING');
+      });
+
+      it(`taints $${name} passed through awk -v`, () => {
+        expect(tokensFor(`awk -v v="$${name}" 'BEGIN { print v }'`)).toContain(
+          'UNTRUSTED_AWK_PROGRAM_OR_VAR'
+        );
+      });
+    }
+
+    it('still taints the single-segment and sanctioned carrier names', () => {
+      // Widening the prefix must not lose the names that already worked.
+      for (const text of [
+        'printf "$SQUAD_TRIGGER_BODY"',
+        'printf "$ISSUE_BODY"',
+        'printf "$PR_TITLE"',
+        'printf "$body"',
+      ]) {
+        expect(tokensFor(text), `${text} must stay tainted`).toContain(
+          'UNTRUSTED_PRINTF_FORMAT'
+        );
+      }
+    });
+
+    it('does not taint runner-owned variables that merely contain the segments', () => {
+      // A widened prefix must not start flagging runner-owned values, or the gate
+      // goes permanently red — as worthless as permanently green.
+      for (const text of [
+        'printf "$RUNNER_TEMP"',
+        'bash -c "export PATH=$PATH"',
+        'source "${GITHUB_WORKSPACE}/setup.sh"',
+        'printf "$BODYGUARD_HOME"',
+      ]) {
+        expect(tokensFor(text), `${text} carries no attacker text and must stay green`).toEqual(
+          []
+        );
+      }
+    });
+  });
+
+  describe("printf's -- end-of-options separator does not shield the format slot", () => {
+    // `printf -- "$body"` is the idiom used precisely when a body might begin with
+    // `-`. The arg reader treated `--` as the format operand and returned it, so the
+    // body — sitting in the real format slot — was never inspected.
+    for (const name of ['body', 'SQUAD_TRIGGER_BODY', 'GITHUB_EVENT_ISSUE_BODY']) {
+      it(`flags printf -- "$${name}"`, () => {
+        expect(
+          tokensFor(`printf -- "$${name}"`),
+          `\`--\` ends option parsing; the body after it IS the format string. ` +
+            `Reading \`--\` as the first argument bypasses UNTRUSTED_PRINTF_FORMAT.`
+        ).toContain('UNTRUSTED_PRINTF_FORMAT');
+      });
+    }
+
+    it('flags -- combined with other option forms', () => {
+      expect(tokensFor('printf -v out -- "$body"')).toContain('UNTRUSTED_PRINTF_FORMAT');
+    });
+
+    it('leaves the format slot green when -- is followed by a literal format', () => {
+      expect(tokensFor(`printf -- '%s\\n' "$body"`)).toEqual([]);
+      expect(tokensFor(`printf -- "%s\\n" "$SQUAD_TRIGGER_BODY"`)).toEqual([]);
+    });
+
+    it('still flags a body glued to -- as one word', () => {
+      // `--"$body"` is a single word, so it is the format string, not a separator.
+      expect(tokensFor('printf --"$body"')).toContain('UNTRUSTED_PRINTF_FORMAT');
+    });
+  });
+
+  describe('extractRunBlocks does not re-read block scalar content as workflow keys', () => {
+    // A `run:` line inside a heredoc or echoed YAML is shell text, not a key. The
+    // outer cursor never advanced past a consumed scalar, so that line re-entered
+    // the header branch: a phantom block appeared, its lines were already owned by
+    // the real block, and every violation inside it was reported twice.
+    const NESTED = [
+      'jobs:', //                                  1
+      '  a:', //                                   2
+      '    steps:', //                             3
+      '      - name: writes a workflow', //        4
+      '        run: |', //                         5
+      "          cat <<'YAML' > generated.yml", // 6
+      '          run: |', //                       7
+      '            printf "$SQUAD_EVENT_BODY"', // 8
+      '          YAML', //                         9
+      '          echo done', //                   10
+      '      - name: tail', //                    11
+      '        run: echo tail', //                12
+    ].join('\n');
+
+    it('opens no phantom block for a run: line nested in a heredoc', () => {
+      const blocks = extractRunBlocks(NESTED);
+      expect(
+        blocks.map(b => b.headerLine),
+        'Line 7 is heredoc payload owned by the block scalar opened on line 5, not a ' +
+          'workflow key. A header at line 7 means scalar content was misparsed.'
+      ).toEqual([5, 12]);
+    });
+
+    it('keeps the whole heredoc inside the enclosing block', () => {
+      const outer = extractRunBlocks(NESTED).find(b => b.headerLine === 5);
+      expect(outer, 'the real run: block on line 5 must be extracted').toBeDefined();
+      expect(
+        outer!.lines.map(l => l.line),
+        'the enclosing block owns every deeper-indented line, heredoc payload included'
+      ).toEqual([6, 7, 8, 9, 10]);
+    });
+
+    it('reports a violation inside nested YAML exactly once', () => {
+      const violations = scanRunBlocks(extractRunBlocks(NESTED), 'nested.yml');
+      expect(
+        violations.map(v => `${v.token}@${v.line}`),
+        'Duplicate blocks produce duplicate findings, so the same defect is counted ' +
+          'twice in the diagnostic and in any violation total.'
+      ).toEqual(['UNTRUSTED_PRINTF_FORMAT@8']);
+    });
+
+    it('does not skip a sibling run: that terminates the previous block', () => {
+      // Guards the off-by-one in the cursor advance: the line that ENDS a scalar is
+      // not part of it and must still be examined as a header.
+      const siblings = [
+        'steps:', //           1
+        '  run: |', //         2
+        '    printf "$A_BODY"', // 3
+        '  run: |', //         4
+        '    printf "$B_BODY"', // 5
+      ].join('\n');
+
+      const blocks = extractRunBlocks(siblings);
+      expect(
+        blocks.map(b => b.headerLine),
+        'Advancing the cursor past a scalar must not swallow the line that ended it.'
+      ).toEqual([2, 4]);
+      expect(scanRunBlocks(blocks, 'siblings.yml').map(v => v.line)).toEqual([3, 5]);
+    });
+
+    it('still extracts the real compiled lock shape (inline and block runs)', () => {
+      // Non-regression: the shapes the gate depends on are unchanged by the advance.
+      const mixed = [
+        'steps:', //                  1
+        '  - name: inline', //        2
+        '    run: echo hi', //        3
+        '  - name: block', //         4
+        '    run: |', //              5
+        '      echo one', //          6
+        '', //                        7
+        '      echo two', //          8
+        '  - name: after', //         9
+        '    run: echo bye', //      10
+      ].join('\n');
+
+      const blocks = extractRunBlocks(mixed);
+      expect(blocks.map(b => b.headerLine)).toEqual([3, 5, 10]);
+      expect(blocks[1].lines.map(l => l.line)).toEqual([6, 7, 8]);
+    });
   });
 });
 

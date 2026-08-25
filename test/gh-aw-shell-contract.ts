@@ -70,9 +70,16 @@ const TEMPLATE_ATTACKER_EVENT = new RegExp(
  * `*_BODY` / `*_TITLE` variable, or a lower-case `$body`, is treated as tainted so
  * a renamed carrier cannot slip the gate. Matching requires a `$`/`${` sigil, so
  * the literal word "body" in prose is not flagged.
+ *
+ * The carrier prefix admits underscores. An earlier `[A-Za-z0-9]+_BODY` matched only
+ * a SINGLE segment before the suffix, so multi-segment carriers — `$SQUAD_EVENT_BODY`,
+ * `$GITHUB_EVENT_ISSUE_BODY`, `$PULL_REQUEST_TITLE` — silently bypassed every detector
+ * while the doc comment above claimed "any `*_BODY` / `*_TITLE`". Since the env-var
+ * naming convention for event carriers is exactly multi-segment SCREAMING_SNAKE, the
+ * unenforced case was the *likely* one, not an exotic one.
  */
 const BODY_VAR =
-  /\$\{?\s*(?:SQUAD_TRIGGER_BODY|SQUAD_DISPATCH_COMMAND|body|[A-Za-z0-9]+_BODY|[A-Za-z0-9]+_TITLE)\b/i;
+  /\$\{?\s*(?:SQUAD_TRIGGER_BODY|SQUAD_DISPATCH_COMMAND|body|[A-Za-z0-9_]*_(?:BODY|TITLE))\b/i;
 
 /** Does this text carry attacker body text, via an Actions expression or a body variable? */
 function carriesBody(text: string): boolean {
@@ -86,6 +93,12 @@ function carriesBody(text: string): boolean {
  *
  * This is a deliberately line-oriented reader rather than a YAML parse: the gate
  * must name the offending line, and a parsed scalar loses its line origin.
+ *
+ * A block scalar's body is opaque shell text, never workflow keys, so the outer
+ * cursor is advanced past it. Without that, a `run:` line embedded in a heredoc or
+ * echoed YAML (`cat <<'YAML' … run: | … YAML`) re-entered the header branch and
+ * opened a phantom block, double-reporting the same line and inflating the block
+ * count that the fail-closed "found something to scan" assertion depends on.
  */
 export function extractRunBlocks(yamlText: string): RunBlock[] {
   const lines = yamlText.replace(/\r\n/g, '\n').split('\n');
@@ -101,7 +114,8 @@ export function extractRunBlocks(yamlText: string): RunBlock[] {
     if (/^[|>][+-]?\s*$/.test(value)) {
       // Block scalar: body is the following lines indented deeper than `run:`.
       const body: Array<{ line: number; text: string }> = [];
-      for (let j = i + 1; j < lines.length; j++) {
+      let j = i + 1;
+      for (; j < lines.length; j++) {
         if (lines[j].trim() === '') {
           body.push({ line: j + 1, text: lines[j] });
           continue;
@@ -113,6 +127,10 @@ export function extractRunBlocks(yamlText: string): RunBlock[] {
       // Trim trailing blank lines that belong to the next key, not the block.
       while (body.length && body[body.length - 1].text.trim() === '') body.pop();
       blocks.push({ headerLine: i + 1, lines: body });
+      // `j` is the first line the scalar does NOT own; resume scanning there so
+      // scalar content is never re-read as a workflow key. `-1` offsets the `i++`.
+      // Popped trailing blanks were still consumed by `j` and cannot be headers.
+      i = j - 1;
     } else if (value !== '') {
       // Inline run: the command is on the same line as the key.
       blocks.push({ headerLine: i + 1, lines: [{ line: i + 1, text: value }] });
@@ -122,13 +140,39 @@ export function extractRunBlocks(yamlText: string): RunBlock[] {
   return blocks;
 }
 
-/** After a `printf`, return the first non-flag argument token (with its quotes). */
+/**
+ * After a `printf`, return the first non-flag argument token (with its quotes).
+ *
+ * Option stripping loops so any order of `-v NAME`, plain `-x` flags, and the `--`
+ * end-of-options separator is consumed. `--` matters specifically: it is not an
+ * operand, so reading it as the format slot made `printf -- "$body"` — the exact
+ * idiom used to stop a body starting with `-` from being parsed as a flag — return
+ * the harmless token `--` and bypass UNTRUSTED_PRINTF_FORMAT entirely. After `--`
+ * every remaining word is an operand, so option scanning stops there.
+ */
 function firstPrintfArg(afterPrintf: string): string {
   let s = afterPrintf.replace(/^\s+/, '');
-  // `printf -v NAME …` consumes a variable-name operand; skip it.
-  const vFlag = s.match(/^-v\s+\S+\s+/);
-  if (vFlag) s = s.slice(vFlag[0].length);
-  else s = s.replace(/^(?:-[A-Za-z]+\s+)+/, '');
+
+  for (;;) {
+    // `printf -v NAME …` consumes a variable-name operand; skip it.
+    const vFlag = s.match(/^-v\s+\S+\s+/);
+    if (vFlag) {
+      s = s.slice(vFlag[0].length);
+      continue;
+    }
+    // `--` ends option parsing: the next word is the format slot, not a flag.
+    const endOfOptions = s.match(/^--\s+/);
+    if (endOfOptions) {
+      s = s.slice(endOfOptions[0].length);
+      break;
+    }
+    const flag = s.match(/^-[A-Za-z]+\s+/);
+    if (flag) {
+      s = s.slice(flag[0].length);
+      continue;
+    }
+    break;
+  }
 
   if (s[0] === "'") {
     const end = s.indexOf("'", 1);
