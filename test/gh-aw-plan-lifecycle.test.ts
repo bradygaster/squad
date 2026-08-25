@@ -449,8 +449,8 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     }
     expect(validation).toMatch(/strongest credible opposition steelman/i);
     expect(validation).toMatch(/falsifiable\s+conditions/);
-    expect(validation).toMatch(/exactly 30 days after execution begins/);
-    expect(validation).toMatch(/materially different alternative approach/);
+    expect(validation).toMatch(/exactly 30 days after\s+execution begins/);
+    expect(validation).toMatch(/materially different alternative approach\s+sketch/);
     expect(validation).toMatch(/explicitly\s+`ACCEPTED` with rationale and an accountable owner/);
   });
 
