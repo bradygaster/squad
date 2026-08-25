@@ -199,6 +199,24 @@ function extractWorkflowDispatchInputs(frontmatter: string): Record<string, Reco
 
   return inputs;
 }
+function extractConcurrency(frontmatter: string): Record<string, string> | undefined {
+  const lines = frontmatter.split('\n');
+  const concurrencyLine = lines.findIndex(line => /^concurrency:\s*$/.test(line));
+  if (concurrencyLine === -1) return undefined;
+
+  const block: Record<string, string> = {};
+  for (let i = concurrencyLine + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\S/.test(line)) break;
+
+    const propertyMatch = line.match(/^  ([A-Za-z0-9_-]+):\s*(.+)$/);
+    if (propertyMatch) {
+      block[propertyMatch[1]] = propertyMatch[2];
+    }
+  }
+
+  return Object.keys(block).length > 0 ? block : undefined;
+}
 
 /** Extract mode table rows from the "## Modes" section of the workflow body. */
 function extractModeTable(content: string): Array<{ command: string; mode: string; description: string }> {
@@ -344,6 +362,33 @@ describe('gh-aw: safe-output configuration', () => {
     const ci = safeOutputs['create-issue'];
     expect(ci, 'create-issue block must exist').toBeDefined();
     expect(ci['max'], 'create-issue max must be 75 — do not reduce below this').toBe(75);
+  });
+});
+
+describe('gh-aw: router concurrency guard (#1730)', () => {
+  const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+  const concurrency = extractConcurrency(frontmatter);
+
+  it('lets the router post explicit mode-specific authorization refusals', () => {
+    expect(frontmatter).toMatch(/^  roles: all$/m);
+  });
+
+  it('declares issue-scoped concurrency without cancel-in-progress', () => {
+    expect(concurrency, 'squad.md should declare a concurrency block').toBeDefined();
+    expect(concurrency?.group).toBe(
+      '"squad-${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}"'
+    );
+    expect(concurrency?.['cancel-in-progress']).toBe('false');
+    expect(concurrency?.group, 'group must resolve the manual-dispatch issue number').toContain(
+      'github.event.inputs.issue_number'
+    );
+    expect(concurrency?.group, 'group must resolve issue and issue_comment events').toContain(
+      'github.event.issue.number'
+    );
+    expect(concurrency?.group, 'group must resolve pull_request_review_comment events').toContain(
+      'github.event.pull_request.number'
+    );
+    expect(concurrency?.group, 'group must not collapse to a static/global lock').toContain('github.run_id');
   });
 });
 

@@ -48,20 +48,45 @@ function bashBlockAfter(heading: string): string {
 const PC0_HEADING = '### Step PC-0: Normalize a dispatched command';
 const PC1_HEADING = '### Step PC-1: Extract the command argument';
 const PC3_HEADING = '### Step PC-3: No recognized command';
+const AG1_HEADING = '### Step AG-1: Classify the parsed mode';
+const AG2_HEADING = '### Step AG-2: Resolve actor permission';
+const AG3_HEADING = '### Step AG-3: Decide authorization';
+const AG4_HEADING = '### Step AG-4: Refuse unauthorized mutation loudly';
 
-/** Run a command extracted from the workflow with a value in the environment. */
-function runDeclared(command: string, value: string, varName = 'SQUAD_TRIGGER_BODY'): string {
+/** Run a command extracted from the workflow with real environment values. */
+function runDeclaredEnv(command: string, env: Record<string, string>): string {
   if (!POSIX_SHELL) throw new Error('no POSIX shell resolved');
   return execFileSync(POSIX_SHELL, ['-c', command], {
     encoding: 'utf8',
-    env: { ...process.env, [varName]: value },
+    env: { ...process.env, ...env },
   }).replace(/\r/g, '').replace(/\n+$/, '');
+}
+
+/** Run a command extracted from the workflow with one value in the environment. */
+function runDeclared(command: string, value: string, varName = 'SQUAD_TRIGGER_BODY'): string {
+  return runDeclaredEnv(command, { [varName]: value });
 }
 
 const parse = (body: string) => runDeclared(bashBlockAfter(PC1_HEADING), body);
 const diagnose = (body: string) => runDeclared(bashBlockAfter(PC3_HEADING), body);
 const normalize = (command: string) =>
   runDeclared(bashBlockAfter(PC0_HEADING), command, 'SQUAD_DISPATCH_COMMAND');
+const classifyMode = (mode: string) => runDeclared(bashBlockAfter(AG1_HEADING), mode, 'SQUAD_PARSED_MODE');
+const decideAuthorization = (modeClass: string, permission: string) =>
+  runDeclaredEnv(bashBlockAfter(AG3_HEADING), {
+    SQUAD_MODE_AUTH_CLASS: modeClass,
+    SQUAD_ACTOR_PERMISSION: permission,
+  });
+const resolveActorPermission = (
+  eventName: string,
+  actor = '',
+  repository = ''
+) =>
+  runDeclaredEnv(bashBlockAfter(AG2_HEADING), {
+    SQUAD_EVENT_NAME: eventName,
+    SQUAD_TRIGGER_ACTOR: actor,
+    SQUAD_REPOSITORY: repository,
+  });
 /** The dispatch path exactly as the workflow runs it: PC-0, then PC-1. */
 const parseDispatch = (command: string) => parse(normalize(command));
 
@@ -305,6 +330,108 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       expect(pc3, 'PC-3 must not fall back to noop, which reports no comment').toMatch(
         /Never call `noop`/i
       );
+    });
+  });
+
+  describe('Actor Authorization Guard (#1730)', () => {
+    const ag1 = workflow.slice(workflow.indexOf(AG1_HEADING), workflow.indexOf(AG2_HEADING));
+    const ag2 = workflow.slice(workflow.indexOf(AG2_HEADING), workflow.indexOf(AG3_HEADING));
+    const ag4 = workflow.slice(workflow.indexOf(AG4_HEADING), workflow.indexOf('## Execute Mode'));
+
+    it.each([
+      'implement',
+      'cast',
+      'connect',
+      'adopt',
+      'cast-member',
+      'retire',
+      'plan revise',
+      'triage',
+      'triage revise',
+      'plan program',
+      'plan program revise',
+      'plan implementation',
+      'plan validate',
+      'plan accept',
+      'plan accept scope',
+      'plan accept implementation',
+      'plan activate',
+    ])(
+      'classifies mutating mode %j as requiring authorization',
+      mode => {
+        expect(
+          classifyMode(mode),
+          `${JSON.stringify(mode)} must require authorization before the router mutates state or dispatches work.`
+        ).toBe('AUTH_REQUIRED');
+      }
+    );
+
+    it.each(['research', 'status', 'plan'])(
+      'classifies open mode %j as bypassing authorization',
+      mode => {
+        expect(
+          classifyMode(mode),
+          `${JSON.stringify(mode)} must stay on the explicit read-only allow-list so its UX stays open.`
+        ).toBe('READ_ONLY');
+      }
+    );
+
+    it.each(['NO_COMMAND', 'unknown', 'plan accepted?', ''])(
+      'does not silently classify malformed mode %j as read-only',
+      mode => {
+        expect(
+          classifyMode(mode),
+          `${JSON.stringify(mode)} must not bypass the guard by landing on the read-only branch.`
+        ).toBe('AUTH_REQUIRED');
+      }
+    );
+
+    it.each(['DISPATCH_AUTHORIZED', 'admin', 'maintain', 'write'])(
+      'permits mutating modes for repository permission %j',
+      permission => {
+        expect(
+          decideAuthorization('AUTH_REQUIRED', permission),
+          `${JSON.stringify(permission)} must authorize a mutating /squad mode.`
+        ).toBe('AUTHORIZED');
+      }
+    );
+
+    it.each(['read', 'triage', 'none', '', 'PERMISSION_UNRESOLVED'])(
+      'refuses mutating modes for repository permission %j',
+      permission => {
+        expect(
+          decideAuthorization('AUTH_REQUIRED', permission),
+          `${JSON.stringify(permission)} must fail closed for a mutating /squad mode.`
+        ).toBe('REFUSE');
+      }
+    );
+
+    it('skips the permission branch entirely for read-only modes', () => {
+      expect(decideAuthorization('READ_ONLY', 'none')).toBe('AUTH_SKIPPED');
+      expect(ag1).toContain('skip the permission lookup entirely');
+      expect(ag2).toContain('When **Step AG-1** returned `AUTH_REQUIRED`');
+    });
+
+    it('uses GitHub workflow_dispatch authorization for controlled relays', () => {
+      expect(resolveActorPermission('workflow_dispatch')).toBe('DISPATCH_AUTHORIZED');
+      expect(ag2).toContain('GitHub requires write access to trigger `workflow_dispatch`');
+      expect(ag2).toContain('Only the exact `workflow_dispatch` event');
+    });
+
+    it('fails closed when non-dispatch actor identity cannot be resolved', () => {
+      expect(resolveActorPermission('issue_comment')).toBe('PERMISSION_UNRESOLVED');
+    });
+
+    it('uses the collaborator-permission API and routes refusals to an actionable comment', () => {
+      expect(ag2).toContain('collaborators/$actor/permission');
+      expect(ag2).toContain("jq -r '.permission // empty'");
+      expect(ag2).toContain('PERMISSION_UNRESOLVED');
+      expect(ag4).toContain('add-comment');
+      expect(ag4).toContain('::error::');
+      expect(ag4).toContain('Ask a repository maintainer');
+      expect(ag4).toContain('admin');
+      expect(ag4).toContain('maintain');
+      expect(ag4).toContain('write');
     });
   });
 });
