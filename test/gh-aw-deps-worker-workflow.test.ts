@@ -314,8 +314,15 @@ describe('gh-aw squad-deps-worker scaffold (#1748 slice S1)', () => {
     const compiled = readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8');
     const lines = compiled.split(/\r?\n/);
     const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-    const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1]!;
-    const configEnd = lines.findIndex((line, index) => index > configStart && line.trim() === delimiter);
+    const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
+    const configEnd = delimiter
+      ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
+      : -1;
+
+    expect(configStart, 'compiled general worker must write the safe-output config').toBeGreaterThanOrEqual(0);
+    expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
+    expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
+
     const safeOutputs = JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
       string,
       Record<string, unknown>
