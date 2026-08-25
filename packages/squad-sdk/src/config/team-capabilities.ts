@@ -342,7 +342,17 @@ function deriveAuthority(evidenceText: string): AgentAuthority[] {
 export function buildTeamCapabilityProfile(input: TeamCapabilityInput = {}): TeamCapabilityProfile {
   const teamMarkdown = typeof input.teamMarkdown === 'string' ? input.teamMarkdown : '';
   const routingMarkdown = typeof input.routingMarkdown === 'string' ? input.routingMarkdown : '';
-  const charters = input.charters ?? {};
+  const charterCandidate = input.charters;
+  const charterPrototype =
+    charterCandidate && typeof charterCandidate === 'object'
+      ? Object.getPrototypeOf(charterCandidate)
+      : undefined;
+  const charters =
+    charterCandidate &&
+    !Array.isArray(charterCandidate) &&
+    (charterPrototype === Object.prototype || charterPrototype === null)
+      ? charterCandidate
+      : {};
 
   let roster: TeamMember[] = [];
   try {
@@ -615,9 +625,12 @@ export function applyTeamCapabilitiesBlock(markdown: string, block: string): str
     return text.slice(0, range.start) + block + text.slice(range.end);
   }
 
-  const initModeIndex = text.indexOf('\n## Init Mode');
-  if (initModeIndex !== -1) {
-    return `${text.slice(0, initModeIndex + 1)}${block}\n\n---\n${text.slice(initModeIndex + 1)}`;
+  const initModeMatch = /^## Init Mode\b/m.exec(text);
+  if (initModeMatch) {
+    const initModeIndex = initModeMatch.index;
+    const prefix = text.slice(0, initModeIndex);
+    const separator = prefix.length > 0 && !prefix.endsWith('\n') ? '\n' : '';
+    return `${prefix}${separator}${block}\n\n---\n${text.slice(initModeIndex)}`;
   }
 
   const canaryIndex = text.indexOf('<!-- SQUAD_COORDINATOR_CANARY_a8f3 -->');
