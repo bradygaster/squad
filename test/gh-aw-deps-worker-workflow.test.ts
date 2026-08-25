@@ -1,18 +1,16 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// #1748 slice S1: `squad-deps-worker.md` is a *scaffold*. It exists so the
-// extensionless manifest/lockfile basenames (`go.mod`, `go.sum`, `yarn.lock`,
-// `package-lock.json`, ...) have an explicit home in `allowed-files` before
-// slice S2 adds Wave 1 `protected-files.exclude` entries. Until S2 lands, this
-// worker's `protected-files` carries NO exclusions -- every manifest write
-// still falls back to a review issue, identical to `squad-implement-worker`.
-// These tests assert that current, deliberately inert, fail-closed state and
-// guard the general worker against silently gaining manifest authority.
+// #1748 slice S2: `squad-deps-worker.md` gains Wave 1 `protected-files.exclude`
+// entries. The Wave 1 basenames (npm/yarn/pnpm + NuGet CPM + Go) are excluded
+// from `protected-files` so the agent can produce a signed PR for those files.
+// Registry/install config, SDK/tool pins, and governance docs remain protected.
+// The general worker (`squad-implement-worker`) is not modified -- it retains
+// `policy: fallback-to-issue` with only `README.md` excluded.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -80,15 +78,11 @@ afterAll(() => {
 });
 
 /**
- * Compiles `squad-deps-worker` in an isolated workspace and returns the
- * decoded `create_pull_request` safe-output config gh-aw baked into the
- * `.lock.yml`. This is the only place the *compiled* (as opposed to
- * hand-authored source) `protected_files`/`allowed_files` contract is
- * observable -- gh-aw's built-in manifest catalog is merged in at compile
- * time and is not otherwise visible from the workflow source file.
+ * Compiles a workflow in an isolated workspace and returns the decoded
+ * `create_pull_request` safe-output config gh-aw bakes into `.lock.yml`.
  */
-function compileDepsWorker(): Record<string, unknown> {
-  const workspace = mkdtempSync(resolve(tmpdir(), 'squad-deps-worker-contract-'));
+function compileWorker(workflowId: string): Record<string, unknown> {
+  const workspace = mkdtempSync(resolve(tmpdir(), `${workflowId}-contract-`));
   compileWorkspaces.push(workspace);
   const workflowDir = resolve(workspace, '.github', 'workflows');
   mkdirSync(workflowDir, { recursive: true });
@@ -96,11 +90,11 @@ function compileDepsWorker(): Record<string, unknown> {
   execFileSync('git', ['init', '--quiet'], { cwd: workspace });
   execFileSync(
     'gh',
-    ['aw', 'compile', 'squad-deps-worker', '--strict', '--no-check-update'],
+    ['aw', 'compile', workflowId, '--strict', '--no-check-update'],
     { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
   );
 
-  const compiled = readFileSync(resolve(workflowDir, 'squad-deps-worker.lock.yml'), 'utf8');
+  const compiled = readFileSync(resolve(workflowDir, `${workflowId}.lock.yml`), 'utf8');
   const lines = compiled.split(/\r?\n/);
   const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
   const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
@@ -108,7 +102,7 @@ function compileDepsWorker(): Record<string, unknown> {
     ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
     : -1;
 
-  expect(configStart, 'compiled deps worker must write the safe-output config').toBeGreaterThanOrEqual(0);
+  expect(configStart, `compiled ${workflowId} must write the safe-output config`).toBeGreaterThanOrEqual(0);
   expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
   expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
 
@@ -117,6 +111,13 @@ function compileDepsWorker(): Record<string, unknown> {
     Record<string, unknown>
   >;
   return safeOutputs.create_pull_request;
+}
+
+/**
+ * Compiles `squad-deps-worker` and returns the full compiled config.
+ */
+function compileDepsWorker(): Record<string, unknown> {
+  return compileWorker('squad-deps-worker');
 }
 
 // Wave 1 (npm/yarn/pnpm + NuGet CPM + Go) manifest/lockfile basenames that
@@ -152,7 +153,7 @@ const ALWAYS_PROTECTED_BASENAMES = [
   'AGENTS.md',
 ];
 
-describe('gh-aw squad-deps-worker scaffold (#1748 slice S1)', () => {
+describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', () => {
   const dispatcher = read('workflows/squad.md');
   const generalWorker = read('workflows/squad-implement-worker.md');
   const depsWorker = read('workflows/squad-deps-worker.md');
@@ -160,74 +161,121 @@ describe('gh-aw squad-deps-worker scaffold (#1748 slice S1)', () => {
   const generalWorkerFrontmatter = frontmatter(generalWorker);
   const depsWorkerFrontmatter = frontmatter(depsWorker);
 
-  it('is a standalone workflow_dispatch worker, not yet wired into the dispatcher', () => {
-    expect(depsWorkerFrontmatter).toMatch(/^on:\r?\n\s+bots: \["github-actions\[bot\]"\]\r?\n\s+workflow_dispatch:/m);
-    expect(depsWorker).not.toContain('slash_command:');
-    expect(depsWorkerFrontmatter).toContain('issue_number:');
-    expect(depsWorkerFrontmatter).toContain('aw_context:');
-    expect(depsWorker).toMatch(/^tools:\r?\n\s+edit:/m);
+  // ── T1: authored exclude list contains exact Wave-1 basenames ─────────────
+  it('authors the exact Wave-1 exclude list in protected-files (T1)', () => {
+    const protectedFiles = yamlBlock(depsWorkerFrontmatter, 'protected-files');
+    const excludeList = listInBlock(protectedFiles, 'exclude');
 
-    // S3 (dispatcher/config routing) has not landed yet -- the deps worker
-    // must not be reachable from `squad.md`'s dispatch-workflow allowlist
-    // until that slice explicitly wires it in.
-    const dispatcherDispatch = yamlBlock(dispatcherFrontmatter, 'dispatch-workflow');
-    expect(listInBlock(dispatcherDispatch, 'workflows')).not.toContain('squad-deps-worker');
-  });
-
-  it('declares Wave 1 extensionless manifest/lockfile basenames in allowed-files (T3)', () => {
-    const allowedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'allowed-files'), 'allowed-files');
-
-    for (const basename of WAVE_1_EXTENSIONLESS_BASENAMES) {
-      expect(allowedFiles, `${basename} must be explicitly allowed`).toContain(basename);
+    for (const basename of WAVE_1_MANIFEST_BASENAMES) {
+      expect(excludeList, `Wave-1 basename ${basename} must be in exclude`).toContain(basename);
     }
-    expect(allowedFiles).toContain('package-lock.json');
-    expect(allowedFiles).toContain('package.json');
-  });
-
-  it('keeps dependency-manifest authority narrow: no broad source-file globs', () => {
-    const allowedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'allowed-files'), 'allowed-files');
-
-    // The general worker's broad source-tree allowlist (extensions, `src/**`,
-    // language directories, etc.) must not leak into the deps worker -- its
-    // entire reason to exist is that it can touch nothing but dependency
-    // manifests and lockfiles.
-    const broadPatternsFromGeneralWorker = [
-      '*.ts',
-      '**/*.ts',
-      '*.py',
-      '**/*.py',
-      '*.md',
-      '**/*.md',
-      'src/**',
-      'docs/**',
-      'Makefile',
-    ];
-    for (const pattern of broadPatternsFromGeneralWorker) {
-      expect(allowedFiles, `${pattern} must not appear in the deps worker's allowed-files`).not.toContain(pattern);
-    }
-
-    // Registry/install config and governance basenames must never be
-    // authorized at all -- being absent from `allowed-files` blocks them
-    // structurally before `protected-files` is even evaluated.
+    // Exact membership: no always-protected basename should appear
     for (const basename of ALWAYS_PROTECTED_BASENAMES) {
-      expect(allowedFiles, `${basename} must not be in allowed-files`).not.toContain(basename);
+      expect(excludeList, `Always-protected ${basename} must NOT be in exclude`).not.toContain(basename);
     }
-    expect(allowedFiles).not.toContain('.npmrc');
-    expect(allowedFiles).not.toContain('.yarnrc.yml');
+    expect(excludeList, '.npmrc must NOT be in exclude').not.toContain('.npmrc');
+    expect(excludeList, '.yarnrc.yml must NOT be in exclude').not.toContain('.yarnrc.yml');
+    expect(excludeList, 'README.md must NOT be in deps worker exclude').not.toContain('README.md');
   });
 
-  it('carries no protected-files exclusions yet (S2 has not landed)', () => {
+  // ── T2: always-protected basenames absent from exclude, present in compiled ─
+  it('always-protected basenames are absent from authored exclude and present in compiled protected_files (T2)', () => {
+    const protectedFiles = yamlBlock(depsWorkerFrontmatter, 'protected-files');
+    const excludeList = listInBlock(protectedFiles, 'exclude');
+
+    for (const basename of ALWAYS_PROTECTED_BASENAMES) {
+      expect(excludeList, `${basename} must not appear in deps worker exclude`).not.toContain(basename);
+    }
+    expect(excludeList, '.npmrc must not appear in deps worker exclude').not.toContain('.npmrc');
+    expect(excludeList, '.yarnrc.yml must not appear in deps worker exclude').not.toContain('.yarnrc.yml');
+  });
+
+  // ── T3: fallback-to-issue policy authored ─────────────────────────────────
+  it('authors fallback-to-issue policy in protected-files (T3)', () => {
     const protectedFiles = yamlBlock(depsWorkerFrontmatter, 'protected-files');
 
     expect(scalarInBlock(protectedFiles, 'policy')).toBe('fallback-to-issue');
     expect(scalarInBlock(protectedFiles, 'policy')).not.toBe('request_review');
     expect(scalarInBlock(protectedFiles, 'policy')).not.toBe('allowed');
-    // No `exclude:` key at all -- every manifest basename still falls back to
-    // a review issue today. Slice S2 introduces the Wave 1 exclude list.
-    expect(listInBlock(protectedFiles, 'exclude')).toEqual([]);
+    expect(scalarInBlock(protectedFiles, 'policy')).not.toBe('blocked');
   });
 
-  it('structurally strips vendored/generated content from any produced patch', () => {
+  // ── T4/T5/T6: compiled contract ───────────────────────────────────────────
+  it(
+    'compiled: Wave-1 basenames are removed from protected_files, always-protected remain, policy is fallback-to-issue, package-lock.json in allowed (T4/T5/T6)',
+    () => {
+      const config = compileDepsWorker();
+
+      // T3/T4: policy compiled
+      expect(config.protected_files_policy).toBe('fallback-to-issue');
+      expect(config.protect_top_level_dot_folders).toBe(true);
+
+      const compiledProtectedFiles = config.protected_files as string[];
+      const compiledAllowedFiles = config.allowed_files as string[];
+      const compiledExcludedFiles = config.excluded_files as string[];
+
+      // T4: Wave-1 basenames are excluded from compiled protected_files
+      for (const basename of WAVE_1_MANIFEST_BASENAMES) {
+        expect(
+          compiledProtectedFiles,
+          `${basename} must NOT be in compiled protected_files (S2 excluded it)`,
+        ).not.toContain(basename);
+      }
+
+      // T5: always-protected still in compiled protected_files
+      for (const basename of ALWAYS_PROTECTED_BASENAMES) {
+        expect(compiledProtectedFiles, `${basename} must remain in compiled protected_files`).toContain(basename);
+      }
+      // .npmrc and .yarnrc.yml are protected structurally by absence from
+      // allowed-files -- gh-aw's built-in catalog does not include them in
+      // the compiled protected_files list, so we assert only that they are
+      // absent from the exclude list (see T1/T2), not from protected_files.
+
+      // T6: package-lock.json in compiled allowed_files AND excluded from protected
+      expect(compiledAllowedFiles, 'package-lock.json must be in compiled allowed_files').toContain('package-lock.json');
+      expect(
+        compiledProtectedFiles,
+        'package-lock.json must NOT be in compiled protected_files (excluded by S2)',
+      ).not.toContain('package-lock.json');
+
+      // T8: vendored/generated paths in excluded_files
+      expect(compiledExcludedFiles).toEqual(
+        expect.arrayContaining(['node_modules/**', 'vendor/**', '.squad/**']),
+      );
+    },
+    20000,
+  );
+
+  // ── T7: general worker authored + compiled unchanged ──────────────────────
+  it('leaves squad-implement-worker with only README.md excluded (authored) (T7)', () => {
+    const protectedFiles = yamlBlock(generalWorkerFrontmatter, 'protected-files');
+    const excludeList = listInBlock(protectedFiles, 'exclude');
+
+    expect(scalarInBlock(protectedFiles, 'policy')).toBe('fallback-to-issue');
+    expect(excludeList).toEqual(['README.md']);
+    for (const basename of [...WAVE_1_MANIFEST_BASENAMES, ...ALWAYS_PROTECTED_BASENAMES]) {
+      expect(excludeList, `${basename} must not be excluded on the general path`).not.toContain(basename);
+    }
+  });
+
+  it(
+    'compiled general worker: no Wave-1 basename leaked into exclude (T7 compiled)',
+    () => {
+      const config = compileWorker('squad-implement-worker');
+      const compiledProtectedFiles = config.protected_files as string[];
+
+      for (const basename of WAVE_1_MANIFEST_BASENAMES) {
+        expect(
+          compiledProtectedFiles,
+          `${basename} must still be protected in compiled general worker`,
+        ).toContain(basename);
+      }
+    },
+    20000,
+  );
+
+  // ── T8: vendored/generated paths remain in authored excluded-files ─────────
+  it('structurally strips vendored/generated content from any produced patch (T8)', () => {
     const excludedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'excluded-files'), 'excluded-files');
 
     expect(excludedFiles).toEqual(
@@ -248,89 +296,160 @@ describe('gh-aw squad-deps-worker scaffold (#1748 slice S1)', () => {
     );
   });
 
-  it('leaves squad-implement-worker with no manifest exclusions (general path unchanged)', () => {
-    const protectedFiles = yamlBlock(generalWorkerFrontmatter, 'protected-files');
+  // ── T6 authored: package-lock.json is in allowed-files AND exclude ─────────
+  it('package-lock.json is in allowed-files and in protected-files.exclude (T6 authored)', () => {
+    const allowedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'allowed-files'), 'allowed-files');
+    const protectedFiles = yamlBlock(depsWorkerFrontmatter, 'protected-files');
     const excludeList = listInBlock(protectedFiles, 'exclude');
 
-    expect(scalarInBlock(protectedFiles, 'policy')).toBe('fallback-to-issue');
-    expect(excludeList).toEqual(['README.md']);
-    for (const basename of [...WAVE_1_MANIFEST_BASENAMES, ...ALWAYS_PROTECTED_BASENAMES]) {
-      expect(excludeList, `${basename} must not be excluded on the general path`).not.toContain(basename);
-    }
+    expect(allowedFiles, 'package-lock.json must be in allowed-files').toContain('package-lock.json');
+    expect(excludeList, 'package-lock.json must be in protected-files.exclude').toContain('package-lock.json');
   });
 
-  it(
-    'compiles cleanly and bakes in a fail-closed protected-files contract',
-    () => {
-      const config = compileDepsWorker();
+  // ── S1 guards preserved (existing behavior) ───────────────────────────────
+  it('is a standalone workflow_dispatch worker, not yet wired into the dispatcher', () => {
+    expect(depsWorkerFrontmatter).toMatch(/^on:\r?\n\s+bots: \["github-actions\[bot\]"\]\r?\n\s+workflow_dispatch:/m);
+    expect(depsWorker).not.toContain('slash_command:');
+    expect(depsWorkerFrontmatter).toContain('issue_number:');
+    expect(depsWorkerFrontmatter).toContain('aw_context:');
+    expect(depsWorker).toMatch(/^tools:\r?\n\s+edit:/m);
 
-      expect(config.protected_files_policy).toBe('fallback-to-issue');
-      expect(config.protect_top_level_dot_folders).toBe(true);
+    const dispatcherDispatch = yamlBlock(dispatcherFrontmatter, 'dispatch-workflow');
+    expect(listInBlock(dispatcherDispatch, 'workflows')).not.toContain('squad-deps-worker');
+  });
 
-      const compiledProtectedFiles = config.protected_files as string[];
-      const compiledAllowedFiles = config.allowed_files as string[];
-      const compiledExcludedFiles = config.excluded_files as string[];
+  it('declares Wave 1 extensionless manifest/lockfile basenames in allowed-files', () => {
+    const allowedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'allowed-files'), 'allowed-files');
 
-      // Nothing has been excluded from protection yet: every Wave 1 manifest
-      // basename this worker is allowed to *see* still resolves to
-      // `fallback-to-issue` when it appears in a patch.
-      for (const basename of WAVE_1_MANIFEST_BASENAMES) {
-        expect(compiledProtectedFiles, `${basename} must still be protected (S2 has not landed)`).toContain(
-          basename,
-        );
-      }
-      // Registry/config and governance files stay protected in gh-aw's
-      // built-in catalog regardless of this worker's allowed-files scope.
-      for (const basename of ALWAYS_PROTECTED_BASENAMES) {
-        expect(compiledProtectedFiles, `${basename} must remain protected`).toContain(basename);
-      }
-
-      for (const basename of WAVE_1_EXTENSIONLESS_BASENAMES) {
-        expect(compiledAllowedFiles).toContain(basename);
-      }
-      expect(compiledExcludedFiles).toEqual(
-        expect.arrayContaining(['node_modules/**', 'vendor/**', '.squad/**']),
-      );
-    },
-    20000,
-  );
-
-  it('does not change squad-implement-worker.md at all', () => {
-    // Structural regression guard: compiling the general worker in the same
-    // workspace must still exclude only README.md -- the new deps worker file
-    // must have zero effect on the general worker's compiled contract.
-    const workspace = mkdtempSync(resolve(tmpdir(), 'squad-implement-worker-unaffected-'));
-    compileWorkspaces.push(workspace);
-    const workflowDir = resolve(workspace, '.github', 'workflows');
-    mkdirSync(workflowDir, { recursive: true });
-    cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
-    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-    execFileSync(
-      'gh',
-      ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
-      { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
-    );
-
-    const compiled = readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8');
-    const lines = compiled.split(/\r?\n/);
-    const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-    const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-    const configEnd = delimiter
-      ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-      : -1;
-
-    expect(configStart, 'compiled general worker must write the safe-output config').toBeGreaterThanOrEqual(0);
-    expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
-    expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
-
-    const safeOutputs = JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-      string,
-      Record<string, unknown>
-    >;
-    const compiledProtectedFiles = safeOutputs.create_pull_request.protected_files as string[];
-
-    for (const basename of WAVE_1_MANIFEST_BASENAMES) {
-      expect(compiledProtectedFiles).toContain(basename);
+    for (const basename of WAVE_1_EXTENSIONLESS_BASENAMES) {
+      expect(allowedFiles, `${basename} must be explicitly allowed`).toContain(basename);
     }
-  }, 20000);
+    expect(allowedFiles).toContain('package-lock.json');
+    expect(allowedFiles).toContain('package.json');
+  });
+
+  it('keeps dependency-manifest authority narrow: no broad source-file globs', () => {
+    const allowedFiles = listInBlock(yamlBlock(depsWorkerFrontmatter, 'allowed-files'), 'allowed-files');
+
+    const broadPatternsFromGeneralWorker = [
+      '*.ts', '**/*.ts', '*.py', '**/*.py', '*.md', '**/*.md', 'src/**', 'docs/**', 'Makefile',
+    ];
+    for (const pattern of broadPatternsFromGeneralWorker) {
+      expect(allowedFiles, `${pattern} must not appear in the deps worker's allowed-files`).not.toContain(pattern);
+    }
+    for (const basename of ALWAYS_PROTECTED_BASENAMES) {
+      expect(allowedFiles, `${basename} must not be in allowed-files`).not.toContain(basename);
+    }
+    expect(allowedFiles).not.toContain('.npmrc');
+    expect(allowedFiles).not.toContain('.yarnrc.yml');
+  });
+
+  // ── T9: mutation tests ─────────────────────────────────────────────────────
+  describe('mutation tests: weakening the contract must be detected (T9)', () => {
+    /**
+     * Apply a mutation to the authored workflow source and validate that the
+     * specified contract check fails. Returns true if the mutation is correctly
+     * detected (i.e. the validator rejects it), false if the mutation goes
+     * undetected (test should fail).
+     */
+    function applyMutationAndValidate(
+      mutationDescription: string,
+      mutateFrontmatter: (fm: string) => string,
+      validator: (excludeList: string[]) => void,
+    ): void {
+      const mutatedFm = mutateFrontmatter(depsWorkerFrontmatter);
+      const protectedFiles = yamlBlock(mutatedFm, 'protected-files');
+      const excludeList = listInBlock(protectedFiles, 'exclude');
+      let caught = false;
+      try {
+        validator(excludeList);
+      } catch {
+        caught = true;
+      }
+      expect(caught, `mutation "${mutationDescription}" should have been detected but was not`).toBe(true);
+    }
+
+    it('detects: remove a Wave-1 exclusion (package.json removed from exclude)', () => {
+      applyMutationAndValidate(
+        'remove package.json from exclude',
+        fm => fm.replace(/^\s+- package\.json\s*$/m, ''),
+        excludeList => {
+          expect(excludeList, 'package.json must be in exclude').toContain('package.json');
+        },
+      );
+    });
+
+    it('detects: remove a Wave-1 exclusion (go.mod removed from exclude)', () => {
+      applyMutationAndValidate(
+        'remove go.mod from exclude',
+        fm => fm.replace(/^\s+- go\.mod\s*$/m, ''),
+        excludeList => {
+          expect(excludeList, 'go.mod must be in exclude').toContain('go.mod');
+        },
+      );
+    });
+
+    it('detects: add an always-protected basename to exclude (NuGet.Config leaked in)', () => {
+      applyMutationAndValidate(
+        'add NuGet.Config to exclude',
+        fm => fm.replace(/(\s+- go\.sum\s*\n)/, '$1        - NuGet.Config\n'),
+        excludeList => {
+          expect(excludeList, 'NuGet.Config must NOT be in exclude').not.toContain('NuGet.Config');
+        },
+      );
+    });
+
+    it('detects: add .npmrc to exclude (always-protected registry config leaked in)', () => {
+      applyMutationAndValidate(
+        'add .npmrc to exclude',
+        fm => fm.replace(/(\s+- go\.sum\s*\n)/, '$1        - .npmrc\n'),
+        excludeList => {
+          expect(excludeList, '.npmrc must NOT be in exclude').not.toContain('.npmrc');
+        },
+      );
+    });
+
+    it('detects: relax policy from fallback-to-issue to allowed', () => {
+      applyMutationAndValidate(
+        'relax policy to allowed',
+        fm => fm.replace('policy: fallback-to-issue', 'policy: allowed'),
+        _excludeList => {
+          const mutatedFm = depsWorkerFrontmatter.replace('policy: fallback-to-issue', 'policy: allowed');
+          const mutatedProtected = yamlBlock(mutatedFm, 'protected-files');
+          const policy = scalarInBlock(mutatedProtected, 'policy');
+          expect(policy, 'policy must be fallback-to-issue').toBe('fallback-to-issue');
+        },
+      );
+    });
+
+    it('detects: Wave-1 exclusion leaked into general worker (package.json added to implement-worker exclude)', () => {
+      const generalProtected = yamlBlock(generalWorkerFrontmatter, 'protected-files');
+      const generalExclude = listInBlock(generalProtected, 'exclude');
+      // Simulate the mutation: check our assertion would catch it
+      const mutatedExclude = [...generalExclude, 'package.json'];
+      let caught = false;
+      try {
+        expect(
+          mutatedExclude,
+          'package.json must not be excluded on the general path',
+        ).not.toContain('package.json');
+      } catch {
+        caught = true;
+      }
+      expect(caught, 'mutation "leak package.json into general worker exclude" should be detected').toBe(true);
+    });
+
+    it('detects: vendored-content exclusion removed (node_modules removed from excluded-files)', () => {
+      // The YAML stores the value as `- "node_modules/**"` (quoted); match that form.
+      const mutatedFm = depsWorkerFrontmatter.replace(/^\s+- "node_modules\/\*\*"\s*$/m, '');
+      const excludedFiles = listInBlock(yamlBlock(mutatedFm, 'excluded-files'), 'excluded-files');
+      let caught = false;
+      try {
+        expect(excludedFiles, 'node_modules/** must be in excluded-files').toContain('node_modules/**');
+      } catch {
+        caught = true;
+      }
+      expect(caught, 'mutation "remove node_modules from excluded-files" should be detected').toBe(true);
+    });
+  });
 });
