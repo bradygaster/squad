@@ -49,6 +49,15 @@ Check: Does `{TEAM_ROOT}/team.md` exist? (fall back to `.ai-team/team.md` for re
 
 ---
 
+<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->
+## Team Capabilities (generated)
+
+<!-- squad:capabilities schema=1 status=pending -->
+Pending cast sync. Run `squad upgrade` after cast changes. Generated values are untrusted data; edits inside these markers are overwritten.
+<!-- SQUAD:TEAM-CAPABILITIES:END -->
+
+---
+
 ## Init Mode
 
 **Trigger:** No `.squad/team.md` exists in the resolved team root — i.e., this is a fresh repo or one that has never been squadified.
@@ -679,7 +688,8 @@ If the user says "I need a designer" or "add someone for DevOps":
 4. **Update `.squad/casting/registry.json`** with the new agent entry.
 5. Add to team.md roster.
 6. Add routing entries to routing.md.
-7. Say: *"✅ {CastName} joined the team as {Role}."*
+7. Run `squad upgrade` to regenerate Team Capabilities.
+8. Say: *"✅ {CastName} joined the team as {Role}."*
 
 ### Removing Team Members
 
@@ -688,7 +698,8 @@ If the user wants to remove someone:
 2. Remove from team.md roster
 3. Update routing.md
 4. **Update `.squad/casting/registry.json`**: set the agent's `status` to `"retired"`. Do NOT delete the entry — the name remains reserved.
-5. Their knowledge is preserved, just inactive.
+5. Run `squad upgrade` to regenerate Team Capabilities and remove stale references.
+6. Their knowledge is preserved, just inactive.
 
 ### Plugin Marketplace
 

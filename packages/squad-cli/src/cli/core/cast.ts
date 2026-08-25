@@ -9,6 +9,7 @@ import {
   getRoleById,
   generateCharterFromRole,
   addAgentToConfig,
+  syncTeamCapabilities,
 } from '@bradygaster/squad-sdk';
 import {
   CastingEngine,
@@ -853,6 +854,23 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   // Sync new agents into squad.config.ts (if present)
   for (const member of allMembers) {
     await addAgentToConfig(teamRoot, member.name.toLowerCase(), member.role);
+  }
+
+  // Re-advertise the cast in .github/agents/squad.agent.md (#1608). Cast
+  // composition just changed, so the generated Team Capabilities block is
+  // stale by definition. Casting still succeeds if advertisement fails, but
+  // surface the error instead of silently leaving stale coordinator data.
+  try {
+    syncTeamCapabilities({
+      squadDir,
+      agentFile: join(teamRoot, '.github', 'agents', 'squad.agent.md'),
+      storage,
+    });
+  } catch (error) {
+    console.warn(
+      '[cast] Could not refresh .github/agents/squad.agent.md:',
+      error instanceof Error ? error.message : error,
+    );
   }
 
   return { teamRoot, membersCreated, filesCreated };
