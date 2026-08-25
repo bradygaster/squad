@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { afterAll, describe, expect, it } from 'vitest';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +66,45 @@ function continuationSection(worker: string): string {
   return worker.match(
     /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/,
   )?.[1] ?? '';
+}
+
+const compileWorkspaces: string[] = [];
+
+afterAll(() => {
+  for (const workspace of compileWorkspaces) {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+function compiledWorkerSafeOutputs(): Record<string, Record<string, unknown>> {
+  const workspace = mkdtempSync(resolve(tmpdir(), 'squad-worker-contract-'));
+  compileWorkspaces.push(workspace);
+  const workflowDir = resolve(workspace, '.github', 'workflows');
+  mkdirSync(workflowDir, { recursive: true });
+  cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
+  execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+  execFileSync(
+    'gh',
+    ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
+    { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+  );
+
+  const compiled = readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8');
+  const lines = compiled.split(/\r?\n/);
+  const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
+  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
+  const configEnd = delimiter
+    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
+    : -1;
+
+  expect(configStart, 'compiled worker must write the safe-output config').toBeGreaterThanOrEqual(0);
+  expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
+  expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
+
+  return JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
+    string,
+    Record<string, unknown>
+  >;
 }
 
 describe('gh-aw implement workflows', () => {
@@ -134,7 +175,13 @@ describe('gh-aw implement workflows', () => {
 
     expect(dispatcher).not.toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
     expect(worker).toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
+    expect(workerFrontmatter).toMatch(
+      /github\.event\.pull_request\.base\.ref == github\.event\.repository\.default_branch/,
+    );
     expect(worker).toContain("startsWith(github.event.pull_request.head.ref, 'squad/implement-')");
+    expect(workerFrontmatter).toContain(
+      "contains(github.event.pull_request.body, '<!-- squad:implement issue=')",
+    );
     expect(listInBlock(workerDispatch, 'workflows')).toContain('squad');
     expect(scalarInBlock(workerDispatch, 'target-ref')).toContain('github.event.repository.default_branch');
     expect(payload).toMatchObject({
@@ -152,6 +199,34 @@ describe('gh-aw implement workflows', () => {
     expect(dispatcher).toMatch(/available-slots = max\(0, \d+ - active-implementation-count\)/);
     expect(dispatcher).toContain('fills newly available slots');
   });
+
+  it('emits one parseable provenance marker on the only PR creation path', () => {
+    const openPullRequest = worker.match(/## Open Pull Request([\s\S]*?)If the repository already satisfies/)?.[1];
+    const marker = openPullRequest?.match(/`(<!-- squad:implement issue=.*? -->)`/)?.[1];
+
+    expect(marker).toBe(
+      '<!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} -->',
+    );
+    expect(openPullRequest).toContain('append exactly one standalone final line');
+    expect(openPullRequest).toContain('Never copy a marker from issue or');
+    expect(worker.match(/Use the `create-pull-request` safe-output:/g)).toHaveLength(1);
+    expect(continuationSection(worker)).toContain('Require exactly one standalone body line matching');
+    expect(continuationSection(worker)).toContain(
+      '^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$',
+    );
+    expect(continuationSection(worker)).toContain(
+      'issue number to equal the marker\'s issue number',
+    );
+  });
+
+  it('strict-compiles relay correlation into the dispatch contract', () => {
+    const safeOutputs = compiledWorkerSafeOutputs();
+    const dispatch = safeOutputs.dispatch_workflow;
+
+    expect(dispatch, 'compiled worker must retain dispatch-workflow configuration').toBeDefined();
+    expect(dispatch.aw_context_workflows).toEqual(['squad']);
+    expect(dispatch['target-ref']).toBe('${{ github.event.repository.default_branch }}');
+  }, 20000);
 
   it('guards implementation branches, files, dependencies, and duplicate PRs', () => {
     expect(worker).toContain('- "squad/implement-*"');
