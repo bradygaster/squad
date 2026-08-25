@@ -5,6 +5,7 @@
  */
 
 import path from 'node:path';
+import { parse as parseJsonc } from 'jsonc-parser';
 import {
   FSStorageProvider,
   resolveStateBackend,
@@ -278,7 +279,7 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
   );
 }
 
-function loadRegistryKeys(squadDir: string): Set<string> {
+function loadKnownRoutingAgentKeys(squadDir: string): Set<string> {
   const registry = readRegistry(squadDir);
   const keys = new Set<string>();
   for (const [agentId, entry] of Object.entries(registry.agents)) {
@@ -286,6 +287,14 @@ function loadRegistryKeys(squadDir: string): Set<string> {
       throw new Error(`registry entry ${agentId} must be an object`);
     }
     keys.add(normalizeAgentRef(agentId));
+  }
+
+  const team = parseTeamMarkdown(
+    readRequiredFile(path.join(squadDir, 'team.md'), '.squad/team.md'),
+  );
+  for (const agent of team.agents) {
+    const key = normalizeAgentRef(agent.name);
+    if (key.startsWith('@')) keys.add(key);
   }
   return keys;
 }
@@ -305,9 +314,9 @@ function checkRouting(squadDir: string): HealthCheckItem {
       );
     }
 
-    let registryKeys: Set<string>;
+    let knownAgentKeys: Set<string>;
     try {
-      registryKeys = loadRegistryKeys(squadDir);
+      knownAgentKeys = loadKnownRoutingAgentKeys(squadDir);
     } catch {
       return fail(
         'routing',
@@ -332,7 +341,7 @@ function checkRouting(squadDir: string): HealthCheckItem {
       parsed.rules.flatMap((rule) => rule.agents);
     for (const agent of agentReferences) {
       const key = normalizeAgentRef(agent);
-      if (!key || !registryKeys.has(key)) {
+      if (!key || !knownAgentKeys.has(key)) {
         unresolved.add(agent);
       } else {
         referenced.add(key);
@@ -483,12 +492,151 @@ function checkStateBackend(
   }
 }
 
-const ENV_CONFIG_PATHS = [
-  '.mcp.json',
-  path.join('.copilot', 'mcp-config.json'),
-  path.join('.vscode', 'mcp.json'),
+const ENV_JSON_CONFIGS = [
+  { relativePath: '.mcp.json', serverKeys: ['mcpServers'] },
+  {
+    relativePath: path.join('.copilot', 'mcp-config.json'),
+    serverKeys: ['mcpServers'],
+  },
+  {
+    relativePath: path.join('.vscode', 'mcp.json'),
+    serverKeys: ['servers'],
+  },
+  {
+    relativePath: path.join('.vscode', 'settings.json'),
+    serverKeys: ['copilot.mcp.servers'],
+  },
 ] as const;
-const ENV_REFERENCE = /\$\{(?:env:)?([A-Z_][A-Z0-9_]*)\}/g;
+const ENV_REFERENCE =
+  /\$(?:\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(?![A-Za-z0-9_])/g;
+
+function collectEnvironmentReferences(
+  declaration: string,
+  variables: Set<string>,
+): void {
+  for (const match of declaration.matchAll(ENV_REFERENCE)) {
+    const name = match[1] ?? match[2];
+    if (name) variables.add(name);
+  }
+}
+
+function parseJsoncObject(
+  content: string,
+  displayPath: string,
+): Record<string, unknown> {
+  const errors: Array<{ error: number; offset: number; length: number }> = [];
+  const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    throw new Error(`${displayPath} contains invalid JSON`);
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${displayPath} root must be a JSON object`);
+  }
+  return parsed;
+}
+
+function collectServerEnvironmentDeclarations(
+  servers: unknown,
+  relativePath: string,
+  variables: Set<string>,
+  diagnostics: string[],
+): void {
+  if (!isRecord(servers)) {
+    diagnostics.push(`${relativePath}: servers must be a JSON object`);
+    return;
+  }
+
+  for (const serverName of Object.keys(servers).sort((a, b) =>
+    a.localeCompare(b),
+  )) {
+    if (serverName.toUpperCase().startsWith('EXAMPLE-')) continue;
+    const server = servers[serverName];
+    if (!isRecord(server) || server.env === undefined) continue;
+    if (!isRecord(server.env)) {
+      diagnostics.push(
+        `${relativePath}: ${serverName}.env must be a JSON object`,
+      );
+      continue;
+    }
+
+    for (const envName of Object.keys(server.env).sort((a, b) =>
+      a.localeCompare(b),
+    )) {
+      const declaration = server.env[envName];
+      if (typeof declaration !== 'string') {
+        diagnostics.push(
+          `${relativePath}: ${serverName}.env.${envName} must be a string`,
+        );
+        continue;
+      }
+      collectEnvironmentReferences(declaration, variables);
+    }
+  }
+}
+
+function collectAgentFrontmatterDeclarations(
+  repoRoot: string,
+  variables: Set<string>,
+  diagnostics: string[],
+): void {
+  const relativePath = path.join('.github', 'agents', 'squad.agent.md');
+  const agentPath = path.join(repoRoot, relativePath);
+  if (!storage.existsSync(agentPath)) return;
+
+  try {
+    const content = storage.readSync(agentPath) ?? '';
+    const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+    if (!frontmatter || !/^mcp-servers:\s*$/m.test(frontmatter)) return;
+
+    const lines = frontmatter.split(/\r?\n/);
+    let inMcpServers = false;
+    let currentServer: string | undefined;
+    let inEnvironment = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const indent = line.length - line.trimStart().length;
+
+      if (indent === 0) {
+        inMcpServers = trimmed === 'mcp-servers:';
+        currentServer = undefined;
+        inEnvironment = false;
+        continue;
+      }
+      if (!inMcpServers) continue;
+      if (indent === 2 && trimmed.endsWith(':')) {
+        currentServer = trimmed.slice(0, -1).trim();
+        inEnvironment = false;
+        continue;
+      }
+      if (indent === 4) {
+        inEnvironment = trimmed === 'env:';
+        continue;
+      }
+      if (
+        indent >= 6 &&
+        inEnvironment &&
+        currentServer &&
+        !currentServer.toUpperCase().startsWith('EXAMPLE-')
+      ) {
+        const separator = trimmed.indexOf(':');
+        if (separator === -1) {
+          diagnostics.push(
+            `${relativePath}: ${currentServer}.env declaration is invalid`,
+          );
+          continue;
+        }
+        collectEnvironmentReferences(
+          trimmed.slice(separator + 1).trim().replace(/^['"]|['"]$/g, ''),
+          variables,
+        );
+      }
+    }
+  } catch (error) {
+    diagnostics.push(`${relativePath}: ${errorMessage(error)}`);
+  }
+}
 
 function collectEnvironmentDeclarations(repoRoot: string): {
   variables: string[];
@@ -497,55 +645,30 @@ function collectEnvironmentDeclarations(repoRoot: string): {
   const variables = new Set<string>();
   const diagnostics: string[] = [];
 
-  for (const relativePath of ENV_CONFIG_PATHS) {
+  for (const { relativePath, serverKeys } of ENV_JSON_CONFIGS) {
     const configPath = path.join(repoRoot, relativePath);
     if (!storage.existsSync(configPath)) continue;
 
     try {
-      const config = parseJsonObject(
+      const config = parseJsoncObject(
         readRequiredFile(configPath, relativePath),
         relativePath,
       );
-      const servers = config.mcpServers ?? config.servers;
+      const servers = serverKeys
+        .map((key) => config[key])
+        .find((value) => value !== undefined);
       if (servers === undefined) continue;
-      if (!isRecord(servers)) {
-        diagnostics.push(`${relativePath}: servers must be a JSON object`);
-        continue;
-      }
-
-      for (const serverName of Object.keys(servers).sort((a, b) =>
-        a.localeCompare(b),
-      )) {
-        // Scaffolded EXAMPLE-* entries document integrations but are not enabled.
-        if (serverName.toUpperCase().startsWith('EXAMPLE-')) continue;
-        const server = servers[serverName];
-        if (!isRecord(server) || server.env === undefined) continue;
-        if (!isRecord(server.env)) {
-          diagnostics.push(
-            `${relativePath}: ${serverName}.env must be a JSON object`,
-          );
-          continue;
-        }
-
-        for (const envName of Object.keys(server.env).sort((a, b) =>
-          a.localeCompare(b),
-        )) {
-          const declaration = server.env[envName];
-          if (typeof declaration !== 'string') {
-            diagnostics.push(
-              `${relativePath}: ${serverName}.env.${envName} must be a string`,
-            );
-            continue;
-          }
-          for (const match of declaration.matchAll(ENV_REFERENCE)) {
-            if (match[1]) variables.add(match[1]);
-          }
-        }
-      }
+      collectServerEnvironmentDeclarations(
+        servers,
+        relativePath,
+        variables,
+        diagnostics,
+      );
     } catch (error) {
       diagnostics.push(`${relativePath}: ${errorMessage(error)}`);
     }
   }
+  collectAgentFrontmatterDeclarations(repoRoot, variables, diagnostics);
 
   return {
     variables: [...variables].sort((a, b) => a.localeCompare(b)),
@@ -610,6 +733,31 @@ export function runSquadHealth(
   return buildHealthReport(squadDir, squadDir, repoRoot);
 }
 
+function buildResolutionFailureReport(
+  error: unknown,
+  repoRoot: string,
+): HealthReport {
+  const diagnostic = [`error: ${errorKind(error)}`];
+  const checks: HealthCheckItem[] = [
+    fail('team', 'Squad state directory could not be resolved', diagnostic),
+    fail(
+      'registry-charters',
+      'Registry and charters could not be checked because Squad state could not be resolved',
+    ),
+    fail(
+      'routing',
+      'Routing could not be checked because Squad state could not be resolved',
+    ),
+    fail(
+      'state-backend',
+      'Configured Squad state could not be resolved',
+      diagnostic,
+    ),
+    checkEnvVars(repoRoot),
+  ];
+  return { schema: HEALTH_SCHEMA, status: 'fail', checks };
+}
+
 function printHuman(report: HealthReport): void {
   console.log(`squad health: ${report.status.toUpperCase()}`);
   for (const check of report.checks) {
@@ -626,9 +774,18 @@ export async function runHealthCommand(
   cwd: string,
   args: string[],
 ): Promise<number> {
-  const dirs = effectiveSquadDir(cwd);
-  const repoRoot = path.dirname(dirs.local.path);
-  const report = buildHealthReport(dirs.stateDir, dirs.local.path, repoRoot);
+  let report: HealthReport;
+  try {
+    const dirs = effectiveSquadDir(cwd);
+    const repoRoot = path.dirname(dirs.local.path);
+    report = buildHealthReport(
+      dirs.stateDir,
+      dirs.backendConfigDir,
+      repoRoot,
+    );
+  } catch (error) {
+    report = buildResolutionFailureReport(error, path.resolve(cwd));
+  }
 
   if (args.includes('--json')) {
     console.log(JSON.stringify(report, null, 2));

@@ -990,7 +990,8 @@ async function main(): Promise<void> {
   if (cmd === 'health') {
     const { runHealthCommand } = await import('./cli/commands/health.js');
     const exitCode = await runHealthCommand(getSquadStartDir(), args.slice(1));
-    process.exit(exitCode);
+    process.exitCode = exitCode;
+    return;
   }
 
   if (cmd === 'consult') {
@@ -1171,5 +1172,4 @@ main().catch(err => {
   }
   process.exit(1);
 });
-
 

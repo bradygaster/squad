@@ -48,9 +48,10 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-#   Default is '0.14.0' — the first release containing `squad health`.
-#   NOTE: This shared component becomes fully operational only after @bradygaster/squad-cli@0.14.0
-#   is published. Import this workflow only from refs that post-date that release.
+# Default is 0.14.0.
+#   This is the first release containing `squad health`. The shared component
+#   becomes fully operational only after that release is published.
+#   Import this workflow only from refs that post-date that release.
 #
 # Optional model override:
 #   vars.SQUAD_MODEL
@@ -71,6 +72,8 @@ engine:
 
 jobs:
   activation:
+    env:
+      SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.14.0' }}
     pre-steps:
       - name: Mint Squad GitHub App token
         id: squad-app-token
@@ -83,7 +86,6 @@ jobs:
 
       - name: Initialize Squad team
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.14.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
         run: |
           # Preserve committed cast state: if .squad/team.md already exists with
@@ -97,7 +99,6 @@ jobs:
 
       - name: Run Squad health check
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.14.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
         run: |
           npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}" health --json

@@ -7,6 +7,7 @@ import {
   vi,
 } from 'vitest';
 import {
+  cpSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -460,6 +461,24 @@ describe('routing readiness', () => {
     expect(result.status).toBe('fail');
     expect(result.diagnostics).toEqual(['unknown agent: Ghost']);
   });
+
+  it('accepts a platform coding agent declared in team.md', () => {
+    writeSquad(
+      'team.md',
+      TEAM.replace(
+        '| Alpha | Developer | TypeScript | Active |',
+        '| Alpha | Developer | TypeScript | Active |\n| @copilot | Coding Agent | TypeScript | Active |',
+      ),
+    );
+    writeSquad(
+      'routing.md',
+      ROUTING.replace('| feature | Alpha |', '| feature | @copilot |'),
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'routing').status).toBe(
+      'pass',
+    );
+  });
 });
 
 describe('state backend readiness', () => {
@@ -633,6 +652,54 @@ describe('environment readiness', () => {
       message: 'Environment configuration declarations are invalid',
     });
   });
+
+  it('supports VS Code settings, bare references, and mixed-case names', () => {
+    setEnvironment('AzureToken', undefined);
+    setEnvironment('db_password', undefined);
+    write(
+      path.join('.vscode', 'settings.json'),
+      `{
+        // VS Code settings are JSONC.
+        "copilot.mcp.servers": {
+          "service": {
+            "env": {
+              "TOKEN": "$AzureToken",
+              "PASSWORD": "\${env:db_password}",
+            },
+          },
+        },
+      }`,
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'env-vars')).toMatchObject({
+      status: 'fail',
+      diagnostics: ['missing: AzureToken', 'missing: db_password'],
+    });
+  });
+
+  it('discovers environment declarations in Squad agent frontmatter', () => {
+    setEnvironment('FrontmatterToken', undefined);
+    write(
+      path.join('.github', 'agents', 'squad.agent.md'),
+      `---
+name: squad
+mcp-servers:
+  service:
+    type: local
+    command: node
+    env:
+      TOKEN: \${FrontmatterToken}
+---
+
+# Squad
+`,
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'env-vars')).toMatchObject({
+      status: 'fail',
+      diagnostics: ['missing: FrontmatterToken'],
+    });
+  });
 });
 
 describe('CLI output and exit semantics', () => {
@@ -663,6 +730,62 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(1);
     expect(report.status).toBe('fail');
     expect(report.checks).toHaveLength(5);
+  });
+
+  it('uses linked team state and its backend configuration', async () => {
+    const remoteSquadDir = path.join(repoRoot, 'shared-team', '.squad');
+    cpSync(squadDir, remoteSquadDir, { recursive: true });
+    rmSync(path.join(squadDir, 'agents'), { recursive: true });
+    rmSync(path.join(squadDir, 'casting'), { recursive: true });
+    unlinkSync(path.join(squadDir, 'team.md'));
+    unlinkSync(path.join(squadDir, 'routing.md'));
+    writeSquad(
+      'config.json',
+      JSON.stringify({ version: 1, teamRoot: 'shared-team' }),
+    );
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      logs.push(String(line));
+    });
+
+    const exitCode = await runHealthCommand(repoRoot, ['--json']);
+    const report = JSON.parse(logs.join('\n')) as HealthReport;
+
+    expect(exitCode).toBe(0);
+    expect(report.status).toBe('pass');
+    expect(check(report, 'registry-charters').status).toBe('pass');
+  });
+
+  it('emits the full JSON contract when state resolution fails', async () => {
+    writeSquad(
+      'config.json',
+      JSON.stringify({
+        version: 1,
+        teamRoot: '.',
+        projectKey: '../escape',
+        stateLocation: 'external',
+      }),
+    );
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      logs.push(String(line));
+    });
+
+    const exitCode = await runHealthCommand(repoRoot, ['--json']);
+    const report = JSON.parse(logs.join('\n')) as HealthReport;
+
+    expect(exitCode).toBe(1);
+    expect(report).toMatchObject({
+      schema: 'squad-health/v1',
+      status: 'fail',
+    });
+    expect(report.checks.map((item) => item.id)).toEqual([
+      'team',
+      'registry-charters',
+      'routing',
+      'state-backend',
+      'env-vars',
+    ]);
   });
 
   it('keeps human output useful and secret-free', async () => {

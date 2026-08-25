@@ -355,12 +355,16 @@ export function parseRoutingRulesMarkdown(
           .map((agent) => agent.trim())
           .filter((agent) => agent.length > 0 && !/^[—-]+$/.test(agent)),
       );
-      const examples =
+      const parsedExamples =
         examplesIndex >= 0
           ? (cells[examplesIndex] ?? '')
               .split(',')
               .map((example) => example.trim())
               .filter(Boolean)
+          : undefined;
+      const examples =
+        parsedExamples && parsedExamples.length > 0
+          ? parsedExamples
           : undefined;
 
       if (workType && agents.length > 0) {

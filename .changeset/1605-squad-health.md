@@ -1,5 +1,5 @@
 ---
-"@bradygaster/squad-cli": patch
+"@bradygaster/squad-cli": minor
 "@bradygaster/squad-sdk": patch
 ---
 
