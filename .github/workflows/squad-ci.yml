@@ -173,7 +173,7 @@ jobs:
         # than skipping — a skipped gate is indistinguishable from no gate. This
         # includes the shell input security contract gate (#1834) and the compile
         # contract (#1732).
-        run: gh extension install github/gh-aw
+        run: gh extension install --pin v0.86.2 github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Build
@@ -670,3 +670,87 @@ jobs:
             echo "::error::$FAILED sample(s) failed build/test validation"
             exit 1
           fi
+
+  # ── gh-aw strict compile gate ────────────────────────────────────────────
+  # Compiles all four Squad-authored workflow sources with --strict against a
+  # pinned compiler so the delivered stack is always proven compilable.
+  # Runs unconditionally on every PR / push so it can be used as a required
+  # status check (check name: "Squad CI / gh-aw strict compile").
+  #
+  # EXTERNAL ACTION REQUIRED after this PR merges to close the
+  # merge-with-failed-checks gap that allowed #1873 and #1874 to merge:
+  #   1. https://github.com/bradygaster/squad/settings/rules/12703724
+  #   2. Set enforcement → Active
+  #   3. Conditions → branch patterns: refs/heads/dev AND refs/heads/main
+  #   4. Rules → Required status checks → add:
+  #        "Squad CI / gh-aw strict compile"
+  #        "Squad CI / test"
+  # Rulesets are external GitHub configuration; they cannot be enforced from
+  # repo code.
+  gh-aw-compile:
+    name: gh-aw strict compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+
+      - name: Install gh-aw v0.86.2 (pinned)
+        run: gh extension install --pin v0.86.2 github/gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Record compiler version
+        run: |
+          echo "### gh-aw compiler" >> "$GITHUB_STEP_SUMMARY"
+          gh aw --version | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up deploy layout
+        # Mirror workflows/ → <tmpdir>/.github/workflows/ then git init so
+        # gh aw compile sees the directory structure it expects in a consumer
+        # repo after `gh aw add`.
+        run: |
+          COMPILE_DIR=$(mktemp -d)
+          echo "COMPILE_DIR=$COMPILE_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$COMPILE_DIR/.github/workflows"
+          cp -r workflows/. "$COMPILE_DIR/.github/workflows/"
+          git -C "$COMPILE_DIR" init --quiet
+
+      - name: Compile all four workflows (--strict) and verify lock files
+        # Failures accumulate rather than short-circuit so every result is
+        # visible in one run.  A compiler that exits 0 without emitting a lock
+        # file is treated as failure — silent-success is a gate gap.
+        run: |
+          set -euo pipefail
+          FAILED=0
+          echo "### Compile results" >> "$GITHUB_STEP_SUMMARY"
+          for WF in squad squad-implement-worker squad-review squad-deps-worker; do
+            printf -- '--- Compiling %s ---\n' "$WF"
+            if (cd "$COMPILE_DIR" && gh aw compile "$WF" --strict --approve --no-check-update 2>&1); then
+              printf '  => OK\n'
+              echo "✅ \`$WF\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::gh aw compile $WF --strict failed"
+              echo "❌ \`$WF\` compile failed" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Lock files" >> "$GITHUB_STEP_SUMMARY"
+          for LOCK in squad.lock.yml squad-implement-worker.lock.yml squad-review.lock.yml squad-deps-worker.lock.yml; do
+            if [ ! -f "$COMPILE_DIR/.github/workflows/$LOCK" ]; then
+              echo "::error::$LOCK not emitted — compiler exited 0 without writing output"
+              echo "❌ missing: \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=$((FAILED + 1))
+            else
+              echo "✅ \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          if [ "$FAILED" -gt 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**❌ $FAILED failure(s) — gate fails closed**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$FAILED failure(s) — gate fails closed"
+            exit 1
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**✅ All four workflows compiled, all four lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
