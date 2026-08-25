@@ -4,12 +4,15 @@
  *
  * Design:
  *  - Derives specialist roles, task types, and routing hints from team.md and routing.md
- *  - Sanitizes all untrusted text so metadata cannot inject headings, code fences,
- *    hidden instructions, or structural Markdown
- *  - Deterministic: identical input produces identical output (sorted by name)
+ *  - Sanitizes all untrusted text, including Markdown link destinations, Unicode bidi
+ *    control characters, and dangerous structural characters, to prevent injection attacks
+ *  - Deterministic: specialist table is sorted alphabetically by name; routing table
+ *    preserves routing.md source order (which has intentional priority ordering)
  *  - No hardcoded default-cast names; works for any team composition
  *  - Authority boundaries are grounded in the coordinator's own refusal rules
  *    (not aspirational permissions) — derived from static coordinator contract
+ *  - refreshTeamContextInAgentFile has no-op semantics: only writes when semantic
+ *    team content changes (timestamp-independent comparison)
  *
  * @module cli/core/agent-context
  */
@@ -33,10 +36,14 @@ export const TEAM_CONTEXT_DEFAULT =
 
 /**
  * Sanitize a single text field for safe embedding in a Markdown table cell or
- * inline text. Removes or escapes Markdown heading markers, code fences, HTML
- * comment delimiters, and pipe characters that would break table alignment.
+ * inline text.
  *
  * Contract:
+ *  - Strips Markdown link destinations ([label](url) → label, [label][ref] → label)
+ *  - Strips Unicode bidi control (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) and
+ *    other dangerous invisible structural characters
+ *  - Removes Markdown heading markers, code fences, HTML comment delimiters,
+ *    and pipe characters that would break table alignment
  *  - Output is a single line (no embedded newlines)
  *  - Maximum 200 characters after sanitization
  *  - Does NOT alter alphanumeric text, emoji, or normal punctuation
@@ -45,6 +52,12 @@ export function sanitizeField(raw: string): string {
   return raw
     // Flatten to single line first (prevents multi-line injection)
     .replace(/\r?\n/g, ' ')
+    // Strip Unicode bidi control characters and dangerous invisible structural controls
+    // (U+200E, U+200F LTR/RTL marks; U+202A–U+202E embedding/override; U+2066–U+2069 isolates)
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0085\u2028\u2029]/g, '')
+    // Strip Markdown link destinations: [label](url) → label, [label][ref] → label
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')
     // Strip Markdown heading markers (## Heading injection)
     .replace(/^#{1,6}\s+/gm, '')
     // Replace code-fence delimiters (``` and ~~~) to prevent code block injection
@@ -68,6 +81,11 @@ export function sanitizeField(raw: string): string {
  */
 export function sanitizeBlock(raw: string): string {
   return raw
+    // Strip Unicode bidi control characters and dangerous invisible structural controls
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0085\u2028\u2029]/g, '')
+    // Strip Markdown link destinations: [label](url) → label, [label][ref] → label
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')
     // Strip heading markers at start of lines
     .replace(/^#{1,6}\s+/gm, '')
     // Replace code-fence delimiters
@@ -78,6 +96,23 @@ export function sanitizeBlock(raw: string): string {
     .replace(/-->/g, '--\u203a')
     .trim()
     .slice(0, 2000);
+}
+
+/**
+ * Sanitize a timestamp string for safe embedding inside an HTML comment.
+ * Truncates at the first occurrence of --> (comment-close) to prevent comment
+ * breakout; strips <!-- to prevent nested comment injection.
+ */
+function sanitizeTimestamp(ts: string): string {
+  // Truncate at first --> to prevent HTML comment breakout —
+  // any text after --> would escape the comment into rendered output
+  const closeIdx = ts.indexOf('-->');
+  const safe = closeIdx >= 0 ? ts.slice(0, closeIdx) : ts;
+  return safe
+    .replace(/<!--/g, '')
+    .replace(/\r?\n/g, ' ')
+    .trim()
+    .slice(0, 50);
 }
 
 // ── Team member types ──────────────────────────────────────────────────────
@@ -109,7 +144,8 @@ export interface RoutingRow {
  *  - Only rows with status that includes "Active", "Silent", "Monitor", "RAI",
  *    or any emoji status are included (skips headers and separators)
  *  - Coordinator row ("Squad | Coordinator") is excluded
- *  - Rows are returned in the order they appear (deterministic)
+ *  - Rows are returned in the order they appear (source-stable);
+ *    generateAWTeamContextBlock applies alphabetical sort for deterministic output
  */
 export function parseTeamMdMembers(content: string): ActiveMember[] {
   const members: ActiveMember[] = [];
@@ -153,6 +189,7 @@ export function parseTeamMdMembers(content: string): ActiveMember[] {
  *   | Work Type | Agent | Examples |
  *
  * The "Agent" cell often contains an emoji + name, e.g. "EECOM 🔧".
+ * Rows are returned in source order — routing.md has intentional priority ordering.
  */
 export function parseRoutingMd(content: string): RoutingRow[] {
   const rows: RoutingRow[] = [];
@@ -185,7 +222,9 @@ export function parseRoutingMd(content: string): RoutingRow[] {
 
 /**
  * Build routing hints table for AW coordinators from routing rows.
- * Deduplicates by agent (keeps first occurrence of each agent name).
+ * Preserves source order (routing.md has intentional priority ordering) and
+ * shows all distinct task types — no deduplication by agent, which would lose
+ * authoritative routing granularity. Capped at 15 rows for prompt budget.
  * Returns an empty string when no routing data is available.
  */
 function buildRoutingHintsTable(rows: RoutingRow[]): string {
@@ -274,7 +313,8 @@ function buildCapabilityBoundaries(members: ActiveMember[]): string {
  *
  * @param members - Active team members parsed from team.md
  * @param routingRows - Routing table rows parsed from routing.md (optional)
- * @param timestamp - ISO timestamp for the auto-generated comment
+ * @param timestamp - ISO timestamp for the auto-generated comment; sanitized
+ *   to prevent HTML comment breakout
  */
 export function generateAWTeamContextBlock(
   members: ActiveMember[],
@@ -285,12 +325,17 @@ export function generateAWTeamContextBlock(
     return TEAM_CONTEXT_DEFAULT;
   }
 
+  // Sort alphabetically by name for deterministic output regardless of team.md order
+  const sortedMembers = [...members].sort((a, b) =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  );
+
   const parts: string[] = [
-    `<!-- Auto-generated by \`squad cast\` — last updated: ${timestamp}. Do not edit manually. -->`,
+    `<!-- Auto-generated by \`squad cast\` — last updated: ${sanitizeTimestamp(timestamp)}. Do not edit manually. -->`,
     '',
   ];
 
-  const specialistTable = buildSpecialistTable(members);
+  const specialistTable = buildSpecialistTable(sortedMembers);
   if (specialistTable) {
     parts.push(specialistTable);
     parts.push('');
@@ -302,7 +347,7 @@ export function generateAWTeamContextBlock(
     parts.push('');
   }
 
-  const capBoundaries = buildCapabilityBoundaries(members);
+  const capBoundaries = buildCapabilityBoundaries(sortedMembers);
   if (capBoundaries) {
     parts.push(capBoundaries);
     parts.push('');
@@ -353,8 +398,14 @@ export function injectTeamContext(agentMd: string, block: string): string {
  *
  * @param squadDir - Path to the `.squad/` directory
  * @param agentMd - Current content of squad.agent.md
+ * @param timestamp - Optional timestamp to embed; defaults to current time.
+ *   Pass an existing timestamp to produce a stable output for comparison.
  */
-export function buildAndInjectTeamContext(squadDir: string, agentMd: string): string {
+export function buildAndInjectTeamContext(
+  squadDir: string,
+  agentMd: string,
+  timestamp?: string,
+): string {
   const teamMdPath = join(squadDir, 'team.md');
   const routingMdPath = join(squadDir, 'routing.md');
 
@@ -379,16 +430,76 @@ export function buildAndInjectTeamContext(squadDir: string, agentMd: string): st
     // Routing is optional; proceed without it
   }
 
-  const block = generateAWTeamContextBlock(members, routingRows);
+  const block = generateAWTeamContextBlock(members, routingRows, timestamp);
   return injectTeamContext(agentMd, block);
+}
+
+// ── Refresh helpers ────────────────────────────────────────────────────────
+
+/**
+ * Extract the "last updated" timestamp string from an existing team context
+ * block embedded in squad.agent.md.
+ *
+ * Returns `undefined` if the timestamp comment is absent (e.g. new file or
+ * legacy template without the comment).
+ */
+export function extractBlockTimestamp(content: string): string | undefined {
+  const m = content.match(
+    /<!-- Auto-generated by `squad cast` — last updated: ([^.]+)\. Do not edit manually\. -->/,
+  );
+  return m?.[1];
+}
+
+/**
+ * Compute whether squad.agent.md needs to be rewritten and what the new
+ * content should be. Exported for direct unit testing without filesystem I/O.
+ *
+ * Logic:
+ *  1. If markers are absent → no-op (nothing to refresh)
+ *  2. Generate a candidate using the EXISTING timestamp (if any) so the
+ *     comparison is timestamp-independent (semantic content only)
+ *  3. If candidate === current → no-op (team and routing are unchanged)
+ *  4. Otherwise → rebuild with a fresh timestamp and signal shouldWrite
+ *
+ * @param squadDir - `.squad/` directory used to load team.md / routing.md
+ * @param currentContent - Existing squad.agent.md content
+ * @param existingTimestamp - Timestamp extracted from the current block, or undefined
+ * @param nowTimestamp - Current time to use when a semantic change is detected
+ */
+export function _computeTeamContextRefresh(
+  squadDir: string,
+  currentContent: string,
+  existingTimestamp: string | undefined,
+  nowTimestamp: string,
+): { shouldWrite: boolean; content: string } {
+  if (!currentContent.includes(TEAM_CONTEXT_BEGIN)) {
+    return { shouldWrite: false, content: currentContent };
+  }
+
+  // Use the existing timestamp for comparison so a time-only delta doesn't trigger a write
+  const tsForComparison = existingTimestamp ?? nowTimestamp;
+  const candidate = buildAndInjectTeamContext(squadDir, currentContent, tsForComparison);
+
+  if (candidate === currentContent) {
+    // Semantic content unchanged — preserve existing file (no write)
+    return { shouldWrite: false, content: currentContent };
+  }
+
+  // Team or routing changed — rebuild with fresh timestamp
+  const updated = buildAndInjectTeamContext(squadDir, currentContent, nowTimestamp);
+  return { shouldWrite: true, content: updated };
 }
 
 /**
  * Read, update, and write the team context section of an existing
  * squad.agent.md file.
  *
- * If the file does not exist or the markers are absent, this is a no-op
- * (no file is created or corrupted).
+ * No-op semantics:
+ *  - Returns without writing when the file does not exist
+ *  - Returns without writing when the markers are absent (legacy install)
+ *  - Returns without writing when the semantic team content is unchanged
+ *    (timestamp is excluded from the comparison so the file is not dirtied
+ *    on every call)
  *
  * @param squadDir - Path to the `.squad/` directory
  * @param agentMdPath - Full path to the squad.agent.md file to update
@@ -400,10 +511,17 @@ export function refreshTeamContextInAgentFile(
   if (!storage.existsSync(agentMdPath)) return;
 
   const current = storage.readSync(agentMdPath) ?? '';
-  if (!current.includes(TEAM_CONTEXT_BEGIN)) return;
+  const existingTs = extractBlockTimestamp(current);
+  const now = new Date().toISOString();
 
-  const updated = buildAndInjectTeamContext(squadDir, current);
-  if (updated !== current) {
-    storage.writeSync(agentMdPath, updated);
+  const { shouldWrite, content } = _computeTeamContextRefresh(
+    squadDir,
+    current,
+    existingTs,
+    now,
+  );
+
+  if (shouldWrite) {
+    storage.writeSync(agentMdPath, content);
   }
 }

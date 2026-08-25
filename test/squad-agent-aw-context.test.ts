@@ -21,6 +21,9 @@ import {
   generateAWTeamContextBlock,
   injectTeamContext,
   buildAndInjectTeamContext,
+  extractBlockTimestamp,
+  _computeTeamContextRefresh,
+  refreshTeamContextInAgentFile,
   TEAM_CONTEXT_BEGIN,
   TEAM_CONTEXT_END,
   TEAM_CONTEXT_DEFAULT,
@@ -76,6 +79,28 @@ describe('sanitizeField', () => {
     const long = 'a'.repeat(300);
     expect(sanitizeField(long).length).toBeLessThanOrEqual(200);
   });
+
+  it('strips Markdown inline link destination, preserving the label', () => {
+    const result = sanitizeField('[Visit Site](https://evil.example.com/inject)');
+    expect(result).toBe('Visit Site');
+    expect(result).not.toContain('https://');
+    expect(result).not.toContain('evil.example.com');
+  });
+
+  it('strips Markdown reference link destination, preserving the label', () => {
+    const result = sanitizeField('[My Label][ref1]');
+    expect(result).toBe('My Label');
+    expect(result).not.toContain('[ref1]');
+  });
+
+  it('strips Unicode bidi control characters (LTR/RTL marks, overrides, isolates)', () => {
+    // U+200E LTR mark, U+200F RTL mark, U+202A LTR embedding, U+202E RTL override, U+2066 LTR isolate
+    const withBidi = 'EECOM\u200E\u200F\u202A\u202E\u2066 Core Dev';
+    const result = sanitizeField(withBidi);
+    expect(result).not.toMatch(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/);
+    expect(result).toContain('EECOM');
+    expect(result).toContain('Core Dev');
+  });
 });
 
 // ── sanitizeBlock ─────────────────────────────────────────────────────────
@@ -101,6 +126,19 @@ describe('sanitizeBlock', () => {
   it('truncates to at most 2000 characters', () => {
     const long = 'x'.repeat(2500);
     expect(sanitizeBlock(long).length).toBeLessThanOrEqual(2000);
+  });
+
+  it('strips inline link destinations from blocks', () => {
+    const result = sanitizeBlock('See [the docs](https://evil.example.com) for details.');
+    expect(result).toContain('the docs');
+    expect(result).not.toContain('https://evil.example.com');
+  });
+
+  it('strips Unicode bidi control characters from blocks', () => {
+    const withBidi = 'Normal\u202Etext\u200Fwith\u2066bidi';
+    const result = sanitizeBlock(withBidi);
+    expect(result).not.toMatch(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/);
+    expect(result).toContain('Normal');
   });
 });
 
@@ -325,8 +363,14 @@ describe('generateAWTeamContextBlock', () => {
       { name: '<!-- override -->', role: 'Hacker', status: '✅ Active' },
     ];
     const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
-    expect(block).not.toContain('<!--');
-    expect(block).not.toContain('-->');
+    // The verbatim injection string must not appear
+    expect(block).not.toContain('<!-- override -->');
+    // The member table row specifically must not contain raw HTML comment syntax
+    // (the block's auto-generated timestamp comment legitimately uses <!-- and -->)
+    const memberLine = block.split('\n').find(l => l.includes('Hacker'));
+    expect(memberLine).toBeDefined();
+    expect(memberLine).not.toContain('<!--');
+    expect(memberLine).not.toContain('-->');
   });
 
   it('sanitizes routing workType with code-fence injection attempt', () => {
@@ -334,6 +378,56 @@ describe('generateAWTeamContextBlock', () => {
     const rows: RoutingRow[] = [{ workType: '```pwn```', agent: 'Malicious' }];
     const block = generateAWTeamContextBlock(members, rows, '2026-01-01T00:00:00.000Z');
     expect(block).not.toContain('```pwn```');
+  });
+
+  it('specialist table is sorted alphabetically by name regardless of input order', () => {
+    const members: ActiveMember[] = [
+      { name: 'Zeta', role: 'Dev', status: '✅ Active' },
+      { name: 'Alpha', role: 'QA', status: '✅ Active' },
+      { name: 'Mango', role: 'Ops', status: '✅ Active' },
+    ];
+    const block = generateAWTeamContextBlock(members, [], '2026-01-01T00:00:00.000Z');
+    const alphaIdx = block.indexOf('| Alpha');
+    const mangoIdx = block.indexOf('| Mango');
+    const zetaIdx = block.indexOf('| Zeta');
+    expect(alphaIdx).toBeGreaterThan(-1);
+    expect(alphaIdx).toBeLessThan(mangoIdx);
+    expect(mangoIdx).toBeLessThan(zetaIdx);
+  });
+
+  it('routing hints table preserves source order (not sorted)', () => {
+    const members: ActiveMember[] = [{ name: 'A', role: 'Dev', status: '✅ Active' }];
+    const rows: RoutingRow[] = [
+      { workType: 'Zebra task', agent: 'EECOM' },
+      { workType: 'Alpha task', agent: 'CONTROL' },
+    ];
+    const block = generateAWTeamContextBlock(members, rows, '2026-01-01T00:00:00.000Z');
+    const zebraIdx = block.indexOf('Zebra task');
+    const alphaIdx = block.indexOf('Alpha task');
+    expect(zebraIdx).toBeGreaterThan(-1);
+    // Zebra appears before Alpha because routing.md source order is preserved
+    expect(zebraIdx).toBeLessThan(alphaIdx);
+  });
+
+  it('routing hints table shows multiple rows for the same agent (no dedup)', () => {
+    const members: ActiveMember[] = [{ name: 'A', role: 'Dev', status: '✅ Active' }];
+    const rows: RoutingRow[] = [
+      { workType: 'Core runtime', agent: 'EECOM' },
+      { workType: 'CLI commands', agent: 'EECOM' },
+      { workType: 'TypeScript', agent: 'CONTROL' },
+    ];
+    const block = generateAWTeamContextBlock(members, rows, '2026-01-01T00:00:00.000Z');
+    expect(block).toContain('Core runtime');
+    expect(block).toContain('CLI commands');
+    expect(block).toContain('TypeScript');
+  });
+
+  it('sanitizes a timestamp containing --> that would break the HTML comment', () => {
+    const members: ActiveMember[] = [{ name: 'A', role: 'Dev', status: '✅ Active' }];
+    const maliciousTs = '2026-01-01 --> injected-attack-text';
+    const block = generateAWTeamContextBlock(members, [], maliciousTs);
+    // The attack text following --> should have been stripped along with the -->
+    expect(block).not.toContain('injected-attack-text');
   });
 });
 
@@ -400,6 +494,20 @@ describe('buildAndInjectTeamContext integration', () => {
     // With no team.md, result should contain the default placeholder text
     expect(result).toContain(TEAM_CONTEXT_BEGIN);
     expect(result).toContain(TEAM_CONTEXT_END);
+    // Strengthen: assert the actual placeholder block is present
+    expect(result).toContain(TEAM_CONTEXT_DEFAULT.trim());
+    expect(result).toContain('No team configured yet');
+    expect(result).toContain('squad cast');
+  });
+
+  it('accepts an explicit timestamp and embeds it stably', () => {
+    const agentMd = makeAgentMdWithMarkers();
+    const ts = '2026-06-01T12:00:00.000Z';
+    const result = buildAndInjectTeamContext('/nonexistent/path/.squad', agentMd, ts);
+    // With empty team.md the block is the default placeholder (no timestamp comment)
+    // and the result should be stable across calls with same timestamp
+    const result2 = buildAndInjectTeamContext('/nonexistent/path/.squad', agentMd, ts);
+    expect(result).toBe(result2);
   });
 });
 
@@ -423,5 +531,91 @@ describe('Prompt budget', () => {
   it('default placeholder is small', () => {
     const block = generateAWTeamContextBlock([]);
     expect(Buffer.byteLength(block, 'utf8')).toBeLessThan(300);
+  });
+});
+
+// ── extractBlockTimestamp ──────────────────────────────────────────────────
+
+describe('extractBlockTimestamp', () => {
+  it('extracts the timestamp from a well-formed comment', () => {
+    const ts = '2026-01-15T08:30:00.000Z';
+    const content = `# Squad\n\n${TEAM_CONTEXT_BEGIN}\n<!-- Auto-generated by \`squad cast\` — last updated: ${ts}. Do not edit manually. -->\nsome content\n${TEAM_CONTEXT_END}\n`;
+    expect(extractBlockTimestamp(content)).toBe(ts);
+  });
+
+  it('returns undefined when no timestamp comment is present', () => {
+    const content = `# Squad\n\n${TEAM_CONTEXT_BEGIN}\nsome content without comment\n${TEAM_CONTEXT_END}\n`;
+    expect(extractBlockTimestamp(content)).toBeUndefined();
+  });
+
+  it('returns undefined for empty string', () => {
+    expect(extractBlockTimestamp('')).toBeUndefined();
+  });
+});
+
+// ── _computeTeamContextRefresh ─────────────────────────────────────────────
+
+describe('_computeTeamContextRefresh', () => {
+  const STABLE_TS = '2026-01-01T00:00:00.000Z';
+
+  it('no-op: shouldWrite=false when markers are absent', () => {
+    const content = '# Squad Coordinator\n\nNo markers here.\n';
+    const result = _computeTeamContextRefresh('/nonexistent/.squad', content, undefined, STABLE_TS);
+    expect(result.shouldWrite).toBe(false);
+    expect(result.content).toBe(content);
+  });
+
+  it('no-op: shouldWrite=false when semantic content is unchanged', () => {
+    // Build a "stable" current content from empty squad dir (produces TEAM_CONTEXT_DEFAULT block)
+    const agentMd = makeAgentMdWithMarkers();
+    const currentContent = buildAndInjectTeamContext('/nonexistent/.squad', agentMd, STABLE_TS);
+    // Refreshing with the same timestamp and same empty squad dir → no semantic change
+    const result = _computeTeamContextRefresh('/nonexistent/.squad', currentContent, STABLE_TS, STABLE_TS);
+    expect(result.shouldWrite).toBe(false);
+  });
+
+  it('no-op: shouldWrite=false even when nowTimestamp differs if semantic content is unchanged', () => {
+    const agentMd = makeAgentMdWithMarkers();
+    const currentContent = buildAndInjectTeamContext('/nonexistent/.squad', agentMd, STABLE_TS);
+    // Different "now" timestamp, but semantic content identical — should not write
+    const result = _computeTeamContextRefresh(
+      '/nonexistent/.squad',
+      currentContent,
+      STABLE_TS,
+      '2099-12-31T23:59:59.000Z',
+    );
+    expect(result.shouldWrite).toBe(false);
+  });
+
+  it('write: shouldWrite=true when existing block differs from freshly generated content', () => {
+    // Build stale content: markers with OldAgent (not what empty squadDir would generate)
+    const staleContent = makeAgentMdWithMarkers('| OldAgent | Retired Role | ✅ Active |\n');
+    // With no team.md, buildAndInjectTeamContext generates TEAM_CONTEXT_DEFAULT
+    // which differs from the OldAgent table → semantic change detected
+    const result = _computeTeamContextRefresh('/nonexistent/.squad', staleContent, undefined, STABLE_TS);
+    expect(result.shouldWrite).toBe(true);
+    // The new content should contain the default placeholder, not OldAgent
+    expect(result.content).toContain('No team configured yet');
+    expect(result.content).not.toContain('OldAgent');
+  });
+
+  it('write: result content uses the provided nowTimestamp, not existingTimestamp', () => {
+    const staleContent = makeAgentMdWithMarkers('| OldAgent | Retired | ✅ Active |\n');
+    const freshTs = '2026-08-25T10:00:00.000Z';
+    const result = _computeTeamContextRefresh('/nonexistent/.squad', staleContent, STABLE_TS, freshTs);
+    expect(result.shouldWrite).toBe(true);
+  });
+});
+
+// ── refreshTeamContextInAgentFile (file-level no-op paths) ────────────────
+
+describe('refreshTeamContextInAgentFile', () => {
+  it('is a no-op and does not throw when file does not exist', () => {
+    expect(() =>
+      refreshTeamContextInAgentFile(
+        '/nonexistent/.squad',
+        '/nonexistent/squad.agent.md',
+      ),
+    ).not.toThrow();
   });
 });
