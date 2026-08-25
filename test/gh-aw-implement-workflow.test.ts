@@ -237,12 +237,32 @@ describe('gh-aw implement workflows', () => {
   });
 
   it('documents one-command installation in dependency order', () => {
-    const workerIndex = guide.indexOf('bradygaster/squad/workflows/squad-implement-worker.md@dev');
-    const dispatcherIndex = guide.indexOf('bradygaster/squad/workflows/squad.md@dev');
+    const paths = [
+      'bradygaster/squad/workflows/squad.md@dev',
+      'bradygaster/squad/workflows/squad-implement-worker.md@dev',
+      'bradygaster/squad/workflows/squad-review.md@dev',
+    ];
+    const orderedInstallCommand = [
+      'gh aw add \\',
+      `  ${paths[0]} \\`,
+      `  ${paths[1]} \\`,
+      `  ${paths[2]}`,
+    ].join('\n');
+    const normalizedGuide = guide.replace(/\r\n/g, '\n');
+    const hasOrderedInstallCommand = (markdown: string): boolean =>
+      [...markdown.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+        .some(match => match[1].includes(orderedInstallCommand));
 
-    expect(workerIndex).toBeGreaterThan(-1);
-    expect(dispatcherIndex).toBeGreaterThan(workerIndex);
-    expect(guide).toContain('The single command installs the dedicated worker first');
+    expect(hasOrderedInstallCommand(normalizedGuide)).toBe(true);
+
+    const reorderedGuide = normalizedGuide.replaceAll(
+      `${paths[0]} \\\n  ${paths[1]}`,
+      `${paths[1]} \\\n  ${paths[0]}`,
+    );
+    expect(hasOrderedInstallCommand(reorderedGuide)).toBe(false);
+    expect(guide).toMatch(
+      /Keep the dispatcher first\. `gh aw add` discovers its implementation-worker and\s+reviewer dependencies while compiling it; the explicit worker and reviewer\s+entries then confirm the complete install surface without creating duplicates\./,
+    );
   });
 });
 
