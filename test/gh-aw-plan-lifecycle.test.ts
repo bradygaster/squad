@@ -352,7 +352,7 @@ function ontologyTransitions(markdown: string): OntologyTransition[] {
   const afterMarker = markdown.slice(sectionStart + sectionMarker.length);
   const nextSection = afterMarker.search(/\n## \d+\./);
   const section = nextSection === -1 ? afterMarker : afterMarker.slice(0, nextSection);
-  const fences = [...section.matchAll(/^```[ \t]*\n([\s\S]*?)^```[ \t]*$/gm)];
+  const fences = [...section.matchAll(/^```[^\r\n]*\n([\s\S]*?)^```[ \t]*$/gm)];
   if (fences.length !== 1) {
     throw new Error(
       `Ontology State Transition Table must contain exactly one fenced block; found ${fences.length}`,
@@ -516,6 +516,14 @@ describe('#1758.3: validate precedes both accept steps', () => {
 
   it('squad.md next-hints reproduce the ontology order', () => {
     expect(() => assertPlanningNextHintsMatch(ontology, squad)).not.toThrow();
+  });
+
+  it('accepts an informational language tag on the ontology fence', () => {
+    const taggedOntology = ontology.replace(
+      '## 2. State Transition Table\n\n```',
+      '## 2. State Transition Table\n\n```text',
+    );
+    expect(() => assertPlanningNextHintsMatch(taggedOntology, squad)).not.toThrow();
   });
 
   it('fails when ontology transitions reorder while pinned inequalities still hold', () => {
