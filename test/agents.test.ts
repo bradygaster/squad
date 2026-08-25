@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { compileCharter, type CharterCompileOptions } from '@bradygaster/squad-sdk/agents';
+import {
+  compileCharter,
+  parseCharterMarkdown,
+  type CharterCompileOptions,
+} from '@bradygaster/squad-sdk/agents';
 import { resolveModel, type ModelResolutionOptions } from '@bradygaster/squad-sdk/agents';
 import { ConfigurationError } from '@bradygaster/squad-sdk/adapter/errors';
 
@@ -94,6 +98,19 @@ describe('Charter Compilation (M1-8)', () => {
   });
 
   describe('Charter Parsing', () => {
+    it('should parse legacy name and role from the title', () => {
+      const charter = parseCharterMarkdown(`# Marquez — CLI UX Designer
+
+## Role
+Reviews command-line user experience.
+`);
+
+      expect(charter.identity).toMatchObject({
+        name: 'Marquez',
+        role: 'CLI UX Designer',
+      });
+    });
+
     it('should parse Identity section with name, role, expertise, style', () => {
       // This would test parseCharterMarkdown with real markdown content
       // For now, we test the exported function behavior

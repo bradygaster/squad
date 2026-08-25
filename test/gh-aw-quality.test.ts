@@ -11,6 +11,7 @@
 import { afterAll, describe, it, expect } from 'vitest';
 import { cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 import { POSIX_SHELL, NO_POSIX_SHELL_MESSAGE, requirePosixShell } from './posix-shell';
@@ -2326,5 +2327,195 @@ describe('gh-aw: threat detection taxonomy — parse_error must not map to agent
     const signalEnd = labelSyncContent.indexOf('];', signalStart);
     const signalBlock = labelSyncContent.slice(signalStart, signalEnd);
     expect(signalBlock).toContain('agentic-detection-failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Shared bootstrap health-before-dispatch contract (#1605)
+//
+// The shared squad.md bootstrap must invoke `squad health --json` after init
+// and before any artifact upload or dispatch. Health failure must stop the
+// dispatch path visibly — no continue-on-error on the health step.
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () => {
+  const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
+
+  it('squad health --json appears in the shared bootstrap', () => {
+    expect(sharedContent).toMatch(/npx\s+--yes\s+"@bradygaster\/squad-cli@\$\{SQUAD_CLI_VERSION\}"\s+health\s+--json/);
+  });
+
+  it('health uses --json flag for structured CI output', () => {
+    expect(sharedContent).toMatch(/health --json/);
+  });
+
+  it('squad health --json appears after squad init (command ordering)', () => {
+    const initIdx = sharedContent.indexOf('init --preset default');
+    const healthIdx = sharedContent.indexOf('health --json');
+    expect(initIdx, 'squad init must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(healthIdx, 'squad health --json must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(healthIdx, 'health must come after init').toBeGreaterThan(initIdx);
+  });
+
+  it('squad health --json appears before upload-artifact (before dispatch)', () => {
+    const healthIdx = sharedContent.indexOf('health --json');
+    const uploadIdx = sharedContent.indexOf('upload-artifact');
+    expect(healthIdx, 'squad health --json must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(uploadIdx, 'upload-artifact must appear in the shared bootstrap').toBeGreaterThan(-1);
+    expect(healthIdx, 'health must come before artifact upload').toBeLessThan(uploadIdx);
+  });
+
+  it('health step has no continue-on-error (fail-fast contract)', () => {
+    const lines = sharedContent.split('\n');
+    const healthLineIdx = lines.findIndex(l => l.includes('health --json'));
+    expect(healthLineIdx, 'health command must appear in the shared bootstrap').toBeGreaterThan(-1);
+
+    // Walk back to the "- name:" that opens this step.
+    let stepStart = healthLineIdx;
+    while (stepStart > 0 && !lines[stepStart].match(/^\s+-\s+name:/)) {
+      stepStart--;
+    }
+    // Walk forward to the next "- name:" or end of the pre-steps block.
+    let stepEnd = healthLineIdx + 1;
+    while (stepEnd < lines.length && !lines[stepEnd].match(/^\s+-\s+name:/) && !lines[stepEnd].match(/^steps:/)) {
+      stepEnd++;
+    }
+    const stepBlock = lines.slice(stepStart, stepEnd).join('\n');
+
+    expect(stepBlock, 'health step must contain the health command').toContain('health --json');
+    expect(
+      stepBlock,
+      'health step must NOT have continue-on-error: true — health failure must stop dispatch',
+    ).not.toMatch(/continue-on-error:\s*true/);
+  });
+
+  it('step ordering in pre-steps: init → health → upload', () => {
+    const preStepsStart = sharedContent.indexOf('pre-steps:');
+    expect(preStepsStart, 'pre-steps: block must exist in the shared bootstrap').toBeGreaterThan(-1);
+    const preStepsSection = sharedContent.slice(preStepsStart);
+
+    const initStepIdx = preStepsSection.indexOf('Initialize Squad team');
+    const healthStepIdx = preStepsSection.indexOf('Run Squad health check');
+    const uploadStepIdx = preStepsSection.indexOf('Upload Squad state artifact');
+
+    expect(initStepIdx, '"Initialize Squad team" step must exist').toBeGreaterThan(-1);
+    expect(healthStepIdx, '"Run Squad health check" step must exist').toBeGreaterThan(-1);
+    expect(uploadStepIdx, '"Upload Squad state artifact" step must exist').toBeGreaterThan(-1);
+
+    expect(healthStepIdx, 'health check must follow init').toBeGreaterThan(initStepIdx);
+    expect(healthStepIdx, 'health check must precede upload').toBeLessThan(uploadStepIdx);
+  });
+
+  it('health step uses the same CLI version mechanism as init', () => {
+    const lines = sharedContent.split('\n');
+    const healthLineIdx = lines.findIndex(l => l.includes('health --json'));
+    expect(healthLineIdx).toBeGreaterThan(-1);
+
+    const healthLine = lines[healthLineIdx];
+    expect(healthLine, 'health must use npx').toContain('npx');
+    expect(healthLine, 'health must reference squad-cli package').toContain('@bradygaster/squad-cli@');
+    expect(healthLine, 'health must use the SQUAD_CLI_VERSION variable').toContain('SQUAD_CLI_VERSION');
+  });
+
+  it('continue-on-error on the restore step does not shield health failure from stopping dispatch', () => {
+    // The agent-job restore step may carry continue-on-error: true — that is deliberate
+    // (it lets the agent-job body explain a missing artifact). The HEALTH step in the
+    // activation job must NOT carry it: activation-job failure blocks the agent job.
+    const lines = sharedContent.split('\n');
+    const restoreLineIdx = lines.findIndex(l => l.includes('Restore Squad state from activation artifact'));
+    expect(restoreLineIdx, 'restore step must exist').toBeGreaterThan(-1);
+
+    // Examine only the activation-job section (before the restore step).
+    const activationSection = lines.slice(0, restoreLineIdx).join('\n');
+    const healthStepStart = activationSection.lastIndexOf('Run Squad health check');
+    expect(healthStepStart, '"Run Squad health check" step must appear before the restore step').toBeGreaterThan(-1);
+
+    const healthStepBlock = activationSection.slice(healthStepStart);
+    expect(
+      healthStepBlock,
+      'health step in the activation job must not carry continue-on-error: true',
+    ).not.toMatch(/continue-on-error:\s*true/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Uncast scaffolds must still initialize before the health gate (#1605)
+//
+// The activation job skips `squad init` when `.squad/team.md` already lists
+// roster entries. A scaffolded team.md carries only the table header and the
+// separator row, and counting those as a roster skips init — which, now that
+// readiness runs before dispatch, fails the activation job and blocks every
+// agent instead of casting the team.
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
+  const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
+
+  function initStepScript(): string {
+    const lines = sharedContent.split('\n');
+    const start = lines.findIndex((l) => l.includes('Initialize Squad team'));
+    expect(start, '"Initialize Squad team" step must exist').toBeGreaterThan(-1);
+    let end = start + 1;
+    while (end < lines.length && !/^\s+-\s+name:/.test(lines[end])) end++;
+    return lines.slice(start, end).join('\n');
+  }
+
+  /** Runs the step's roster guard against a team.md fixture. */
+  function skipsInit(teamContent: string): boolean {
+    const dir = mkdtempSync(join(tmpdir(), 'squad-roster-guard-'));
+    try {
+      const teamPath = join(dir, 'team.md');
+      writeFileSync(teamPath, teamContent);
+      const script = initStepScript();
+      const guard = script.match(/if \[ -f "\.squad\/team\.md" \] && ([\s\S]*?); then/)?.[1];
+      expect(
+        guard,
+        'roster guard must remain extractable from the "Initialize Squad team" step',
+      ).toBeDefined();
+
+      const result = spawnSync(
+        requirePosixShell(),
+        ['-c', (guard as string).replace(/\.squad\/team\.md/g, teamPath)],
+        { encoding: 'utf8' },
+      );
+      return result.status === 0;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const HEADER = '## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n';
+
+  it('keeps the roster guard runnable in a plain POSIX shell', () => {
+    // The fixtures below execute the guard through `requirePosixShell()`, which is
+    // `/bin/sh` on Linux. Process substitution is a bash extension, so a guard that
+    // used it would fail there for the wrong reason and make the fixtures below
+    // report on shell support instead of roster semantics.
+    expect(
+      initStepScript(),
+      'roster guard must not use bash-only process substitution',
+    ).not.toContain('<(');
+  });
+
+  it('runs init for a scaffolded team.md that has no cast members', () => {
+    expect(
+      skipsInit(`${HEADER}\n## Project Context\n`),
+      'header and separator rows are not roster entries — skipping init here leaves ' +
+        'an uncast team that fails readiness and blocks every dispatch',
+    ).toBe(false);
+  });
+
+  it('preserves a committed cast rather than re-running init', () => {
+    expect(
+      skipsInit(`${HEADER}| Flight | Lead | \`.squad/agents/flight/charter.md\` | ✅ Active |\n\n## Project Context\n`),
+      'a team.md with real roster rows must still skip init (#1657)',
+    ).toBe(true);
+  });
+
+  it('ignores roster-shaped rows outside the Members section', () => {
+    expect(
+      skipsInit(`## Coordinator\n\n| Name | Role | Notes |\n|------|------|-------|\n| Squad | Coordinator | Routes work. |\n\n${HEADER}\n`),
+      'only the Members table describes the cast; the Coordinator table is always present',
+    ).toBe(false);
   });
 });

@@ -128,6 +128,21 @@ describe('effectiveSquadDir()', () => {
     expect(stateDir).toBe(join(globalDir, 'projects', projectKey));
   });
 
+  it('resolves linked team state and backend config from the remote team root', () => {
+    scaffold('.squad', 'shared-team/.squad');
+    const squadDir = join(TMP, '.squad');
+    writeConfig(squadDir, {
+      version: 1,
+      teamRoot: 'shared-team',
+    });
+
+    const { local, stateDir, backendConfigDir } = effectiveSquadDir(TMP);
+
+    expect(local.path).toBe(squadDir);
+    expect(stateDir).toBe(join(TMP, 'shared-team', '.squad'));
+    expect(backendConfigDir).toBe(stateDir);
+  });
+
   it('preserves SquadDirInfo metadata in local field', () => {
     scaffold('.squad');
     const { local } = effectiveSquadDir(TMP);

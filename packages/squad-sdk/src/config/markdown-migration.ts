@@ -239,8 +239,8 @@ function parseTeamTable(lines: string[]): ParsedAgent[] {
 
     const cells = trimmed.split('|').map((c) => c.trim()).filter(Boolean);
 
-    // Detect header row
-    if (!headerCols && cells.some((c) => /name/i.test(c))) {
+    // Reset the column mapping for each roster table in the document.
+    if (cells.some((c) => /^name$/i.test(c.replace(/[*_`]/g, '').trim()))) {
       headerCols = cells.map((c) => c.toLowerCase());
       continue;
     }
@@ -289,58 +289,87 @@ function parseTeamTable(lines: string[]): ParsedAgent[] {
  */
 export function parseRoutingRulesMarkdown(
   content: string,
-): { rules: ParsedRoutingRule[]; warnings: string[] } {
+): {
+  rules: ParsedRoutingRule[];
+  warnings: string[];
+  agentReferences?: string[];
+} {
   content = normalizeEol(content);
   const rules: ParsedRoutingRule[] = [];
   const warnings: string[] = [];
+  const agentReferences: string[] = [];
 
   if (!content || !content.trim()) {
-    return { rules, warnings };
+    return { rules, warnings, agentReferences };
   }
 
   const lines = content.split('\n');
   let inTable = false;
-  let headerPassed = false;
+  let headerColumns: string[] = [];
 
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Detect routing table
-    if (/##\s*routing\s*table/i.test(trimmed)) {
+    // Detect routing table section (also accepts "## Work Type → Agent" used by this project's routing.md)
+    if (/##\s*routing\s*table/i.test(trimmed) || /##\s*work\s*type\s*.{0,5}agent/i.test(trimmed)) {
       inTable = true;
-      headerPassed = false;
+      headerColumns = [];
       continue;
     }
 
     // New section ends the table
-    if (inTable && /^##\s+/.test(trimmed) && !/routing\s*table/i.test(trimmed)) {
+    if (inTable && /^##\s+/.test(trimmed) && !/routing\s*table/i.test(trimmed) && !/work\s*type\s*.{0,5}agent/i.test(trimmed)) {
       inTable = false;
       continue;
     }
 
     if (inTable && trimmed.startsWith('|')) {
-      // Header row
-      if (/work\s*type|pattern/i.test(trimmed)) {
-        headerPassed = true;
+      const cells = parseMarkdownTableCells(trimmed);
+      if (
+        headerColumns.length === 0 &&
+        cells.some((cell) => /^(work\s*type|pattern)$/i.test(cell))
+      ) {
+        headerColumns = cells.map((cell) => cell.toLowerCase());
         continue;
       }
-      // Separator
-      if (/^[|:\-\s]+$/.test(trimmed)) continue;
+      if (cells.every((cell) => /^[-:]+$/.test(cell))) continue;
+      if (headerColumns.length === 0) continue;
 
-      if (!headerPassed) continue;
+      const workTypeIndex = headerColumns.findIndex((column) =>
+        /^(work\s*type|pattern)$/.test(column),
+      );
+      const agentIndexes = headerColumns
+        .map((column, index) =>
+          /^(route\s*to|agent|primary|secondary|owner)$/.test(column)
+            ? index
+            : -1,
+        )
+        .filter((index) => index >= 0);
+      const examplesIndex = headerColumns.findIndex((column) =>
+        /^examples?$/.test(column),
+      );
+      const workType = cells[workTypeIndex];
+      const agents = agentIndexes.flatMap((index) =>
+        (cells[index] ?? '')
+          .split(',')
+          .map((agent) => agent.trim())
+          .filter((agent) => agent.length > 0 && !/^[—-]+$/.test(agent)),
+      );
+      const parsedExamples =
+        examplesIndex >= 0
+          ? (cells[examplesIndex] ?? '')
+              .split(',')
+              .map((example) => example.trim())
+              .filter(Boolean)
+          : undefined;
+      const examples =
+        parsedExamples && parsedExamples.length > 0
+          ? parsedExamples
+          : undefined;
 
-      const cells = trimmed.split('|').map((c) => c.trim()).filter(Boolean);
-      if (cells.length >= 2) {
-        const workType = cells[0];
-        const agents = cells[1]!.split(',').map((a) => a.trim()).filter(Boolean);
-        const examples =
-          cells.length >= 3
-            ? cells[2]!.split(',').map((e) => e.trim()).filter(Boolean)
-            : undefined;
-
-        if (workType && agents.length > 0) {
-          rules.push({ workType, agents, examples });
-        }
+      if (workType && agents.length > 0) {
+        rules.push({ workType, agents, examples });
+        agentReferences.push(...agents);
       }
     }
   }
@@ -349,7 +378,60 @@ export function parseRoutingRulesMarkdown(
     warnings.push('Could not parse any routing rules from routing.md');
   }
 
-  return { rules, warnings };
+  agentReferences.push(...parseModuleOwnershipAgentReferences(lines));
+
+  return { rules, warnings, agentReferences };
+}
+
+function parseModuleOwnershipAgentReferences(lines: string[]): string[] {
+  const references: string[] = [];
+  let inTable = false;
+  let agentColumns: number[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^##\s+module\s+ownership\b/i.test(trimmed)) {
+      inTable = true;
+      agentColumns = [];
+      continue;
+    }
+    if (inTable && /^##\s+/.test(trimmed)) break;
+    if (!inTable || !trimmed.startsWith('|')) continue;
+
+    const cells = parseMarkdownTableCells(trimmed);
+    if (
+      agentColumns.length === 0 &&
+      cells.some((cell) => /^(primary|secondary|owner|agent)$/i.test(cell))
+    ) {
+      agentColumns = cells
+        .map((cell, index) =>
+          /^(primary|secondary|owner|agent)$/i.test(cell) ? index : -1,
+        )
+        .filter((index) => index >= 0);
+      continue;
+    }
+    if (cells.every((cell) => /^[-:]+$/.test(cell))) continue;
+
+    for (const column of agentColumns) {
+      const value = cells[column];
+      if (!value || /^[—-]+$/.test(value)) continue;
+      references.push(
+        ...value
+          .split(',')
+          .map((agent) => agent.trim())
+          .filter(Boolean),
+      );
+    }
+  }
+
+  return references;
+}
+
+function parseMarkdownTableCells(line: string): string[] {
+  const cells = line.split('|').map((cell) => cell.trim());
+  if (cells[0] === '') cells.shift();
+  if (cells.at(-1) === '') cells.pop();
+  return cells;
 }
 
 // ============================================================================
