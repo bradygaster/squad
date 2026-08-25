@@ -14,6 +14,14 @@ import { join, dirname } from 'node:path';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 import { POSIX_SHELL, NO_POSIX_SHELL_MESSAGE, requirePosixShell } from './posix-shell';
+import {
+  extractRunBlocks,
+  scanRunBlocks,
+  extractBodyHandlingShell,
+  scanShellLines,
+  formatViolations,
+  type ContractToken,
+} from './gh-aw-shell-contract';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
@@ -1081,55 +1089,408 @@ describe('gh-aw: inline skill extraction', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test: gh-aw compilation retains durable state and Auto-Cast contracts
+// Test: gh-aw compilation retains durable state, Auto-Cast contracts, AND the
+// shell input security contract over compiled output (#1834).
 // ---------------------------------------------------------------------------
+//
+// workflows/squad.md §"Shell input security contract [MANDATORY]" declares that
+// attacker-controlled GitHub event text may reach the shell only through named
+// env: vars read via quoted expansion, and names four greppable anti-patterns.
+// That contract was declared but unenforced. This suite is the gate.
+//
+// The gate FAILS CLOSED. It used to gate on `it.skipIf(!ghAwAvailable)`, which is
+// the exact "silently skipped while the suite reports green" defect this file's
+// header (see #1833) complains about: a check that never runs is indistinguishable
+// from no check. So `gh aw` missing, a lock that fails to compile, an absent lock,
+// or zero inspected surfaces are all FAILURES, never skips. CI installs gh aw for
+// exactly this reason (.github/workflows/squad-ci.yml, #1732/#1834).
 
-describe('gh-aw: compiled workflow contract', () => {
-  const ghAwAvailable = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' }).status === 0;
+const GH_AW_INSTALL_HINT =
+  '`gh aw` is required to compile the workflow this gate inspects. Install it with ' +
+  '`gh extension install github/gh-aw` (matches .github/workflows/squad-ci.yml). This ' +
+  'gate fails closed rather than skipping: an unmeasured contract is indistinguishable ' +
+  'from a violated one (#1834).';
 
-  // Explicit timeout: this test shells out to the real `gh aw compile` binary,
-  // which reliably finishes in ~2-3s in isolation but can exceed the 5s vitest
-  // default under full-suite parallel load/contention. Bumping this avoids
-  // spurious CI flakiness unrelated to the assertions themselves.
-  it.skipIf(!ghAwAvailable)('strict-compiles and preserves prompt/config behavior', () => {
-    const workspace = createTestWorkspace('gh-aw-compile-');
-    try {
-      execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-      // gh-aw's dispatch-workflow validation (added alongside #1682's
-      // safe-outputs.dispatch-workflow config) resolves its dispatch target against
-      // a `.github/workflows/` directory that it locates relative to the compiled
-      // file's path, assuming the standard `<repo-root>/.github/workflows/<file>.md`
-      // layout. This repo distributes the gh-aw *source* one level shallower, from a
-      // top-level `workflows/` directory (see docs/src/content/docs/guide/gh-aw.md),
-      // which downstream consumers install into their own `.github/workflows/` via
-      // `gh aw add owner/squad/workflows/squad-implement-worker.md@dev
-      // owner/squad/workflows/squad.md@dev` — landing both files side-by-side there.
-      // Mirror that real deployment layout in the ephemeral test workspace (instead
-      // of a bare `workflows/` copy) so the dispatch target `squad-implement-worker`
-      // resolves the same way it will for every real downstream install.
-      cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
-      execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict'], {
-        cwd: workspace,
-        encoding: 'utf8',
-        stdio: 'pipe',
+const CONTRACT_FIXTURE = join(
+  process.cwd(),
+  'test',
+  'fixtures',
+  'gh-aw-shell-contract',
+  'violating.lock.yml'
+);
+
+describe('gh-aw: compiled workflow shell input security contract', () => {
+  // Compile the real workflow once and memoize. The top-level afterAll wipes
+  // TEST_WORKSPACES_DIR, so the ephemeral workspace is cleaned globally.
+  let compiledLock: string | null = null;
+
+  function lockText(): string {
+    if (compiledLock !== null) return compiledLock;
+
+    const versionProbe = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' });
+    if (versionProbe.status !== 0) {
+      throw new Error(`gh aw --version failed. ${GH_AW_INSTALL_HINT}`);
+    }
+
+    const workspace = createTestWorkspace('gh-aw-contract-');
+    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    // gh-aw's dispatch-workflow validation resolves its dispatch target against a
+    // `.github/workflows/` directory located relative to the compiled file. This
+    // repo ships the gh-aw *source* from a top-level `workflows/` dir; downstream
+    // consumers install it into `.github/workflows/` via `gh aw add`. Mirror that
+    // real deployment layout so `squad-implement-worker` resolves as it will in
+    // every real install.
+    cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
+    execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict'], {
+      cwd: workspace,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    const lockPath = join(workspace, '.github', 'workflows', 'squad.lock.yml');
+    if (!existsSync(lockPath)) {
+      throw new Error(
+        `gh aw compile produced no squad.lock.yml — the compiled artifact this gate ` +
+          `inspects is absent, so the contract is unmeasured. ${GH_AW_INSTALL_HINT}`
+      );
+    }
+    compiledLock = readText(lockPath);
+    return compiledLock;
+  }
+
+  // Explicit timeout: shells out to the real `gh aw compile`, ~2-3s in isolation
+  // but can exceed the 5s vitest default under full-suite parallel contention.
+  it('strict-compiles and preserves prompt/config behavior', () => {
+    const compiled = lockText();
+    expect(compiled).toContain('"auto_close_issue":false');
+    expect(compiled).toContain('"data_enabled":true');
+    expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
+    expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
+    // gh-aw records runtime-import paths relative to the repo root, so with the
+    // real `.github/workflows/` deployment layout these are prefixed accordingly.
+    expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
+    expect(compiled).toContain('{{#runtime-import .github/workflows/squad.md}}');
+    expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
+  }, 20000);
+
+  it('emits no attacker-controlled event text in any compiled run: block', () => {
+    const compiled = lockText();
+    const blocks = extractRunBlocks(compiled);
+
+    // Fail closed: a scanner with nothing to scan is a permanently green gate. The
+    // real lock has dozens of run: blocks; zero means compilation changed shape and
+    // the extractor no longer sees them.
+    expect(
+      blocks.length,
+      'No run: blocks found in compiled squad.lock.yml. A scanner that finds nothing ' +
+        'to scan is a permanently green gate (#1834). Re-check extractRunBlocks against ' +
+        'the current `gh aw compile` output shape.'
+    ).toBeGreaterThan(0);
+
+    const violations = scanRunBlocks(blocks, '.github/workflows/squad.lock.yml');
+    expect(
+      violations,
+      `Compiled run: blocks violate the shell input security contract ` +
+        `(workflows/squad.md §"Shell input security contract [MANDATORY]"). Actions ` +
+        `expands \${{ … }} before the shell starts, so event text in a run: block is ` +
+        `unsafe even inside quotes. Each entry names the anti-pattern token, file, and ` +
+        `line:\n${formatViolations(violations)}\n\n` +
+        `Reproduce the finding directly against compiled output:\n` +
+        `  gh aw compile .github/workflows/squad.md --strict\n` +
+        `  grep -nE '\\$\\{\\{[^}]*github\\.event\\.[a-z_]+\\.(body|title)' ` +
+        `.github/workflows/squad.lock.yml`
+    ).toEqual([]);
+  }, 20000);
+
+  it('routes the /squad parser body only through contract-safe shell', () => {
+    // The printf/eval/awk hops live in the parser one-liners of workflows/squad.md,
+    // which gh-aw pulls in verbatim at runtime via {{#runtime-import … squad.md}} —
+    // never inlined into the lock. This is the only surface on which those hops can
+    // be observed, so it is scanned directly (see gh-aw-shell-contract.ts header).
+    const source = readText(SQUAD_WORKFLOW);
+    const shell = extractBodyHandlingShell(source);
+
+    expect(
+      shell.length,
+      'No body-handling shell found in workflows/squad.md. The /squad parser reads ' +
+        'SQUAD_TRIGGER_BODY through fenced bash; zero matches means the extractor lost ' +
+        'the parser code and the printf/eval/awk hops are unmeasured (#1834).'
+    ).toBeGreaterThan(0);
+
+    const violations = scanShellLines(shell, 'workflows/squad.md');
+    expect(
+      violations,
+      `The /squad parser passes attacker body text into a forbidden shell construct ` +
+        `(workflows/squad.md §"Shell input security contract [MANDATORY]"). Each entry ` +
+        `names the anti-pattern token, file, and line:\n${formatViolations(violations)}\n\n` +
+        `Reproduce: inspect the parser one-liners that read the body variable:\n` +
+        `  grep -nE 'printf +"?\\$|awk +-v|eval|bash +-c' workflows/squad.md`
+    ).toEqual([]);
+  });
+
+  it('positive control: turns red on a known-violating compiled fixture, naming token, file, and line', () => {
+    // RETRO's acceptance bar (#1834): "A gate that cannot turn red on a fixture
+    // containing `run: printf '%s\n' "${{ github.event.issue.body }}"` is not a valid
+    // gate." This proves the gate CAN fail, using the same extractor/scanner the real
+    // lock goes through. It needs no gh aw, so it runs everywhere — the "can it turn
+    // red" proof must never itself be skippable.
+    expect(existsSync(CONTRACT_FIXTURE), `positive-control fixture missing: ${CONTRACT_FIXTURE}`).toBe(true);
+
+    const fixture = readText(CONTRACT_FIXTURE);
+    const violations = scanRunBlocks(extractRunBlocks(fixture), 'violating.lock.yml');
+
+    const tokens = new Set<ContractToken>(violations.map(v => v.token));
+    for (const expected of [
+      'UNTRUSTED_TEMPLATE_IN_RUN',
+      'UNTRUSTED_PRINTF_FORMAT',
+      'UNTRUSTED_COMMAND_STRING',
+      'UNTRUSTED_AWK_PROGRAM_OR_VAR',
+    ] as ContractToken[]) {
+      expect(
+        tokens.has(expected),
+        `Positive-control fixture did not trip ${expected}. The gate cannot observe ` +
+          `that anti-pattern, so it is a status-only gate for it (#1834). Found tokens: ` +
+          `${[...tokens].join(', ') || '(none)'}`
+      ).toBe(true);
+    }
+
+    // The diagnostic must name token AND file AND line — a status-only failure passes
+    // a generic-shaped assertion clean (#1832 mutation-testing finding).
+    const mandated = violations.find(v => v.token === 'UNTRUSTED_TEMPLATE_IN_RUN');
+    expect(mandated, 'the mandated RETRO line must trip UNTRUSTED_TEMPLATE_IN_RUN').toBeDefined();
+    expect(mandated!.file).toBe('violating.lock.yml');
+    expect(mandated!.line, 'the violation must carry a concrete 1-based line number').toBeGreaterThan(0);
+    expect(mandated!.evidence).toContain('github.event.issue.body');
+
+    // And the rendered diagnostic actually contains token, file, and line together.
+    expect(formatViolations(violations)).toMatch(
+      /UNTRUSTED_TEMPLATE_IN_RUN\s+violating\.lock\.yml:\d+/
+    );
+  });
+
+  it('does not flag the sanctioned body-handling forms (guards against a permanent red)', () => {
+    // The contract's own correct forms must stay green, or the gate is a permanent
+    // red — equally worthless per the 2026-08-20 test bar. Runner-owned expansions
+    // ($PATH, ${RUNNER_TEMP}) are not attacker text and must not trip the gate.
+    const safe = [
+      `printf '%s\\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\\r$/,"")}' | grep -F -- '/squad'`,
+      `body="\${SQUAD_TRIGGER_BODY-}"`,
+      `printf '%s\\n' "$body" | tr -d '\\r' | grep -n -i -m 3 -F -- '/squad'`,
+      // `--` ends printf's option parsing; the format slot is still the literal that
+      // follows it, so the body remains an argument. The `--` handling added for the
+      // bypass below must not turn this sanctioned form red.
+      `printf -- '%s\\n' "$body"`,
+      `printf -- '%s\\n' "$GITHUB_EVENT_ISSUE_BODY"`,
+      `bash -c 'set +o histexpand; export PATH="$PATH"'`,
+      `source "\${RUNNER_TEMP}/gh-aw/actions/resolve_docker_socket_gid.sh"`,
+      `awk -v n=3 'BEGIN { print n }'`,
+    ].map((text, i) => ({ line: i + 1, text }));
+
+    expect(
+      scanShellLines(safe, 'sanctioned-forms'),
+      'The scanner flagged a contract-COMPLIANT form. A gate that is always red is as ' +
+        'worthless as one that is always green (2026-08-20 test bar). Tighten the ' +
+        'detectors in gh-aw-shell-contract.ts.'
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: scanner-level regressions in the shell contract gate (#1834)
+// ---------------------------------------------------------------------------
+//
+// The gate above proves the CONTRACT holds against the real workflow. These tests
+// prove the DETECTOR holds — that the scanner actually observes what its own doc
+// comments claim it observes. Three bypasses were found by review after the gate
+// landed; each is a case where the gate reported green because the detector never
+// looked, which is the same "unmeasured is indistinguishable from clean" failure
+// mode the gate itself exists to eliminate.
+//
+// These are pure unit tests over the exported scanner: no `gh aw`, no compile, so
+// the proof that the detector can see each bypass is never skippable.
+
+describe('gh-aw: shell contract detector regressions (#1834)', () => {
+  const scan = (text: string) => scanShellLines([{ line: 1, text }], 'regression');
+  const tokensFor = (text: string) => scan(text).map(v => v.token);
+
+  describe('BODY_VAR matches multi-segment carrier names', () => {
+    // The doc comment promised "any `*_BODY` / `*_TITLE` variable", but the pattern
+    // allowed only ONE `[A-Za-z0-9]+` segment before the suffix. Event-carrier env
+    // vars are conventionally multi-segment SCREAMING_SNAKE, so the *unenforced*
+    // shape was the idiomatic one — every detector went blind on it.
+    const multiSegment = [
+      'SQUAD_EVENT_BODY',
+      'GITHUB_EVENT_ISSUE_BODY',
+      'GITHUB_EVENT_COMMENT_BODY',
+      'SQUAD_EVENT_ISSUE_TITLE',
+      'GITHUB_EVENT_PULL_REQUEST_TITLE',
+    ];
+
+    for (const name of multiSegment) {
+      it(`taints $${name} in printf's format slot`, () => {
+        expect(
+          tokensFor(`printf "$${name}"`),
+          `$${name} is a *_BODY/*_TITLE carrier the scanner claims to taint, but a ` +
+            `single-segment-only pattern let it reach printf's format slot unflagged.`
+        ).toContain('UNTRUSTED_PRINTF_FORMAT');
       });
 
-      const compiled = readText(join(workspace, '.github', 'workflows', 'squad.lock.yml'));
-      expect(compiled).toContain('"auto_close_issue":false');
-      expect(compiled).toContain('"data_enabled":true');
-      expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
-      expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
-      // gh-aw records runtime-import paths relative to the repo root (not the
-      // compiled file's own directory), so with the real `.github/workflows/`
-      // deployment layout these are prefixed accordingly — verified against an
-      // isolated compile outside this repo/worktree entirely.
-      expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
-      expect(compiled).toContain('{{#runtime-import .github/workflows/squad.md}}');
-      expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
-    } finally {
-      rmSync(workspace, { recursive: true, force: true });
+      it(`taints $${name} in a command string`, () => {
+        expect(tokensFor(`eval "\${${name}-}"`)).toContain('UNTRUSTED_COMMAND_STRING');
+      });
+
+      it(`taints $${name} passed through awk -v`, () => {
+        expect(tokensFor(`awk -v v="$${name}" 'BEGIN { print v }'`)).toContain(
+          'UNTRUSTED_AWK_PROGRAM_OR_VAR'
+        );
+      });
     }
-  }, 20000);
+
+    it('still taints the single-segment and sanctioned carrier names', () => {
+      // Widening the prefix must not lose the names that already worked.
+      for (const text of [
+        'printf "$SQUAD_TRIGGER_BODY"',
+        'printf "$ISSUE_BODY"',
+        'printf "$PR_TITLE"',
+        'printf "$body"',
+      ]) {
+        expect(tokensFor(text), `${text} must stay tainted`).toContain(
+          'UNTRUSTED_PRINTF_FORMAT'
+        );
+      }
+    });
+
+    it('does not taint runner-owned variables that merely contain the segments', () => {
+      // A widened prefix must not start flagging runner-owned values, or the gate
+      // goes permanently red — as worthless as permanently green.
+      for (const text of [
+        'printf "$RUNNER_TEMP"',
+        'bash -c "export PATH=$PATH"',
+        'source "${GITHUB_WORKSPACE}/setup.sh"',
+        'printf "$BODYGUARD_HOME"',
+      ]) {
+        expect(tokensFor(text), `${text} carries no attacker text and must stay green`).toEqual(
+          []
+        );
+      }
+    });
+  });
+
+  describe("printf's -- end-of-options separator does not shield the format slot", () => {
+    // `printf -- "$body"` is the idiom used precisely when a body might begin with
+    // `-`. The arg reader treated `--` as the format operand and returned it, so the
+    // body — sitting in the real format slot — was never inspected.
+    for (const name of ['body', 'SQUAD_TRIGGER_BODY', 'GITHUB_EVENT_ISSUE_BODY']) {
+      it(`flags printf -- "$${name}"`, () => {
+        expect(
+          tokensFor(`printf -- "$${name}"`),
+          `\`--\` ends option parsing; the body after it IS the format string. ` +
+            `Reading \`--\` as the first argument bypasses UNTRUSTED_PRINTF_FORMAT.`
+        ).toContain('UNTRUSTED_PRINTF_FORMAT');
+      });
+    }
+
+    it('flags -- combined with other option forms', () => {
+      expect(tokensFor('printf -v out -- "$body"')).toContain('UNTRUSTED_PRINTF_FORMAT');
+    });
+
+    it('leaves the format slot green when -- is followed by a literal format', () => {
+      expect(tokensFor(`printf -- '%s\\n' "$body"`)).toEqual([]);
+      expect(tokensFor(`printf -- "%s\\n" "$SQUAD_TRIGGER_BODY"`)).toEqual([]);
+    });
+
+    it('still flags a body glued to -- as one word', () => {
+      // `--"$body"` is a single word, so it is the format string, not a separator.
+      expect(tokensFor('printf --"$body"')).toContain('UNTRUSTED_PRINTF_FORMAT');
+    });
+  });
+
+  describe('extractRunBlocks does not re-read block scalar content as workflow keys', () => {
+    // A `run:` line inside a heredoc or echoed YAML is shell text, not a key. The
+    // outer cursor never advanced past a consumed scalar, so that line re-entered
+    // the header branch: a phantom block appeared, its lines were already owned by
+    // the real block, and every violation inside it was reported twice.
+    const NESTED = [
+      'jobs:', //                                  1
+      '  a:', //                                   2
+      '    steps:', //                             3
+      '      - name: writes a workflow', //        4
+      '        run: |', //                         5
+      "          cat <<'YAML' > generated.yml", // 6
+      '          run: |', //                       7
+      '            printf "$SQUAD_EVENT_BODY"', // 8
+      '          YAML', //                         9
+      '          echo done', //                   10
+      '      - name: tail', //                    11
+      '        run: echo tail', //                12
+    ].join('\n');
+
+    it('opens no phantom block for a run: line nested in a heredoc', () => {
+      const blocks = extractRunBlocks(NESTED);
+      expect(
+        blocks.map(b => b.headerLine),
+        'Line 7 is heredoc payload owned by the block scalar opened on line 5, not a ' +
+          'workflow key. A header at line 7 means scalar content was misparsed.'
+      ).toEqual([5, 12]);
+    });
+
+    it('keeps the whole heredoc inside the enclosing block', () => {
+      const outer = extractRunBlocks(NESTED).find(b => b.headerLine === 5);
+      expect(outer, 'the real run: block on line 5 must be extracted').toBeDefined();
+      expect(
+        outer!.lines.map(l => l.line),
+        'the enclosing block owns every deeper-indented line, heredoc payload included'
+      ).toEqual([6, 7, 8, 9, 10]);
+    });
+
+    it('reports a violation inside nested YAML exactly once', () => {
+      const violations = scanRunBlocks(extractRunBlocks(NESTED), 'nested.yml');
+      expect(
+        violations.map(v => `${v.token}@${v.line}`),
+        'Duplicate blocks produce duplicate findings, so the same defect is counted ' +
+          'twice in the diagnostic and in any violation total.'
+      ).toEqual(['UNTRUSTED_PRINTF_FORMAT@8']);
+    });
+
+    it('does not skip a sibling run: that terminates the previous block', () => {
+      // Guards the off-by-one in the cursor advance: the line that ENDS a scalar is
+      // not part of it and must still be examined as a header.
+      const siblings = [
+        'steps:', //           1
+        '  run: |', //         2
+        '    printf "$A_BODY"', // 3
+        '  run: |', //         4
+        '    printf "$B_BODY"', // 5
+      ].join('\n');
+
+      const blocks = extractRunBlocks(siblings);
+      expect(
+        blocks.map(b => b.headerLine),
+        'Advancing the cursor past a scalar must not swallow the line that ended it.'
+      ).toEqual([2, 4]);
+      expect(scanRunBlocks(blocks, 'siblings.yml').map(v => v.line)).toEqual([3, 5]);
+    });
+
+    it('still extracts the real compiled lock shape (inline and block runs)', () => {
+      // Non-regression: the shapes the gate depends on are unchanged by the advance.
+      const mixed = [
+        'steps:', //                  1
+        '  - name: inline', //        2
+        '    run: echo hi', //        3
+        '  - name: block', //         4
+        '    run: |', //              5
+        '      echo one', //          6
+        '', //                        7
+        '      echo two', //          8
+        '  - name: after', //         9
+        '    run: echo bye', //      10
+      ].join('\n');
+
+      const blocks = extractRunBlocks(mixed);
+      expect(blocks.map(b => b.headerLine)).toEqual([3, 5, 10]);
+      expect(blocks[1].lines.map(l => l.line)).toEqual([6, 7, 8]);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

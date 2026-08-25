@@ -167,10 +167,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Install gh-aw extension
-        # Required so `gh aw --version` succeeds and the compile-gate test in
-        # test/gh-aw-quality.test.ts is NOT skipped. Without this step the test
-        # uses `it.skipIf(!ghAwAvailable)` and always skips — which is
-        # indistinguishable from having no gate at all. See #1732.
+        # Required so `gh aw --version` succeeds and the compiled-workflow gates in
+        # test/gh-aw-quality.test.ts can compile squad.md. Those gates FAIL CLOSED:
+        # if gh aw is absent they hard-fail with this exact install command, rather
+        # than skipping — a skipped gate is indistinguishable from no gate. This
+        # includes the shell input security contract gate (#1834) and the compile
+        # contract (#1732).
         run: gh extension install github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}

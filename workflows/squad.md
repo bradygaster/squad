@@ -292,10 +292,26 @@ expressions, or when parser code passes a body variable as a `printf` format,
 into `eval`/`bash -c`, or into an awk program/`awk -v`. A gate that cannot turn
 red on a fixture whose `run:` prints a raw issue-body expression is not valid.
 
-That gate is **not implemented**; it is tracked in #1834. This contract is
-normative today but reviewed by hand, not enforced by CI. The steps below
-satisfy hops 2–6 as written; hop 1 is unverifiable here, since this repository
-ships no compiled gh-aw output.
+That gate is **implemented** (#1834) in `test/gh-aw-quality.test.ts` (describe
+`gh-aw: compiled workflow shell input security contract`), backed by the scanner
+in `test/gh-aw-shell-contract.ts` and the positive-control fixture
+`test/fixtures/gh-aw-shell-contract/violating.lock.yml`. It runs in CI, which
+installs `gh aw` and compiles this workflow (see `.github/workflows/squad-ci.yml`).
+The gate fails closed: a missing compiler, an absent lock, or zero inspected
+surfaces are failures, never skips.
+
+Because the contract spans two artifacts, it is verified on two surfaces:
+
+- **Hop 1 (`UNTRUSTED_TEMPLATE_IN_RUN`)** is a property of the compiled lock, so
+  it is scanned there. Actions expands template expressions before the shell
+  starts, so an attacker-controlled event expression left in a compiled `run:`
+  block is the observable failure.
+- **Hops 2–6 (`printf`/`eval`/`bash -c`/`awk`)** live in the `/squad` parser
+  one-liners below, which gh-aw pulls in verbatim at runtime via a
+  runtime-import of this file and never inlines into the lock. That
+  runtime-imported source is therefore the only surface on which those hops can
+  be observed, and the gate scans it directly. The steps below satisfy hops 2–6
+  as written.
 
 ### Step PC-0: Normalize a dispatched command [MANDATORY on `workflow_dispatch`]
 
