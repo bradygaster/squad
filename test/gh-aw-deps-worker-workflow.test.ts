@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -114,7 +114,8 @@ function compileWorker(workflowId: string): Record<string, unknown> {
 }
 
 /**
- * Compiles `squad-deps-worker` and returns the full compiled config.
+ * Compiles `squad-deps-worker` and returns the decoded `create_pull_request`
+ * safe-output config gh-aw bakes into `.lock.yml`.
  */
 function compileDepsWorker(): Record<string, unknown> {
   return compileWorker('squad-deps-worker');
@@ -261,7 +262,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
   });
 
   it(
-    'compiled general worker: no Wave-1 basename leaked into exclude (T7 compiled)',
+    'compiled general worker: Wave-1 basenames remain compiled protected (T7 compiled)',
     () => {
       const config = compileWorker('squad-implement-worker');
       const compiledProtectedFiles = config.protected_files as string[];
@@ -349,10 +350,9 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
   // ── T9: mutation tests ─────────────────────────────────────────────────────
   describe('mutation tests: weakening the contract must be detected (T9)', () => {
     /**
-     * Apply a mutation to the authored workflow source and validate that the
-     * specified contract check fails. Returns true if the mutation is correctly
-     * detected (i.e. the validator rejects it), false if the mutation goes
-     * undetected (test should fail).
+     * Apply a mutation to the authored workflow source and assert that the
+     * validator throws (i.e. the mutation is correctly detected). The function
+     * returns void; detection is asserted internally.
      *
      * The validator receives the exclude list AND the mutated frontmatter so
      * that tests asserting scalar values (e.g. policy) can parse them from the
