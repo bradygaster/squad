@@ -12,6 +12,7 @@ on:
     events:
       - issues
       - issue_comment
+      - pull_request_comment
       - pull_request_review_comment
   workflow_dispatch:
     inputs:
@@ -105,7 +106,7 @@ safe-outputs:
     max: 20
     target: "*"
   dispatch-workflow:
-    workflows: [squad-implement-worker]
+    workflows: [squad-implement-worker, squad-review]
     max: 3
 ---
 
@@ -220,6 +221,7 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad cast-member <spec>` | Cast Member |
 | `/squad retire <name>` | Retire |
 | `/squad status` | Status |
+| `/squad review` | Review Relay |
 | `/squad research` | Research |
 | `/squad plan` | Plan |
 | `/squad plan revise <feedback>` | Plan Revise |
@@ -375,7 +377,7 @@ requested. First-token-wins is the contract; keep extraction anchored to
 3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `research`, `triage`, `implement`
+   - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
 4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
 
@@ -429,7 +431,7 @@ Assign the parsed mode string from **Step PC-2** to `SQUAD_PARSED_MODE` and run 
 ```bash
 mode="${SQUAD_PARSED_MODE-}"
 case "$mode" in
-  status|research|plan)
+  status|review|research|plan)
     echo READ_ONLY
     ;;
   *)
@@ -441,7 +443,11 @@ esac
 - `READ_ONLY` → skip the permission lookup entirely and continue to **Execute Mode** unchanged.
 - `AUTH_REQUIRED` → continue to **Step AG-2**.
 
-**Open-mode allow-list:** `status`, `research`, and `plan` (plan preview). These commands remain available to any actor. Every other recognized mode either changes repository state, revises or advances a durable planning artifact, or dispatches implementation work, so it requires authorization.
+**Open-mode allow-list:** `status`, `review` (advisory relay), `research`, and
+`plan` (plan preview). These commands remain available to any actor. Every
+other recognized mode changes repository state, revises or advances a durable
+planning artifact, or dispatches implementation work, so it requires
+authorization.
 
 ### Step AG-2: Resolve actor permission [MANDATORY for `AUTH_REQUIRED`]
 
@@ -517,6 +523,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `cast-member` | `squad-cast-member` |
 | `retire` | `squad-retire` |
 | `status` | `squad-status` |
+| `review` | `squad-review-relay` |
 | `research` | `squad-research` |
 | `plan` | `squad-plan` |
 | `plan revise` | `squad-plan-revise` |
@@ -532,7 +539,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `plan activate` | `squad-plan-activate` |
 | `implement` | `squad-implement` |
 
-**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Implement) must not load them.
+**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement) must not load them.
 
 If the parsed mode's skill cannot be loaded, report the failure in plain language and stop. Never improvise a mode playbook from memory.
 
@@ -541,7 +548,7 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 ## Team Guard
 
 **Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
-**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Implement (these run their own pre-checks).
+**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement (these run their own pre-checks).
 
 ### Step TG-1: Check Team Presence
 
@@ -739,6 +746,35 @@ Create `meet-the-squad.md` at repo root with: title, universe name, team table (
 ##### Step 7: Post Completion
 
 `add-comment`: `🧑‍🤝‍🧑 Your Squad is ready for review.\n\n**PR:** #{pr_number}\n\nMerge the PR to activate your team. Run /squad status afterward to verify.`
+
+## skill: `squad-review-relay`
+---
+description: Relay `/squad review` on a pull request to the independent reviewer.
+---
+
+This mode is only valid from a pull request comment or pull request review
+comment. Resolve the pull request number and current 40-character lowercase
+head SHA from GitHub's API, not from user text. If either cannot be established,
+post one `add-comment` explaining that `/squad review` must target a pull
+request, then stop without dispatching.
+
+Use only the typed `dispatch-workflow` safe-output. Never call the generic
+`dispatch_workflow` tool. Emit exactly one dispatch:
+
+```json
+{
+  "workflow_name": "squad-review",
+  "inputs": {
+    "issue_number": "{pull-request-number}",
+    "expected_head_sha": "{current-head-sha}",
+    "request_origin": "manual"
+  }
+}
+```
+
+Do not review the diff in this router, emit a verdict, edit files, create an
+issue, or dispatch any other workflow. The independent reviewer owns all
+provenance, deduplication, and review decisions.
 
 ## skill: `squad-connect`
 ---
