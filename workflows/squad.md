@@ -548,8 +548,7 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 ## Team Guard
 
 **Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
-**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay,
-Implement (these run their own pre-checks).
+**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement (these run their own pre-checks).
 
 ### Step TG-1: Check Team Presence
 
