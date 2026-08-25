@@ -6,6 +6,7 @@ emoji: "🤖"
 private: false
 on:
   bots: ["github-actions[bot]"]
+  roles: all
   slash_command:
     name: squad
     events:
@@ -30,6 +31,9 @@ permissions:
   copilot-requests: write
   issues: read
   pull-requests: read
+concurrency:
+  group: "squad-${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}"
+  cancel-in-progress: false
 network:
   allowed:
     - defaults
@@ -412,9 +416,94 @@ Steps 1–3 are load-bearing precisely because their output is observable: an
 agent chooses. Do not drop them in favor of step 4, and do not call step 4 a
 guarantee.
 
+## Actor Authorization Guard
+
+Run this guard after **Step PC-2** resolves the parsed mode and before **Execute Mode** loads any skill.
+
+### Step AG-1: Classify the parsed mode [MANDATORY]
+
+Authorization is opt-out only for the explicit open-mode allow-list below. Never infer "read-only" from a prefix, from the absence of a mutating keyword, or from prose. Anything outside the allow-list — including empty, malformed, or future mode strings — requires authorization or should already have been stopped by **Step PC-3**. Unknown text must never bypass this guard by being treated as read-only.
+
+Assign the parsed mode string from **Step PC-2** to `SQUAD_PARSED_MODE` and run exactly this:
+
+```bash
+mode="${SQUAD_PARSED_MODE-}"
+case "$mode" in
+  status|research|plan)
+    echo READ_ONLY
+    ;;
+  *)
+    echo AUTH_REQUIRED
+    ;;
+esac
+```
+
+- `READ_ONLY` → skip the permission lookup entirely and continue to **Execute Mode** unchanged.
+- `AUTH_REQUIRED` → continue to **Step AG-2**.
+
+**Open-mode allow-list:** `status`, `research`, and `plan` (plan preview). These commands remain available to any actor. Every other recognized mode either changes repository state, revises or advances a durable planning artifact, or dispatches implementation work, so it requires authorization.
+
+### Step AG-2: Resolve actor permission [MANDATORY for `AUTH_REQUIRED`]
+
+When **Step AG-1** returned `AUTH_REQUIRED`, resolve the event, actor, and repository only through named YAML `env:` bindings; never embed Actions expressions inside a shell block. Use `github.event_name` for `SQUAD_EVENT_NAME`, `github.actor` for `SQUAD_TRIGGER_ACTOR`, and `github.repository` for `SQUAD_REPOSITORY`.
+
+GitHub requires write access to trigger `workflow_dispatch`. That platform authorization also covers the controlled `dispatch-workflow` relay from `squad-implement-worker`; do not look up the relay bot as though it were a human collaborator. For all issue, issue-comment, and pull-request-review-comment paths, call the collaborator-permission API for the triggering actor.
+
+```bash
+event="${SQUAD_EVENT_NAME-}"
+actor="${SQUAD_TRIGGER_ACTOR-}"
+repository="${SQUAD_REPOSITORY-}"
+if [ "$event" = "workflow_dispatch" ]; then
+  echo DISPATCH_AUTHORIZED
+elif [ -z "$actor" ] || [ -z "$repository" ]; then
+  echo PERMISSION_UNRESOLVED
+else
+  perm="$(gh api "repos/$repository/collaborators/$actor/permission" 2>/dev/null | jq -r '.permission // empty' 2>/dev/null || true)"
+  if [ -n "$perm" ]; then
+    printf '%s\n' "$perm"
+  else
+    echo PERMISSION_UNRESOLVED
+  fi
+fi
+```
+
+Only the exact `workflow_dispatch` event receives `DISPATCH_AUTHORIZED`; never use a generic event fallback. On every other event, API errors, empty output, and missing actor/repository identity are all `PERMISSION_UNRESOLVED`. Fail closed — never continue a mutating mode on an unresolved permission signal.
+
+### Step AG-3: Decide authorization [MANDATORY]
+
+Assign **Step AG-1**'s output to `SQUAD_MODE_AUTH_CLASS` and **Step AG-2**'s output to `SQUAD_ACTOR_PERMISSION`, then run exactly this:
+
+```bash
+mode_class="${SQUAD_MODE_AUTH_CLASS-}"
+perm="${SQUAD_ACTOR_PERMISSION-}"
+if [ "$mode_class" = "READ_ONLY" ]; then
+  echo AUTH_SKIPPED
+else
+  case "$perm" in
+    DISPATCH_AUTHORIZED|admin|maintain|write) echo AUTHORIZED ;;
+    *) echo REFUSE ;;
+  esac
+fi
+```
+
+- `AUTHORIZED` → continue to **Execute Mode**.
+- `AUTH_SKIPPED` → continue to **Execute Mode**.
+- `REFUSE` → go to **Step AG-4**. This includes `read`, `triage`, `none`, `PERMISSION_UNRESOLVED`, empty output, and every other value not explicitly authorized above.
+
+### Step AG-4: Refuse unauthorized mutation loudly [MANDATORY]
+
+When **Step AG-3** returned `REFUSE`:
+
+1. Emit `echo "::error::Squad refused mutating mode '<parsed mode>' for actor '<actor>' — repository permission admin, maintain, or write is required"` so the run log is visibly red. If the permission lookup failed, say that it was unresolved instead of inventing a tier.
+2. Use the existing `add-comment` safe-output to post exactly one refusal comment on the triggering issue or pull request:
+   `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
+3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
+
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+
 ## Execute Mode
 
-Each mode's playbook ships as a **skill**. Load only the one skill for the parsed mode, then follow it verbatim.
+Each mode's playbook ships as a **skill**. Enter this section only after **Actor Authorization Guard** returned `AUTHORIZED` or `AUTH_SKIPPED`. Load only the one skill for the parsed mode, then follow it verbatim.
 
 **MODE ISOLATION:** Execute ONLY the active mode's skill. Other modes' instructions do not apply — do not load more than one mode skill.
 
