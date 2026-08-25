@@ -466,7 +466,11 @@ function saveCBState(squadDir: string, state: CircuitBreakerState): void {
 
 // ── Stop Signal (#1711) ──────────────────────────────────────────
 
-/** Sentinel file name, relative to the squad directory, that stops a watch run. */
+/**
+ * Stop-file name, relative to the squad directory. Creating this file stops a
+ * watch run. Distinct from the user-configured `--sentinel-file`, which stops a
+ * run when it is *removed*.
+ */
 export const STOP_FILE_NAME = 'ralph-stop';
 
 /** Why a watch run is stopping. */
