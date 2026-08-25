@@ -237,12 +237,18 @@ describe('gh-aw implement workflows', () => {
   });
 
   it('documents one-command installation in dependency order', () => {
-    const workerIndex = guide.indexOf('bradygaster/squad/workflows/squad-implement-worker.md@dev');
     const dispatcherIndex = guide.indexOf('bradygaster/squad/workflows/squad.md@dev');
+    const workerIndex = guide.indexOf('bradygaster/squad/workflows/squad-implement-worker.md@dev');
+    const reviewerIndex = guide.indexOf('bradygaster/squad/workflows/squad-review.md@dev');
 
+    expect(dispatcherIndex).toBeGreaterThan(-1);
     expect(workerIndex).toBeGreaterThan(-1);
-    expect(dispatcherIndex).toBeGreaterThan(workerIndex);
-    expect(guide).toContain('The single command installs the dedicated worker first');
+    expect(reviewerIndex).toBeGreaterThan(-1);
+    expect(workerIndex).toBeGreaterThan(dispatcherIndex);
+    expect(reviewerIndex).toBeGreaterThan(workerIndex);
+    expect(guide).toMatch(
+      /Keep the dispatcher first\. `gh aw add` discovers its implementation-worker and\s+reviewer dependencies while compiling it; the explicit worker and reviewer\s+entries then confirm the complete install surface without creating duplicates\./,
+    );
   });
 });
 
