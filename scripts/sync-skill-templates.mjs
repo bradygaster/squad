@@ -18,8 +18,8 @@ const targets = [
 console.log('🔄 Syncing skill templates from canonical source...\n');
 
 if (!existsSync(skillsSourceDir)) {
-  console.error(`❌ Source directory not found: ${skillsSourceDir}`);
-  process.exit(1);
+  console.log(`⏭️  Source directory not found: ${skillsSourceDir} — skipping sync (normal on main/preview)`);
+  process.exit(0);
 }
 
 const skillDirs = readdirSync(skillsSourceDir).filter(name => {
