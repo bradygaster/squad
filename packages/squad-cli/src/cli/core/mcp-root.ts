@@ -21,7 +21,8 @@
  *
  * Safety: we refuse to overwrite a malformed `.mcp.json` rather than
  * silently clobber a user-edited file; other `mcpServers.*` entries are
- * preserved byte-for-byte through the JSON round-trip.
+ * preserved semantically through the JSON round-trip, and user-supplied
+ * `env` values on the `squad_state` entry survive re-runs.
  *
  * @module cli/core/mcp-root
  */
@@ -96,22 +97,30 @@ export function ensureSquadStateMcpInRoot(
   }
 
   const existing = parsed.mcpServers[key];
+
+  // `command`/`args` are Squad-managed (they carry the version pin) and are
+  // always refreshed. `env` is user territory — Squad writes no keys into it,
+  // so anything already there (corporate npm proxy settings, for example) is
+  // carried forward rather than reset. See bradygaster/squad#1893.
+  const hasUsableEnv =
+    !!existing?.env && typeof existing.env === 'object' && !Array.isArray(existing.env);
   const desired: McpServerEntry = {
     command: spec.command,
     args: [...spec.args],
-    env: {},
+    env: hasUsableEnv ? { ...existing!.env } : {},
     tools: ['*'],
   };
 
+  // `desired.env` is a verbatim copy of `existing.env` whenever the latter is a
+  // usable object, so `hasUsableEnv` is the whole env comparison. A malformed
+  // `env` (array/string/null) is normalized to `{}` above and must be rewritten.
   if (
     existing &&
     existing.command === desired.command &&
     Array.isArray(existing.args) &&
     existing.args.length === desired.args!.length &&
     existing.args.every((a, i) => a === desired.args![i]) &&
-    existing.env &&
-    typeof existing.env === 'object' &&
-    Object.keys(existing.env).length === 0 &&
+    hasUsableEnv &&
     Array.isArray(existing.tools) &&
     existing.tools.length === 1 &&
     existing.tools[0] === '*'
