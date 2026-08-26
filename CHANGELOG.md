@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-25
+
+### Added
+
+- (cli) Add `squad health` readiness diagnostics and fail-fast shared workflow integration, so workflows can gate on environment readiness before running (#1605).
+- (cli) Advertise real team capabilities in `.github/agents/squad.agent.md` so an outer Agentic Workflows coordinator can route to the squad correctly; the block regenerates on cast, init, and upgrade (#1608).
+- (cli) Support `{prompt}` token in custom watch/loop agent commands as an unambiguous placement for the generated prompt, with the existing `-p <prompt>` fallback preserved.
+- (cli) `squad doctor` now checks that every `eol=lf`-pinned file is actually LF on disk (not just in the index), names stale files, and points at `npm run fix:crlf`; closes #1793.
+- (cli) Two stop signals for `squad watch`/`squad loop` previously parsed but never read — `--sentinel-file <path>` and `.squad/ralph-stop` — are now wired to the graceful shutdown path; closes #1711.
+
+### Changed
+
+- (cli) Model catalog tiers and fallback routing updated for GPT-5.6 Sol, Terra, and Luna, and Gemini 3.1 Pro. Terra is the new default standard model for code and prompt tasks; Luna is its economy fallback.
+- (cli) Back up locally modified workflow files before `squad upgrade` refreshes them (#1493).
+
+### Fixed
+
+- (cli) `setupConsultMode` now verifies that `info/exclude` belongs to the repository rooted at `projectRoot` before writing; prevents hiding `.squad/` in the main checkout and all sibling worktrees when called from a linked worktree.
+- (cli) Watch's PID tracker cross-checks a live process's actual OS start time against `spawnedAt` before killing it, preventing collateral kills after a crash + PID reuse (#1641).
+- (cli) `LocalPollingProvider` parses script `task.ref` with quote awareness, fixing scheduler tasks on Windows paths with spaces (e.g. `C:\Program Files\nodejs\node.exe`); adds `TaskConfig.argv` as the unambiguous alternative.
+- (cli) `squad watch` and `squad loop` now route all capability state reads/writes through `stateRoot` (from `effectiveSquadDir().stateDir`) instead of constructing `.squad/` paths from `teamRoot`, fixing silent empty-state reads after `squad externalize`; closes #1490.
+- (cli) `squad nap` (`archiveDecisions`) no longer destroys decision history: archival now refuses to run when the destination is untracked and git-ignored, verifies entry count before trimming the source, and uses fence-aware record-boundary scanning. SDK adds `archiveEntries()`, `resolveTrackedDestination()`, `prepareInboxBodyForMerge()`; fixes #1774, #1783, #1760.
+- (sdk) `resolveSquadState()` now passes `rootDir: paths.teamDir` to `FSStorageProvider`, so the path-traversal guard actually validates state writes; also fixes `resolveSquadPaths()` treating `config.teamRoot: "."` as remote mode, which pointed `teamDir` one level above `.squad/`; fixes #1555.
+- (sdk) `parseAzureDevOpsRemote()` now decodes percent-encoded characters in org/project/repo segments for all three URL formats (`dev.azure.com`, SSH, legacy `visualstudio.com`); fixes #1526.
+- (sdk) Add `"max"` to `SquadReasoningEffort` and `VALID_REASONING_EFFORTS` to match Copilot SDK 1.0.9.
+
 ## [0.12.0] - 2026-08-12
 
 ### Added
