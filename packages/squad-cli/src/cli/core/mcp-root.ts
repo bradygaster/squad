@@ -21,7 +21,7 @@
  *
  * Safety: we refuse to overwrite a malformed `.mcp.json` rather than
  * silently clobber a user-edited file; other `mcpServers.*` entries are
- * preserved byte-for-byte through the JSON round-trip, and user-supplied
+ * preserved semantically through the JSON round-trip, and user-supplied
  * `env` values on the `squad_state` entry survive re-runs.
  *
  * @module cli/core/mcp-root
