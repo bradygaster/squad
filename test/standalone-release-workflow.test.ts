@@ -18,6 +18,9 @@ const standalone = readFileSync(join(WORKFLOWS, 'squad-standalone-release.yml'),
 describe('standalone release handoff', () => {
   it('supports a confirmation-gated manual release from dev only', () => {
     expect(release).toMatch(/workflow_dispatch:\r?\n\s+inputs:\r?\n\s+confirm_tag:/);
+    expect(release).toContain(
+      "description: 'Type v followed by the package.json version (for example v0.13.1)'",
+    );
     expect(release).toContain("if: github.event_name == 'workflow_dispatch'");
     expect(release).toContain('RELEASE_REF: ${{ github.ref }}');
     expect(release).toContain('if [ "${RELEASE_REF}" != "refs/heads/dev" ]; then');

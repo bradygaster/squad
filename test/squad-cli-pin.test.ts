@@ -133,7 +133,7 @@ describe('Squad standalone release activation pin (#1825)', () => {
     expect(executable).not.toMatch(/packages\/squad-cli\/package\.json/);
     expect(executable).not.toMatch(/dist-tags\.latest|npm view/);
     expect(executable).toContain('releases/latest');
-    expect(executable).toContain('Squad standalone activation pin is behind the published release');
+    expect(executable).toContain('Squad standalone activation release is stale or incomplete');
     for (const asset of [
       'squad-linux-x64.tar.gz',
       'squad-linux-arm64.tar.gz',

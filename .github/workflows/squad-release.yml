@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_tag:
-        description: 'Type the exact release tag from package.json (for example v0.13.1)'
+        description: 'Type v followed by the package.json version (for example v0.13.1)'
         required: true
         type: string
 
