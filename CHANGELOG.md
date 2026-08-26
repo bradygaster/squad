@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-08-26
+
+### Fixed
+
+- Allow runtime state tools to persist the casting policy, registry, and history keys required by the coordinator (`casting/policy`, `casting/registry`, and `casting/history`), while continuing to reject unrelated casting paths (#1876, #1898).
+
 ## [0.13.0] - 2026-08-25
 
 This release is focused on hardening the gh-aw (Agentic Workflows) integration shipped in v0.12.0: the install contract, workflow router, plan lifecycle, dispatch reliability, and CI coverage are all tightened. It also adds `squad health`, fixes `squad watch`/`squad loop` externalized-state routing, fixes `squad nap` archival, and hardens the SDK's state and scheduler paths.
@@ -539,5 +545,4 @@ First stable release since v0.9.4 (April 25). Consumes 97 changesets (sdk: 50, c
 - New entry point: `src/cli-entry.ts` (CLI bootstrap separated from library exports)
 - Migrated to npm workspace publishing (`@bradygaster/squad-sdk`, `@bradygaster/squad-cli`)
 - Changesets infrastructure for independent package versioning
-
 
