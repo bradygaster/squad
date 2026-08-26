@@ -1238,7 +1238,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
     expect(compiled).toContain('version: ${{ steps.squad-release.outputs.tag }}');
-    expect(compiled).toContain("skip-init: 'true'");
+    expect(compiled).toContain('skip-init: "true"');
     expect(compiled).not.toContain('npm install --global');
     expect(compiled).not.toContain('npx --yes "@bradygaster/squad-cli@');
   }, 20000);
