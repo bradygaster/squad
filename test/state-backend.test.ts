@@ -757,6 +757,30 @@ describe('ToolRegistry state tools with git-native backend', () => {
     expect(backend.read('sessions/session-1/state.md')).toBeUndefined();
   });
 
+  it('allows exactly the three casting runtime state keys', { timeout: 30_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const write = registry.getTool('squad_state_write')!;
+
+    const castingKeys = [
+      'casting/policy.json',
+      'casting/registry.json',
+      'casting/history.json',
+    ];
+    for (const key of castingKeys) {
+      await expect(write.handler({ key, content: '{}\n' })).resolves.toMatchObject({ resultType: 'success' });
+      expect(backend.read(key)).toBe('{}\n');
+      expect(existsSync(join(squadDir(), key))).toBe(false);
+    }
+
+    await expect(write.handler({ key: 'casting/agents.json', content: '{}\n' })).resolves.toMatchObject({ resultType: 'failure' });
+    await expect(write.handler({ key: 'casting/archive/history.json', content: '{}\n' })).resolves.toMatchObject({ resultType: 'failure' });
+    expect(backend.read('casting/agents.json')).toBeUndefined();
+    expect(backend.read('casting/archive/history.json')).toBeUndefined();
+    expect(git('status --porcelain')).toBe('');
+  });
+
   it('routes existing squad_decide writes through configured backend storage', { timeout: 20_000 }, async () => {
     const backend = new OrphanBranchBackend(TMP);
     const adapter = new StateBackendStorageAdapter(backend, squadDir());
