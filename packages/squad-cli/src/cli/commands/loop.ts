@@ -19,6 +19,7 @@ import {
   CapabilityRegistry,
   createDefaultRegistry,
 } from './watch/index.js';
+import { buildCustomAgentCommand } from './watch/agent-spawn.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './watch/types.js';
 import type { WatchConfig } from './watch/config.js';
 import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
@@ -131,13 +132,12 @@ export function generateLoopFile(): string {
 
 // ── Agent Command Builder ────────────────────────────────────────
 
-function buildLoopAgentCommand(
+export function buildLoopAgentCommand(
   prompt: string,
   options: { agentCmd?: string; copilotFlags?: string; teamRoot?: string },
 ): { cmd: string; args: string[] } {
   if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+    return buildCustomAgentCommand(options.agentCmd, prompt);
   }
   const args = ['-p', prompt];
   if (options.copilotFlags) {
@@ -350,6 +350,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
   const baseContext: WatchContext = {
     teamRoot,
+    stateRoot: stateDir,
     adapter,
     round: 0,
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),

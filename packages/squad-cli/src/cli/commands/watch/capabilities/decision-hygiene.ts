@@ -17,7 +17,7 @@ export class DecisionHygieneCapability implements WatchCapability {
   readonly phase = 'housekeeping' as const;
 
   async preflight(context: WatchContext): Promise<PreflightResult> {
-    const inboxDir = path.join(context.teamRoot, '.squad', 'decisions', 'inbox');
+    const inboxDir = path.join(context.stateRoot, 'decisions', 'inbox');
     if (!storage.existsSync(inboxDir)) {
       return { ok: false, reason: 'no decision inbox directory found' };
     }
@@ -26,7 +26,7 @@ export class DecisionHygieneCapability implements WatchCapability {
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
     try {
-      const inboxDir = path.join(context.teamRoot, '.squad', 'decisions', 'inbox');
+      const inboxDir = path.join(context.stateRoot, 'decisions', 'inbox');
       if (!storage.existsSync(inboxDir)) {
         return { success: true, summary: 'no decision inbox' };
       }
@@ -45,7 +45,14 @@ export class DecisionHygieneCapability implements WatchCapability {
 
       const prompt =
         'Merge the decision inbox files in .squad/decisions/inbox/ into .squad/decisions.md. ' +
-        'Append each decision as a new section. After merging, delete the inbox files.';
+        'Append each decision as a new section. ' +
+        'Before splicing an inbox body beneath an "###" entry, DEMOTE its headings so the ' +
+        'shallowest heading lands at "####" — never leave an "##" under an "###". Be ' +
+        'fence-aware: "#" lines inside fenced code blocks are comments, not headings. ' +
+        'Delete an inbox file only after confirming its content is literally present in ' +
+        'decisions.md. If you archive anything out of decisions.md: verify the destination is ' +
+        'git-tracked first (git ls-files --error-unmatch), append and verify before trimming, ' +
+        'and report entry counts moved rather than file sizes.';
 
       const { cmd, args } = buildAgentCommand(prompt, context);
       await spawnWithTimeout(cmd, args, context.teamRoot, 60_000);

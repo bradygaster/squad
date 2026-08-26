@@ -233,8 +233,8 @@ describe('writeAgentModelOverrides', () => {
 // ============================================================================
 
 describe('resolveModel', () => {
-  it('Layer 4: returns default haiku when nothing is set', () => {
-    expect(resolveModel({})).toBe('claude-haiku-4.5');
+  it('Layer 4: returns default Luna when nothing is set', () => {
+    expect(resolveModel({})).toBe('gpt-5.6-luna');
   });
 
   it('Layer 3: task model wins over default', () => {

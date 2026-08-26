@@ -173,14 +173,20 @@ describe('estimateCost()', () => {
 
   it('works for fast-tier models', () => {
     const cost = estimateCost('claude-haiku-4.5', 10000, 5000);
-    // pricing: input $0.0000008/token, output $0.000004/token
-    expect(cost).toBeCloseTo(0.008 + 0.02, 6);
+    // Pricing: input $0.000001/token, output $0.000005/token.
+    expect(cost).toBeCloseTo(0.01 + 0.025, 6);
+  });
+
+  it('uses the current GPT-5.6 Luna rates', () => {
+    const cost = estimateCost('gpt-5.6-luna', 10000, 5000);
+    // Pricing: input $0.0000002/token, output $0.0000012/token.
+    expect(cost).toBeCloseTo(0.002 + 0.006, 6);
   });
 
   it('works for premium-tier models', () => {
     const cost = estimateCost('claude-opus-4.6', 1000, 500);
-    // pricing: input $0.000015/token, output $0.000075/token
-    expect(cost).toBeCloseTo(0.015 + 0.0375, 6);
+    // Pricing: input $0.000005/token, output $0.000025/token.
+    expect(cost).toBeCloseTo(0.005 + 0.0125, 6);
   });
 });
 

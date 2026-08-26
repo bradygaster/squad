@@ -5,7 +5,10 @@
 #
 # This is the DISTRIBUTION version of the bootstrap, living under workflows/shared/
 # so users can pull it via:
-#   gh aw add bradygaster/squad/workflows/squad.md@latest
+#   gh aw add \
+#     bradygaster/squad/workflows/squad.md@dev \
+#     bradygaster/squad/workflows/squad-implement-worker.md@dev \
+#     bradygaster/squad/workflows/squad-review.md@dev
 #
 # Design credit: adapted from Peli de Halleux's proven gh-aw integration in
 # github/gh-aw. Original:
@@ -45,7 +48,9 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-#   Default is 0.11.0.
+# Default is 0.12.0.
+#   This is the latest published stable release when this workflow was authored.
+#   The release pipeline updates this pin only after npm publication.
 #
 # Optional model override:
 #   vars.SQUAD_MODEL
@@ -76,18 +81,50 @@ jobs:
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
 
+      - name: Install Squad CLI
+        id: squad-cli
+        env:
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
+        run: |
+          set -euo pipefail
+          install_root="${RUNNER_TEMP}/squad-cli"
+          npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"
+          installed_version="$("$install_root/bin/squad" --version)"
+          echo "Installed Squad CLI ${installed_version} (requested ${SQUAD_CLI_VERSION})."
+          echo "version=${installed_version}" >> "$GITHUB_OUTPUT"
+          echo "$install_root/bin" >> "$GITHUB_PATH"
+
       - name: Initialize Squad team
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.11.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
         run: |
           # Preserve committed cast state: if .squad/team.md already exists with
           # roster entries, skip init to avoid overwriting a merged cast (#1657).
-          if [ -f ".squad/team.md" ] && grep -q '^[|]' <(sed -n '/^## Members/,/^## /p' .squad/team.md | tail -n +2); then
+          # Only data rows count as roster entries: a scaffolded team.md carries
+          # the table header and separator, and treating those as a cast skips
+          # init, leaving a team the readiness check then rejects (#1605).
+          if [ -f ".squad/team.md" ] && awk '
+            /^## Members/ { in_members = 1; next }
+            /^## / { in_members = 0 }
+            in_members && /^\|/ && !/^\|[[:space:]]*Name[[:space:]]*\|/ && /[[:alnum:]]/ { found = 1 }
+            END { exit found ? 0 : 1 }
+          ' .squad/team.md; then
             echo "✓ Existing squad team detected with roster entries — skipping init."
           else
             echo "No existing squad team found — running squad init."
-            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.11.0}" init --preset default --state-backend local
+            squad init --preset default --state-backend local
+          fi
+
+      - name: Run Squad health check
+        env:
+          GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+          SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}
+        run: |
+          set -euo pipefail
+          if squad help | grep -Fq 'Validate team state for CI'; then
+            squad health --json
+          else
+            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI pin."
           fi
 
       - name: Upload Squad state artifact
@@ -120,11 +157,13 @@ agent sandbox:
 
 1. **`jobs.activation.pre-steps`** — the repository is already checked out by the
    activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), checks whether `.squad/team.md` already exists with
-   roster entries (preserving any previously committed cast), and only runs
-   `squad init` if no usable team is found. The resulting `.squad/` team state
-   plus `.github/agents/squad.agent.md` are uploaded as a `squad-state` artifact
-   — all inside the activation job with unrestricted egress.
+   uses a supplied PAT), installs the selected published Squad CLI globally,
+   checks whether `.squad/team.md` already exists with roster entries (preserving
+   any previously committed cast), and only runs `squad init` if no usable team
+   is found. It then runs `squad health --json` when the installed release
+   supports it and uploads the resulting `.squad/` team state plus
+   `.github/agents/squad.agent.md` only when readiness checks pass — all inside
+   the activation job with unrestricted egress.
 
 2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
    into the workspace. The Squad CLI is never installed here; only the files it

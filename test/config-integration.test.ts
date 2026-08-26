@@ -726,17 +726,30 @@ describe('Integration: Config validation error paths', () => {
     expect(result.warnings?.some(w => w.includes('Duplicate'))).toBe(true);
   });
 
+  it('validateConfigDetailed accepts a current defaultModel', () => {
+    const result = validateConfigDetailed({
+      ...RUNTIME_DEFAULT,
+      models: {
+        ...RUNTIME_DEFAULT.models,
+        defaultModel: 'gpt-5.6-luna',
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors.length).toBe(0);
+    expect(result.warnings?.some(w => w.includes('gpt-5.6-luna') && w.includes('not in the current model catalog'))).toBe(false);
+  });
+
   it('validateConfigDetailed warns when defaultModel is not in MODEL_CATALOG', () => {
     const result = validateConfigDetailed({
       ...RUNTIME_DEFAULT,
       models: {
         ...RUNTIME_DEFAULT.models,
-        defaultModel: 'gpt-4.1',
+        defaultModel: 'unsupported-model',
       },
     });
     expect(result.valid).toBe(true);
     expect(result.errors.length).toBe(0);
-    expect(result.warnings?.some(w => w.includes('gpt-4.1') && w.includes('not in the current model catalog'))).toBe(true);
+    expect(result.warnings?.some(w => w.includes('unsupported-model') && w.includes('not in the current model catalog'))).toBe(true);
   });
 
   it('schema validateConfig rejects non-object', () => {
@@ -950,7 +963,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
 
     expect(config.team.name).toBe('Integration Squad');
     expect(config.agents.length).toBe(1);
-    expect(config.models.default).toBe('claude-sonnet-4.6');
+    expect(config.models.default).toBe('gpt-5.6-terra');
   });
 });
 

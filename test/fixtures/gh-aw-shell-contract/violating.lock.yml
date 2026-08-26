@@ -1,0 +1,42 @@
+# Positive-control fixture for the gh-aw shell input security contract gate (#1834).
+#
+# This is a compiled-shaped GitHub Actions lock fragment whose `run:` blocks each
+# violate one anti-pattern from workflows/squad.md §"Shell input security contract".
+# It exists so the gate is PROVEN capable of failing, not assumed to be: the gate's
+# own test feeds this file through the same extractRunBlocks()/scanRunBlocks() used
+# on the real squad.lock.yml and asserts each token is named with its file and line.
+#
+# RETRO's acceptance bar (issue #1834): "A gate that cannot turn red on a fixture
+# containing `run: printf '%s\n' \"${{ github.event.issue.body }}\"` is not a valid
+# gate." That exact line is the first block below.
+#
+# DO NOT install or reference this file as a workflow. It lives under test/fixtures/
+# so actionlint and gh-aw never see it; only the gate's unit test reads it.
+name: shell-contract-positive-control
+on:
+  issues:
+    types: [opened]
+jobs:
+  violations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: UNTRUSTED_TEMPLATE_IN_RUN — raw event expression inside run
+        run: printf '%s\n' "${{ github.event.issue.body }}"
+      - name: UNTRUSTED_PRINTF_FORMAT — body in printf's format slot
+        env:
+          SQUAD_TRIGGER_BODY: ${{ github.event.issue.body }}
+        run: |
+          body="${SQUAD_TRIGGER_BODY-}"
+          printf "$body"
+      - name: UNTRUSTED_COMMAND_STRING — body built into a command string
+        env:
+          SQUAD_TRIGGER_BODY: ${{ github.event.issue.body }}
+        run: |
+          eval "$SQUAD_TRIGGER_BODY"
+          bash -c "handle $SQUAD_TRIGGER_BODY"
+      - name: UNTRUSTED_AWK_PROGRAM_OR_VAR — body through awk -v and awk program
+        env:
+          SQUAD_TRIGGER_BODY: ${{ github.event.issue.body }}
+        run: |
+          awk -v body="$SQUAD_TRIGGER_BODY" 'BEGIN { print body }'
+          awk "/$SQUAD_TRIGGER_BODY/ { print }"

@@ -24,7 +24,7 @@ The Aspiregregator is a .NET Aspire community content aggregator application. Th
 
 ### Manual Validation
 
-1. Compare each output file against the schema in `workflows/shared/planning-ontology.md`
+1. Compare each output file against the schema in `workflows/shared/squad-planning-ontology.md`
 2. Verify every `Structured data:` JSON block has `schema_version: "1"`, `origin_issue: 8`, `phases: []`, and the expected `squad_artifact`
 3. Confirm traceability: every task → epic → initiative → triage item
 

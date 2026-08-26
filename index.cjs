@@ -735,13 +735,29 @@ function generateProjectWorkflowStub(workflowFile, projectType) {
 
 // Write a workflow file: verbatim copy for npm projects, stub for others
 function writeWorkflowFile(file, srcPath, destPath, projectType) {
+  const backupIfCustomized = (nextContent) => {
+    if (!fs.existsSync(destPath)) return;
+
+    const existing = fs.readFileSync(destPath, 'utf8');
+    const normalizedExisting = existing.replace(/\r\n/g, '\n');
+    const normalizedNext = nextContent.replace(/\r\n/g, '\n');
+
+    if (normalizedExisting !== normalizedNext && normalizedExisting.trim().length > 0) {
+      const backupPath = destPath + '.local-backup';
+      fs.writeFileSync(backupPath, existing);
+      console.log(`${YELLOW}⚠${RESET} ${file} has local customizations — backed up to ${path.basename(backupPath)}`);
+    }
+  };
+
   if (projectType !== 'npm' && PROJECT_TYPE_SENSITIVE_WORKFLOWS.has(file)) {
     const stub = generateProjectWorkflowStub(file, projectType);
     if (stub) {
+      backupIfCustomized(stub);
       fs.writeFileSync(destPath, stub);
       return;
     }
   }
+  backupIfCustomized(fs.readFileSync(srcPath, 'utf8'));
   fs.copyFileSync(srcPath, destPath);
 }
 

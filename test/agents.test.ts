@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { compileCharter, type CharterCompileOptions } from '@bradygaster/squad-sdk/agents';
+import {
+  compileCharter,
+  parseCharterMarkdown,
+  type CharterCompileOptions,
+} from '@bradygaster/squad-sdk/agents';
 import { resolveModel, type ModelResolutionOptions } from '@bradygaster/squad-sdk/agents';
 import { ConfigurationError } from '@bradygaster/squad-sdk/adapter/errors';
 
@@ -87,13 +91,26 @@ describe('Charter Compilation (M1-8)', () => {
       };
 
       const config = compileCharter(options);
-      
+
       expect(config.displayName).toBeTruthy();
       expect(config.displayName).toContain('Agent1');
     });
   });
 
   describe('Charter Parsing', () => {
+    it('should parse legacy name and role from the title', () => {
+      const charter = parseCharterMarkdown(`# Marquez — CLI UX Designer
+
+## Role
+Reviews command-line user experience.
+`);
+
+      expect(charter.identity).toMatchObject({
+        name: 'Marquez',
+        role: 'CLI UX Designer',
+      });
+    });
+
     it('should parse Identity section with name, role, expertise, style', () => {
       // This would test parseCharterMarkdown with real markdown content
       // For now, we test the exported function behavior
@@ -112,7 +129,7 @@ describe('Charter Compilation (M1-8)', () => {
       };
 
       const config = compileCharter(options);
-      
+
       expect(config.name).toBe('test-agent');
       expect(config.prompt).toBeTruthy();
     });
@@ -208,7 +225,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.source).not.toBe('charter');
       expect(result.source).toBe('task-auto');
-      expect(result.model).toBe('claude-sonnet-4.6');
+      expect(result.model).toBe('gpt-5.6-terra');
     });
 
     it('should prefer user override over charter', () => {
@@ -233,7 +250,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-sonnet-4.6');
+      expect(result.model).toBe('gpt-5.6-terra');
       expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
@@ -245,7 +262,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-sonnet-4.6');
+      expect(result.model).toBe('gpt-5.6-terra');
       expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
@@ -257,7 +274,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-opus-4.6');
+      expect(result.model).toBe('gpt-5.6-sol');
       expect(result.tier).toBe('premium');
       expect(result.source).toBe('task-auto');
     });
@@ -269,7 +286,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-haiku-4.5');
+      expect(result.model).toBe('gpt-5.6-luna');
       expect(result.tier).toBe('fast');
       expect(result.source).toBe('task-auto');
     });
@@ -281,7 +298,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-haiku-4.5');
+      expect(result.model).toBe('gpt-5.6-luna');
       expect(result.tier).toBe('fast');
       expect(result.source).toBe('task-auto');
     });
@@ -293,7 +310,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-haiku-4.5');
+      expect(result.model).toBe('gpt-5.6-luna');
       expect(result.tier).toBe('fast');
       expect(result.source).toBe('task-auto');
     });
@@ -309,8 +326,8 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       // Should fall through to task-auto first
       const result = resolveModel(options);
-      
-      expect(result.model).toBe('claude-haiku-4.5');
+
+      expect(result.model).toBe('gpt-5.6-luna');
       expect(result.tier).toBe('fast');
     });
   });
@@ -325,11 +342,24 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.fallbackChain).toEqual([
+        'gpt-5.6-sol',
+        'claude-opus-5',
         'claude-opus-4.8',
         'claude-opus-4.7',
         'claude-opus-4.6',
         'claude-sonnet-4.6',
       ]);
+    });
+
+    it('should classify catalog premium Sol with the premium fallback chain', () => {
+      const result = resolveModel({
+        userOverride: 'gpt-5.6-sol',
+        taskType: 'code',
+      });
+
+      expect(result.tier).toBe('premium');
+      expect(result.fallbackChain[0]).toBe('gpt-5.6-sol');
+      expect(result.fallbackChain).toContain('gpt-5.6-sol');
     });
 
     it('should provide standard fallback chain', () => {
@@ -339,17 +369,16 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      // Chain reordered to prefer newest per series first (PR #1444 follow-up, tamirdresher request).
+      // Standard routing prefers GPT Terra before the Claude fallbacks.
       expect(result.fallbackChain).toEqual([
+        'gpt-5.6-terra',
         'claude-sonnet-5',
         'claude-sonnet-4.6',
-        'gpt-5.6-sol',
-        'gpt-5.6-terra',
-        'gpt-5.6-luna',
+        'gpt-5.5',
         'gpt-5.4',
         'gpt-5.3-codex',
         'claude-sonnet-4.5',
-        'gemini-2.5-pro',
+        'gemini-3.1-pro',
       ]);
     });
 
@@ -361,6 +390,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.fallbackChain).toEqual([
+        'gpt-5.6-luna',
         'claude-haiku-4.5',
         'gpt-5.4-mini',
         'gpt-5-mini',
@@ -371,7 +401,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
   describe('Model Resolution Priority', () => {
     it('should follow complete priority chain', () => {
       // Test all 4 layers in sequence
-      
+
       // 1. User override wins
       let result = resolveModel({
         userOverride: 'gpt-5.2',
@@ -379,21 +409,21 @@ describe('Per-Agent Model Selection (M1-9)', () => {
         taskType: 'code',
       });
       expect(result.source).toBe('user-override');
-      
+
       // 2. Charter preference when no override
       result = resolveModel({
         charterPreference: 'claude-sonnet-4.5',
         taskType: 'code',
       });
       expect(result.source).toBe('charter');
-      
+
       // 3. Task auto-selection when charter is auto
       result = resolveModel({
         charterPreference: 'auto',
         taskType: 'code',
       });
       expect(result.source).toBe('task-auto');
-      
+
       // 4. Default as last resort (task-auto covers most cases)
       result = resolveModel({
         taskType: 'docs',
@@ -423,7 +453,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.source).toBe('task-auto');
-      expect(result.model).toBe('claude-sonnet-4.6');
+      expect(result.model).toBe('gpt-5.6-terra');
     });
 
     it('should include agentRole in context without affecting resolution', () => {
@@ -434,7 +464,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-sonnet-4.6');
+      expect(result.model).toBe('gpt-5.6-terra');
       expect(result.source).toBe('task-auto');
     });
   });

@@ -1,6 +1,6 @@
 /**
  * Squad Initialization and Onboarding Tests
- * 
+ *
  * Tests for M2-6 (Squad Init Replatform) and M2-10 (Agent Onboarding).
  */
 
@@ -82,7 +82,7 @@ describe('Squad Initialization', () => {
       const configContent = await readFile(result.configPath, 'utf-8');
       const parsed = JSON.parse(configContent);
       expect(parsed.version).toBe('1.0.0');
-      expect(parsed.models.defaultModel).toBe('claude-sonnet-4.6');
+      expect(parsed.models.defaultModel).toBe('gpt-5.6-terra');
       expect(parsed.routing.rules).toHaveLength(4);
     });
 

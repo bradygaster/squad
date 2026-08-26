@@ -1,9 +1,9 @@
 /**
  * Model Configuration & Registry
- * 
+ *
  * Defines the full model catalog and provides model lookup, fallback chains,
  * and availability checking. Implements the model tier system from squad.agent.md.
- * 
+ *
  * @module config/models
  */
 
@@ -99,13 +99,13 @@ export interface CostPolicyOutcome {
 export interface ModelInfo {
   /** Model identifier */
   id: ModelId;
-  
+
   /** Model tier (quality axis) */
   tier: ModelTier;
-  
+
   /** Provider (anthropic, openai, google) */
   provider: 'anthropic' | 'openai' | 'google';
-  
+
   /** Model family */
   family: 'claude' | 'gpt' | 'gemini';
 
@@ -114,20 +114,20 @@ export interface ModelInfo {
    * Separate from {@link tier}; optional so out-of-catalog IDs still pass through.
    */
   githubCategory?: GitHubModelCategory;
-  
+
   /** Supports vision/multimodal input */
   vision?: boolean;
-  
+
   /** Typical use cases */
   useCases?: string[];
-  
-  /** Relative cost (1-10 scale, 10 = most expensive) */
+
+  /** Relative cost heuristic (1-10 scale, 10 = most expensive; not USD) */
   cost?: number;
-  
+
   /** Relative speed (1-10 scale, 10 = fastest) */
   speed?: number;
 
-  /** Per-token pricing in USD (if known) */
+  /** Uncached input/output token pricing in USD (if known) */
   pricing?: ModelPricing;
 }
 
@@ -135,8 +135,8 @@ export interface ModelInfo {
  * Full model catalog.
  *
  * Restricted to model IDs verified reachable from the GitHub Copilot CLI
- * surface (the `copilot-cli` integration subset, 13 enabled models, verified
- * 2026-07-04). Each entry carries an optional {@link ModelInfo.githubCategory}
+ * surface (the `copilot-cli` integration subset, 17 enabled models, verified
+ * 2026-07-13). Each entry carries an optional {@link ModelInfo.githubCategory}
  * (cost axis) sourced from the models API `model_picker_category`, kept
  * separate from {@link ModelInfo.tier} (quality axis).
  *
@@ -152,6 +152,17 @@ export interface ModelInfo {
 export const MODEL_CATALOG: ModelInfo[] = [
   // Premium tier (quality) — powerful category (cost)
   {
+    id: 'claude-opus-5',
+    tier: 'premium',
+    provider: 'anthropic',
+    family: 'claude',
+    githubCategory: 'powerful',
+    vision: true,
+    useCases: ['architecture proposals', 'security audits', 'complex design'],
+    cost: 10,
+    speed: 3,
+  },
+  {
     id: 'claude-opus-4.8',
     tier: 'premium',
     provider: 'anthropic',
@@ -161,6 +172,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     useCases: ['architecture proposals', 'security audits', 'complex design'],
     cost: 10,
     speed: 3,
+    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000025 },
   },
   {
     id: 'claude-opus-4.7',
@@ -172,6 +184,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     useCases: ['architecture proposals', 'security audits', 'complex design'],
     cost: 10,
     speed: 3,
+    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000025 },
   },
   {
     id: 'claude-opus-4.6',
@@ -183,7 +196,22 @@ export const MODEL_CATALOG: ModelInfo[] = [
     useCases: ['architecture proposals', 'security audits', 'complex design'],
     cost: 10,
     speed: 3,
-    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
+    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000025 },
+  },
+  // gpt-5.6 family — CLI-observed reachable models (2026-07-13).
+  // githubCategory per live Copilot API (canonical billing axis):
+  //   sol=powerful, terra=versatile, luna=lightweight.
+  {
+    id: 'gpt-5.6-sol',
+    tier: 'premium',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'powerful',
+    vision: true,
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 6,
+    speed: 7,
+    pricing: { inputPerToken: 0.000005, outputPerToken: 0.00003 },
   },
 
   // Standard tier (quality) — versatile/powerful category (cost)
@@ -197,6 +225,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     useCases: ['code generation', 'test writing', 'refactoring'],
     cost: 5,
     speed: 7,
+    pricing: { inputPerToken: 0.000002, outputPerToken: 0.00001 },
   },
   {
     id: 'claude-sonnet-4.6',
@@ -228,22 +257,11 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'openai',
     family: 'gpt',
     githubCategory: 'powerful',
+    vision: true,
     useCases: ['general purpose', 'code generation', 'analysis'],
     cost: 6,
     speed: 7,
-  },
-  // gpt-5.6 family — CLI-observed Standard-tier reachable models (2026-07-13).
-  // Tier: standard (quality axis). githubCategory per live Copilot API (canonical billing axis):
-  //   sol=powerful, terra=versatile, luna=lightweight.
-  {
-    id: 'gpt-5.6-sol',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    githubCategory: 'powerful',
-    useCases: ['general purpose', 'code generation', 'analysis'],
-    cost: 6,
-    speed: 7,
+    pricing: { inputPerToken: 0.000005, outputPerToken: 0.00003 },
   },
   {
     id: 'gpt-5.6-terra',
@@ -251,19 +269,11 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'openai',
     family: 'gpt',
     githubCategory: 'versatile',
+    vision: true,
     useCases: ['general purpose', 'code generation', 'analysis'],
     cost: 5,
     speed: 8,
-  },
-  {
-    id: 'gpt-5.6-luna',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    githubCategory: 'lightweight',
-    useCases: ['general purpose', 'code generation', 'analysis'],
-    cost: 3,
-    speed: 9,
+    pricing: { inputPerToken: 0.000002, outputPerToken: 0.000012 },
   },
   {
     id: 'gpt-5.4',
@@ -271,10 +281,11 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'openai',
     family: 'gpt',
     githubCategory: 'powerful',
+    vision: true,
     useCases: ['general purpose', 'code generation', 'analysis'],
     cost: 6,
     speed: 7,
-    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000015 },
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.000015 },
   },
   {
     id: 'gpt-5.3-codex',
@@ -282,13 +293,14 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'openai',
     family: 'gpt',
     githubCategory: 'powerful',
+    vision: true,
     useCases: ['heavy code generation', 'multi-file refactors'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: { inputPerToken: 0.00000175, outputPerToken: 0.000014 },
   },
   {
-    id: 'gemini-2.5-pro',
+    id: 'gemini-3.1-pro',
     tier: 'standard',
     provider: 'google',
     family: 'gemini',
@@ -301,15 +313,28 @@ export const MODEL_CATALOG: ModelInfo[] = [
 
   // Fast tier (quality) — lightweight category (cost)
   {
+    id: 'gpt-5.6-luna',
+    tier: 'fast',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'lightweight',
+    vision: true,
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 3,
+    speed: 9,
+    pricing: { inputPerToken: 0.0000002, outputPerToken: 0.0000012 },
+  },
+  {
     id: 'claude-haiku-4.5',
     tier: 'fast',
     provider: 'anthropic',
     family: 'claude',
     githubCategory: 'lightweight',
+    vision: true,
     useCases: ['boilerplate', 'changelogs', 'simple fixes'],
     cost: 2,
     speed: 9,
-    pricing: { inputPerToken: 0.0000008, outputPerToken: 0.000004 },
+    pricing: { inputPerToken: 0.000001, outputPerToken: 0.000005 },
   },
   {
     id: 'gpt-5.4-mini',
@@ -317,9 +342,11 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'openai',
     family: 'gpt',
     githubCategory: 'lightweight',
+    vision: true,
     useCases: ['scaffolding', 'test boilerplate', 'simple tasks'],
     cost: 1,
     speed: 10,
+    pricing: { inputPerToken: 0.00000075, outputPerToken: 0.0000045 },
   },
   {
     id: 'gpt-5-mini',
@@ -327,21 +354,23 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'openai',
     family: 'gpt',
     githubCategory: 'lightweight',
+    vision: true,
     useCases: ['typo fixes', 'renames', 'simple tasks'],
     cost: 1,
     speed: 10,
-    pricing: { inputPerToken: 0.00000015, outputPerToken: 0.0000006 },
+    pricing: { inputPerToken: 0.00000025, outputPerToken: 0.000002 },
   },
 ];
 
 /**
  * Default fallback chains per tier — real, CLI-reachable IDs ordered by preference.
- * Newest model in each series is first (tamirdresher PR #1444 follow-up, 2026-07-13).
+ * Preferred model order follows the tier routing policy (GPT-first for premium
+ * and standard, then provider fallbacks).
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
-  premium: ['claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6', 'claude-sonnet-4.6'],
-  standard: ['claude-sonnet-5', 'claude-sonnet-4.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-2.5-pro'],
-  fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
+  premium: ['gpt-5.6-sol', 'claude-opus-5', 'claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6', 'claude-sonnet-4.6'],
+  standard: ['gpt-5.6-terra', 'claude-sonnet-5', 'claude-sonnet-4.6', 'gpt-5.5', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-3.1-pro'],
+  fast: ['gpt-5.6-luna', 'claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
 };
 
 /**
@@ -351,10 +380,10 @@ export class ModelRegistry {
   private catalog: Map<ModelId, ModelInfo>;
   private tierIndex: Map<ModelTier, ModelInfo[]>;
   private providerIndex: Map<string, ModelInfo[]>;
-  
+
   constructor(catalog: ModelInfo[] = MODEL_CATALOG) {
     this.catalog = new Map(catalog.map(model => [model.id, model]));
-    
+
     // Build tier index
     this.tierIndex = new Map();
     for (const tier of ['premium', 'standard', 'fast'] as ModelTier[]) {
@@ -363,7 +392,7 @@ export class ModelRegistry {
         catalog.filter(m => m.tier === tier)
       );
     }
-    
+
     // Build provider index
     this.providerIndex = new Map();
     for (const model of catalog) {
@@ -372,50 +401,50 @@ export class ModelRegistry {
       this.providerIndex.set(model.provider, existing);
     }
   }
-  
+
   /**
    * Gets model information by ID.
-   * 
+   *
    * @param id - Model identifier
    * @returns Model info if found, null otherwise
    */
   getModelInfo(id: ModelId): ModelInfo | null {
     return this.catalog.get(id) || null;
   }
-  
+
   /**
    * Checks if a model is available in the catalog.
-   * 
+   *
    * @param id - Model identifier
    * @returns True if model exists in catalog
    */
   isModelAvailable(id: ModelId): boolean {
     return this.catalog.has(id);
   }
-  
+
   /**
    * Gets all models for a specific tier.
-   * 
+   *
    * @param tier - Model tier
    * @returns Array of models in that tier
    */
   getModelsByTier(tier: ModelTier): ModelInfo[] {
     return this.tierIndex.get(tier) || [];
   }
-  
+
   /**
    * Gets all models from a specific provider.
-   * 
+   *
    * @param provider - Provider name
    * @returns Array of models from that provider
    */
   getModelsByProvider(provider: string): ModelInfo[] {
     return this.providerIndex.get(provider) || [];
   }
-  
+
   /**
    * Gets the fallback chain for a specific tier.
-   * 
+   *
    * @param tier - Model tier
    * @param preferSameProvider - If true, prefer models from same provider
    * @param currentModel - Current model (for provider preference)
@@ -427,34 +456,34 @@ export class ModelRegistry {
     currentModel?: ModelId
   ): ModelId[] {
     const defaultChain = DEFAULT_FALLBACK_CHAINS[tier] || [];
-    
+
     if (!preferSameProvider || !currentModel) {
       return defaultChain;
     }
-    
+
     // Get current model's provider
     const current = this.getModelInfo(currentModel);
     if (!current) {
       return defaultChain;
     }
-    
+
     // Reorder chain to prefer same provider
     const sameProvider = defaultChain.filter(id => {
       const model = this.getModelInfo(id);
       return model?.provider === current.provider;
     });
-    
+
     const otherProvider = defaultChain.filter(id => {
       const model = this.getModelInfo(id);
       return model?.provider !== current.provider;
     });
-    
+
     return [...sameProvider, ...otherProvider];
   }
-  
+
   /**
    * Gets the next fallback model in the chain.
-   * 
+   *
    * @param currentModel - Current model that failed
    * @param tier - Model tier
    * @param attemptedModels - Models already attempted
@@ -466,20 +495,20 @@ export class ModelRegistry {
     attemptedModels: Set<ModelId> = new Set()
   ): ModelId | null {
     const chain = this.getFallbackChain(tier, true, currentModel);
-    
+
     // Find next model in chain that hasn't been attempted
     for (const modelId of chain) {
       if (modelId !== currentModel && !attemptedModels.has(modelId)) {
         return modelId;
       }
     }
-    
+
     return null;
   }
-  
+
   /**
    * Gets model recommendations based on use case.
-   * 
+   *
    * @param useCase - Desired use case
    * @param tier - Optional tier constraint
    * @returns Recommended models sorted by relevance
@@ -489,34 +518,34 @@ export class ModelRegistry {
     const candidates = tier
       ? this.getModelsByTier(tier)
       : Array.from(this.catalog.values());
-    
+
     // Score models by use case match
     const scored = candidates
       .map(model => ({
         model,
-        score: model.useCases?.some(uc => 
+        score: model.useCases?.some(uc =>
           uc.toLowerCase().includes(useCaseLower) ||
           useCaseLower.includes(uc.toLowerCase())
         ) ? 10 : 0
       }))
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score);
-    
+
     return scored.map(item => item.model);
   }
-  
+
   /**
    * Gets all model IDs in the catalog.
-   * 
+   *
    * @returns Array of all model IDs
    */
   getAllModelIds(): ModelId[] {
     return Array.from(this.catalog.keys());
   }
-  
+
   /**
    * Gets catalog statistics.
-   * 
+   *
    * @returns Catalog stats
    */
   getStats(): {
@@ -529,14 +558,14 @@ export class ModelRegistry {
       standard: 0,
       fast: 0
     };
-    
+
     const byProvider: Record<string, number> = {};
-    
+
     for (const model of this.catalog.values()) {
       byTier[model.tier]++;
       byProvider[model.provider] = (byProvider[model.provider] || 0) + 1;
     }
-    
+
     return {
       total: this.catalog.size,
       byTier,
@@ -575,7 +604,7 @@ export function isModelAvailable(id: ModelId): boolean {
  * Estimate the cost of a model invocation based on token counts and
  * the SDK's built-in pricing table.
  *
- * @returns Estimated cost in USD, or 0 if pricing is unavailable for the model.
+ * @returns Estimated uncached input/output cost in USD, or 0 if pricing is unavailable.
  */
 export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
   const info = defaultRegistry.getModelInfo(model as ModelId);
@@ -598,15 +627,18 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
  */
 export const ECONOMY_MODEL_MAP: Record<string, string> = {
   // Premium → standard downgrade (architecture/review tasks)
+  'gpt-5.6-sol':        'gpt-5.6-terra',
+  'claude-opus-5':      'claude-sonnet-4.5',
   'claude-opus-4.8':      'claude-sonnet-4.5',
   'claude-opus-4.7':      'claude-sonnet-4.5',
   'claude-opus-4.6':      'claude-sonnet-4.5',
   // Standard → fast downgrade (code writing, docs, planning, triage)
-  'claude-sonnet-5':      'gpt-5-mini',
-  'claude-sonnet-4.6':    'gpt-5-mini',
-  'claude-sonnet-4.5':    'gpt-5-mini',
+  'gpt-5.6-terra':       'gpt-5.6-luna',
+  'claude-sonnet-5':      'gpt-5.6-luna',
+  'claude-sonnet-4.6':    'gpt-5.6-luna',
+  'claude-sonnet-4.5':    'gpt-5.6-luna',
   // Fast → cheapest fast (scribe/mechanical, docs)
-  'claude-haiku-4.5':     'gpt-5-mini',
+  'claude-haiku-4.5':     'gpt-5.6-luna',
 };
 
 /**
@@ -1448,7 +1480,7 @@ export function resolveContextTier(options: {
  *   Layer 1: Session-wide user directive ("always use opus")
  *   Layer 2: Charter preference (agent's ## Model section)
  *   Layer 3: Task-aware auto-selection (code → sonnet, docs → haiku)
- *   Layer 4: Default (claude-haiku-4.5)
+ *   Layer 4: Default (gpt-5.6-luna)
  *
  * Per-agent overrides from config.json take priority over the global defaultModel.
  *
@@ -1511,6 +1543,6 @@ export function resolveModel(options: {
   }
 
   // Layer 4: Default (economy mode applies)
-  const defaultModel = 'claude-haiku-4.5';
+  const defaultModel = 'gpt-5.6-luna';
   return isEconomy ? applyEconomyMode(defaultModel) : defaultModel;
 }

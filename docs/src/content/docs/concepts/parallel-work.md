@@ -27,7 +27,7 @@ graph TD
     G["Result B"]
     H["Result C"]
     I["Collect &<br/>Synthesize"]
-    
+
     A --> B
     B --> C
     B --> D
@@ -113,41 +113,41 @@ First match wins:
 | **1. User Override** | You said `"use opus"` or `"save costs"` — done, session-wide |
 | **2. Charter Preference** | Agent's charter has a `## Model` section |
 | **3. Task-Aware Auto** | Coordinator checks what the agent is actually doing (see table below) |
-| **4. Default** | `claude-haiku-4.5` — cost wins when in doubt |
+| **4. Default** | `gpt-5.6-luna` — cost wins when in doubt |
 
 ### Task-Aware Defaults
 
 | Task Output | Model | Tier |
 |-------------|-------|------|
-| Writing code (implementation, refactoring, tests, bug fixes) | `claude-sonnet-4.5` | Standard |
-| Writing prompts or agent designs | `claude-sonnet-4.5` | Standard |
-| Non-code work (docs, planning, triage, changelogs) | `claude-haiku-4.5` | Fast |
-| Visual/design work requiring image analysis | `claude-opus-4.5` | Premium |
+| Writing code (implementation, refactoring, tests, bug fixes) | `gpt-5.6-terra` | Standard |
+| Writing prompts or agent designs | `gpt-5.6-terra` | Standard |
+| Non-code work (docs, planning, triage, changelogs) | `gpt-5.6-luna` | Fast |
+| Visual/design work requiring image analysis | `gpt-5.6-sol` | Premium |
 
 ### Role-to-Model Mapping
 
 | Role | Default Model | Why |
 |------|--------------|-----|
-| Core Dev / Backend / Frontend | `claude-sonnet-4.5` | Writes code — quality first |
-| Tester / QA | `claude-sonnet-4.5` | Writes test code |
+| Core Dev / Backend / Frontend | `gpt-5.6-terra` | Writes code — quality first |
+| Tester / QA | `gpt-5.6-terra` | Writes test code |
 | Lead / Architect | auto (per-task) | Mixed: code review vs. planning |
 | Prompt Engineer | auto (per-task) | Prompt design is like code |
-| DevRel / Writer | `claude-haiku-4.5` | Docs — not code |
-| Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops |
-| Git / Release | `claude-haiku-4.5` | Changelogs, tags, version bumps |
-| Designer / Visual | `claude-opus-4.5` | Vision capability required |
+| DevRel / Writer | `gpt-5.6-luna` | Docs — not code |
+| Scribe / Logger | `gpt-5.6-luna` | Mechanical file ops |
+| Git / Release | `gpt-5.6-luna` | Changelogs, tags, version bumps |
+| Designer / Visual | `gpt-5.6-sol` | Vision capability required |
 
-### Model Catalog (16 models)
+### Model Catalog (17 models)
 Squad supports models across three tiers:
-- **Premium:** claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
-- **Standard:** claude-sonnet-4.5, gpt-5.2-codex, claude-sonnet-4, gpt-5.2, gpt-5.1-codex, gpt-5.1, gpt-5, gemini-3-pro-preview
-- **Fast/Cheap:** claude-haiku-4.5, gpt-5.1-codex-mini, gpt-4.1, gpt-5-mini, gpt-5.1-codex-mini
+- **Premium:** gpt-5.6-sol, claude-opus-5, claude-opus-4.8, claude-opus-4.7, claude-opus-4.6
+- **Standard:** gpt-5.6-terra, claude-sonnet-5, claude-sonnet-4.6, claude-sonnet-4.5, gpt-5.5, gpt-5.4, gpt-5.3-codex, gemini-3.1-pro
+- **Fast/Cheap:** gpt-5.6-luna, claude-haiku-4.5, gpt-5.4-mini, gpt-5-mini
 ### Fallback Chains
 If a model is unavailable (plan restriction, rate limit, deprecation), Squad silently retries with the next in chain. Never falls back **up** in tier — a fast task won't land on a premium model.
 ```
-Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.5
-Standard: claude-sonnet-4.5 → gpt-5.2-codex → claude-sonnet-4 → gpt-5.2
-Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
+Premium: gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6
+Standard: gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro
+Fast:     gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini
 ```
 
 ---

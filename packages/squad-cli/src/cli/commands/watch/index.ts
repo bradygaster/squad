@@ -38,6 +38,7 @@ import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
 import { createVerboseLogger, type VerboseLogger } from './verbose.js';
+import { buildCustomAgentCommand } from './agent-spawn.js';
 
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
@@ -395,10 +396,15 @@ async function runCheck(
 
 // ── SubSquad Discovery ───────────────────────────────────────────
 
-interface SubSquad { name: string; dir: string; labels: string[] }
+export interface SubSquad { name: string; dir: string; labels: string[] }
 
-function discoverSubSquads(teamRoot: string): SubSquad[] {
-  const subsquadDir = path.join(teamRoot, '.squad', 'subsquads');
+/**
+ * Discover subsquads under `{stateRoot}/subsquads/`. `subsquads/` is not in
+ * externalize's KEEP_LOCAL set, so after `squad externalize` it lives at the
+ * external state dir — pass the effective state dir here, not teamRoot (#1490).
+ */
+export function discoverSubSquads(stateRoot: string): SubSquad[] {
+  const subsquadDir = path.join(stateRoot, 'subsquads');
   if (!storage.existsSync(subsquadDir)) return [];
   try {
     const entries = storage.listSync?.(subsquadDir) ?? [];
@@ -462,6 +468,54 @@ function saveCBState(squadDir: string, state: CircuitBreakerState): void {
     path.join(squadDir, 'ralph-circuit-breaker.json'),
     JSON.stringify(state, null, 2),
   );
+}
+
+// ── Stop Signal (#1711) ──────────────────────────────────────────
+
+/**
+ * Stop-file name, relative to the squad directory. Creating this file stops a
+ * watch run. Distinct from the user-configured `--sentinel-file`, which stops a
+ * run when it is *removed*.
+ */
+export const STOP_FILE_NAME = 'ralph-stop';
+
+/** Why a watch run is stopping. */
+export interface StopSignal {
+  /** Human-readable explanation, printed before shutdown. */
+  reason: string;
+}
+
+/**
+ * Decide whether a watch run should stop.
+ *
+ * Two independent triggers, both of which are documented but were previously
+ * never read:
+ *
+ * - `--sentinel-file <path>` stops the run once that file is **removed**.
+ * - `<squadDir>/ralph-stop` stops the run once that file **exists**.
+ *
+ * Pure apart from the injected `exists` probe so it can be unit tested.
+ */
+export function detectStopSignal(options: {
+  squadDir: string;
+  sentinelFile?: string;
+  exists: (filePath: string) => boolean;
+}): StopSignal | null {
+  const { squadDir, sentinelFile, exists } = options;
+
+  if (sentinelFile) {
+    const resolved = path.resolve(sentinelFile);
+    if (!exists(resolved)) {
+      return { reason: `sentinel file removed (${resolved})` };
+    }
+  }
+
+  const stopFile = path.join(squadDir, STOP_FILE_NAME);
+  if (exists(stopFile)) {
+    return { reason: `stop file present (${stopFile})` };
+  }
+
+  return null;
 }
 
 // ── Capability Phase Runner ──────────────────────────────────────
@@ -606,8 +660,7 @@ export function buildAgentCommand(
 ): { cmd: string; args: string[] } {
   const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
   if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+    return buildCustomAgentCommand(options.agentCmd, prompt);
   }
   const args = ['-p', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
@@ -779,9 +832,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   // ── Capability system setup ────────────────────────────────────
   const registry = createDefaultRegistry();
 
-  // Load external capabilities from .squad/capabilities/
+  // Load external capabilities — from the external state dir's
+  // capabilities/ when externalized, otherwise .squad/capabilities/ (#1490)
   const { loadExternalCapabilities } = await import('./external-loader.js');
-  await loadExternalCapabilities(teamRoot, registry);
+  await loadExternalCapabilities(teamRoot, registry, path.join(stateDir, 'capabilities'));
 
   // PID tracking for child process cleanup
   const { PidTracker } = await import('./pid-tracker.js');
@@ -798,6 +852,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   const baseContext: WatchContext = {
     teamRoot,
+    stateRoot: stateDir,
     adapter,
     round: 0,
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
@@ -845,6 +900,20 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     console.log(`${DIM}Log file: ${resolvedLogFile}${RESET}`);
   }
 
+  // Stop-signal setup (#1711). The sentinel stops the run when it is *removed*,
+  // so create it up front - otherwise the very first round would stop instantly.
+  if (config.sentinelFile) {
+    const resolvedSentinel = path.resolve(config.sentinelFile);
+    if (!storage.existsSync(resolvedSentinel)) {
+      storage.writeSync(
+        resolvedSentinel,
+        'squad watch sentinel. Delete this file to stop the run gracefully.\n',
+      );
+    }
+    console.log(`${DIM}Sentinel: ${resolvedSentinel} (delete to stop)${RESET}`);
+  }
+  console.log(`${DIM}Stop file: ${path.join(squadDirInfo.path, STOP_FILE_NAME)} (create to stop)${RESET}`);
+
   // Fix 3: Immediate visual feedback after banner
   console.log(`Running first check now...`);
 
@@ -854,9 +923,46 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   let round = 0;
   let roundInProgress = false;
 
+  // Stop-signal plumbing (#1711)
+  let stopRequested = false;
+  let isShuttingDown = false;
+  let intervalId: NodeJS.Timeout | undefined;
+  let resolveRun: (() => void) | undefined;
+
+  const shutdown = async (): Promise<void> => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    if (intervalId) clearInterval(intervalId);
+    process.off('SIGINT', shutdown);
+    process.off('SIGTERM', shutdown);
+    await eventBus.emit({
+      type: 'session:destroyed', sessionId: monitorSessionId,
+      agentName: 'Ralph', payload: null, timestamp: new Date(),
+    });
+    await monitor.stop();
+    saveCBState(squadDirInfo.path, cbState);
+    console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+    logStream?.end();
+    resolveRun?.();
+  };
+
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
     const roundStart = Date.now();
+
+    // Stop-signal gate (#1711). Checked before any work so a stop request takes
+    // effect within one interval, without needing to signal the process.
+    const stopSignal = detectStopSignal({
+      squadDir: squadDirInfo.path,
+      sentinelFile: config.sentinelFile,
+      exists: (filePath) => storage.existsSync(filePath),
+    });
+    if (stopSignal) {
+      console.log(`\n${YELLOW}🛑${RESET} [${ts}] Stop requested - ${stopSignal.reason}`);
+      stopRequested = true;
+      await shutdown();
+      return;
+    }
 
     // Circuit breaker gate
     if (cbState.status === 'open') {
@@ -908,7 +1014,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
 
     // SubSquad discovery (informational, not a capability)
-    const subSquads = discoverSubSquads(teamRoot);
+    const subSquads = discoverSubSquads(stateDir);
     if (subSquads.length > 0 && round === 1) {
       console.log(`${DIM}📂 Discovered ${subSquads.length} subsquad(s): ${subSquads.map(s => s.name).join(', ')}${RESET}`);
     }
@@ -995,7 +1101,16 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   await executeRound();
 
   return new Promise<void>((resolve) => {
-    const intervalId = setInterval(
+    resolveRun = resolve;
+
+    // A stop signal on the first round already ran shutdown, which could not
+    // resolve the run promise because it did not exist yet.
+    if (isShuttingDown || stopRequested) {
+      resolve();
+      return;
+    }
+
+    intervalId = setInterval(
       async () => {
         if (roundInProgress) return;
         roundInProgress = true;
@@ -1020,25 +1135,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       },
       interval * 60 * 1000,
     );
-
-    // Graceful shutdown
-    let isShuttingDown = false;
-    const shutdown = async () => {
-      if (isShuttingDown) return;
-      isShuttingDown = true;
-      clearInterval(intervalId);
-      process.off('SIGINT', shutdown);
-      process.off('SIGTERM', shutdown);
-      await eventBus.emit({
-        type: 'session:destroyed', sessionId: monitorSessionId,
-        agentName: 'Ralph', payload: null, timestamp: new Date(),
-      });
-      await monitor.stop();
-      saveCBState(squadDirInfo.path, cbState);
-      console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
-      logStream?.end();
-      resolve();
-    };
 
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);

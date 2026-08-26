@@ -395,7 +395,7 @@ describe('StreamBridge', () => {
       type: 'usage',
       sessionId: 'fenster',
       agentName: 'fenster',
-      model: 'gpt-4',
+      model: 'gpt-5.6-luna',
       inputTokens: 100,
       outputTokens: 50,
       estimatedCost: 0.01,
@@ -403,7 +403,7 @@ describe('StreamBridge', () => {
     };
     bridge.handleEvent(usage);
     expect(usageCalls).toHaveLength(1);
-    expect(usageCalls[0]!.model).toBe('gpt-4');
+    expect(usageCalls[0]!.model).toBe('gpt-5.6-luna');
     expect(usageCalls[0]!.cost).toBe(0.01);
   });
 
@@ -480,7 +480,7 @@ describe('StreamBridge', () => {
       type: 'usage',
       sessionId: 'fenster',
       agentName: 'fenster',
-      model: 'gpt-4',
+      model: 'gpt-5.6-luna',
       inputTokens: 10,
       outputTokens: 5,
       estimatedCost: 0,

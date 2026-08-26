@@ -62,6 +62,7 @@ import {
 import type { ExecutableWorkItem } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/execute.js';
 import { CleanupCapability } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/cleanup.js';
 import { DecisionHygieneCapability } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/decision-hygiene.js';
+import { RetroCapability } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/retro.js';
 import { BoardCapability } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/board.js';
 import { SelfPullCapability } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/self-pull.js';
 
@@ -70,6 +71,7 @@ import { SelfPullCapability } from '../../packages/squad-cli/src/cli/commands/wa
 function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
   return {
     teamRoot: '/fake/team',
+    stateRoot: '/fake/team/.squad',
     adapter: {
       listWorkItems: vi.fn().mockResolvedValue([]),
     } as unknown as WatchContext['adapter'],
@@ -211,6 +213,25 @@ describe('Watch Capabilities', () => {
         // Path must be constructed from teamRoot, not a global path
         const [calledPath] = mockFsExistsSync.mock.calls[0] as [string];
         expect(calledPath).toContain('/some/repo');
+        expect(prompt).toContain('Ralph, Go!');
+      });
+
+      // Regression (#1490): a 2-arg call still derives the check from
+      // teamRoot + '.squad' (unchanged, backward compatible), but the
+      // real caller (ExecuteCapability.executeAll) now passes
+      // context.stateRoot as the 3rd arg, which must win when given —
+      // that's what lets ralph-instructions.md be found after externalize.
+      it('checks ralph-instructions.md under the passed stateDir when given, not teamRoot/.squad', () => {
+        mockFsExistsSync.mockImplementation((p: unknown) => {
+          return typeof p === 'string' && p.endsWith('ralph-instructions.md');
+        });
+        const issues: ExecutableWorkItem[] = [
+          { number: 1, title: 'Task', labels: [{ name: 'squad' }], assignees: [] },
+        ];
+        const prompt = buildAgentPrompt(issues, '/local/repo', '/external/state');
+        const [calledPath] = mockFsExistsSync.mock.calls[0] as [string];
+        expect(calledPath.replace(/\\/g, '/')).toBe('/external/state/ralph-instructions.md');
+        expect(calledPath.replace(/\\/g, '/')).not.toContain('/local/repo');
         expect(prompt).toContain('Ralph, Go!');
       });
 
@@ -523,6 +544,40 @@ describe('Watch Capabilities', () => {
         expect(result.summary).toContain('nothing to do');
       });
     });
+
+    // Regression (#1490): before the fix, every path here was built from
+    // teamRoot + '.squad', so after `squad externalize` the local .squad/
+    // is a marker-only stub and every check silently sees an empty
+    // directory. Give teamRoot and stateRoot different fake roots and
+    // confirm the capability only ever looks under stateRoot.
+    describe('externalized state (#1490)', () => {
+      it('preflight checks stateRoot, not teamRoot/.squad', async () => {
+        mockStorage.existsSync.mockImplementation((dir: string) => dir === '/external/state');
+        const cap = new CleanupCapability();
+        const result = await cap.preflight(
+          makeContext({ teamRoot: '/local/repo', stateRoot: '/external/state' }),
+        );
+        expect(result.ok).toBe(true);
+        expect(mockStorage.existsSync).toHaveBeenCalledWith('/external/state');
+      });
+
+      it('execute lists scratch/orchestration-log/log/inbox under stateRoot, not teamRoot', async () => {
+        const seenDirs: string[] = [];
+        mockStorage.listSync.mockImplementation((dir: string) => {
+          seenDirs.push(dir);
+          return [];
+        });
+        const cap = new CleanupCapability();
+        await cap.execute(makeContext({ teamRoot: '/local/repo', stateRoot: '/external/state', round: 1 }));
+
+        expect(seenDirs.length).toBeGreaterThan(0);
+        for (const dir of seenDirs) {
+          const normalized = dir.replace(/\\/g, '/');
+          expect(normalized.startsWith('/external/state')).toBe(true);
+          expect(normalized.includes('/local/repo')).toBe(false);
+        }
+      });
+    });
   });
 
   // ────────────────────────────────────────────────────────────────
@@ -604,6 +659,69 @@ describe('Watch Capabilities', () => {
         const result = await cap.execute(makeContext());
         expect(result.success).toBe(true);
         expect(result.summary).toContain('no decision inbox');
+      });
+    });
+
+    // Regression (#1490): preflight/execute both built the inbox path from
+    // teamRoot + '.squad' — after externalize the inbox lives at stateRoot
+    // instead, and the old code silently never found it.
+    describe('externalized state (#1490)', () => {
+      it('preflight/execute both check the inbox under stateRoot, not teamRoot', async () => {
+        mockStorage.existsSync.mockImplementation((dir: string) => dir.replace(/\\/g, '/').startsWith('/external/state'));
+        const seenDirs: string[] = [];
+        mockStorage.listSync.mockImplementation((dir: string) => {
+          seenDirs.push(dir);
+          return ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md'];
+        });
+        const cap = new DecisionHygieneCapability();
+        const ctx = makeContext({ teamRoot: '/local/repo', stateRoot: '/external/state' });
+
+        const preflight = await cap.preflight(ctx);
+        expect(preflight.ok).toBe(true);
+
+        const result = await cap.execute(ctx);
+        expect(result.success).toBe(true);
+        expect(result.summary).toContain('merged');
+        expect(seenDirs.length).toBeGreaterThan(0);
+        for (const dir of seenDirs) {
+          expect(dir.replace(/\\/g, '/').startsWith('/external/state')).toBe(true);
+        }
+      });
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // RetroCapability — retrospective staleness check + write
+  // ────────────────────────────────────────────────────────────────
+
+  describe('RetroCapability', () => {
+    describe('execute', () => {
+      it('reports not due when a recent retrospective log exists', async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        mockStorage.listSync.mockReturnValue([`${today}-retrospective.md`]);
+        const cap = new RetroCapability();
+        const result = await cap.execute(makeContext());
+        expect(result.success).toBe(true);
+        expect(result.summary).toBe('retro not due');
+      });
+
+      // Regression (#1490): the staleness check listed teamRoot + '.squad/log'
+      // — after externalize that's the local marker dir (empty), so the
+      // capability always saw "no retro found" and fired on every round
+      // regardless of an existing, externalized retrospective log.
+      it('checks log/ under stateRoot, not teamRoot, for existing retrospectives', async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const seenDirs: string[] = [];
+        mockStorage.listSync.mockImplementation((dir: string) => {
+          seenDirs.push(dir);
+          return dir.replace(/\\/g, '/') === '/external/state/log' ? [`${today}-retrospective.md`] : [];
+        });
+        const cap = new RetroCapability();
+        const result = await cap.execute(
+          makeContext({ teamRoot: '/local/repo', stateRoot: '/external/state' }),
+        );
+        expect(seenDirs.map(d => d.replace(/\\/g, '/'))).toContain('/external/state/log');
+        expect(result.summary).toBe('retro not due');
       });
     });
   });

@@ -3,7 +3,7 @@
 > **Duration:** 12–18 minutes  
 > **Audience:** Developers familiar with GitHub and .NET Aspire  
 > **Scenario:** Add real-time notifications via SignalR to a .NET Aspire app using the Squad agentic SDLC  
-> **Prerequisite:** The presenter has a fresh .NET Aspire app (AppHost, ServiceDefaults, WebFrontend, ApiService) and has installed the Squad workflow via `gh aw add bradygaster/squad/workflows/squad.md@latest`. No squad has been cast yet.
+> **Prerequisite:** The presenter has a fresh .NET Aspire app (AppHost, ServiceDefaults, WebFrontend, ApiService) and has installed the dispatcher, implementation worker, and advisory reviewer with the [gh-aw guide's install command](src/content/docs/guide/gh-aw.md#install-the-workflows). No squad has been cast yet.
 
 Planning comments remain human-readable. For programmatic discovery, gh-aw appends a validated `Structured data:` JSON block containing `squad_artifact`, `schema_version: "1"`, `origin_issue`, and a `phases` array. The screen excerpts below omit that footer for readability.
 

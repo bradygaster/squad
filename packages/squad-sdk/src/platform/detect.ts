@@ -46,6 +46,18 @@ export function parseGitHubRemote(url: string): GitHubRemoteInfo | null {
 }
 
 /**
+ * Decode a URL path segment (e.g. a project name containing `%20` for a
+ * space). Falls back to the raw value if it isn't validly percent-encoded.
+ */
+function decodeSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
  * Parse an Azure DevOps remote URL into org/project/repo.
  * Supports multiple formats:
  *   https://dev.azure.com/org/project/_git/repo
@@ -62,7 +74,7 @@ export function parseAzureDevOpsRemote(url: string): AzureDevOpsRemoteInfo | nul
     /dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+?)(?:\.git)?$/i,
   );
   if (devAzureHttps) {
-    return { org: devAzureHttps[1]!, project: devAzureHttps[2]!, repo: devAzureHttps[3]! };
+    return { org: decodeSegment(devAzureHttps[1]!), project: decodeSegment(devAzureHttps[2]!), repo: decodeSegment(devAzureHttps[3]!) };
   }
 
   // SSH dev.azure.com: git@ssh.dev.azure.com:v3/org/project/repo
@@ -70,7 +82,7 @@ export function parseAzureDevOpsRemote(url: string): AzureDevOpsRemoteInfo | nul
     /ssh\.dev\.azure\.com:v3\/([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/i,
   );
   if (devAzureSsh) {
-    return { org: devAzureSsh[1]!, project: devAzureSsh[2]!, repo: devAzureSsh[3]! };
+    return { org: decodeSegment(devAzureSsh[1]!), project: decodeSegment(devAzureSsh[2]!), repo: decodeSegment(devAzureSsh[3]!) };
   }
 
   // Legacy visualstudio.com: https://org.visualstudio.com/project/_git/repo
@@ -80,7 +92,7 @@ export function parseAzureDevOpsRemote(url: string): AzureDevOpsRemoteInfo | nul
     /([^/.]+)\.visualstudio\.com\/([^/]+)\/_git\/([^/]+?)(?:\.git)?$/i,
   );
   if (vsMatch) {
-    return { org: vsMatch[1]!, project: vsMatch[2]!, repo: vsMatch[3]! };
+    return { org: decodeSegment(vsMatch[1]!), project: decodeSegment(vsMatch[2]!), repo: decodeSegment(vsMatch[3]!) };
   }
 
   return null;
