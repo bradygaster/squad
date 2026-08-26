@@ -240,13 +240,15 @@ describe('gh-aw implement workflows', () => {
     const paths = [
       'bradygaster/squad/workflows/squad.md@dev',
       'bradygaster/squad/workflows/squad-implement-worker.md@dev',
+      'bradygaster/squad/workflows/squad-deps-worker.md@dev',
       'bradygaster/squad/workflows/squad-review.md@dev',
     ];
     const orderedInstallCommand = [
       'gh aw add \\',
       `  ${paths[0]} \\`,
       `  ${paths[1]} \\`,
-      `  ${paths[2]}`,
+      `  ${paths[2]} \\`,
+      `  ${paths[3]}`,
     ].join('\n');
     const normalizedGuide = guide.replace(/\r\n/g, '\n');
     const hasOrderedInstallCommand = (markdown: string): boolean =>
@@ -261,7 +263,7 @@ describe('gh-aw implement workflows', () => {
     );
     expect(hasOrderedInstallCommand(reorderedGuide)).toBe(false);
     expect(guide).toMatch(
-      /Keep the dispatcher first\. `gh aw add` discovers its implementation-worker and\s+reviewer dependencies while compiling it; the explicit worker and reviewer\s+entries then confirm the complete install surface without creating duplicates\./,
+      /Keep the dispatcher first\. `gh aw add` discovers its general worker, dependency\s+worker, and reviewer dependencies while compiling it; the explicit worker and\s+reviewer entries then confirm the complete install surface without creating\s+duplicates\./,
     );
   });
 });

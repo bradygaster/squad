@@ -30,6 +30,7 @@ gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev
 
 # 4. Commit and push the workflow sources and generated files
@@ -85,12 +86,14 @@ approve their own pull requests.
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev
 ```
 
-Keep the dispatcher first. `gh aw add` discovers its implementation-worker and
-reviewer dependencies while compiling it; the explicit worker and reviewer
-entries then confirm the complete install surface without creating duplicates.
+Keep the dispatcher first. `gh aw add` discovers its general worker, dependency
+worker, and reviewer dependencies while compiling it; the explicit worker and
+reviewer entries then confirm the complete install surface without creating
+duplicates.
 The installed top-level workflow set is:
 
 - `squad.md` and `squad.lock.yml`
@@ -978,6 +981,7 @@ To update your compiled workflow after pulling upstream changes:
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev
 ```
 

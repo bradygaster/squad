@@ -23,12 +23,13 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev
 ```
 
 This command:
 
-1. Fetches the Squad dispatcher, implementation worker, and advisory reviewer
+1. Fetches the Squad dispatcher, general and dependency workers, and advisory reviewer
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 

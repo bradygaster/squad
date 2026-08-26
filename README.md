@@ -539,6 +539,7 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev
 git add -- \
   .github/aw/ \
