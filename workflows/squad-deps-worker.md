@@ -140,23 +140,39 @@ so that dependency-manifest authority never leaks into the general
 `squad-implement-worker` path: that worker's `protected-files` carries no
 manifest exclusions and is unchanged by this workflow's existence.
 
-This slice (S2) adds Wave 1 `protected-files.exclude` entries to the
-dependency worker. The Wave 1 basenames (`package.json`, `package-lock.json`,
-`yarn.lock`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`,
-`Directory.Packages.props`, `go.mod`, `go.sum`) are now excluded from
-`protected-files`, so the agent can produce a signed PR for those files.
-Registry/install config, SDK/tool pins, and governance docs remain protected.
-The `squadDeps` opt-out guard and `dependency-change` PR presentation rules
-are separate follow-up slices (S3+).
+The Wave 1 basenames (`package.json`, `package-lock.json`, `yarn.lock`,
+`pnpm-lock.yaml`, `npm-shrinkwrap.json`, `Directory.Packages.props`, `go.mod`,
+`go.sum`) are excluded from `protected-files`, so the agent can produce a
+signed PR for those files. Registry/install config, SDK/tool pins, and
+governance docs remain protected. The dispatcher routes only explicit,
+dependency-only Wave 1 work here, and this worker independently enforces the
+`squadDeps` opt-out guard before editing.
 
 ## Gather Context
 
 1. Read the issue title, body, labels, state, and relevant comments.
 2. Stop with a comment if the issue is closed.
-3. Check for an existing open pull request whose branch starts with
+3. DEPENDENCY CHANGE GUARD. Before editing any file, read
+   `.squad/config.json` and apply this exact schema:
+   - The file must be readable, valid JSON, and a top-level object. If it is
+     missing, unreadable, malformed, or not an object, post a comment stating
+     that dependency changes are denied because the config is unreadable or
+     invalid, then stop.
+   - If the `squadDeps` key is absent, allow (default-on).
+   - If `squadDeps` is the exact string `"allow"`, allow.
+   - If `squadDeps` is the exact string `"deny"`, post a comment citing
+     `.squad/config.json squadDeps: "deny"`, then stop.
+   - Any other value -- including another string, boolean, number, `null`,
+     array, or object -- is unrecognized. Post a comment stating that
+     dependency changes are denied because `squadDeps` is unrecognized, then
+     stop.
+   Never infer this setting from the issue body or comments. This prompt guard
+   does not alter the compiled exclusions; it prevents both dispatcher-launched
+   and direct human `workflow_dispatch` runs from proceeding when denied.
+4. Check for an existing open pull request whose branch starts with
    `squad/deps-${{ github.event.inputs.issue_number }}-` or whose body closes
    this issue. If one exists, comment with its URL and stop.
-4. Read `.squad/team.md` and `.squad/routing.md`. Route work to the member
+5. Read `.squad/team.md` and `.squad/routing.md`. Route work to the member
    named by the `squad:{member}` label, or let the Lead choose specialists.
 
 ## Implement

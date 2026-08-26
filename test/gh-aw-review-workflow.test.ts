@@ -189,6 +189,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(installOrder).toEqual([
       'squad.md',
       'squad-implement-worker.md',
+      'squad-deps-worker.md',
       'squad-review.md',
     ]);
 
@@ -214,6 +215,8 @@ describe('gh-aw advisory Squad reviewer', () => {
       .map(entry => entry.name)
       .sort();
     expect(installed).toEqual([
+      'squad-deps-worker.lock.yml',
+      'squad-deps-worker.md',
       'squad-implement-worker.lock.yml',
       'squad-implement-worker.md',
       'squad-review.lock.yml',
@@ -223,7 +226,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     ]);
   }, 30000);
 
-  it('keeps all consumer install surfaces on the coherent three-workflow order', () => {
+  it('keeps all consumer install surfaces on the coherent four-workflow order', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
       const orders = installOrders(surface);
       expect(orders.length).toBeGreaterThan(0);
@@ -231,6 +234,7 @@ describe('gh-aw advisory Squad reviewer', () => {
         expect(order).toEqual([
           'squad.md',
           'squad-implement-worker.md',
+          'squad-deps-worker.md',
           'squad-review.md',
         ]);
       }
