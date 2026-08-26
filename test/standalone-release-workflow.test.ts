@@ -16,6 +16,14 @@ const release = readFileSync(join(WORKFLOWS, 'squad-release.yml'), 'utf8');
 const standalone = readFileSync(join(WORKFLOWS, 'squad-standalone-release.yml'), 'utf8');
 
 describe('standalone release handoff', () => {
+  it('supports a confirmation-gated manual release from dev only', () => {
+    expect(release).toMatch(/workflow_dispatch:\r?\n\s+inputs:\r?\n\s+confirm_tag:/);
+    expect(release).toContain("if: github.event_name == 'workflow_dispatch'");
+    expect(release).toContain('RELEASE_REF: ${{ github.ref }}');
+    expect(release).toContain('if [ "${RELEASE_REF}" != "refs/heads/dev" ]; then');
+    expect(release).toContain('if [ "${CONFIRM_TAG}" != "${expected_tag}" ]; then');
+  });
+
   it('calls the reusable bundle workflow after creating a release', () => {
     expect(release).toMatch(/release:\r?\n\s+runs-on:[\s\S]*?\s+outputs:/);
     expect(release).toContain("created: ${{ steps.check_tag.outputs.exists == 'false' }}");

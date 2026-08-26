@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
- * Move the Squad CLI activation pin to a published version (#1825).
+ * Move the Squad CLI activation pin to a published standalone release (#1825).
  *
- * The pin decays on a schedule nobody controls: every npm release makes it stale,
- * and nothing about releasing touches it. `.github/workflows/squad-cli-pin-drift.yml`
- * is the daily backstop that *notices*; this script is the half that prevents, by
- * moving the pin in the same run that made the new version installable.
+ * `.github/workflows/squad-cli-pin-drift.yml` verifies that the pin resolves to a
+ * complete GitHub Release. This script keeps automated bumps compatible with the
+ * release-tag format consumed by scripts/install.sh.
  *
  * It is a script rather than an inline `run:` block for two reasons. The patterns
  * below contain backticks (the docs table) and pipes (the YAML `||` fallback), both
  * of which are hostile to quoting inside a workflow block scalar — and as a file it
  * can be exercised by `test/squad-cli-pin.test.ts` without a release.
  *
- * Deliberately does NOT read `packages/squad-cli/package.json`. That holds the next
- * *unreleased* version and resolves to E404 on npm — the exact breakage PR #1818
- * fixed. The caller supplies a version it has already proven is published.
+ * Deliberately does NOT read `packages/squad-cli/package.json`. The caller supplies
+ * a version it has already proven is published.
  *
  * Fails closed: if any pattern stops matching, the pin has moved and this script has
  * silently become a no-op. A bumper that cannot find its target must say so loudly,
@@ -44,7 +42,7 @@ const SITES = [
   {
     file: PIN_FILE,
     label: 'header comment default',
-    pattern: /^(#\s+Default is )[0-9][^\s.]*(?:\.[^\s.]+)*(\.\s*)$/gm,
+    pattern: /^(#\s+Default is )v?[0-9][^\s.]*(?:\.[^\s.]+)*(\.\s*)$/gm,
   },
   {
     file: DOCS_FILE,
@@ -58,17 +56,18 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = (process.env.TARGET_VERSION ?? '').trim();
+const requestedTarget = (process.env.TARGET_VERSION ?? '').trim();
 
-if (!target) {
+if (!requestedTarget) {
   fail('TARGET_VERSION is not set — refusing to guess which version to pin.');
 }
 
-// Prereleases reach npm too, but activation is the cold-start path for brand-new
-// repositories; pointing it at a prerelease would hand every new user an unproven
-// build. `dist-tags.latest` is the stable channel, so the pin tracks stable only.
-if (!/^\d+\.\d+\.\d+$/.test(target)) {
-  fail(`refusing to pin a non-stable version: "${target}" (expected MAJOR.MINOR.PATCH)`);
+const target = requestedTarget.startsWith('v') ? requestedTarget : `v${requestedTarget}`;
+
+// Activation is the cold-start path for brand-new repositories. Keep it on a
+// stable GitHub Release tag rather than a prerelease.
+if (!/^v\d+\.\d+\.\d+$/.test(target)) {
+  fail(`refusing to pin a non-stable version: "${requestedTarget}" (expected vMAJOR.MINOR.PATCH)`);
 }
 
 const sources = new Map();
@@ -148,14 +147,14 @@ if (changed && process.env.PR_BODY_FILE) {
   writeFileSync(
     process.env.PR_BODY_FILE,
     [
-      `Squad CLI \`${target}\` is published, so new-repo activation should install it.`,
+      `Squad standalone release \`${target}\` is published, so new-repo activation should install it.`,
       '',
       '| File | Site | Was |',
       '|---|---|---|',
       rows,
       '',
-      'Opened automatically by `.github/workflows/squad-npm-publish.yml` (#1825) as part',
-      `of the run that published \`${target}\`.`,
+      'Opened automatically after publication verification by the activation pin guard',
+      `for standalone release \`${target}\` (#1825).`,
       '',
       '> **This pull request has no CI.** GitHub does not fire `pull_request` workflows',
       '> for pull requests opened with `GITHUB_TOKEN`. The rewrite was verified in the',

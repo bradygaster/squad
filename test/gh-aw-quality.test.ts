@@ -1187,7 +1187,10 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     // real deployment layout so `squad-implement-worker` resolves as it will in
     // every real install.
     cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
-    execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict'], {
+    // CI compiles with --approve after review. The newly approved action is
+    // SHA-pinned to this repository and only downloads checksum-verified release
+    // assets; it receives no secret input.
+    execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict', '--approve'], {
       cwd: workspace,
       encoding: 'utf8',
       stdio: 'pipe',
@@ -1219,7 +1222,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
   }, 20000);
 
-  it('preserves the published CLI selection in the compiled install step (#1884)', () => {
+  it('preserves the standalone release selection in the compiled install step (#1884)', () => {
     const compiled = lockText();
     const pin = readText(join(SHARED_DIR, 'squad.md')).match(
       /SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'([^']+)'/,
@@ -1228,13 +1231,15 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(pin, 'could not locate the source Squad CLI fallback').toBeDefined();
     expect(compiled).toMatch(
       new RegExp(
-        String.raw`name: Install Squad CLI[\s\S]*SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'${pin}'\s*\}\}`,
+        String.raw`name: Resolve Squad standalone release[\s\S]*SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'${pin}'\s*\}\}`,
       ),
     );
     expect(compiled).toContain(
-      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
-    expect(compiled).toContain('echo "$install_root/bin" >> "$GITHUB_PATH"');
+    expect(compiled).toContain('version: ${{ steps.squad-release.outputs.tag }}');
+    expect(compiled).toContain("skip-init: 'true'");
+    expect(compiled).not.toContain('npm install --global');
     expect(compiled).not.toContain('npx --yes "@bradygaster/squad-cli@');
   }, 20000);
 
@@ -2434,7 +2439,7 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     expect(healthStepIdx, 'health check must precede upload').toBeLessThan(uploadStepIdx);
   });
 
-  it('health and init use the globally installed CLI selected before both steps', () => {
+  it('health and init use the standalone CLI selected before both steps', () => {
     const lines = sharedContent.split('\n');
     const healthLineIdx = lines.findIndex(l => l.includes('health --json'));
     expect(healthLineIdx).toBeGreaterThan(-1);
@@ -2442,8 +2447,10 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     const healthLine = lines[healthLineIdx];
     expect(healthLine, 'health must invoke the installed squad binary').toMatch(/\bsquad health --json/);
     expect(sharedContent).toContain(
-      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
+    expect(sharedContent).toContain('version: ${{ steps.squad-release.outputs.tag }}');
+    expect(sharedContent).not.toContain('npm install --global');
     expect(sharedContent).not.toContain('npx --yes "@bradygaster/squad-cli@');
   });
 

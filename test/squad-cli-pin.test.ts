@@ -1,5 +1,5 @@
 /**
- * Squad CLI activation pin consistency (#1825)
+ * Squad standalone release activation pin consistency (#1825)
  *
  * `workflows/shared/squad.md` states the pinned CLI version twice: once as prose in
  * the header comment that documents `vars.SQUAD_CLI_VERSION`, and once as the literal
@@ -9,17 +9,16 @@
  * trying to verify the pin.
  *
  * This suite is the offline half of the guard. The online half
- * (`.github/workflows/squad-cli-pin-drift.yml`) compares the pin against npm's
- * published `dist-tags.latest` on a schedule; it cannot run here because it needs the
- * network, and a network call in the unit suite fails closed on an offline machine.
+ * (`.github/workflows/squad-cli-pin-drift.yml`) compares the pin against the latest
+ * complete standalone GitHub Release; it cannot run here because it needs the network,
+ * and a network call in the unit suite fails closed on an offline machine.
  *
  * Split that way, each half checks something the other structurally cannot:
  *   - here: the file agrees with itself, on every PR, deterministically
  *   - there: the file agrees with reality, daily
  *
- * Neither reads `packages/squad-cli/package.json`. That holds the next *unreleased*
- * version — 0.13.0 while this was written, which resolves to E404 on npm — so deriving
- * the pin from it reproduces the exact breakage PR #1818 fixed.
+ * Neither reads `packages/squad-cli/package.json`. That can hold the next unreleased
+ * version, while activation requires a public release carrying standalone assets.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -62,10 +61,10 @@ function effectivePin(source: string): string | undefined {
 
 /** The version quoted in the header comment that documents the default. */
 function documentedPin(source: string): string | undefined {
-  return source.match(/^#\s*Default is ([0-9][^\s.]*(?:\.[^\s.]+)*)\.\s*$/m)?.[1];
+  return source.match(/^#\s*Default is (v?[0-9][^\s.]*(?:\.[^\s.]+)*)\.\s*$/m)?.[1];
 }
 
-describe('Squad CLI activation pin (#1825)', () => {
+describe('Squad standalone release activation pin (#1825)', () => {
   it('states a resolvable pin', () => {
     const pin = effectivePin(readPinFile());
 
@@ -73,7 +72,7 @@ describe('Squad CLI activation pin (#1825)', () => {
     // stopped matching too — and it would report "no drift" against a pin it never
     // found. Failing here makes that visible on the PR that reshapes the line.
     expect(pin, 'could not locate the SQUAD_CLI_VERSION fallback literal').toBeDefined();
-    expect(pin).toMatch(/^\d+\.\d+\.\d+/);
+    expect(pin).toMatch(/^v\d+\.\d+\.\d+$/);
   });
 
   it('documents the same version it resolves', () => {
@@ -83,43 +82,41 @@ describe('Squad CLI activation pin (#1825)', () => {
     expect(documentedPin(source)).toBe(effectivePin(source));
   });
 
-  it('does not carry a second, unreachable default', () => {
+  it('normalizes legacy version overrides and never installs through npm', () => {
     const source = readPinFile();
-    const pin = effectivePin(source);
 
-    // `SQUAD_CLI_VERSION` is set from `vars.X || '<pin>'`, which always yields a
-    // non-empty string, so a shell `${SQUAD_CLI_VERSION:-<pin>}` fallback can never
-    // fire. It is unreachable code whose only real effect is to be a third place the
-    // version can go stale — and being unreachable, it goes stale invisibly.
-    expect(source).not.toMatch(/\$\{SQUAD_CLI_VERSION:-/);
-
-    expect(source).not.toContain('npx --yes "@bradygaster/squad-cli@');
     expect(source).toContain(
-      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
-    expect(source).not.toContain(`squad-cli@${pin}`);
+    expect(source).toContain('*) release_tag="v${release_tag}" ;;');
+    expect(source).not.toMatch(/\bnpm (?:install|ci|view)\b/);
+    expect(source).not.toContain('npx --yes');
   });
 
-  it('binds the selected version on the install step gh-aw preserves (#1884)', () => {
+  it('binds the selected release to the standalone action gh-aw preserves (#1884)', () => {
     const source = readPinFile();
+    const resolveStep = source.match(
+      /- name: Resolve Squad standalone release[\s\S]*?(?=\n\s+- name:)/,
+    )?.[0];
     const installStep = source.match(
-      /- name: Install Squad CLI[\s\S]*?(?=\n\s+- name:)/,
+      /- name: Install Squad CLI from standalone release[\s\S]*?(?=\n\s+- name:)/,
     )?.[0];
 
-    expect(installStep, 'could not locate the Squad CLI install step').toBeDefined();
-    expect(installStep).toMatch(
+    expect(resolveStep, 'could not locate the Squad release resolver').toBeDefined();
+    expect(resolveStep).toMatch(
       /env:\s*\n\s+SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'[^']+'\s*\}\}/,
     );
-    expect(installStep).toContain(
-      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+    expect(installStep, 'could not locate the standalone Squad install step').toContain(
+      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
-    expect(installStep).toContain('echo "$install_root/bin" >> "$GITHUB_PATH"');
+    expect(installStep).toContain('version: ${{ steps.squad-release.outputs.tag }}');
+    expect(installStep).toContain("skip-init: 'true'");
     expect(source).not.toMatch(
       /activation:\s*\n\s+env:\s*\n\s+SQUAD_CLI_VERSION:/,
     );
   });
 
-  it('keeps the drift guard pointed at npm rather than the repo', () => {
+  it('keeps the drift guard pointed at complete GitHub Release assets', () => {
     const workflow = readFileSync(DRIFT_WORKFLOW, 'utf8');
 
     // Comments are stripped first. The header comment names the trap deliberately, to
@@ -130,11 +127,22 @@ describe('Squad CLI activation pin (#1825)', () => {
       .filter((l) => !l.trimStart().startsWith('#'))
       .join('\n');
 
-    // The trap this issue was filed to avoid: the CLI package manifest holds the next
-    // unreleased version, so a guard reading it would compare the repo to itself and
-    // then "fix" the pin to something npm cannot install.
+    // Activation consumes release assets, not a package registry or the next in-repo
+    // manifest version.
     expect(executable).not.toMatch(/packages\/squad-cli\/package\.json/);
-    expect(executable).toMatch(/dist-tags\.latest/);
+    expect(executable).not.toMatch(/dist-tags\.latest|npm view/);
+    expect(executable).toContain('releases/latest');
+    for (const asset of [
+      'squad-linux-x64.tar.gz',
+      'squad-linux-arm64.tar.gz',
+      'squad-darwin-x64.tar.gz',
+      'squad-darwin-arm64.tar.gz',
+      'squad-win32-x64.zip',
+      'squad-win32-arm64.zip',
+      'SHA256SUMS.txt',
+    ]) {
+      expect(executable).toContain(asset);
+    }
   });
 
   it('passes values into shell through env, not expression interpolation', () => {
@@ -195,7 +203,7 @@ describe('Squad CLI activation pin (#1825)', () => {
     const docs = readFileSync(DOCS_FILE, 'utf8');
 
     // A third copy of the version, in the page that tells people what activation
-    // installs. It is outside the workflow file, so neither the drift guard's npm
+    // installs. It is outside the workflow file, so neither the drift guard's release
     // comparison nor the two checks above ever looked at it — it could sit stale
     // indefinitely while every other guard reported green.
     const documented = docs.match(
@@ -227,13 +235,11 @@ describe('Squad CLI activation pin (#1825)', () => {
     expect(output).toContain('already');
   });
 
-  it('wires the bump into the run that publishes', () => {
+  it('keeps the existing release bump automation compatible with the standalone pin', () => {
     const workflow = readFileSync(PUBLISH_WORKFLOW, 'utf8');
 
-    // Prevention has to be attached to publishing itself. If the bump job is dropped,
-    // or stops depending on the publish that makes the version installable, the pin
-    // goes back to decaying silently and only the daily backstop notices — a day late,
-    // as a red build.
+    // Stable npm publication may still open the pin PR, but the rewrite emits a
+    // GitHub Release tag. The online drift guard independently rejects missing assets.
     expect(workflow).toMatch(/bump-activation-pin:/);
     expect(workflow).toMatch(/needs:\s*publish-cli/);
     expect(workflow).toContain('scripts/bump-activation-pin.mjs');
@@ -254,9 +260,8 @@ describe('Squad CLI activation pin (#1825)', () => {
       })
       .join('\n');
 
-    // Same trap as the drift guard: `packages/squad-cli/package.json` holds the next
-    // unreleased version, so a bumper reading it would pin activation to something npm
-    // cannot install — reproducing PR #1818's breakage automatically, every release.
+    // The in-repo manifest may be ahead of the standalone GitHub Release.
     expect(executable).not.toMatch(/packages\/squad-cli\/package\.json/);
+    expect(executable).toContain("requestedTarget.startsWith('v')");
   });
 });

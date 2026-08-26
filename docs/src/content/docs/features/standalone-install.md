@@ -35,7 +35,7 @@ release `SHA256SUMS.txt`, unpacks it into `$PREFIX/lib/squad`, and symlinks
 ```sh
 # pin a version and install somewhere specific
 curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh \
-  | VERSION="v0.11.0" PREFIX="$HOME/tools" sh
+  | VERSION="v0.13.1" PREFIX="$HOME/tools" sh
 ```
 
 ### Windows
@@ -123,12 +123,17 @@ The bundles are what make an npm-free CI job possible — including the
 [gh-aw](/features/gh-aw/) activation job, which previously required `npx` and so
 could not run on a runner without npm registry access.
 
+The release workflow still uses npm at bundle-build time because there is no
+practical npm-free way to assemble the dependency tree. That workflow uses the
+GitHub-hosted runner's normal registry configuration. The Microsoft npm proxy is
+for local development only and must not be configured in GitHub Actions.
+
 The `squad-init` action wraps the install and init steps:
 
 ```yaml
 - uses: bradygaster/squad/.github/actions/squad-init@<sha>
   with:
-    version: v0.11.0        # default: latest release
+    version: v0.13.1        # default: latest release
     preset: default
     state-backend: local
 ```
@@ -139,7 +144,7 @@ Point `repository:` at an internal mirror if your runners cannot reach
 ```yaml
 - name: Install Squad
   env:
-    SQUAD_VERSION: v0.11.0
+    SQUAD_VERSION: v0.13.1
   run: |
     curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh \
       | VERSION="${SQUAD_VERSION}" PREFIX="${HOME}/.local" sh
