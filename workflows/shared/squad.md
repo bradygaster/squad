@@ -49,10 +49,9 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-# Default is 0.14.0.
-#   This is the first release containing `squad health`. The shared component
-#   becomes fully operational only after that release is published.
-#   Import this workflow only from refs that post-date that release.
+# Default is 0.12.0.
+#   This is the latest published stable release when this workflow was authored.
+#   The release pipeline updates this pin only after npm publication.
 #
 # Optional model override:
 #   vars.SQUAD_MODEL
@@ -73,8 +72,6 @@ engine:
 
 jobs:
   activation:
-    env:
-      SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.14.0' }}
     pre-steps:
       - name: Mint Squad GitHub App token
         id: squad-app-token
@@ -84,6 +81,19 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+
+      - name: Install Squad CLI
+        id: squad-cli
+        env:
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
+        run: |
+          set -euo pipefail
+          install_root="${RUNNER_TEMP}/squad-cli"
+          npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"
+          installed_version="$("$install_root/bin/squad" --version)"
+          echo "Installed Squad CLI ${installed_version} (requested ${SQUAD_CLI_VERSION})."
+          echo "version=${installed_version}" >> "$GITHUB_OUTPUT"
+          echo "$install_root/bin" >> "$GITHUB_PATH"
 
       - name: Initialize Squad team
         env:
@@ -103,14 +113,20 @@ jobs:
             echo "✓ Existing squad team detected with roster entries — skipping init."
           else
             echo "No existing squad team found — running squad init."
-            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}" init --preset default --state-backend local
+            squad init --preset default --state-backend local
           fi
 
       - name: Run Squad health check
         env:
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+          SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}
         run: |
-          npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}" health --json
+          set -euo pipefail
+          if squad help | grep -Fq 'Validate team state for CI'; then
+            squad health --json
+          else
+            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI pin."
+          fi
 
       - name: Upload Squad state artifact
         if: success()
@@ -142,10 +158,11 @@ agent sandbox:
 
 1. **`jobs.activation.pre-steps`** — the repository is already checked out by the
    activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), checks whether `.squad/team.md` already exists with
-   roster entries (preserving any previously committed cast), and only runs
-   `squad init` if no usable team is found. It then runs `squad health --json`
-   and uploads the resulting `.squad/` team state plus
+   uses a supplied PAT), installs the selected published Squad CLI globally,
+   checks whether `.squad/team.md` already exists with roster entries (preserving
+   any previously committed cast), and only runs `squad init` if no usable team
+   is found. It then runs `squad health --json` when the installed release
+   supports it and uploads the resulting `.squad/` team state plus
    `.github/agents/squad.agent.md` only when readiness checks pass — all inside
    the activation job with unrestricted egress.
 

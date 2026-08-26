@@ -93,12 +93,30 @@ describe('Squad CLI activation pin (#1825)', () => {
     // version can go stale — and being unreachable, it goes stale invisibly.
     expect(source).not.toMatch(/\$\{SQUAD_CLI_VERSION:-/);
 
-    // Belt and braces: no *other* copy of the version string in an npx invocation.
-    const npxLines = source.split(/\r?\n/).filter((l) => l.includes('squad-cli@'));
-    for (const line of npxLines) {
-      expect(line, `npx line hardcodes a version instead of using the env var: ${line.trim()}`)
-        .not.toContain(`squad-cli@${pin}`);
-    }
+    expect(source).not.toContain('npx --yes "@bradygaster/squad-cli@');
+    expect(source).toContain(
+      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+    );
+    expect(source).not.toContain(`squad-cli@${pin}`);
+  });
+
+  it('binds the selected version on the install step gh-aw preserves (#1884)', () => {
+    const source = readPinFile();
+    const installStep = source.match(
+      /- name: Install Squad CLI[\s\S]*?(?=\n\s+- name:)/,
+    )?.[0];
+
+    expect(installStep, 'could not locate the Squad CLI install step').toBeDefined();
+    expect(installStep).toMatch(
+      /env:\s*\n\s+SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'[^']+'\s*\}\}/,
+    );
+    expect(installStep).toContain(
+      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+    );
+    expect(installStep).toContain('echo "$install_root/bin" >> "$GITHUB_PATH"');
+    expect(source).not.toMatch(
+      /activation:\s*\n\s+env:\s*\n\s+SQUAD_CLI_VERSION:/,
+    );
   });
 
   it('keeps the drift guard pointed at npm rather than the repo', () => {

@@ -1219,6 +1219,25 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
   }, 20000);
 
+  it('preserves the published CLI selection in the compiled install step (#1884)', () => {
+    const compiled = lockText();
+    const pin = readText(join(SHARED_DIR, 'squad.md')).match(
+      /SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'([^']+)'/,
+    )?.[1];
+
+    expect(pin, 'could not locate the source Squad CLI fallback').toBeDefined();
+    expect(compiled).toMatch(
+      new RegExp(
+        String.raw`name: Install Squad CLI[\s\S]*SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'${pin}'\s*\}\}`,
+      ),
+    );
+    expect(compiled).toContain(
+      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+    );
+    expect(compiled).toContain('echo "$install_root/bin" >> "$GITHUB_PATH"');
+    expect(compiled).not.toContain('npx --yes "@bradygaster/squad-cli@');
+  }, 20000);
+
   it('emits no attacker-controlled event text in any compiled run: block', () => {
     const compiled = lockText();
     const blocks = extractRunBlocks(compiled);
@@ -2342,11 +2361,20 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
   const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
 
   it('squad health --json appears in the shared bootstrap', () => {
-    expect(sharedContent).toMatch(/npx\s+--yes\s+"@bradygaster\/squad-cli@\$\{SQUAD_CLI_VERSION\}"\s+health\s+--json/);
+    expect(sharedContent).toMatch(/\bsquad\s+health\s+--json/);
   });
 
   it('health uses --json flag for structured CI output', () => {
     expect(sharedContent).toMatch(/health --json/);
+  });
+
+  it('gates health on command capability until the published pin includes it (#1884)', () => {
+    expect(sharedContent).toContain(
+      "squad help | grep -Fq 'Validate team state for CI'",
+    );
+    expect(sharedContent).toContain(
+      'predates the health command; the readiness gate will activate after the next published CLI pin',
+    );
   });
 
   it('squad health --json appears after squad init (command ordering)', () => {
@@ -2406,15 +2434,17 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     expect(healthStepIdx, 'health check must precede upload').toBeLessThan(uploadStepIdx);
   });
 
-  it('health step uses the same CLI version mechanism as init', () => {
+  it('health and init use the globally installed CLI selected before both steps', () => {
     const lines = sharedContent.split('\n');
     const healthLineIdx = lines.findIndex(l => l.includes('health --json'));
     expect(healthLineIdx).toBeGreaterThan(-1);
 
     const healthLine = lines[healthLineIdx];
-    expect(healthLine, 'health must use npx').toContain('npx');
-    expect(healthLine, 'health must reference squad-cli package').toContain('@bradygaster/squad-cli@');
-    expect(healthLine, 'health must use the SQUAD_CLI_VERSION variable').toContain('SQUAD_CLI_VERSION');
+    expect(healthLine, 'health must invoke the installed squad binary').toMatch(/\bsquad health --json/);
+    expect(sharedContent).toContain(
+      'npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"',
+    );
+    expect(sharedContent).not.toContain('npx --yes "@bradygaster/squad-cli@');
   });
 
   it('continue-on-error on the restore step does not shield health failure from stopping dispatch', () => {
