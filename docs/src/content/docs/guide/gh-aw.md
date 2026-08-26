@@ -151,7 +151,7 @@ Set a repository variable to control which Squad CLI version the workflow uses:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `SQUAD_CLI_VERSION` | Squad CLI version to install during activation | `0.12.0` |
+| `SQUAD_CLI_VERSION` | Squad CLI version to install during activation | `0.13.0` |
 
 Set it in **Settings → Secrets and variables → Actions → Variables**.
 

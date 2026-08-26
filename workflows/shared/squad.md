@@ -49,7 +49,7 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-# Default is 0.12.0.
+# Default is 0.13.0.
 #   This is the latest published stable release when this workflow was authored.
 #   The release pipeline updates this pin only after npm publication.
 #
@@ -85,7 +85,7 @@ jobs:
       - name: Install Squad CLI
         id: squad-cli
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.13.0' }}
         run: |
           set -euo pipefail
           install_root="${RUNNER_TEMP}/squad-cli"
