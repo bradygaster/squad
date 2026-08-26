@@ -35,7 +35,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
       - name: Compare pin against latest standalone release
         id: compare
@@ -104,7 +104,7 @@ jobs:
           PINNED: ${{ steps.compare.outputs.pinned }}
           LATEST: ${{ steps.compare.outputs.latest }}
           MISSING: ${{ steps.compare.outputs.missing }}
-          TITLE: 'Squad CLI activation pin is behind the published release'
+          TITLE: 'Squad standalone activation pin is behind the published release'
         run: |
           set -euo pipefail
 

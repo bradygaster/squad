@@ -93,7 +93,7 @@ jobs:
             v*) ;;
             *) release_tag="v${release_tag}" ;;
           esac
-          if ! echo "${release_tag}" | LC_ALL=C grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*$'; then
+          if ! echo "${release_tag}" | LC_ALL=C grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::SQUAD_CLI_VERSION must be a semver release tag (for example v0.13.1)."
             exit 1
           fi

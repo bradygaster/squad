@@ -89,6 +89,7 @@ describe('Squad standalone release activation pin (#1825)', () => {
       'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
     expect(source).toContain('*) release_tag="v${release_tag}" ;;');
+    expect(source).toContain("grep -qE '^v[0-9]+\\.[0-9]+\\.[0-9]+$'");
     expect(source).not.toMatch(/\bnpm (?:install|ci|view)\b/);
     expect(source).not.toContain('npx --yes');
   });
@@ -132,6 +133,7 @@ describe('Squad standalone release activation pin (#1825)', () => {
     expect(executable).not.toMatch(/packages\/squad-cli\/package\.json/);
     expect(executable).not.toMatch(/dist-tags\.latest|npm view/);
     expect(executable).toContain('releases/latest');
+    expect(executable).toContain('Squad standalone activation pin is behind the published release');
     for (const asset of [
       'squad-linux-x64.tar.gz',
       'squad-linux-arm64.tar.gz',

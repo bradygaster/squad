@@ -39,7 +39,7 @@ jobs:
           RELEASE_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          expected_tag="v$(node -e "console.log(require('./package.json').version)")"
+          expected_tag="v$(node -p 'require("./package.json").version')"
           if [ "${RELEASE_REF}" != "refs/heads/dev" ]; then
             echo "::error::Manual standalone releases must be dispatched from dev, not ${RELEASE_REF}."
             exit 1
