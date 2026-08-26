@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Allow runtime state tools to persist the casting policy, registry, and history keys required by the coordinator (`casting/policy`, `casting/registry`, and `casting/history`), while continuing to reject unrelated casting paths (#1876, #1898).
+- Allow runtime state tools to persist the casting policy, registry, and history keys required by the coordinator (`casting/policy.json`, `casting/registry.json`, and `casting/history.json`), while continuing to reject unrelated casting paths (#1876, #1898).
 
 ## [0.13.0] - 2026-08-25
 
@@ -545,4 +545,3 @@ First stable release since v0.9.4 (April 25). Consumes 97 changesets (sdk: 50, c
 - New entry point: `src/cli-entry.ts` (CLI bootstrap separated from library exports)
 - Migrated to npm workspace publishing (`@bradygaster/squad-sdk`, `@bradygaster/squad-cli`)
 - Changesets infrastructure for independent package versioning
-
