@@ -6,29 +6,75 @@ All notable changes to this project will be documented in this file.
 
 ## [0.13.0] - 2026-08-25
 
+This release is focused on hardening the gh-aw (Agentic Workflows) integration shipped in v0.12.0: the install contract, workflow router, plan lifecycle, dispatch reliability, and CI coverage are all tightened. It also adds `squad health`, fixes `squad watch`/`squad loop` externalized-state routing, fixes `squad nap` archival, and hardens the SDK's state and scheduler paths.
+
 ### Added
 
-- (cli) Add `squad health` readiness diagnostics and fail-fast shared workflow integration, so workflows can gate on environment readiness before running (#1605).
-- (cli) Advertise real team capabilities in `.github/agents/squad.agent.md` so an outer Agentic Workflows coordinator can route to the squad correctly; the block regenerates on cast, init, and upgrade (#1608).
-- (cli) Support `{prompt}` token in custom watch/loop agent commands as an unambiguous placement for the generated prompt, with the existing `-p <prompt>` fallback preserved.
-- (cli) `squad doctor` now checks that every `eol=lf`-pinned file is actually LF on disk (not just in the index), names stale files, and points at `npm run fix:crlf`; closes #1793.
-- (cli) Two stop signals for `squad watch`/`squad loop` previously parsed but never read — `--sentinel-file <path>` and `.squad/ralph-stop` — are now wired to the graceful shutdown path; closes #1711.
+#### CLI
+- `squad health` — new readiness diagnostics command; shared workflows can gate on environment readiness before running (#1877).
+- `{prompt}` token in custom watch/loop agent commands as an unambiguous placement for the generated prompt; the existing `-p <prompt>` fallback is preserved (#1708).
+- `squad doctor` now checks that every `eol=lf`-pinned file is actually LF on disk (not just in the index), names stale files, and points at `npm run fix:crlf`; closes #1793.
+- Two stop signals for `squad watch`/`squad loop` previously parsed but never read — `--sentinel-file <path>` and `.squad/ralph-stop` — are now wired to the graceful shutdown path; closes #1711.
+- Workflow files are now backed up before `squad upgrade` refreshes them (#1709).
+- Shell detection now fails loudly instead of silently skipping when no POSIX shell resolves (#1857).
+
+#### gh-aw / Agentic Workflows
+- `feat(workflows): add advisory Squad reviewer` — a lightweight advisory review step added to the gh-aw workflow so plan output is reviewed before activation (#1871).
+- Team Guard Step TG-2 — roster certification emitted into generated workflow output, letting an outer coordinator verify the cast is complete before dispatching (#1837).
+- `squad-deps-worker` — a new fail-closed dependency-manifest worker that validates and routes dependency-update tasks; Wave 1 `protected-files.exclude` included (#1882, #1883, #1888).
+
+#### SDK
+- `feat(sdk): advertise real team capabilities in squad.agent.md` — a generated `Team Capabilities` block lists the actual cast, supported task types, and domain-to-agent routing hints; the block is rewritten on init, upgrade, and cast changes (#1881).
+- `"max"` added to `SquadReasoningEffort` and `VALID_REASONING_EFFORTS` to match Copilot SDK 1.0.9 (#1693).
+
+#### Release / distribution
+- Activation pin drift guard: a daily CI job checks that the Squad CLI activation pin in gh-aw templates matches the latest published release and opens a PR when it drifts (#1855).
+- Activation pin is now automatically updated when a new CLI version publishes (#1858).
 
 ### Changed
 
-- (cli) Model catalog tiers and fallback routing updated for GPT-5.6 Sol, Terra, and Luna, and Gemini 3.1 Pro. Terra is the new default standard model for code and prompt tasks; Luna is its economy fallback.
-- (cli) Back up locally modified workflow files before `squad upgrade` refreshes them (#1493).
+- (cli) Model catalog tiers and fallback routing updated for GPT-5.6 Sol, Terra, and Luna, and Gemini 3.1 Pro. Terra is the new default standard model for code and prompt tasks; Luna is its economy fallback (#1749, #1750).
 
 ### Fixed
 
-- (cli) `setupConsultMode` now verifies that `info/exclude` belongs to the repository rooted at `projectRoot` before writing; prevents hiding `.squad/` in the main checkout and all sibling worktrees when called from a linked worktree.
-- (cli) Watch's PID tracker cross-checks a live process's actual OS start time against `spawnedAt` before killing it, preventing collateral kills after a crash + PID reuse (#1641).
-- (cli) `LocalPollingProvider` parses script `task.ref` with quote awareness, fixing scheduler tasks on Windows paths with spaces (e.g. `C:\Program Files\nodejs\node.exe`); adds `TaskConfig.argv` as the unambiguous alternative.
-- (cli) `squad watch` and `squad loop` now route all capability state reads/writes through `stateRoot` (from `effectiveSquadDir().stateDir`) instead of constructing `.squad/` paths from `teamRoot`, fixing silent empty-state reads after `squad externalize`; closes #1490.
-- (cli) `squad nap` (`archiveDecisions`) no longer destroys decision history: archival now refuses to run when the destination is untracked and git-ignored, verifies entry count before trimming the source, and uses fence-aware record-boundary scanning. SDK adds `archiveEntries()`, `resolveTrackedDestination()`, `prepareInboxBodyForMerge()`; fixes #1774, #1783, #1760.
-- (sdk) `resolveSquadState()` now passes `rootDir: paths.teamDir` to `FSStorageProvider`, so the path-traversal guard actually validates state writes; also fixes `resolveSquadPaths()` treating `config.teamRoot: "."` as remote mode, which pointed `teamDir` one level above `.squad/`; fixes #1555.
-- (sdk) `parseAzureDevOpsRemote()` now decodes percent-encoded characters in org/project/repo segments for all three URL formats (`dev.azure.com`, SSH, legacy `visualstudio.com`); fixes #1526.
-- (sdk) Add `"max"` to `SquadReasoningEffort` and `VALID_REASONING_EFFORTS` to match Copilot SDK 1.0.9.
+#### gh-aw / Agentic Workflows — install and activation
+- **`fix(gh-aw): preserve Squad CLI install contract`** — all four gh-aw workflow templates (`squad.yml`, `squad-cast.yml`, `squad-research.yml`, `squad-review.yml`) now install the Squad CLI *before* `gh aw install`, preventing `squad` from being absent when the `gh-aw` extension invokes it; this was the root cause of new-repo activation failures (#1887).
+- `fix(gh-aw): bump activation CLI pin 0.11.0 → 0.12.0` for new-repo readiness (#1818).
+- `ci: pin gh-aw v0.86.2 and add strict compile gate for all four workflows` — each workflow file is compiled and validated in CI; the compile job now non-skippably installs the gh-aw extension so the gate cannot be green-washed (#1886, #1775).
+
+#### gh-aw / Agentic Workflows — router and dispatch
+- `fix(gh-aw): fail loudly when /squad parses no command` — prevents a no-op silent run when the slash command payload is malformed (#1824, #1832).
+- `fix(gh-aw): scan the first non-empty line in PC-0, not record 1` — fixes plan-coordinator step parsing for plans whose first line is blank (#1841).
+- `fix(gh-aw): enforce activation agent bindings` — agent binding is now validated before an activation step is dispatched (#1865).
+- `fix(gh-aw): bind squad:{agent} labels to each issue's own plan row` — labels were previously applied to the wrong issue row in multi-issue plans (#1863).
+- `fix(gh-aw): stop the validation schema from shipping its own verdict` — schema self-reference loop that caused validation to always pass removed (#1853).
+- `fix(gh-aw): refill dispatch slots from the root, not the parent epic` — epic dispatch slot exhaustion no longer blocks sibling dispatch (#1787).
+- `fix(workflows): harden squad router` — router hardening pass: improved command parsing, guard conditions, and error reporting (#1868).
+- `fix(workflows): harden implement relay provenance` — provenance metadata is now correctly threaded through the implement relay step (#1869).
+- `fix(workflows): give plan validation adversarial teeth` — plan validation now checks for injection-style patterns and structural violations (#1870).
+- `fix(dispatch): raise max to 2 and add schema static gate` — dispatch parallelism cap raised and enforced by a static schema check (#1772, #1777).
+- `fix(gh-aw): refill dispatch slots from root` and long-path planning lifecycle defects corrected (#1778).
+- Continuation dispatch inputs interpolated so merge continuation resolves the correct epic (#1741).
+- Nested source files and package-registry egress now allowed in workflow scope (#1744).
+- Protected writes fall back to a review issue instead of failing silently.
+- Dispatch workflow schema probes prevented (#1766).
+- `fix(squad.md): stop seeding Owner/Agent binding with the tokens it forbids` (#1789).
+- `test(gh-aw): enforce dispatcher-first install order` — CI test asserts the install ordering contract is maintained (#1879).
+- `test(gh-aw): enforce shell input security contract over compiled output` — compiled workflow output is scanned for unsafe input expansion patterns (#1834, #1866).
+- `fix(ci): lint gh-aw generated workflows instead of skipping them` — generated workflow YAML is now included in the actionlint pass (#1854).
+
+#### CLI
+- `fix(cli): route watch/loop capability state through the effective state dir` — after `squad externalize`, all capability state reads/writes (decision hygiene, cleanup, retro, subsquad discovery, ralph-instructions check) now use `stateRoot` from `effectiveSquadDir().stateDir` instead of a bare `.squad/` join; closes #1490 (#1660).
+- `fix(cli): verify process identity before killing tracked watch PIDs` — cross-checks the live process's OS start time against `spawnedAt` before killing, preventing collateral kills after crash + PID reuse (#1641, #1665).
+- `fix(squad): make Scribe archival incapable of destroying state` — `squad nap` / `archiveDecisions` now refuses to run when the destination is untracked and git-ignored, verifies entry count before trimming the source, and uses fence-aware record-boundary scanning. SDK adds `archiveEntries()`, `resolveTrackedDestination()`, `prepareInboxBodyForMerge()`, `demoteHeadings()`; fixes #1774, #1783, #1760 (#1792).
+- `fix(sdk): refuse consult when info/exclude resolves outside the project` — `setupConsultMode` now verifies `info/exclude` belongs to the repository rooted at `projectRoot`; prevents hiding `.squad/` across the main checkout and all sibling worktrees when called from a linked worktree (#1850).
+- Watch's PID tracker cross-checks a live process's actual OS start time against `spawnedAt` before killing it, preventing collateral kills after a crash + PID reuse (#1665).
+
+#### SDK
+- `fix(sdk): wire FSStorageProvider rootDir in resolveSquadState` — `resolveSquadState()` now passes `rootDir: paths.teamDir` to `FSStorageProvider` so the path-traversal guard validates state writes; also fixes `resolveSquadPaths()` treating `config.teamRoot: "."` as remote mode, which pointed `teamDir` one level above `.squad/`; fixes #1555 (#1695).
+- `fix(sdk): decode URL-encoded segments in Azure DevOps remote parsing` — `parseAzureDevOpsRemote()` decodes percent-encoded characters in org/project/repo segments for all three URL formats (`dev.azure.com`, SSH, legacy `visualstudio.com`), fixing `az` CLI calls for projects with spaces in their names; fixes #1526 (#1637).
+- `fix(sdk): support command paths containing spaces in scheduler script tasks` — `LocalPollingProvider` now parses `task.ref` with quote awareness and longest-match path resolution, fixing scheduler tasks on the default Windows Node.js install path (`C:\Program Files\nodejs\node.exe`). Adds `TaskConfig.argv` as the unambiguous alternative. Spawn failures now surface a `spawnError` code instead of silently producing empty output; fixes #1794 (#1802).
+- Insider tag promotion now split by package so SDK and CLI are promoted independently (#1710).
 
 ## [0.12.0] - 2026-08-12
 
