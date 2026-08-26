@@ -97,12 +97,12 @@ export const DEFAULT_CONFIG: SquadConfig = {
     fallbackBehavior: 'coordinator',
   },
   models: {
-    default: 'claude-sonnet-4.6',
+    default: 'gpt-5.6-terra',
     defaultTier: 'standard',
     tiers: {
-      premium: ['claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6'],
-      standard: ['claude-sonnet-4.6', 'claude-sonnet-5', 'gpt-5.4', 'gpt-5.3-codex'],
-      fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
+      premium: ['gpt-5.6-sol', 'claude-opus-5', 'claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6'],
+      standard: ['gpt-5.6-terra', 'claude-sonnet-5', 'claude-sonnet-4.6', 'gpt-5.5', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-3.1-pro'],
+      fast: ['gpt-5.6-luna', 'claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
     },
   },
   agents: [],
@@ -132,14 +132,14 @@ export function defineConfig(config: Partial<SquadConfig>): SquadConfig {
 
 export function validateConfig(config: unknown): config is SquadConfig {
   if (typeof config !== 'object' || config === null) return false;
-  
+
   const c = config as Partial<SquadConfig>;
-  
+
   if (typeof c.version !== 'string') return false;
   if (!c.team || typeof c.team.name !== 'string') return false;
   if (!c.routing || !Array.isArray(c.routing.rules)) return false;
   if (!c.models || typeof c.models.default !== 'string') return false;
   if (!Array.isArray(c.agents)) return false;
-  
+
   return true;
 }

@@ -114,7 +114,7 @@ export function parseApiModels(json: unknown): DiscoveredModel[] {
  *   "Claude Sonnet 5[^sonnet-5-promo]"   → "claude-sonnet-5"           (footnote stripped, matches)
  *   "Claude Opus 4.8"                    → "claude-opus-4.8"           (matches catalog → $5/$25)
  *   "Claude Opus 4.8 (fast mode) (prev)" → "claude-opus-4.8-fast-mode-prev"  (ignored — not in catalog)
- *   "Gemini 2.5 Pro"                     → "gemini-2.5-pro"            (matches catalog)
+ *   "Gemini 3.1 Pro"                     → "gemini-3.1-pro"            (matches catalog)
  */
 export function normalizeDisplayName(name: string): string {
   return name

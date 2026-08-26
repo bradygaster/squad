@@ -226,12 +226,12 @@ Proceed? (yes / no)
 
 ### Set Default Model
 
-- **intent:** set default model, change model, use gpt-4, use claude, switch model
+- **intent:** set default model, change model, use gpt, use claude, switch model
 - **summary:** Set the default model for all agents in config.json
 - **action:** file-edit
 - **command:** .squad/config.json → defaultModel
 - **args:**
-  - `model`: Model name (e.g., gpt-4o, claude-sonnet-4.5, o3)
+  - `model`: Model name (e.g., gpt-5.6-luna, claude-sonnet-4.5, gpt-5.3-codex)
 - **confirm:** false
 
 ### Override Per-Agent Model
@@ -242,7 +242,7 @@ Proceed? (yes / no)
 - **command:** .squad/config.json → agentModelOverrides.{agentName}
 - **args:**
   - `agent`: Agent name (must match name in team.md)
-  - `model`: Model name (e.g., gpt-4o, claude-sonnet-4.5)
+  - `model`: Model name (e.g., gpt-5.6-luna, claude-sonnet-4.5)
 - **confirm:** false
 
 ### Clear Model Preference

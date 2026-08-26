@@ -38,30 +38,38 @@ afterEach(() => {
 
 describe('ECONOMY_MODEL_MAP', () => {
   it('maps premium models to standard', () => {
+    expect(ECONOMY_MODEL_MAP['gpt-5.6-sol']).toBe('gpt-5.6-terra');
+    expect(ECONOMY_MODEL_MAP['claude-opus-5']).toBe('claude-sonnet-4.5');
     expect(ECONOMY_MODEL_MAP['claude-opus-4.6']).toBe('claude-sonnet-4.5');
     expect(ECONOMY_MODEL_MAP['claude-opus-4.7']).toBe('claude-sonnet-4.5');
     expect(ECONOMY_MODEL_MAP['claude-opus-4.8']).toBe('claude-sonnet-4.5');
   });
 
   it('maps standard sonnet models to fast', () => {
-    expect(ECONOMY_MODEL_MAP['claude-sonnet-4.6']).toBe('gpt-5-mini');
-    expect(ECONOMY_MODEL_MAP['claude-sonnet-4.5']).toBe('gpt-5-mini');
+    expect(ECONOMY_MODEL_MAP['claude-sonnet-4.6']).toBe('gpt-5.6-luna');
+    expect(ECONOMY_MODEL_MAP['claude-sonnet-4.5']).toBe('gpt-5.6-luna');
+  });
+
+  it('maps Terra to the preferred fast model', () => {
+    expect(ECONOMY_MODEL_MAP['gpt-5.6-terra']).toBe('gpt-5.6-luna');
   });
 
   it('maps haiku to cheapest fast', () => {
-    expect(ECONOMY_MODEL_MAP['claude-haiku-4.5']).toBe('gpt-5-mini');
+    expect(ECONOMY_MODEL_MAP['claude-haiku-4.5']).toBe('gpt-5.6-luna');
   });
 });
 
 describe('applyEconomyMode', () => {
   it('returns economy model for known models', () => {
+    expect(applyEconomyMode('gpt-5.6-sol')).toBe('gpt-5.6-terra');
     expect(applyEconomyMode('claude-opus-4.6')).toBe('claude-sonnet-4.5');
-    expect(applyEconomyMode('claude-sonnet-4.6')).toBe('gpt-5-mini');
-    expect(applyEconomyMode('claude-haiku-4.5')).toBe('gpt-5-mini');
+    expect(applyEconomyMode('claude-sonnet-4.6')).toBe('gpt-5.6-luna');
+    expect(applyEconomyMode('gpt-5.6-terra')).toBe('gpt-5.6-luna');
+    expect(applyEconomyMode('claude-haiku-4.5')).toBe('gpt-5.6-luna');
   });
 
   it('returns original model when no economy mapping exists', () => {
-    expect(applyEconomyMode('gpt-4.1')).toBe('gpt-4.1');
+    expect(applyEconomyMode('gpt-5.6-luna')).toBe('gpt-5.6-luna');
     expect(applyEconomyMode('gpt-5-mini')).toBe('gpt-5-mini');
     expect(applyEconomyMode('unknown-model-xyz')).toBe('unknown-model-xyz');
   });
@@ -149,24 +157,24 @@ describe('writeEconomyMode', () => {
 // ============================================================================
 
 describe('resolveModel economy mode (option)', () => {
-  it('Layer 4 default: uses gpt-5-mini instead of haiku when economyMode: true', () => {
-    expect(resolveModel({ economyMode: true })).toBe('gpt-5-mini');
+  it('Layer 4 default: uses Luna instead of haiku when economyMode: true', () => {
+    expect(resolveModel({ economyMode: true })).toBe('gpt-5.6-luna');
   });
 
-  it('Layer 4 default: uses haiku when economyMode: false', () => {
-    expect(resolveModel({ economyMode: false })).toBe('claude-haiku-4.5');
+  it('Layer 4 default: uses Luna when economyMode: false', () => {
+    expect(resolveModel({ economyMode: false })).toBe('gpt-5.6-luna');
   });
 
-  it('Layer 3 code task: uses gpt-5-mini instead of sonnet when economyMode: true', () => {
-    expect(resolveModel({ taskModel: 'claude-sonnet-4.6', economyMode: true })).toBe('gpt-5-mini');
+  it('Layer 3 code task: uses Luna instead of sonnet when economyMode: true', () => {
+    expect(resolveModel({ taskModel: 'claude-sonnet-4.6', economyMode: true })).toBe('gpt-5.6-luna');
   });
 
   it('Layer 3 architecture task: uses sonnet instead of opus when economyMode: true', () => {
     expect(resolveModel({ taskModel: 'claude-opus-4.6', economyMode: true })).toBe('claude-sonnet-4.5');
   });
 
-  it('Layer 3 docs task: uses gpt-5-mini instead of haiku when economyMode: true', () => {
-    expect(resolveModel({ taskModel: 'claude-haiku-4.5', economyMode: true })).toBe('gpt-5-mini');
+  it('Layer 3 docs task: uses Luna instead of haiku when economyMode: true', () => {
+    expect(resolveModel({ taskModel: 'claude-haiku-4.5', economyMode: true })).toBe('gpt-5.6-luna');
   });
 
   it('Layer 2 charter preference: NOT overridden by economy mode', () => {
@@ -215,7 +223,7 @@ describe('resolveModel economy mode (from config)', () => {
       join(squadDir, 'config.json'),
       JSON.stringify({ version: 1, economyMode: true })
     );
-    expect(resolveModel({ squadDir, taskModel: 'claude-sonnet-4.6' })).toBe('gpt-5-mini');
+    expect(resolveModel({ squadDir, taskModel: 'claude-sonnet-4.6' })).toBe('gpt-5.6-luna');
   });
 
   it('uses normal model when economyMode absent from config', () => {
@@ -234,7 +242,7 @@ describe('resolveModel economy mode (from config)', () => {
     // Option says true, config says false → option wins
     expect(
       resolveModel({ squadDir, taskModel: 'claude-sonnet-4.6', economyMode: true })
-    ).toBe('gpt-5-mini');
+    ).toBe('gpt-5.6-luna');
   });
 });
 
@@ -243,30 +251,30 @@ describe('resolveModel economy mode (from config)', () => {
 // ============================================================================
 
 describe('SDK resolveModel (agents) economy mode', () => {
-  it('code task → gpt-5-mini when economyMode: true', () => {
+  it('code task → Luna when economyMode: true', () => {
     const result = sdkResolveModel({ taskType: 'code', economyMode: true });
-    expect(result.model).toBe('gpt-5-mini');
+    expect(result.model).toBe('gpt-5.6-luna');
     expect(result.source).toBe('task-auto');
   });
 
-  it('docs task → gpt-5-mini when economyMode: true', () => {
+  it('docs task → Luna when economyMode: true', () => {
     const result = sdkResolveModel({ taskType: 'docs', economyMode: true });
-    expect(result.model).toBe('gpt-5-mini');
+    expect(result.model).toBe('gpt-5.6-luna');
   });
 
-  it('mechanical task → gpt-5-mini when economyMode: true', () => {
+  it('mechanical task → Luna when economyMode: true', () => {
     const result = sdkResolveModel({ taskType: 'mechanical', economyMode: true });
-    expect(result.model).toBe('gpt-5-mini');
+    expect(result.model).toBe('gpt-5.6-luna');
   });
 
-  it('visual task → claude-sonnet-4.5 when economyMode: true', () => {
+  it('visual task → Terra when economyMode: true', () => {
     const result = sdkResolveModel({ taskType: 'visual', economyMode: true });
-    expect(result.model).toBe('claude-sonnet-4.5');
+    expect(result.model).toBe('gpt-5.6-terra');
   });
 
-  it('code task → claude-sonnet-4.6 when economyMode: false', () => {
+  it('code task → gpt-5.6-terra when economyMode: false', () => {
     const result = sdkResolveModel({ taskType: 'code', economyMode: false });
-    expect(result.model).toBe('claude-sonnet-4.6');
+    expect(result.model).toBe('gpt-5.6-terra');
   });
 
   it('user override NOT affected by economy mode', () => {

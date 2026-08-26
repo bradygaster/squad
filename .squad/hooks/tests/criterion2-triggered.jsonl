@@ -1,3 +1,0 @@
-{"turn_id":"sess-test-004-t1","timestamp":"2026-07-26T20:03:00Z","mode":"Standard","task_calls_since_last_turn":0,"write_tools_used":[],"domain_artifact_declared":{"value":false,"description":""},"justification":""}
-{"turn_id":"sess-test-004-t2","timestamp":"2026-07-26T20:04:00Z","mode":"Standard","task_calls_since_last_turn":0,"write_tools_used":[],"domain_artifact_declared":{"value":false,"description":""},"justification":""}
-{"turn_id":"sess-test-004-t3","timestamp":"2026-07-26T20:05:00Z","mode":"Full","task_calls_since_last_turn":0,"write_tools_used":[],"domain_artifact_declared":{"value":false,"description":""},"justification":""}

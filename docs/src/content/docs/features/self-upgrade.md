@@ -121,6 +121,32 @@ squad upgrade --self --skip-repo-upgrade
 
 *(This flag may not exist yet — just showing the pattern. For now, self-upgrade always runs repo upgrade.)*
 
+### Your Customizations Are Backed Up
+
+`squad upgrade` overwrites Squad-owned files with the latest templates. Before it overwrites a file you've edited locally, it saves your version alongside it as `<file>.local-backup` and prints a warning.
+
+This covers `.github/agents/squad.agent.md` and the Squad-managed workflow files in `.github/workflows/`.
+
+```text
+⚠  squad.agent.md has local customizations — backed up to squad.agent.md.local-backup
+   To restore: copy squad.agent.md.local-backup → squad.agent.md
+⚠  squad-ci.yml has local customizations — backed up to squad-ci.yml.local-backup
+```
+
+To restore your version, copy the backup back over the refreshed file:
+
+```bash
+cp .github/agents/squad.agent.md.local-backup .github/agents/squad.agent.md
+```
+
+Three things worth knowing:
+
+- **Version stamps don't count as customizations.** The `<!-- squad-cli vX.Y.Z -->` line in `squad.agent.md` changes on every release, so it's stripped before comparing. A file that differs only by its version stamp is refreshed silently, with no backup.
+- **Only the most recent backup is kept.** Backups are written to a fixed path, so re-customizing a file and upgrading again overwrites the previous `.local-backup`. Move anything you want to keep somewhere safe before your next upgrade.
+- **Backups aren't gitignored.** They show up as untracked files in `git status`. Delete them once you've merged back what you need.
+
+`squad upgrade --dry-run` previews the upgrade and will tell you if `squad.agent.md` would be backed up. It stops short of the workflow files, so it won't flag customized workflows — check those yourself before upgrading if you've edited them.
+
 ---
 
 ## Permission Errors

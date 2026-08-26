@@ -40,13 +40,14 @@ When economy mode is **active**, Layer 3 auto-selection uses this table instead 
 
 | Task Output | Normal Mode | Economy Mode |
 |-------------|-------------|--------------|
-| Writing code (implementation, refactoring, bug fixes) | `claude-sonnet-4.5` | `gpt-5-mini` |
-| Writing prompts or agent designs | `claude-sonnet-4.5` | `gpt-5-mini` |
-| Docs, planning, triage, changelogs, mechanical ops | `claude-haiku-4.5` | `gpt-5-mini` |
-| Architecture, code review, security audits | `claude-opus-4.6` | `claude-sonnet-4.5` |
-| Scribe / logger / mechanical file ops | `claude-haiku-4.5` | `gpt-5-mini` |
+| Writing code (implementation, refactoring, bug fixes) | `gpt-5.6-terra` | `gpt-5.6-luna` |
+| Writing prompts or agent designs | `gpt-5.6-terra` | `gpt-5.6-luna` |
+| Docs, planning, triage, changelogs, mechanical ops | `gpt-5.6-luna` | `gpt-5.6-luna` |
+| Visual/design work requiring image analysis | `gpt-5.6-sol` | `gpt-5.6-terra` |
+| Architecture, code review, security audits | `gpt-5.6-sol` | `gpt-5.6-terra` |
+| Scribe / logger / mechanical file ops | `gpt-5.6-luna` | `gpt-5.6-luna` |
 
-**Prefer `gpt-5-mini`** for all economy-mode tasks where cost is the priority.
+**Prefer `gpt-5.6-luna`** for all economy-mode tasks where cost is the priority.
 
 ## AGENT WORKFLOW
 
@@ -111,4 +112,4 @@ After updating economy mode state and including the `💰` indicator in spawn ac
 - **Don't override Layer 0 in economy mode.** If the user set `defaultModel: "claude-opus-4.6"`, they want quality. Economy mode only affects Layer 3 auto-selection.
 - **Don't silently apply economy mode.** Always acknowledge when activated or deactivated.
 - **Don't treat economy mode as permanent by default.** Session phrases activate session-only; only "always" or `config.json` persist it.
-- **Don't bump premium tasks down too far.** Architecture and security reviews shift from opus to sonnet in economy mode — they do NOT go to fast/cheap models.
+- **Don't bump premium tasks down too far.** Visual, architecture, and security work shifts from Sol to Terra in economy mode — it does NOT go to fast/cheap models.

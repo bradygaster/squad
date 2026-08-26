@@ -235,7 +235,7 @@ describe('Compat v0.4.1: Config Path Equivalence', () => {
 
   it('DEFAULT_CONFIG has expected shape', () => {
     expect(DEFAULT_CONFIG.version).toBe('1.0.0');
-    expect(DEFAULT_CONFIG.models.defaultModel).toBe('claude-sonnet-4.6');
+    expect(DEFAULT_CONFIG.models.defaultModel).toBe('gpt-5.6-terra');
     expect(DEFAULT_CONFIG.models.defaultTier).toBe('standard');
     expect(DEFAULT_CONFIG.routing.rules.length).toBeGreaterThanOrEqual(1);
     expect(DEFAULT_CONFIG.casting?.allowlistUniverses).toBeDefined();
@@ -466,6 +466,7 @@ describe('Compat v0.4.1: Event Bus Shape', () => {
 
 describe('Compat v0.4.1: Model Catalog', () => {
   it('catalog contains expected premium models', () => {
+    expect(isModelAvailable('claude-opus-5')).toBe(true);
     expect(isModelAvailable('claude-opus-4.6')).toBe(true);
     expect(isModelAvailable('claude-opus-4.8')).toBe(true);
   });
@@ -482,17 +483,16 @@ describe('Compat v0.4.1: Model Catalog', () => {
     expect(isModelAvailable('gpt-5-mini')).toBe(true);
   });
 
-  it('premium fallback chain starts with opus', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.8');
+  it('premium fallback chain starts with GPT Sol', () => {
+    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('gpt-5.6-sol');
   });
 
-  it('standard fallback chain starts with sonnet', () => {
-    // Reordered to prefer newest Sonnet series first (PR #1444 follow-up, tamirdresher request).
-    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-5');
+  it('standard fallback chain starts with GPT Terra', () => {
+    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('gpt-5.6-terra');
   });
 
-  it('fast fallback chain starts with haiku', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.fast[0]).toBe('claude-haiku-4.5');
+  it('fast fallback chain starts with Luna', () => {
+    expect(DEFAULT_FALLBACK_CHAINS.fast[0]).toBe('gpt-5.6-luna');
   });
 
   it('getModelInfo returns correct tier for known models', () => {

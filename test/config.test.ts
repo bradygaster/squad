@@ -3,21 +3,21 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { 
-  loadConfigSync, 
+import {
+  loadConfigSync,
   validateConfig,
   validateConfigDetailed,
   discoverConfigFile,
   ConfigValidationError,
   DEFAULT_CONFIG,
-  type SquadConfig 
+  type SquadConfig
 } from '@bradygaster/squad-sdk/runtime';
 import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 
 describe('Configuration Loader', () => {
   const testDir = join(process.cwd(), 'test-fixtures', 'config');
-  
+
   describe('validateConfig', () => {
     it('should validate a valid minimal config', () => {
       const config = {
@@ -40,12 +40,12 @@ describe('Configuration Loader', () => {
           ]
         }
       };
-      
+
       const validated = validateConfig(config);
       expect(validated.version).toBe('1.0.0');
       expect(validated.models.defaultModel).toBe('claude-sonnet-4.5');
     });
-    
+
     it('should reject config without version', () => {
       const config = {
         models: {
@@ -61,10 +61,10 @@ describe('Configuration Loader', () => {
           rules: []
         }
       };
-      
+
       expect(() => validateConfig(config)).toThrow(ConfigValidationError);
     });
-    
+
     it('should reject config without models', () => {
       const config = {
         version: '1.0.0',
@@ -72,10 +72,10 @@ describe('Configuration Loader', () => {
           rules: []
         }
       };
-      
+
       expect(() => validateConfig(config)).toThrow(ConfigValidationError);
     });
-    
+
     it('should reject config without routing', () => {
       const config = {
         version: '1.0.0',
@@ -89,10 +89,10 @@ describe('Configuration Loader', () => {
           }
         }
       };
-      
+
       expect(() => validateConfig(config)).toThrow(ConfigValidationError);
     });
-    
+
     it('should reject invalid model tier', () => {
       const config = {
         version: '1.0.0',
@@ -114,10 +114,10 @@ describe('Configuration Loader', () => {
           ]
         }
       };
-      
+
       expect(() => validateConfig(config)).toThrow(ConfigValidationError);
     });
-    
+
     it('should merge with defaults for optional fields', () => {
       const config = {
         version: '1.0.0',
@@ -139,20 +139,20 @@ describe('Configuration Loader', () => {
           ]
         }
       };
-      
+
       const validated = validateConfig(config);
-      
+
       // Should have defaults merged
       expect(validated.casting).toBeDefined();
       expect(validated.platforms).toBeDefined();
       expect(validated.routing.governance).toBeDefined();
     });
-    
+
     it('should provide helpful error messages', () => {
       const config = {
         version: '1.0.0'
       };
-      
+
       try {
         validateConfig(config);
         expect.fail('Should have thrown ConfigValidationError');
@@ -164,7 +164,7 @@ describe('Configuration Loader', () => {
       }
     });
   });
-  
+
   describe('loadConfigSync', () => {
     beforeEach(() => {
       // Clean up test directory
@@ -173,13 +173,13 @@ describe('Configuration Loader', () => {
       } catch {}
       mkdirSync(testDir, { recursive: true });
     });
-    
+
     afterEach(() => {
       try {
         rmSync(testDir, { recursive: true, force: true });
       } catch {}
     });
-    
+
     it('should load valid JSON config', () => {
       const configPath = join(testDir, 'squad.config.json');
       const config = {
@@ -202,47 +202,47 @@ describe('Configuration Loader', () => {
           ]
         }
       };
-      
+
       writeFileSync(configPath, JSON.stringify(config, null, 2));
-      
+
       const result = loadConfigSync(testDir);
       expect(result.isDefault).toBe(false);
       expect(result.source).toBe(configPath);
       expect(result.config.models.defaultModel).toBe('gpt-5.1-codex');
     });
-    
+
     it('should return default config when no config file exists', () => {
       const result = loadConfigSync(testDir);
-      
+
       expect(result.isDefault).toBe(true);
       expect(result.source).toBeUndefined();
       expect(result.config).toEqual(DEFAULT_CONFIG);
     });
-    
+
     it('should throw on invalid JSON', () => {
       const configPath = join(testDir, 'squad.config.json');
       writeFileSync(configPath, '{ invalid json }');
-      
+
       expect(() => loadConfigSync(testDir)).toThrow();
     });
-    
+
     it('should throw on validation failure', () => {
       const configPath = join(testDir, 'squad.config.json');
       const config = {
         version: '1.0.0'
         // Missing required fields
       };
-      
+
       writeFileSync(configPath, JSON.stringify(config));
-      
+
       expect(() => loadConfigSync(testDir)).toThrow(ConfigValidationError);
     });
   });
-  
+
   describe('DEFAULT_CONFIG', () => {
     it('should have valid structure', () => {
       expect(DEFAULT_CONFIG.version).toBe('1.0.0');
-      expect(DEFAULT_CONFIG.models.defaultModel).toBe('claude-sonnet-4.6');
+      expect(DEFAULT_CONFIG.models.defaultModel).toBe('gpt-5.6-terra');
       expect(DEFAULT_CONFIG.models.defaultTier).toBe('standard');
       expect(DEFAULT_CONFIG.models.fallbackChains.premium).toBeInstanceOf(Array);
       expect(DEFAULT_CONFIG.models.fallbackChains.standard).toBeInstanceOf(Array);
@@ -250,7 +250,7 @@ describe('Configuration Loader', () => {
       expect(DEFAULT_CONFIG.routing.rules).toBeInstanceOf(Array);
       expect(DEFAULT_CONFIG.routing.governance).toBeDefined();
     });
-    
+
     it('should pass its own validation', () => {
       expect(() => validateConfig(DEFAULT_CONFIG)).not.toThrow();
     });

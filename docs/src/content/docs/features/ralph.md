@@ -176,7 +176,7 @@ If the file is missing, Ralph falls back to the built-in execution prompt.
   🔴 Untriaged:         2
   🟡 Assigned:          5
   🚀 Executed:          3
-  
+
 ▶ [14:23:10] Executing #42 "Fix auth redirect bug" → gh copilot --message "Work on issue #42..."
 ✓ [14:25:43] #42 completed
 ▶ [14:25:44] Executing #45 "Add retry logic" → gh copilot --message "Work on issue #45..."
@@ -191,7 +191,7 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--execute` | Enable work execution (spawn Copilot to work on issues) | `squad watch --execute` |
 | `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
-| `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-4"` |
+| `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-5.6-luna"` |
 
 #### Issue Scanning
 
@@ -254,9 +254,18 @@ When all features are enabled, each round follows this cycle:
 ### Advanced: `--agent-cmd` (Hidden Flag)
 For advanced users who know what they're doing:
 ```bash
-squad watch --execute --agent-cmd "custom-agent-wrapper"
+squad watch --execute \
+  --agent-cmd "custom-agent run --task {prompt}"
 ```
-This fully overrides the agent command. The default is `gh copilot --message "<prompt>"` plus any `--copilot-flags`. Use this to plug in custom agent wrappers or alternative Copilot entry points.
+Use one standalone `{prompt}` token to place the complete generated prompt as a
+single argument. Embedded forms such as `--task={prompt}` are not replaced. If
+the token is absent, Squad preserves the legacy contract and appends
+`-p <prompt>`.
+
+This fully overrides the default `copilot -p "<prompt>"` command. Custom
+commands do not receive `--copilot-flags`, Squad's automatic
+`--additional-mcp-config` injection, or `squad_state_*` MCP tools; the custom
+runner must provide its own policy and tool configuration.
 ### Azure DevOps Support
 Ralph supports Azure DevOps repos and work items via the SDK's PlatformAdapter. When your git remote points to `dev.azure.com` or `visualstudio.com`, Ralph auto-detects ADO — no flag needed.
 **Setup:**

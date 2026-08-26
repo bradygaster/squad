@@ -262,7 +262,7 @@ describe('OTel Integration — metrics across operations', () => {
     pipeline.attachToSession('sess-e2e');
 
     const usageEvents = [
-      { type: 'usage' as const, sessionId: 'sess-e2e', agentName: 'fenster', model: 'gpt-4', inputTokens: 100, outputTokens: 50, estimatedCost: 0.003, timestamp: new Date() },
+      { type: 'usage' as const, sessionId: 'sess-e2e', agentName: 'fenster', model: 'gpt-5.6-luna', inputTokens: 100, outputTokens: 50, estimatedCost: 0.003, timestamp: new Date() },
       { type: 'usage' as const, sessionId: 'sess-e2e', agentName: 'edie', model: 'claude-3', inputTokens: 200, outputTokens: 100, estimatedCost: 0.01, timestamp: new Date() },
     ];
 
@@ -305,7 +305,7 @@ describe('OTel Integration — metrics across operations', () => {
     await pipeline.processEvent({
       type: 'usage',
       sessionId: 'sess-ttft',
-      model: 'gpt-4',
+      model: 'gpt-5.6-luna',
       inputTokens: 10,
       outputTokens: 5,
       estimatedCost: 0.001,
@@ -323,7 +323,7 @@ describe('OTel Integration — metrics across operations', () => {
     await pipeline.processEvent({
       type: 'usage',
       sessionId: 'ghost-session',
-      model: 'gpt-4',
+      model: 'gpt-5.6-luna',
       inputTokens: 999,
       outputTokens: 999,
       estimatedCost: 999,
@@ -341,7 +341,7 @@ describe('OTel Integration — metrics across operations', () => {
     pipeline.attachToSession('sess-b');
 
     await pipeline.processEvent({
-      type: 'usage', sessionId: 'sess-a', agentName: 'fenster', model: 'gpt-4',
+      type: 'usage', sessionId: 'sess-a', agentName: 'fenster', model: 'gpt-5.6-luna',
       inputTokens: 100, outputTokens: 50, estimatedCost: 0.003, timestamp: new Date(),
     });
     await pipeline.processEvent({
@@ -351,7 +351,7 @@ describe('OTel Integration — metrics across operations', () => {
 
     const summary = pipeline.getUsageSummary();
     expect(summary.totalInputTokens).toBe(300);
-    expect(summary.byAgent.get('fenster')!.model).toBe('gpt-4');
+    expect(summary.byAgent.get('fenster')!.model).toBe('gpt-5.6-luna');
     expect(summary.byAgent.get('edie')!.model).toBe('claude-3');
   });
 });

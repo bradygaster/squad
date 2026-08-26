@@ -40,13 +40,13 @@ describe('CLI: watch execute mode', () => {
         assignees: [],
       };
       const teamRoot = '/path/to/squad';
-      const options = { intervalMinutes: 10, copilotFlags: '--model gpt-4 --yolo' };
+      const options = { intervalMinutes: 10, copilotFlags: '--model gpt-5.6-luna --yolo' };
 
       const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
 
       expect(cmd).toBe('copilot');
       expect(args).toContain('--model');
-      expect(args).toContain('gpt-4');
+      expect(args).toContain('gpt-5.6-luna');
       expect(args).toContain('--yolo');
     });
 
@@ -67,6 +67,28 @@ describe('CLI: watch execute mode', () => {
       expect(args).toContain('--flag');
       expect(args).toContain('value');
       expect(args).toContain('-p');
+    });
+
+    it('places the prompt at a standalone custom agent placeholder', () => {
+      const issue: WatchWorkItem = {
+        number: 51,
+        title: 'Bounded custom task',
+        body: '',
+        labels: [{ name: 'squad:custom' }],
+        assignees: [],
+      };
+
+      const { cmd, args } = buildAgentCommand(issue, '/path/to/squad', {
+        intervalMinutes: 10,
+        agentCmd: 'boundary run --task {prompt}',
+      });
+
+      expect(cmd).toBe('boundary');
+      expect(args).toEqual([
+        'run',
+        '--task',
+        'Work on issue #51: Bounded custom task. Read the issue body for full details.',
+      ]);
     });
   });
 

@@ -11,34 +11,36 @@
 
 export const MODELS = {
   /** Default model for config files and new projects (env-overridable) */
-  DEFAULT: process.env['SQUAD_DEFAULT_MODEL'] ?? 'claude-sonnet-4.6',
+  DEFAULT: process.env['SQUAD_DEFAULT_MODEL'] ?? 'gpt-5.6-terra',
 
   /** Default model for model-selector Layer 4 — cost-first */
-  SELECTOR_DEFAULT: 'claude-haiku-4.5',
+  SELECTOR_DEFAULT: 'gpt-5.6-luna',
 
   /** Default tier for the model-selector Layer 4 fallback */
   SELECTOR_DEFAULT_TIER: 'fast',
 
-  /** Fallback chains by tier — ordered by preference (newest per series first) */
+  /** Fallback chains by tier — policy-ordered, GPT-first for premium/standard */
   FALLBACK_CHAINS: {
     premium: [
+      'gpt-5.6-sol',
+      'claude-opus-5',
       'claude-opus-4.8',
       'claude-opus-4.7',
       'claude-opus-4.6',
       'claude-sonnet-4.6',
     ],
     standard: [
+      'gpt-5.6-terra',
       'claude-sonnet-5',
       'claude-sonnet-4.6',
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
+      'gpt-5.5',
       'gpt-5.4',
       'gpt-5.3-codex',
       'claude-sonnet-4.5',
-      'gemini-2.5-pro',
+      'gemini-3.1-pro',
     ],
     fast: [
+      'gpt-5.6-luna',
       'claude-haiku-4.5',
       'gpt-5.4-mini',
       'gpt-5-mini',

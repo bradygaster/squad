@@ -34,6 +34,7 @@ function mkRepo(backend: string): string {
 function makeContext(teamRoot: string, round = 1, config: Record<string, unknown> = {}): WatchContext {
   return {
     teamRoot,
+    stateRoot: path.join(teamRoot, '.squad'),
     adapter: {} as WatchContext['adapter'],
     round,
     roster: [],

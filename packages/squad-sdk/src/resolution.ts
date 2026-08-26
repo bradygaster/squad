@@ -365,8 +365,12 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
   const isLegacy = name === '.ai-team';
   const config = loadDirConfig(projectDir);
 
-  if (config && config.teamRoot) {
+  if (config && config.teamRoot && config.teamRoot !== '.') {
     // Remote mode: teamDir resolved relative to the project root (parent of .squad/)
+    // '.' is the sentinel externalize.ts writes for "no separate team root" —
+    // falls through to local mode below instead of resolving to the parent
+    // of .squad/ (path.resolve(projectRoot, '.') === projectRoot, one level
+    // too high).
     const projectRoot = path.resolve(projectDir, '..');
     const teamDir = path.resolve(projectRoot, config.teamRoot);
     return {
@@ -847,8 +851,12 @@ export function resolveSquadState(startDir?: string, cliOverride?: StateBackendT
 
   // For local backend, use FSStorageProvider directly (more capable).
   // For git-notes/orphan, bridge via StateBackendStorageAdapter.
+  // rootDir is paths.teamDir (matches the squadRoot every local-backend
+  // caller — e.g. ToolRegistry in state-mcp.ts — builds its paths against),
+  // so the traversal guard actually validates instead of no-op'ing on an
+  // unset rootDir and letting a bad upstream path resolve silently.
   const stateStorage: StorageProvider = backend.name === 'local'
-    ? new FSStorageProvider()
+    ? new FSStorageProvider(paths.teamDir)
     : new StateBackendStorageAdapter(backend, paths.projectDir);
 
   return { paths, backend, repoRoot, storage: stateStorage };

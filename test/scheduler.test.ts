@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -15,6 +15,8 @@ import {
   GitHubActionsProvider,
   ScheduleValidationError,
   validateTaskRef,
+  tokenizeTaskRef,
+  resolveScriptCommand,
 } from '../packages/squad-sdk/src/runtime/scheduler.js';
 import type {
   ScheduleManifest,
@@ -521,6 +523,157 @@ describe('Scheduler: LocalPollingProvider', () => {
       for (const t of ticks) {
         expect(t).toBeLessThan(75);
       }
+    });
+  });
+});
+
+// ============================================================================
+// #1794 — task refs whose command path contains a space
+// ============================================================================
+//
+// `C:\Program Files\nodejs\node.exe` is the DEFAULT Windows Node install
+// location, so this is the modal Windows configuration, not an edge case.
+// The provider split `task.ref` on whitespace with no quote handling, so the
+// command became `C:\Program` and the spawn failed with ENOENT.
+//
+// Every test here uses a path containing a space by construction. A test using
+// a space-free path passes identically before and after the fix and proves
+// nothing — that is the vacuity trap in this particular bug.
+
+describe('Scheduler: LocalPollingProvider — command paths containing spaces (#1794)', () => {
+  let sandbox: string;
+  let spacedNode: string;
+
+  beforeAll(() => {
+    sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-sched-space-'));
+    // Mirror the real-world shape: a directory named like "Program Files".
+    const nodeDir = path.join(sandbox, 'Program Files', 'nodejs');
+    fs.mkdirSync(nodeDir, { recursive: true });
+    spacedNode = path.join(nodeDir, path.basename(process.execPath));
+    fs.copyFileSync(process.execPath, spacedNode);
+  });
+
+  afterAll(() => {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  it('the fixture path really does contain a space (guards against a vacuous test)', () => {
+    expect(spacedNode).toContain(' ');
+    expect(fs.existsSync(spacedNode)).toBe(true);
+  });
+
+  it('executes an unquoted command path containing a space', async () => {
+    const provider = new LocalPollingProvider();
+    const entry = validEntry({
+      task: { type: 'script', ref: `${spacedNode} -e console.log('unquoted-ok')` },
+    });
+    const result = await provider.execute(entry);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('unquoted-ok');
+  });
+
+  it('executes a double-quoted command path containing a space', async () => {
+    const provider = new LocalPollingProvider();
+    const entry = validEntry({
+      task: { type: 'script', ref: `"${spacedNode}" -e console.log('quoted-ok')` },
+    });
+    const result = await provider.execute(entry);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('quoted-ok');
+  });
+
+  it('passes a quoted ARGUMENT containing a space through as one argv entry', async () => {
+    const provider = new LocalPollingProvider();
+    const entry = validEntry({
+      task: {
+        type: 'script',
+        ref: `"${spacedNode}" -e console.log(process.argv[1]) "hello there world"`,
+      },
+    });
+    const result = await provider.execute(entry);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('hello there world');
+  });
+
+  it('executes via explicit argv with no parsing at all', async () => {
+    const provider = new LocalPollingProvider();
+    const entry = validEntry({
+      task: {
+        type: 'script',
+        ref: spacedNode,
+        argv: ['-e', `console.log('argv-ok')`],
+      },
+    });
+    const result = await provider.execute(entry);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('argv-ok');
+  });
+
+  it('names the command and surfaces ENOENT when the executable does not exist', async () => {
+    const provider = new LocalPollingProvider();
+    const missing = path.join(sandbox, 'Program Files', 'nowhere', 'ghost.exe');
+    const entry = validEntry({
+      task: { type: 'script', ref: `${missing} --version` },
+    });
+    const result = await provider.execute(entry);
+    expect(result.success).toBe(false);
+    // Pre-fix this returned code: undefined and stderr: '' — a spawn failure
+    // that told an operator nothing about what failed to spawn.
+    expect(result.spawnError).toBe('ENOENT');
+    expect(result.error).toContain('ghost.exe');
+  });
+});
+
+describe('tokenizeTaskRef / resolveScriptCommand (#1794)', () => {
+  it('keeps a quoted path with spaces as a single token', () => {
+    const { tokens, firstQuoted } = tokenizeTaskRef(`"C:\\Program Files\\nodejs\\node.exe" -v`);
+    expect(firstQuoted).toBe(true);
+    expect(tokens).toEqual(['C:\\Program Files\\nodejs\\node.exe', '-v']);
+  });
+
+  it('does NOT treat backslashes as escapes', () => {
+    const { tokens } = tokenizeTaskRef(`C:\\Program\\nodejs\\node.exe -v`);
+    expect(tokens[0]).toBe('C:\\Program\\nodejs\\node.exe');
+  });
+
+  it('treats a quote appearing mid-token as a literal character', () => {
+    // Backward compatibility: refs like `node -e console.log('hi')` must keep
+    // passing the inner quotes through untouched. Stripping them turns the
+    // string literal into an identifier and the child throws ReferenceError.
+    const { tokens } = tokenizeTaskRef(`node -e console.log('hi')`);
+    expect(tokens).toEqual(['node', '-e', `console.log('hi')`]);
+  });
+
+  it('groups a quoted argument containing spaces into one token', () => {
+    const { tokens } = tokenizeTaskRef(`node script.js "two words"`);
+    expect(tokens).toEqual(['node', 'script.js', 'two words']);
+  });
+
+  it('rejects an unterminated quote rather than silently mis-splitting', () => {
+    expect(() => tokenizeTaskRef(`node "unterminated`)).toThrow(ScheduleValidationError);
+  });
+
+  it('prefers the plain first token when it exists, leaving old refs untouched', () => {
+    const exists = (p: string) => p === '/usr/bin/node';
+    expect(resolveScriptCommand(['/usr/bin/node', '-v'], false, exists)).toEqual({
+      command: '/usr/bin/node',
+      args: ['-v'],
+    });
+  });
+
+  it('widens across spaces to find an unquoted command path that exists', () => {
+    const full = 'C:\\Program Files\\nodejs\\node.exe';
+    const exists = (p: string) => p === full;
+    expect(
+      resolveScriptCommand(['C:\\Program', 'Files\\nodejs\\node.exe', '-v'], false, exists),
+    ).toEqual({ command: full, args: ['-v'] });
+  });
+
+  it('falls back to the first token for bare PATH commands that are not files', () => {
+    const exists = () => false;
+    expect(resolveScriptCommand(['node', '-v'], false, exists)).toEqual({
+      command: 'node',
+      args: ['-v'],
     });
   });
 });

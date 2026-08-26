@@ -41,7 +41,7 @@ Without `--mcp-frontmatter` (default), the agent file frontmatter is:
 ---
 name: squad
 description: Squad coordinator
-model: claude-opus-4.5
+model: claude-opus-5
 tools: ["*"]
 ---
 ```
@@ -66,7 +66,7 @@ With `--mcp-frontmatter`, the MCP server moves into the frontmatter:
 ---
 name: squad
 description: Squad coordinator
-model: claude-opus-4.5
+model: claude-opus-5
 tools: ["*"]
 mcpServers:
   squad_state:

@@ -9,9 +9,9 @@
  * replaces the generated index with a curated landing page.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync, readdirSync, readFileSync, renameSync, unlinkSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,10 +43,18 @@ if (!typedocBin) {
 // Step 1 — Run TypeDoc
 console.log('⚙️  Running TypeDoc…');
 try {
-  execSync(typedocBin, { cwd: SDK_DIR, stdio: 'inherit' });
+  const typedocCommand = process.platform === 'win32'
+    ? relative(SDK_DIR, typedocBin)
+    : typedocBin;
+
+  execFileSync(typedocCommand, [], {
+    cwd: SDK_DIR,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
 } catch (err) {
   console.error(`❌ TypeDoc failed. Command: ${typedocBin} (cwd: ${SDK_DIR})`);
-  console.error(err.message);
+  console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 }
 

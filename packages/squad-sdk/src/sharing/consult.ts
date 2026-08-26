@@ -320,7 +320,19 @@ export function getPersonalSquadRoot(): string {
 }
 
 /**
- * Resolve the git exclude path using git rev-parse (handles worktrees/submodules).
+ * Resolve the exclude file git actually reads for `cwd`.
+ *
+ * NOTE: this does not scope the answer to `cwd`. `git rev-parse` answers for whichever
+ * repository *encloses* `cwd`, and `info/exclude` is a shared path, so:
+ *
+ *   - from a linked worktree it returns the MAIN checkout's exclude (git keeps no
+ *     per-worktree exclude — a file written to `.git/worktrees/<id>/info/exclude` is
+ *     never read), and
+ *   - from a directory that is not itself a repo root it returns the exclude of some
+ *     ANCESTOR repository.
+ *
+ * In both cases a write here lands outside `cwd` and is invisible from it. Callers that
+ * intend to affect only `cwd` must check containment first — see `isExcludeOwnedBy`.
  *
  * @param cwd - Working directory inside the git repo
  * @throws Error if not a git repository
@@ -334,6 +346,30 @@ export function resolveGitExcludePath(cwd: string): string {
   } catch {
     throw new Error('Not a git repository. Consult mode requires git.');
   }
+}
+
+/**
+ * Whether the exclude file git reads for `projectRoot` belongs to a repository rooted
+ * AT `projectRoot`, rather than to a main checkout or an ancestor repository.
+ *
+ * Returns false for a linked worktree (common dir lives in the main checkout) and for a
+ * directory that merely sits inside some outer repository. Both are cases where writing
+ * to the exclude silently affects checkouts other than `projectRoot`.
+ */
+export function isExcludeOwnedBy(projectRoot: string): boolean {
+  let commonDir: string;
+  try {
+    const raw = execSync('git rev-parse --git-common-dir', {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+    }).trim();
+    commonDir = path.resolve(projectRoot, raw);
+  } catch {
+    return false;
+  }
+
+  const rel = path.relative(path.resolve(projectRoot), commonDir);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
 /**
@@ -364,7 +400,24 @@ export async function setupConsultMode(
     throw new Error('Not a git repository. Consult mode requires git.');
   }
 
-  // Resolve exclude path via git rev-parse (handles worktrees/submodules)
+  // Resolve exclude path via git rev-parse, then confirm it belongs to THIS project.
+  //
+  // Consult mode hides `.squad/` by appending to git's info/exclude. That file is shared
+  // per-repository, so if the resolved path belongs to a main checkout or an ancestor
+  // repo, the write hides `.squad/` in checkouts the caller never named — where it may be
+  // real, tracked state. info/exclude is untracked and per-clone, so nothing in the repo
+  // can undo it afterwards. Refuse instead of poisoning. (#1826, root cause of #1817)
+  if (!isExcludeOwnedBy(projectRoot)) {
+    throw new Error(
+      `Refusing to enable consult mode: ${projectRoot} is not the root of its own git repository.\n` +
+        `It is either a linked worktree or a directory inside an outer repository, so git's ` +
+        `info/exclude resolves outside it.\n` +
+        `Consult mode would hide .squad/ across the main checkout and every sibling worktree, ` +
+        `and info/exclude is untracked so the change could not be reverted from the repo.\n` +
+        `Run 'squad consult' from the main checkout instead.`,
+    );
+  }
+
   // Normalize to absolute path in case it's relative
   const gitExclude = (() => {
     const excludePath = resolveGitExcludePath(projectRoot);

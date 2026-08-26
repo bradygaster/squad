@@ -88,6 +88,26 @@ export function _resetCopilotDetection(): void {
   _copilotResolved = null;
 }
 
+export function buildCustomAgentCommand(
+  agentCmd: string,
+  prompt: string,
+): { cmd: string; args: string[] } {
+  const [cmd, ...args] = agentCmd.trim().split(/\s+/);
+  const promptIndex = args.indexOf('{prompt}');
+
+  if (promptIndex !== -1 && args.indexOf('{prompt}', promptIndex + 1) !== -1) {
+    throw new Error('agentCmd may contain at most one standalone {prompt} token');
+  }
+
+  if (promptIndex === -1) {
+    args.push('-p', prompt);
+  } else {
+    args[promptIndex] = prompt;
+  }
+
+  return { cmd: cmd!, args };
+}
+
 /**
  * Build the command + args array for an agent invocation.
  *
@@ -102,10 +122,7 @@ export function buildAgentCommand(
   context: WatchContext,
 ): { cmd: string; args: string[] } {
   if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    const cmd = parts[0]!;
-    const args = [...parts.slice(1), '-p', prompt];
-    return { cmd, args };
+    return buildCustomAgentCommand(context.agentCmd, prompt);
   }
 
   // Default: detect available copilot CLI at runtime (cached)
@@ -132,8 +149,7 @@ export function buildCopilotCommand(
   context: WatchContext,
 ): { cmd: string; args: string[] } {
   if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+    return buildCustomAgentCommand(context.agentCmd, prompt);
   }
   const args = ['-p', prompt];
   if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));

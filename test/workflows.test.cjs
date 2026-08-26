@@ -192,6 +192,42 @@ describe('CI/CD workflow templates (squad-ci, squad-preview, squad-release)', ()
       assert.equal(after, template,
         'upgraded file should match the template exactly');
     });
+
+    it('upgrade backs up modified workflow content before overwriting', (t) => {
+      const firstTemplate = CI_CD_WORKFLOWS.find(f =>
+        fs.existsSync(path.join(TEMPLATES_DIR, f))
+      );
+      if (!firstTemplate) {
+        t.skip('no CI/CD workflow templates created yet');
+        return;
+      }
+
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test","version":"1.0.0"}\n');
+
+      initSquad(tmpDir);
+      const dest = path.join(tmpDir, '.github', 'workflows', firstTemplate);
+      const backup = dest + '.local-backup';
+      const customized = [
+        'name: Squad CI',
+        'on: [push]',
+        'jobs:',
+        '  custom:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo custom workflow edit',
+        '',
+      ].join('\n');
+
+      fs.writeFileSync(dest, customized);
+
+      const result = runSquad(['upgrade'], tmpDir);
+      assert.equal(result.exitCode, 0, `upgrade should succeed: ${result.stdout}`);
+
+      assert.equal(fs.readFileSync(backup, 'utf8'), customized,
+        'upgrade should preserve the pre-upgrade workflow in a local backup');
+      assert.match(result.stdout, /backed up .*\.local-backup/,
+        'upgrade should log the workflow backup path');
+    });
   });
 
   describe('workflow YAML validity after init', () => {

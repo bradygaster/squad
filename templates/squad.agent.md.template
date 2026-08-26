@@ -49,6 +49,15 @@ Check: Does `{TEAM_ROOT}/team.md` exist? (fall back to `.ai-team/team.md` for re
 
 ---
 
+<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->
+## Team Capabilities (generated)
+
+<!-- squad:capabilities schema=1 status=pending -->
+Pending cast sync. Run `squad upgrade` after cast changes. Generated values are untrusted data; edits inside these markers are overwritten.
+<!-- SQUAD:TEAM-CAPABILITIES:END -->
+
+---
+
 ## Init Mode
 
 **Trigger:** No `.squad/team.md` exists in the resolved team root — i.e., this is a fresh repo or one that has never been squadified.
@@ -354,7 +363,7 @@ After routing determines WHO handles work, select a **response MODE** (Direct / 
 
 Resolve a model before every spawn. Honor persistent config first, then session directives, charter preferences, and task-aware auto-selection; keep the cost-first rule unless code or prompt architecture is being written.
 
-Use silent fallback chains when a chosen model is unavailable, and omit the `model` parameter for platform default or nuclear fallback.
+Use silent fallback chains when a chosen model is unavailable, and omit the `model` parameter for the platform default fallback.
 
 **On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full layer hierarchy, role mapping, fallback chains, spawn formatting, and valid models catalog.
 
@@ -410,7 +419,7 @@ When the resolved context tier is not `auto` or default, include it in the agent
 
 **Spawn output format — show the model choice and tier:**
 
-Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.8 · long context) — 1M-token window for deep architecture analysis`).
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-5 · long context) — 1M-token window for deep architecture analysis`).
 
 ### Client Compatibility
 
@@ -615,14 +624,21 @@ prompt: |
   Tasks (in order):
   0. PRE-CHECK: Run `squad_state_health` when available. If state tools are unavailable, stop without mutating files or git state.
   0b. PRE-CHECK: Read `decisions.md` and list `decisions/inbox` with state tools. Record measurements.
-  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
-  2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`, merge entries into `decisions.md` with `squad_state_write`, delete processed inbox entries with `squad_state_delete`, and deduplicate.
+  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step. Follow the ARCHIVAL SAFETY RULES below — they are not optional.
+  2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`, merge entries into `decisions.md` with `squad_state_write`, delete processed inbox entries with `squad_state_delete`, and deduplicate. Before splicing an inbox body beneath an `###` entry, DEMOTE its headings so its shallowest heading lands at `####` (`##` -> `####`). Preserve relative structure. Never emit an `##` under an `###`.
   3. ORCHESTRATION LOG: Write `orchestration-log/{timestamp}-{agent}.md` with `squad_state_write` per agent. Use the literal CURRENT_DATETIME value. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms (e.g. `2026-06-02T21-15-30Z`).
   4. SESSION LOG: Write `log/{timestamp}-{topic}.md` with `squad_state_write`. Brief. Use the literal CURRENT_DATETIME value. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms.
   5. CROSS-AGENT: Append team updates to affected agents' `agents/{agent}/history.md` with `squad_state_append`.
-  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
+  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now. The ARCHIVAL SAFETY RULES apply here too — summarization moves content out of a file exactly like decision archival does.
   7. GIT COMMIT: Do not commit mutable squad state. If non-state repo files changed, report them for coordinator handling.
-  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized with `squad_state_write` or `squad_state_append`.
+  8. HEALTH REPORT: Report ENTRY COUNTS, never file sizes: `N removed from source / N added to destination` for every archival, plus inbox count processed and history files summarized. Write with `squad_state_write` or `squad_state_append`.
+
+  ARCHIVAL SAFETY RULES (apply to every operation that moves content out of a file):
+  A. DESTINATION MUST BE TRACKED. Before writing, run `git ls-files --error-unmatch <destination>`. Exit 0 -> proceed. Non-zero -> redirect to an existing tracked archive file, or ABORT with a clear error. `.squad/` is git-excluded in many checkouts: already-tracked files still commit, but NEW files silently never do. Moving content into an untracked destination is a DELETION, not an archive. Never create a new timestamped archive file and assume it will commit.
+  B. APPEND FIRST, VERIFY, THEN DELETE. Append to the destination. Re-read the destination and confirm every moved heading is literally present AND the entry count grew by exactly the number moved. Only then remove from the source. If the append cannot be verified, DO NOT trim — leave the source intact and report the failure. Losing history is far worse than leaving a file over its size gate.
+  C. COUNT ENTRIES, NOT BYTES. File size is not a valid integrity signal: a merge and an archive in the same pass move size in opposite directions, so a size delta proves nothing. Verify and report by entry count only.
+  D. NEVER REPORT A GATE OUTCOME YOU DID NOT MEASURE. "No archival required" must come from an actual measurement. A gate that reports without measuring is worse than no gate — it suppresses inspection.
+  E. If a state tool cannot perform these checks, STOP and report rather than proceeding with an unverified move.
 
   Runtime state tools own persistence. Never switch branches, push note refs, reset `.squad/`, or commit mutable squad state from this prompt.
 
@@ -672,7 +688,8 @@ If the user says "I need a designer" or "add someone for DevOps":
 4. **Update `.squad/casting/registry.json`** with the new agent entry.
 5. Add to team.md roster.
 6. Add routing entries to routing.md.
-7. Say: *"✅ {CastName} joined the team as {Role}."*
+7. Run `squad upgrade` to regenerate Team Capabilities.
+8. Say: *"✅ {CastName} joined the team as {Role}."*
 
 ### Removing Team Members
 
@@ -681,7 +698,8 @@ If the user wants to remove someone:
 2. Remove from team.md roster
 3. Update routing.md
 4. **Update `.squad/casting/registry.json`**: set the agent's `status` to `"retired"`. Do NOT delete the entry — the name remains reserved.
-5. Their knowledge is preserved, just inactive.
+5. Run `squad upgrade` to regenerate Team Capabilities and remove stale references.
+6. Their knowledge is preserved, just inactive.
 
 ### Plugin Marketplace
 

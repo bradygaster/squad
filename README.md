@@ -173,10 +173,9 @@ npx @bradygaster/squad-cli watch
 # Monitor and auto-execute against actionable issues
 npx @bradygaster/squad-cli watch --execute --interval 5
 
-# With custom agent runner and copilot flags
+# With a custom agent runner that uses --task instead of -p
 npx @bradygaster/squad-cli watch --execute \
-  --agent-cmd "agency copilot" \
-  --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
+  --agent-cmd "custom-agent run --task {prompt} --autopilot" \
   --auth-user myaccount
 
 # Run watch with diagnostics
@@ -192,8 +191,8 @@ npx @bradygaster/squad-cli watch --health
 |------|-------------|
 | `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
 | `--interval N` | Poll every N minutes (default: 10) |
-| `--agent-cmd` | Custom agent command (default: `gh copilot`) |
-| `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
+| `--agent-cmd` | Custom agent command; use one standalone `{prompt}` token to place the prompt, or Squad appends `-p <prompt>` |
+| `--copilot-flags` | Flags passed to the default Copilot runner (e.g., `--yolo --autopilot`) |
 | `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
 | `--log-file` | Mirror output to file for later review and diagnostics |
 | `--verbose` | Show extra diagnostic output (auth probes, callbacks, pulls) |
@@ -448,7 +447,7 @@ import { defineSquad, defineTeam, defineAgent } from '@bradygaster/squad-sdk';
 export default defineSquad({
   team: defineTeam({ name: 'Platform Squad', members: ['@edie', '@mcmanus'] }),
   agents: [
-    defineAgent({ name: 'edie', role: 'TypeScript Engineer', model: 'claude-sonnet-4' }),
+    defineAgent({ name: 'edie', role: 'TypeScript Engineer', model: 'claude-sonnet-5' }),
     defineAgent({ name: 'mcmanus', role: 'DevRel', model: 'claude-haiku-4.5' }),
   ],
 });
@@ -534,19 +533,38 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 
 ### Install
 
+<!-- cspell:ignore agentics -->
+
 ```bash
 gh aw add \
+  bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad.md@dev
-gh aw compile
+  bradygaster/squad/workflows/squad-review.md@dev
 git add -- \
+  .github/aw/ \
+  .github/skills/ \
   .github/workflows/ \
   .gitattributes
 git commit -m "Add Squad workflow"
 git push
 ```
 
+`gh aw add` compiles the workflows automatically. If it reports unapproved
+safe-update changes, review them and run `gh aw compile --approve`.
+
 > `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
+
+Review the complete generated diff before you commit:
+
+| Path | What gh-aw writes | Commit? |
+|------|-------------------|---------|
+| `.github/workflows/` | The Squad workflow sources, shared imports, compiled lock files, and `agentics-maintenance.yml` | Yes |
+| `.github/aw/` | Supporting gh-aw state, including pinned action versions and SHAs | Yes |
+| `.github/skills/` | The agentic-workflows dispatcher skill | Yes |
+| `.gitattributes` | Marks compiled `.lock.yml` workflows as generated | Yes |
+| `.vscode/` | Workspace settings that enable GitHub Copilot for Markdown files in VS Code | Optional — commit only if you want to share this workspace setting |
+
+`agentics-maintenance.yml` is a second installed workflow. Squad configures its created pull request safe output to expire after 14 days, so this workflow runs scheduled expiration cleanup and also exposes manual maintenance operations. To omit it, create `.github/workflows/aw.json` with `{"maintenance": false}` before installing. gh-aw then warns that expiration is disabled and removes the maintenance workflow.
 
 ### Slash commands
 

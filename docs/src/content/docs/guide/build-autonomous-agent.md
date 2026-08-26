@@ -150,7 +150,7 @@ export default defineSquad({
 
   defaults: defineDefaults({
     model: {
-      preferred: 'claude-sonnet-4',
+      preferred: 'claude-sonnet-5',
       rationale: 'Good balance of speed and quality for docs generation',
       fallback: 'claude-haiku-4.5',
     },
@@ -319,7 +319,7 @@ async function runLoop(
       costTracker.recordUsage({
         sessionId: agent.sessionId,
         agentName: agent.member.name,
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         inputTokens: 1200,
         outputTokens: 800,
         estimatedCost: 0.006,
@@ -355,9 +355,7 @@ The autonomous-pipeline sample demonstrates three coordination patterns that age
 
 These patterns let agents coordinate without a central orchestrator. Each agent makes local decisions that accumulate into a shared knowledge base.
 
-:::note[`squad_route` requires `fanOutDepsGetter`]
-For `squad_route` to actually spawn agent sessions, the `ToolRegistry` must be constructed with a `fanOutDepsGetter` callback that provides fan-out dependencies (`sessionPool`, `modelClient`, `squadRoot`, `configGetter`). Without it, the tool returns an honest `fan-out-deps-unavailable` error instead of silently succeeding. See the [SDK reference](/reference/sdk/#toolregistry) for wiring details.
-:::
+> **`squad_route` requires `fanOutDepsGetter`:** For `squad_route` to actually spawn agent sessions, the `ToolRegistry` must be constructed with a `fanOutDepsGetter` callback that provides fan-out dependencies (`sessionPool`, `modelClient`, `squadRoot`, `configGetter`). Without it, the tool returns an honest `fan-out-deps-unavailable` error instead of silently succeeding. See the [SDK reference](/reference/sdk/#toolregistry) for wiring details.
 
 ---
 
@@ -401,7 +399,7 @@ recordTokenUsage({
   type: 'usage',
   sessionId: 'session-lori-0',
   agentName: 'lori',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-5',
   inputTokens: 1200,
   outputTokens: 800,
   estimatedCost: 0.006,
@@ -508,7 +506,7 @@ while (tasks.some(t => t.status !== 'done')) {
     costTracker.recordUsage({
       sessionId: agent.sessionId,
       agentName: agent.member.name,
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-5',
       inputTokens: 1000,
       outputTokens: 600,
       estimatedCost: 0.005,

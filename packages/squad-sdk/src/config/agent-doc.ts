@@ -20,6 +20,9 @@ export interface AgentDocMetadata {
   /** One-line description / role */
   description?: string;
 
+  /** Expertise areas declared in the IDENTITY section (`**Expertise:** a, b`) */
+  expertise: string[];
+
   /** Capability strings listed under CAPABILITIES */
   capabilities: string[];
 
@@ -62,6 +65,7 @@ const STANDARD_SECTIONS = new Set([
 export function parseAgentDoc(markdown: string): AgentDocMetadata {
   markdown = normalizeEol(markdown);
   const result: AgentDocMetadata = {
+    expertise: [],
     capabilities: [],
     routingHints: [],
     modelPreferences: [],
@@ -179,6 +183,15 @@ function parseIdentitySection(body: string, result: AgentDocMetadata): void {
     body.match(/\*?\*?Role:?\*?\*?\s*(.+)/i);
   if (descMatch) {
     result.description = descMatch[1]!.trim();
+  }
+
+  // **Expertise:** a, b, c
+  const expertiseMatch = body.match(/\*?\*?Expertise:?\*?\*?\s*(.+)/i);
+  if (expertiseMatch) {
+    result.expertise = expertiseMatch[1]!
+      .split(/[,;]/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   }
 
   // Model preference inside identity

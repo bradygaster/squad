@@ -172,7 +172,7 @@ describe('streaming-chat', () => {
         type: 'usage',
         sessionId: 's1',
         agentName: 'Agent1',
-        model: 'gpt-4',
+        model: 'gpt-5.6-luna',
         inputTokens: 100,
         outputTokens: 50,
         estimatedCost: 0.01,
