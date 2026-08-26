@@ -17,8 +17,8 @@
 #
 # The Squad CLI is never installed or executed in the agent job — only the files it
 # produces (`.squad/` team state and `.github/agents/squad.agent.md`) are restored
-# there. This is deliberate: gh-aw's network firewall only constrains the agent job,
-# so the npm install and initialization happen in the unrestricted activation job.
+# there. The activation job downloads a self-contained GitHub Release bundle, runs
+# initialization, and hands the resulting state to the network-constrained agent job.
 #
 # Usage (as an import in your gh-aw workflow):
 #   imports:
@@ -49,9 +49,9 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-# Default is 0.12.0.
-#   This is the latest published stable release when this workflow was authored.
-#   The release pipeline updates this pin only after npm publication.
+# Default is v0.13.1.
+#   This is a GitHub Release tag whose standalone assets are installed without npm.
+#   Values without a leading `v` are normalized for compatibility with older configs.
 #
 # Optional model override:
 #   vars.SQUAD_MODEL
@@ -82,18 +82,29 @@ jobs:
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
 
-      - name: Install Squad CLI
-        id: squad-cli
+      - name: Resolve Squad standalone release
+        id: squad-release
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v0.13.1' }}
         run: |
           set -euo pipefail
-          install_root="${RUNNER_TEMP}/squad-cli"
-          npm install --global --prefix "$install_root" "@bradygaster/squad-cli@${SQUAD_CLI_VERSION}"
-          installed_version="$("$install_root/bin/squad" --version)"
-          echo "Installed Squad CLI ${installed_version} (requested ${SQUAD_CLI_VERSION})."
-          echo "version=${installed_version}" >> "$GITHUB_OUTPUT"
-          echo "$install_root/bin" >> "$GITHUB_PATH"
+          release_tag="${SQUAD_CLI_VERSION}"
+          case "${release_tag}" in
+            v*) ;;
+            *) release_tag="v${release_tag}" ;;
+          esac
+          if ! echo "${release_tag}" | LC_ALL=C grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::SQUAD_CLI_VERSION must be a semver release tag (for example v0.13.1)."
+            exit 1
+          fi
+          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Squad CLI from standalone release
+        id: squad-cli
+        uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377
+        with:
+          version: ${{ steps.squad-release.outputs.tag }}
+          skip-init: 'true'
 
       - name: Initialize Squad team
         env:
@@ -114,6 +125,14 @@ jobs:
           else
             echo "No existing squad team found — running squad init."
             squad init --preset default --state-backend local
+          fi
+
+      - name: Verify npm-free Squad state wiring
+        run: |
+          set -euo pipefail
+          if [ -f .mcp.json ] && grep -q '"npx"' .mcp.json; then
+            echo "::error::.mcp.json references npx; expected the standalone Squad launcher."
+            exit 1
           fi
 
       - name: Run Squad health check
@@ -158,13 +177,13 @@ agent sandbox:
 
 1. **`jobs.activation.pre-steps`** — the repository is already checked out by the
    activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), installs the selected published Squad CLI globally,
+   uses a supplied PAT), downloads the selected standalone GitHub Release bundle,
    checks whether `.squad/team.md` already exists with roster entries (preserving
    any previously committed cast), and only runs `squad init` if no usable team
    is found. It then runs `squad health --json` when the installed release
    supports it and uploads the resulting `.squad/` team state plus
    `.github/agents/squad.agent.md` only when readiness checks pass — all inside
-   the activation job with unrestricted egress.
+   the activation job without contacting an npm registry.
 
 2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
    into the workspace. The Squad CLI is never installed here; only the files it

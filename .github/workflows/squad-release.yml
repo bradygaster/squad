@@ -3,6 +3,12 @@ name: Squad Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      confirm_tag:
+        description: 'Type v followed by the package.json version (for example v0.13.1)'
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}
@@ -25,6 +31,24 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
+
+      - name: Validate manual release request
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CONFIRM_TAG: ${{ inputs.confirm_tag }}
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          expected_tag="v$(node -p 'require("./package.json").version')"
+          if [ "${RELEASE_REF}" != "refs/heads/dev" ]; then
+            echo "::error::Manual standalone releases must be dispatched from dev, not ${RELEASE_REF}."
+            exit 1
+          fi
+          if [ "${CONFIRM_TAG}" != "${expected_tag}" ]; then
+            echo "::error::confirm_tag must be ${expected_tag}, got ${CONFIRM_TAG}."
+            exit 1
+          fi
+          echo "Confirmed manual standalone release ${expected_tag} from dev."
 
       - name: Run tests
         run: node --test test/*.test.cjs

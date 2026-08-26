@@ -147,13 +147,15 @@ Once pushed, the `/squad` slash command is live on your repo.
 
 ### Optional: pin a CLI version
 
-Set a repository variable to control which Squad CLI version the workflow uses:
+Activation downloads a self-contained GitHub Release bundle; it does not install
+Squad from npm. Set a repository variable to select a specific standalone release:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `SQUAD_CLI_VERSION` | Squad CLI version to install during activation | `0.12.0` |
+| `SQUAD_CLI_VERSION` | Standalone GitHub Release tag to install during activation | `v0.13.1` |
 
-Set it in **Settings → Secrets and variables → Actions → Variables**.
+Set it in **Settings → Secrets and variables → Actions → Variables**. A value
+without the leading `v` is accepted for compatibility with older configurations.
 
 ### Optional: enhanced permissions with a GitHub App
 
