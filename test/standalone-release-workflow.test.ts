@@ -56,7 +56,7 @@ describe('standalone release handoff', () => {
 
   it('uses the explicit release tag for bundles and packaging manifests', () => {
     const tagExpression =
-      'TAG: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}';
+      "TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}";
     expect(standalone.match(new RegExp(tagExpression.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')))
       .toHaveLength(3);
   });

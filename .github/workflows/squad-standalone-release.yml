@@ -226,7 +226,7 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         working-directory: artifacts
         run: |
           set -euo pipefail
@@ -251,7 +251,7 @@ jobs:
 
       - name: Generate manifests
         env:
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         run: |
           set -euo pipefail
           cat artifacts/*.sha256 > "${RUNNER_TEMP}/SHA256SUMS.txt"
@@ -273,7 +273,7 @@ jobs:
 
       - name: Summarize
         env:
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         run: |
           set -euo pipefail
           {
