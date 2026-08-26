@@ -14,6 +14,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.check_tag.outputs.exists == 'false' }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -79,3 +82,15 @@ jobs:
         run: |
           gh release view "${{ steps.version.outputs.tag }}"
           echo "✅ Release ${{ steps.version.outputs.tag }} created and verified."
+
+  standalone:
+    name: Publish standalone bundles
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/squad-standalone-release.yml
+    with:
+      upload: true
+      release_tag: ${{ needs.release.outputs.tag }}
+      source_ref: ${{ needs.release.outputs.tag }}

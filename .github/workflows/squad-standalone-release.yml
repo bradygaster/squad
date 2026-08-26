@@ -14,6 +14,28 @@ name: Squad Standalone Bundles
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      node_version:
+        description: 'Node.js runtime version to vendor into the bundles'
+        required: false
+        default: '22.20.0'
+        type: string
+      upload:
+        description: 'Attach the built bundles to the requested release'
+        required: false
+        default: false
+        type: boolean
+      release_tag:
+        description: 'GitHub Release tag that receives the bundles'
+        required: false
+        default: ''
+        type: string
+      source_ref:
+        description: 'Git ref whose source is bundled'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       node_version:
@@ -26,6 +48,16 @@ on:
         required: false
         default: false
         type: boolean
+      release_tag:
+        description: 'GitHub Release tag that receives the bundles (defaults to the selected tag)'
+        required: false
+        default: ''
+        type: string
+      source_ref:
+        description: 'Git ref whose source is bundled (defaults to release_tag or the selected ref)'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -72,6 +104,8 @@ jobs:
             runner: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_ref || inputs.release_tag || github.event.release.tag_name || github.ref }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
@@ -92,7 +126,10 @@ jobs:
           unzip -v | head -n 1
 
       - name: Build packages
-        run: npm run build
+        # Root prebuild synchronizes contributor-only .squad sources that are
+        # intentionally absent from release tags. Package builds consume the
+        # already-synchronized templates committed with the release.
+        run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
 
       - name: Build standalone bundle
         env:
@@ -189,7 +226,7 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         working-directory: artifacts
         run: |
           set -euo pipefail
@@ -214,7 +251,7 @@ jobs:
 
       - name: Generate manifests
         env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         run: |
           set -euo pipefail
           cat artifacts/*.sha256 > "${RUNNER_TEMP}/SHA256SUMS.txt"
@@ -236,7 +273,7 @@ jobs:
 
       - name: Summarize
         env:
-          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         run: |
           set -euo pipefail
           {
@@ -251,4 +288,3 @@ jobs:
             # shellcheck disable=SC2016
             echo '  validate with `winget validate --manifest <dir>`, then open the PR.'
           } >> "${GITHUB_STEP_SUMMARY}"
-
