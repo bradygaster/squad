@@ -354,9 +354,12 @@ When you run `/squad cast`, the workflow follows these steps:
    Backend, Tester). If you request a themed universe in your brief, Squad picks
    character names from that universe instead — any universe works, not just the
    15 built-in ones.
-5. **Scaffolding** — generates all squad files (charters, routing, registry)
-6. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
-   team for review
+5. **Scaffolding** — replaces the disposable activation scaffold with the final
+   charters, routing, registry, and synchronized custom-agent capabilities
+6. **Integrity gate** — verifies the complete routing file, registry/charter
+   agreement, generated capabilities, and an explicit Cast-only payload
+7. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
+   team for review; a failed integrity gate posts recovery guidance instead
 
 The completion comment links the created Cast PR. Open that PR, mark it ready
 when it was created as a draft, request Copilot review, and wait for its checks.
