@@ -356,11 +356,12 @@ When you run `/squad cast`, the workflow follows these steps:
    character names from that universe instead — any universe works, not just the
    15 built-in ones.
 5. **Scaffolding** — replaces the disposable activation scaffold with the final
-   charters, routing, registry, and synchronized custom-agent capabilities
-6. **Integrity gate** — verifies the complete routing file, registry/charter
-   agreement, generated capabilities, and an explicit Cast-only payload
+   charters, routing, registry, and a compact self-contained GH-AW coordinator
+6. **Deterministic validation** — parses the final coordinator and team, checks
+   every local path against the exact-case Cast payload/tree, and verifies
+   registry, routing, charter, and generated-capability agreement
 7. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
-   team for review; a failed integrity gate posts recovery guidance instead
+   team for review; a failed validation posts recovery guidance instead
 
 The completion comment links the created Cast PR. Open that PR, mark it ready
 when it was created as a draft, request Copilot review, and wait for its checks.
@@ -368,6 +369,11 @@ GitHub may require maintainer approval before application CI runs on a
 workflow-created branch; when the PR shows `action_required`, approve that
 workflow run from the checks view and wait for it to finish. Merge the Cast PR
 only after its generated files, review, and repository checks are complete.
+
+The validator runs in the agent workspace immediately before the built-in
+safe-output request. gh-aw does not provide an independent post-agent hook that
+can conditionally authorize PR creation, so this is deterministic pre-output
+enforcement rather than a separate post-agent gate.
 
 ### The casting brief
 

@@ -39,6 +39,7 @@ network:
     - defaults
 imports:
   - shared/squad.md
+  - shared/squad-cast-validator.md
   - shared/squad-planning-ontology.md
   - shared/squad-planning-policy.md
 tools:
@@ -700,7 +701,7 @@ Every team gets a **Lead**. Then allocate specialists based on signals:
 | ML/data pipelines | ML Engineer |
 | Mobile | Mobile Engineer |
 
-Guidelines: 4–7 agents. Min: Lead + 2 specialists + 1 quality role. Scribe, Ralph, Rai are built-in (don't count).
+Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
 
 ##### Step 3: Naming Mode & Name Allocation
 
@@ -731,7 +732,6 @@ Guidelines: 4–7 agents. Min: Lead + 2 specialists + 1 quality role. Scribe, Ra
 3. Name rules:
    - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
    - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
-   - Scribe, Ralph, and Rai keep their built-in names in every mode.
 4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
 5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
@@ -747,19 +747,27 @@ bootstrap routing, registry, history, or charters.
 
 Create/replace:
 
-1. **`.squad/team.md`** — Roster table: Coordinator (Squad), Members (Name|Role|Charter path|Status), always-on (Scribe, Ralph, Rai), Coding Agent (@copilot with `copilot-auto-assign: false`).
+1. **`.squad/team.md`** — Roster table containing only Coordinator (Squad), active registry Members (Name|Role|Charter path|Status), and Coding Agent (@copilot with `copilot-auto-assign: false`). Every charter path must be a concrete active-member path created by this Cast. Do not add inactive/support-role rows or charter references.
 2. **`.squad/agents/{id}/charter.md`** — Per agent: `# Name — Role`, Identity block (name, role, expertise, style), "What I Own", Boundaries (handle/don't), Model: auto.
 3. **`.squad/routing.md`** — Completely replace the file. It must contain exactly one `## Routing Table` section, using section heading `## Routing Table` and exact headers `Work Type | Route To | Examples`; every `Route To` value is an exact active casting-registry `persistent_name`, with multiple names comma-separated and no prose or annotations. No `## Work Type → Agent` section or other legacy routing section may remain anywhere in the file. Do not route to always-on support roles unless they are also active registry agents.
 4. **`.squad/casting/registry.json`** — From Step 3.
 5. **`.squad/casting/history.json`** — From Step 3.
 6. **`.squad/casting/policy.json`** — Standard policy with all 15 universes.
-7. **`.github/agents/squad.agent.md`** — Use the bootstrap agent file only as the base; do not rewrite unrelated standalone behavior. Replace the complete generated block from `<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->` through `<!-- SQUAD:TEAM-CAPABILITIES:END -->` from the final `.squad/team.md`, `.squad/routing.md`, active registry entries, and selected charters. The regenerated metadata and body must advertise the actual specialists and routes, and must not contain pending, zero, or uncast placeholders. Normalize only directly coupled path casing required by the final files; specifically replace `.squad/templates/Rai-charter.md` with `.squad/templates/rai-charter.md` when present.
+7. **`.github/agents/squad.agent.md`** — Completely replace the disposable bootstrap coordinator. Do not reuse, patch, summarize, or retain any bootstrap body text. Generate a compact GH-AW-specific coordinator with this complete structure:
+
+   - YAML frontmatter: `name: Squad`, a description that says it routes repository work to the active GH-AW Cast, and `tools: ["*"]`.
+   - `# Squad Coordinator` plus one short paragraph establishing that the coordinator routes work and does not replace specialist judgment.
+   - `## Cast sources` listing only the concrete final Cast paths for the team, routing, registry, history, policy, meet-the-squad, and every active member charter. Do not use path globs or dynamic paths.
+   - `## Routing work` with this behavior: read the routing table, select only active registry members, load only the selected member's charter, delegate through the platform's available agent mechanism, and synthesize the result for the user. If no route matches, choose the active Lead; if no active Lead exists, ask the user rather than inventing a member.
+   - One complete generated Team Capabilities block delimited by `<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->` and `<!-- SQUAD:TEAM-CAPABILITIES:END -->`. Preserve the stable heading, metadata, specialist table, supported task types, routing hints, and capability boundaries format. Set `specialists` to the active registry count and set both `taskTypes` and `hints` to the routing-row count; all three counts must be nonzero. Generate every value from the final team, routing, registry, and active charters.
+
+   The coordinator must be self-contained for the final Cast tree. It must not mention inactive/support roles, standalone lifecycle behavior, templates, configuration, decisions, plugins, logs, non-GH-AW clients, internal Squad source paths, or sample labels/names that are not active registry members.
 
 Keep naming consistent across generated team state and the Cast PR summary. In descriptive mode, describe the choice as descriptive naming and never invent or mention a fictional universe.
 
 ##### Step 5: Generate meet-the-squad.md
 
-Create `meet-the-squad.md` at repo root with: title, naming mode (`Descriptive` in descriptive mode; otherwise the exact universe name), team table (Name|Role|Specialty|How to talk), Always-On Support table, How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date.
+Create `meet-the-squad.md` at repo root with: title, naming mode (`Descriptive` in descriptive mode; otherwise the exact universe name), active team table (Name|Role|Specialty|How to talk), How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date. Do not advertise inactive/support roles.
 
 ##### Step 6: Build the Safe-Output Payload
 
@@ -783,21 +791,34 @@ Bootstrap default agent IDs `lead`, `reviewer`, `security`, `docs`, and `devrel`
 are excluded unless the final registry selected that ID and this Cast replaced
 its charter from scratch.
 
-##### Step 7: Final fail-closed integrity pass
+##### Step 7: Deterministic final-tree validation
 
-Before requesting safe output, validate the complete generated state, not a
-single matching section. This gate requires exact routing/registry agreement:
+Natural-language review is not the gate. Immediately before requesting safe
+output, create `$RUNNER_TEMP/squad-cast-payload.json` as a JSON array containing
+every concrete Step 6 payload path, invoke the `skill` tool on
+`squad-cast-validator`, then run the exact command it returns. Do not rewrite,
+shorten, or substitute the validator.
 
-1. The explicit payload allowlist contains only Step 6 paths, with one concrete charter path per final selected ID and no directory-wide entry.
-2. Registry active IDs, team member charter paths, selected charter directories, and payload charter paths are exact sets; there are no stale agent directories or role IDs.
-3. Validate the entire `.squad/routing.md` file: exactly one `## Routing Table` section, exact headers `Work Type | Route To | Examples`, no legacy routing heading anywhere, and every route target resolves to an active registry `persistent_name`.
-4. The custom-agent file has exactly one generated marker pair, no placeholder capability marker, and its actual specialists and routes agree with final team/routing/registry/charters. Reject `specialists=0`, `taskTypes=0`, `hints=0`, `pending`, or `uncast`.
-5. No excluded bootstrap/template/automation path is present in the payload.
+The validator deterministically parses the final registry, routing, team, and
+coordinator; compares active IDs, names, charter directories, and routing;
+verifies the synchronized nonzero capability marker; extracts every literal
+dot-rooted local path from the final coordinator and team; compares those paths
+case-sensitively with the explicit payload and final tree; and rejects
+inactive/support roles, standalone templates/state, non-GH-AW clients, internal
+source paths, globs, placeholders, and fictional/inactive sample labels.
 
-If any check fails, post one actionable `add-comment` naming every failed
-invariant and telling the user to rerun `{canonical_command}`; call `noop` and
-stop. Do not call `create-pull-request`, and do not describe partial output as a
-successful Cast.
+Only a zero exit status with `Cast validation passed.` authorizes the
+`create-pull-request` request. If the command is unavailable, cannot be
+materialized exactly, or exits nonzero, post one actionable `add-comment`
+containing its complete failure list and telling the user to rerun
+`{canonical_command}`; call `noop` and stop. Do not call `create-pull-request`,
+and do not describe partial output as a successful Cast.
+
+This is the strongest deterministic boundary available in gh-aw's single-agent
+architecture: it runs against the agent's final working tree immediately before
+the built-in safe-output request. gh-aw does not expose an independent
+post-agent hook that can conditionally authorize `create-pull-request`, so do
+not describe this as a post-agent or independently fail-closed gate.
 
 ##### Step 8: Open PR
 
