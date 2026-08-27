@@ -234,10 +234,10 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad plan program revise <feedback>` | Plan Program Revise |
 | `/squad plan implementation` | Plan Implementation |
 | `/squad plan validate` | Plan Validate |
-| `/squad activate` | Activate |
-| `/squad activate phase {N}` | Activate |
-| `/squad plan accept` | Plan Accept (fast-path) |
-| `/squad plan accept phase {N}` | Plan Accept |
+| `/squad activate` | Activate (recommended fast-path) |
+| `/squad activate phase {N}` | Activate (recommended fast-path) |
+| `/squad plan accept` | Plan Accept (legacy alias) |
+| `/squad plan accept phase {N}` | Plan Accept (legacy alias) |
 | `/squad plan accept scope` | Plan Accept Scope |
 | `/squad plan accept implementation` | Plan Accept Implementation |
 | `/squad plan accept implementation phase {N}` | Plan Accept Implementation |

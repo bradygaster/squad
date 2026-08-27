@@ -314,8 +314,8 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Planning | `/squad plan implementation` | Decompose a program plan into PR-sized tasks | Requires a program plan first |
 | Planning | `/squad plan validate` | Validate plan readiness before acceptance | Checks dependencies, decisions, sizing |
 | Planning | `/squad plan revise <feedback>` | Revise the current plan based on feedback | Works at any planning stage |
-| Activation | `/squad activate` | **Recommended fast path:** review and accept the latest fast plan, then create its GitHub issues | Requires write, maintain, or admin permission |
-| Activation | `/squad activate phase {N}` | Review, accept, and create issues for only Phase N of the latest fast plan | Incremental and in order |
+| Activation | `/squad activate` | **Recommended fast path:** review and accept the latest fast plan, then create its GitHub issues | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission |
+| Activation | `/squad activate phase {N}` | Review, accept, and create issues for only Phase N of the latest fast plan | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission; incremental and in order |
 | Acceptance | `/squad plan accept` | Legacy alias for `/squad activate` | Preserved for backward compatibility |
 | Acceptance | `/squad plan accept phase {N}` | Legacy alias for `/squad activate phase {N}` | Preserved for backward compatibility |
 | Acceptance | `/squad plan accept scope` | Approve the program plan scope | Locks strategic structure before decomposition |

@@ -286,8 +286,14 @@ describe('/squad activate reuses the fast-path acceptance lifecycle', () => {
   const accept = skillBlock(squad, 'squad-plan-accept');
 
   it('declares whole-plan and phase-aware activate commands', () => {
-    expect(modes).toContain('| `/squad activate` | Activate |');
-    expect(modes).toContain('| `/squad activate phase {N}` | Activate |');
+    expect(modes).toContain('| `/squad activate` | Activate (recommended fast-path) |');
+    expect(modes).toContain(
+      '| `/squad activate phase {N}` | Activate (recommended fast-path) |'
+    );
+    expect(modes).toContain('| `/squad plan accept` | Plan Accept (legacy alias) |');
+    expect(modes).toContain(
+      '| `/squad plan accept phase {N}` | Plan Accept (legacy alias) |'
+    );
   });
 
   it('routes activate to the existing squad-plan-accept skill', () => {
@@ -312,6 +318,12 @@ describe('/squad activate reuses the fast-path acceptance lifecycle', () => {
     expect(guide).toContain('`/squad plan accept` remains a backward-compatible alias');
     expect(guide).toContain('### Granular lifecycle');
     expect(guide).toContain('| Activation | `/squad plan activate` |');
+    expect(guide).toContain(
+      '| Activation | `/squad activate` | **Recommended fast path:** review and accept the latest fast plan, then create its GitHub issues | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission |'
+    );
+    expect(guide).toContain(
+      '| Activation | `/squad activate phase {N}` | Review, accept, and create issues for only Phase N of the latest fast plan | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission; incremental and in order |'
+    );
   });
 });
 
