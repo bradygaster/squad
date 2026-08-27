@@ -419,10 +419,7 @@ jobs:
                 command = $0
                 sub(/^[[:space:]]*-[[:space:]]*/, "", command)
                 sub(/^run:[[:space:]]*/, "", command)
-                if (
-                  command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/
-                  && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/
-                ) {
+                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/) {
                   print NR ":" $0
                 }
               }
