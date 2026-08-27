@@ -133,6 +133,32 @@ jobs:
             }
             if (failed) process.exit(1);
           "
+      - name: Validate workspace release dependency
+        run: |
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+
+          const sdk = JSON.parse(readFileSync('packages/squad-sdk/package.json', 'utf8'));
+          const cli = JSON.parse(readFileSync('packages/squad-cli/package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const dependency = cli.dependencies?.['@bradygaster/squad-sdk'];
+          const lockDependency =
+            lock.packages?.['packages/squad-cli']?.dependencies?.['@bradygaster/squad-sdk'];
+
+          if (sdk.version !== cli.version) {
+            throw new Error(`SDK ${sdk.version} and CLI ${cli.version} versions do not match.`);
+          }
+          if (sdk.version.includes('-')) {
+            const expected = `>=${sdk.version}`;
+            if (dependency !== expected || lockDependency !== expected) {
+              throw new Error(
+                `Preview publication requires the CLI SDK dependency and lockfile entry to be '${expected}'.`,
+              );
+            }
+          } else if (dependency?.includes('-') || lockDependency?.includes('-')) {
+            throw new Error('Stable publication cannot retain a prerelease SDK dependency floor.');
+          }
+          NODE
   smoke-test:
     name: CLI packaging smoke test
     needs: preflight
@@ -163,9 +189,9 @@ jobs:
             exit 1
           fi
       - name: Build
-        run: npm run build
-        env:
-          SKIP_BUILD_BUMP: '1'
+        # Release tags intentionally omit contributor-only .squad sources used
+        # by the root prebuild synchronization step.
+        run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
       - name: Validate npm pack succeeds
         run: |
           echo "Verifying npm pack produces valid tarballs..."
@@ -211,6 +237,10 @@ jobs:
     needs: [preflight, smoke-test, registry-check]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      dist_tag: ${{ steps.version.outputs.dist_tag }}
+      stable_release: ${{ steps.version.outputs.stable_release }}
+      version: ${{ steps.version.outputs.version }}
     permissions:
       contents: read
       id-token: write
@@ -252,8 +282,21 @@ jobs:
             echo "::error::Invalid npm release version '${VERSION}'; expected strict SemVer without a leading v."
             exit 1
           fi
+
+          stable_release=false
+          dist_tag=preview
+          if [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            stable_release=true
+            dist_tag=latest
+          elif [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Unsupported prerelease '$VERSION'; expected MAJOR.MINOR.PATCH-preview.N."
+            exit 1
+          fi
+
+          echo "dist_tag=${dist_tag}" >> "$GITHUB_OUTPUT"
+          echo "stable_release=${stable_release}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Publishing version: ${VERSION}"
+          echo "Publishing version: ${VERSION} on npm dist-tag '${dist_tag}'"
       - name: Install dependencies
         run: |
           success=false
@@ -283,28 +326,37 @@ jobs:
           echo "Package version matches: $PKG_VERSION"
       - name: Publish squad-sdk to npm
         env:
+          NPM_DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           if npm view "@bradygaster/squad-sdk@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
             echo "@bradygaster/squad-sdk@${PACKAGE_VERSION} already exists; skipping npm publish."
+            tagged_version="$(npm view @bradygaster/squad-sdk "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
+            if [ "$tagged_version" != "$PACKAGE_VERSION" ]; then
+              echo "::error::npm dist-tag '${NPM_DIST_TAG}' points to '${tagged_version:-<unset>}', not '${PACKAGE_VERSION}'. Refusing to move it implicitly."
+              exit 1
+            fi
           else
-            npm -w packages/squad-sdk publish --access public --provenance
+            npm -w packages/squad-sdk publish --access public --provenance --tag "$NPM_DIST_TAG"
           fi
       - name: Verify npm publication
         env:
+          NPM_DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           for i in 1 2 3 4 5; do
-            if npm view "@bradygaster/squad-sdk@${PACKAGE_VERSION}" version 2>/dev/null; then
-              echo "Verified on npm registry"
+            published_version="$(npm view "@bradygaster/squad-sdk@${PACKAGE_VERSION}" version 2>/dev/null || true)"
+            tagged_version="$(npm view @bradygaster/squad-sdk "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
+            if [ "$published_version" = "$PACKAGE_VERSION" ] && [ "$tagged_version" = "$PACKAGE_VERSION" ]; then
+              echo "Verified @bradygaster/squad-sdk@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}'"
               exit 0
             fi
-            echo "Registry propagation attempt $i/5, waiting 15s..."
+            echo "Registry attempt $i/5: version='${published_version:-<unset>}', ${NPM_DIST_TAG}='${tagged_version:-<unset>}'; waiting 15s..."
             sleep 15
           done
-          echo "::error::Could not verify @bradygaster/squad-sdk@${PACKAGE_VERSION} on npm after 5 attempts."
+          echo "::error::Could not verify @bradygaster/squad-sdk@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}' after 5 attempts."
           exit 1
   publish-cli:
     name: Publish @bradygaster/squad-cli
@@ -317,6 +369,8 @@ jobs:
     outputs:
       # Consumed by `bump-activation-pin` so the pin moves to the version this run
       # actually published, rather than to whatever npm happens to report later.
+      dist_tag: ${{ steps.version.outputs.dist_tag }}
+      stable_release: ${{ steps.version.outputs.stable_release }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
@@ -356,8 +410,21 @@ jobs:
             echo "::error::Invalid npm release version '${VERSION}'; expected strict SemVer without a leading v."
             exit 1
           fi
+
+          stable_release=false
+          dist_tag=preview
+          if [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            stable_release=true
+            dist_tag=latest
+          elif [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Unsupported prerelease '$VERSION'; expected MAJOR.MINOR.PATCH-preview.N."
+            exit 1
+          fi
+
+          echo "dist_tag=${dist_tag}" >> "$GITHUB_OUTPUT"
+          echo "stable_release=${stable_release}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Publishing version: ${VERSION}"
+          echo "Publishing version: ${VERSION} on npm dist-tag '${dist_tag}'"
       - name: Install dependencies
         run: |
           success=false
@@ -440,28 +507,37 @@ jobs:
           echo "Package version matches: $PKG_VERSION"
       - name: Publish squad-cli to npm
         env:
+          NPM_DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           if npm view "@bradygaster/squad-cli@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
             echo "@bradygaster/squad-cli@${PACKAGE_VERSION} already exists; skipping npm publish."
+            tagged_version="$(npm view @bradygaster/squad-cli "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
+            if [ "$tagged_version" != "$PACKAGE_VERSION" ]; then
+              echo "::error::npm dist-tag '${NPM_DIST_TAG}' points to '${tagged_version:-<unset>}', not '${PACKAGE_VERSION}'. Refusing to move it implicitly."
+              exit 1
+            fi
           else
-            npm -w packages/squad-cli publish --access public --provenance
+            npm -w packages/squad-cli publish --access public --provenance --tag "$NPM_DIST_TAG"
           fi
       - name: Verify npm publication
         env:
+          NPM_DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           for i in 1 2 3 4 5; do
-            if npm view "@bradygaster/squad-cli@${PACKAGE_VERSION}" version 2>/dev/null; then
-              echo "Verified on npm registry"
+            published_version="$(npm view "@bradygaster/squad-cli@${PACKAGE_VERSION}" version 2>/dev/null || true)"
+            tagged_version="$(npm view @bradygaster/squad-cli "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
+            if [ "$published_version" = "$PACKAGE_VERSION" ] && [ "$tagged_version" = "$PACKAGE_VERSION" ]; then
+              echo "Verified @bradygaster/squad-cli@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}'"
               exit 0
             fi
-            echo "Registry propagation attempt $i/5, waiting 15s..."
+            echo "Registry attempt $i/5: version='${published_version:-<unset>}', ${NPM_DIST_TAG}='${tagged_version:-<unset>}'; waiting 15s..."
             sleep 15
           done
-          echo "::error::Could not verify @bradygaster/squad-cli@${PACKAGE_VERSION} on npm after 5 attempts."
+          echo "::error::Could not verify @bradygaster/squad-cli@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}' after 5 attempts."
           exit 1
 
   # --- Issue #1825 ------------------------------------------------------
@@ -480,6 +556,7 @@ jobs:
   bump-activation-pin:
     name: Bump activation pin to the published release
     needs: publish-cli
+    if: needs.publish-cli.outputs.stable_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -581,6 +658,7 @@ jobs:
   promote-insider-tag-sdk:
     name: Promote SDK insider dist-tag if behind latest
     needs: publish-sdk
+    if: needs.publish-sdk.outputs.stable_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -631,6 +709,7 @@ jobs:
   promote-insider-tag-cli:
     name: Promote CLI insider dist-tag if behind latest
     needs: publish-cli
+    if: needs.publish-cli.outputs.stable_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -28,6 +28,12 @@ Use npm when Node.js 22.5 or later is already available:
 npm install -g @bradygaster/squad-cli@latest
 ```
 
+To test an on-demand prerelease from `dev`:
+
+```bash
+npm install -g @bradygaster/squad-cli@preview
+```
+
 For one-off use without a global install:
 
 ```bash
@@ -82,14 +88,15 @@ signing limitations.
 
 | Method | Platforms | Node.js required | Best for |
 |--------|-----------|------------------|----------|
-| npm or npx | macOS, Linux, Windows | Yes | Node.js development environments and insider builds |
+| npm or npx | macOS, Linux, Windows | Yes | Node.js environments, previews, and insider builds |
 | Install script | macOS, Linux | No | Verified command-line installation without npm |
 | Homebrew | macOS | No | Homebrew-managed upgrades |
 | WinGet | Windows | No | Windows Package Manager-managed upgrades |
 | Direct archive | macOS, Linux, Windows | No | Mirrors, offline staging, and controlled deployment |
 
-Homebrew and WinGet track stable releases. Use npm's `insider` tag or a direct
-GitHub prerelease archive when testing a prerelease build.
+Homebrew, WinGet, and the install script track stable releases. Use npm's
+`preview` tag for release candidates, `insider` for development snapshots, or
+a direct GitHub prerelease archive when testing an early build.
 
 ## Verify the installation
 
@@ -143,6 +150,7 @@ Update the CLI through the same channel used to install it:
 | Installed with | Update command |
 |----------------|----------------|
 | npm | `npm install -g @bradygaster/squad-cli@latest` |
+| npm preview | `npm install -g @bradygaster/squad-cli@preview` |
 | Homebrew | `brew upgrade --cask squad` |
 | WinGet | `winget upgrade --id bradygaster.Squad --exact` |
 | Install script | Re-run the install script |

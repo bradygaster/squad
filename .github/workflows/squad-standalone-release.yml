@@ -38,7 +38,7 @@ on:
         type: string
     secrets:
       HOMEBREW_TAP_TOKEN:
-        description: 'Fine-grained PAT with Contents read/write on bradygaster/homebrew-squad'
+        description: 'Classic PAT with public_repo and write access to bradygaster/homebrew-squad'
         required: false
       WINGET_CREATE_GITHUB_TOKEN:
         description: 'Classic public_repo PAT for tamirdresher/winget-pkgs and upstream PRs'
@@ -365,7 +365,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
-            echo "::error::HOMEBREW_TAP_TOKEN is required. Configure a fine-grained PAT limited to bradygaster/homebrew-squad with Contents read/write."
+            echo "::error::HOMEBREW_TAP_TOKEN is required. Configure a classic PAT with public_repo from a collaborator with write access to bradygaster/homebrew-squad."
             {
               echo "### Homebrew publication"
               echo ""

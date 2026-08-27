@@ -20,12 +20,13 @@ The Insider Program gives you continuous access to development builds of Squad. 
 Insider builds are published from the `dev` branch to the npm `insider` dist-tag via a manual workflow dispatch. There is no separate `insider` branch — `dev` is the single source of truth for all development.
 
 ```
-dev (development)  → npm @insider tag (on demand)
-  ↓
-preview (staging)  → release candidate validation
-  ↓
-main (stable)      → npm @latest tag
+dev (development)       → npm @insider snapshots (on demand)
+dev (release candidate) → GitHub prerelease + npm @preview (on demand)
+main (stable)           → GitHub release + npm @latest (automatic)
 ```
+
+`preview` is a release channel, not a branch. Stable promotion sanitizes and
+merges `dev` directly into `main`.
 
 ---
 

@@ -1,14 +1,14 @@
 /**
  * Regression guards for the standalone release handoff.
  *
- * GitHub suppresses release events created with GITHUB_TOKEN, so the normal
- * release workflow must call the bundle workflow directly. Release tags also
- * omit contributor-only .squad state, which means the bundle build must avoid
- * the root prebuild synchronization step.
+ * GitHub suppresses events created with GITHUB_TOKEN, so promotion explicitly
+ * dispatches the release workflow and the release workflow calls its publishers
+ * directly. Release tags also omit contributor-only .squad state, which means
+ * publication builds must avoid the root prebuild synchronization step.
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 
@@ -16,6 +16,7 @@ const WORKFLOWS = join(process.cwd(), '.github', 'workflows');
 const release = readFileSync(join(WORKFLOWS, 'squad-release.yml'), 'utf8');
 const standalone = readFileSync(join(WORKFLOWS, 'squad-standalone-release.yml'), 'utf8');
 const npmPublish = readFileSync(join(WORKFLOWS, 'squad-npm-publish.yml'), 'utf8');
+const promote = readFileSync(join(WORKFLOWS, 'squad-promote.yml'), 'utf8');
 
 interface WorkflowStep {
   name?: string;
@@ -49,6 +50,9 @@ interface WorkflowDefinition {
     workflow_dispatch?: {
       inputs?: Record<string, unknown>;
     };
+    push?: {
+      branches?: string[];
+    };
   };
   concurrency?: {
     group?: string;
@@ -61,6 +65,7 @@ interface WorkflowDefinition {
 const releaseWorkflow = parse(release) as WorkflowDefinition;
 const standaloneWorkflow = parse(standalone) as WorkflowDefinition;
 const npmPublishWorkflow = parse(npmPublish) as WorkflowDefinition;
+const promoteWorkflow = parse(promote) as WorkflowDefinition;
 
 function stepNamed(job: WorkflowJob, name: string): WorkflowStep {
   const step = job.steps?.find((candidate) => candidate.name === name);
@@ -73,15 +78,26 @@ function serialized(job: WorkflowJob): string {
 }
 
 describe('standalone release handoff', () => {
-  it('supports a confirmation-gated manual release from dev only', () => {
+  it('publishes on-demand prereleases from dev and automatic stable releases from main', () => {
     expect(release).toMatch(/workflow_dispatch:\r?\n\s+inputs:\r?\n\s+confirm_tag:/);
     expect(release).toContain(
-      "description: 'Type v followed by the package.json version (for example v0.13.1)'",
+      "description: 'Confirm the release tag (for example v0.14.0-preview.1 or v0.14.0)'",
     );
-    expect(release).toContain("if: github.event_name == 'workflow_dispatch'");
+    expect(releaseWorkflow.on?.push?.branches).toEqual(['main']);
     expect(release).toContain('RELEASE_REF: ${{ github.ref }}');
-    expect(release).toContain('if [ "${RELEASE_REF}" != "refs/heads/dev" ]; then');
-    expect(release).toContain('if [ "${CONFIRM_TAG}" != "${expected_tag}" ]; then');
+    expect(release).toContain('if [ "$RELEASE_REF" = "refs/heads/dev" ]; then');
+    expect(release).toContain('elif [ "$RELEASE_REF" = "refs/heads/main" ]; then');
+    expect(release).toContain('if [ "$RELEASE_REF" != "refs/heads/main" ]; then');
+    expect(release).toContain('Manual dev releases require a prerelease version');
+    expect(release).toContain('Manual main releases require a stable MAJOR.MINOR.PATCH version');
+    expect(release).toContain('The main branch requires a stable MAJOR.MINOR.PATCH version');
+    expect(release).toContain('-preview\\.(0|[1-9][0-9]*)');
+    expect(release).toContain('Preview releases require the CLI SDK dependency');
+    expect(release).toContain('--prerelease');
+    expect(release).toContain('--latest');
+    expect(releaseWorkflow.jobs.release.outputs?.stable_release).toBe(
+      '${{ steps.version.outputs.stable_release }}',
+    );
   });
 
   it('calls the reusable bundle workflow after creating a release', () => {
@@ -160,6 +176,37 @@ describe('standalone release handoff', () => {
   });
 });
 
+describe('stable promotion', () => {
+  it('promotes directly from dev to main through a validated sanitized merge', () => {
+    expect(existsSync(join(WORKFLOWS, 'squad-preview.yml'))).toBe(false);
+    expect(Object.keys(promoteWorkflow.jobs)).toEqual(['dev-to-main']);
+
+    const promotion = serialized(promoteWorkflow.jobs['dev-to-main']);
+    expect(promotion).toContain('git merge origin/dev --no-commit --no-ff -X theirs || true');
+    expect(promotion).toContain('git diff --name-only --diff-filter=U');
+    expect(promotion).toContain('git rm -rf --cached --ignore-unmatch');
+    expect(promotion).toContain('.ai-team/');
+    expect(promotion).toContain('.squad/');
+    expect(promotion).toContain('.ai-team-templates/');
+    expect(promotion).toContain('team-docs/');
+    expect(promotion).toContain('docs/proposals/');
+    expect(promotion).toContain('Stable promotion requires a MAJOR.MINOR.PATCH version');
+    expect(promotion).toContain(
+      'npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build',
+    );
+    expect(promotion).toContain('git push origin HEAD:main');
+    expect(promotion).toContain('gh workflow run squad-release.yml');
+    expect(
+      stepNamed(promoteWorkflow.jobs['dev-to-main'], 'Push main and start stable release').run,
+    ).toContain('-f confirm_tag="v${VERSION}"');
+    expect(promotion).not.toContain('origin/preview');
+    expect(promoteWorkflow.permissions).toEqual({
+      actions: 'write',
+      contents: 'write',
+    });
+  });
+});
+
 describe('reusable npm publication', () => {
   it('preserves direct triggers and declares only the required npm credential', () => {
     expect(npmPublishWorkflow.on?.release?.types).toContain('published');
@@ -204,6 +251,13 @@ describe('reusable npm publication', () => {
     expect(activationCheckout?.with?.ref).toBe('dev');
   });
 
+  it('builds release-tag workspaces without contributor-only prebuild inputs', () => {
+    const build = stepNamed(npmPublishWorkflow.jobs['smoke-test'], 'Build');
+    expect(build.run).toBe(
+      'npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build',
+    );
+  });
+
   it('validates reusable and manual versions without expression injection', () => {
     expect(npmPublish).not.toContain('github.event.inputs.version');
 
@@ -221,6 +275,15 @@ describe('reusable npm publication', () => {
       expect(normalize?.run, jobName).toContain("semver_re='^(0|[1-9][0-9]*)");
       expect(normalize?.run, jobName).toContain('=~');
     }
+  });
+
+  it('guards preview publication against stale workspace SDK resolution', () => {
+    const guard = stepNamed(
+      npmPublishWorkflow.jobs.preflight,
+      'Validate workspace release dependency',
+    );
+    expect(guard.run).toContain('const expected = `>=${sdk.version}`');
+    expect(guard.run).toContain('lockDependency !== expected');
   });
 
   it('skips each existing package independently and still verifies it', () => {
@@ -245,6 +308,39 @@ describe('reusable npm publication', () => {
         `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
       );
     }
+  });
+
+  it('publishes stable versions to latest and prereleases to preview', () => {
+    for (const jobName of ['publish-sdk', 'publish-cli']) {
+      const job = npmPublishWorkflow.jobs[jobName];
+      const normalize = stepNamed(job, 'Determine and validate version');
+      const publish = job.steps?.find((step) => step.name?.startsWith('Publish '));
+      const verify = stepNamed(job, 'Verify npm publication');
+
+      expect(job.outputs?.dist_tag, jobName).toBe('${{ steps.version.outputs.dist_tag }}');
+      expect(job.outputs?.stable_release, jobName).toBe(
+        '${{ steps.version.outputs.stable_release }}',
+      );
+      expect(normalize.run, jobName).toContain('dist_tag=preview');
+      expect(normalize.run, jobName).toContain('dist_tag=latest');
+      expect(normalize.run, jobName).toContain('expected MAJOR.MINOR.PATCH-preview.N');
+      expect(publish?.env?.NPM_DIST_TAG, jobName).toBe(
+        '${{ steps.version.outputs.dist_tag }}',
+      );
+      expect(publish?.run, jobName).toContain('--tag "$NPM_DIST_TAG"');
+      expect(publish?.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
+      expect(verify.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
+    }
+
+    expect(npmPublishWorkflow.jobs['bump-activation-pin'].if).toBe(
+      "needs.publish-cli.outputs.stable_release == 'true'",
+    );
+    expect(npmPublishWorkflow.jobs['promote-insider-tag-sdk'].if).toBe(
+      "needs.publish-sdk.outputs.stable_release == 'true'",
+    );
+    expect(npmPublishWorkflow.jobs['promote-insider-tag-cli'].if).toBe(
+      "needs.publish-cli.outputs.stable_release == 'true'",
+    );
   });
 
   it('uses least privilege for provenance and the activation pin PR', () => {
@@ -405,7 +501,7 @@ describe('automated package publication', () => {
       '${{ secrets.HOMEBREW_TAP_TOKEN }}',
     );
     expect(homebrewGate.run).toContain('[ -z "${HOMEBREW_TAP_TOKEN}" ]');
-    expect(homebrewGate.run).toMatch(/fine-grained PAT.*Contents read\/write/);
+    expect(homebrewGate.run).toMatch(/classic PAT.*public_repo/);
 
     const wingetGate = stepNamed(winget, 'Require WinGet publication credential');
     expect(wingetGate.env?.WINGET_CREATE_GITHUB_TOKEN).toBe(
