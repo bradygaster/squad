@@ -290,6 +290,7 @@ function createTestWorkspace(prefix: string): string {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: safe-output configuration', () => {
+  const workflow = readText(SQUAD_WORKFLOW);
   const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
   const safeOutputs = extractSafeOutputs(frontmatter);
 
@@ -299,7 +300,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data') continue;
+      if (name === 'data' || name === 'messages') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -342,7 +343,26 @@ describe('gh-aw: safe-output configuration', () => {
     expect(pr.labels, 'should have labels').toBeDefined();
     expect(pr.max, 'should have max').toBeDefined();
     expect(pr['allowed-base-branches'], 'should have allowed-base-branches').toBeDefined();
+    expect(pr['allowed-files'], 'Cast PR must allow generated agent definitions').toContain(
+      '.github/agents/*.agent.md',
+    );
     expect(pr['auto-close-issue'], 'Cast PR must not close the originating work issue').toBe(false);
+  });
+
+  it('reports the verified pull request after safe-output creation', () => {
+    const cast = workflow.slice(
+      workflow.indexOf('## skill: `squad-cast`'),
+      workflow.indexOf('## skill: `squad-review-relay`'),
+    );
+
+    expect(frontmatter).toContain(
+      'pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review.',
+    );
+    expect(safeOutputs.messages['append-only-comments']).toBe(true);
+    expect(cast).toContain(
+      '`safe-outputs.messages.pull-request-created` notification runs after PR creation',
+    );
+    expect(cast).not.toContain('**PR:** #{pr_number}');
   });
 
   it('defines the minimum schema-validated durable artifact envelope', () => {
@@ -2315,6 +2335,14 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
   it('Cast PR body instructs user to return to originating issue and rerun canonical command', () => {
     expect(squadContent).toMatch(/return to the originating issue and rerun.*\{canonical_command\}/s);
   });
+
+  it('Cast emits routing state that standalone health can parse', () => {
+    expect(squadContent).toContain('section heading `## Routing Table`');
+    expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
+    expect(squadContent).toContain('exact active casting-registry `persistent_name`');
+    expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
+    expect(squadContent).toContain('Do not route to always-on support roles');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2408,7 +2436,7 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     while (stepStart > 0 && !lines[stepStart].match(/^\s+-\s+name:/)) {
       stepStart--;
     }
-    // Walk forward to the next "- name:" or end of the pre-steps block.
+    // Walk forward to the next "- name:" or end of the activation steps block.
     let stepEnd = healthLineIdx + 1;
     while (stepEnd < lines.length && !lines[stepEnd].match(/^\s+-\s+name:/) && !lines[stepEnd].match(/^steps:/)) {
       stepEnd++;
@@ -2422,14 +2450,17 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     ).not.toMatch(/continue-on-error:\s*true/);
   });
 
-  it('step ordering in pre-steps: init → health → upload', () => {
-    const preStepsStart = sharedContent.indexOf('pre-steps:');
-    expect(preStepsStart, 'pre-steps: block must exist in the shared bootstrap').toBeGreaterThan(-1);
-    const preStepsSection = sharedContent.slice(preStepsStart);
+  it('step ordering after activation checkout: init → health → upload', () => {
+    const activationStepsStart = sharedContent.search(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    expect(
+      activationStepsStart,
+      'jobs.activation.steps must exist in the shared bootstrap',
+    ).toBeGreaterThan(-1);
+    const activationStepsSection = sharedContent.slice(activationStepsStart);
 
-    const initStepIdx = preStepsSection.indexOf('Initialize Squad team');
-    const healthStepIdx = preStepsSection.indexOf('Run Squad health check');
-    const uploadStepIdx = preStepsSection.indexOf('Upload Squad state artifact');
+    const initStepIdx = activationStepsSection.indexOf('Initialize Squad team');
+    const healthStepIdx = activationStepsSection.indexOf('Run Squad health check');
+    const uploadStepIdx = activationStepsSection.indexOf('Upload Squad state artifact');
 
     expect(initStepIdx, '"Initialize Squad team" step must exist').toBeGreaterThan(-1);
     expect(healthStepIdx, '"Run Squad health check" step must exist').toBeGreaterThan(-1);
@@ -2488,6 +2519,21 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
 describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
   const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
 
+  it('runs initialization after gh-aw checks out the activation context', () => {
+    expect(
+      sharedContent,
+      'the generated activation checkout must include committed Squad state',
+    ).toMatch(/ambient-folders:\s*\n\s+- \.squad/);
+    expect(
+      sharedContent,
+      'jobs.activation.steps runs after the generated activation checkout',
+    ).toMatch(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    expect(
+      sharedContent,
+      'pre-steps run before the generated activation checkout and cannot inspect committed state',
+    ).not.toMatch(/jobs:\s*\n\s+activation:\s*\n\s+pre-steps:/);
+  });
+
   function initStepScript(): string {
     const lines = sharedContent.split('\n');
     const start = lines.findIndex((l) => l.includes('Initialize Squad team'));
@@ -2512,8 +2558,8 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
 
       const result = spawnSync(
         requirePosixShell(),
-        ['-c', (guard as string).replace(/\.squad\/team\.md/g, teamPath)],
-        { encoding: 'utf8' },
+        ['-c', (guard as string).replace(/\.squad\/team\.md/g, 'team.md')],
+        { cwd: dir, encoding: 'utf8' },
       );
       return result.status === 0;
     } finally {

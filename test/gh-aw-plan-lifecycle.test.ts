@@ -206,16 +206,16 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     expect(isRoleStringLeak('Procedures')).toBe(false);
   });
 
-  it('squad-plan binds the Owner column to the team.md Name column', () => {
+  it('squad-plan binds the Owner column to a certified team.md Name cell', () => {
     const block = skillBlock(squad, 'squad-plan');
-    expect(block).toMatch(/Owner\/Agent binding rule/i);
-    expect(block).toContain('`Name` column');
-    expect(block).toContain('@copilot');
+    expect(block).toMatch(/Owner binding gate/i);
+    expect(block).toContain('`Name` cell');
+    expect(block).toMatch(/every work item `Owner` MUST match one certified name/i);
   });
 
   it('squad-plan-accept mints squad:{owner} from the cast Name, not a role', () => {
     const block = skillBlock(squad, 'squad-plan-accept');
-    expect(block).toContain('`Name` column');
+    expect(block).toMatch(/certified\s+active roster name/i);
     expect(block).toContain('`squad:{owner}`');
   });
 
@@ -224,6 +224,56 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     expect(block).toMatch(/Agent binding rule/i);
     expect(block).toContain('`Name` column');
     expect(block).toMatch(/appears verbatim in the `Name` column/);
+  });
+});
+
+describe('#1903: fast-path planning binds certified roster owners end to end', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const accept = skillBlock(squad, 'squad-plan-accept');
+
+  it('requires every fast-path Owner to be certified before posting', () => {
+    const gate = plan.match(/3\. Use the `ROSTER_MEMBER:`[\s\S]*?(?=\n4\.)/)?.[0] ?? '';
+    expect(gate, 'squad-plan must contain an explicit certified-roster gate').not.toBe('');
+    expect(gate).toMatch(/every work item `Owner` MUST match one certified name/i);
+    expect(gate).toMatch(/never synthesize a\s+role, alias, or placeholder/i);
+    expect(gate).toMatch(/never use `@copilot` while a certified roster\s+exists/i);
+
+    const finalCheck = plan.match(/Re-check every `Owner`[\s\S]*?(?=\nDo NOT create issues)/)?.[0] ?? '';
+    expect(finalCheck).toMatch(/do not post until every row passes/i);
+    expect(finalCheck).toMatch(/Copy each row's `Depends On` value unchanged/i);
+  });
+
+  it('freezes each accepted row and derives its lowercase member label without remapping', () => {
+    const preflight = accept.match(/Before any `create-issue` call[\s\S]*?(?=\nFor each work item)/)?.[0] ?? '';
+    expect(preflight, 'squad-plan-accept must validate bindings before mutation').not.toBe('');
+    expect(preflight).toMatch(/original `Owner` and `Depends On` values/i);
+    expect(preflight).toMatch(/stop before mutation/i);
+    expect(preflight).toMatch(/never\s+substitute, re-route, or fall back/i);
+
+    const labelRule = accept.match(/^- Labels:.*$/m)?.[0] ?? '';
+    expect(labelRule).toMatch(/frozen row `Owner` lowercased/i);
+    expect(labelRule).toMatch(/only from that task's certified binding/i);
+  });
+
+  it('creates only the planned tasks under the origin issue for a flat plan', () => {
+    expect(accept).toMatch(/origin issue is always the root/i);
+    expect(accept).toMatch(/flat plan, create exactly one issue per[\s\S]*work-item row/i);
+    expect(accept).toMatch(/every task's parent to the origin issue/i);
+    expect(accept).toMatch(/Do not\s+create an additional epic, summary, root, or phase issue/i);
+  });
+
+  it('preserves every declared dependency through the safe-output capability', () => {
+    expect(accept).toMatch(/Copy every frozen `Depends On` value into the created issue body/i);
+    expect(accept).toMatch(/Do not\s+infer, drop, or reorder dependencies/i);
+    expect(accept).toMatch(/native `blockedBy` relationships only when[\s\S]*safe-output[\s\S]*explicitly exposes/i);
+    expect(accept).toMatch(/Do not bypass safe outputs with\s+a direct write API call/i);
+    expect(accept).toMatch(/body references are\s+the expected fallback/i);
+  });
+
+  it('reports the created hierarchy and dependency mode without overclaiming', () => {
+    expect(accept).toMatch(/Report the exact number of created task issues/i);
+    expect(accept).toMatch(/whether dependencies use native edges or the body-reference fallback/i);
+    expect(accept).toMatch(/Never\s+claim an epic, phase issue, sub-issue relationship, or native dependency edge/i);
   });
 });
 
