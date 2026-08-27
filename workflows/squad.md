@@ -1116,7 +1116,11 @@ Resolve which planning path this issue is on, in this order:
 
 ##### Step 2: Create Sub-Issues — Hierarchical
 
-If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks directly under root.
+The origin issue is always the root. If the plan has explicit phases, create one
+phase issue per accepted phase under the origin issue, then create that phase's
+task issues under its phase issue. For a flat plan, create exactly one issue per
+accepted work-item row and set every task's parent to the origin issue. Do not
+create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
 accepted plan row. Freeze a binding for each task number containing that row's
@@ -1137,18 +1141,28 @@ the declared task dependencies.
 
 Create in dependency order. Labels must have descriptions and colors.
 
-##### Step 3: Native Dependency Edges
+##### Step 3: Preserve Dependencies
 
-For every non-empty frozen `Depends On` entry, add the corresponding `blockedBy`
-relationship via GitHub API using the created issue-number map. Do not infer,
-drop, or reorder dependency edges. Graceful fallback to body-text references if
-unavailable.
+For every non-empty frozen `Depends On` entry, preserve the corresponding task
+references in the created issue body using the created issue-number map. Do not
+infer, drop, or reorder dependencies.
+
+Add native `blockedBy` relationships only when an available approved safe-output
+tool explicitly exposes that field or operation. Do not bypass safe outputs with
+a direct write API call. When native edges are unavailable, body references are
+the expected fallback, and the acceptance summary MUST say that dependencies
+were preserved in issue bodies without native edges.
 
 ##### Step 4: Post Summary
 
 Artifact data varies:
 - Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table
 - Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table
+
+Report the exact number of created task issues, their actual parent hierarchy,
+and whether dependencies use native edges or the body-reference fallback. Never
+claim an epic, phase issue, sub-issue relationship, or native dependency edge
+that was not created.
 
 ## skill: `squad-plan-revise`
 ---

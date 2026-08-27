@@ -255,10 +255,25 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(labelRule).toMatch(/only from that task's certified binding/i);
   });
 
-  it('preserves every declared dependency through body references and native edges', () => {
+  it('creates only the planned tasks under the origin issue for a flat plan', () => {
+    expect(accept).toMatch(/origin issue is always the root/i);
+    expect(accept).toMatch(/flat plan, create exactly one issue per[\s\S]*work-item row/i);
+    expect(accept).toMatch(/every task's parent to the origin issue/i);
+    expect(accept).toMatch(/Do not\s+create an additional epic, summary, root, or phase issue/i);
+  });
+
+  it('preserves every declared dependency through the safe-output capability', () => {
     expect(accept).toMatch(/Copy every frozen `Depends On` value into the created issue body/i);
-    expect(accept).toMatch(/For every non-empty frozen `Depends On` entry[\s\S]*`blockedBy`/i);
-    expect(accept).toMatch(/Do not infer,\s+drop, or reorder dependency edges/i);
+    expect(accept).toMatch(/Do not\s+infer, drop, or reorder dependencies/i);
+    expect(accept).toMatch(/native `blockedBy` relationships only when[\s\S]*safe-output[\s\S]*explicitly exposes/i);
+    expect(accept).toMatch(/Do not bypass safe outputs with\s+a direct write API call/i);
+    expect(accept).toMatch(/body references are\s+the expected fallback/i);
+  });
+
+  it('reports the created hierarchy and dependency mode without overclaiming', () => {
+    expect(accept).toMatch(/Report the exact number of created task issues/i);
+    expect(accept).toMatch(/whether dependencies use native edges or the body-reference fallback/i);
+    expect(accept).toMatch(/Never\s+claim an epic, phase issue, sub-issue relationship, or native dependency edge/i);
   });
 });
 

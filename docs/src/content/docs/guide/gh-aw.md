@@ -651,7 +651,10 @@ After this, the plan is ready to activate.
 
 Creates GitHub issues from the accepted plan with proper labels (`squad`,
 `squad:{agent-name}`), acceptance criteria, dependency references, and phase
-assignments.
+assignments. Flat plans create one child issue per planned task directly under
+the originating issue; they do not add a duplicate epic. Dependencies use native
+`blockedBy` edges when the installed safe-output tool supports them, otherwise
+they remain explicit `Depends On` references in each issue body.
 
 ### Incremental phase acceptance
 
