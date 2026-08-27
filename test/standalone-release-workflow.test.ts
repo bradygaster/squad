@@ -17,6 +17,10 @@ const release = readFileSync(join(WORKFLOWS, 'squad-release.yml'), 'utf8');
 const standalone = readFileSync(join(WORKFLOWS, 'squad-standalone-release.yml'), 'utf8');
 const npmPublish = readFileSync(join(WORKFLOWS, 'squad-npm-publish.yml'), 'utf8');
 const promote = readFileSync(join(WORKFLOWS, 'squad-promote.yml'), 'utf8');
+const ghAwGuide = readFileSync(
+  join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md'),
+  'utf8',
+);
 
 interface WorkflowStep {
   name?: string;
@@ -599,5 +603,33 @@ describe('automated package publication', () => {
       'squad-standalone-release-publication',
     );
     expect(standaloneWorkflow.concurrency?.['cancel-in-progress']).toBe(false);
+  });
+
+  it('documents the strict, reviewable four-workflow bootstrap', () => {
+    expect(ghAwGuide).toContain('gh aw compile --strict --approve');
+    expect(ghAwGuide).toContain('gh aw compile --strict');
+    expect(ghAwGuide).toContain('gh pr create');
+    expect(ghAwGuide).toContain('gh pr edit --add-reviewer @copilot');
+    expect(ghAwGuide).toContain('gh pr checks --watch');
+    expect(ghAwGuide).toContain('.github/aw/');
+    expect(ghAwGuide).toContain('`.vscode/settings.json`');
+    expect(ghAwGuide).toContain('SQUAD_GITHUB_APP_PRIVATE_KEY');
+    expect(ghAwGuide).toContain('SQUAD_GITHUB_TOKEN');
+    expect(ghAwGuide).toContain('both slash-command and `github-actions[bot]`');
+    expect(ghAwGuide).toContain('The completion comment links the created Cast PR');
+    expect(ghAwGuide).toContain('application CI is `action_required`');
+    expect(ghAwGuide).toContain(
+      '`squad-deps-worker.md` and `squad-deps-worker.lock.yml`',
+    );
+  });
+
+  it('documents the v0.13.1 npm-free activation and committed-state boundary', () => {
+    expect(ghAwGuide).toContain(
+      'standalone GitHub Release bundle with checksum verification',
+    );
+    expect(ghAwGuide).toContain('a merged Cast');
+    expect(ghAwGuide).not.toContain('Installs `@bradygaster/squad-cli`');
+    expect(ghAwGuide).not.toContain('State does not persist across runs.');
+    expect(ghAwGuide).not.toContain('`create-issue` safe-output has a max of 75');
   });
 });

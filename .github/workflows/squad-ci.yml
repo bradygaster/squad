@@ -413,7 +413,20 @@ jobs:
         run: |
           VIOLATIONS=0
           for wf in .github/workflows/*.yml; do
-            BARE=$(grep -n 'npm.*publish' "$wf" | grep -v '#' | grep -v '\-w ' | grep -v '\-\-workspace' | grep -v 'echo ' | grep -v 'grep ' | grep -v 'name:' || true)
+            BARE=$(awk '
+              /^[[:space:]]*#/ { next }
+              {
+                command = $0
+                sub(/^[[:space:]]*-[[:space:]]*/, "", command)
+                sub(/^run:[[:space:]]*/, "", command)
+                if (
+                  command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/
+                  && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/
+                ) {
+                  print NR ":" $0
+                }
+              }
+            ' "$wf")
             if [ -n "$BARE" ]; then
               echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
               echo "$BARE"

@@ -48,6 +48,9 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 safe-outputs:
+  messages:
+    append-only-comments: true
+    pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
   data:
     type: object
     properties:
@@ -94,7 +97,7 @@ safe-outputs:
       - "squad/*"
     allowed-files:
       - ".squad/**"
-      - ".github/agents/squad.agent.md"
+      - ".github/agents/*.agent.md"
       - "meet-the-squad.md"
     protected-files: allowed
     max-patch-files: 500
@@ -728,7 +731,7 @@ Create/replace:
 
 1. **`.squad/team.md`** — Roster table: Coordinator (Squad), Members (Name|Role|Charter path|Status), always-on (Scribe, Ralph, Rai), Coding Agent (@copilot with `copilot-auto-assign: false`).
 2. **`.squad/agents/{id}/charter.md`** — Per agent: `# Name — Role`, Identity block (name, role, expertise, style), "What I Own", Boundaries (handle/don't), Model: auto.
-3. **`.squad/routing.md`** — Domain→agent routing table.
+3. **`.squad/routing.md`** — Domain→agent routing table in the standalone health parser's format: section heading `## Routing Table`; headers `Work Type | Route To | Examples`; every `Route To` value is an exact active casting-registry `persistent_name`, with multiple names comma-separated and no prose or annotations. Do not route to always-on support roles unless they are also active registry agents.
 4. **`.squad/casting/registry.json`** — From Step 3.
 5. **`.squad/casting/history.json`** — From Step 3.
 6. **`.squad/casting/policy.json`** — Standard policy with all 15 universes.
@@ -745,7 +748,9 @@ Create `meet-the-squad.md` at repo root with: title, universe name, team table (
 
 ##### Step 7: Post Completion
 
-`add-comment`: `🧑‍🤝‍🧑 Your Squad is ready for review.\n\n**PR:** #{pr_number}\n\nMerge the PR to activate your team. Run /squad status afterward to verify.`
+Do not emit a separate `add-comment`. The configured
+`safe-outputs.messages.pull-request-created` notification runs after PR creation
+and includes the verified PR number, URL, and CI-approval guidance.
 
 ## skill: `squad-review-relay`
 ---
@@ -1046,13 +1051,15 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 1. Read issue body (the epic/brief).
 2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
-3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** permitted
-   `Owner`/`Agent` values are Team Guard Step TG-2's certified roster set — the
-   `Name` column of `## Members` in **this repository's** `.squad/team.md` — plus
-   `@copilot`. Map each item's domain to a member via `.squad/routing.md` and emit
-   that member's exact `Name` cell — never a recalled name, never another column
-   (the `Role` column included). If none fits, use `@copilot`. Governs every
-   `Owner`/`Agent` column and `squad:{owner}` label downstream.
+3. Use the `ROSTER_MEMBER:` lines already emitted by mandatory Team Guard Step
+   TG-2 as the certified active roster set. **Owner binding gate:** when
+   `TEAM_PRESENT`, every work item `Owner` MUST match one certified name. Resolve
+   each item's domain through `.squad/routing.md`; if no exact rule exists, choose
+   the closest active member whose documented remit fits, but never synthesize a
+   role, alias, or placeholder and never use `@copilot` while a certified roster
+   exists. Preserve each selected member's exact `Name` cell in the plan. On
+   `ROSTER_UNREADABLE:`, stop instead of posting a plan. This gate governs every
+   `Owner` column and downstream `squad:{owner}` label.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -1065,7 +1072,10 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
 
-Re-check every `Owner` against the Step 1 permitted set before posting; a value absent from it is invalid and must be re-resolved.
+Re-check every `Owner` against the Step 1 certified set before posting. If any
+value is absent, re-resolve it to a certified active member and repeat the check;
+do not post until every row passes. Copy each row's `Depends On` value unchanged
+into the artifact.
 
 Do NOT create issues.
 
@@ -1106,28 +1116,53 @@ Resolve which planning path this issue is on, in this order:
 
 ##### Step 2: Create Sub-Issues — Hierarchical
 
-If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks directly under root.
+The origin issue is always the root. If the plan has explicit phases, create one
+phase issue per accepted phase under the origin issue, then create that phase's
+task issues under its phase issue. For a flat plan, create exactly one issue per
+accepted work-item row and set every task's parent to the origin issue. Do not
+create an additional epic, summary, root, or phase issue for a flat plan.
+
+Before any `create-issue` call, run Team Guard Step TG-2 and validate every
+accepted plan row. Freeze a binding for each task number containing that row's
+original `Owner` and `Depends On` values. If any `Owner` does not match a certified
+active roster name, stop before mutation and require `/squad plan revise`; never
+substitute, re-route, or fall back to another identity during acceptance.
 
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the `Owner` lowercased. Mint `squad:{owner}` **only** when that value matches a `ROSTER_MEMBER:` line from Team Guard Step TG-2 — its stdout (the certified roster set, from the `Name` column of `## Members` in `.squad/team.md`) is the sole source; never re-read team.md or recall a name. Uncertified `Owner`: apply only `squad`, fall back to `@copilot`. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat)
 - Size: set Project field if available, else body `**Size:**` line
 
-Cross-phase deps: look up real issue numbers from prior acceptance comments.
+Copy every frozen `Depends On` value into the created issue body. Cross-phase
+deps: look up real issue numbers from prior acceptance comments without changing
+the declared task dependencies.
 
 Create in dependency order. Labels must have descriptions and colors.
 
-##### Step 3: Native Dependency Edges
+##### Step 3: Preserve Dependencies
 
-Add `blockedBy` relationships via GitHub API. Graceful fallback to body-text references if unavailable.
+For every non-empty frozen `Depends On` entry, preserve the corresponding task
+references in the created issue body using the created issue-number map. Do not
+infer, drop, or reorder dependencies.
+
+Add native `blockedBy` relationships only when an available approved safe-output
+tool explicitly exposes that field or operation. Do not bypass safe outputs with
+a direct write API call. When native edges are unavailable, body references are
+the expected fallback, and the acceptance summary MUST say that dependencies
+were preserved in issue bodies without native edges.
 
 ##### Step 4: Post Summary
 
 Artifact data varies:
 - Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table
 - Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table
+
+Report the exact number of created task issues, their actual parent hierarchy,
+and whether dependencies use native edges or the body-reference fallback. Never
+claim an epic, phase issue, sub-issue relationship, or native dependency edge
+that was not created.
 
 ## skill: `squad-plan-revise`
 ---
