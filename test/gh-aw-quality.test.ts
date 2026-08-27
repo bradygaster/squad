@@ -2508,6 +2508,16 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
 describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
   const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
 
+  it('checks out committed Squad state before deciding whether to initialize', () => {
+    const checkout = sharedContent.indexOf('- name: Checkout repository');
+    const initialize = sharedContent.indexOf('- name: Initialize Squad team');
+
+    expect(checkout, 'activation must check out the repository').toBeGreaterThan(-1);
+    expect(initialize, 'activation must initialize or preserve Squad state').toBeGreaterThan(-1);
+    expect(checkout, 'checkout must run before the roster preservation guard').toBeLessThan(initialize);
+    expect(sharedContent.slice(checkout, initialize)).toContain('uses: actions/checkout@v4');
+  });
+
   function initStepScript(): string {
     const lines = sharedContent.split('\n');
     const start = lines.findIndex((l) => l.includes('Initialize Squad team'));
@@ -2532,8 +2542,8 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
 
       const result = spawnSync(
         requirePosixShell(),
-        ['-c', (guard as string).replace(/\.squad\/team\.md/g, teamPath)],
-        { encoding: 'utf8' },
+        ['-c', (guard as string).replace(/\.squad\/team\.md/g, 'team.md')],
+        { cwd: dir, encoding: 'utf8' },
       );
       return result.status === 0;
     } finally {

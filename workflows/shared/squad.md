@@ -73,6 +73,9 @@ engine:
 jobs:
   activation:
     pre-steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Mint Squad GitHub App token
         id: squad-app-token
         if: ${{ vars.SQUAD_GITHUB_APP_ID != '' }}
