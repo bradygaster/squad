@@ -929,10 +929,38 @@ describe('#1756: research uses a structural contract, not a length floor', () =>
   });
 
   it('the MANDATORY verify step enumerates the structural checks', () => {
-    const verify = block.match(/Step 4: Verify Completion \[MANDATORY\]([\s\S]*)$/)?.[1] ?? '';
+    const verify = block.match(/Step 5: Verify Completion \[MANDATORY\]([\s\S]*)$/)?.[1] ?? '';
     expect(verify).toContain('Evidence table');
     expect(verify).toMatch(/unique `Rn` ID and exactly one citation token/);
     expect(verify).not.toContain('≥200 chars');
+  });
+});
+
+describe('#1914: research creates the planning lifecycle state', () => {
+  const block = skillBlock(squad, 'squad-research');
+
+  it('requires an explicit lifecycle update before completion verification', () => {
+    const lifecycle = block.match(
+      /Step 4: Update Lifecycle([\s\S]*?)Step 5: Verify Completion/,
+    )?.[1] ?? '';
+
+    expect(lifecycle).toContain(
+      'data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}',
+    );
+    expect(lifecycle).toContain('Set Research = `✅ Done`');
+    expect(lifecycle).toContain('state = Researched');
+    expect(lifecycle).toContain('last command = `/squad research`');
+    expect(lifecycle).toContain('next = `/squad triage`');
+    expect(lifecycle).toContain('also available = `/squad plan`');
+  });
+
+  it('fails completion when the lifecycle artifact is missing or stale', () => {
+    const verify = block.match(/Step 5: Verify Completion \[MANDATORY\]([\s\S]*)$/)?.[1] ?? '';
+
+    expect(verify).toContain('The `lifecycle-state` artifact records Research complete');
+    expect(verify).toContain('`/squad research`');
+    expect(verify).toContain('`/squad triage`');
+    expect(verify).toContain('`/squad plan`');
   });
 });
 
