@@ -96,7 +96,7 @@ safe-outputs:
       - "squad/*"
     allowed-files:
       - ".squad/**"
-      - ".github/agents/squad.agent.md"
+      - ".github/agents/*.agent.md"
       - "meet-the-squad.md"
     protected-files: allowed
     max-patch-files: 500

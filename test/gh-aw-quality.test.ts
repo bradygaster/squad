@@ -343,6 +343,9 @@ describe('gh-aw: safe-output configuration', () => {
     expect(pr.labels, 'should have labels').toBeDefined();
     expect(pr.max, 'should have max').toBeDefined();
     expect(pr['allowed-base-branches'], 'should have allowed-base-branches').toBeDefined();
+    expect(pr['allowed-files'], 'Cast PR must allow generated agent definitions').toContain(
+      '.github/agents/*.agent.md',
+    );
     expect(pr['auto-close-issue'], 'Cast PR must not close the originating work issue').toBe(false);
   });
 
