@@ -1076,14 +1076,15 @@ fills newly available slots. Continue until the parent has no open leaf tasks.
 
 ## skill: `squad-research`
 ---
-description: Produce the research artifact that seeds planning for an issue.
+description: Produce the research artifact that seeds planning and update lifecycle state.
 ---
 
 Deep analysis → structured findings comment. Read-only + comment. Works on open/closed issues.
 
 **Acknowledge:** `🤖 Squad is researching this…`
 
-**TASK:** Steps 1–4. The deliverable is Step 3's findings comment. Reserve ≥40% budget for Step 3.
+**TASK:** Steps 1–5. Deliverables are Step 3's findings comment and Step 4's
+lifecycle update. Reserve ≥40% budget for Step 3.
 
 ##### Step 1: Determine Scope
 
@@ -1104,7 +1105,14 @@ Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → 
 
 **Structural contract (not a length floor).** The artifact MUST contain every one of these labeled sections: **Evidence table**, **Goals**, **Non-goals**, **Load-bearing assumptions**, **Open decisions**, **Acceptance framing**. Every evidence row carries a stable `Rn` traceability ID (`R1`, `R2`, …) and exactly one citation token — a file path, `path:line`, URL, or `#issue`/`#pr` reference — so each finding is independently checkable. Recommendations and load-bearing assumptions reference the `Rn` IDs they rest on. Assert structure, not length: never pad to hit a size target.
 
-##### Step 4: Verify Completion [MANDATORY]
+##### Step 4: Update Lifecycle
+
+Find/create the single `lifecycle-state` artifact comment. Include
+`data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Set Research = `✅ Done`, state = Researched, last command = `/squad research`,
+next = `/squad triage`, and also available = `/squad plan`.
+
+##### Step 5: Verify Completion [MANDATORY]
 
 Confirm ALL of the following, each independently checkable from the posted comment without re-running research. If ANY fails, fix and re-post now:
 
@@ -1113,6 +1121,9 @@ Confirm ALL of the following, each independently checkable from the posted comme
 3. Every required section present: **Evidence table**, **Goals**, **Non-goals**, **Load-bearing assumptions**, **Open decisions**, **Acceptance framing**.
 4. Every evidence row has a unique `Rn` ID and exactly one citation token.
 5. ≥1 recommendation, each tracing to ≥1 `Rn` ID.
+6. The `lifecycle-state` artifact records Research complete, `/squad research`
+   as the last command, `/squad triage` as the next action, and `/squad plan`
+   as also available.
 
 ## skill: `squad-plan`
 ---
