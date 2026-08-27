@@ -32,10 +32,25 @@ git init
 
 ### 2. 安装 Squad
 
+根据你的平台选择一种安装方式：
+
+| 安装方式 | 命令 |
+|----------|------|
+| npm（所有平台，需要 Node.js 22.5+） | `npm install -g @bradygaster/squad-cli` |
+| Homebrew（macOS） | `brew install --cask bradygaster/squad/squad` |
+| WinGet（Windows） | `winget install --id bradygaster.Squad --exact` |
+| 安装脚本（macOS/Linux，无需 npm） | 查看[独立安装指南](https://bradygaster.github.io/squad/docs/features/standalone-install/) |
+
+你也可以从 [GitHub Releases](https://github.com/bradygaster/squad/releases/latest)
+直接下载 macOS、Linux 或 Windows 压缩包。
+
 ```bash
-npm install -g @bradygaster/squad-cli
 squad init
 ```
+
+所有方式安装的都是同一个 CLI。独立安装包自带 Node.js，无需安装
+Node.js，也无需访问 npm registry。完整要求和平台说明请参阅
+[安装指南](https://bradygaster.github.io/squad/docs/get-started/installation/)。
 
 **✓ 验证：** 检查项目中是否创建了 `.squad/team.md`。
 
@@ -76,9 +91,15 @@ Squad 会提议一个团队 — 每个成员的名字都来自一个持久化的
 
 **第一步：更新 CLI 二进制文件**
 
-```bash
-npm install -g @bradygaster/squad-cli@latest
-```
+使用与你安装时相同的渠道：
+
+| 安装方式 | 更新命令 |
+|----------|----------|
+| npm | `npm install -g @bradygaster/squad-cli@latest` |
+| Homebrew | `brew upgrade --cask squad` |
+| WinGet | `winget upgrade --id bradygaster.Squad --exact` |
+| 安装脚本 | 重新运行[安装脚本](https://bradygaster.github.io/squad/docs/features/standalone-install/#macos-and-linux) |
+| 直接下载 | 从 [GitHub Releases](https://github.com/bradygaster/squad/releases/latest) 下载新版本 |
 
 **第二步：更新项目中 Squad 管理的文件**
 

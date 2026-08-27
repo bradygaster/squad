@@ -109,6 +109,13 @@ The following checks run automatically in CI (no manual action required):
 - Creates git tag (e.g., `v0.5.0`)
 - Creates GitHub Release with auto-generated notes
 - Verifies release was created successfully
+- Directly calls the reusable npm publication workflow
+- Builds and uploads six npm-free standalone archives plus `SHA256SUMS.txt`
+- For stable releases, updates the Homebrew cask and opens or reuses the WinGet
+  manifest pull request
+
+Publication jobs are idempotent. If an external credential or service causes a
+failure, fix the problem and rerun the failed job.
 
 ## Key Requirements
 
@@ -116,6 +123,12 @@ The following checks run automatically in CI (no manual action required):
 - **Version consistency** between `package.json` and CHANGELOG.md is enforced
 - **All tests must pass** before release can proceed
 - **No `.ai-team/` or `.squad/` files** on preview or main branches
+- **`NPM_TOKEN`** must be an npm automation token
+- **`HOMEBREW_TAP_TOKEN`** must have Contents read/write access to
+  `bradygaster/homebrew-squad`
+- **`WINGET_CREATE_GITHUB_TOKEN`** must be a classic PAT with `public_repo`
+- **Homebrew and WinGet** publish only stable `vMAJOR.MINOR.PATCH` releases;
+  prereleases still receive npm and standalone artifacts
 
 ## References
 

@@ -11,15 +11,16 @@ CI runners behind a corporate firewall, locked-down build agents, and air-gapped
 mirrors. It is also simply a faster install for anyone who does not otherwise
 have a Node toolchain.
 
-`npm install -g @bradygaster/squad-cli` remains fully supported and is still the
-recommended path for day-to-day development.
+`npm install -g @bradygaster/squad-cli` remains fully supported. All install
+methods provide the same Squad CLI; choose based on your platform and whether
+your environment can reach the npm registry.
 
 ## Install
 
 ### macOS and Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh | sh
 ```
 
 The installer picks the right bundle for your platform, verifies it against the
@@ -34,7 +35,7 @@ release `SHA256SUMS.txt`, unpacks it into `$PREFIX/lib/squad`, and symlinks
 
 ```sh
 # pin a version and install somewhere specific
-curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh \
+curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh \
   | VERSION="v0.13.1" PREFIX="$HOME/tools" sh
 ```
 
@@ -55,7 +56,8 @@ add the folder to your `PATH`.
 Install with Homebrew:
 
 ```sh
-brew install --cask bradygaster/squad/squad
+brew tap bradygaster/squad
+brew install --cask squad
 ```
 
 Or use the install script above, which works on macOS too.
@@ -146,7 +148,7 @@ Point `repository:` at an internal mirror if your runners cannot reach
   env:
     SQUAD_VERSION: v0.13.1
   run: |
-    curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh \
+    curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh \
       | VERSION="${SQUAD_VERSION}" PREFIX="${HOME}/.local" sh
     echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
@@ -222,9 +224,13 @@ node scripts/generate-packaging.mjs --version v0.11.0
 ```
 
 That writes `dist-packaging/homebrew/squad.rb` and the three winget manifests
-(version, installer, locale). The release workflow runs this automatically and
-attaches the result as a `packaging-manifests` artifact; a maintainer submits
-them to the tap and to `winget-pkgs`.
+(version, installer, locale). The release workflow runs this automatically,
+updates the Homebrew tap, and opens a pull request against `winget-pkgs`.
+The `packaging-manifests` artifact is retained for audit and manual recovery.
+Homebrew updates are available as soon as the release workflow finishes;
+WinGet updates become available after the community repository accepts the
+generated pull request. Homebrew and WinGet publication runs only for stable
+`vMAJOR.MINOR.PATCH` releases; prereleases still receive standalone archives.
 
 ## Known limitations
 

@@ -8,7 +8,7 @@ This guide covers everything you need to know: from setting up your local enviro
 
 Before contributing, ensure you have:
 
-- **Node.js** ≥20.0.0
+- **Node.js** 22.5.0 or later
 - **npm** ≥10.0.0 (for workspace support)
 - **Git** with SSH agent (for package resolution)
 - **gh CLI** (for GitHub integration testing)

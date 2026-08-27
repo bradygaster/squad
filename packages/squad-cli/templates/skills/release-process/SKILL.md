@@ -30,7 +30,10 @@ Established through the v0.9.1 incident (8-hour recovery) and reinforced by the 
 
 ## Context
 
-Squad publishes two npm packages: `@bradygaster/squad-sdk` and `@bradygaster/squad-cli`. The release pipeline flows: dev → preview → main → GitHub Release → npm publish. Brady (project owner) triggers releases — the coordinator does NOT.
+Squad publishes two npm packages, six standalone archives, a Homebrew cask,
+and WinGet manifests. The release pipeline flows:
+dev → preview → main → GitHub Release → npm + standalone + package-manager
+publication. Brady (project owner) triggers releases — the coordinator does NOT.
 
 ## Rules (Non-Negotiable)
 
@@ -98,7 +101,8 @@ NPM_TOKEN in CI must be an Automation token (not a user token with 2FA prompts).
 
 ### 7. No Draft GitHub Releases
 
-Never create draft GitHub Releases. The `release: published` event only fires when a release is published — drafts don't trigger the npm publish workflow.
+Never create draft GitHub Releases. The release workflow hands off to its
+reusable publication workflows only after it creates the published release.
 
 ### 8. Version Format
 
@@ -107,6 +111,18 @@ Semantic versioning only: `MAJOR.MINOR.PATCH` (e.g., `0.9.1`). Four-part version
 ### 9. SKIP_BUILD_BUMP=1 in CI
 
 Set this environment variable in all CI build steps to prevent the build script from mutating versions during CI runs.
+
+### 10. Distribution Credentials
+
+The repository requires these Actions secrets:
+
+- `NPM_TOKEN`: npm automation token
+- `HOMEBREW_TAP_TOKEN`: fine-grained GitHub PAT with Contents read/write for
+  `bradygaster/homebrew-squad`
+- `WINGET_CREATE_GITHUB_TOKEN`: classic GitHub PAT with `public_repo`, owned by
+  the account that maintains `tamirdresher/winget-pkgs`
+
+Homebrew and WinGet publish only stable `vMAJOR.MINOR.PATCH` releases.
 
 ## Release Checklist (Quick Reference)
 
@@ -124,9 +140,10 @@ Set this environment variable in all CI build steps to prevent the build script 
 □ Preview CI green (squad-preview validates)
 □ Promote preview → main
 □ squad-release auto-creates GitHub Release
-□ squad-npm-publish auto-triggers (⚠️ may be BLOCKED — see GITHUB_TOKEN limitation below)
-□ If publish didn't trigger: gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
-□ Monitor publish workflow
+□ squad-release directly calls npm and standalone reusable workflows
+□ GitHub release has six standalone archives plus SHA256SUMS.txt
+□ Homebrew cask points to the new stable version
+□ WinGet update PR is open or updated for the new stable version
 □ Post-publish smoke test
 ```
 
@@ -141,7 +158,7 @@ Set this environment variable in all CI build steps to prevent the build script 
 | User npm tokens with 2FA | EOTP errors in CI | Use Automation token type |
 | Root package.json version drift (v0.9.4) | squad-release.yml fails CHANGELOG check | Always bump all 3 package.json files together (PR #1043) |
 | CHANGELOG.md missing `## [$VERSION]` (v0.9.4) | squad-release.yml exits with error | Convert `[Unreleased]` → `[$VERSION] - YYYY-MM-DD` before promoting to main (PR #1042) |
-| GITHUB_TOKEN can't trigger downstream workflows (v0.9.4) | squad-npm-publish.yml never fires | Manual `gh workflow run` or use PAT/GitHub App token (see below) |
+| GITHUB_TOKEN can't trigger downstream workflows (v0.9.4) | Event-only publish workflows never fire | Call npm and standalone reusable workflows directly from `squad-release.yml` |
 | Lockfile integrity check rejects workspace packages (v0.9.4) | False failures in squad-npm-publish.yml | Only validate packages resolved from npm registry (`startsWith('https://')`) (PR #1044) |
 | `prebuild` version bump breaks workspace linking (v0.9.4) | Local builds fail after bump-build.mjs runs | `git checkout -- package.json packages/*/package.json` then fresh install |
 | `dev` and `main` silently drift to unrelated histories (2026-08-13) | `dev` → `main` promotion PR is flatly unmergeable, no reviewable diff | Run `git merge-base upstream/dev upstream/main` BEFORE starting release-prep; see Rule 0 above |
@@ -173,17 +190,19 @@ npm version $VERSION --workspaces --include-workspace-root --no-git-tag-version
 
 **Rule:** Before promoting to main, convert `[Unreleased]` to `[$VERSION] - YYYY-MM-DD` in CHANGELOG.md and add a fresh `[Unreleased]` section above it.
 
-### GITHUB_TOKEN Event Propagation Limitation (CRITICAL)
+### Direct Reusable Workflow Handoff (CRITICAL)
 
-When `squad-release.yml` creates a GitHub Release using the default `GITHUB_TOKEN`, the `release: published` event does NOT trigger `squad-npm-publish.yml`. This is a GitHub security feature to prevent infinite workflow loops.
+GitHub suppresses workflow events created by the default `GITHUB_TOKEN`.
+Therefore `squad-release.yml` must directly call both reusable workflows after
+creating a new release:
 
-**Workaround:** After the release workflow succeeds and creates the tag + GitHub Release, manually trigger the publish workflow:
-```bash
-gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
-```
-IMPORTANT: Use `--ref main` to ensure the workflow runs against the main branch (where the release artifacts exist).
+- `squad-npm-publish.yml` publishes and verifies both npm packages.
+- `squad-standalone-release.yml` uploads standalone assets, updates Homebrew,
+  and opens or updates the WinGet manifest PR.
 
-**Permanent fix (TODO):** Use a PAT or GitHub App token in `squad-release.yml` instead of `GITHUB_TOKEN`.
+Do not replace this handoff with an event-only chain. Both publication workflows
+remain manually dispatchable for recovery, and publication steps are
+idempotent so failed jobs can be rerun safely.
 
 ### Lockfile Integrity — Workspace Package Handling
 
@@ -206,8 +225,9 @@ npm run build
 ```
 dev → preview → main (via squad-promote.yml)
 main push → squad-release.yml validates CHANGELOG, creates tag + GitHub Release
-release published → squad-npm-publish.yml (⚠️ BLOCKED by GITHUB_TOKEN limitation)
-manual workaround → gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
+release job → directly calls reusable npm + standalone publication workflows
+npm → SDK + CLI packages
+standalone → six archives + checksums + Homebrew + WinGet PR
 ```
 
 ### npm Publish Workflow Dispatch Target

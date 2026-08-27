@@ -8,7 +8,9 @@ source: "team-decision"
 
 ## Context
 
-This is the **definitive release runbook** for Squad. Born from the v0.8.22 release disaster (4-part semver mangled by npm, draft release never triggered publish, wrong NPM_TOKEN type, 6+ hours of broken `latest` dist-tag) and hardened by v0.9.4 lessons (root package.json drift, CHANGELOG validation, GITHUB_TOKEN propagation limitation — PRs #1042, #1043, #1044).
+This is the **definitive release runbook** for Squad. Born from the v0.8.22
+release disaster and hardened by the v0.9.4 lessons, it covers npm packages,
+standalone archives, Homebrew, and WinGet.
 
 See also: `.squad/skills/release-process/SKILL.md` for the team-level skill with full incident history.
 
@@ -37,7 +39,7 @@ node -p "require('semver').valid('0.8.23-preview.1')"
 
 **If `semver.valid()` returns `null`:** STOP. Fix the version. Do NOT proceed.
 
-### 2. NPM_TOKEN Verification
+### 2. Distribution Credential Verification
 
 **Rule:** NPM_TOKEN must be an **Automation token** (no 2FA required). User tokens with 2FA will fail in CI with EOTP errors.
 
@@ -57,6 +59,15 @@ Look for:
 4. Copy token and save as GitHub secret: `NPM_TOKEN`
 
 **If using a User token:** STOP. Create an Automation token first.
+
+The release workflow also requires:
+
+- `HOMEBREW_TAP_TOKEN`: fine-grained GitHub PAT restricted to
+  `bradygaster/homebrew-squad`, with Contents read/write.
+- `WINGET_CREATE_GITHUB_TOKEN`: classic GitHub PAT with `public_repo`, owned by
+  the account that maintains `tamirdresher/winget-pkgs`.
+
+Homebrew and WinGet publish only stable `vMAJOR.MINOR.PATCH` releases.
 
 ### 3. Branch and Tag State
 
@@ -193,15 +204,17 @@ gh release view "v$VERSION"
 gh release edit "v$VERSION" --draft=false
 ```
 
-**Checkpoint:** Release is published (NOT draft). The `release: published` event fired and triggered `publish.yml`.
+**Checkpoint:** Release is published (NOT draft). `squad-release.yml` directly
+started its reusable npm and standalone publication jobs.
 
 ### Step 4: Monitor Workflow
 
-The `publish.yml` workflow should start automatically within 10 seconds of release creation.
+The `npm` and `standalone` jobs in `squad-release.yml` should start after
+release creation.
 
 ```bash
-# Watch workflow runs
-gh run list --workflow=publish.yml --limit 1
+# Watch the release workflow
+gh run list --workflow=squad-release.yml --limit 1
 
 # Get detailed status
 gh run view --log
@@ -212,6 +225,8 @@ gh run view --log
 2. Verify step runs with retry loop (up to 5 attempts, 15s interval) to confirm SDK on npm registry
 3. `publish-cli` job runs → publishes `@bradygaster/squad-cli`
 4. Verify step runs with retry loop to confirm CLI on npm registry
+5. Six standalone bundles and `SHA256SUMS.txt` are attached to the release
+6. Stable releases update the Homebrew cask and open or reuse a WinGet PR
 
 **If workflow fails:** Check the logs. Common issues:
 - EOTP error = wrong NPM_TOKEN type (use Automation token)
@@ -307,11 +322,20 @@ git push origin dev
 
 ## Manual Publish (Fallback)
 
-If `publish.yml` workflow fails or needs to be bypassed, use `workflow_dispatch` to manually trigger publish.
+If an automated publication job cannot be rerun from `squad-release.yml`, use
+`workflow_dispatch` for recovery.
 
 ```bash
-# Trigger manual publish — ALWAYS use --ref main
-gh workflow run squad-npm-publish.yml --ref main -f version="0.8.22"
+# Recover npm publication from the immutable release tag
+gh workflow run squad-npm-publish.yml --ref main \
+  -f version="0.8.22" \
+  -f source_ref="v0.8.22"
+
+# Recover standalone assets and stable package-manager publication
+gh workflow run squad-standalone-release.yml --ref main \
+  -f upload=true \
+  -f release_tag="v0.8.22" \
+  -f source_ref="v0.8.22"
 
 # Monitor the run
 gh run watch
@@ -319,18 +343,16 @@ gh run watch
 
 **Rule:** Only use this if automated publish failed. Always investigate why automation failed and fix it for next release.
 
-### GITHUB_TOKEN Event Propagation Limitation (v0.9.4 — CRITICAL)
+### Direct Reusable Workflow Handoff (CRITICAL)
 
-When `squad-release.yml` creates a GitHub Release using the default `GITHUB_TOKEN`, the `release: published` event does **NOT** trigger `squad-npm-publish.yml`. This is a GitHub security feature to prevent infinite workflow loops.
+GitHub does not emit downstream workflow events for releases created by the
+default `GITHUB_TOKEN`. `squad-release.yml` therefore calls
+`squad-npm-publish.yml` and `squad-standalone-release.yml` directly after
+creating a release. Do not replace this with an event-only chain.
 
-**After the release workflow succeeds**, check if `squad-npm-publish.yml` started automatically. If it didn't:
-```bash
-gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
-```
-
-IMPORTANT: Use `--ref main` — the repo default branch is `dev`, and the workflow must run against `main` where the release tag and artifacts exist.
-
-**Permanent fix (TODO):** Use a PAT or GitHub App token in `squad-release.yml` instead of `GITHUB_TOKEN`.
+Publication is idempotent: existing npm versions, matching Homebrew content,
+and existing WinGet versions or pull requests are verified and skipped. Rerun
+the failed job after fixing credentials or an external-service failure.
 
 ---
 
@@ -429,11 +451,14 @@ git push origin main
 **Root cause:** CHANGELOG.md still has `[Unreleased]` but no `## [$VERSION]` section.  
 **Fix:** Convert `[Unreleased]` to `[$VERSION] - YYYY-MM-DD` and add a fresh `[Unreleased]` above it.
 
-### Publish Workflow Not Triggered After Release (v0.9.4 — GITHUB_TOKEN)
+### Publication Jobs Missing After Release
 
-**Symptom:** `squad-release.yml` succeeds, creates tag + GitHub Release, but `squad-npm-publish.yml` never starts.  
-**Root cause:** `GITHUB_TOKEN`-created events don't trigger other workflows (GitHub security feature).  
-**Fix:** Manually trigger: `gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z`
+**Symptom:** `squad-release.yml` creates the release but its `npm` or
+`standalone` job is absent.
+**Root cause:** The direct reusable-workflow handoff was removed or the release
+job did not report `created=true`.
+**Fix:** Restore the direct calls in `squad-release.yml`. For an existing
+release, use the recovery dispatch commands above with the immutable release tag.
 
 ### Lockfile Integrity Check Rejects Workspace Packages (v0.9.4 — PR #1044)
 
@@ -461,6 +486,8 @@ Before starting ANY release, confirm:
 
 - [ ] Version is valid semver: `node -p "require('semver').valid('VERSION')"` returns the version string (NOT null)
 - [ ] NPM_TOKEN is an Automation token (no 2FA): `npm token list` shows `read-write` without OTP requirement
+- [ ] `HOMEBREW_TAP_TOKEN` has Contents read/write on `bradygaster/homebrew-squad`
+- [ ] `WINGET_CREATE_GITHUB_TOKEN` is a classic PAT with `public_repo`
 - [ ] Branch is clean: `git status` shows "nothing to commit, working tree clean"
 - [ ] Tag doesn't exist: `git tag -l "vVERSION"` returns empty
 - [ ] `SKIP_BUILD_BUMP=1` is set: `echo $SKIP_BUILD_BUMP` returns `1`
@@ -476,8 +503,7 @@ Before creating GitHub Release:
 After GitHub Release:
 
 - [ ] Release is published (NOT draft): `gh release view "vVERSION"` output doesn't contain "(draft)"
-- [ ] Workflow is running: `gh run list --workflow=squad-npm-publish.yml --limit 1` shows "in_progress"
-- [ ] **If workflow didn't trigger** (GITHUB_TOKEN limitation): `gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z`
+- [ ] Release workflow shows `npm` and `standalone` publication jobs
 
 After workflow completes:
 
@@ -486,6 +512,9 @@ After workflow completes:
 - [ ] CLI on npm: `npm view @bradygaster/squad-cli version` returns correct version
 - [ ] `latest` tags correct: `npm dist-tag ls @bradygaster/squad-sdk` shows `latest: VERSION`
 - [ ] Packages install: `npm install @bradygaster/squad-cli` succeeds
+- [ ] Release has six standalone archives and `SHA256SUMS.txt`
+- [ ] Stable release updated `bradygaster/homebrew-squad/Casks/squad.rb`
+- [ ] Stable release opened or reused the WinGet manifest PR
 
 After dev sync:
 
@@ -507,7 +536,7 @@ This skill was created after the v0.8.22 release disaster and updated after v0.9
 **Key learnings (v0.9.4 — PRs #1042, #1043, #1044):**
 6. Root package.json MUST match sub-packages — squad-release.yml reads from root
 7. CHANGELOG.md must have `## [$VERSION]` section — `[Unreleased]` is not enough
-8. GITHUB_TOKEN events don't trigger downstream workflows — manual dispatch required
+8. GITHUB_TOKEN events don't trigger downstream workflows — use direct reusable workflow calls
 9. Lockfile integrity checks must filter out workspace packages (not from registry)
 10. Prebuild version bump breaks local workspace linking — reset with git checkout
 
@@ -515,8 +544,9 @@ This skill was created after the v0.8.22 release disaster and updated after v0.9
 ```
 dev → preview → main (via squad-promote.yml)
 main push → squad-release.yml validates CHANGELOG, creates tag + GitHub Release
-release published → squad-npm-publish.yml (⚠️ may be BLOCKED by GITHUB_TOKEN limitation)
-manual workaround → gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
+release job → directly calls reusable npm + standalone publication workflows
+npm → SDK + CLI packages
+standalone → six archives + checksums + Homebrew + WinGet PR
 ```
 
 **Never again.**

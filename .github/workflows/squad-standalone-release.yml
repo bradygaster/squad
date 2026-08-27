@@ -36,6 +36,13 @@ on:
         required: false
         default: ''
         type: string
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        description: 'Fine-grained PAT with Contents read/write on bradygaster/homebrew-squad'
+        required: false
+      WINGET_CREATE_GITHUB_TOKEN:
+        description: 'Classic public_repo PAT for tamirdresher/winget-pkgs and upstream PRs'
+        required: false
   workflow_dispatch:
     inputs:
       node_version:
@@ -60,7 +67,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: squad-standalone-release-publication
   cancel-in-progress: false
 
 permissions:
@@ -215,14 +222,6 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Build combined SHA256SUMS.txt
-        working-directory: artifacts
-        run: |
-          set -euo pipefail
-          cat ./*.sha256 > SHA256SUMS.txt
-          rm -f ./*.sha256
-          cat SHA256SUMS.txt
-
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,15 +229,93 @@ jobs:
         working-directory: artifacts
         run: |
           set -euo pipefail
-          gh release upload "${TAG}" ./* --clobber --repo "${GITHUB_REPOSITORY}"
+          assets=(
+            squad-linux-x64.tar.gz
+            squad-linux-arm64.tar.gz
+            squad-darwin-x64.tar.gz
+            squad-darwin-arm64.tar.gz
+            squad-win32-x64.zip
+            squad-win32-arm64.zip
+          )
+          existing_dir="${RUNNER_TEMP}/existing-release-assets"
+          mkdir -p "${existing_dir}"
+          gh release view "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json assets \
+            --jq '.assets[].name' \
+            > "${existing_dir}/asset-names.txt"
+          mapfile -t existing_assets < "${existing_dir}/asset-names.txt"
+
+          upload_paths=()
+          reused_count=0
+          for asset in "${assets[@]}"; do
+            if [ ! -f "${asset}" ]; then
+              echo "::error::Build artifacts are missing ${asset}."
+              exit 1
+            fi
+
+            if printf '%s\n' "${existing_assets[@]}" | grep -Fxq "${asset}"; then
+              gh release download "${TAG}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --pattern "${asset}" \
+                --dir "${existing_dir}" \
+                --clobber
+              mv -- "${existing_dir}/${asset}" "${asset}"
+              reused_count=$((reused_count + 1))
+            else
+              upload_paths+=("${asset}")
+            fi
+
+            sha256sum "${asset}" > "${asset}.sha256"
+          done
+
+          cat ./*.sha256 > SHA256SUMS.txt
+          rm -f ./*.sha256
+
+          if [ "${#upload_paths[@]}" -gt 0 ]; then
+            gh release upload "${TAG}" "${upload_paths[@]}" --repo "${GITHUB_REPOSITORY}"
+          fi
+
+          checksum_changed=true
+          if printf '%s\n' "${existing_assets[@]}" | grep -Fxq SHA256SUMS.txt; then
+            gh release download "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern SHA256SUMS.txt \
+              --dir "${existing_dir}" \
+              --clobber
+            if cmp -s "${existing_dir}/SHA256SUMS.txt" SHA256SUMS.txt; then
+              checksum_changed=false
+            fi
+          fi
+          if [ "${checksum_changed}" = "true" ]; then
+            gh release upload "${TAG}" SHA256SUMS.txt --clobber --repo "${GITHUB_REPOSITORY}"
+          fi
+
+          {
+            echo "### Standalone release assets"
+            echo ""
+            echo "Reused ${reused_count} immutable archive(s) and uploaded ${#upload_paths[@]} missing archive(s)."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7
+        with:
+          name: standalone-release-checksums
+          path: artifacts/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
 
   packaging:
     name: Generate Homebrew and winget manifests
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      release_tag: ${{ steps.generate.outputs.release_tag }}
+      stable_release: ${{ steps.generate.outputs.stable_release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_ref || inputs.release_tag || github.event.release.tag_name || github.ref }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
@@ -246,24 +323,26 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
         with:
-          path: artifacts
-          merge-multiple: true
+          name: standalone-release-checksums
+          path: release-metadata
 
       - name: Generate manifests
+        id: generate
         env:
           TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
         run: |
           set -euo pipefail
-          cat artifacts/*.sha256 > "${RUNNER_TEMP}/SHA256SUMS.txt"
           node scripts/generate-packaging.mjs \
             --version "${TAG}" \
-            --checksums "${RUNNER_TEMP}/SHA256SUMS.txt" \
+            --checksums release-metadata/SHA256SUMS.txt \
             --out-dir dist-packaging
+          echo "release_tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          if [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "stable_release=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "stable_release=false" >> "${GITHUB_OUTPUT}"
+          fi
 
-      # Submitting to homebrew-core and winget-pkgs requires pushing to
-      # repositories this workflow has no credentials for, so the manifests are
-      # published as an artifact for a maintainer to submit. Automating the
-      # submission is follow-up work once the packages are accepted once.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7
         with:
           name: packaging-manifests
@@ -271,20 +350,450 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Summarize
+  publish-homebrew:
+    name: Publish Homebrew cask
+    needs: packaging
+    if: needs.packaging.outputs.stable_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Require Homebrew tap credential
         env:
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is required. Configure a fine-grained PAT limited to bradygaster/homebrew-squad with Contents read/write."
+            {
+              echo "### Homebrew publication"
+              echo ""
+              echo "❌ Blocked: \`HOMEBREW_TAP_TOKEN\` is not configured."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
+        with:
+          name: packaging-manifests
+          path: packaging
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          repository: bradygaster/homebrew-squad
+          ref: main
+          path: homebrew-tap
+          fetch-depth: 1
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: true
+
+      - name: Publish cask to the tap
+        env:
+          TAG: ${{ needs.packaging.outputs.release_tag }}
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          source_cask="../packaging/homebrew/squad.rb"
+          target_cask="Casks/squad.rb"
+          cask_url="https://github.com/bradygaster/homebrew-squad/blob/main/Casks/squad.rb"
+
+          extract_stable_cask_version() {
+            local file="$1"
+            local versions
+            mapfile -t versions < <(
+              sed -nE 's/^[[:space:]]*version "([^"]+)"[[:space:]]*$/\1/p' "${file}"
+            )
+            if [ "${#versions[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one version declaration in ${file}." >&2
+              return 1
+            fi
+            if [[ ! "${versions[0]}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::Cask version '${versions[0]}' in ${file} is not stable SemVer." >&2
+              return 1
+            fi
+            printf '%s' "${versions[0]}"
+          }
+
+          version_is_newer() {
+            local lhs_major lhs_minor lhs_patch
+            local rhs_major rhs_minor rhs_patch
+            IFS=. read -r lhs_major lhs_minor lhs_patch <<< "$1"
+            IFS=. read -r rhs_major rhs_minor rhs_patch <<< "$2"
+            if (( lhs_major > rhs_major )); then return 0; fi
+            if (( lhs_major < rhs_major )); then return 1; fi
+            if (( lhs_minor > rhs_minor )); then return 0; fi
+            if (( lhs_minor < rhs_minor )); then return 1; fi
+            if (( lhs_patch > rhs_patch )); then return 0; fi
+            return 1
+          }
+
+          if [ ! -f "${source_cask}" ]; then
+            echo "::error::The packaging-manifests artifact is missing homebrew/squad.rb."
+            exit 1
+          fi
+          candidate_version="$(extract_stable_cask_version "${source_cask}")"
+          if [ "${candidate_version}" != "${TAG#v}" ]; then
+            echo "::error::Generated cask version ${candidate_version} does not match release tag ${TAG}."
+            exit 1
+          fi
+          if [ -f "${target_cask}" ]; then
+            current_version="$(extract_stable_cask_version "${target_cask}")"
+            if version_is_newer "${current_version}" "${candidate_version}"; then
+              {
+                echo "### Homebrew publication"
+                echo ""
+                echo "⏭️ Refused to downgrade [\`Casks/squad.rb\`](${cask_url}) from ${current_version} to ${candidate_version}."
+              } >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+          fi
+          if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+            echo "::error::The Homebrew tap checkout was not clean before publication."
+            git status --short
+            exit 1
+          fi
+          if cmp -s "${source_cask}" "${target_cask}"; then
+            {
+              echo "### Homebrew publication"
+              echo ""
+              echo "⏭️ [\`Casks/squad.rb\`](${cask_url}) already matches ${TAG}; no commit was needed."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          mkdir -p Casks
+          cp -- "${source_cask}" "${target_cask}"
+          status_output="$(git status --porcelain=v1 --untracked-files=all)"
+          if [ "${status_output}" != " M ${target_cask}" ] && [ "${status_output}" != "?? ${target_cask}" ]; then
+            echo "::error::Refusing to publish because files other than ${target_cask} changed."
+            git status --short
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${target_cask}"
+          git commit -m "chore: update Squad cask for ${TAG}"
+          git push origin HEAD:main
+
+          commit_sha="$(git rev-parse HEAD)"
           {
-            echo "### Packaging manifests for ${TAG}"
+            echo "### Homebrew publication"
             echo ""
-            echo "Download the \`packaging-manifests\` artifact, then:"
+            echo "✅ Updated [\`Casks/squad.rb\`](${cask_url}) in [\`${commit_sha:0:7}\`](https://github.com/bradygaster/homebrew-squad/commit/${commit_sha})."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Summarize Homebrew failure
+        if: failure()
+        run: |
+          {
+            echo "### Homebrew publication failed"
             echo ""
-            # shellcheck disable=SC2016
-            echo '- Homebrew — copy `homebrew/squad.rb` into the tap as `Casks/squad.rb`.'
-            # shellcheck disable=SC2016
-            echo '- winget — copy `winget/` into `winget-pkgs/manifests/b/bradygaster/Squad/<version>/`,'
-            # shellcheck disable=SC2016
-            echo '  validate with `winget validate --manifest <dir>`, then open the PR.'
+            echo "❌ Inspect the failed step. Target: [bradygaster/homebrew-squad](https://github.com/bradygaster/homebrew-squad)."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish-winget:
+    name: Publish WinGet manifests
+    needs: packaging
+    if: needs.packaging.outputs.stable_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Require WinGet publication credential
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WINGET_CREATE_GITHUB_TOKEN}" ]; then
+            echo "::error::WINGET_CREATE_GITHUB_TOKEN is required. Configure a classic PAT with public_repo for tamirdresher/winget-pkgs pushes and microsoft/winget-pkgs pull requests."
+            {
+              echo "### WinGet publication"
+              echo ""
+              echo "❌ Blocked: \`WINGET_CREATE_GITHUB_TOKEN\` is not configured."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
+        with:
+          name: packaging-manifests
+          path: packaging
+
+      - name: Resolve WinGet release metadata
+        id: release
+        env:
+          TAG: ${{ needs.packaging.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${TAG}" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+            echo "::error::WinGet publication requires a release tag in vMAJOR.MINOR.PATCH form; got '${TAG}'."
+            exit 1
+          fi
+
+          version="${BASH_REMATCH[1]}"
+          branch="bradygaster-squad-${version}"
+          package_root="manifests/b/bradygaster/Squad"
+          expected=(
+            "bradygaster.Squad.installer.yaml"
+            "bradygaster.Squad.locale.en-US.yaml"
+            "bradygaster.Squad.yaml"
+          )
+          mapfile -t generated < <(find packaging/winget -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [ "${#generated[@]}" -ne 3 ] || [ "${generated[*]}" != "${expected[*]}" ]; then
+            echo "::error::The packaging-manifests artifact must contain exactly the three expected WinGet manifests."
+            printf 'Found: %s\n' "${generated[*]:-(none)}"
+            exit 1
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
+          echo "package_root=${package_root}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          repository: microsoft/winget-pkgs
+          ref: master
+          path: winget-base
+          fetch-depth: 1
+          sparse-checkout: manifests/b/bradygaster/Squad
+          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          persist-credentials: false
+
+      - name: Check WinGet publication state
+        id: guard
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          GH_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          manifest_dir="${PACKAGE_ROOT}/${VERSION}"
+          version_url="https://github.com/microsoft/winget-pkgs/tree/master/${manifest_dir}"
+
+          if [ -d "winget-base/${manifest_dir}" ]; then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            {
+              echo "### WinGet publication"
+              echo ""
+              echo "⏭️ Version ${VERSION} is already present in [microsoft/winget-pkgs](${version_url})."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          pr_url="$(gh api \
+            --method GET \
+            repos/microsoft/winget-pkgs/pulls \
+            -f state=open \
+            -f "head=tamirdresher:${BRANCH}" \
+            --jq '.[0].html_url // ""')"
+          if [ -n "${pr_url}" ]; then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            {
+              echo "### WinGet publication"
+              echo ""
+              echo "⏭️ [An open WinGet PR already exists](${pr_url}) for \`${BRANCH}\`."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          if [ ! -d "winget-base/${PACKAGE_ROOT}" ]; then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            {
+              echo "### WinGet publication"
+              echo ""
+              echo "⏭️ The base package is not yet in [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs/tree/master/manifests/b/bradygaster)."
+              echo "The initial package PR must merge before automated version updates begin."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          set +e
+          git ls-remote --exit-code --heads \
+            https://github.com/tamirdresher/winget-pkgs.git \
+            "refs/heads/${BRANCH}" >/dev/null
+          branch_status=$?
+          set -e
+          case "${branch_status}" in
+            0) branch_exists=true ;;
+            2) branch_exists=false ;;
+            *)
+              echo "::error::Could not determine whether tamirdresher/winget-pkgs branch ${BRANCH} exists."
+              exit "${branch_status}"
+              ;;
+          esac
+
+          if [ "${branch_exists}" = "true" ]; then
+            manifest_paths=(
+              "${manifest_dir}/bradygaster.Squad.installer.yaml"
+              "${manifest_dir}/bradygaster.Squad.locale.en-US.yaml"
+              "${manifest_dir}/bradygaster.Squad.yaml"
+            )
+            changed_files="$(gh api \
+              "repos/microsoft/winget-pkgs/compare/master...tamirdresher:${BRANCH}" \
+              --paginate \
+              --jq '.files[].filename')"
+            while IFS= read -r changed_file; do
+              [ -z "${changed_file}" ] && continue
+              allowed=false
+              for manifest_path in "${manifest_paths[@]}"; do
+                if [ "${changed_file}" = "${manifest_path}" ]; then
+                  allowed=true
+                  break
+                fi
+              done
+              if [ "${allowed}" != "true" ]; then
+                echo "::error::Refusing to reuse ${BRANCH}; it changes unrelated path ${changed_file}."
+                exit 1
+              fi
+            done <<< "${changed_files}"
+          fi
+
+          echo "skip=false" >> "${GITHUB_OUTPUT}"
+          echo "branch_exists=${branch_exists}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out existing WinGet version branch
+        if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          repository: tamirdresher/winget-pkgs
+          ref: ${{ steps.release.outputs.branch }}
+          path: winget-pkgs
+          fetch-depth: 1
+          sparse-checkout: manifests/b/bradygaster/Squad
+          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Check out WinGet master for a new version branch
+        if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'false'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          repository: microsoft/winget-pkgs
+          ref: master
+          path: winget-pkgs
+          fetch-depth: 1
+          sparse-checkout: manifests/b/bradygaster/Squad
+          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Push manifests and open upstream PR
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          BRANCH_EXISTS: ${{ steps.guard.outputs.branch_exists }}
+          GH_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
+          TAG: ${{ needs.packaging.outputs.release_tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        working-directory: winget-pkgs
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+            echo "::error::The WinGet checkout was not clean before publication."
+            git status --short
+            exit 1
+          fi
+          if [ "${BRANCH_EXISTS}" = "false" ]; then
+            git switch -c "${BRANCH}"
+          elif [ "$(git branch --show-current)" != "${BRANCH}" ]; then
+            echo "::error::Expected checked-out branch ${BRANCH}, got $(git branch --show-current)."
+            exit 1
+          fi
+          git remote set-url origin https://github.com/tamirdresher/winget-pkgs.git
+
+          target_dir="${PACKAGE_ROOT}/${VERSION}"
+          manifest_names=(
+            "bradygaster.Squad.installer.yaml"
+            "bradygaster.Squad.locale.en-US.yaml"
+            "bradygaster.Squad.yaml"
+          )
+          expected_paths=()
+          mkdir -p "${target_dir}"
+          for manifest_name in "${manifest_names[@]}"; do
+            source_manifest="../packaging/winget/${manifest_name}"
+            target_manifest="${target_dir}/${manifest_name}"
+            cp -- "${source_manifest}" "${target_manifest}"
+            expected_paths+=("${target_manifest}")
+          done
+
+          status_output="$(git status --porcelain=v1 --untracked-files=all)"
+          while IFS= read -r status_entry; do
+            [ -z "${status_entry}" ] && continue
+            changed_path="${status_entry:3}"
+            allowed=false
+            for expected_path in "${expected_paths[@]}"; do
+              if [ "${changed_path}" = "${expected_path}" ]; then
+                allowed=true
+                break
+              fi
+            done
+            if [ "${allowed}" != "true" ]; then
+              echo "::error::Refusing to publish unrelated path ${changed_path}."
+              exit 1
+            fi
+          done <<< "${status_output}"
+
+          git add -- "${expected_paths[@]}"
+          set +e
+          git diff --cached --quiet
+          staged_status=$?
+          set -e
+          case "${staged_status}" in
+            0)
+              commit_status="The existing branch already contained the generated manifests."
+              ;;
+            1)
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git commit -m "New version: bradygaster.Squad version ${VERSION}"
+              commit_status="Committed the generated manifests."
+              ;;
+            *)
+              echo "::error::Could not inspect staged WinGet manifest changes."
+              exit "${staged_status}"
+              ;;
+          esac
+
+          if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+            echo "::error::The WinGet checkout contains unstaged or uncommitted changes."
+            git status --short
+            exit 1
+          fi
+          git push origin "HEAD:refs/heads/${BRANCH}"
+
+          pr_url="$(gh api \
+            --method GET \
+            repos/microsoft/winget-pkgs/pulls \
+            -f state=open \
+            -f "head=tamirdresher:${BRANCH}" \
+            --jq '.[0].html_url // ""')"
+          if [ -z "${pr_url}" ]; then
+            pr_url="$(gh pr create \
+              --repo microsoft/winget-pkgs \
+              --base master \
+              --head "tamirdresher:${BRANCH}" \
+              --title "New version: bradygaster.Squad version ${VERSION}" \
+              --body "Automated manifest update for [Squad ${TAG}](https://github.com/bradygaster/squad/releases/tag/${TAG}), using the release run's packaging-manifests artifact.")"
+            pr_status="Opened"
+          else
+            pr_status="Reused"
+          fi
+
+          {
+            echo "### WinGet publication"
+            echo ""
+            echo "✅ ${pr_status} [microsoft/winget-pkgs PR](${pr_url}) from \`tamirdresher:${BRANCH}\`."
+            echo "${commit_status}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Summarize WinGet failure
+        if: failure()
+        run: |
+          {
+            echo "### WinGet publication failed"
+            echo ""
+            echo "❌ Inspect the failed step. Fork: [tamirdresher/winget-pkgs](https://github.com/tamirdresher/winget-pkgs)."
           } >> "${GITHUB_STEP_SUMMARY}"

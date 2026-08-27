@@ -8,11 +8,11 @@ Common issues and fixes for Squad installation and usage.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `squad: command not found` | Squad CLI not installed or not in PATH | Run `npm install -g @bradygaster/squad-cli` or use `npx @bradygaster/squad-cli` |
-| `No .squad/ directory found` | Not in a git repo or Squad not initialized | Run `git init` then `npx squad init` |
+| `squad: command not found` | Squad CLI not installed or not in PATH | Install it using a method in the [Installation guide](../get-started/installation) |
+| `No .squad/ directory found` | Not in a git repo or Squad not initialized | Run `git init` then `squad init` |
 | `Cannot find agent "{name}"` | Agent doesn't exist in `.squad/agents/` | Check `.squad/team.md` for roster, or re-run casting |
 | `gh: command not found` | GitHub CLI not installed | Install from [cli.github.com](https://cli.github.com/) then `gh auth login` |
-| `Node.js version error` | Node.js version below v20 | Upgrade Node.js to v20+ (see below) |
+| `Node.js version error` | npm install uses Node.js below v22.5 | Upgrade Node.js to v22.5+ or use a standalone install (see below) |
 
 ---
 
@@ -94,9 +94,11 @@ See [Cross-organization authentication](./cross-org-auth) for detailed setup ins
 
 ## Node.js version too old
 
-**Problem:** `npx github:bradygaster/squad` fails with an engine compatibility error, or Squad behaves unexpectedly.
+**Problem:** An npm or npx install fails with an engine compatibility error, or Squad behaves unexpectedly.
 
-**Cause:** Squad requires Node.js 20.0.0 or later (LTS), enforced via `engines` in `package.json`.
+**Cause:** The Squad npm package requires Node.js 22.5.0 or later, enforced via
+`engines` in `package.json`. Standalone installs vendor their own runtime and
+are not affected.
 
 **Fix:**
 
@@ -104,7 +106,7 @@ See [Cross-organization authentication](./cross-org-auth) for detailed setup ins
 node --version
 ```
 
-If below v20, upgrade to the latest LTS:
+If below v22.5, upgrade to the latest LTS:
 - **nvm (macOS/Linux):** `nvm install --lts && nvm use --lts`
 - **nvm-windows:** `nvm install lts && nvm use lts`
 - **Direct download:** [nodejs.org](https://nodejs.org/)

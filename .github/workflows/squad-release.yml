@@ -23,6 +23,7 @@ jobs:
     outputs:
       created: ${{ steps.check_tag.outputs.exists == 'false' }}
       tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -107,6 +108,21 @@ jobs:
           gh release view "${{ steps.version.outputs.tag }}"
           echo "✅ Release ${{ steps.version.outputs.tag }} created and verified."
 
+  npm:
+    name: Publish npm packages
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    uses: ./.github/workflows/squad-npm-publish.yml
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    with:
+      version: ${{ needs.release.outputs.version }}
+      source_ref: ${{ needs.release.outputs.tag }}
+
   standalone:
     name: Publish standalone bundles
     needs: release
@@ -114,6 +130,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/squad-standalone-release.yml
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
     with:
       upload: true
       release_tag: ${{ needs.release.outputs.tag }}
