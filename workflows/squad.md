@@ -48,6 +48,8 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 safe-outputs:
+  messages:
+    pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
   data:
     type: object
     properties:
@@ -745,7 +747,9 @@ Create `meet-the-squad.md` at repo root with: title, universe name, team table (
 
 ##### Step 7: Post Completion
 
-`add-comment`: `🧑‍🤝‍🧑 Your Squad is ready for review.\n\n**PR:** #{pr_number}\n\nMerge the PR to activate your team. Run /squad status afterward to verify.`
+Do not emit a separate `add-comment`. The configured
+`safe-outputs.messages.pull-request-created` notification runs after PR creation
+and includes the verified PR number, URL, and CI-approval guidance.
 
 ## skill: `squad-review-relay`
 ---

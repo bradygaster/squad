@@ -15,7 +15,7 @@ This guide covers setup, every slash command, and daily usage patterns.
 
 ## Quick start
 
-Five steps from zero to a working Squad team:
+Seven steps from zero to a validated, reviewable Squad bootstrap:
 
 ```bash
 # 1. Install the gh-aw extension (one-time)
@@ -26,24 +26,47 @@ gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=true
 
-# 3. Add the Squad workflows to your repo
+# 3. Create a bootstrap branch
+default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
+git switch -c chore/squad-gh-aw-bootstrap
+
+# 4. Add the Squad workflows to your repo
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev
 
-# 4. Commit and push the workflow sources and generated files
-git add -- .gitattributes .github/workflows/ .github/skills/
-git commit -m "ci: add Squad agentic workflow"
-git push
+# 5. On first install, review the safe-update report.
+# If it contains only the documented Squad secrets and init action, approve it:
+gh aw compile --strict --approve
 
-# 5. Open an issue and type /squad cast — done!
+# 6. Always run the final strict compile without approval
+gh aw compile --strict
+
+# Verify every supported workflow has a source and generated lockfile
+for workflow in squad squad-implement-worker squad-deps-worker squad-review; do
+  test -f ".github/workflows/${workflow}.md"
+  test -f ".github/workflows/${workflow}.lock.yml"
+done
+
+# 7. Commit the generated files and open the bootstrap PR
+git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+git diff --cached --stat
+test -z "$(git diff --cached --diff-filter=D --name-only)"
+git commit -m "ci: add Squad agentic workflow"
+git push -u origin HEAD
+gh pr create \
+  --base "$default_branch" \
+  --title "ci: add Squad agentic workflow" \
+  --body "Installs and strictly compiles the supported Squad GH-AW workflows."
+gh pr edit --add-reviewer @copilot
+gh pr checks --watch
 ```
 
-After pushing, open an issue in your repo and write `/squad cast` in the body or
-a comment. Squad analyzes your codebase, composes a team of specialist agents,
-and opens a PR with the result.
+After the bootstrap PR is reviewed and merged, open an issue in your repo and
+write `/squad cast` in the body or a comment. Squad analyzes your codebase,
+composes a team of specialist agents, and opens a second PR with the result.
 
 ---
 
@@ -80,6 +103,16 @@ a link for you to create the pull request manually. A manually created pull
 request is authored by your account, and GitHub does not allow authors to
 approve their own pull requests.
 
+### Create a bootstrap branch
+
+```bash
+default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
+git switch -c chore/squad-gh-aw-bootstrap
+```
+
+Keep the generated workflow install isolated on this branch until strict
+compilation and human review are complete.
+
 ### Install the workflows
 
 ```bash
@@ -98,39 +131,85 @@ The installed top-level workflow set is:
 
 - `squad.md` and `squad.lock.yml`
 - `squad-implement-worker.md` and `squad-implement-worker.lock.yml`
+- `squad-deps-worker.md` and `squad-deps-worker.lock.yml`
 - `squad-review.md` and `squad-review.lock.yml`
 
 > **Branch note:** `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
 
 This registers the Squad workflow in your repository's agentic workflow
-configuration and automatically compiles the workflow definitions into
-deterministic `.lock.yml` files. Under normal conditions, no separate compile
-step is needed.
+configuration and compiles the workflow definitions into deterministic
+`.lock.yml` files. The supported bootstrap path still runs `gh aw compile
+--strict` explicitly before review so every installed source is validated
+together and the PR contains the exact generated lockfiles that passed.
 
-> **Safe-update approval:** If `gh aw add` reports unapproved safe-update
-> changes for restricted secrets (`SQUAD_GITHUB_APP_PRIVATE_KEY`,
-> `SQUAD_GITHUB_TOKEN`), review those changes and complete the approval with:
+### Review first-install safe updates
+
+On a clean repository, `gh aw add` reports these expected safe-update changes:
+
+- Restricted secrets: `SQUAD_GITHUB_APP_PRIVATE_KEY` and `SQUAD_GITHUB_TOKEN`
+- Action: `bradygaster/squad/.github/actions/squad-init`
+
+Review the report before approving it. If it contains only those documented
+entries, complete the first-install approval with:
 >
 > ```bash
-> gh aw compile --approve
+> gh aw compile --strict --approve
 > ```
->
-> This follow-up is only needed when the safe-update warning appears.
 
-### Commit the workflow files
+Stop and investigate if the report contains any other secret or action. The
+approval command is needed only when the safe-update warning appears; it is not
+a substitute for the final strict compile below.
+
+### Strictly compile the installed workflows
 
 ```bash
-git add -- .gitattributes .github/workflows/ .github/skills/
-git commit -m "ci: add Squad agentic workflow"
-git push
+gh aw compile --strict
 ```
 
-This command stages `.gitattributes` and files under `.github/workflows/` and
-`.github/skills/`.
+Run this exact command after any required first-install approval and before
+committing. It must report all four workflows succeeded. `squad.md` currently
+emits one known warning because both slash-command and `github-actions[bot]`
+triggers are configured; the bot trigger is required for controlled worker
+continuation dispatches. Any error or any additional warning is a stop condition.
 
-> **Troubleshooting:** If the lock files are missing or you need to regenerate
-> them manually, run `gh aw compile`. This is only needed if something went wrong
-> during `gh aw add`.
+Verify the complete source/lock surface:
+
+```bash
+for workflow in squad squad-implement-worker squad-deps-worker squad-review; do
+  test -f ".github/workflows/${workflow}.md"
+  test -f ".github/workflows/${workflow}.lock.yml"
+done
+```
+
+### Open the bootstrap pull request
+
+```bash
+git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+git diff --cached --stat
+test -z "$(git diff --cached --diff-filter=D --name-only)"
+git commit -m "ci: add Squad agentic workflow"
+git push -u origin HEAD
+gh pr create \
+  --base "$default_branch" \
+  --title "ci: add Squad agentic workflow" \
+  --body "Installs and strictly compiles the supported Squad GH-AW workflows."
+gh pr edit --add-reviewer @copilot
+gh pr checks --watch
+```
+
+This stages the workflow sources and lockfiles, the gh-aw manifest and pinned
+state under `.github/aw/`, the installed skills, and `.gitattributes`. Review
+the complete generated diff in the bootstrap PR, address Copilot review
+feedback, and wait for required checks. Merge only after human approval.
+
+`gh aw add` may also create `.vscode/settings.json` to enable Copilot for
+Markdown workflow files. The command above intentionally leaves that optional
+editor setting untracked. Delete it if you do not want the local setting, or
+stage it explicitly if your team wants to share it.
+
+> **Troubleshooting:** If the lock files are missing, rerun `gh aw compile
+> --strict`. Do not open or merge the bootstrap PR until all four source/lock
+> pairs exist and strict compilation succeeds.
 
 Downloaded workflow audit data is local diagnostic output and should not be
 committed. If a `.gitignore` is missing from `.github/aw/logs/`, add one there:
@@ -181,6 +260,27 @@ a Personal Access Token:
 | `SQUAD_GITHUB_TOKEN` | Secret | Fallback PAT when no GitHub App is configured |
 
 **Auth precedence:** GitHub App token → `SQUAD_GITHUB_TOKEN` → `github.token`.
+
+---
+
+## Supported-path validation checklist
+
+Use this checklist for the initial bootstrap and after any workflow update:
+
+| Stage | Action | Expected evidence |
+|-------|--------|-------------------|
+| Install | Run the four-workflow `gh aw add` command on a bootstrap branch | All four `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
+| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All four workflows succeed, only the documented bot-trigger warning remains, and all eight source/lock files exist |
+| Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |
+| Activation | Run `/squad cast` after the bootstrap PR merges | The run resolves `v0.13.1` by default, installs the standalone bundle, initializes only when no committed team exists, runs health, and uploads `squad-state` |
+| Cast persistence | Review the Cast PR before merging | The PR contains `.squad/casting/policy.json`, `registry.json`, and `history.json`, plus the team, routing, charters, Copilot agent, and `meet-the-squad.md` |
+| Cast checks | Open the linked Cast PR and inspect its checks; if application CI is `action_required`, approve that workflow run and wait for it to finish | Copilot review and the repository's normal build, test, lint, and security checks complete before merge |
+| Handoffs | Run `/squad implement` on a ready issue, then `/squad review` on its PR | The dispatcher starts the appropriate isolated worker; the reviewer posts one advisory verdict for the current head SHA |
+| Rerun | Repeat the same command after a cancellation or uncertain result | Existing Cast and implementation PRs are detected instead of duplicated; an unchanged reviewed head is not reviewed twice |
+| Recovery | Fix the named failing activation step, then use **Re-run failed jobs**; for an interrupted command, rerun the identical `/squad` command | Activation uploads no partial state artifact, and command-specific idempotency resumes from GitHub's committed PR, issue, comment, and review state |
+
+If a work command auto-opens a Cast PR because no committed team exists, merge
+that PR and rerun the original command. Do not start a second Cast command.
 
 ---
 
@@ -254,6 +354,13 @@ When you run `/squad cast`, the workflow follows these steps:
 5. **Scaffolding** — generates all squad files (charters, routing, registry)
 6. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
    team for review
+
+The completion comment links the created Cast PR. Open that PR, mark it ready
+when it was created as a draft, request Copilot review, and wait for its checks.
+GitHub may require maintainer approval before application CI runs on a
+workflow-created branch; when the PR shows `action_required`, approve that
+workflow run from the checks view and wait for it to finish. Merge the Cast PR
+only after its generated files, review, and repository checks are complete.
 
 ### The casting brief
 
@@ -957,10 +1064,13 @@ Understanding the two-job architecture helps when debugging.
 The activation job runs with full network access:
 
 1. Optionally mints a GitHub App installation token
-2. Installs `@bradygaster/squad-cli` at the configured version
-3. Runs `squad init --preset default --state-backend local`
-4. Uploads `.squad/` and `.github/agents/squad.agent.md` as a `squad-state`
-   artifact
+2. Resolves `SQUAD_CLI_VERSION` (default `v0.13.1`) and downloads the matching
+   standalone GitHub Release bundle with checksum verification — no npm install
+3. Preserves a committed team with roster entries, or runs
+   `squad init --preset default --state-backend local` when no usable team exists
+4. Rejects `npx`-based MCP wiring and runs `squad health --json`
+5. On success, uploads `.squad/` and `.github/agents/squad.agent.md` as a
+   one-day `squad-state` artifact
 
 ### Job 2: Agent (network-restricted)
 
@@ -971,7 +1081,11 @@ The agent job runs inside the `gh aw` sandbox with no outbound network:
 3. Executes the Squad coordinator using only the pre-generated files
 
 The Squad CLI is never installed in the agent job — only the files it produced
-are used. State does not persist across runs.
+are used. Each run starts from the repository's committed state: a merged Cast
+PR persists the complete team and casting files, while activation-only scaffold
+state and uncommitted runtime output do not carry over. User-facing changes
+persist through Squad's guarded pull requests, issue comments, issues, and
+reviews.
 
 ---
 
@@ -992,7 +1106,7 @@ This re-compiles the workflow from source. If you have local customizations in y
 For manual recompilation of all workflows:
 
 ```bash
-gh aw compile
+gh aw compile --strict
 ```
 
 ---
@@ -1003,13 +1117,18 @@ gh aw compile
 |---------|-------|-----|
 | "Nothing to cast from" comment | Both repo and issue are empty | Add a README or write a casting brief in the issue body |
 | Cast produces a generic team | Issue body was empty, repo was analyzed alone | Write a detailed casting brief (see [example](#example-writing-a-casting-brief)) |
+| Cast completed but no PR link is visible | The completion response did not resolve the created PR | Open the repository's pull requests and find the newest `[squad] Cast` PR before rerunning; do not start a second Cast command |
+| Cast PR application CI shows `action_required` | GitHub requires maintainer approval for checks on the workflow-created branch | Approve the workflow run from the PR checks view, wait for normal repository CI, then continue review |
 | "Could not access" error on Connect/Adopt | Source repo is private or doesn't exist | Verify the source repo is accessible and contains a `.squad/` directory |
-| `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile`, commit the lock file, and push |
+| `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile --strict`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
-| Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 75 | Re-run the identical activation command — it is idempotent and picks up where it left off |
+| Plan activation creates fewer issues than the accepted plan declares | The run ended before every missing issue was created | Re-run the identical activation command — title matching resumes without duplicating existing issues |
 | `/squad implement` cannot create a PR | Actions is not allowed to create pull requests | Enable **Allow GitHub Actions to create and approve pull requests** in repository Actions settings |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
+| Standalone activation fails before init | `SQUAD_CLI_VERSION` is invalid or its release assets are unavailable | Correct the variable or select a published release, then use **Re-run failed jobs** |
+| Squad health fails | Initialization or committed team state is incomplete | Inspect the `Run Squad health check` JSON, correct the reported state, and rerun; no `squad-state` artifact is uploaded on failure |
+| A command run was cancelled or its result is uncertain | The run stopped before a durable output was confirmed | Rerun the identical `/squad` command; Cast, implementation, activation, and review paths check existing GitHub state before creating output |
 
 ---
 

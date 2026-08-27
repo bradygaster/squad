@@ -290,6 +290,7 @@ function createTestWorkspace(prefix: string): string {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: safe-output configuration', () => {
+  const workflow = readText(SQUAD_WORKFLOW);
   const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
   const safeOutputs = extractSafeOutputs(frontmatter);
 
@@ -299,7 +300,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data') continue;
+      if (name === 'data' || name === 'messages') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -343,6 +344,21 @@ describe('gh-aw: safe-output configuration', () => {
     expect(pr.max, 'should have max').toBeDefined();
     expect(pr['allowed-base-branches'], 'should have allowed-base-branches').toBeDefined();
     expect(pr['auto-close-issue'], 'Cast PR must not close the originating work issue').toBe(false);
+  });
+
+  it('reports the verified pull request after safe-output creation', () => {
+    const cast = workflow.slice(
+      workflow.indexOf('## skill: `squad-cast`'),
+      workflow.indexOf('## skill: `squad-review-relay`'),
+    );
+
+    expect(frontmatter).toContain(
+      'pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review.',
+    );
+    expect(cast).toContain(
+      '`safe-outputs.messages.pull-request-created` notification runs after PR creation',
+    );
+    expect(cast).not.toContain('**PR:** #{pr_number}');
   });
 
   it('defines the minimum schema-validated durable artifact envelope', () => {
