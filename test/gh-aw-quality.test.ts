@@ -2335,6 +2335,12 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
   it('Cast PR body instructs user to return to originating issue and rerun canonical command', () => {
     expect(squadContent).toMatch(/return to the originating issue and rerun.*\{canonical_command\}/s);
   });
+
+  it('Cast emits routing state that standalone health can parse', () => {
+    expect(squadContent).toContain('section heading `## Routing Table`');
+    expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
+    expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
+  });
 });
 
 // ---------------------------------------------------------------------------
