@@ -964,6 +964,51 @@ describe('#1914: research creates the planning lifecycle state', () => {
   });
 });
 
+describe('#1916: fast-path commands maintain the planning lifecycle state', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const revise = skillBlock(squad, 'squad-plan-revise');
+  const activate = skillBlock(squad, 'squad-plan-accept');
+  const lifecycleEnvelope =
+    'data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}';
+
+  it('updates lifecycle state after creating a fast plan', () => {
+    const lifecycle = plan.match(/Step 4: Update Lifecycle([\s\S]*)$/)?.[1] ?? '';
+
+    expect(lifecycle).toContain(lifecycleEnvelope);
+    expect(lifecycle).toContain('Set Plan = `✅ Done`');
+    expect(lifecycle).toContain('state = Planned');
+    expect(lifecycle).toContain('last command = `/squad plan`');
+    expect(lifecycle).toContain('next =\n`/squad activate`');
+    expect(lifecycle).toContain('also available = `/squad plan revise <feedback>`');
+  });
+
+  it('preserves planned lifecycle state after revising a fast plan', () => {
+    expect(revise).toContain(lifecycleEnvelope);
+    expect(revise).toContain('Keep Plan = `✅ Done`');
+    expect(revise).toContain('state = Planned');
+    expect(revise).toContain('last command =\n   `/squad plan revise`');
+    expect(revise).toContain('next = `/squad activate`');
+  });
+
+  it('records phase progress or terminal activation after fast-path acceptance', () => {
+    const lifecycle =
+      activate.match(/Step 5: Update Fast-Path Lifecycle([\s\S]*)$/)?.[1] ?? '';
+
+    expect(lifecycle).toContain(lifecycleEnvelope);
+    expect(lifecycle).toContain('record phase `{N}` activated');
+    expect(lifecycle).toContain('point next to the next unactivated phase');
+    expect(lifecycle).toContain('Activation = `✅ Done`');
+    expect(lifecycle).toContain('state =\n  Activated');
+    expect(lifecycle).toContain('This is terminal');
+  });
+
+  it('repairs stale lifecycle state on an idempotent activate rerun', () => {
+    expect(activate).toMatch(
+      /already-accepted → verify the existing lifecycle state already[\s\S]*repair it if stale/,
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // #1772 (defense-in-depth) — empty workflow_dispatch probe is guarded, not
 // turned into a junk issue. Pairs with EECOM's dispatch-workflow max fix

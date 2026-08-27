@@ -1134,7 +1134,8 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 **Acknowledge:** `🤖 Squad is creating a plan…`
 
-**TASK:** Steps 1–3. Deliverable = Step 3.
+**TASK:** Steps 1–4. Deliverables are Step 3's plan and Step 4's lifecycle
+update.
 
 ##### Step 1: Gather Context
 
@@ -1167,6 +1168,14 @@ do not post until every row passes. Copy each row's `Depends On` value unchanged
 into the artifact.
 
 Do NOT create issues.
+
+##### Step 4: Update Lifecycle
+
+Find/create the single `lifecycle-state` artifact comment; never post a second
+lifecycle tracker. Include
+`data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Set Plan = `✅ Done`, state = Planned, last command = `/squad plan`, next =
+`/squad activate`, and also available = `/squad plan revise <feedback>`.
 
 ## skill: `squad-plan-accept`
 ---
@@ -1201,7 +1210,10 @@ Resolve which planning path this issue is on, in this order:
 
 1. Extract `requested_phase` from args (or null).
 2. Find the latest `phases-accepted` artifact and read its `phases` array → `accepted_phases` (or []).
-3. Validate: already-accepted → stop with next-available hint. Out-of-order → stop with sequential hint.
+3. Validate: already-accepted → verify the existing lifecycle state already
+   reflects that completed phase or terminal activation, repair it if stale,
+   then stop with the next-available hint. Out-of-order → stop with sequential
+   hint.
 4. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
 5. If no items remain after filter: stop.
 
@@ -1255,6 +1267,19 @@ and whether dependencies use native edges or the body-reference fallback. Never
 claim an epic, phase issue, sub-issue relationship, or native dependency edge
 that was not created.
 
+##### Step 5: Update Fast-Path Lifecycle
+
+Find/create the single `lifecycle-state` artifact comment; never post a second
+lifecycle tracker. Include
+`data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+
+- Phase-specific: keep Plan = `✅ Done`, record phase `{N}` activated, set the
+  last command to the invoked `/squad activate phase {N}` or legacy alias, and
+  point next to the next unactivated phase.
+- Full or last phase: set Plan = `✅ Done`, Activation = `✅ Done`, state =
+  Activated, and the last command to the invoked `/squad activate` or legacy
+  alias. This is terminal, so do not invent another next action.
+
 ## skill: `squad-plan-revise`
 ---
 description: Revise an existing plan artifact from reviewer feedback.
@@ -1267,6 +1292,11 @@ description: Revise an existing plan artifact from reviewer feedback.
 3. Apply feedback to plan.
 4. **EDIT the existing artifact comment** (never post a duplicate).
 5. Prepend revision note.
+6. Find/create the single `lifecycle-state` artifact comment and include
+   `data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+   Keep Plan = `✅ Done`, state = Planned, set last command =
+   `/squad plan revise`, next = `/squad activate`, and also available =
+   `/squad plan revise <feedback>`.
 
 ## skill: `squad-triage`
 ---
