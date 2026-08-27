@@ -299,7 +299,7 @@ export function validateCastTree({ root, payloadPath }) {
     errors.push('team: inactive/support roles must not be advertised by the GH-AW Cast roster');
   }
   if (SUPPORT_ROLE_PATTERN.test(coordinator)) {
-    errors.push('coordinator: inactive/support roles are forbidden without Cast-owned artifacts');
+    errors.push('coordinator: inactive/support roles are forbidden in GH-AW Cast output');
   }
 
   const teamCharters = extractLocalReferences(team)

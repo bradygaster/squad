@@ -180,9 +180,17 @@ describe('GH-AW Cast final-tree validator', () => {
       '.squad/team.md',
       `${teamMarkdown()}\n| Scribe | Session Logger | \`.squad/agents/scribe/charter.md\` | Silent |\n`,
     );
+    write(
+      fixture.root,
+      '.github/agents/squad.agent.md',
+      `${coordinatorMarkdown()}\nScribe records each delegated task.\n`,
+    );
     const result = validate(fixture.root, fixture.payload);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/inactive\/support roles|scribe\/charter\.md/i);
+    expect(result.stderr).toContain(
+      'coordinator: inactive/support roles are forbidden in GH-AW Cast output',
+    );
   });
 
   it('rejects standalone template references absent from the final payload', () => {
