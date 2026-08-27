@@ -167,7 +167,6 @@ describe('gh-aw advisory Squad reviewer', () => {
 
     expect(listInBlock(routerDispatch, 'workflows')).toContain('squad-review');
     expect(ROUTER).toContain('| `/squad review` | Review Relay |');
-    expect(ROUTER_FRONTMATTER).toContain('- pull_request_comment');
     expect(REVIEWER).not.toContain('slash_command:');
     expect(reviewTrigger).toMatch(/workflow_dispatch:\n\s+inputs:/);
     expect(reviewTrigger).toMatch(/pull_request:\n\s+types: \[ready_for_review, synchronize\]/);
@@ -182,6 +181,23 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(relayPayload.issue_number).toBeUndefined();
     expect(relay).not.toContain('"pr_number"');
     expect(relay).toContain('Never call the generic');
+  });
+
+  it('limits slash commands to issue and pull request conversation surfaces', () => {
+    const slashCommand = yamlBlock(ROUTER_FRONTMATTER, 'slash_command');
+    const guideSection = GUIDE.match(/## Slash commands[\s\S]*?(?=\n## Casting a team)/)?.[0] ?? '';
+
+    expect(listInBlock(slashCommand, 'events')).toEqual([
+      'issues',
+      'issue_comment',
+      'pull_request_comment',
+    ]);
+    expect(slashCommand).not.toContain('pull_request_review_comment');
+    expect(ROUTER).toContain('PR conversation comment');
+    expect(ROUTER).not.toMatch(/PR review comment|pull request review comment/i);
+    expect(guideSection).toContain('PR conversation comment');
+    expect(guideSection).toContain('Inline code-review threads do not trigger Squad commands.');
+    expect(guideSection).not.toMatch(/PR review comment|pull request review comment/i);
   });
 
   it('materializes the documented install as complete source and lock pairs', () => {

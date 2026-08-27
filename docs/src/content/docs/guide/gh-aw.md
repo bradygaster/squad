@@ -288,7 +288,8 @@ that PR and rerun the original command. Do not start a second Cast command.
 ## Slash commands
 
 Every command starts with `/squad`. Type it in an issue body, issue comment, or
-PR review comment.
+PR conversation comment. On a pull request, post the command in the
+**Conversation** tab. Inline code-review threads do not trigger Squad commands.
 
 Commands are matched longest-prefix-first, so the most specific command string
 wins: `/squad plan accept scope` is not treated as `/squad plan`.
@@ -332,7 +333,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 |---------|-------------|
 | **Issue body** | Write `/squad cast` when creating a new issue |
 | **Issue comment** | Comment `/squad cast` on any existing issue |
-| **PR review comment** | Comment `/squad cast` on any pull request |
+| **PR conversation comment** | Comment `/squad cast` in the pull request conversation |
 | **Workflow dispatch** | Trigger manually from the Actions tab with a `command` input |
 
 For workflow dispatch, go to **Actions → Squad → Run workflow** and enter the

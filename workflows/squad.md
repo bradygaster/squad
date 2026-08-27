@@ -13,7 +13,6 @@ on:
       - issues
       - issue_comment
       - pull_request_comment
-      - pull_request_review_comment
   workflow_dispatch:
     inputs:
       command:
@@ -183,8 +182,8 @@ Resolve the slash command in this order:
    is empty, the activation guard above has already halted the run; never reach
    this step with an empty dispatched command. When it is non-empty, it is the
    trigger source; skip the remaining sources.
-2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
-   comment text.
+2. **Issue comment / PR conversation comment:** `github.event.comment.body` —
+   the full comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
 4. Otherwise default to `cast` only for an explicit `/squad` slash command with
    no arguments.
@@ -937,8 +936,8 @@ slots.
 
 1. Resolve the target issue number using the Trigger Context resolution order:
    the interpolated dispatched issue number when non-empty, otherwise the
-   triggering issue. If invoked from a pull request review comment, explain that
-   `/squad implement` must be run from the target issue.
+   triggering issue. If invoked from a pull request conversation comment,
+   explain that `/squad implement` must be run from the target issue.
 2. Read the target issue title, body, labels, state, and relevant comments.
 3. Discover the target's open descendant issues using native GitHub sub-issue
    relationships, descending recursively through **every** level of the
