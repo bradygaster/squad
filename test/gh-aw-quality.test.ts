@@ -2340,7 +2340,7 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
     expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
     expect(squadContent).toContain('exact active casting-registry `persistent_name`');
     expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
-    expect(squadContent).toContain('Do not route to always-on support roles');
+    expect(squadContent).toContain('Do not route to inactive/support roles');
   });
 });
 
@@ -2410,31 +2410,30 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
   });
 
   it('validates the complete routing file as one exact registry-backed section', () => {
-    expect(cast).toContain('Validate the entire `.squad/routing.md` file');
+    expect(cast).toMatch(/validator deterministically parses.*routing/s);
     expect(cast).toContain('exactly one `## Routing Table` section');
     expect(cast).toContain('exact headers `Work Type | Route To | Examples`');
     expect(cast).toContain('No `## Work Type → Agent` section');
-    expect(cast).toMatch(/every route target.*active registry `persistent_name`/s);
+    expect(cast).toMatch(/every `Route To` value.*active casting-registry `persistent_name`/s);
   });
 
   it('synchronizes the generated agent capabilities from final Cast state', () => {
-    expect(cast).toContain('Use the bootstrap agent file only as the base');
+    expect(cast).toContain('Completely replace the disposable bootstrap coordinator');
+    expect(cast).toContain('Do not reuse, patch, summarize, or retain any bootstrap body text');
     expect(cast).toContain('<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->');
     expect(cast).toContain('<!-- SQUAD:TEAM-CAPABILITIES:END -->');
-    expect(cast).toMatch(/actual specialists.*routes/s);
-    expect(cast).toMatch(/pending.*zero.*uncast/s);
-    expect(cast).toContain('`.squad/templates/Rai-charter.md`');
-    expect(cast).toContain('`.squad/templates/rai-charter.md`');
+    expect(cast).toMatch(/specialists.*active registry count/s);
+    expect(cast).toMatch(/taskTypes.*hints.*routing-row count/s);
+    expect(cast).toContain('must be self-contained for the final Cast tree');
   });
 
-  it('fails closed before safe output when any Cast integrity invariant fails', () => {
-    expect(cast).toContain('Final fail-closed integrity pass');
-    expect(cast).toContain('explicit payload allowlist');
-    expect(cast).toContain('no stale agent directories or role IDs');
-    expect(cast).toContain('no placeholder capability marker');
-    expect(cast).toContain('exact routing/registry agreement');
-    expect(cast).toMatch(/If any check fails.*Do not call `create-pull-request`/s);
-    expect(cast).toMatch(/actionable.*`add-comment`.*`noop`/s);
+  it('runs the deterministic final-tree validator immediately before safe output', () => {
+    expect(cast).toContain('Deterministic final-tree validation');
+    expect(cast).toContain('$RUNNER_TEMP/squad-cast-payload.json');
+    expect(cast).toContain('squad-cast-validator');
+    expect(cast).toMatch(/Only a zero exit status.*authorizes.*`create-pull-request`/s);
+    expect(cast).toMatch(/exits nonzero.*`add-comment`.*`noop`/s);
+    expect(cast).toMatch(/does not expose an independent\s+post-agent hook/s);
   });
 });
 
