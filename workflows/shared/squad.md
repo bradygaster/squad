@@ -35,10 +35,9 @@
 # `squad init` writes is picked up by that mechanism. Additionally, `engine.agent`
 # is set to `squad`, so the compiler emits `--agent squad` on the Copilot invocation.
 #
-# `ambient-folders` (gh-aw main): upstream now uses a top-level
-# `ambient-folders: [.squad, .github/agents]` key to bundle Squad's files into the
-# standard activation artifact. That feature is unreleased on stable — once it ships,
-# the explicit artifact upload/download below can be replaced.
+# `ambient-folders` adds committed `.squad/` state to gh-aw's activation checkout
+# so the roster guard can preserve an existing cast. The explicit artifact below
+# remains the fail-fast handoff for the standalone distribution.
 #
 # Optional custom credentials for `squad init`:
 #   vars.SQUAD_GITHUB_APP_ID / secrets.SQUAD_GITHUB_APP_PRIVATE_KEY / vars.SQUAD_GITHUB_APP_OWNER
@@ -69,6 +68,8 @@ engine:
   id: copilot
   version: 1.0.78
   agent: squad
+ambient-folders:
+  - .squad
 
 jobs:
   activation:

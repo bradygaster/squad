@@ -2514,6 +2514,10 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
   it('runs initialization after gh-aw checks out the activation context', () => {
     expect(
       sharedContent,
+      'the generated activation checkout must include committed Squad state',
+    ).toMatch(/ambient-folders:\s*\n\s+- \.squad/);
+    expect(
+      sharedContent,
       'jobs.activation.steps runs after the generated activation checkout',
     ).toMatch(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
     expect(
