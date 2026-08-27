@@ -2344,6 +2344,33 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
   });
 });
 
+describe('gh-aw: Cast naming-mode contract (#1907)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+  const cast = squadContent.match(
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+  )?.[0] ?? '';
+
+  it('defaults an unqualified Cast request to descriptive role-based names', () => {
+    expect(cast).toMatch(/No themed naming request.*descriptive mode/s);
+    expect(cast).toContain('short, unique functional names derived from roles');
+    expect(cast).toMatch(/every registry entry.*`universe`.*`"descriptive"`/s);
+    expect(cast).toMatch(/descriptive naming.*never invent.*fictional universe/s);
+    expect(cast).not.toContain('assign character names from a fictional universe');
+  });
+
+  it('uses an explicitly requested built-in or custom universe', () => {
+    expect(cast).toMatch(/Explicit built-in or custom universe request.*requested universe/s);
+    expect(cast).toMatch(/custom universe.*spoiler-safety rules/s);
+  });
+
+  it('auto-selects a built-in universe only for themed names with no universe', () => {
+    expect(cast).toMatch(
+      /Themed names requested without a universe.*auto-select.*built-in universe/s,
+    );
+    expect(cast).toMatch(/capacity.*shape.*fit table/s);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // gh-aw: Threat detection taxonomy regression (#1701)
 //

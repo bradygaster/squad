@@ -18,6 +18,7 @@ const ghAwGuide = readFileSync(
   join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md'),
   'utf8',
 );
+const squadWorkflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8');
 
 describe('standalone release handoff', () => {
   it('supports a confirmation-gated manual release from dev only', () => {
@@ -102,5 +103,20 @@ describe('standalone release handoff', () => {
     expect(ghAwGuide).not.toContain('Installs `@bradygaster/squad-cli`');
     expect(ghAwGuide).not.toContain('State does not persist across runs.');
     expect(ghAwGuide).not.toContain('`create-issue` safe-output has a max of 75');
+  });
+
+  it('keeps the Cast prompt aligned with the documented naming modes', () => {
+    expect(ghAwGuide).toContain('### Descriptive (default)');
+    expect(ghAwGuide).toContain('When you don\'t request a themed universe');
+    expect(ghAwGuide).toMatch(/themed\s+names without specifying a universe/);
+    expect(ghAwGuide).toContain('You can request **any universe**');
+
+    expect(squadWorkflow).toMatch(/No themed naming request.*descriptive mode/s);
+    expect(squadWorkflow).toMatch(
+      /Explicit built-in or custom universe request.*requested universe/s,
+    );
+    expect(squadWorkflow).toMatch(
+      /Themed names requested without a universe.*auto-select.*built-in universe/s,
+    );
   });
 });

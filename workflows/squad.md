@@ -657,10 +657,10 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
 
 ## skill: `squad-cast`
 ---
-description: "Cast a Squad team: analyze the repo, compose agents, assign character names, scaffold .squad/, open the Cast PR."
+description: "Cast a Squad team: analyze the repo, compose agents, resolve descriptive or themed names from the brief, scaffold .squad/, open the Cast PR."
 ---
 
-Analyze repo, compose team, assign character names from a fictional universe, generate `.squad/` scaffolding, open PR.
+Analyze repo, compose team, resolve names from the requested naming mode, generate `.squad/` scaffolding, open PR.
 
 **Acknowledge:** `🤖 Squad is analyzing your repo and assembling a team…`
 
@@ -677,6 +677,8 @@ Evaluate issue (title + body) and repo content to determine primary casting inpu
 | Any | Explicit team spec | **Issue is source of truth** |
 
 "Explicit source-of-truth signal" = issue reads like a team spec (role lists, team-size declarations, operating-model descriptions).
+
+Resolve naming intent from `{canonical_command}` and the primary casting input above. An explicit naming request in `{canonical_command}` wins; otherwise use the issue brief. Repo analysis informs roles but does not request themed naming.
 
 ##### Step 1: Repo Analysis
 
@@ -701,10 +703,13 @@ Every team gets a **Lead**. Then allocate specialists based on signals:
 
 Guidelines: 4–7 agents. Min: Lead + 2 specialists + 1 quality role. Scribe, Ralph, Rai are built-in (don't count).
 
-##### Step 3: Universe & Name Allocation
+##### Step 3: Naming Mode & Name Allocation
 
 1. Count agents from Step 2.
-2. Select universe (pick one whose capacity fits with minimal waste):
+2. Resolve exactly one naming mode:
+   - **No themed naming request:** use **descriptive mode**. Assign short, unique functional names derived from roles (for example Lead, Frontend, Backend, Tester). Do not select a fictional universe.
+   - **Explicit built-in or custom universe request:** use that requested universe.
+   - **Themed names requested without a universe:** auto-select one built-in universe using the capacity/shape fit table below, preferring the smallest capacity that fits the team and the shape that best matches the project.
 
 | Universe | Cap | Shape |
 |----------|-----|-------|
@@ -724,9 +729,12 @@ Guidelines: 4–7 agents. Min: Lead + 2 specialists + 1 quality role. Scribe, Ra
 | The Simpsons | 20 | large, comedy |
 | Marvel Cinematic Universe | 25 | large, action |
 
-3. Name rules: one universe only, pressure/function over authority, no spoilers, early-introduction names, Scribe/Ralph/Rai keep built-in names.
-4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "Universe", "legacy_named": false, "status": "active" } } }`
-5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "Name", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
+3. Name rules:
+   - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
+   - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
+   - Scribe, Ralph, and Rai keep their built-in names in every mode.
+4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
+5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
 ##### Step 4: Generate Scaffolding
 
@@ -741,9 +749,11 @@ Create/replace:
 7. **`.squad/decisions/`** — Empty directory.
 8. **`.github/agents/squad.agent.md`** — Verify exists (from `squad init`), include in PR.
 
+Keep naming consistent across generated team state and the Cast PR summary. In descriptive mode, describe the choice as descriptive naming and never invent or mention a fictional universe.
+
 ##### Step 5: Generate meet-the-squad.md
 
-Create `meet-the-squad.md` at repo root with: title, universe name, team table (Name|Role|Specialty|How to talk), Always-On Support table, How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date.
+Create `meet-the-squad.md` at repo root with: title, naming mode (`Descriptive` in descriptive mode; otherwise the exact universe name), team table (Name|Role|Specialty|How to talk), Always-On Support table, How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date.
 
 ##### Step 6: Open PR
 
