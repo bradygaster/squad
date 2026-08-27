@@ -156,9 +156,10 @@ entries, complete the first-install approval with:
 > gh aw compile --strict --approve
 > ```
 
-Stop and investigate if the report contains any other secret or action. The
-approval command is needed only when the safe-update warning appears; it is not
-a substitute for the final strict compile below.
+Stop and investigate if the report contains any other secret or action.
+
+This follow-up is only needed when the safe-update warning appears.
+It is not a substitute for the final strict compile below.
 
 ### Strictly compile the installed workflows
 
