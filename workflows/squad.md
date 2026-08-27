@@ -49,6 +49,7 @@ tools:
     toolsets: [default]
 safe-outputs:
   messages:
+    append-only-comments: true
     pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
   data:
     type: object

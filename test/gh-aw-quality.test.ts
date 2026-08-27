@@ -358,6 +358,7 @@ describe('gh-aw: safe-output configuration', () => {
     expect(frontmatter).toContain(
       'pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review.',
     );
+    expect(safeOutputs.messages['append-only-comments']).toBe(true);
     expect(cast).toContain(
       '`safe-outputs.messages.pull-request-created` notification runs after PR creation',
     );
