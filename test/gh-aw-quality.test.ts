@@ -2339,7 +2339,9 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
   it('Cast emits routing state that standalone health can parse', () => {
     expect(squadContent).toContain('section heading `## Routing Table`');
     expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
+    expect(squadContent).toContain('exact active casting-registry `persistent_name`');
     expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
+    expect(squadContent).toContain('Do not route to always-on support roles');
   });
 });
 

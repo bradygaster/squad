@@ -731,7 +731,7 @@ Create/replace:
 
 1. **`.squad/team.md`** — Roster table: Coordinator (Squad), Members (Name|Role|Charter path|Status), always-on (Scribe, Ralph, Rai), Coding Agent (@copilot with `copilot-auto-assign: false`).
 2. **`.squad/agents/{id}/charter.md`** — Per agent: `# Name — Role`, Identity block (name, role, expertise, style), "What I Own", Boundaries (handle/don't), Model: auto.
-3. **`.squad/routing.md`** — Domain→agent routing table in the standalone health parser's format: section heading `## Routing Table`; headers `Work Type | Route To | Examples`; every `Route To` value is an exact roster `Name`, with multiple names comma-separated and no prose or annotations.
+3. **`.squad/routing.md`** — Domain→agent routing table in the standalone health parser's format: section heading `## Routing Table`; headers `Work Type | Route To | Examples`; every `Route To` value is an exact active casting-registry `persistent_name`, with multiple names comma-separated and no prose or annotations. Do not route to always-on support roles unless they are also active registry agents.
 4. **`.squad/casting/registry.json`** — From Step 3.
 5. **`.squad/casting/history.json`** — From Step 3.
 6. **`.squad/casting/policy.json`** — Standard policy with all 15 universes.
