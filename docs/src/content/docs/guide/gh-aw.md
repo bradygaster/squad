@@ -314,8 +314,10 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Planning | `/squad plan implementation` | Decompose a program plan into PR-sized tasks | Requires a program plan first |
 | Planning | `/squad plan validate` | Validate plan readiness before acceptance | Checks dependencies, decisions, sizing |
 | Planning | `/squad plan revise <feedback>` | Revise the current plan based on feedback | Works at any planning stage |
-| Acceptance | `/squad plan accept` | **Fast path:** accept all phases of scope + implementation + activate | Creates GitHub issues immediately |
-| Acceptance | `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) | Combines scope + impl + activate for that phase |
+| Activation | `/squad activate` | **Recommended fast path:** review and accept the latest fast plan, then create its GitHub issues | Requires write, maintain, or admin permission |
+| Activation | `/squad activate phase {N}` | Review, accept, and create issues for only Phase N of the latest fast plan | Incremental and in order |
+| Acceptance | `/squad plan accept` | Legacy alias for `/squad activate` | Preserved for backward compatibility |
+| Acceptance | `/squad plan accept phase {N}` | Legacy alias for `/squad activate phase {N}` | Preserved for backward compatibility |
 | Acceptance | `/squad plan accept scope` | Approve the program plan scope | Locks strategic structure before decomposition |
 | Acceptance | `/squad plan accept implementation` | Approve all phases of the implementation plan | Issues are not created until activate |
 | Acceptance | `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan | Also auto-activates when prior phases are ready |
@@ -482,7 +484,26 @@ All agents are renamed and their files updated accordingly.
 Squad's SDLC commands let you go from an issue to a fully decomposed, agent-assigned
 backlog without leaving the issue thread.
 
-### The full lifecycle
+### Recommended lifecycle: research → plan → activate
+
+For most work, use the clear three-step lifecycle:
+
+```text
+/squad research
+/squad plan
+/squad activate
+```
+
+`/squad research` gathers evidence, `/squad plan` proposes a combined program and
+implementation plan for review, and `/squad activate` reviews and accepts the
+latest fast plan before creating its GitHub issues. Activation is a mutating
+command, so the actor needs write, maintain, or admin repository permission.
+
+To activate one phase at a time, use `/squad activate phase {N}`. The existing
+`/squad plan accept` and `/squad plan accept phase {N}` commands remain supported
+as legacy aliases with identical behavior.
+
+### Granular lifecycle
 
 ```
 research → triage → plan program → plan implementation → accept → activate
@@ -513,14 +534,16 @@ next command. `Also available` shows alternative valid commands at this point in
 the lifecycle. This means you never have to remember the state machine — the
 issue thread always shows what's next.
 
-### Fast paths (backward compatible)
+### Fast paths and compatibility aliases
 
 You don't have to use every step. Fast-path commands combine multiple stages:
 
 | Fast path | Equivalent to | Stages skipped |
 |-----------|---------------|----------------|
 | `/squad plan` | `/squad plan program` + `/squad plan implementation` | Separate triage classification; separate scope review gate |
-| `/squad plan accept` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` | Separate scope lock step; separate implementation approval step; issues created immediately |
+| `/squad activate` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` | Separate scope lock step; separate implementation approval step; issues created immediately |
+
+`/squad plan accept` remains a backward-compatible alias for `/squad activate`.
 
 #### What you give up with each fast path
 
@@ -531,7 +554,7 @@ You don't have to use every step. Fast-path commands combine multiple stages:
 - **Risk:** Scope may be broader or narrower than intended because exclusions were never explicitly classified. Triage is where you tell Squad "don't plan that" — without it, Squad infers scope from research findings alone.
 - **Good for:** Small, well-understood features where you already know the scope and trust Squad's decomposition without a formal review gate.
 
-**`/squad plan accept` (skipping separate scope lock and implementation review)**
+**`/squad activate` (skipping separate scope lock and implementation review)**
 
 - **Skips:** Separate `/squad plan accept scope` — you cannot review and approve strategic structure before decomposition runs
 - **Skips:** Separate `/squad plan accept implementation` — the task breakdown goes directly to GitHub issue creation without a standalone review step
@@ -708,17 +731,16 @@ supersedes the previous one.
 
 ### Examples
 
-**Small project — fast path (4 commands):**
+**Small project — recommended fast path (3 commands):**
 
+```text
+1. /squad research → Deep repo analysis
+2. /squad plan     → Program + implementation plan for review
+3. /squad activate → Accept the reviewed plan and create issues
 ```
-1. /squad research                → Deep repo analysis
-   Next step shown: "/squad triage" or "/squad plan" (fast path)
-2. /squad plan                    → Program + implementation in one pass
-   Next action: "/squad plan accept"
-3. /squad plan revise fewer tasks → Adjusted plan
-   Next action: "/squad plan accept"
-4. /squad plan accept             → Issues created
-```
+
+If the plan needs changes, run `/squad plan revise <feedback>` before activation.
+`/squad plan accept` remains an equivalent legacy command.
 
 **Large project — granular lifecycle (7+ commands):**
 

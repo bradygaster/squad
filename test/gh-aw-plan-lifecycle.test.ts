@@ -19,6 +19,7 @@ const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const ONTOLOGY = join(WORKFLOWS_DIR, 'shared', 'squad-planning-ontology.md');
 const TEAM = join(process.cwd(), '.squad', 'team.md');
+const GH_AW_GUIDE = join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md');
 
 function readText(filePath: string): string {
   return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
@@ -96,6 +97,7 @@ function agentBlock(markdown: string, name: string): string {
 const squad = readText(SQUAD_WORKFLOW);
 const ontology = readText(ONTOLOGY);
 const team = readText(TEAM);
+const guide = readText(GH_AW_GUIDE);
 
 // ---------------------------------------------------------------------------
 // team.md parsing — Name column vs Role column
@@ -274,6 +276,42 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(accept).toMatch(/Report the exact number of created task issues/i);
     expect(accept).toMatch(/whether dependencies use native edges or the body-reference fallback/i);
     expect(accept).toMatch(/Never\s+claim an epic, phase issue, sub-issue relationship, or native dependency edge/i);
+  });
+});
+
+describe('/squad activate reuses the fast-path acceptance lifecycle', () => {
+  const modes = squad.match(/^## Modes\n([\s\S]*?)(?=\n## )/m)?.[1] ?? '';
+  const execute = squad.match(/^## Execute Mode\n([\s\S]*?)(?=\n## )/m)?.[1] ?? '';
+  const plan = skillBlock(squad, 'squad-plan');
+  const accept = skillBlock(squad, 'squad-plan-accept');
+
+  it('declares whole-plan and phase-aware activate commands', () => {
+    expect(modes).toContain('| `/squad activate` | Activate |');
+    expect(modes).toContain('| `/squad activate phase {N}` | Activate |');
+  });
+
+  it('routes activate to the existing squad-plan-accept skill', () => {
+    expect(execute).toContain('| `activate` | `squad-plan-accept` |');
+    expect(squad.match(/^## skill: `squad-plan-accept`$/gm)).toHaveLength(1);
+  });
+
+  it('prefers activate in fast-plan next steps while retaining the legacy alias', () => {
+    expect(plan).toMatch(/Next Steps \(`\/squad activate` preferred/);
+    expect(plan).toContain('`/squad plan accept` remains a supported legacy alias');
+    expect(accept).toContain('`/squad activate` [phase {N}] (recommended)');
+    expect(accept).toContain('`/squad plan accept` [phase {N}]');
+    expect(accept).toContain('(supported legacy alias)');
+  });
+
+  it('documents the recommended three-step lifecycle and both compatibility paths', () => {
+    expect(guide).toContain('### Recommended lifecycle: research → plan → activate');
+    expect(guide).toMatch(/\/squad research\n\/squad plan\n\/squad activate/);
+    expect(guide).toMatch(
+      /`\/squad activate` reviews and accepts the\s+latest fast plan before creating its GitHub issues/
+    );
+    expect(guide).toContain('`/squad plan accept` remains a backward-compatible alias');
+    expect(guide).toContain('### Granular lifecycle');
+    expect(guide).toContain('| Activation | `/squad plan activate` |');
   });
 });
 

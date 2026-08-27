@@ -234,6 +234,8 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad plan program revise <feedback>` | Plan Program Revise |
 | `/squad plan implementation` | Plan Implementation |
 | `/squad plan validate` | Plan Validate |
+| `/squad activate` | Activate |
+| `/squad activate phase {N}` | Activate |
 | `/squad plan accept` | Plan Accept (fast-path) |
 | `/squad plan accept phase {N}` | Plan Accept |
 | `/squad plan accept scope` | Plan Accept Scope |
@@ -380,7 +382,7 @@ requested. First-token-wins is the contract; keep extraction anchored to
 3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
+   - `cast-member` (1), `activate` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
 4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
 
@@ -508,7 +510,7 @@ When **Step AG-3** returned `REFUSE`:
    `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
 3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
 
-**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
 
 ## Execute Mode
 
@@ -536,6 +538,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `plan program revise` | `squad-plan-program-revise` |
 | `plan implementation` | `squad-plan-implementation` |
 | `plan validate` | `squad-plan-validate` |
+| `activate` | `squad-plan-accept` |
 | `plan accept` | `squad-plan-accept` |
 | `plan accept scope` | `squad-plan-accept-scope` |
 | `plan accept implementation` | `squad-plan-accept-implementation` |
@@ -550,7 +553,7 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 
 ## Team Guard
 
-**Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
+**Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Activate, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
 **Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement (these run their own pre-checks).
 
 ### Step TG-1: Check Team Presence
@@ -1070,7 +1073,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 `add-comment` with `data: {"squad_artifact":"plan","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
+Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
 
 Re-check every `Owner` against the Step 1 certified set before posting. If any
 value is absent, re-resolve it to a certified active member and repeat the check;
@@ -1081,12 +1084,14 @@ Do NOT create issues.
 
 ## skill: `squad-plan-accept`
 ---
-description: Accept a plan (whole plan or a single phase) and record the accepted artifact.
+description: Review and activate a fast plan (whole plan or a single phase), accepting it and creating issues.
 ---
 
-`/squad plan accept` [phase {N}] — combines scope+impl+activation for simple workflows.
+`/squad activate` [phase {N}] (recommended) or `/squad plan accept` [phase {N}]
+(supported legacy alias) — review the latest fast plan, then combine
+scope+implementation acceptance and activation for simple workflows.
 
-**Behavior:** If `program` or `implementation` artifacts exist, run Accept Scope → Accept Impl → Activate in sequence. If only a `plan` artifact exists, use legacy behavior below.
+**Behavior:** If `program` or `implementation` artifacts exist, run Accept Scope → Accept Impl → Activate in sequence. If only a `plan` artifact exists, use the fast-path behavior below.
 
 **Acknowledge:** `🤖 Squad is creating the planned issues…`
 
@@ -1100,9 +1105,9 @@ Resolve which planning path this issue is on, in this order:
    **Accept Implementation** (`squad-plan-accept-implementation`) → **Activate**
    (`squad-plan-activate`) — each honoring its own preconditions (e.g. Accept
    Implementation requires a `validation` PASS). Then stop; do NOT run the
-   legacy fast-path steps below.
+   fast-path steps below.
 2. Otherwise, find the latest `plan` artifact. If found, continue with the
-   legacy fast-path behavior in the steps below.
+   fast-path behavior in the steps below.
 3. If none of `program`, `implementation`, or `plan` exist, reply "No plan found.
    Run `/squad plan` first." and stop.
 
