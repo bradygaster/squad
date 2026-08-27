@@ -2428,7 +2428,7 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     while (stepStart > 0 && !lines[stepStart].match(/^\s+-\s+name:/)) {
       stepStart--;
     }
-    // Walk forward to the next "- name:" or end of the pre-steps block.
+    // Walk forward to the next "- name:" or end of the activation steps block.
     let stepEnd = healthLineIdx + 1;
     while (stepEnd < lines.length && !lines[stepEnd].match(/^\s+-\s+name:/) && !lines[stepEnd].match(/^steps:/)) {
       stepEnd++;
@@ -2442,14 +2442,17 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     ).not.toMatch(/continue-on-error:\s*true/);
   });
 
-  it('step ordering in pre-steps: init → health → upload', () => {
-    const preStepsStart = sharedContent.indexOf('pre-steps:');
-    expect(preStepsStart, 'pre-steps: block must exist in the shared bootstrap').toBeGreaterThan(-1);
-    const preStepsSection = sharedContent.slice(preStepsStart);
+  it('step ordering after activation checkout: init → health → upload', () => {
+    const activationStepsStart = sharedContent.search(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    expect(
+      activationStepsStart,
+      'jobs.activation.steps must exist in the shared bootstrap',
+    ).toBeGreaterThan(-1);
+    const activationStepsSection = sharedContent.slice(activationStepsStart);
 
-    const initStepIdx = preStepsSection.indexOf('Initialize Squad team');
-    const healthStepIdx = preStepsSection.indexOf('Run Squad health check');
-    const uploadStepIdx = preStepsSection.indexOf('Upload Squad state artifact');
+    const initStepIdx = activationStepsSection.indexOf('Initialize Squad team');
+    const healthStepIdx = activationStepsSection.indexOf('Run Squad health check');
+    const uploadStepIdx = activationStepsSection.indexOf('Upload Squad state artifact');
 
     expect(initStepIdx, '"Initialize Squad team" step must exist').toBeGreaterThan(-1);
     expect(healthStepIdx, '"Run Squad health check" step must exist').toBeGreaterThan(-1);
@@ -2508,14 +2511,15 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
 describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
   const sharedContent = readText(join(SHARED_DIR, 'squad.md'));
 
-  it('checks out committed Squad state before deciding whether to initialize', () => {
-    const checkout = sharedContent.indexOf('- name: Checkout repository');
-    const initialize = sharedContent.indexOf('- name: Initialize Squad team');
-
-    expect(checkout, 'activation must check out the repository').toBeGreaterThan(-1);
-    expect(initialize, 'activation must initialize or preserve Squad state').toBeGreaterThan(-1);
-    expect(checkout, 'checkout must run before the roster preservation guard').toBeLessThan(initialize);
-    expect(sharedContent.slice(checkout, initialize)).toContain('uses: actions/checkout@v4');
+  it('runs initialization after gh-aw checks out the activation context', () => {
+    expect(
+      sharedContent,
+      'jobs.activation.steps runs after the generated activation checkout',
+    ).toMatch(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    expect(
+      sharedContent,
+      'pre-steps run before the generated activation checkout and cannot inspect committed state',
+    ).not.toMatch(/jobs:\s*\n\s+activation:\s*\n\s+pre-steps:/);
   });
 
   function initStepScript(): string {

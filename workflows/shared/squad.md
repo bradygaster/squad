@@ -72,10 +72,7 @@ engine:
 
 jobs:
   activation:
-    pre-steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+    steps:
       - name: Mint Squad GitHub App token
         id: squad-app-token
         if: ${{ vars.SQUAD_GITHUB_APP_ID != '' }}
@@ -178,7 +175,7 @@ steps:
 This shared component handles the entire Squad install/init lifecycle outside the
 agent sandbox:
 
-1. **`jobs.activation.pre-steps`** — the repository is already checked out by the
+1. **`jobs.activation.steps`** — the repository is already checked out by the
    activation job. This step optionally mints a GitHub App installation token (or
    uses a supplied PAT), downloads the selected standalone GitHub Release bundle,
    checks whether `.squad/team.md` already exists with roster entries (preserving
