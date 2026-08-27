@@ -2371,6 +2371,73 @@ describe('gh-aw: Cast naming-mode contract (#1907)', () => {
   });
 });
 
+describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+  const cast = squadContent.match(
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+  )?.[0] ?? '';
+
+  it('uses an explicit fresh-artifact payload allowlist instead of staging .squad wholesale', () => {
+    expect(cast).toContain('Never stage `.squad/` wholesale');
+    for (const artifact of [
+      '`.squad/team.md`',
+      '`.squad/routing.md`',
+      '`.squad/casting/registry.json`',
+      '`.squad/casting/history.json`',
+      '`.squad/casting/policy.json`',
+      '`.github/agents/squad.agent.md`',
+      '`meet-the-squad.md`',
+    ]) {
+      expect(cast).toContain(artifact);
+    }
+    expect(cast).toContain('only the concrete `.squad/agents/{selected-id}/charter.md`');
+  });
+
+  it('explicitly excludes activation-bootstrap templates, automation, and default agents', () => {
+    for (const excluded of [
+      '`.squad/templates/**`',
+      '`.squad/skills/**`',
+      '`.squad/scripts/**`',
+      '`.squad/workflows/**`',
+      '`lead`',
+      '`reviewer`',
+      '`security`',
+      '`docs`',
+      '`devrel`',
+    ]) {
+      expect(cast).toContain(excluded);
+    }
+  });
+
+  it('validates the complete routing file as one exact registry-backed section', () => {
+    expect(cast).toContain('Validate the entire `.squad/routing.md` file');
+    expect(cast).toContain('exactly one `## Routing Table` section');
+    expect(cast).toContain('exact headers `Work Type | Route To | Examples`');
+    expect(cast).toContain('No `## Work Type → Agent` section');
+    expect(cast).toMatch(/every route target.*active registry `persistent_name`/s);
+  });
+
+  it('synchronizes the generated agent capabilities from final Cast state', () => {
+    expect(cast).toContain('Use the bootstrap agent file only as the base');
+    expect(cast).toContain('<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->');
+    expect(cast).toContain('<!-- SQUAD:TEAM-CAPABILITIES:END -->');
+    expect(cast).toMatch(/actual specialists.*routes/s);
+    expect(cast).toMatch(/pending.*zero.*uncast/s);
+    expect(cast).toContain('`.squad/templates/Rai-charter.md`');
+    expect(cast).toContain('`.squad/templates/rai-charter.md`');
+  });
+
+  it('fails closed before safe output when any Cast integrity invariant fails', () => {
+    expect(cast).toContain('Final fail-closed integrity pass');
+    expect(cast).toContain('explicit payload allowlist');
+    expect(cast).toContain('no stale agent directories or role IDs');
+    expect(cast).toContain('no placeholder capability marker');
+    expect(cast).toContain('exact routing/registry agreement');
+    expect(cast).toMatch(/If any check fails.*Do not call `create-pull-request`/s);
+    expect(cast).toMatch(/actionable.*`add-comment`.*`noop`/s);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // gh-aw: Threat detection taxonomy regression (#1701)
 //
