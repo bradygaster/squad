@@ -158,7 +158,10 @@ describe('GH-AW Cast final-tree validator', () => {
     )?.[1];
     expect(encoded, 'embedded validator payload must remain extractable').toBeDefined();
     const embedded = gunzipSync(Buffer.from((encoded as string).replace(/\s/g, ''), 'base64'));
-    expect(embedded.toString('utf8')).toBe(readFileSync(validator, 'utf8'));
+    const normalizeLf = (value: string) => value.replace(/\r\n/g, '\n');
+    expect(normalizeLf(embedded.toString('utf8'))).toBe(
+      normalizeLf(readFileSync(validator, 'utf8')),
+    );
     expect(helper).toContain('node "${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"');
     expect(helper).toContain('--payload "${RUNNER_TEMP:?}/squad-cast-payload.json"');
   });
