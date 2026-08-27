@@ -1132,18 +1132,17 @@ describe('gh-aw: inline skill extraction', () => {
 
     const dispatchTable = readText(SQUAD_WORKFLOW);
     for (const { mode } of modes) {
+      const normalizedMode = mode.replace(/\([^)]*\)/g, '').trim();
       const slug =
         'squad-' +
-        mode
-          .replace(/\([^)]*\)/g, '')
-          .trim()
+        normalizedMode
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
 
       const hasSkill = skillNames.has(slug);
       // Some modes legitimately share a playbook; accept an explicit mapping row.
-      const hasMapping = new RegExp(`\\|[^|\\n]*${mode.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^|\\n]*\\|[^|\\n]*squad-`, 'i').test(dispatchTable);
+      const hasMapping = new RegExp(`\\|[^|\\n]*${normalizedMode.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^|\\n]*\\|[^|\\n]*squad-`, 'i').test(dispatchTable);
 
       expect(
         hasSkill || hasMapping,

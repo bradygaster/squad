@@ -170,10 +170,13 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
     const dispatched = [
       'implement', // squad-implement-worker.md relay, and the schema's examples
       'research',
+      'activate',
+      'activate phase 2',
       'cast',
       'status',
       'connect org/repo',
       'plan accept implementation phase 2',
+      'plan accept',
     ];
 
     it.each(dispatched)('dispatching %j reaches its mode instead of failing the run', cmd => {
@@ -352,6 +355,7 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       'plan program revise',
       'plan implementation',
       'plan validate',
+      'activate',
       'plan accept',
       'plan accept scope',
       'plan accept implementation',
@@ -432,6 +436,35 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       expect(ag4).toContain('admin');
       expect(ag4).toContain('maintain');
       expect(ag4).toContain('write');
+    });
+
+    it('keeps activate phase variants behind authorization', () => {
+      expect(ag1).toContain('Anything outside the allow-list');
+      expect(classifyMode('activate')).toBe('AUTH_REQUIRED');
+      expect(workflow).toContain('`activate phase {N}` → `activate`');
+    });
+  });
+
+  describe('/squad activate fast-path alias', () => {
+    const pc2 = workflow.slice(
+      workflow.indexOf('### Step PC-2:'),
+      workflow.indexOf(PC3_HEADING)
+    );
+
+    it.each([
+      ['activate', 'activate'],
+      ['activate phase 2', 'activate phase 2'],
+      ['plan accept', 'plan accept'],
+    ])('extracts %j without changing the command arguments', (command, expected) => {
+      expect(parse(`/squad ${command}`)).toBe(expected);
+      expect(parseDispatch(command)).toBe(expected);
+    });
+
+    it('routes the alias as its own one-token mode after longer plan commands', () => {
+      const twoTokenModes = pc2.indexOf('`plan implementation` (2)');
+      const activateMode = pc2.indexOf('`activate` (1)');
+      expect(twoTokenModes).toBeGreaterThan(-1);
+      expect(activateMode).toBeGreaterThan(twoTokenModes);
     });
   });
 });
