@@ -1050,13 +1050,15 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 1. Read issue body (the epic/brief).
 2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
-3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** permitted
-   `Owner`/`Agent` values are Team Guard Step TG-2's certified roster set — the
-   `Name` column of `## Members` in **this repository's** `.squad/team.md` — plus
-   `@copilot`. Map each item's domain to a member via `.squad/routing.md` and emit
-   that member's exact `Name` cell — never a recalled name, never another column
-   (the `Role` column included). If none fits, use `@copilot`. Governs every
-   `Owner`/`Agent` column and `squad:{owner}` label downstream.
+3. Use the `ROSTER_MEMBER:` lines already emitted by mandatory Team Guard Step
+   TG-2 as the certified active roster set. **Owner binding gate:** when
+   `TEAM_PRESENT`, every work item `Owner` MUST match one certified name. Resolve
+   each item's domain through `.squad/routing.md`; if no exact rule exists, choose
+   the closest active member whose documented remit fits, but never synthesize a
+   role, alias, or placeholder and never use `@copilot` while a certified roster
+   exists. Preserve each selected member's exact `Name` cell in the plan. On
+   `ROSTER_UNREADABLE:`, stop instead of posting a plan. This gate governs every
+   `Owner` column and downstream `squad:{owner}` label.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -1069,7 +1071,10 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
 
-Re-check every `Owner` against the Step 1 permitted set before posting; a value absent from it is invalid and must be re-resolved.
+Re-check every `Owner` against the Step 1 certified set before posting. If any
+value is absent, re-resolve it to a certified active member and repeat the check;
+do not post until every row passes. Copy each row's `Depends On` value unchanged
+into the artifact.
 
 Do NOT create issues.
 
@@ -1112,20 +1117,31 @@ Resolve which planning path this issue is on, in this order:
 
 If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks directly under root.
 
+Before any `create-issue` call, run Team Guard Step TG-2 and validate every
+accepted plan row. Freeze a binding for each task number containing that row's
+original `Owner` and `Depends On` values. If any `Owner` does not match a certified
+active roster name, stop before mutation and require `/squad plan revise`; never
+substitute, re-route, or fall back to another identity during acceptance.
+
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the `Owner` lowercased. Mint `squad:{owner}` **only** when that value matches a `ROSTER_MEMBER:` line from Team Guard Step TG-2 — its stdout (the certified roster set, from the `Name` column of `## Members` in `.squad/team.md`) is the sole source; never re-read team.md or recall a name. Uncertified `Owner`: apply only `squad`, fall back to `@copilot`. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat)
 - Size: set Project field if available, else body `**Size:**` line
 
-Cross-phase deps: look up real issue numbers from prior acceptance comments.
+Copy every frozen `Depends On` value into the created issue body. Cross-phase
+deps: look up real issue numbers from prior acceptance comments without changing
+the declared task dependencies.
 
 Create in dependency order. Labels must have descriptions and colors.
 
 ##### Step 3: Native Dependency Edges
 
-Add `blockedBy` relationships via GitHub API. Graceful fallback to body-text references if unavailable.
+For every non-empty frozen `Depends On` entry, add the corresponding `blockedBy`
+relationship via GitHub API using the created issue-number map. Do not infer,
+drop, or reorder dependency edges. Graceful fallback to body-text references if
+unavailable.
 
 ##### Step 4: Post Summary
 

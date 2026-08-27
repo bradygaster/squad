@@ -206,16 +206,16 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     expect(isRoleStringLeak('Procedures')).toBe(false);
   });
 
-  it('squad-plan binds the Owner column to the team.md Name column', () => {
+  it('squad-plan binds the Owner column to a certified team.md Name cell', () => {
     const block = skillBlock(squad, 'squad-plan');
-    expect(block).toMatch(/Owner\/Agent binding rule/i);
-    expect(block).toContain('`Name` column');
-    expect(block).toContain('@copilot');
+    expect(block).toMatch(/Owner binding gate/i);
+    expect(block).toContain('`Name` cell');
+    expect(block).toMatch(/every work item `Owner` MUST match one certified name/i);
   });
 
   it('squad-plan-accept mints squad:{owner} from the cast Name, not a role', () => {
     const block = skillBlock(squad, 'squad-plan-accept');
-    expect(block).toContain('`Name` column');
+    expect(block).toMatch(/certified\s+active roster name/i);
     expect(block).toContain('`squad:{owner}`');
   });
 
@@ -224,6 +224,41 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     expect(block).toMatch(/Agent binding rule/i);
     expect(block).toContain('`Name` column');
     expect(block).toMatch(/appears verbatim in the `Name` column/);
+  });
+});
+
+describe('#1903: fast-path planning binds certified roster owners end to end', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const accept = skillBlock(squad, 'squad-plan-accept');
+
+  it('requires every fast-path Owner to be certified before posting', () => {
+    const gate = plan.match(/3\. Use the `ROSTER_MEMBER:`[\s\S]*?(?=\n4\.)/)?.[0] ?? '';
+    expect(gate, 'squad-plan must contain an explicit certified-roster gate').not.toBe('');
+    expect(gate).toMatch(/every work item `Owner` MUST match one certified name/i);
+    expect(gate).toMatch(/never synthesize a\s+role, alias, or placeholder/i);
+    expect(gate).toMatch(/never use `@copilot` while a certified roster\s+exists/i);
+
+    const finalCheck = plan.match(/Re-check every `Owner`[\s\S]*?(?=\nDo NOT create issues)/)?.[0] ?? '';
+    expect(finalCheck).toMatch(/do not post until every row passes/i);
+    expect(finalCheck).toMatch(/Copy each row's `Depends On` value unchanged/i);
+  });
+
+  it('freezes each accepted row and derives its lowercase member label without remapping', () => {
+    const preflight = accept.match(/Before any `create-issue` call[\s\S]*?(?=\nFor each work item)/)?.[0] ?? '';
+    expect(preflight, 'squad-plan-accept must validate bindings before mutation').not.toBe('');
+    expect(preflight).toMatch(/original `Owner` and `Depends On` values/i);
+    expect(preflight).toMatch(/stop before mutation/i);
+    expect(preflight).toMatch(/never\s+substitute, re-route, or fall back/i);
+
+    const labelRule = accept.match(/^- Labels:.*$/m)?.[0] ?? '';
+    expect(labelRule).toMatch(/frozen row `Owner` lowercased/i);
+    expect(labelRule).toMatch(/only from that task's certified binding/i);
+  });
+
+  it('preserves every declared dependency through body references and native edges', () => {
+    expect(accept).toMatch(/Copy every frozen `Depends On` value into the created issue body/i);
+    expect(accept).toMatch(/For every non-empty frozen `Depends On` entry[\s\S]*`blockedBy`/i);
+    expect(accept).toMatch(/Do not infer,\s+drop, or reorder dependency edges/i);
   });
 });
 
