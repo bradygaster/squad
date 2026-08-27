@@ -113,10 +113,10 @@ describe('standalone release handoff', () => {
 
     expect(squadWorkflow).toMatch(/No themed naming request.*descriptive mode/s);
     expect(squadWorkflow).toMatch(
-      /Explicit built-in or custom universe request.*requested universe/s
+      /Explicit built-in or custom universe request.*requested universe/s,
     );
     expect(squadWorkflow).toMatch(
-      /Themed names requested without a universe.*auto-select.*built-in universe/s
+      /Themed names requested without a universe.*auto-select.*built-in universe/s,
     );
   });
 });

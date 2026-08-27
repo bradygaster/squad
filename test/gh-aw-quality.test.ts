@@ -2347,7 +2347,7 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
 describe('gh-aw: Cast naming-mode contract (#1907)', () => {
   const squadContent = readText(SQUAD_WORKFLOW);
   const cast = squadContent.match(
-    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:)/
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
   )?.[0] ?? '';
 
   it('defaults an unqualified Cast request to descriptive role-based names', () => {
@@ -2365,7 +2365,7 @@ describe('gh-aw: Cast naming-mode contract (#1907)', () => {
 
   it('auto-selects a built-in universe only for themed names with no universe', () => {
     expect(cast).toMatch(
-      /Themed names requested without a universe.*auto-select.*built-in universe/s
+      /Themed names requested without a universe.*auto-select.*built-in universe/s,
     );
     expect(cast).toMatch(/capacity.*shape.*fit table/s);
   });
