@@ -945,7 +945,7 @@ describe('#1914: research creates the planning lifecycle state', () => {
     )?.[1] ?? '';
 
     expect(lifecycle).toContain(
-      'data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}',
+      'Call `upsert_lifecycle_state` once with the complete lifecycle body.',
     );
     expect(lifecycle).toContain('Set Research = `✅ Done`');
     expect(lifecycle).toContain('state = Researched');
@@ -968,13 +968,13 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
   const plan = skillBlock(squad, 'squad-plan');
   const revise = skillBlock(squad, 'squad-plan-revise');
   const activate = skillBlock(squad, 'squad-plan-accept');
-  const lifecycleEnvelope =
-    'data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}';
+  const lifecycleUpsert =
+    'Call `upsert_lifecycle_state` once with the complete lifecycle body.';
 
   it('updates lifecycle state after creating a fast plan', () => {
     const lifecycle = plan.match(/Step 4: Update Lifecycle([\s\S]*)$/)?.[1] ?? '';
 
-    expect(lifecycle).toContain(lifecycleEnvelope);
+    expect(lifecycle).toContain(lifecycleUpsert);
     expect(lifecycle).toContain('Set Plan = `✅ Done`');
     expect(lifecycle).toContain('state = Planned');
     expect(lifecycle).toContain('last command = `/squad plan`');
@@ -983,7 +983,7 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
   });
 
   it('preserves planned lifecycle state after revising a fast plan', () => {
-    expect(revise).toContain(lifecycleEnvelope);
+    expect(revise).toContain(lifecycleUpsert);
     expect(revise).toContain('Keep Plan = `✅ Done`');
     expect(revise).toContain('state = Planned');
     expect(revise).toContain('last command =\n   `/squad plan revise`');
@@ -994,7 +994,7 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
     const lifecycle =
       activate.match(/Step 5: Update Fast-Path Lifecycle([\s\S]*)$/)?.[1] ?? '';
 
-    expect(lifecycle).toContain(lifecycleEnvelope);
+    expect(lifecycle).toContain(lifecycleUpsert);
     expect(lifecycle).toContain('record phase `{N}` activated');
     expect(lifecycle).toContain('point next to the next unactivated phase');
     expect(lifecycle).toContain('Activation = `✅ Done`');

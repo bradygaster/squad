@@ -115,9 +115,8 @@ safe-outputs:
 
 ## Planning Artifact Data Contract (all modes)
 
-gh-aw removes HTML comments from prompts and sanitized output bodies. Never use HTML comments as Squad state markers.
-
-Every machine-readable planning comment MUST include safe-output `data` with:
+gh-aw strips HTML comments, so never use them as state markers. Every
+machine-readable planning comment MUST include safe-output `data`:
 
 ```json
 {
@@ -128,12 +127,13 @@ Every machine-readable planning comment MUST include safe-output `data` with:
 }
 ```
 
-Use the triggering issue number for `origin_issue`. Because gh-aw requires every declared schema property, emit `phases: []` for non-phase artifacts and the accumulated phase numbers for phase-state artifacts. Validation results remain in the human-readable body. gh-aw appends the validated envelope as a `Structured data:` fenced JSON block in the GitHub body.
+Use the triggering issue for `origin_issue`; emit `phases: []` except for
+accumulated phase-state numbers. Keep validation in the readable body. Locate
+artifacts by paginating all comments, matching the exact structured fields, and
+choosing the newest match.
 
-When locating artifacts:
-1. **Paginate fully** — fetch ALL comments (paginate if >30).
-2. **Parse structured data** — match exact `squad_artifact`, `schema_version: "1"`, and the current `origin_issue`.
-3. **Latest = newest** — if multiple comments match, use the most recent.
+For each lifecycle-state write, call `upsert_lifecycle_state` once with the
+complete body. It updates the newest trusted tracker or creates the first one.
 
 # Squad — `/squad` Slash Command
 
@@ -1107,8 +1107,7 @@ Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → 
 
 ##### Step 4: Update Lifecycle
 
-Find/create the single `lifecycle-state` artifact comment. Include
-`data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Call `upsert_lifecycle_state` once with the complete lifecycle body.
 Set Research = `✅ Done`, state = Researched, last command = `/squad research`,
 next = `/squad triage`, and also available = `/squad plan`.
 
@@ -1171,9 +1170,7 @@ Do NOT create issues.
 
 ##### Step 4: Update Lifecycle
 
-Find/create the single `lifecycle-state` artifact comment; never post a second
-lifecycle tracker. Include
-`data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Call `upsert_lifecycle_state` once with the complete lifecycle body.
 Set Plan = `✅ Done`, state = Planned, last command = `/squad plan`, next =
 `/squad activate`, and also available = `/squad plan revise <feedback>`.
 
@@ -1269,9 +1266,7 @@ that was not created.
 
 ##### Step 5: Update Fast-Path Lifecycle
 
-Find/create the single `lifecycle-state` artifact comment; never post a second
-lifecycle tracker. Include
-`data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Call `upsert_lifecycle_state` once with the complete lifecycle body.
 
 - Phase-specific: keep Plan = `✅ Done`, record phase `{N}` activated, set the
   last command to the invoked `/squad activate phase {N}` or legacy alias, and
@@ -1292,8 +1287,7 @@ description: Revise an existing plan artifact from reviewer feedback.
 3. Apply feedback to plan.
 4. **EDIT the existing artifact comment** (never post a duplicate).
 5. Prepend revision note.
-6. Find/create the single `lifecycle-state` artifact comment and include
-   `data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+6. Call `upsert_lifecycle_state` once with the complete lifecycle body.
    Keep Plan = `✅ Done`, state = Planned, set last command =
    `/squad plan revise`, next = `/squad activate`, and also available =
    `/squad plan revise <feedback>`.
@@ -1333,7 +1327,7 @@ Structure: `## 🔍 Squad Triage — Dispositions` → Intent + reference lines 
 
 ##### Step 4: Update Lifecycle
 
-Find/create the `lifecycle-state` artifact comment. Include `data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
+Call `upsert_lifecycle_state` once with the complete lifecycle body. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
 
 ## skill: `squad-triage-revise`
 ---
