@@ -34,6 +34,10 @@ function lifecycleScript(): string {
   return scriptForStep('Upsert Squad lifecycle state');
 }
 
+function researchScript(): string {
+  return scriptForStep('Upsert Squad research artifact');
+}
+
 function lifecycleRepairScript(): string {
   return scriptForStep('Repair terminal lifecycle after idempotent activation');
 }
@@ -87,6 +91,50 @@ async function runLifecycleUpsert(items: unknown[], comments: Comment[] = []) {
   return { created, updated, failures };
 }
 
+async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
+  const directory = mkdtempSync(join(tmpdir(), 'squad-research-'));
+  tempDirectories.push(directory);
+  const outputPath = join(directory, 'agent-output.json');
+  writeFileSync(outputPath, JSON.stringify({ items }));
+
+  const created: Array<Record<string, unknown>> = [];
+  const updated: Array<Record<string, unknown>> = [];
+  const deleted: Array<Record<string, unknown>> = [];
+  const failures: string[] = [];
+  const github = {
+    paginate: async () => comments,
+    rest: {
+      issues: {
+        listComments: () => undefined,
+        createComment: async (params: Record<string, unknown>) => created.push(params),
+        updateComment: async (params: Record<string, unknown>) => updated.push(params),
+        deleteComment: async (params: Record<string, unknown>) => deleted.push(params),
+      },
+    },
+  };
+  const context = { repo: { owner: 'octodemo', repo: 'consumer' } };
+  const previousOutput = process.env.GH_AW_AGENT_OUTPUT;
+  const previousIssue = process.env.ISSUE_NUMBER;
+  process.env.GH_AW_AGENT_OUTPUT = outputPath;
+  process.env.ISSUE_NUMBER = '5';
+
+  try {
+    const compiled = compileFunction(
+      `return (async () => {\n${researchScript()}\n})();`,
+      ['github', 'context', 'core'],
+      { importModuleDynamically: vmConstants.USE_MAIN_CONTEXT_DEFAULT_LOADER },
+    ) as (...args: unknown[]) => Promise<unknown>;
+    await compiled(github, context, { setFailed: (message: string) => failures.push(message) });
+  } finally {
+    if (previousOutput === undefined) delete process.env.GH_AW_AGENT_OUTPUT;
+    else process.env.GH_AW_AGENT_OUTPUT = previousOutput;
+    if (previousIssue === undefined) delete process.env.ISSUE_NUMBER;
+    else process.env.ISSUE_NUMBER = previousIssue;
+  }
+
+  return { created, updated, deleted, failures };
+}
+
 async function runLifecycleRepair(
   comments: Comment[],
   command = '/squad activate',
@@ -129,6 +177,117 @@ async function runLifecycleRepair(
 
   return { created, updated, failures, info };
 }
+
+describe('#1935: deterministic research artifact safe output', () => {
+  const body = [
+    '## 🔬 Squad Research — Example',
+    '',
+    '### Goals',
+    '- Goal',
+    '',
+    '### Non-goals',
+    '- Non-goal',
+    '',
+    '### Evidence table',
+    '| Rn | Finding | Risk | Complexity | Citation |',
+    '| --- | --- | --- | --- | --- |',
+    '| R1 | Finding | 🟢 | S | src/example.ts:1 |',
+    '',
+    '### Load-bearing assumptions',
+    '- R1',
+    '',
+    '### Open decisions',
+    '- Decision',
+    '',
+    '### Acceptance framing',
+    '- R1',
+  ].join('\n');
+
+  it('creates the first research artifact with the fixed structured envelope', async () => {
+    const result = await runResearchUpsert([
+      { type: 'upsert_research_artifact', body },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.deleted).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].issue_number).toBe(5);
+    expect(result.created[0].body).toContain(body);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+  });
+
+  it('updates the newest trusted research artifact and removes older duplicates', async () => {
+    const artifact = (originIssue: number) => [
+      'Research',
+      '',
+      '```json',
+      JSON.stringify({
+        squad_artifact: 'research',
+        schema_version: '1',
+        origin_issue: originIssue,
+        phases: [],
+      }),
+      '```',
+    ].join('\n');
+    const result = await runResearchUpsert(
+      [{ type: 'upsert_research_artifact', body }],
+      [
+        {
+          id: 10,
+          body: artifact(5),
+          created_at: '2026-08-27T23:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 20,
+          body: artifact(5),
+          created_at: '2026-08-28T00:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 30,
+          body: artifact(6),
+          created_at: '2026-08-28T01:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 40,
+          body: artifact(5),
+          created_at: '2026-08-28T02:00:00Z',
+          user: { login: 'untrusted-user' },
+        },
+      ],
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].comment_id).toBe(20);
+    expect(result.deleted).toEqual([
+      expect.objectContaining({ comment_id: 10 }),
+    ]);
+  });
+
+  it('replaces agent-supplied trailing metadata with the trusted envelope', async () => {
+    const result = await runResearchUpsert([
+      {
+        type: 'upsert_research_artifact',
+        body: `${body}\n\n\`\`\`json\n{"squad_artifact":"research","origin_issue":999}\n\`\`\``,
+      },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect((result.created[0].body as string).match(/Structured data:/g)).toHaveLength(1);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+    expect(result.created[0].body).not.toContain('"origin_issue":999');
+  });
+});
 
 describe('#1916: deterministic lifecycle safe output', () => {
   const body = [
