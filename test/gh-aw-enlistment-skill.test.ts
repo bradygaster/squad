@@ -73,13 +73,44 @@ describe('gh-aw-enlistment skill', () => {
   describe('safety gates encoded in the body', () => {
     const content = readLF(CANONICAL);
 
-    it('allowlists ONLY the two documented secrets', () => {
-      expect(content).toContain('SQUAD_GITHUB_APP_PRIVATE_KEY');
-      expect(content).toContain('SQUAD_GITHUB_TOKEN');
+    // EXCLUSIVITY GUARD — these two tests enforce the exact set of
+    // backtick-delimited tokens in the bounded allowlist region.
+    // Using deep-equality on a sorted array (not .toContain) so that adding a
+    // 4th entry, removing an entry, or renaming one all cause an immediate
+    // failure.  The delimiters scope the extraction so identical strings that
+    // appear elsewhere in the document (Anti-Patterns section, examples) do
+    // NOT count.
+    it('allowlist region delimiters exist exactly once each', () => {
+      const startMatches = [...content.matchAll(/^<!-- allowlist-start -->$/gm)];
+      const endMatches   = [...content.matchAll(/^<!-- allowlist-end -->$/gm)];
+      expect(startMatches.length, '<!-- allowlist-start --> must appear exactly once').toBe(1);
+      expect(endMatches.length,   '<!-- allowlist-end --> must appear exactly once').toBe(1);
     });
 
-    it('allowlists the documented squad-init action', () => {
-      expect(content).toContain('bradygaster/squad/.github/actions/squad-init');
+    it('allowlist region contains EXACTLY the two documented secrets and the one documented action — no more, no fewer', () => {
+      const startTag = '<!-- allowlist-start -->';
+      const endTag   = '<!-- allowlist-end -->';
+      const startIdx = content.indexOf(startTag);
+      const endIdx   = content.indexOf(endTag);
+      expect(startIdx, 'allowlist-start delimiter must exist').toBeGreaterThan(-1);
+      expect(endIdx,   'allowlist-end delimiter must exist').toBeGreaterThan(startIdx);
+
+      // Extract strictly between the delimiter lines (exclusive).
+      const region = content.slice(startIdx + startTag.length, endIdx);
+
+      // Every backtick-delimited token in the region — order-independent exact set.
+      const tokens = [...region.matchAll(/`([^`]+)`/g)].map(m => m[1]);
+      expect(tokens.slice().sort(), 'allowlist tokens must be exactly the three documented entries').toEqual(
+        [
+          'SQUAD_GITHUB_APP_PRIVATE_KEY',
+          'SQUAD_GITHUB_TOKEN',
+          'bradygaster/squad/.github/actions/squad-init',
+        ].sort()
+      );
+
+      // Structural: exactly 2 bullet lines (one for the two secrets, one for the action).
+      const bulletLines = region.split('\n').filter(l => l.trimStart().startsWith('- '));
+      expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
     });
 
     it('installs all four @dev workflows', () => {
@@ -124,6 +155,19 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toMatch(/auto-?merge/i);
       expect(content).toMatch(/never merge|do not merge|human-reviewed|human approval/i);
       expect(content).toMatch(/\/squad cast/);
+    });
+
+    it("documents extension check in both bash (grep -q) and PowerShell (Select-String guarding gh-aw install) forms", () => {
+      // Regression guard for Change B: the portability note must stay in the
+      // skill so Windows users are not silently left with a bash-only check.
+      expect(content, "bash form 'grep -q' must be present").toContain("grep -q 'github/gh-aw'");
+      // The PowerShell check must bind Select-String to the 'github/gh-aw'
+      // pattern AND guard an install — a bare Select-String anywhere is too loose.
+      // Allows for Markdown blockquote wrapping (leading '>') and line-wrapping
+      // (the install half may continue on the same or a wrapped line).
+      expect(content, "PowerShell form must bind Select-String to 'github/gh-aw' and guard an install").toMatch(
+        /Select-String\s+-Quiet\s+'github\/gh-aw'.*gh extension install github\/gh-aw/s
+      );
     });
 
     it('resolves repo identity at runtime (no hardcoded owner/repo placeholder)', () => {

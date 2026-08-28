@@ -70,6 +70,10 @@ gh extension list | grep -q 'github/gh-aw' || gh extension install github/gh-aw
 git status --short
 ```
 
+> **Portability — extension check:** the `grep -q` above is bash/Git Bash. On Windows
+> PowerShell use:
+> `if (-not (gh extension list | Select-String -Quiet 'github/gh-aw')) { gh extension install github/gh-aw }`
+
 - **STOP** if `gh auth status` is not logged in, or is logged in as the wrong
   identity for this repo (see the `gh-auth-isolation` skill to operate as a
   specific account without switching the global default).
@@ -130,8 +134,10 @@ creating duplicates. The installed top-level set is exactly:
 
 On a clean repo, `gh aw add` reports these expected safe updates and **nothing else**:
 
+<!-- allowlist-start -->
 - Restricted secrets: **`SQUAD_GITHUB_APP_PRIVATE_KEY`** and **`SQUAD_GITHUB_TOKEN`**
 - Action: **`bradygaster/squad/.github/actions/squad-init`**
+<!-- allowlist-end -->
 
 If — and only if — the report contains exactly those documented entries, complete
 the one-time approval:
