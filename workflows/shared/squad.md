@@ -181,6 +181,137 @@ safe-outputs:
               }
 
 jobs:
+  repair_activated_lifecycle:
+    name: Repair terminal Squad lifecycle
+    needs:
+      - agent
+      - detection
+      - safe_outputs
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.agent.result == 'success' &&
+        needs.detection.result == 'success' &&
+        needs.safe_outputs.result == 'success' &&
+        !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
+        github.event_name == 'issue_comment' &&
+        (github.event.comment.body == '/squad activate' ||
+         github.event.comment.body == '/squad plan accept')
+      }}
+    runs-on: ubuntu-slim
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Repair terminal lifecycle after idempotent activation
+        uses: actions/github-script@v9
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          SQUAD_COMMAND: ${{ github.event.comment.body }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const command = String(process.env.SQUAD_COMMAND || "").trim();
+            if (
+              !Number.isInteger(issueNumber) ||
+              issueNumber <= 0 ||
+              !["/squad activate", "/squad plan accept"].includes(command)
+            ) {
+              core.setFailed("A valid whole-plan activation command and issue number are required.");
+              return;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+            const trusted = comments.filter(
+              (comment) => comment.user?.login === "github-actions[bot]",
+            );
+            const envelopeFor = (comment) => {
+              const matches = String(comment.body || "").matchAll(
+                /Structured data:\s*```json\s*([\s\S]*?)```/gi,
+              );
+              let envelope = null;
+              for (const match of matches) {
+                try {
+                  envelope = JSON.parse(match[1]);
+                } catch (error) {
+                  if (!(error instanceof SyntaxError)) throw error;
+                }
+              }
+              return envelope;
+            };
+            const artifacts = trusted.map((comment) => ({
+              comment,
+              envelope: envelopeFor(comment),
+            }));
+            const accepted = artifacts.some(
+              ({ envelope }) =>
+                envelope?.squad_artifact === "plan-accepted" &&
+                envelope?.schema_version === "1" &&
+                envelope?.origin_issue === issueNumber &&
+                Array.isArray(envelope?.phases) &&
+                envelope.phases.length === 0,
+            );
+            if (!accepted) {
+              core.info("No trusted whole-plan acceptance artifact; lifecycle repair is not applicable.");
+              return;
+            }
+
+            const lifecycle = artifacts
+              .filter(
+                ({ envelope }) =>
+                  envelope?.squad_artifact === "lifecycle-state" &&
+                  envelope?.schema_version === "1" &&
+                  envelope?.origin_issue === issueNumber,
+              )
+              .sort(({ comment: left }, { comment: right }) =>
+                String(left.created_at).localeCompare(String(right.created_at)),
+              )
+              .at(-1)?.comment;
+            const lifecycleBody = String(lifecycle?.body || "");
+            const terminal =
+              /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(lifecycleBody) &&
+              /^(?:[-*]\s+)?\*\*Activation:\*\*\s+✅\s+Done\s*$/im.test(lifecycleBody) &&
+              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)`\s*$/im.test(lifecycleBody);
+            if (terminal) {
+              core.info("The newest lifecycle tracker already records terminal activation.");
+              return;
+            }
+
+            const body = [
+              `## 🧭 Squad Lifecycle State — Issue #${issueNumber}`,
+              "",
+              "- **State:** Activated",
+              "- **Plan:** ✅ Done",
+              "- **Activation:** ✅ Done",
+              `- **Last command:** \`${command}\``,
+              "- **Next action:** Track progress on the created task issues; no further planning action is required.",
+            ].join("\n");
+            const data = JSON.stringify({
+              squad_artifact: "lifecycle-state",
+              schema_version: "1",
+              origin_issue: issueNumber,
+              phases: [],
+            });
+            const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+
+            if (lifecycle) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: lifecycle.id,
+                body: finalBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issueNumber,
+                body: finalBody,
+              });
+            }
+
   activation:
     steps:
       - name: Mint Squad GitHub App token
