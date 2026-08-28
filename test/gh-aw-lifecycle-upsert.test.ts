@@ -327,6 +327,30 @@ describe('#1916: deterministic lifecycle safe output', () => {
     '- **Last command:** `/squad activate`',
     '- **Next action:** Track progress on the 5 created task issues; no further planning action required.',
   ].join('\n');
+  const terminalTableBody = [
+    '## Planning Lifecycle',
+    '',
+    '| Phase | Status | Artifact | Updated |',
+    '|-------|--------|----------|---------|',
+    '| Activated | ✅ Done | 5 task issues created under #5 | 2026-08-28 |',
+    '',
+    '**Current state:** Activated',
+    '**Last command:** `/squad activate` by @octocat',
+    '**Next action:** None — activation is terminal.',
+  ].join('\n');
+  const terminalProgressBody = [
+    '## Squad Planning Lifecycle',
+    '',
+    '**State:** Activated',
+    '',
+    '**Progress**',
+    '- Research: ✅ Done',
+    '- Plan: ✅ Done',
+    '- Activation: ✅ Done',
+    '',
+    '**Last command:** `/squad activate`',
+    '**Next action:** Plan is fully activated — 6 task issues created under #5.',
+  ].join('\n');
 
   it('creates the first tracker with the fixed structured envelope', async () => {
     const result = await runLifecycleUpsert([
@@ -442,6 +466,19 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.failures).toEqual([]);
     expect(result.created).toHaveLength(1);
     expect(result.created[0].body).toContain(terminalBody);
+  });
+
+  it.each([
+    ['progress-table activation with command attribution', terminalTableBody],
+    ['plain progress-list activation', terminalProgressBody],
+  ])('accepts live terminal presentation: %s', async (_name, liveBody) => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: liveBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(liveBody);
   });
 
   it('rejects non-command next actions for nonterminal states', async () => {

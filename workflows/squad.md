@@ -1178,6 +1178,12 @@ the envelope only through `data` so gh-aw appends it exactly once.
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
 
+Choose the hierarchy explicitly. A phased plan MUST place every work-item table
+under a heading matching `### Phase {N}` (optional title text may follow). Even a
+single `### Phase 1` heading makes the plan phased. A flat plan MUST use one
+work-item table with no `### Phase {N}` headings. Do not use phase headings as
+visual decoration on a plan intended to stay flat.
+
 Re-check every `Owner` against the Step 1 certified set before posting. If any
 value is absent, re-resolve it to a certified active member and repeat the check;
 do not post until every row passes. Copy each row's `Depends On` value unchanged
@@ -1239,14 +1245,20 @@ Resolve which planning path this issue is on, in this order:
    hint. Out of order → stop with the sequential hint.
 5. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
 6. If no items remain after filter: stop.
+7. Determine hierarchy only from the latest plan artifact's headings. Any heading
+   matching `### Phase {N}` makes the plan explicitly phased, including a lone
+   `### Phase 1`; every accepted row must remain in its declared phase. With no
+   matching heading, the plan is flat. Do not infer hierarchy from prose, task
+   count, dependency shape, or personal preference.
 
 ##### Step 2: Create Sub-Issues — Hierarchical
 
-The origin issue is always the root. If the plan has explicit phases, create one
-phase issue per accepted phase under the origin issue, then create that phase's
-task issues under its phase issue. For a flat plan, create exactly one issue per
-accepted work-item row and set every task's parent to the origin issue. Do not
-create an additional epic, summary, root, or phase issue for a flat plan.
+The origin issue is always the root. Apply Step 1a's heading rule exactly. If the
+plan has explicit `### Phase {N}` headings, create one phase issue per accepted
+phase under the origin issue, then create that phase's task issues under its phase
+issue; never flatten it. For a flat plan, create exactly one issue per accepted
+work-item row and set every task's parent to the origin issue.
+Do not create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
 accepted plan row. Freeze a binding for each task number containing that row's
@@ -1299,7 +1311,8 @@ Call `upsert_lifecycle_state` once with the complete lifecycle body.
   point next to the next unactivated phase.
 - Full or last phase: set Plan = `✅ Done`, Activation = `✅ Done`, state =
   Activated, and the last command to the invoked `/squad activate` or legacy
-  alias. This is terminal, so do not invent another next action.
+  alias. This is terminal. Set Next action to explicit terminal prose such as
+  `None — activation is complete`; do not invent another slash command.
 
 ## skill: `squad-plan-revise`
 ---
