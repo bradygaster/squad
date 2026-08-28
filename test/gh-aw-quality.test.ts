@@ -420,6 +420,16 @@ describe('#1916: lifecycle comment updates use a deterministic safe-output job',
     expect(workflow).toContain('call `upsert_lifecycle_state` once');
     expect(workflow).toContain('updates the newest trusted tracker or creates the first one');
   });
+
+  it('repairs terminal state deterministically when an idempotent rerun omits the upsert', () => {
+    expect(shared).toContain('repair_activated_lifecycle:');
+    expect(shared).toContain(
+      "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
+    );
+    expect(shared).toContain("github.event.comment.body == '/squad activate'");
+    expect(shared).toContain('envelope?.squad_artifact === "plan-accepted"');
+    expect(shared).toContain('name: Repair terminal lifecycle after idempotent activation');
+  });
 });
 
 describe('gh-aw: router concurrency guard (#1730)', () => {
@@ -1285,6 +1295,18 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     );
     expect(compiled).toContain('name: Upsert Squad lifecycle state');
     expect(compiled).toContain('comment_id: current.id');
+  }, 20000);
+
+  it('compiles the deterministic terminal lifecycle repair job (#1928)', () => {
+    const compiled = lockText();
+    expect(compiled).toContain('  repair_activated_lifecycle:');
+    expect(compiled).toMatch(
+      /repair_activated_lifecycle:[\s\S]*?needs:[\s\S]*?- safe_outputs/,
+    );
+    expect(compiled).toContain('name: Repair terminal lifecycle after idempotent activation');
+    expect(compiled).toContain(
+      "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
+    );
   }, 20000);
 
   it('preserves the standalone release selection in the compiled install step (#1884)', () => {
@@ -2589,7 +2611,7 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
   });
 
   it('step ordering after activation checkout: init → health → upload', () => {
-    const activationStepsStart = sharedContent.search(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    const activationStepsStart = sharedContent.search(/^  activation:\s*\n\s+steps:/m);
     expect(
       activationStepsStart,
       'jobs.activation.steps must exist in the shared bootstrap',
@@ -2665,11 +2687,11 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
     expect(
       sharedContent,
       'jobs.activation.steps runs after the generated activation checkout',
-    ).toMatch(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    ).toMatch(/^  activation:\s*\n\s+steps:/m);
     expect(
       sharedContent,
       'pre-steps run before the generated activation checkout and cannot inspect committed state',
-    ).not.toMatch(/jobs:\s*\n\s+activation:\s*\n\s+pre-steps:/);
+    ).not.toMatch(/^  activation:\s*\n\s+pre-steps:/m);
   });
 
   function initStepScript(): string {
