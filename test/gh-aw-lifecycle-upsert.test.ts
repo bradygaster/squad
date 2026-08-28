@@ -202,10 +202,11 @@ describe('#1935: deterministic research artifact safe output', () => {
     '### Acceptance framing',
     '- R1',
   ].join('\n');
+  const boldSectionBody = body.replace(/^### (.+)$/gm, '**$1**');
 
-  it('creates the first research artifact with the fixed structured envelope', async () => {
+  it('accepts bold section labels and creates the fixed structured envelope', async () => {
     const result = await runResearchUpsert([
-      { type: 'upsert_research_artifact', body },
+      { type: 'upsert_research_artifact', body: boldSectionBody },
     ]);
 
     expect(result.failures).toEqual([]);
@@ -213,7 +214,7 @@ describe('#1935: deterministic research artifact safe output', () => {
     expect(result.deleted).toEqual([]);
     expect(result.created).toHaveLength(1);
     expect(result.created[0].issue_number).toBe(5);
-    expect(result.created[0].body).toContain(body);
+    expect(result.created[0].body).toContain(boldSectionBody);
     expect(result.created[0].body).toContain(
       '{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}',
     );

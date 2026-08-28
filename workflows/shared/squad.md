@@ -134,9 +134,13 @@ safe-outputs:
                 "Open decisions",
                 "Acceptance framing",
               ];
-              const hasRequiredSections = requiredSections.every((section) =>
-                new RegExp(`^#{2,6}\\s+${section}\\s*$`, "im").test(body),
-              );
+              const hasRequiredSections = requiredSections.every((section) => {
+                const label = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                return new RegExp(
+                  `^(?:#{2,6}\\s+${label}|\\*\\*${label}\\*\\*)\\s*$`,
+                  "im",
+                ).test(body);
+              });
               if (!/^##\s+.*\bSquad Research\b/i.test(firstLine) || !hasRequiredSections) {
                 core.setFailed("Research body must include an H2 Squad Research heading and every required section.");
                 return;
