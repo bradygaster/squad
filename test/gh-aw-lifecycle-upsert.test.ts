@@ -351,6 +351,19 @@ describe('#1916: deterministic lifecycle safe output', () => {
     '**Last command:** `/squad activate`',
     '**Next action:** Plan is fully activated — 6 task issues created under #5.',
   ].join('\n');
+  const terminalActivateTableBody = [
+    '## 🧭 Squad Lifecycle — Issue #32',
+    '',
+    '**State:** Activated',
+    '**Last command:** `/squad activate`',
+    '**Next action:** None — activation is complete',
+    '',
+    '| Stage | Status |',
+    '|-------|--------|',
+    '| Research | ✅ Done |',
+    '| Plan | ✅ Done |',
+    '| Activate | ✅ Done |',
+  ].join('\n');
 
   it('creates the first tracker with the fixed structured envelope', async () => {
     const result = await runLifecycleUpsert([
@@ -471,6 +484,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
   it.each([
     ['progress-table activation with command attribution', terminalTableBody],
     ['plain progress-list activation', terminalProgressBody],
+    ['activate-stage table row', terminalActivateTableBody],
   ])('accepts live terminal presentation: %s', async (_name, liveBody) => {
     const result = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: liveBody },
