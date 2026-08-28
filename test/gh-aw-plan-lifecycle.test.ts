@@ -1009,6 +1009,29 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
   });
 });
 
+describe('#1922: fast-path planning proves research absence with pagination', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const gatherContext =
+    plan.match(/Step 1: Gather Context([\s\S]*?)Step 2: Decompose/)?.[1] ?? '';
+
+  it('requires a complete structured-data scan before falling back', () => {
+    expect(gatherContext).toContain('Paginate **all** issue comments');
+    expect(gatherContext).toContain('`gh api --paginate`');
+    expect(gatherContext).toContain('`squad_artifact = research`');
+    expect(gatherContext).toContain('`origin_issue = {issue_number}`');
+    expect(gatherContext).toContain('newest matching comment by\n     `created_at`');
+    expect(gatherContext).toContain(
+      'Only when the completed scan has no match may you use lightweight',
+    );
+  });
+
+  it('forbids truncated comment discovery and fails closed on retrieval errors', () => {
+    expect(gatherContext).toMatch(/Do not use\s+`gh issue view --json comments`/);
+    expect(gatherContext).toMatch(/truncate comment output with `head` or\s+`tail`/);
+    expect(gatherContext).toContain('call `report_incomplete` and\n     stop');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // #1772 (defense-in-depth) — empty workflow_dispatch probe is guarded, not
 // turned into a junk issue. Pairs with EECOM's dispatch-workflow max fix
