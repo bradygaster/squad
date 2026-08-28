@@ -77,7 +77,7 @@ function provenanceRows(workflow: string): string[] {
 function installOrders(markdown: string): string[][] {
   const uncommented = markdown.replace(/^#\s?/gm, '');
   return [...uncommented.matchAll(/gh aw add \\\n((?:\s+bradygaster\/squad\/workflows\/[^\n]+\n?)+)/g)]
-    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@dev/g)]
+    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@(?:dev|\$\{SQUAD_SHA\})/g)]
       .map(match => match[1]));
 }
 

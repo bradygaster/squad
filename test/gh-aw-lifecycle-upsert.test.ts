@@ -234,6 +234,36 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.created[0].body).not.toContain('"origin_issue":999');
   });
 
+  it('replaces an unlabeled trailing lifecycle envelope with the trusted envelope', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: `${legacyBody}\n\n\`\`\`json\n{"squad_artifact":"lifecycle-state","origin_issue":999}\n\`\`\``,
+      },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(legacyBody);
+    expect((result.created[0].body as string).match(/Structured data:/g)).toHaveLength(1);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+    expect(result.created[0].body).not.toContain('"origin_issue":999');
+  });
+
+  it('rejects lifecycle metadata that is not the trailing JSON fence', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: `${legacyBody}\n\n\`\`\`json\n{"squad_artifact":"lifecycle-state","origin_issue":999}\n\`\`\`\n\nUnexpected trailing text.`,
+      },
+    ]);
+
+    expect(result.failures).toEqual(['Lifecycle body must omit structured data.']);
+    expect(result.created).toEqual([]);
+  });
+
   it('accepts issue-specific lifecycle presentation headings', async () => {
     const result = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: issueHeadingBody },

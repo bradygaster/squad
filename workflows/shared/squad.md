@@ -117,9 +117,14 @@ safe-outputs:
                 core.setFailed("Lifecycle body exceeds 50,000 characters.");
                 return;
               }
-              const body = rawBody
-                .replace(/\n+Structured data:\s*\n+```json\s*[\s\S]*?```\s*$/i, "")
-                .trim();
+              const marker = '"squad_artifact":"lifecycle-state"';
+              const trailingMetadata = rawBody.match(
+                /\n+(?:Structured data:\s*\n+)?```json\s*(\{(?:(?!```)[\s\S])*?\})\s*```\s*$/i,
+              );
+              const body = trailingMetadata &&
+                trailingMetadata[1].replace(/\s/g, "").includes(marker)
+                ? rawBody.slice(0, trailingMetadata.index).trim()
+                : rawBody;
               const firstLine = body.split(/\r?\n/, 1)[0];
               const hasLifecycleHeading =
                 /^##\s+/.test(firstLine) &&
@@ -155,7 +160,6 @@ safe-outputs:
                 issue_number: issueNumber,
                 per_page: 100,
               });
-              const marker = '"squad_artifact":"lifecycle-state"';
               const matches = comments
                 .filter((comment) =>
                   comment.user?.login === "github-actions[bot]" &&
