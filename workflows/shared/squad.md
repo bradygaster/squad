@@ -271,7 +271,7 @@ safe-outputs:
               const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`/im.test(body);
               const hasActivationDone =
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
-                /^\|\s*Activat(?:ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
               const hasTerminalState =
                 /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
                 hasActivationDone &&
