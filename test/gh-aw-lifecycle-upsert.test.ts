@@ -80,8 +80,32 @@ async function runLifecycleUpsert(items: unknown[], comments: Comment[] = []) {
 }
 
 describe('#1916: deterministic lifecycle safe output', () => {
-  const body = '## Planning Lifecycle\n\n**Current state:** Planned';
-  const legacyBody = '## 🧭 Squad Lifecycle State\n\n- **State:** Planned';
+  const body = [
+    '## Planning Lifecycle',
+    '',
+    '**Current state:** Planned',
+    '**Last command:** `/squad plan`',
+    '**Next action:** `/squad activate`',
+  ].join('\n');
+  const legacyBody = [
+    '## 🧭 Squad Lifecycle State',
+    '',
+    '- **State:** Planned',
+    '- **Last command:** `/squad plan`',
+    '- **Next command:** `/squad activate`',
+  ].join('\n');
+  const issueHeadingBody = [
+    '## 🔄 Squad Lifecycle State — Issue #5',
+    '',
+    '| Stage | Status |',
+    '| --- | --- |',
+    '| Research | Done |',
+    '| Plan | Done |',
+    '',
+    '**Current state:** Planned',
+    '**Last command:** `/squad plan`',
+    '**Next recommended:** `/squad activate`',
+  ].join('\n');
 
   it('creates the first tracker with the fixed structured envelope', async () => {
     const result = await runLifecycleUpsert([
@@ -149,6 +173,32 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.created[0].body).not.toContain('"origin_issue":999');
   });
 
+  it('accepts issue-specific lifecycle presentation headings', async () => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: issueHeadingBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(issueHeadingBody);
+  });
+
+  it.each([
+    ['state', body.replace('**Current state:** Planned\n', '')],
+    ['last command', body.replace('**Last command:** `/squad plan`\n', '')],
+    ['next action', body.replace('**Next action:** `/squad activate`', '')],
+  ])('rejects lifecycle output missing its %s field', async (_field, incompleteBody) => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: incompleteBody },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.',
+    ]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+  });
+
   it('rejects malformed or duplicate lifecycle output', async () => {
     const malformed = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: 'not a lifecycle body' },
@@ -159,7 +209,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
     ]);
 
     expect(malformed.failures).toEqual([
-      'Lifecycle body must begin with a recognized Squad lifecycle heading.',
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.',
     ]);
     expect(duplicate.failures).toEqual(['Expected exactly one lifecycle update, found 2.']);
   });

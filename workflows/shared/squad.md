@@ -84,7 +84,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown beginning with a recognized Squad lifecycle heading; omit structured data.
+          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields; structured data is normalized by the writer.
           required: true
           type: string
       steps:
@@ -120,12 +120,16 @@ safe-outputs:
               const body = rawBody
                 .replace(/\n+Structured data:\s*\n+```json\s*[\s\S]*?```\s*$/i, "")
                 .trim();
-              const lifecycleHeadings = [
-                "## Planning Lifecycle",
-                "## 🧭 Squad Lifecycle State",
-              ];
-              if (!lifecycleHeadings.some((heading) => body.startsWith(heading))) {
-                core.setFailed("Lifecycle body must begin with a recognized Squad lifecycle heading.");
+              const firstLine = body.split(/\r?\n/, 1)[0];
+              const hasLifecycleHeading =
+                /^##\s+/.test(firstLine) &&
+                /\blifecycle\b/i.test(firstLine) &&
+                (/\bsquad\b/i.test(firstLine) || /\bplanning\b/i.test(firstLine));
+              const hasState = /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+\S+/im.test(body);
+              const hasLastCommand = /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              const hasNextAction = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
+                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.");
                 return;
               }
               if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {
