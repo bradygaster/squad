@@ -19,6 +19,7 @@ const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const ONTOLOGY = join(WORKFLOWS_DIR, 'shared', 'squad-planning-ontology.md');
 const TEAM = join(process.cwd(), '.squad', 'team.md');
+const GH_AW_GUIDE = join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md');
 
 function readText(filePath: string): string {
   return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
@@ -96,6 +97,7 @@ function agentBlock(markdown: string, name: string): string {
 const squad = readText(SQUAD_WORKFLOW);
 const ontology = readText(ONTOLOGY);
 const team = readText(TEAM);
+const guide = readText(GH_AW_GUIDE);
 
 // ---------------------------------------------------------------------------
 // team.md parsing — Name column vs Role column
@@ -262,6 +264,14 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(accept).toMatch(/Do not\s+create an additional epic, summary, root, or phase issue/i);
   });
 
+  it('resolves fast-plan hierarchy only from explicit phase headings', () => {
+    expect(plan).toMatch(/single `### Phase 1` heading makes the plan phased/i);
+    expect(plan).toMatch(/flat plan MUST use one[\s\S]*no `### Phase \{N\}` headings/i);
+    expect(accept).toMatch(/Determine hierarchy only from the latest plan artifact's headings/i);
+    expect(accept).toMatch(/Any heading[\s\S]*`### Phase \{N\}` makes the plan explicitly phased/i);
+    expect(accept).toMatch(/Do not infer hierarchy from prose, task\s+count, dependency shape, or personal preference/i);
+  });
+
   it('preserves every declared dependency through the safe-output capability', () => {
     expect(accept).toMatch(/Copy every frozen `Depends On` value into the created issue body/i);
     expect(accept).toMatch(/Do not\s+infer, drop, or reorder dependencies/i);
@@ -274,6 +284,54 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(accept).toMatch(/Report the exact number of created task issues/i);
     expect(accept).toMatch(/whether dependencies use native edges or the body-reference fallback/i);
     expect(accept).toMatch(/Never\s+claim an epic, phase issue, sub-issue relationship, or native dependency edge/i);
+  });
+});
+
+describe('/squad activate reuses the fast-path acceptance lifecycle', () => {
+  const modes = squad.match(/^## Modes\n([\s\S]*?)(?=\n## )/m)?.[1] ?? '';
+  const execute = squad.match(/^## Execute Mode\n([\s\S]*?)(?=\n## )/m)?.[1] ?? '';
+  const plan = skillBlock(squad, 'squad-plan');
+  const accept = skillBlock(squad, 'squad-plan-accept');
+
+  it('declares whole-plan and phase-aware activate commands', () => {
+    expect(modes).toContain('| `/squad activate` | Activate (recommended fast-path) |');
+    expect(modes).toContain(
+      '| `/squad activate phase {N}` | Activate (recommended fast-path) |'
+    );
+    expect(modes).toContain('| `/squad plan accept` | Plan Accept (legacy alias) |');
+    expect(modes).toContain(
+      '| `/squad plan accept phase {N}` | Plan Accept (legacy alias) |'
+    );
+  });
+
+  it('routes activate to the existing squad-plan-accept skill', () => {
+    expect(execute).toContain('| `activate` | `squad-plan-accept` |');
+    expect(squad.match(/^## skill: `squad-plan-accept`$/gm)).toHaveLength(1);
+  });
+
+  it('prefers activate in fast-plan next steps while retaining the legacy alias', () => {
+    expect(plan).toMatch(/Next Steps \(`\/squad activate` preferred/);
+    expect(plan).toContain('`/squad plan accept` remains a supported legacy alias');
+    expect(accept).toContain('`/squad activate` [phase {N}] (recommended)');
+    expect(accept).toContain('`/squad plan accept` [phase {N}]');
+    expect(accept).toContain('(supported legacy alias)');
+  });
+
+  it('documents the recommended three-step lifecycle and both compatibility paths', () => {
+    expect(guide).toContain('### Recommended lifecycle: research → plan → activate');
+    expect(guide).toMatch(/\/squad research\n\/squad plan\n\/squad activate/);
+    expect(guide).toMatch(
+      /`\/squad activate` reviews and accepts the\s+latest fast plan before creating its GitHub issues/
+    );
+    expect(guide).toContain('`/squad plan accept` remains a backward-compatible alias');
+    expect(guide).toContain('### Granular lifecycle');
+    expect(guide).toContain('| Activation | `/squad plan activate` |');
+    expect(guide).toContain(
+      '| Activation | `/squad activate` | **Recommended fast path:** review and accept the latest fast plan, then create its GitHub issues | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission |'
+    );
+    expect(guide).toContain(
+      '| Activation | `/squad activate phase {N}` | Review, accept, and create issues for only Phase N of the latest fast plan | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission; incremental and in order |'
+    );
   });
 });
 
@@ -879,10 +937,133 @@ describe('#1756: research uses a structural contract, not a length floor', () =>
   });
 
   it('the MANDATORY verify step enumerates the structural checks', () => {
-    const verify = block.match(/Step 4: Verify Completion \[MANDATORY\]([\s\S]*)$/)?.[1] ?? '';
+    const verify = block.match(/Step 5: Verify Completion \[MANDATORY\]([\s\S]*)$/)?.[1] ?? '';
     expect(verify).toContain('Evidence table');
     expect(verify).toMatch(/unique `Rn` ID and exactly one citation token/);
     expect(verify).not.toContain('≥200 chars');
+  });
+});
+
+describe('#1914: research creates the planning lifecycle state', () => {
+  const block = skillBlock(squad, 'squad-research');
+
+  it('requires an explicit lifecycle update before completion verification', () => {
+    const lifecycle = block.match(
+      /Step 4: Update Lifecycle([\s\S]*?)Step 5: Verify Completion/,
+    )?.[1] ?? '';
+
+    expect(lifecycle).toContain(
+      'Call `upsert_lifecycle_state` once with the complete lifecycle body.',
+    );
+    expect(lifecycle).toContain('Set Research = `✅ Done`');
+    expect(lifecycle).toContain('state = Researched');
+    expect(lifecycle).toContain('last command = `/squad research`');
+    expect(lifecycle).toContain('next = `/squad triage`');
+    expect(lifecycle).toContain('also available = `/squad plan`');
+  });
+
+  it('fails completion when the lifecycle artifact is missing or stale', () => {
+    const verify = block.match(/Step 5: Verify Completion \[MANDATORY\]([\s\S]*)$/)?.[1] ?? '';
+
+    expect(verify).toContain('The `lifecycle-state` artifact records Research complete');
+    expect(verify).toContain('`/squad research`');
+    expect(verify).toContain('`/squad triage`');
+    expect(verify).toContain('`/squad plan`');
+  });
+});
+
+describe('#1916: fast-path commands maintain the planning lifecycle state', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const revise = skillBlock(squad, 'squad-plan-revise');
+  const activate = skillBlock(squad, 'squad-plan-accept');
+  const lifecycleUpsert =
+    'Call `upsert_lifecycle_state` once with the complete lifecycle body.';
+
+  it('updates lifecycle state after creating a fast plan', () => {
+    const lifecycle = plan.match(/Step 4: Update Lifecycle([\s\S]*)$/)?.[1] ?? '';
+
+    expect(lifecycle).toContain(lifecycleUpsert);
+    expect(lifecycle).toContain('Set Plan = `✅ Done`');
+    expect(lifecycle).toContain('state = Planned');
+    expect(lifecycle).toContain('last command = `/squad plan`');
+    expect(lifecycle).toContain('next =\n`/squad activate`');
+    expect(lifecycle).toContain('also available = `/squad plan revise <feedback>`');
+  });
+
+  it('preserves planned lifecycle state after revising a fast plan', () => {
+    expect(revise).toContain(lifecycleUpsert);
+    expect(revise).toContain('Keep Plan = `✅ Done`');
+    expect(revise).toContain('state = Planned');
+    expect(revise).toContain('last command =\n   `/squad plan revise`');
+    expect(revise).toContain('next = `/squad activate`');
+  });
+
+  it('records phase progress or terminal activation after fast-path acceptance', () => {
+    const lifecycle =
+      activate.match(/Step 5: Update Fast-Path Lifecycle([\s\S]*)$/)?.[1] ?? '';
+
+    expect(lifecycle).toContain(lifecycleUpsert);
+    expect(lifecycle).toContain('record phase `{N}` activated');
+    expect(lifecycle).toContain('point next to the next unactivated phase');
+    expect(lifecycle).toContain('Activation = `✅ Done`');
+    expect(lifecycle).toContain('state =\n  Activated');
+    expect(lifecycle).toContain('This is terminal');
+  });
+
+  it('repairs stale lifecycle state on an idempotent activate rerun', () => {
+    expect(activate).toContain('**Whole-plan idempotency:**');
+    expect(activate).toContain('create no issues and post no acceptance');
+    expect(activate).toContain('inspect the newest lifecycle state');
+    expect(activate).toContain(
+      'call `upsert_lifecycle_state` exactly once with',
+    );
+    expect(activate).toContain(
+      'Return `noop` only when that lifecycle state',
+    );
+  });
+});
+
+describe('#1922: fast-path planning proves research absence with pagination', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const gatherContext =
+    plan.match(/Step 1: Gather Context([\s\S]*?)Step 2: Decompose/)?.[1] ?? '';
+
+  it('requires a complete structured-data scan before falling back', () => {
+    expect(gatherContext).toContain('Paginate **all** issue comments');
+    expect(gatherContext).toContain('`gh api --paginate`');
+    expect(gatherContext).toContain('`squad_artifact = research`');
+    expect(gatherContext).toContain('`origin_issue = {issue_number}`');
+    expect(gatherContext).toContain('newest matching comment by\n     `created_at`');
+    expect(gatherContext).toContain(
+      'Only when the completed scan has no match may you use lightweight',
+    );
+  });
+
+  it('forbids truncated comment discovery and fails closed on retrieval errors', () => {
+    expect(gatherContext).toMatch(/Do not use\s+`gh issue view --json comments`/);
+    expect(gatherContext).toMatch(/truncate comment output with `head` or\s+`tail`/);
+    expect(gatherContext).toContain('call `report_incomplete` and\n     stop');
+  });
+});
+
+describe('#1924: planning comments contain one gh-aw structured-data envelope', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const contract =
+    squad.match(
+      /## Planning Artifact Data Contract \(all modes\)([\s\S]*?)# Squad — `\/squad` Slash Command/,
+    )?.[1] ?? '';
+  const postPlan = plan.match(/Step 3: Post Plan([\s\S]*?)Step 4: Update Lifecycle/)?.[1] ?? '';
+
+  it('requires every planning mode to pass metadata only through data', () => {
+    expect(contract).toMatch(/only through the safe-output\s+tool's `data` argument/);
+    expect(contract).toContain('Never include a `Structured data:` heading');
+    expect(contract).toContain('gh-aw appends exactly one validated block');
+  });
+
+  it('repeats the no-embedded-metadata rule at the fast-plan call site', () => {
+    expect(postPlan).toContain('The `body` MUST NOT contain a `Structured data:` block');
+    expect(postPlan).toMatch(/pass\s+the envelope only through `data`/);
+    expect(postPlan).toContain('gh-aw appends it exactly once');
   });
 });
 

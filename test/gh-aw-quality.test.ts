@@ -379,10 +379,56 @@ describe('gh-aw: safe-output configuration', () => {
     expect(safeOutputs['add-comment'], 'add-comment should exist').toBeDefined();
   });
 
+  it('keeps built-in comment targets explicit (#1916)', () => {
+    expect(safeOutputs['add-comment'].target).toBe('*');
+    expect(safeOutputs['add-comment']['allows-comment-ids']).toBeUndefined();
+  });
+
   it('create-issue max is 75 (supports large plans, forward-port of #1683)', () => {
     const ci = safeOutputs['create-issue'];
     expect(ci, 'create-issue block must exist').toBeDefined();
     expect(ci['max'], 'create-issue max must be 75 — do not reduce below this').toBe(75);
+  });
+});
+
+describe('#1916: lifecycle comment updates use a deterministic safe-output job', () => {
+  const workflow = readText(SQUAD_WORKFLOW);
+  const shared = readText(join(SHARED_DIR, 'squad.md'));
+
+  it('defines a bounded, permission-scoped lifecycle upsert', () => {
+    expect(shared).toContain('upsert-lifecycle-state:');
+    expect(shared).toContain('needs: safe_outputs');
+    expect(shared).toContain('issues: write');
+    expect(shared).toContain('pull-requests: write');
+    expect(shared).toContain('max: 1');
+  });
+
+  it('selects only bot-authored lifecycle artifacts and chooses the newest', () => {
+    expect(shared).toContain('comment.user?.login === "github-actions[bot]"');
+    expect(shared).toContain('includes(marker)');
+    expect(shared).toContain('.sort((left, right)');
+    expect(shared).toContain('const current = matches.at(-1);');
+  });
+
+  it('updates in place or creates the first lifecycle comment', () => {
+    expect(shared).toContain('github.rest.issues.updateComment');
+    expect(shared).toContain('comment_id: current.id');
+    expect(shared).toContain('github.rest.issues.createComment');
+  });
+
+  it('requires one lifecycle upsert with a complete body', () => {
+    expect(workflow).toContain('call `upsert_lifecycle_state` once');
+    expect(workflow).toContain('updates the newest trusted tracker or creates the first one');
+  });
+
+  it('repairs terminal state deterministically when an idempotent rerun omits the upsert', () => {
+    expect(shared).toContain('repair_activated_lifecycle:');
+    expect(shared).toContain(
+      "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
+    );
+    expect(shared).toContain("github.event.comment.body == '/squad activate'");
+    expect(shared).toContain('envelope?.squad_artifact === "plan-accepted"');
+    expect(shared).toContain('name: Repair terminal lifecycle after idempotent activation');
   });
 });
 
@@ -1021,7 +1067,7 @@ describe('gh-aw: inline skill extraction', () => {
     ...imports
       .map(rel => join(WORKFLOWS_DIR, rel))
       .filter(existsSync)
-      .map(readText),
+      .map(path => readText(path).replace(/^---\n[\s\S]*?\n---\n/, '')),
     readText(SQUAD_WORKFLOW).replace(/^---\n[\s\S]*?\n---\n/, ''),
   ].join('\n');
 
@@ -1132,18 +1178,17 @@ describe('gh-aw: inline skill extraction', () => {
 
     const dispatchTable = readText(SQUAD_WORKFLOW);
     for (const { mode } of modes) {
+      const normalizedMode = mode.replace(/\([^)]*\)/g, '').trim();
       const slug =
         'squad-' +
-        mode
-          .replace(/\([^)]*\)/g, '')
-          .trim()
+        normalizedMode
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
 
       const hasSkill = skillNames.has(slug);
       // Some modes legitimately share a playbook; accept an explicit mapping row.
-      const hasMapping = new RegExp(`\\|[^|\\n]*${mode.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^|\\n]*\\|[^|\\n]*squad-`, 'i').test(dispatchTable);
+      const hasMapping = new RegExp(`\\|[^|\\n]*${normalizedMode.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^|\\n]*\\|[^|\\n]*squad-`, 'i').test(dispatchTable);
 
       expect(
         hasSkill || hasMapping,
@@ -1240,6 +1285,28 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
     expect(compiled).toContain('{{#runtime-import .github/workflows/squad.md}}');
     expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
+  }, 20000);
+
+  it('compiles the lifecycle upsert as a post-safe-output job (#1916)', () => {
+    const compiled = lockText();
+    expect(compiled).toContain('  upsert_lifecycle_state:');
+    expect(compiled).toMatch(
+      /upsert_lifecycle_state:[\s\S]*?needs:[\s\S]*?- safe_outputs/,
+    );
+    expect(compiled).toContain('name: Upsert Squad lifecycle state');
+    expect(compiled).toContain('comment_id: current.id');
+  }, 20000);
+
+  it('compiles the deterministic terminal lifecycle repair job (#1928)', () => {
+    const compiled = lockText();
+    expect(compiled).toContain('  repair_activated_lifecycle:');
+    expect(compiled).toMatch(
+      /repair_activated_lifecycle:[\s\S]*?needs:[\s\S]*?- safe_outputs/,
+    );
+    expect(compiled).toContain('name: Repair terminal lifecycle after idempotent activation');
+    expect(compiled).toContain(
+      "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
+    );
   }, 20000);
 
   it('preserves the standalone release selection in the compiled install step (#1884)', () => {
@@ -2341,7 +2408,100 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
     expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
     expect(squadContent).toContain('exact active casting-registry `persistent_name`');
     expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
-    expect(squadContent).toContain('Do not route to always-on support roles');
+    expect(squadContent).toContain('Do not route to inactive/support roles');
+  });
+});
+
+describe('gh-aw: Cast naming-mode contract (#1907)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+  const cast = squadContent.match(
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+  )?.[0] ?? '';
+
+  it('defaults an unqualified Cast request to descriptive role-based names', () => {
+    expect(cast).toMatch(/No themed naming request.*descriptive mode/s);
+    expect(cast).toContain('short, unique functional names derived from roles');
+    expect(cast).toMatch(/every registry entry.*`universe`.*`"descriptive"`/s);
+    expect(cast).toMatch(/descriptive naming.*never invent.*fictional universe/s);
+    expect(cast).not.toContain('assign character names from a fictional universe');
+  });
+
+  it('uses an explicitly requested built-in or custom universe', () => {
+    expect(cast).toMatch(/Explicit built-in or custom universe request.*requested universe/s);
+    expect(cast).toMatch(/custom universe.*spoiler-safety rules/s);
+  });
+
+  it('auto-selects a built-in universe only for themed names with no universe', () => {
+    expect(cast).toMatch(
+      /Themed names requested without a universe.*auto-select.*built-in universe/s,
+    );
+    expect(cast).toMatch(/capacity.*shape.*fit table/s);
+  });
+});
+
+describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+  const cast = squadContent.match(
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+  )?.[0] ?? '';
+
+  it('uses an explicit fresh-artifact payload allowlist instead of staging .squad wholesale', () => {
+    expect(cast).toContain('Never stage `.squad/` wholesale');
+    for (const artifact of [
+      '`.squad/team.md`',
+      '`.squad/routing.md`',
+      '`.squad/casting/registry.json`',
+      '`.squad/casting/history.json`',
+      '`.squad/casting/policy.json`',
+      '`.github/agents/squad.agent.md`',
+      '`meet-the-squad.md`',
+    ]) {
+      expect(cast).toContain(artifact);
+    }
+    expect(cast).toContain('only the concrete `.squad/agents/{selected-id}/charter.md`');
+  });
+
+  it('explicitly excludes activation-bootstrap templates, automation, and default agents', () => {
+    for (const excluded of [
+      '`.squad/templates/**`',
+      '`.squad/skills/**`',
+      '`.squad/scripts/**`',
+      '`.squad/workflows/**`',
+      '`lead`',
+      '`reviewer`',
+      '`security`',
+      '`docs`',
+      '`devrel`',
+    ]) {
+      expect(cast).toContain(excluded);
+    }
+  });
+
+  it('validates the complete routing file as one exact registry-backed section', () => {
+    expect(cast).toMatch(/validator deterministically parses.*routing/s);
+    expect(cast).toContain('exactly one `## Routing Table` section');
+    expect(cast).toContain('exact headers `Work Type | Route To | Examples`');
+    expect(cast).toContain('No `## Work Type → Agent` section');
+    expect(cast).toMatch(/every `Route To` value.*active casting-registry `persistent_name`/s);
+  });
+
+  it('synchronizes the generated agent capabilities from final Cast state', () => {
+    expect(cast).toContain('Completely replace the disposable bootstrap coordinator');
+    expect(cast).toContain('Do not reuse, patch, summarize, or retain any bootstrap body text');
+    expect(cast).toContain('<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->');
+    expect(cast).toContain('<!-- SQUAD:TEAM-CAPABILITIES:END -->');
+    expect(cast).toMatch(/specialists.*active registry count/s);
+    expect(cast).toMatch(/taskTypes.*hints.*routing-row count/s);
+    expect(cast).toContain('must be self-contained for the final Cast tree');
+  });
+
+  it('runs the deterministic final-tree validator immediately before safe output', () => {
+    expect(cast).toContain('Deterministic final-tree validation');
+    expect(cast).toContain('$RUNNER_TEMP/squad-cast-payload.json');
+    expect(cast).toContain('squad-cast-validator');
+    expect(cast).toMatch(/Only a zero exit status.*authorizes.*`create-pull-request`/s);
+    expect(cast).toMatch(/exits nonzero.*`add-comment`.*`noop`/s);
+    expect(cast).toMatch(/does not expose an independent\s+post-agent hook/s);
   });
 });
 
@@ -2451,7 +2611,7 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
   });
 
   it('step ordering after activation checkout: init → health → upload', () => {
-    const activationStepsStart = sharedContent.search(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    const activationStepsStart = sharedContent.search(/^  activation:\s*\n\s+steps:/m);
     expect(
       activationStepsStart,
       'jobs.activation.steps must exist in the shared bootstrap',
@@ -2527,11 +2687,11 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
     expect(
       sharedContent,
       'jobs.activation.steps runs after the generated activation checkout',
-    ).toMatch(/jobs:\s*\n\s+activation:\s*\n\s+steps:/);
+    ).toMatch(/^  activation:\s*\n\s+steps:/m);
     expect(
       sharedContent,
       'pre-steps run before the generated activation checkout and cannot inspect committed state',
-    ).not.toMatch(/jobs:\s*\n\s+activation:\s*\n\s+pre-steps:/);
+    ).not.toMatch(/^  activation:\s*\n\s+pre-steps:/m);
   });
 
   function initStepScript(): string {

@@ -13,7 +13,6 @@ on:
       - issues
       - issue_comment
       - pull_request_comment
-      - pull_request_review_comment
   workflow_dispatch:
     inputs:
       command:
@@ -40,6 +39,7 @@ network:
     - defaults
 imports:
   - shared/squad.md
+  - shared/squad-cast-validator.md
   - shared/squad-planning-ontology.md
   - shared/squad-planning-policy.md
 tools:
@@ -115,9 +115,8 @@ safe-outputs:
 
 ## Planning Artifact Data Contract (all modes)
 
-gh-aw removes HTML comments from prompts and sanitized output bodies. Never use HTML comments as Squad state markers.
-
-Every machine-readable planning comment MUST include safe-output `data` with:
+gh-aw strips HTML comments, so never use them as state markers. Every
+machine-readable planning comment MUST include safe-output `data`:
 
 ```json
 {
@@ -128,12 +127,15 @@ Every machine-readable planning comment MUST include safe-output `data` with:
 }
 ```
 
-Use the triggering issue number for `origin_issue`. Because gh-aw requires every declared schema property, emit `phases: []` for non-phase artifacts and the accumulated phase numbers for phase-state artifacts. Validation results remain in the human-readable body. gh-aw appends the validated envelope as a `Structured data:` fenced JSON block in the GitHub body.
+Use the triggering issue for `origin_issue`; emit `phases: []` except for
+accumulated phase-state numbers. Pass this envelope only through the safe-output
+tool's `data` argument. Never include a `Structured data:` heading or fenced
+metadata in the readable `body`; gh-aw appends exactly one validated block. Keep
+validation in the readable body. Locate artifacts by paginating all comments,
+matching the exact structured fields, and choosing the newest match.
 
-When locating artifacts:
-1. **Paginate fully** — fetch ALL comments (paginate if >30).
-2. **Parse structured data** — match exact `squad_artifact`, `schema_version: "1"`, and the current `origin_issue`.
-3. **Latest = newest** — if multiple comments match, use the most recent.
+For each lifecycle-state write, call `upsert_lifecycle_state` once with the
+complete body. It updates the newest trusted tracker or creates the first one.
 
 # Squad — `/squad` Slash Command
 
@@ -183,8 +185,8 @@ Resolve the slash command in this order:
    is empty, the activation guard above has already halted the run; never reach
    this step with an empty dispatched command. When it is non-empty, it is the
    trigger source; skip the remaining sources.
-2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
-   comment text.
+2. **Issue comment / PR conversation comment:** `github.event.comment.body` —
+   the full comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
 4. Otherwise default to `cast` only for an explicit `/squad` slash command with
    no arguments.
@@ -234,8 +236,10 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad plan program revise <feedback>` | Plan Program Revise |
 | `/squad plan implementation` | Plan Implementation |
 | `/squad plan validate` | Plan Validate |
-| `/squad plan accept` | Plan Accept (fast-path) |
-| `/squad plan accept phase {N}` | Plan Accept |
+| `/squad activate` | Activate (recommended fast-path) |
+| `/squad activate phase {N}` | Activate (recommended fast-path) |
+| `/squad plan accept` | Plan Accept (legacy alias) |
+| `/squad plan accept phase {N}` | Plan Accept (legacy alias) |
 | `/squad plan accept scope` | Plan Accept Scope |
 | `/squad plan accept implementation` | Plan Accept Implementation |
 | `/squad plan accept implementation phase {N}` | Plan Accept Implementation |
@@ -380,7 +384,7 @@ requested. First-token-wins is the contract; keep extraction anchored to
 3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
+   - `cast-member` (1), `activate` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
 4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
 
@@ -508,7 +512,7 @@ When **Step AG-3** returned `REFUSE`:
    `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
 3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
 
-**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
 
 ## Execute Mode
 
@@ -536,6 +540,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `plan program revise` | `squad-plan-program-revise` |
 | `plan implementation` | `squad-plan-implementation` |
 | `plan validate` | `squad-plan-validate` |
+| `activate` | `squad-plan-accept` |
 | `plan accept` | `squad-plan-accept` |
 | `plan accept scope` | `squad-plan-accept-scope` |
 | `plan accept implementation` | `squad-plan-accept-implementation` |
@@ -550,7 +555,7 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 
 ## Team Guard
 
-**Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
+**Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Activate, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
 **Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement (these run their own pre-checks).
 
 ### Step TG-1: Check Team Presence
@@ -654,10 +659,10 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
 
 ## skill: `squad-cast`
 ---
-description: "Cast a Squad team: analyze the repo, compose agents, assign character names, scaffold .squad/, open the Cast PR."
+description: "Cast a Squad team: analyze the repo, compose agents, resolve descriptive or themed names from the brief, scaffold .squad/, open the Cast PR."
 ---
 
-Analyze repo, compose team, assign character names from a fictional universe, generate `.squad/` scaffolding, open PR.
+Analyze repo, compose team, resolve names from the requested naming mode, generate `.squad/` scaffolding, open PR.
 
 **Acknowledge:** `🤖 Squad is analyzing your repo and assembling a team…`
 
@@ -674,6 +679,8 @@ Evaluate issue (title + body) and repo content to determine primary casting inpu
 | Any | Explicit team spec | **Issue is source of truth** |
 
 "Explicit source-of-truth signal" = issue reads like a team spec (role lists, team-size declarations, operating-model descriptions).
+
+Resolve naming intent from `{canonical_command}` and the primary casting input above. An explicit naming request in `{canonical_command}` wins; otherwise use the issue brief. Repo analysis informs roles but does not request themed naming.
 
 ##### Step 1: Repo Analysis
 
@@ -696,12 +703,15 @@ Every team gets a **Lead**. Then allocate specialists based on signals:
 | ML/data pipelines | ML Engineer |
 | Mobile | Mobile Engineer |
 
-Guidelines: 4–7 agents. Min: Lead + 2 specialists + 1 quality role. Scribe, Ralph, Rai are built-in (don't count).
+Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
 
-##### Step 3: Universe & Name Allocation
+##### Step 3: Naming Mode & Name Allocation
 
 1. Count agents from Step 2.
-2. Select universe (pick one whose capacity fits with minimal waste):
+2. Resolve exactly one naming mode:
+   - **No themed naming request:** use **descriptive mode**. Assign short, unique functional names derived from roles (for example Lead, Frontend, Backend, Tester). Do not select a fictional universe.
+   - **Explicit built-in or custom universe request:** use that requested universe.
+   - **Themed names requested without a universe:** auto-select one built-in universe using the capacity/shape fit table below, preferring the smallest capacity that fits the team and the shape that best matches the project.
 
 | Universe | Cap | Shape |
 |----------|-----|-------|
@@ -721,32 +731,102 @@ Guidelines: 4–7 agents. Min: Lead + 2 specialists + 1 quality role. Scribe, Ra
 | The Simpsons | 20 | large, comedy |
 | Marvel Cinematic Universe | 25 | large, action |
 
-3. Name rules: one universe only, pressure/function over authority, no spoilers, early-introduction names, Scribe/Ralph/Rai keep built-in names.
-4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "Universe", "legacy_named": false, "status": "active" } } }`
-5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "Name", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
+3. Name rules:
+   - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
+   - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
+4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
+5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
 ##### Step 4: Generate Scaffolding
 
+The activation-time `squad init --preset default` team state is disposable input,
+not Cast PR payload. Determine the final selected IDs first, then completely
+replace the team-owned files below. Remove every bootstrap or prior
+`.squad/agents/{id}/` directory that is not in the final selected ID set; the
+default preset IDs are `lead`, `reviewer`, `security`, `docs`, and `devrel`
+(unless an ID was freshly selected and regenerated by this Cast). Do not reuse
+bootstrap routing, registry, history, or charters.
+
 Create/replace:
 
-1. **`.squad/team.md`** — Roster table: Coordinator (Squad), Members (Name|Role|Charter path|Status), always-on (Scribe, Ralph, Rai), Coding Agent (@copilot with `copilot-auto-assign: false`).
+1. **`.squad/team.md`** — Roster table containing only Coordinator (Squad), active registry Members (Name|Role|Charter path|Status), and Coding Agent (@copilot with `copilot-auto-assign: false`). Every charter path must be a concrete active-member path created by this Cast. Do not add inactive/support-role rows or charter references.
 2. **`.squad/agents/{id}/charter.md`** — Per agent: `# Name — Role`, Identity block (name, role, expertise, style), "What I Own", Boundaries (handle/don't), Model: auto.
-3. **`.squad/routing.md`** — Domain→agent routing table in the standalone health parser's format: section heading `## Routing Table`; headers `Work Type | Route To | Examples`; every `Route To` value is an exact active casting-registry `persistent_name`, with multiple names comma-separated and no prose or annotations. Do not route to always-on support roles unless they are also active registry agents.
+3. **`.squad/routing.md`** — Completely replace the file. It must contain exactly one `## Routing Table` section, using section heading `## Routing Table` and exact headers `Work Type | Route To | Examples`; every `Route To` value is an exact active casting-registry `persistent_name`, with multiple names comma-separated and no prose or annotations. No `## Work Type → Agent` section or other legacy routing section may remain anywhere in the file. Do not route to inactive/support roles.
 4. **`.squad/casting/registry.json`** — From Step 3.
 5. **`.squad/casting/history.json`** — From Step 3.
 6. **`.squad/casting/policy.json`** — Standard policy with all 15 universes.
-7. **`.squad/decisions/`** — Empty directory.
-8. **`.github/agents/squad.agent.md`** — Verify exists (from `squad init`), include in PR.
+7. **`.github/agents/squad.agent.md`** — Completely replace the disposable bootstrap coordinator. Do not reuse, patch, summarize, or retain any bootstrap body text. Generate a compact GH-AW-specific coordinator with this complete structure:
+
+   - YAML frontmatter: `name: Squad`, a description that says it routes repository work to the active GH-AW Cast, and `tools: ["*"]`.
+   - `# Squad Coordinator` plus one short paragraph establishing that the coordinator routes work and does not replace specialist judgment.
+   - `## Cast sources` listing only the concrete final Cast paths for the team, routing, registry, history, policy, meet-the-squad, and every active member charter. Do not use path globs or dynamic paths.
+   - `## Routing work` with this behavior: read the routing table, select only active registry members, load only the selected member's charter, delegate through the platform's available agent mechanism, and synthesize the result for the user. If no route matches, choose the active Lead; if no active Lead exists, ask the user rather than inventing a member.
+   - One complete generated Team Capabilities block delimited by `<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->` and `<!-- SQUAD:TEAM-CAPABILITIES:END -->`. Preserve the stable heading, metadata, specialist table, supported task types, routing hints, and capability boundaries format. Set `specialists` to the active registry count and set both `taskTypes` and `hints` to the routing-row count; all three counts must be nonzero. Generate every value from the final team, routing, registry, and active charters.
+
+   The coordinator must be self-contained for the final Cast tree. It must not mention inactive/support roles, standalone lifecycle behavior, templates, configuration, decisions, plugins, logs, non-GH-AW clients, internal Squad source paths, or sample labels/names that are not active registry members.
+
+Keep naming consistent across generated team state and the Cast PR summary. In descriptive mode, describe the choice as descriptive naming and never invent or mention a fictional universe.
 
 ##### Step 5: Generate meet-the-squad.md
 
-Create `meet-the-squad.md` at repo root with: title, universe name, team table (Name|Role|Specialty|How to talk), Always-On Support table, How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date.
+Create `meet-the-squad.md` at repo root with: title, naming mode (`Descriptive` in descriptive mode; otherwise the exact universe name), active team table (Name|Role|Specialty|How to talk), How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date. Do not advertise inactive/support roles.
 
-##### Step 6: Open PR
+##### Step 6: Build the Safe-Output Payload
 
-`create-pull-request`: branch `squad/cast-{repo}`, title `[squad] Cast your Squad — {description}`, body with team summary. Append to the PR body: "After merging, return to the originating issue and rerun `{canonical_command}` to resume your work." Files: `.squad/`, `.github/agents/squad.agent.md`, `meet-the-squad.md`. Stage only these.
+Build an explicit payload allowlist containing only these fresh Cast-owned
+artifacts:
 
-##### Step 7: Post Completion
+- `.squad/team.md`
+- `.squad/routing.md`
+- `.squad/casting/registry.json`
+- `.squad/casting/history.json`
+- `.squad/casting/policy.json`
+- only the concrete `.squad/agents/{selected-id}/charter.md` path for each final selected member
+- `.github/agents/squad.agent.md`
+- `meet-the-squad.md`
+
+Never stage `.squad/` wholesale and never pass a directory prefix or glob as the
+safe-output file request. Explicitly exclude `.squad/templates/**`,
+`.squad/skills/**`, `.squad/scripts/**`, `.squad/workflows/**`, configuration,
+policies outside `.squad/casting/policy.json`, and unrelated bootstrap state.
+Bootstrap default agent IDs `lead`, `reviewer`, `security`, `docs`, and `devrel`
+are excluded unless the final registry selected that ID and this Cast replaced
+its charter from scratch.
+
+##### Step 7: Deterministic final-tree validation
+
+Natural-language review is not the gate. Immediately before requesting safe
+output, create `$RUNNER_TEMP/squad-cast-payload.json` as a JSON array containing
+every concrete Step 6 payload path, invoke the `skill` tool on
+`squad-cast-validator`, then run the exact command it returns. Do not rewrite,
+shorten, or substitute the validator.
+
+The validator deterministically parses the final registry, routing, team, and
+coordinator; compares active IDs, names, charter directories, and routing;
+verifies the synchronized nonzero capability marker; extracts every literal
+dot-rooted local path from the final coordinator and team; compares those paths
+case-sensitively with the explicit payload and final tree; and rejects
+inactive/support roles, standalone templates/state, non-GH-AW clients, internal
+source paths, globs, placeholders, and fictional/inactive sample labels.
+
+Only a zero exit status with `Cast validation passed.` authorizes the
+`create-pull-request` request. If the command is unavailable, cannot be
+materialized exactly, or exits nonzero, post one actionable `add-comment`
+containing its complete failure list and telling the user to rerun
+`{canonical_command}`; call `noop` and stop. Do not call `create-pull-request`,
+and do not describe partial output as a successful Cast.
+
+This is the strongest deterministic boundary available in gh-aw's single-agent
+architecture: it runs against the agent's final working tree immediately before
+the built-in safe-output request. gh-aw does not expose an independent
+post-agent hook that can conditionally authorize `create-pull-request`, so do
+not describe this as a post-agent or independently fail-closed gate.
+
+##### Step 8: Open PR
+
+`create-pull-request`: branch `squad/cast-{repo}`, title `[squad] Cast your Squad — {description}`, body with team summary. Append to the PR body: "After merging, return to the originating issue and rerun `{canonical_command}` to resume your work." Enumerate every concrete path from the validated Step 6 payload allowlist as the file request; do not add any other path.
+
+##### Step 9: Post Completion
 
 Do not emit a separate `add-comment`. The configured
 `safe-outputs.messages.pull-request-created` notification runs after PR creation
@@ -879,8 +959,8 @@ slots.
 
 1. Resolve the target issue number using the Trigger Context resolution order:
    the interpolated dispatched issue number when non-empty, otherwise the
-   triggering issue. If invoked from a pull request review comment, explain that
-   `/squad implement` must be run from the target issue.
+   triggering issue. If invoked from a pull request conversation comment,
+   explain that `/squad implement` must be run from the target issue.
 2. Read the target issue title, body, labels, state, and relevant comments.
 3. Discover the target's open descendant issues using native GitHub sub-issue
    relationships, descending recursively through **every** level of the
@@ -998,14 +1078,15 @@ fills newly available slots. Continue until the parent has no open leaf tasks.
 
 ## skill: `squad-research`
 ---
-description: Produce the research artifact that seeds planning for an issue.
+description: Produce the research artifact that seeds planning and update lifecycle state.
 ---
 
 Deep analysis → structured findings comment. Read-only + comment. Works on open/closed issues.
 
 **Acknowledge:** `🤖 Squad is researching this…`
 
-**TASK:** Steps 1–4. The deliverable is Step 3's findings comment. Reserve ≥40% budget for Step 3.
+**TASK:** Steps 1–5. Deliverables are Step 3's findings comment and Step 4's
+lifecycle update. Reserve ≥40% budget for Step 3.
 
 ##### Step 1: Determine Scope
 
@@ -1020,13 +1101,21 @@ Budget-aware breadth-first investigation: architecture mapping, technology audit
 
 ##### Step 3: Post Findings
 
-`add-comment` with `data: {"squad_artifact":"research","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Call `upsert_research_artifact` once with the complete research body. The
+trusted writer supplies the structured envelope and replaces the existing
+bot-authored research artifact for this issue.
 
 Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → **Goals** → **Non-goals** → **Evidence table** (columns `Rn` | Finding | Risk 🟢/🟡/🔴 | Complexity S/M/L/XL | Citation) → **Load-bearing assumptions** → **Open decisions** → **Acceptance framing** → Recommendations (each referencing the `Rn` IDs it rests on) → Next Step (`/squad triage` or `/squad plan`).
 
 **Structural contract (not a length floor).** The artifact MUST contain every one of these labeled sections: **Evidence table**, **Goals**, **Non-goals**, **Load-bearing assumptions**, **Open decisions**, **Acceptance framing**. Every evidence row carries a stable `Rn` traceability ID (`R1`, `R2`, …) and exactly one citation token — a file path, `path:line`, URL, or `#issue`/`#pr` reference — so each finding is independently checkable. Recommendations and load-bearing assumptions reference the `Rn` IDs they rest on. Assert structure, not length: never pad to hit a size target.
 
-##### Step 4: Verify Completion [MANDATORY]
+##### Step 4: Update Lifecycle
+
+Call `upsert_lifecycle_state` once with the complete lifecycle body.
+Set Research = `✅ Done`, state = Researched, last command = `/squad research`,
+next = `/squad triage`, and also available = `/squad plan`.
+
+##### Step 5: Verify Completion [MANDATORY]
 
 Confirm ALL of the following, each independently checkable from the posted comment without re-running research. If ANY fails, fix and re-post now:
 
@@ -1035,6 +1124,9 @@ Confirm ALL of the following, each independently checkable from the posted comme
 3. Every required section present: **Evidence table**, **Goals**, **Non-goals**, **Load-bearing assumptions**, **Open decisions**, **Acceptance framing**.
 4. Every evidence row has a unique `Rn` ID and exactly one citation token.
 5. ≥1 recommendation, each tracing to ≥1 `Rn` ID.
+6. The `lifecycle-state` artifact records Research complete, `/squad research`
+   as the last command, `/squad triage` as the next action, and `/squad plan`
+   as also available.
 
 ## skill: `squad-plan`
 ---
@@ -1045,12 +1137,24 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 **Acknowledge:** `🤖 Squad is creating a plan…`
 
-**TASK:** Steps 1–3. Deliverable = Step 3.
+**TASK:** Steps 1–4. Deliverables are Step 3's plan and Step 4's lifecycle
+update.
 
 ##### Step 1: Gather Context
 
 1. Read issue body (the epic/brief).
-2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
+2. Prove research context with a complete comment scan:
+   - Paginate **all** issue comments with `gh api --paginate` (or an equivalent
+     GitHub tool with an explicit pagination loop). Do not use
+     `gh issue view --json comments`, truncate comment output with `head` or
+     `tail`, or stop after the first page.
+   - Match the structured fields `squad_artifact = research` and
+     `origin_issue = {issue_number}`, then choose the newest matching comment by
+     `created_at`.
+   - If the complete scan fails or cannot finish, call `report_incomplete` and
+     stop. Only when the completed scan has no match may you use lightweight
+     repository analysis.
+   - When found, use the newest research artifact as the plan's primary context.
 3. Use the `ROSTER_MEMBER:` lines already emitted by mandatory Team Guard Step
    TG-2 as the certified active roster set. **Owner binding gate:** when
    `TEAM_PRESENT`, every work item `Owner` MUST match one certified name. Resolve
@@ -1069,8 +1173,16 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 ##### Step 3: Post Plan
 
 `add-comment` with `data: {"squad_artifact":"plan","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+The `body` MUST NOT contain a `Structured data:` block or fenced metadata; pass
+the envelope only through `data` so gh-aw appends it exactly once.
 
-Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
+Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
+
+Choose the hierarchy explicitly. A phased plan MUST place every work-item table
+under a heading matching `### Phase {N}` (optional title text may follow). Even a
+single `### Phase 1` heading makes the plan phased. A flat plan MUST use one
+work-item table with no `### Phase {N}` headings. Do not use phase headings as
+visual decoration on a plan intended to stay flat.
 
 Re-check every `Owner` against the Step 1 certified set before posting. If any
 value is absent, re-resolve it to a certified active member and repeat the check;
@@ -1079,14 +1191,22 @@ into the artifact.
 
 Do NOT create issues.
 
+##### Step 4: Update Lifecycle
+
+Call `upsert_lifecycle_state` once with the complete lifecycle body.
+Set Plan = `✅ Done`, state = Planned, last command = `/squad plan`, next =
+`/squad activate`, and also available = `/squad plan revise <feedback>`.
+
 ## skill: `squad-plan-accept`
 ---
-description: Accept a plan (whole plan or a single phase) and record the accepted artifact.
+description: Review and activate a fast plan (whole plan or a single phase), accepting it and creating issues.
 ---
 
-`/squad plan accept` [phase {N}] — combines scope+impl+activation for simple workflows.
+`/squad activate` [phase {N}] (recommended) or `/squad plan accept` [phase {N}]
+(supported legacy alias) — review the latest fast plan, then combine
+scope+implementation acceptance and activation for simple workflows.
 
-**Behavior:** If `program` or `implementation` artifacts exist, run Accept Scope → Accept Impl → Activate in sequence. If only a `plan` artifact exists, use legacy behavior below.
+**Behavior:** If `program` or `implementation` artifacts exist, run Accept Scope → Accept Impl → Activate in sequence. If only a `plan` artifact exists, use the fast-path behavior below.
 
 **Acknowledge:** `🤖 Squad is creating the planned issues…`
 
@@ -1100,27 +1220,45 @@ Resolve which planning path this issue is on, in this order:
    **Accept Implementation** (`squad-plan-accept-implementation`) → **Activate**
    (`squad-plan-activate`) — each honoring its own preconditions (e.g. Accept
    Implementation requires a `validation` PASS). Then stop; do NOT run the
-   legacy fast-path steps below.
+   fast-path steps below.
 2. Otherwise, find the latest `plan` artifact. If found, continue with the
-   legacy fast-path behavior in the steps below.
+   fast-path behavior in the steps below.
 3. If none of `program`, `implementation`, or `plan` exist, reply "No plan found.
    Run `/squad plan` first." and stop.
 
 ##### Step 1a: Phase Resolution
 
 1. Extract `requested_phase` from args (or null).
-2. Find the latest `phases-accepted` artifact and read its `phases` array → `accepted_phases` (or []).
-3. Validate: already-accepted → stop with next-available hint. Out-of-order → stop with sequential hint.
-4. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
-5. If no items remain after filter: stop.
+2. Paginate all comments and select the newest `plan-accepted`,
+   `phases-accepted`, and `lifecycle-state` artifacts whose `origin_issue`
+   matches this issue.
+3. **Whole-plan idempotency:** when `requested_phase` is null and a matching
+   `plan-accepted` artifact exists, create no issues and post no acceptance
+   artifact. Before stopping, inspect the newest lifecycle state. If it is
+   missing or does not record State = Activated, Activation = `✅ Done`, and the
+   invoked activation command, call `upsert_lifecycle_state` exactly once with
+   the terminal body from Step 5. Return `noop` only when that lifecycle state
+   is already terminal and consistent. Then stop.
+4. **Phase-specific:** read `accepted_phases` from the latest matching
+   `phases-accepted` artifact (or `[]`). Already accepted → verify the lifecycle
+   reflects that phase, repair it if stale, then stop with the next-available
+   hint. Out of order → stop with the sequential hint.
+5. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
+6. If no items remain after filter: stop.
+7. Determine hierarchy only from the latest plan artifact's headings. Any heading
+   matching `### Phase {N}` makes the plan explicitly phased, including a lone
+   `### Phase 1`; every accepted row must remain in its declared phase. With no
+   matching heading, the plan is flat. Do not infer hierarchy from prose, task
+   count, dependency shape, or personal preference.
 
 ##### Step 2: Create Sub-Issues — Hierarchical
 
-The origin issue is always the root. If the plan has explicit phases, create one
-phase issue per accepted phase under the origin issue, then create that phase's
-task issues under its phase issue. For a flat plan, create exactly one issue per
-accepted work-item row and set every task's parent to the origin issue. Do not
-create an additional epic, summary, root, or phase issue for a flat plan.
+The origin issue is always the root. Apply Step 1a's heading rule exactly. If the
+plan has explicit `### Phase {N}` headings, create one phase issue per accepted
+phase under the origin issue, then create that phase's task issues under its phase
+issue; never flatten it. For a flat plan, create exactly one issue per accepted
+work-item row and set every task's parent to the origin issue.
+Do not create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
 accepted plan row. Freeze a binding for each task number containing that row's
@@ -1164,6 +1302,18 @@ and whether dependencies use native edges or the body-reference fallback. Never
 claim an epic, phase issue, sub-issue relationship, or native dependency edge
 that was not created.
 
+##### Step 5: Update Fast-Path Lifecycle
+
+Call `upsert_lifecycle_state` once with the complete lifecycle body.
+
+- Phase-specific: keep Plan = `✅ Done`, record phase `{N}` activated, set the
+  last command to the invoked `/squad activate phase {N}` or legacy alias, and
+  point next to the next unactivated phase.
+- Full or last phase: set Plan = `✅ Done`, Activation = `✅ Done`, state =
+  Activated, and the last command to the invoked `/squad activate` or legacy
+  alias. This is terminal. Set Next action to explicit terminal prose such as
+  `None — activation is complete`; do not invent another slash command.
+
 ## skill: `squad-plan-revise`
 ---
 description: Revise an existing plan artifact from reviewer feedback.
@@ -1176,6 +1326,10 @@ description: Revise an existing plan artifact from reviewer feedback.
 3. Apply feedback to plan.
 4. **EDIT the existing artifact comment** (never post a duplicate).
 5. Prepend revision note.
+6. Call `upsert_lifecycle_state` once with the complete lifecycle body.
+   Keep Plan = `✅ Done`, state = Planned, set last command =
+   `/squad plan revise`, next = `/squad activate`, and also available =
+   `/squad plan revise <feedback>`.
 
 ## skill: `squad-triage`
 ---
@@ -1212,7 +1366,7 @@ Structure: `## 🔍 Squad Triage — Dispositions` → Intent + reference lines 
 
 ##### Step 4: Update Lifecycle
 
-Find/create the `lifecycle-state` artifact comment. Include `data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
+Call `upsert_lifecycle_state` once with the complete lifecycle body. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
 
 ## skill: `squad-triage-revise`
 ---

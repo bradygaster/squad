@@ -288,7 +288,8 @@ that PR and rerun the original command. Do not start a second Cast command.
 ## Slash commands
 
 Every command starts with `/squad`. Type it in an issue body, issue comment, or
-PR review comment.
+PR conversation comment. On a pull request, post the command in the
+**Conversation** tab. Inline code-review threads do not trigger Squad commands.
 
 Commands are matched longest-prefix-first, so the most specific command string
 wins: `/squad plan accept scope` is not treated as `/squad plan`.
@@ -314,8 +315,10 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Planning | `/squad plan implementation` | Decompose a program plan into PR-sized tasks | Requires a program plan first |
 | Planning | `/squad plan validate` | Validate plan readiness before acceptance | Checks dependencies, decisions, sizing |
 | Planning | `/squad plan revise <feedback>` | Revise the current plan based on feedback | Works at any planning stage |
-| Acceptance | `/squad plan accept` | **Fast path:** accept all phases of scope + implementation + activate | Creates GitHub issues immediately |
-| Acceptance | `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) | Combines scope + impl + activate for that phase |
+| Activation | `/squad activate` | **Recommended fast path:** review and accept the latest fast plan, then create its GitHub issues | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission |
+| Activation | `/squad activate phase {N}` | Review, accept, and create issues for only Phase N of the latest fast plan | Requires an existing fast plan from `/squad plan` and write, maintain, or admin permission; incremental and in order |
+| Acceptance | `/squad plan accept` | Legacy alias for `/squad activate` | Preserved for backward compatibility |
+| Acceptance | `/squad plan accept phase {N}` | Legacy alias for `/squad activate phase {N}` | Preserved for backward compatibility |
 | Acceptance | `/squad plan accept scope` | Approve the program plan scope | Locks strategic structure before decomposition |
 | Acceptance | `/squad plan accept implementation` | Approve all phases of the implementation plan | Issues are not created until activate |
 | Acceptance | `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan | Also auto-activates when prior phases are ready |
@@ -330,7 +333,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 |---------|-------------|
 | **Issue body** | Write `/squad cast` when creating a new issue |
 | **Issue comment** | Comment `/squad cast` on any existing issue |
-| **PR review comment** | Comment `/squad cast` on any pull request |
+| **PR conversation comment** | Comment `/squad cast` in the pull request conversation |
 | **Workflow dispatch** | Trigger manually from the Actions tab with a `command` input |
 
 For workflow dispatch, go to **Actions → Squad → Run workflow** and enter the
@@ -352,9 +355,13 @@ When you run `/squad cast`, the workflow follows these steps:
    Backend, Tester). If you request a themed universe in your brief, Squad picks
    character names from that universe instead — any universe works, not just the
    15 built-in ones.
-5. **Scaffolding** — generates all squad files (charters, routing, registry)
-6. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
-   team for review
+5. **Scaffolding** — replaces the disposable activation scaffold with the final
+   charters, routing, registry, and a compact self-contained GH-AW coordinator
+6. **Deterministic validation** — parses the final coordinator and team, checks
+   every local path against the exact-case Cast payload/tree, and verifies
+   registry, routing, charter, and generated-capability agreement
+7. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
+   team for review; a failed validation posts recovery guidance instead
 
 The completion comment links the created Cast PR. Open that PR, mark it ready
 when it was created as a draft, request Copilot review, and wait for its checks.
@@ -362,6 +369,11 @@ GitHub may require maintainer approval before application CI runs on a
 workflow-created branch; when the PR shows `action_required`, approve that
 workflow run from the checks view and wait for it to finish. Merge the Cast PR
 only after its generated files, review, and repository checks are complete.
+
+The validator runs in the agent workspace immediately before the built-in
+safe-output request. gh-aw does not provide an independent post-agent hook that
+can conditionally authorize PR creation, so this is deterministic pre-output
+enforcement rather than a separate post-agent gate.
 
 ### The casting brief
 
@@ -482,7 +494,26 @@ All agents are renamed and their files updated accordingly.
 Squad's SDLC commands let you go from an issue to a fully decomposed, agent-assigned
 backlog without leaving the issue thread.
 
-### The full lifecycle
+### Recommended lifecycle: research → plan → activate
+
+For most work, use the clear three-step lifecycle:
+
+```text
+/squad research
+/squad plan
+/squad activate
+```
+
+`/squad research` gathers evidence, `/squad plan` proposes a combined program and
+implementation plan for review, and `/squad activate` reviews and accepts the
+latest fast plan before creating its GitHub issues. Activation is a mutating
+command, so the actor needs write, maintain, or admin repository permission.
+
+To activate one phase at a time, use `/squad activate phase {N}`. The existing
+`/squad plan accept` and `/squad plan accept phase {N}` commands remain supported
+as legacy aliases with identical behavior.
+
+### Granular lifecycle
 
 ```
 research → triage → plan program → plan implementation → accept → activate
@@ -513,14 +544,16 @@ next command. `Also available` shows alternative valid commands at this point in
 the lifecycle. This means you never have to remember the state machine — the
 issue thread always shows what's next.
 
-### Fast paths (backward compatible)
+### Fast paths and compatibility aliases
 
 You don't have to use every step. Fast-path commands combine multiple stages:
 
 | Fast path | Equivalent to | Stages skipped |
 |-----------|---------------|----------------|
 | `/squad plan` | `/squad plan program` + `/squad plan implementation` | Separate triage classification; separate scope review gate |
-| `/squad plan accept` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` | Separate scope lock step; separate implementation approval step; issues created immediately |
+| `/squad activate` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` | Separate scope lock step; separate implementation approval step; issues created immediately |
+
+`/squad plan accept` remains a backward-compatible alias for `/squad activate`.
 
 #### What you give up with each fast path
 
@@ -531,7 +564,7 @@ You don't have to use every step. Fast-path commands combine multiple stages:
 - **Risk:** Scope may be broader or narrower than intended because exclusions were never explicitly classified. Triage is where you tell Squad "don't plan that" — without it, Squad infers scope from research findings alone.
 - **Good for:** Small, well-understood features where you already know the scope and trust Squad's decomposition without a formal review gate.
 
-**`/squad plan accept` (skipping separate scope lock and implementation review)**
+**`/squad activate` (skipping separate scope lock and implementation review)**
 
 - **Skips:** Separate `/squad plan accept scope` — you cannot review and approve strategic structure before decomposition runs
 - **Skips:** Separate `/squad plan accept implementation` — the task breakdown goes directly to GitHub issue creation without a standalone review step
@@ -708,17 +741,16 @@ supersedes the previous one.
 
 ### Examples
 
-**Small project — fast path (4 commands):**
+**Small project — recommended fast path (3 commands):**
 
+```text
+1. /squad research → Deep repo analysis
+2. /squad plan     → Program + implementation plan for review
+3. /squad activate → Accept the reviewed plan and create issues
 ```
-1. /squad research                → Deep repo analysis
-   Next step shown: "/squad triage" or "/squad plan" (fast path)
-2. /squad plan                    → Program + implementation in one pass
-   Next action: "/squad plan accept"
-3. /squad plan revise fewer tasks → Adjusted plan
-   Next action: "/squad plan accept"
-4. /squad plan accept             → Issues created
-```
+
+If the plan needs changes, run `/squad plan revise <feedback>` before activation.
+`/squad plan accept` remains an equivalent legacy command.
 
 **Large project — granular lifecycle (7+ commands):**
 
@@ -1095,23 +1127,50 @@ reviews.
 
 ## Upgrading
 
-To update your compiled workflow after pulling upstream changes:
+Pin upgrades to one immutable 40-character Squad commit SHA. A bare `gh aw add`
+does not refresh files that are already installed, so use `--force`:
 
 ```bash
+SQUAD_SHA="<40-character-commit-sha>"
+
 gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-review.md@${SQUAD_SHA} \
+  --force
 ```
 
-This re-compiles the workflow from source. If you have local customizations in your compiled `.github/workflows/squad-*.lock.yml`, they will be overwritten — keep customizations in the source `.md` files instead.
+`--force` overwrites the installed source files. Save any local source
+customizations first, then reapply them before the final compile. Never customize
+generated `.lock.yml` files.
 
-For manual recompilation of all workflows:
+Existing local imports are not guaranteed to refresh with the top-level files.
+Fetch every Squad shared import at the same SHA:
 
 ```bash
+mkdir -p .github/workflows/shared
+
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad.md" \
+  --output .github/workflows/shared/squad.md
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-cast-validator.md" \
+  --output .github/workflows/shared/squad-cast-validator.md
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-ontology.md" \
+  --output .github/workflows/shared/squad-planning-ontology.md
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-policy.md" \
+  --output .github/workflows/shared/squad-planning-policy.md
+
 gh aw compile --strict
 ```
+
+Confirm all four source files and generated locks reference `SQUAD_SHA`, review
+the workflow diff, then commit them together. With gh-aw v0.86.2, do not use
+`gh aw update` for this immutable-pin flow: its stored source branch and cooldown
+can leave the installed sources at a different revision than the SHA you intend.
 
 ---
 
