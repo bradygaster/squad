@@ -1221,13 +1221,22 @@ Resolve which planning path this issue is on, in this order:
 ##### Step 1a: Phase Resolution
 
 1. Extract `requested_phase` from args (or null).
-2. Find the latest `phases-accepted` artifact and read its `phases` array → `accepted_phases` (or []).
-3. Validate: already-accepted → verify the existing lifecycle state already
-   reflects that completed phase or terminal activation, repair it if stale,
-   then stop with the next-available hint. Out-of-order → stop with sequential
-   hint.
-4. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
-5. If no items remain after filter: stop.
+2. Paginate all comments and select the newest `plan-accepted`,
+   `phases-accepted`, and `lifecycle-state` artifacts whose `origin_issue`
+   matches this issue.
+3. **Whole-plan idempotency:** when `requested_phase` is null and a matching
+   `plan-accepted` artifact exists, create no issues and post no acceptance
+   artifact. Before stopping, inspect the newest lifecycle state. If it is
+   missing or does not record State = Activated, Activation = `✅ Done`, and the
+   invoked activation command, call `upsert_lifecycle_state` exactly once with
+   the terminal body from Step 5. Return `noop` only when that lifecycle state
+   is already terminal and consistent. Then stop.
+4. **Phase-specific:** read `accepted_phases` from the latest matching
+   `phases-accepted` artifact (or `[]`). Already accepted → verify the lifecycle
+   reflects that phase, repair it if stale, then stop with the next-available
+   hint. Out of order → stop with the sequential hint.
+5. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
+6. If no items remain after filter: stop.
 
 ##### Step 2: Create Sub-Issues — Hierarchical
 
