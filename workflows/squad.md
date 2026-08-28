@@ -1139,7 +1139,18 @@ update.
 ##### Step 1: Gather Context
 
 1. Read issue body (the epic/brief).
-2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
+2. Prove research context with a complete comment scan:
+   - Paginate **all** issue comments with `gh api --paginate` (or an equivalent
+     GitHub tool with an explicit pagination loop). Do not use
+     `gh issue view --json comments`, truncate comment output with `head` or
+     `tail`, or stop after the first page.
+   - Match the structured fields `squad_artifact = research` and
+     `origin_issue = {issue_number}`, then choose the newest matching comment by
+     `created_at`.
+   - If the complete scan fails or cannot finish, call `report_incomplete` and
+     stop. Only when the completed scan has no match may you use lightweight
+     repository analysis.
+   - When found, use the newest research artifact as the plan's primary context.
 3. Use the `ROSTER_MEMBER:` lines already emitted by mandatory Team Guard Step
    TG-2 as the certified active roster set. **Owner binding gate:** when
    `TEAM_PRESENT`, every work item `Owner` MUST match one certified name. Resolve
