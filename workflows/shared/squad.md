@@ -110,8 +110,15 @@ safe-outputs:
                 return;
               }
 
-              const body = String(items[0].body || "")
+              const rawBody = String(items[0].body || "")
                 .replace(/<!--[\s\S]*?-->/g, "")
+                .trim();
+              if (rawBody.length > 50000) {
+                core.setFailed("Lifecycle body exceeds 50,000 characters.");
+                return;
+              }
+              const body = rawBody
+                .replace(/\n+Structured data:\s*\n+```json\s*[\s\S]*?```\s*$/i, "")
                 .trim();
               const lifecycleHeadings = [
                 "## Planning Lifecycle",
@@ -119,10 +126,6 @@ safe-outputs:
               ];
               if (!lifecycleHeadings.some((heading) => body.startsWith(heading))) {
                 core.setFailed("Lifecycle body must begin with a recognized Squad lifecycle heading.");
-                return;
-              }
-              if (body.length > 50000) {
-                core.setFailed("Lifecycle body exceeds 50,000 characters.");
                 return;
               }
               if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {

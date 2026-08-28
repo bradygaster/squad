@@ -131,6 +131,24 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.updated[0].body).toContain(legacyBody);
   });
 
+  it('replaces agent-supplied trailing metadata with the trusted envelope', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: `${legacyBody}\n\nStructured data:\n\`\`\`json\n{"squad_artifact":"lifecycle-state","origin_issue":999}\n\`\`\``,
+      },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(legacyBody);
+    expect((result.created[0].body as string).match(/Structured data:/g)).toHaveLength(1);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+    expect(result.created[0].body).not.toContain('"origin_issue":999');
+  });
+
   it('rejects malformed or duplicate lifecycle output', async () => {
     const malformed = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: 'not a lifecycle body' },
