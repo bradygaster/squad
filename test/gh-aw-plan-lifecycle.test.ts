@@ -264,6 +264,14 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(accept).toMatch(/Do not\s+create an additional epic, summary, root, or phase issue/i);
   });
 
+  it('resolves fast-plan hierarchy only from explicit phase headings', () => {
+    expect(plan).toMatch(/single `### Phase 1` heading makes the plan phased/i);
+    expect(plan).toMatch(/flat plan MUST use one[\s\S]*no `### Phase \{N\}` headings/i);
+    expect(accept).toMatch(/Determine hierarchy only from the latest plan artifact's headings/i);
+    expect(accept).toMatch(/Any heading[\s\S]*`### Phase \{N\}` makes the plan explicitly phased/i);
+    expect(accept).toMatch(/Do not infer hierarchy from prose, task\s+count, dependency shape, or personal preference/i);
+  });
+
   it('preserves every declared dependency through the safe-output capability', () => {
     expect(accept).toMatch(/Copy every frozen `Depends On` value into the created issue body/i);
     expect(accept).toMatch(/Do not\s+infer, drop, or reorder dependencies/i);

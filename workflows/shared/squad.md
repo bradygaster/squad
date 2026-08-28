@@ -269,10 +269,13 @@ safe-outputs:
               const hasState = /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+\S+/im.test(body);
               const hasLastCommand = /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad\b[^`]*`/im.test(body);
               const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              const hasActivationDone =
+                /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
+                /^\|\s*Activat(?:ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
               const hasTerminalState =
                 /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
-                /^(?:[-*]\s+)?\*\*Activation:\*\*\s+✅\s+Done\s*$/im.test(body) &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)`\s*$/im.test(body) &&
+                hasActivationDone &&
+                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
                 /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
               const hasNextAction = hasNextCommand || hasTerminalState;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
