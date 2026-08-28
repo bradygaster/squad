@@ -84,7 +84,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown beginning with "## Planning Lifecycle"; omit structured data.
+          description: Complete lifecycle Markdown beginning with a recognized Squad lifecycle heading; omit structured data.
           required: true
           type: string
       steps:
@@ -113,8 +113,12 @@ safe-outputs:
               const body = String(items[0].body || "")
                 .replace(/<!--[\s\S]*?-->/g, "")
                 .trim();
-              if (!body.startsWith("## Planning Lifecycle")) {
-                core.setFailed('Lifecycle body must begin with "## Planning Lifecycle".');
+              const lifecycleHeadings = [
+                "## Planning Lifecycle",
+                "## 🧭 Squad Lifecycle State",
+              ];
+              if (!lifecycleHeadings.some((heading) => body.startsWith(heading))) {
+                core.setFailed("Lifecycle body must begin with a recognized Squad lifecycle heading.");
                 return;
               }
               if (body.length > 50000) {

@@ -81,6 +81,7 @@ async function runLifecycleUpsert(items: unknown[], comments: Comment[] = []) {
 
 describe('#1916: deterministic lifecycle safe output', () => {
   const body = '## Planning Lifecycle\n\n**Current state:** Planned';
+  const legacyBody = '## 🧭 Squad Lifecycle State\n\n- **State:** Planned';
 
   it('creates the first tracker with the fixed structured envelope', async () => {
     const result = await runLifecycleUpsert([
@@ -100,7 +101,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
   it('updates the newest trusted tracker in place', async () => {
     const marker = '{"squad_artifact":"lifecycle-state"}';
     const result = await runLifecycleUpsert(
-      [{ type: 'upsert_lifecycle_state', body }],
+      [{ type: 'upsert_lifecycle_state', body: legacyBody }],
       [
         {
           id: 10,
@@ -127,6 +128,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.created).toEqual([]);
     expect(result.updated).toHaveLength(1);
     expect(result.updated[0].comment_id).toBe(20);
+    expect(result.updated[0].body).toContain(legacyBody);
   });
 
   it('rejects malformed or duplicate lifecycle output', async () => {
@@ -139,7 +141,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
     ]);
 
     expect(malformed.failures).toEqual([
-      'Lifecycle body must begin with "## Planning Lifecycle".',
+      'Lifecycle body must begin with a recognized Squad lifecycle heading.',
     ]);
     expect(duplicate.failures).toEqual(['Expected exactly one lifecycle update, found 2.']);
   });
