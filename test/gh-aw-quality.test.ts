@@ -379,10 +379,46 @@ describe('gh-aw: safe-output configuration', () => {
     expect(safeOutputs['add-comment'], 'add-comment should exist').toBeDefined();
   });
 
+  it('keeps built-in comment targets explicit (#1916)', () => {
+    expect(safeOutputs['add-comment'].target).toBe('*');
+    expect(safeOutputs['add-comment']['allows-comment-ids']).toBeUndefined();
+  });
+
   it('create-issue max is 75 (supports large plans, forward-port of #1683)', () => {
     const ci = safeOutputs['create-issue'];
     expect(ci, 'create-issue block must exist').toBeDefined();
     expect(ci['max'], 'create-issue max must be 75 — do not reduce below this').toBe(75);
+  });
+});
+
+describe('#1916: lifecycle comment updates use a deterministic safe-output job', () => {
+  const workflow = readText(SQUAD_WORKFLOW);
+  const shared = readText(join(SHARED_DIR, 'squad.md'));
+
+  it('defines a bounded, permission-scoped lifecycle upsert', () => {
+    expect(shared).toContain('upsert-lifecycle-state:');
+    expect(shared).toContain('needs: safe_outputs');
+    expect(shared).toContain('issues: write');
+    expect(shared).toContain('pull-requests: write');
+    expect(shared).toContain('max: 1');
+  });
+
+  it('selects only bot-authored lifecycle artifacts and chooses the newest', () => {
+    expect(shared).toContain('comment.user?.login === "github-actions[bot]"');
+    expect(shared).toContain('includes(marker)');
+    expect(shared).toContain('.sort((left, right)');
+    expect(shared).toContain('const current = matches.at(-1);');
+  });
+
+  it('updates in place or creates the first lifecycle comment', () => {
+    expect(shared).toContain('github.rest.issues.updateComment');
+    expect(shared).toContain('comment_id: current.id');
+    expect(shared).toContain('github.rest.issues.createComment');
+  });
+
+  it('requires one lifecycle upsert with a complete body', () => {
+    expect(workflow).toContain('call `upsert_lifecycle_state` once');
+    expect(workflow).toContain('updates the newest trusted tracker or creates the first one');
   });
 });
 
@@ -1021,7 +1057,7 @@ describe('gh-aw: inline skill extraction', () => {
     ...imports
       .map(rel => join(WORKFLOWS_DIR, rel))
       .filter(existsSync)
-      .map(readText),
+      .map(path => readText(path).replace(/^---\n[\s\S]*?\n---\n/, '')),
     readText(SQUAD_WORKFLOW).replace(/^---\n[\s\S]*?\n---\n/, ''),
   ].join('\n');
 
@@ -1239,6 +1275,16 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
     expect(compiled).toContain('{{#runtime-import .github/workflows/squad.md}}');
     expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
+  }, 20000);
+
+  it('compiles the lifecycle upsert as a post-safe-output job (#1916)', () => {
+    const compiled = lockText();
+    expect(compiled).toContain('  upsert_lifecycle_state:');
+    expect(compiled).toMatch(
+      /upsert_lifecycle_state:[\s\S]*?needs:[\s\S]*?- safe_outputs/,
+    );
+    expect(compiled).toContain('name: Upsert Squad lifecycle state');
+    expect(compiled).toContain('comment_id: current.id');
   }, 20000);
 
   it('preserves the standalone release selection in the compiled install step (#1884)', () => {

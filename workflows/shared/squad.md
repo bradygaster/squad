@@ -71,6 +71,98 @@ engine:
 ambient-folders:
   - .squad
 
+safe-outputs:
+  jobs:
+    upsert-lifecycle-state:
+      description: Update the single Squad planning lifecycle comment for this issue.
+      runs-on: ubuntu-slim
+      needs: safe_outputs
+      permissions:
+        issues: write
+        pull-requests: write
+      max: 1
+      output: Lifecycle state updated.
+      inputs:
+        body:
+          description: Complete lifecycle Markdown beginning with "## Planning Lifecycle"; omit structured data.
+          required: true
+          type: string
+      steps:
+        - name: Upsert Squad lifecycle state
+          uses: actions/github-script@v9
+          env:
+            ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || github.event.inputs.issue_number }}
+          with:
+            script: |
+              const { readFileSync } = await import("node:fs");
+              const issueNumber = Number(process.env.ISSUE_NUMBER);
+              if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+                core.setFailed("A valid issue or pull request number is required.");
+                return;
+              }
+
+              const output = JSON.parse(readFileSync(process.env.GH_AW_AGENT_OUTPUT, "utf8"));
+              const items = (output.items || []).filter(
+                (item) => item.type === "upsert_lifecycle_state",
+              );
+              if (items.length !== 1) {
+                core.setFailed(`Expected exactly one lifecycle update, found ${items.length}.`);
+                return;
+              }
+
+              const body = String(items[0].body || "")
+                .replace(/<!--[\s\S]*?-->/g, "")
+                .trim();
+              if (!body.startsWith("## Planning Lifecycle")) {
+                core.setFailed('Lifecycle body must begin with "## Planning Lifecycle".');
+                return;
+              }
+              if (body.length > 50000) {
+                core.setFailed("Lifecycle body exceeds 50,000 characters.");
+                return;
+              }
+              if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {
+                core.setFailed("Lifecycle body must omit structured data.");
+                return;
+              }
+
+              const data = JSON.stringify({
+                squad_artifact: "lifecycle-state",
+                schema_version: "1",
+                origin_issue: issueNumber,
+                phases: [],
+              });
+              const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+              const marker = '"squad_artifact":"lifecycle-state"';
+              const matches = comments
+                .filter((comment) =>
+                  comment.user?.login === "github-actions[bot]" &&
+                  String(comment.body || "").replace(/\s/g, "").includes(marker),
+                )
+                .sort((left, right) =>
+                  String(left.created_at).localeCompare(String(right.created_at)),
+                );
+              const current = matches.at(-1);
+
+              if (current) {
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: current.id,
+                  body: finalBody,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  body: finalBody,
+                });
+              }
+
 jobs:
   activation:
     steps:
