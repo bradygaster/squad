@@ -128,9 +128,11 @@ machine-readable planning comment MUST include safe-output `data`:
 ```
 
 Use the triggering issue for `origin_issue`; emit `phases: []` except for
-accumulated phase-state numbers. Keep validation in the readable body. Locate
-artifacts by paginating all comments, matching the exact structured fields, and
-choosing the newest match.
+accumulated phase-state numbers. Pass this envelope only through the safe-output
+tool's `data` argument. Never include a `Structured data:` heading or fenced
+metadata in the readable `body`; gh-aw appends exactly one validated block. Keep
+validation in the readable body. Locate artifacts by paginating all comments,
+matching the exact structured fields, and choosing the newest match.
 
 For each lifecycle-state write, call `upsert_lifecycle_state` once with the
 complete body. It updates the newest trusted tracker or creates the first one.
@@ -1169,6 +1171,8 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 ##### Step 3: Post Plan
 
 `add-comment` with `data: {"squad_artifact":"plan","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+The `body` MUST NOT contain a `Structured data:` block or fenced metadata; pass
+the envelope only through `data` so gh-aw appends it exactly once.
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
 

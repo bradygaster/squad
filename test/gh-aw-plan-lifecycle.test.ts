@@ -1032,6 +1032,27 @@ describe('#1922: fast-path planning proves research absence with pagination', ()
   });
 });
 
+describe('#1924: planning comments contain one gh-aw structured-data envelope', () => {
+  const plan = skillBlock(squad, 'squad-plan');
+  const contract =
+    squad.match(
+      /## Planning Artifact Data Contract \(all modes\)([\s\S]*?)# Squad — `\/squad` Slash Command/,
+    )?.[1] ?? '';
+  const postPlan = plan.match(/Step 3: Post Plan([\s\S]*?)Step 4: Update Lifecycle/)?.[1] ?? '';
+
+  it('requires every planning mode to pass metadata only through data', () => {
+    expect(contract).toMatch(/only through the safe-output\s+tool's `data` argument/);
+    expect(contract).toContain('Never include a `Structured data:` heading');
+    expect(contract).toContain('gh-aw appends exactly one validated block');
+  });
+
+  it('repeats the no-embedded-metadata rule at the fast-plan call site', () => {
+    expect(postPlan).toContain('The `body` MUST NOT contain a `Structured data:` block');
+    expect(postPlan).toMatch(/pass\s+the envelope only through `data`/);
+    expect(postPlan).toContain('gh-aw appends it exactly once');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // #1772 (defense-in-depth) — empty workflow_dispatch probe is guarded, not
 // turned into a junk issue. Pairs with EECOM's dispatch-workflow max fix
