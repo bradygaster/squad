@@ -106,6 +106,16 @@ describe('#1916: deterministic lifecycle safe output', () => {
     '**Last command:** `/squad plan`',
     '**Next recommended:** `/squad activate`',
   ].join('\n');
+  const terminalBody = [
+    '## 🧭 Squad Lifecycle State',
+    '',
+    '- **State:** Activated',
+    '- **Research:** ✅ Done',
+    '- **Plan:** ✅ Done',
+    '- **Activation:** ✅ Done',
+    '- **Last command:** `/squad activate`',
+    '- **Next action:** Track progress on the 5 created task issues; no further planning action required.',
+  ].join('\n');
 
   it('creates the first tracker with the fixed structured envelope', async () => {
     const result = await runLifecycleUpsert([
@@ -181,6 +191,33 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.failures).toEqual([]);
     expect(result.created).toHaveLength(1);
     expect(result.created[0].body).toContain(issueHeadingBody);
+  });
+
+  it('accepts non-command guidance for the terminal Activated state', async () => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: terminalBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(terminalBody);
+  });
+
+  it('rejects non-command next actions for nonterminal states', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: body.replace(
+          '**Next action:** `/squad activate`',
+          '**Next action:** Wait for more information.',
+        ),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.',
+    ]);
+    expect(result.created).toEqual([]);
   });
 
   it.each([
