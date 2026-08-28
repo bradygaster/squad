@@ -1101,7 +1101,9 @@ Budget-aware breadth-first investigation: architecture mapping, technology audit
 
 ##### Step 3: Post Findings
 
-`add-comment` with `data: {"squad_artifact":"research","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
+Call `upsert_research_artifact` once with the complete research body. The
+trusted writer supplies the structured envelope and replaces the existing
+bot-authored research artifact for this issue.
 
 Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → **Goals** → **Non-goals** → **Evidence table** (columns `Rn` | Finding | Risk 🟢/🟡/🔴 | Complexity S/M/L/XL | Citation) → **Load-bearing assumptions** → **Open decisions** → **Acceptance framing** → Recommendations (each referencing the `Rn` IDs it rests on) → Next Step (`/squad triage` or `/squad plan`).
 

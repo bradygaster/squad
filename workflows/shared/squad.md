@@ -73,6 +73,138 @@ ambient-folders:
 
 safe-outputs:
   jobs:
+    upsert-research-artifact:
+      description: Create or replace the single Squad research artifact for this issue.
+      runs-on: ubuntu-slim
+      needs: safe_outputs
+      permissions:
+        issues: write
+        pull-requests: write
+      max: 1
+      output: Research artifact updated.
+      inputs:
+        body:
+          description: Complete research Markdown with an H2 Squad Research heading and all required sections; structured data is normalized by the writer.
+          required: true
+          type: string
+      steps:
+        - name: Upsert Squad research artifact
+          uses: actions/github-script@v9
+          env:
+            ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || github.event.inputs.issue_number }}
+          with:
+            script: |
+              const { readFileSync } = await import("node:fs");
+              const issueNumber = Number(process.env.ISSUE_NUMBER);
+              if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+                core.setFailed("A valid issue or pull request number is required.");
+                return;
+              }
+
+              const output = JSON.parse(readFileSync(process.env.GH_AW_AGENT_OUTPUT, "utf8"));
+              const items = (output.items || []).filter(
+                (item) => item.type === "upsert_research_artifact",
+              );
+              if (items.length !== 1) {
+                core.setFailed(`Expected exactly one research update, found ${items.length}.`);
+                return;
+              }
+
+              const rawBody = String(items[0].body || "")
+                .replace(/<!--[\s\S]*?-->/g, "")
+                .trim();
+              if (rawBody.length > 50000) {
+                core.setFailed("Research body exceeds 50,000 characters.");
+                return;
+              }
+              const marker = '"squad_artifact":"research"';
+              const trailingMetadata = rawBody.match(
+                /\n+(?:Structured data:\s*\n+)?```json\s*(\{(?:(?!```)[\s\S])*?\})\s*```\s*$/i,
+              );
+              const body = trailingMetadata &&
+                trailingMetadata[1].replace(/\s/g, "").includes(marker)
+                ? rawBody.slice(0, trailingMetadata.index).trim()
+                : rawBody;
+              const firstLine = body.split(/\r?\n/, 1)[0];
+              const requiredSections = [
+                "Goals",
+                "Non-goals",
+                "Evidence table",
+                "Load-bearing assumptions",
+                "Open decisions",
+                "Acceptance framing",
+              ];
+              const hasRequiredSections = requiredSections.every((section) =>
+                new RegExp(`^#{2,6}\\s+${section}\\s*$`, "im").test(body),
+              );
+              if (!/^##\s+.*\bSquad Research\b/i.test(firstLine) || !hasRequiredSections) {
+                core.setFailed("Research body must include an H2 Squad Research heading and every required section.");
+                return;
+              }
+              if (body.includes("Structured data:") || body.replace(/\s/g, "").includes(marker)) {
+                core.setFailed("Research body must omit structured data.");
+                return;
+              }
+
+              const data = JSON.stringify({
+                squad_artifact: "research",
+                schema_version: "1",
+                origin_issue: issueNumber,
+                phases: [],
+              });
+              const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+              const matches = comments
+                .filter((comment) => {
+                  if (comment.user?.login !== "github-actions[bot]") return false;
+                  const blocks = String(comment.body || "").matchAll(
+                    /```json\s*(\{(?:(?!```)[\s\S])*?\})\s*```/gi,
+                  );
+                  for (const block of blocks) {
+                    try {
+                      const candidate = JSON.parse(block[1]);
+                      if (
+                        candidate.squad_artifact === "research" &&
+                        candidate.schema_version === "1" &&
+                        candidate.origin_issue === issueNumber
+                      ) {
+                        return true;
+                      }
+                    } catch {
+                      // Ignore non-JSON fences and continue scanning this comment.
+                    }
+                  }
+                  return false;
+                })
+                .sort((left, right) =>
+                  String(left.created_at).localeCompare(String(right.created_at)),
+                );
+              const current = matches.at(-1);
+
+              if (current) {
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: current.id,
+                  body: finalBody,
+                });
+                for (const duplicate of matches.slice(0, -1)) {
+                  await github.rest.issues.deleteComment({
+                    ...context.repo,
+                    comment_id: duplicate.id,
+                  });
+                }
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  body: finalBody,
+                });
+              }
+
     upsert-lifecycle-state:
       description: Update the single Squad planning lifecycle comment for this issue.
       runs-on: ubuntu-slim
