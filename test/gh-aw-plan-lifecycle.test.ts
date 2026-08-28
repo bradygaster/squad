@@ -1003,8 +1003,14 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
   });
 
   it('repairs stale lifecycle state on an idempotent activate rerun', () => {
-    expect(activate).toMatch(
-      /already-accepted → verify the existing lifecycle state already[\s\S]*repair it if stale/,
+    expect(activate).toContain('**Whole-plan idempotency:**');
+    expect(activate).toContain('create no issues and post no acceptance');
+    expect(activate).toContain('inspect the newest lifecycle state');
+    expect(activate).toContain(
+      'call `upsert_lifecycle_state` exactly once with',
+    );
+    expect(activate).toContain(
+      'Return `noop` only when that lifecycle state',
     );
   });
 });
