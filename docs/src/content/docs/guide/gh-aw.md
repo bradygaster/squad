@@ -1127,23 +1127,50 @@ reviews.
 
 ## Upgrading
 
-To update your compiled workflow after pulling upstream changes:
+Pin upgrades to one immutable 40-character Squad commit SHA. A bare `gh aw add`
+does not refresh files that are already installed, so use `--force`:
 
 ```bash
+SQUAD_SHA="<40-character-commit-sha>"
+
 gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-review.md@${SQUAD_SHA} \
+  --force
 ```
 
-This re-compiles the workflow from source. If you have local customizations in your compiled `.github/workflows/squad-*.lock.yml`, they will be overwritten — keep customizations in the source `.md` files instead.
+`--force` overwrites the installed source files. Save any local source
+customizations first, then reapply them before the final compile. Never customize
+generated `.lock.yml` files.
 
-For manual recompilation of all workflows:
+Existing local imports are not guaranteed to refresh with the top-level files.
+Fetch every Squad shared import at the same SHA:
 
 ```bash
+mkdir -p .github/workflows/shared
+
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad.md" \
+  --output .github/workflows/shared/squad.md
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-cast-validator.md" \
+  --output .github/workflows/shared/squad-cast-validator.md
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-ontology.md" \
+  --output .github/workflows/shared/squad-planning-ontology.md
+curl --fail --silent --show-error --location \
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-policy.md" \
+  --output .github/workflows/shared/squad-planning-policy.md
+
 gh aw compile --strict
 ```
+
+Confirm all four source files and generated locks reference `SQUAD_SHA`, review
+the workflow diff, then commit them together. With gh-aw v0.86.2, do not use
+`gh aw update` for this immutable-pin flow: its stored source branch and cooldown
+can leave the installed sources at a different revision than the SHA you intend.
 
 ---
 
