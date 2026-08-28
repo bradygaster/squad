@@ -1,10 +1,11 @@
 # Release Process for Squad Maintainers
 
-Squad has two automated release channels:
+Squad has three automated release channels:
 
 | Channel | Source | Version | npm tag | Package managers |
 |---------|--------|---------|---------|------------------|
-| Preview | Manual dispatch from `dev` | `X.Y.Z-preview.N` | `preview` | Not updated |
+| Insider | Manual insider dispatch from `dev` | `X.Y.Z-insider.N` | `insider` | Homebrew and WinGet |
+| Preview | Manual release dispatch from `dev` | `X.Y.Z-preview.N` | `preview` | Homebrew and WinGet |
 | Stable | Sanitized promotion to `main` | `X.Y.Z` | `latest` | Homebrew and WinGet |
 
 There is no staging `preview` branch. The word preview refers to a GitHub
@@ -60,13 +61,33 @@ stable. It then:
 2. Creates a GitHub prerelease.
 3. Publishes the SDK and CLI to npm `preview`.
 4. Uploads standalone archives for macOS, Linux, and Windows.
-5. Skips Homebrew and WinGet.
+5. Updates `squad-preview` in Homebrew and
+   `bradygaster.Squad.Preview` in WinGet.
 
 Install the preview with:
 
 ```bash
 npm install -g @bradygaster/squad-cli@preview
+brew install --cask squad-preview
 ```
+
+```powershell
+winget install --id bradygaster.Squad.Preview --exact
+```
+
+## Publish an insider snapshot
+
+Dispatch the insider workflow from `dev`:
+
+```bash
+gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
+gh run watch
+```
+
+The workflow computes the next immutable `X.Y.Z-insider.N` version, publishes
+both npm packages, creates a GitHub prerelease, uploads standalone archives,
+updates `squad-insider` in Homebrew, and opens or reuses the
+`bradygaster.Squad.Insider` WinGet PR.
 
 ## Publish stable
 
@@ -130,8 +151,14 @@ npm view @bradygaster/squad-cli dist-tags.latest
 ```
 
 The values must equal the release version. The GitHub Release must contain six
-archives and `SHA256SUMS.txt`. Stable releases must also update
-`bradygaster/homebrew-squad/Casks/squad.rb` and create or reuse a WinGet PR.
+archives and `SHA256SUMS.txt`. Every channel must update its Homebrew cask and
+create or reuse its WinGet PR:
+
+| Channel | Homebrew cask | WinGet identifier |
+|---------|---------------|-------------------|
+| Insider | `squad-insider` | `bradygaster.Squad.Insider` |
+| Preview | `squad-preview` | `bradygaster.Squad.Preview` |
+| Stable | `squad` | `bradygaster.Squad` |
 
 ## Recover a failed publication
 

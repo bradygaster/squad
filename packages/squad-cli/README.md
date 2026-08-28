@@ -12,7 +12,7 @@ The programmable multi-agent CLI for GitHub Copilot. Build an AI team, assign ro
 - **GitHub Copilot CLI** — provides the AI backend and is installed separately
 - **GitHub CLI** (`gh`) — required only for GitHub issue, pull request, and work-loop operations
 
-Node.js 22.5 or later is required for npm and npx installs. The standalone
+Node.js 22.5 or later is required for npm installs. The standalone
 methods below vendor Node.js and do not require npm or access to the npm
 registry.
 
@@ -25,8 +25,8 @@ npm install -g @bradygaster/squad-cli@latest
 # Project-local
 npm install --save-dev @bradygaster/squad-cli
 
-# One-shot (no install)
-npx @bradygaster/squad-cli
+# Preview channel
+npm install -g @bradygaster/squad-cli@preview
 
 # Insider channel (pre-release builds)
 npm install -g @bradygaster/squad-cli@insider
@@ -39,13 +39,24 @@ npm install -g @bradygaster/squad-cli@insider
 ```bash
 brew tap bradygaster/squad
 brew install --cask squad
+
+# Early-release channels
+brew install --cask squad-preview
+brew install --cask squad-insider
 ```
 
 **Windows with WinGet:**
 
 ```powershell
 winget install --id bradygaster.Squad --exact
+
+# Early-release channels
+winget install --id bradygaster.Squad.Preview --exact
+winget install --id bradygaster.Squad.Insider --exact
 ```
+
+Only one channel can own the `squad` command at a time. Uninstall the current
+cask or package before switching channels.
 
 **macOS or Linux with the verified install script:**
 

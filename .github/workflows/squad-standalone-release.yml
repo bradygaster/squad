@@ -12,8 +12,6 @@ name: Squad Standalone Bundles
 # dependency tree; it is the runtime dependency that is removed.
 
 on:
-  release:
-    types: [published]
   workflow_call:
     inputs:
       node_version:
@@ -33,6 +31,11 @@ on:
         type: string
       source_ref:
         description: 'Git ref whose source is bundled'
+        required: false
+        default: ''
+        type: string
+      package_version:
+        description: 'Optional package version override for generated insider snapshots'
         required: false
         default: ''
         type: string
@@ -62,6 +65,11 @@ on:
         type: string
       source_ref:
         description: 'Git ref whose source is bundled (defaults to release_tag or the selected ref)'
+        required: false
+        default: ''
+        type: string
+      package_version:
+        description: 'Optional package version override for generated insider snapshots'
         required: false
         default: ''
         type: string
@@ -112,7 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ inputs.source_ref || inputs.release_tag || github.event.release.tag_name || github.ref }}
+          ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
@@ -131,6 +139,38 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq unzip
           }
           unzip -v | head -n 1
+
+      - name: Apply package version override
+        if: inputs.package_version != ''
+        env:
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          const version = process.env.PACKAGE_VERSION;
+          const supported =
+            /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-insider\.(0|[1-9]\d*)$/;
+          if (!supported.test(version)) {
+            throw new Error(
+              `package_version must be an insider version such as 0.14.0-insider.1; got '${version}'`,
+            );
+          }
+
+          for (const file of [
+            'package.json',
+            'packages/squad-sdk/package.json',
+            'packages/squad-cli/package.json',
+          ]) {
+            const pkg = JSON.parse(readFileSync(file, 'utf8'));
+            pkg.version = version;
+            if (file === 'packages/squad-cli/package.json') {
+              pkg.dependencies['@bradygaster/squad-sdk'] = version;
+            }
+            writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+          }
+          NODE
 
       - name: Build packages
         # Root prebuild synchronizes contributor-only .squad sources that are
@@ -211,7 +251,7 @@ jobs:
   publish:
     name: Attach bundles to release
     needs: build
-    if: github.event_name == 'release' || inputs.upload
+    if: inputs.upload
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -225,7 +265,7 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
+          TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) }}
         working-directory: artifacts
         run: |
           set -euo pipefail
@@ -311,11 +351,13 @@ jobs:
     timeout-minutes: 10
     outputs:
       release_tag: ${{ steps.generate.outputs.release_tag }}
-      stable_release: ${{ steps.generate.outputs.stable_release }}
+      release_channel: ${{ steps.generate.outputs.release_channel }}
+      homebrew_cask: ${{ steps.generate.outputs.homebrew_cask }}
+      winget_identifier: ${{ steps.generate.outputs.winget_identifier }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ inputs.source_ref || inputs.release_tag || github.event.release.tag_name || github.ref }}
+          ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
@@ -329,19 +371,33 @@ jobs:
       - name: Generate manifests
         id: generate
         env:
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}
+          TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) }}
         run: |
           set -euo pipefail
+          if [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            channel=stable
+            homebrew_cask=squad
+            winget_identifier=bradygaster.Squad
+          elif [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$ ]]; then
+            channel=preview
+            homebrew_cask=squad-preview
+            winget_identifier=bradygaster.Squad.Preview
+          elif [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-insider\.(0|[1-9][0-9]*)$ ]]; then
+            channel=insider
+            homebrew_cask=squad-insider
+            winget_identifier=bradygaster.Squad.Insider
+          else
+            echo "::error::Unsupported release tag '${TAG}'."
+            exit 1
+          fi
           node scripts/generate-packaging.mjs \
             --version "${TAG}" \
             --checksums release-metadata/SHA256SUMS.txt \
             --out-dir dist-packaging
           echo "release_tag=${TAG}" >> "${GITHUB_OUTPUT}"
-          if [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "stable_release=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "stable_release=false" >> "${GITHUB_OUTPUT}"
-          fi
+          echo "release_channel=${channel}" >> "${GITHUB_OUTPUT}"
+          echo "homebrew_cask=${homebrew_cask}" >> "${GITHUB_OUTPUT}"
+          echo "winget_identifier=${winget_identifier}" >> "${GITHUB_OUTPUT}"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7
         with:
@@ -353,7 +409,6 @@ jobs:
   publish-homebrew:
     name: Publish Homebrew cask
     needs: packaging
-    if: needs.packaging.outputs.stable_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -390,15 +445,17 @@ jobs:
 
       - name: Publish cask to the tap
         env:
+          CASK: ${{ needs.packaging.outputs.homebrew_cask }}
+          CHANNEL: ${{ needs.packaging.outputs.release_channel }}
           TAG: ${{ needs.packaging.outputs.release_tag }}
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
-          source_cask="../packaging/homebrew/squad.rb"
-          target_cask="Casks/squad.rb"
-          cask_url="https://github.com/bradygaster/homebrew-squad/blob/main/Casks/squad.rb"
+          source_cask="../packaging/homebrew/${CASK}.rb"
+          target_cask="Casks/${CASK}.rb"
+          cask_url="https://github.com/bradygaster/homebrew-squad/blob/main/${target_cask}"
 
-          extract_stable_cask_version() {
+          extract_cask_version() {
             local file="$1"
             local versions
             mapfile -t versions < <(
@@ -408,42 +465,40 @@ jobs:
               echo "::error::Expected exactly one version declaration in ${file}." >&2
               return 1
             fi
-            if [[ ! "${versions[0]}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-              echo "::error::Cask version '${versions[0]}' in ${file} is not stable SemVer." >&2
+            case "${CHANNEL}" in
+              stable) pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ;;
+              preview) pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$' ;;
+              insider) pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-insider\.(0|[1-9][0-9]*)$' ;;
+              *) echo "::error::Unknown Homebrew release channel '${CHANNEL}'." >&2; return 1 ;;
+            esac
+            if [[ ! "${versions[0]}" =~ ${pattern} ]]; then
+              echo "::error::Cask version '${versions[0]}' in ${file} is not valid for ${CHANNEL}." >&2
               return 1
             fi
             printf '%s' "${versions[0]}"
           }
 
           version_is_newer() {
-            local lhs_major lhs_minor lhs_patch
-            local rhs_major rhs_minor rhs_patch
-            IFS=. read -r lhs_major lhs_minor lhs_patch <<< "$1"
-            IFS=. read -r rhs_major rhs_minor rhs_patch <<< "$2"
-            if (( lhs_major > rhs_major )); then return 0; fi
-            if (( lhs_major < rhs_major )); then return 1; fi
-            if (( lhs_minor > rhs_minor )); then return 0; fi
-            if (( lhs_minor < rhs_minor )); then return 1; fi
-            if (( lhs_patch > rhs_patch )); then return 0; fi
-            return 1
+            [ "$1" != "$2" ] &&
+              [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]
           }
 
           if [ ! -f "${source_cask}" ]; then
-            echo "::error::The packaging-manifests artifact is missing homebrew/squad.rb."
+            echo "::error::The packaging-manifests artifact is missing homebrew/${CASK}.rb."
             exit 1
           fi
-          candidate_version="$(extract_stable_cask_version "${source_cask}")"
+          candidate_version="$(extract_cask_version "${source_cask}")"
           if [ "${candidate_version}" != "${TAG#v}" ]; then
             echo "::error::Generated cask version ${candidate_version} does not match release tag ${TAG}."
             exit 1
           fi
           if [ -f "${target_cask}" ]; then
-            current_version="$(extract_stable_cask_version "${target_cask}")"
+            current_version="$(extract_cask_version "${target_cask}")"
             if version_is_newer "${current_version}" "${candidate_version}"; then
               {
                 echo "### Homebrew publication"
                 echo ""
-                echo "⏭️ Refused to downgrade [\`Casks/squad.rb\`](${cask_url}) from ${current_version} to ${candidate_version}."
+                echo "⏭️ Refused to downgrade [\`${target_cask}\`](${cask_url}) from ${current_version} to ${candidate_version}."
               } >> "${GITHUB_STEP_SUMMARY}"
               exit 0
             fi
@@ -457,7 +512,7 @@ jobs:
             {
               echo "### Homebrew publication"
               echo ""
-              echo "⏭️ [\`Casks/squad.rb\`](${cask_url}) already matches ${TAG}; no commit was needed."
+              echo "⏭️ [\`${target_cask}\`](${cask_url}) already matches ${TAG}; no commit was needed."
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
@@ -481,7 +536,7 @@ jobs:
           {
             echo "### Homebrew publication"
             echo ""
-            echo "✅ Updated [\`Casks/squad.rb\`](${cask_url}) in [\`${commit_sha:0:7}\`](https://github.com/bradygaster/homebrew-squad/commit/${commit_sha})."
+            echo "✅ Updated [\`${target_cask}\`](${cask_url}) in [\`${commit_sha:0:7}\`](https://github.com/bradygaster/homebrew-squad/commit/${commit_sha})."
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Summarize Homebrew failure
@@ -496,7 +551,6 @@ jobs:
   publish-winget:
     name: Publish WinGet manifests
     needs: packaging
-    if: needs.packaging.outputs.stable_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -525,21 +579,23 @@ jobs:
       - name: Resolve WinGet release metadata
         id: release
         env:
+          CHANNEL: ${{ needs.packaging.outputs.release_channel }}
+          PACKAGE_IDENTIFIER: ${{ needs.packaging.outputs.winget_identifier }}
           TAG: ${{ needs.packaging.outputs.release_tag }}
         run: |
           set -euo pipefail
-          if [[ ! "${TAG}" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
-            echo "::error::WinGet publication requires a release tag in vMAJOR.MINOR.PATCH form; got '${TAG}'."
+          if [[ ! "${TAG}" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(preview|insider)\.(0|[1-9][0-9]*))?)$ ]]; then
+            echo "::error::WinGet publication requires a stable, preview, or insider release tag; got '${TAG}'."
             exit 1
           fi
 
           version="${BASH_REMATCH[1]}"
-          branch="bradygaster-squad-${version}"
-          package_root="manifests/b/bradygaster/Squad"
+          branch="bradygaster-squad-${CHANNEL}-${version}"
+          package_root="manifests/b/${PACKAGE_IDENTIFIER//./\/}"
           expected=(
-            "bradygaster.Squad.installer.yaml"
-            "bradygaster.Squad.locale.en-US.yaml"
-            "bradygaster.Squad.yaml"
+            "${PACKAGE_IDENTIFIER}.installer.yaml"
+            "${PACKAGE_IDENTIFIER}.locale.en-US.yaml"
+            "${PACKAGE_IDENTIFIER}.yaml"
           )
           mapfile -t generated < <(find packaging/winget -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
           if [ "${#generated[@]}" -ne 3 ] || [ "${generated[*]}" != "${expected[*]}" ]; then
@@ -550,6 +606,7 @@ jobs:
 
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
+          echo "package_identifier=${PACKAGE_IDENTIFIER}" >> "${GITHUB_OUTPUT}"
           echo "package_root=${package_root}" >> "${GITHUB_OUTPUT}"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
@@ -558,7 +615,7 @@ jobs:
           ref: master
           path: winget-base
           fetch-depth: 1
-          sparse-checkout: manifests/b/bradygaster/Squad
+          sparse-checkout: ${{ steps.release.outputs.package_root }}
           token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
           persist-credentials: false
 
@@ -567,6 +624,7 @@ jobs:
         env:
           BRANCH: ${{ steps.release.outputs.branch }}
           GH_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          PACKAGE_IDENTIFIER: ${{ steps.release.outputs.package_identifier }}
           PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
@@ -600,17 +658,6 @@ jobs:
             exit 0
           fi
 
-          if [ ! -d "winget-base/${PACKAGE_ROOT}" ]; then
-            echo "skip=true" >> "${GITHUB_OUTPUT}"
-            {
-              echo "### WinGet publication"
-              echo ""
-              echo "⏭️ The base package is not yet in [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs/tree/master/manifests/b/bradygaster)."
-              echo "The initial package PR must merge before automated version updates begin."
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
           set +e
           git ls-remote --exit-code --heads \
             https://github.com/tamirdresher/winget-pkgs.git \
@@ -628,9 +675,9 @@ jobs:
 
           if [ "${branch_exists}" = "true" ]; then
             manifest_paths=(
-              "${manifest_dir}/bradygaster.Squad.installer.yaml"
-              "${manifest_dir}/bradygaster.Squad.locale.en-US.yaml"
-              "${manifest_dir}/bradygaster.Squad.yaml"
+              "${manifest_dir}/${PACKAGE_IDENTIFIER}.installer.yaml"
+              "${manifest_dir}/${PACKAGE_IDENTIFIER}.locale.en-US.yaml"
+              "${manifest_dir}/${PACKAGE_IDENTIFIER}.yaml"
             )
             changed_files="$(gh api \
               "repos/microsoft/winget-pkgs/compare/master...tamirdresher:${BRANCH}" \
@@ -663,7 +710,7 @@ jobs:
           ref: ${{ steps.release.outputs.branch }}
           path: winget-pkgs
           fetch-depth: 1
-          sparse-checkout: manifests/b/bradygaster/Squad
+          sparse-checkout: ${{ steps.release.outputs.package_root }}
           token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
           persist-credentials: true
 
@@ -675,7 +722,7 @@ jobs:
           ref: master
           path: winget-pkgs
           fetch-depth: 1
-          sparse-checkout: manifests/b/bradygaster/Squad
+          sparse-checkout: ${{ steps.release.outputs.package_root }}
           token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
           persist-credentials: true
 
@@ -685,6 +732,7 @@ jobs:
           BRANCH: ${{ steps.release.outputs.branch }}
           BRANCH_EXISTS: ${{ steps.guard.outputs.branch_exists }}
           GH_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          PACKAGE_IDENTIFIER: ${{ steps.release.outputs.package_identifier }}
           PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
           TAG: ${{ needs.packaging.outputs.release_tag }}
           VERSION: ${{ steps.release.outputs.version }}
@@ -706,9 +754,9 @@ jobs:
 
           target_dir="${PACKAGE_ROOT}/${VERSION}"
           manifest_names=(
-            "bradygaster.Squad.installer.yaml"
-            "bradygaster.Squad.locale.en-US.yaml"
-            "bradygaster.Squad.yaml"
+            "${PACKAGE_IDENTIFIER}.installer.yaml"
+            "${PACKAGE_IDENTIFIER}.locale.en-US.yaml"
+            "${PACKAGE_IDENTIFIER}.yaml"
           )
           expected_paths=()
           mkdir -p "${target_dir}"
@@ -748,7 +796,7 @@ jobs:
             1)
               git config user.name "github-actions[bot]"
               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git commit -m "New version: bradygaster.Squad version ${VERSION}"
+              git commit -m "New version: ${PACKAGE_IDENTIFIER} version ${VERSION}"
               commit_status="Committed the generated manifests."
               ;;
             *)
@@ -775,7 +823,7 @@ jobs:
               --repo microsoft/winget-pkgs \
               --base master \
               --head "tamirdresher:${BRANCH}" \
-              --title "New version: bradygaster.Squad version ${VERSION}" \
+              --title "New version: ${PACKAGE_IDENTIFIER} version ${VERSION}" \
               --body "Automated manifest update for [Squad ${TAG}](https://github.com/bradygaster/squad/releases/tag/${TAG}), using the release run's packaging-manifests artifact.")"
             pr_status="Opened"
           else

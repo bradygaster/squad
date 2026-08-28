@@ -16,7 +16,7 @@ This guide covers what's different, what's the same, and when to use CLI vs VS C
 - **VS Code** — Latest version
 - **GitHub Copilot extension** — `GitHub.copilot` (installed, authenticated)
 - **Workspace trust** — Your workspace must be trusted (VS Code security)
-- **Node.js 22.5+** — Only if installing the CLI with npm or npx
+- **Node.js 22.5+** — Only if installing the CLI with npm
 - **Squad installed** — Either in the repo already (from CLI), or initialized fresh via agent selection
 
 ### Initial Setup

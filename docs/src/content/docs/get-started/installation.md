@@ -1,7 +1,8 @@
 # Installation
 
-Install the Squad CLI with npm or as a self-contained bundle. Every method
-provides the same `squad` command and uses the same `.squad/` team state.
+Install the Squad CLI with npm, a platform package manager, or a self-contained
+bundle. Every method provides the same `squad` command and uses the same
+`.squad/` team state.
 
 ## Before you begin
 
@@ -12,7 +13,7 @@ All CLI installations need:
 - **[GitHub CLI](https://cli.github.com/)** only for GitHub issues, pull
   requests, project boards, and the work loop
 
-Node.js 22.5 or later is required for npm and npx installs. The install script,
+Node.js 22.5 or later is required for npm installs. The install script,
 Homebrew cask, WinGet package, and direct archives vendor Node.js, so they do
 not need Node.js, npm, or access to `registry.npmjs.org`.
 
@@ -34,12 +35,6 @@ To test an on-demand prerelease from `dev`:
 npm install -g @bradygaster/squad-cli@preview
 ```
 
-For one-off use without a global install:
-
-```bash
-npx @bradygaster/squad-cli init
-```
-
 ### macOS or Linux install script
 
 The verified install script selects the correct archive, checks its SHA-256,
@@ -56,15 +51,33 @@ brew tap bradygaster/squad
 brew install --cask squad
 ```
 
+Use `squad-preview` for release candidates or `squad-insider` for development
+snapshots:
+
+```bash
+brew install --cask squad-preview
+brew install --cask squad-insider
+```
+
 ### WinGet on Windows
 
 ```powershell
 winget install --id bradygaster.Squad --exact
 ```
 
+Use the channel-specific package identifier for early builds:
+
+```powershell
+winget install --id bradygaster.Squad.Preview --exact
+winget install --id bradygaster.Squad.Insider --exact
+```
+
 WinGet updates become searchable after the Windows Package Manager community
 repository accepts the automated release pull request. If the package is not
 found yet, use the direct Windows archive.
+
+Only one channel can own the `squad` command at a time. Uninstall the current
+Homebrew cask or WinGet package before switching channels.
 
 ### Direct download
 
@@ -88,15 +101,14 @@ signing limitations.
 
 | Method | Platforms | Node.js required | Best for |
 |--------|-----------|------------------|----------|
-| npm or npx | macOS, Linux, Windows | Yes | Node.js environments, previews, and insider builds |
+| npm | macOS, Linux, Windows | Yes | Node.js environments |
 | Install script | macOS, Linux | No | Verified command-line installation without npm |
-| Homebrew | macOS | No | Homebrew-managed upgrades |
-| WinGet | Windows | No | Windows Package Manager-managed upgrades |
+| Homebrew | macOS | No | Stable, preview, and insider upgrades |
+| WinGet | Windows | No | Stable, preview, and insider upgrades |
 | Direct archive | macOS, Linux, Windows | No | Mirrors, offline staging, and controlled deployment |
 
-Homebrew, WinGet, and the install script track stable releases. Use npm's
-`preview` tag for release candidates, `insider` for development snapshots, or
-a direct GitHub prerelease archive when testing an early build.
+The install script tracks stable releases. npm, Homebrew, WinGet, and direct
+GitHub assets support stable, preview, and insider channels.
 
 ## Verify the installation
 
@@ -151,8 +163,13 @@ Update the CLI through the same channel used to install it:
 |----------------|----------------|
 | npm | `npm install -g @bradygaster/squad-cli@latest` |
 | npm preview | `npm install -g @bradygaster/squad-cli@preview` |
+| npm insider | `npm install -g @bradygaster/squad-cli@insider` |
 | Homebrew | `brew upgrade --cask squad` |
+| Homebrew preview | `brew upgrade --cask squad-preview` |
+| Homebrew insider | `brew upgrade --cask squad-insider` |
 | WinGet | `winget upgrade --id bradygaster.Squad --exact` |
+| WinGet preview | `winget upgrade --id bradygaster.Squad.Preview --exact` |
+| WinGet insider | `winget upgrade --id bradygaster.Squad.Insider --exact` |
 | Install script | Re-run the install script |
 | Direct archive | Download and unpack the newer release |
 

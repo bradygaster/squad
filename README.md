@@ -45,6 +45,10 @@ Choose the install method for your platform:
 | WinGet (Windows) | `winget install --id bradygaster.Squad --exact` |
 | Install script (macOS/Linux, no npm) | See [Standalone Install](https://bradygaster.github.io/squad/docs/features/standalone-install/) |
 
+Preview and insider builds are available as `squad-preview` and
+`squad-insider` Homebrew casks, or as `bradygaster.Squad.Preview` and
+`bradygaster.Squad.Insider` WinGet packages.
+
 Direct archives for macOS, Linux, and Windows are also available from
 [GitHub Releases](https://github.com/bradygaster/squad/releases/latest).
 
@@ -190,21 +194,21 @@ Ralph continuously polls for work and dispatches agents to handle it. Watch mode
 
 ```bash
 # Monitor for issues (triage mode — no execution)
-npx @bradygaster/squad-cli watch
+squad watch
 
 # Monitor and auto-execute against actionable issues
-npx @bradygaster/squad-cli watch --execute --interval 5
+squad watch --execute --interval 5
 
 # With a custom agent runner that uses --task instead of -p
-npx @bradygaster/squad-cli watch --execute \
+squad watch --execute \
   --agent-cmd "custom-agent run --task {prompt} --autopilot" \
   --auth-user myaccount
 
 # Run watch with diagnostics
-npx @bradygaster/squad-cli watch --execute --log-file ./watch.log --verbose
+squad watch --execute --log-file ./watch.log --verbose
 
 # Check health of running watch process
-npx @bradygaster/squad-cli watch --health
+squad watch --health
 ```
 
 ### Key Flags

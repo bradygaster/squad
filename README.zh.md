@@ -41,6 +41,10 @@ git init
 | WinGet（Windows） | `winget install --id bradygaster.Squad --exact` |
 | 安装脚本（macOS/Linux，无需 npm） | 查看[独立安装指南](https://bradygaster.github.io/squad/docs/features/standalone-install/) |
 
+预览版和 Insider 版也可通过 Homebrew 的 `squad-preview`、
+`squad-insider` cask，或 WinGet 的 `bradygaster.Squad.Preview`、
+`bradygaster.Squad.Insider` 软件包安装。
+
 你也可以从 [GitHub Releases](https://github.com/bradygaster/squad/releases/latest)
 直接下载 macOS、Linux 或 Windows 压缩包。
 

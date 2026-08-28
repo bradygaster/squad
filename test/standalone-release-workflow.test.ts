@@ -16,11 +16,24 @@ const WORKFLOWS = join(process.cwd(), '.github', 'workflows');
 const release = readFileSync(join(WORKFLOWS, 'squad-release.yml'), 'utf8');
 const standalone = readFileSync(join(WORKFLOWS, 'squad-standalone-release.yml'), 'utf8');
 const npmPublish = readFileSync(join(WORKFLOWS, 'squad-npm-publish.yml'), 'utf8');
+const insiderPublish = readFileSync(join(WORKFLOWS, 'squad-insider-publish.yml'), 'utf8');
 const promote = readFileSync(join(WORKFLOWS, 'squad-promote.yml'), 'utf8');
 const ghAwGuide = readFileSync(
   join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md'),
   'utf8',
 );
+const publicCliDocs = [
+  'README.md',
+  'packages/squad-cli/README.md',
+  'docs/src/content/docs/get-started/installation.md',
+  'docs/src/content/docs/guide.md',
+  'docs/src/content/docs/features/vscode.md',
+  'docs/src/content/docs/features/standalone-install.md',
+  'docs/src/content/docs/guide/personal-squad.md',
+  'docs/src/content/docs/insider-program.md',
+  'docs/src/content/docs/scenarios/production-troubleshooting.md',
+  'docs/src/content/docs/scenarios/troubleshooting.md',
+].map((file) => [file, readFileSync(join(process.cwd(), file), 'utf8')] as const);
 
 interface WorkflowStep {
   name?: string;
@@ -69,6 +82,7 @@ interface WorkflowDefinition {
 const releaseWorkflow = parse(release) as WorkflowDefinition;
 const standaloneWorkflow = parse(standalone) as WorkflowDefinition;
 const npmPublishWorkflow = parse(npmPublish) as WorkflowDefinition;
+const insiderPublishWorkflow = parse(insiderPublish) as WorkflowDefinition;
 const promoteWorkflow = parse(promote) as WorkflowDefinition;
 
 function stepNamed(job: WorkflowJob, name: string): WorkflowStep {
@@ -128,14 +142,21 @@ describe('standalone release handoff', () => {
   it('accepts explicit release and source refs for calls and manual backfills', () => {
     expect(standalone).toMatch(/workflow_call:\r?\n\s+inputs:/);
     expect(standalone).toMatch(/workflow_dispatch:\r?\n\s+inputs:/);
-    for (const input of ['node_version:', 'upload:', 'release_tag:', 'source_ref:']) {
+    for (const input of [
+      'node_version:',
+      'upload:',
+      'release_tag:',
+      'source_ref:',
+      'package_version:',
+    ]) {
       const inputName = input.slice(0, -1);
       expect(standaloneWorkflow.on?.workflow_call?.inputs).toHaveProperty(inputName);
       expect(standaloneWorkflow.on?.workflow_dispatch?.inputs).toHaveProperty(inputName);
     }
     expect(standalone).toContain(
-      'ref: ${{ inputs.source_ref || inputs.release_tag || github.event.release.tag_name || github.ref }}',
+      'ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}',
     );
+    expect(standaloneWorkflow.on?.release).toBeUndefined();
   });
 
   it('builds package workspaces without the release-tag-incompatible root prebuild', () => {
@@ -147,7 +168,7 @@ describe('standalone release handoff', () => {
 
   it('uses the explicit release tag for bundles and packaging manifests', () => {
     const tagExpression =
-      "${{ inputs.release_tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) }}";
+      "${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) }}";
     expect(
       stepNamed(standaloneWorkflow.jobs.publish, 'Upload to release').env?.TAG,
     ).toBe(tagExpression);
@@ -367,6 +388,72 @@ describe('reusable npm publication', () => {
   });
 });
 
+describe('insider publication', () => {
+  it('publishes npm, an immutable GitHub prerelease, standalone assets, and package managers', () => {
+    const publish = insiderPublishWorkflow.jobs.publish;
+    const releaseJob = insiderPublishWorkflow.jobs.release;
+    const standaloneJob = insiderPublishWorkflow.jobs.standalone;
+
+    expect(publish.outputs?.insider_version).toBe(
+      '${{ steps.version.outputs.insider_version }}',
+    );
+    expect(publish.outputs?.source_sha).toBe('${{ steps.version.outputs.source_sha }}');
+    expect(stepNamed(publish, 'Compute insider version').run).toContain(
+      'source_sha=$(git rev-parse HEAD)',
+    );
+    expect(stepNamed(publish, 'Compute insider version').run).toContain(
+      'BASE="${BASE_VERSION%%-*}"',
+    );
+
+    const create = stepNamed(releaseJob, 'Create immutable insider release');
+    expect(releaseJob.permissions).toEqual({ contents: 'write' });
+    expect(create.run).toContain('gh release create "${tag}"');
+    expect(create.run).toContain('--target "${SOURCE_SHA}"');
+    expect(create.run).toContain('--prerelease');
+    expect(create.run).toContain('--json isPrerelease,targetCommitish');
+    expect(create.run).toContain('Reusing existing insider release');
+
+    expect(standaloneJob.uses).toBe('./.github/workflows/squad-standalone-release.yml');
+    expect(standaloneJob.with).toMatchObject({
+      upload: true,
+      release_tag: '${{ needs.release.outputs.tag }}',
+      source_ref: '${{ needs.publish.outputs.source_sha }}',
+      package_version: '${{ needs.publish.outputs.insider_version }}',
+    });
+    expect(standaloneJob.secrets).toEqual({
+      HOMEBREW_TAP_TOKEN: '${{ secrets.HOMEBREW_TAP_TOKEN }}',
+      WINGET_CREATE_GITHUB_TOKEN: '${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}',
+    });
+  });
+
+  it('overrides package versions only for generated insider bundles', () => {
+    const override = stepNamed(
+      standaloneWorkflow.jobs.build,
+      'Apply package version override',
+    );
+    expect(override.if).toBe("inputs.package_version != ''");
+    expect(override.run).toContain('-insider\\.');
+    expect(override.run).toContain("pkg.version = version");
+    expect(override.run).toContain("pkg.dependencies['@bradygaster/squad-sdk'] = version");
+  });
+});
+
+describe('public installation guidance', () => {
+  it('documents all package-manager channels without presenting npx as a CLI option', () => {
+    const combined = publicCliDocs.map(([, content]) => content).join('\n');
+
+    expect(combined).toContain('squad-preview');
+    expect(combined).toContain('squad-insider');
+    expect(combined).toContain('bradygaster.Squad.Preview');
+    expect(combined).toContain('bradygaster.Squad.Insider');
+    for (const [file, content] of publicCliDocs) {
+      expect(content, file).not.toMatch(
+        /\bnpx\s+(?:--yes\s+|-y\s+)?(?:@bradygaster\/squad-cli|squad\b)/,
+      );
+    }
+  });
+});
+
 describe('automated package publication', () => {
   const packaging = standaloneWorkflow.jobs.packaging;
   const homebrew = standaloneWorkflow.jobs['publish-homebrew'];
@@ -431,26 +518,34 @@ describe('automated package publication', () => {
     expect(checksumUpload?.with?.path).toBe('artifacts/SHA256SUMS.txt');
   });
 
-  it('serializes mutable channels and gates them on strict stable tags', () => {
+  it('serializes mutable channels and publishes strict stable, preview, and insider tags', () => {
     expect(standaloneWorkflow.concurrency).toEqual({
       group: 'squad-standalone-release-publication',
       'cancel-in-progress': false,
     });
-    expect(packaging.outputs?.stable_release).toBe(
-      '${{ steps.generate.outputs.stable_release }}',
+    expect(packaging.outputs?.release_channel).toBe(
+      '${{ steps.generate.outputs.release_channel }}',
+    );
+    expect(packaging.outputs?.homebrew_cask).toBe(
+      '${{ steps.generate.outputs.homebrew_cask }}',
+    );
+    expect(packaging.outputs?.winget_identifier).toBe(
+      '${{ steps.generate.outputs.winget_identifier }}',
     );
 
     const generate = stepNamed(packaging, 'Generate manifests').run ?? '';
-    expect(generate).toContain(
-      '[[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$ ]]',
-    );
-    expect(homebrew.if).toBe("needs.packaging.outputs.stable_release == 'true'");
-    expect(winget.if).toBe("needs.packaging.outputs.stable_release == 'true'");
+    expect(generate).toContain('channel=stable');
+    expect(generate).toContain('channel=preview');
+    expect(generate).toContain('channel=insider');
+    expect(generate).toContain('homebrew_cask=squad-preview');
+    expect(generate).toContain('winget_identifier=bradygaster.Squad.Insider');
+    expect(homebrew.if).toBeUndefined();
+    expect(winget.if).toBeUndefined();
   });
 
   it('checks out packaging at the same explicit source ref as the build', () => {
     const expectedRef =
-      '${{ inputs.source_ref || inputs.release_tag || github.event.release.tag_name || github.ref }}';
+      '${{ inputs.source_ref || inputs.release_tag || github.ref }}';
 
     for (const jobName of ['build', 'packaging']) {
       const checkout = standaloneWorkflow.jobs[jobName].steps?.find((step) =>
@@ -527,8 +622,8 @@ describe('automated package publication', () => {
     });
 
     const publish = stepNamed(homebrew, 'Publish cask to the tap').run ?? '';
-    expect(publish).toContain('../packaging/homebrew/squad.rb');
-    expect(publish).toContain('Casks/squad.rb');
+    expect(publish).toContain('../packaging/homebrew/${CASK}.rb');
+    expect(publish).toContain('Casks/${CASK}.rb');
     expect(publish).toContain('cmp -s');
     expect(publish).toContain('git status --porcelain');
     expect(publish).toContain('git add -- "${target_cask}"');
@@ -537,10 +632,12 @@ describe('automated package publication', () => {
     expect(publish).not.toMatch(/git add (?:\.|-A)|git push .*--force/);
   });
 
-  it('validates cask versions and refuses stale Homebrew downgrades', () => {
+  it('validates channel cask versions and refuses stale Homebrew downgrades', () => {
     const publish = stepNamed(homebrew, 'Publish cask to the tap').run ?? '';
-    expect(publish).toContain('extract_stable_cask_version');
-    expect(publish).toContain('is not stable SemVer');
+    expect(publish).toContain('extract_cask_version');
+    expect(publish).toContain('preview)');
+    expect(publish).toContain('insider)');
+    expect(publish).toContain('is not valid for ${CHANNEL}');
     expect(publish).toContain('candidate_version');
     expect(publish).toContain('current_version');
     expect(publish).toContain('version_is_newer');
@@ -549,24 +646,17 @@ describe('automated package publication', () => {
 
   it('validates and idempotently publishes only the three WinGet manifests', () => {
     const metadata = stepNamed(winget, 'Resolve WinGet release metadata').run ?? '';
-    expect(metadata).toContain(
-      '^v((0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))$',
-    );
-    expect(metadata).toContain('branch="bradygaster-squad-${version}"');
-    expect(metadata).toContain('package_root="manifests/b/bradygaster/Squad"');
-    for (const manifest of [
-      'bradygaster.Squad.yaml',
-      'bradygaster.Squad.installer.yaml',
-      'bradygaster.Squad.locale.en-US.yaml',
-    ]) {
-      expect(metadata).toContain(manifest);
-    }
+    expect(metadata).toContain('-(preview|insider)');
+    expect(metadata).toContain('branch="bradygaster-squad-${CHANNEL}-${version}"');
+    expect(metadata).toContain('package_root="manifests/b/${PACKAGE_IDENTIFIER//./\\/}"');
+    expect(metadata).toContain('${PACKAGE_IDENTIFIER}.yaml');
+    expect(metadata).toContain('${PACKAGE_IDENTIFIER}.installer.yaml');
+    expect(metadata).toContain('${PACKAGE_IDENTIFIER}.locale.en-US.yaml');
 
     const guard = stepNamed(winget, 'Check WinGet publication state').run ?? '';
     expect(guard).toContain('winget-base/${manifest_dir}');
     expect(guard).toContain('repos/microsoft/winget-pkgs/pulls');
     expect(guard).toContain('-f "head=tamirdresher:${BRANCH}"');
-    expect(guard).toContain('winget-base/${PACKAGE_ROOT}');
     expect(guard).toContain('git ls-remote --exit-code --heads');
     expect(guard).toContain('compare/master...tamirdresher:${BRANCH}');
     expect(guard).toContain('changes unrelated path');
@@ -587,6 +677,7 @@ describe('automated package publication', () => {
     expect(publish).toContain('--repo microsoft/winget-pkgs');
     expect(publish).toContain('--base master');
     expect(publish).toContain('--head "tamirdresher:${BRANCH}"');
+    expect(publish).toContain('New version: ${PACKAGE_IDENTIFIER} version ${VERSION}');
     expect(publish).not.toMatch(/git add (?:\.|-A)|git push .*--force/);
   });
 

@@ -122,8 +122,8 @@ brew install --cask copilot-cli                   # Homebrew
 ## Using it in CI
 
 The bundles are what make an npm-free CI job possible — including the
-[gh-aw](/features/gh-aw/) activation job, which previously required `npx` and so
-could not run on a runner without npm registry access.
+[gh-aw](/features/gh-aw/) activation job, which previously required registry
+access and could not run on an isolated runner.
 
 The release workflow still uses npm at bundle-build time because there is no
 practical npm-free way to assemble the dependency tree. That workflow uses the
@@ -169,21 +169,13 @@ docker build -t squad:local .
 docker run --rm -e GITHUB_TOKEN=... -v "$PWD/.squad:/app/.squad" squad:local
 ```
 
-The image sets `SQUAD_STANDALONE_HOME=/opt/squad`, which is what makes
-`squad init` inside the container write an npx-free MCP spec (below).
+The image sets `SQUAD_STANDALONE_HOME=/opt/squad`, which makes `squad init`
+inside the container write a registry-independent MCP spec.
 
 ## The squad_state MCP server
 
 `squad init` writes a `squad_state` MCP entry into `.mcp.json` so Copilot can
-reach Squad's state tools. Normally that entry launches through `npx`:
-
-```json
-{ "command": "npx", "args": ["-y", "@bradygaster/squad-cli@0.11.0", "state-mcp"] }
-```
-
-That would defeat the purpose here — the CLI would install fine from a bundle,
-then the MCP server would fail to start on the first run because npm is
-unreachable. When Squad is running from a bundle it instead writes:
+reach Squad's state tools. A bundle install writes the local executable directly:
 
 ```json
 { "command": "/opt/squad/squad", "args": ["state-mcp"] }

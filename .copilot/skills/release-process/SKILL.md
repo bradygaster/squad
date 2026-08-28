@@ -1,6 +1,6 @@
 ---
 name: "release-process"
-description: "Operate Squad's automated preview and stable release channels safely"
+description: "Operate Squad's automated insider, preview, and stable release channels safely"
 domain: "release-management"
 confidence: "high"
 source: "team-decision"
@@ -13,7 +13,8 @@ recovery commands. The operational model is:
 
 | Release | Trigger | Required version | Result |
 |---------|---------|------------------|--------|
-| Preview | Manual `squad-release.yml` dispatch from `dev` | `X.Y.Z-preview.N` | GitHub prerelease, npm `preview`, standalone archives |
+| Insider | Manual `squad-insider-publish.yml` dispatch from `dev` | Generated `X.Y.Z-insider.N` | GitHub prerelease, npm `insider`, standalone archives, Homebrew, WinGet |
+| Preview | Manual `squad-release.yml` dispatch from `dev` | `X.Y.Z-preview.N` | GitHub prerelease, npm `preview`, standalone archives, Homebrew, WinGet |
 | Stable | Manual `squad-promote.yml` dispatch from `dev` | `X.Y.Z` | Sanitized `main` push, GitHub stable release, npm `latest`, standalone archives, Homebrew, WinGet |
 
 There is no staging `preview` branch. Do not create tags or GitHub Releases
@@ -57,8 +58,21 @@ gh run watch
 
 The release workflow rejects stable versions on manual dispatch, creates a
 GitHub prerelease, publishes npm `preview`, and uploads standalone bundles.
-Homebrew, WinGet, the activation pin, and insider-tag promotion remain
-stable-only.
+It also updates the `squad-preview` Homebrew cask and
+`bradygaster.Squad.Preview` WinGet package. The activation pin and insider-tag
+promotion remain stable-only.
+
+## Insider
+
+```bash
+gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
+gh run watch
+```
+
+The workflow computes the next `X.Y.Z-insider.N` version, publishes npm
+`insider`, creates the GitHub prerelease and standalone archives, updates
+`squad-insider` in Homebrew, and opens or reuses the
+`bradygaster.Squad.Insider` WinGet PR.
 
 ## Stable
 
@@ -89,8 +103,8 @@ gh release view "v$VERSION"
 ```
 
 Use the tag for the channel being released. Verify the GitHub Release contains
-all six OS/architecture archives and `SHA256SUMS.txt`. Stable releases must also
-update the Homebrew cask and create or reuse a WinGet PR.
+all six OS/architecture archives and `SHA256SUMS.txt`. Every release must update
+its channel-specific Homebrew cask and create or reuse a WinGet PR.
 
 ## Recovery
 

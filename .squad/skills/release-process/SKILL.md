@@ -1,6 +1,6 @@
 ---
 name: "release-process"
-description: "Prepare, publish, recover, and verify Squad preview and stable releases"
+description: "Prepare, publish, recover, and verify Squad insider, preview, and stable releases"
 domain: "release"
 confidence: "high"
 source: "earned"
@@ -8,12 +8,13 @@ source: "earned"
 
 # Release Process
 
-This is the canonical Squad release runbook. Squad has two release channels and
-two long-lived branches:
+This is the canonical Squad release runbook. Squad has three release channels
+and two long-lived branches:
 
 | Source | Version | GitHub | npm | Standalone | Homebrew/WinGet |
 |--------|---------|--------|-----|------------|-----------------|
-| Manual dispatch from `dev` | `X.Y.Z-preview.N` | Prerelease | `preview` | Yes | No |
+| Insider dispatch from `dev` | Generated `X.Y.Z-insider.N` | Prerelease | `insider` | Yes | Yes |
+| Release dispatch from `dev` | `X.Y.Z-preview.N` | Prerelease | `preview` | Yes | Yes |
 | Push to `main` by promotion workflow | `X.Y.Z` | Stable/latest | `latest` | Yes | Yes |
 
 The repository does not use a staging `preview` branch. Preview is a release
@@ -30,7 +31,7 @@ channel, not a branch.
    not match an older stable range.
 5. Add an exact `## [VERSION]` entry to `CHANGELOG.md`.
 6. Merge release preparation to `dev` and wait for CI before dispatching.
-7. Do not publish Homebrew or WinGet for prereleases.
+7. Keep separate Homebrew casks and WinGet identifiers for each channel.
 
 ## Required credentials
 
@@ -99,13 +100,31 @@ The workflow:
 3. Creates `v$VERSION` and a GitHub prerelease.
 4. Publishes both npm packages with `--tag preview`.
 5. Uploads six standalone archives and `SHA256SUMS.txt`.
-6. Skips the activation-pin, insider-tag, Homebrew, and WinGet jobs.
+6. Updates the `squad-preview` Homebrew cask and
+   `bradygaster.Squad.Preview` WinGet package.
 
 Install the resulting preview:
 
 ```bash
 npm install -g @bradygaster/squad-cli@preview
 ```
+
+The same preview is available through `brew install --cask squad-preview` and
+`winget install --id bradygaster.Squad.Preview --exact`.
+
+## Publish an insider release
+
+Start an on-demand snapshot from `dev`:
+
+```bash
+gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
+gh run watch
+```
+
+The workflow computes the next immutable `X.Y.Z-insider.N` version, publishes
+npm `insider`, creates a GitHub prerelease, uploads standalone bundles, updates
+the `squad-insider` Homebrew cask, and opens or reuses the
+`bradygaster.Squad.Insider` WinGet PR.
 
 ## Publish a stable release
 
@@ -143,8 +162,7 @@ PR.
 
 ## Verify publication
 
-For a preview, replace `DIST_TAG` with `preview`; for a stable release use
-`latest`:
+Use `insider`, `preview`, or `latest` for `DIST_TAG`:
 
 ```bash
 VERSION=0.14.0
@@ -167,11 +185,9 @@ squad-win32-arm64.zip
 SHA256SUMS.txt
 ```
 
-For stable releases, also verify:
-
-- `bradygaster/homebrew-squad/Casks/squad.rb` references the new version.
-- A matching `microsoft/winget-pkgs` PR exists or the workflow reports that the
-  version is already present.
+For every release, also verify the channel's Homebrew cask (`squad`,
+`squad-preview`, or `squad-insider`) and WinGet identifier
+(`bradygaster.Squad`, `.Preview`, or `.Insider`) reference the new version.
 
 ## Recovery
 

@@ -1,8 +1,7 @@
 # Release Checklist
 
-Squad supports on-demand preview releases from `dev` and stable releases from
-`main`. The `preview` name identifies an npm/GitHub release channel, not a
-branch.
+Squad supports on-demand insider and preview releases from `dev`, plus stable
+releases from `main`. Channel names identify release streams, not branches.
 
 ## All releases
 
@@ -30,7 +29,17 @@ branch.
 - [ ] GitHub marks `vX.Y.Z-preview.N` as a prerelease.
 - [ ] npm `preview` points to the version for both packages.
 - [ ] The release has six standalone archives and `SHA256SUMS.txt`.
-- [ ] Homebrew and WinGet jobs are skipped.
+- [ ] `squad-preview` references the new Homebrew version.
+- [ ] A `bradygaster.Squad.Preview` WinGet PR exists or is already upstream.
+
+## Insider release
+
+- [ ] Dispatch `squad-insider-publish.yml` from `dev`.
+- [ ] npm `insider` points to the generated `X.Y.Z-insider.N` version.
+- [ ] GitHub marks the same version as a prerelease.
+- [ ] The release has six standalone archives and `SHA256SUMS.txt`.
+- [ ] `squad-insider` references the new Homebrew version.
+- [ ] A `bradygaster.Squad.Insider` WinGet PR exists or is already upstream.
 
 ## Stable release
 
@@ -61,7 +70,7 @@ branch.
 
 - Do not create or push the release tag.
 - Do not create or edit the GitHub Release.
-- Do not move npm dist-tags.
+- Do not move npm dist-tags manually.
 - Do not push directly to `main`.
 - Do not use or recreate a staging `preview` branch.
 
@@ -70,4 +79,4 @@ branch.
 Fix the credential or service failure and rerun the failed child job. If a
 manual backfill is required, dispatch `squad-npm-publish.yml` or
 `squad-standalone-release.yml` with `source_ref=vVERSION`. Use `--ref dev` for
-preview releases and `--ref main` for stable releases.
+preview or insider releases and `--ref main` for stable releases.

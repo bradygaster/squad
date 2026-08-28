@@ -1,6 +1,6 @@
 ---
 name: "versioning-policy"
-description: "SemVer rules for Squad's stable, preview, and local package versions"
+description: "SemVer rules for Squad's stable, preview, insider, and local package versions"
 domain: "release, versioning, npm, CI"
 confidence: "high"
 source: "earned (PR #640 workspace resolution incident and automated release channels)"
@@ -79,10 +79,12 @@ a stale published SDK rather than the workspace SDK.
    `X.Y.Z-preview.N` version and matching SDK dependency floor.
 2. Merge to `dev`, wait for CI, and dispatch `squad-release.yml` from `dev`.
 3. Repeat with a new immutable preview version when another candidate is needed.
-4. Prepare stable `X.Y.Z` and its stable SDK dependency floor on `dev`.
-5. Dispatch `squad-promote.yml`; it sanitizes `dev`, pushes `main`, and
+4. Dispatch `squad-insider-publish.yml` whenever an on-demand development
+   snapshot is needed; it computes the next immutable `X.Y.Z-insider.N`.
+5. Prepare stable `X.Y.Z` and its stable SDK dependency floor on `dev`.
+6. Dispatch `squad-promote.yml`; it sanitizes `dev`, pushes `main`, and
    explicitly dispatches the stable release.
-6. Open the next preview-version PR for continued development.
+7. Open the next preview-version PR for continued development.
 
 A preview such as `0.14.0-preview.1` is never renamed or converted in place.
 Stable `0.14.0` is a separate immutable package version and GitHub tag.
@@ -112,6 +114,7 @@ publishing.
 
 | Rule | Summary |
 |---|---|
+| Insider | The workflow generates `X.Y.Z-insider.N` from the stable base version |
 | Preview | Commit `X.Y.Z-preview.N` to `dev` for an on-demand prerelease |
 | Stable | Only `X.Y.Z` may release from `main` |
 | Sync | Root, SDK, CLI, and lockfile workspace versions must match |

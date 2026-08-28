@@ -69,7 +69,7 @@ verified macOS/Linux install script, or a direct release archive. See the
 - A git repository (Squad stores team state in `.squad/`)
 - **`gh` CLI** — required for GitHub Issues, PRs, Ralph, and Project Boards ([install](https://cli.github.com/))
 
-Node.js 22.5+ is required only for npm, npx, and SDK installs. Standalone CLI
+Node.js 22.5+ is required only for npm and SDK installs. Standalone CLI
 methods vendor Node.js.
 
 Running `squad init` creates the `.squad/` directory structure, copies `squad.agent.md` into `.github/agents/`, and installs GitHub Actions workflows into `.github/workflows/`. Your team is created at runtime when you first talk to Squad.
