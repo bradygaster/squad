@@ -94,9 +94,17 @@ describe('gh-aw-enlistment skill', () => {
     });
 
     it('requires a final strict compile without --approve', () => {
-      // The plain strict compile must appear as its own command (not only the
-      // first-install `--approve` variant).
-      expect(content).toMatch(/gh aw compile --strict(?!\s*--approve)/);
+      // The standalone command must appear as its own line (start-of-line in a
+      // fenced bash block), not merely as a prose/backtick mention.  The
+      // previous lookahead-only regex was flagged by a reviewer as a false
+      // positive: the Anti-Patterns prose "finish with a plain `gh aw compile
+      // --strict` (no `--approve`)" also matched it.
+      //
+      // Anchoring with ^, the `m` (multiline) flag, and allowing only an
+      // optional trailing # comment means only real command lines satisfy the
+      // pattern.  Lines with --approve (L140, L259, L295) do not match because
+      // --approve follows --strict before any #.
+      expect(content).toMatch(/^gh aw compile --strict(\s+#[^\n]*)?$/m);
     });
 
     it('permits only the documented bot-trigger warning', () => {
