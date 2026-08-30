@@ -334,6 +334,14 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Session init reference — coordinator procedures run at session start',
   },
+  // Templates directory README (squad-owned) — explains which files are runtime inputs
+  // vs bootstrap templates so contributors and users don't accidentally delete load-bearing files.
+  {
+    source: 'templates-readme.md',
+    destination: 'templates/README.md',
+    overwriteOnUpgrade: true,
+    description: 'Templates directory guide — runtime inputs vs bootstrap templates',
+  },
   
   // Workflows (squad-owned, overwrite on upgrade)
   {
