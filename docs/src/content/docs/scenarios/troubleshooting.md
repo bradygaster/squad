@@ -8,7 +8,7 @@ Common issues and fixes for Squad installation and usage.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `squad: command not found` | Squad CLI not installed or not in PATH | Install it using a method in the [Installation guide](../get-started/installation) |
+| `squad: command not found` | Squad CLI not installed or not in PATH | Install it using a method in the [Installation guide](../get-started/installation.md) |
 | `No .squad/ directory found` | Not in a git repo or Squad not initialized | Run `git init` then `squad init` |
 | `Cannot find agent "{name}"` | Agent doesn't exist in `.squad/agents/` | Check `.squad/team.md` for roster, or re-run casting |
 | `gh: command not found` | GitHub CLI not installed | Install from [cli.github.com](https://cli.github.com/) then `gh auth login` |
@@ -26,7 +26,7 @@ transport and could hide SSH prompts behind the progress spinner.
 
 **Fix:** Install Squad through npm, Homebrew, WinGet, the verified install
 script, or a release archive, then run `squad init`. See the
-[Installation guide](../get-started/installation).
+[Installation guide](../get-started/installation.md).
 
 ---
 

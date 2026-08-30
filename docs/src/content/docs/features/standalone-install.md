@@ -215,14 +215,15 @@ They are generated from the release's own `SHA256SUMS.txt`:
 node scripts/generate-packaging.mjs --version v0.11.0
 ```
 
-That writes `dist-packaging/homebrew/squad.rb` and the three winget manifests
-(version, installer, locale). The release workflow runs this automatically,
-updates the Homebrew tap, and opens a pull request against `winget-pkgs`.
+That writes a channel-specific Homebrew cask (`squad.rb`, `squad-preview.rb`,
+or `squad-insider.rb`) and three channel-specific winget manifests (version,
+installer, locale). The release workflow runs this automatically, updates the
+Homebrew tap, and opens a pull request against `winget-pkgs`.
 The `packaging-manifests` artifact is retained for audit and manual recovery.
 Homebrew updates are available as soon as the release workflow finishes;
 WinGet updates become available after the community repository accepts the
-generated pull request. Homebrew and WinGet publication runs only for stable
-`vMAJOR.MINOR.PATCH` releases; prereleases still receive standalone archives.
+generated pull request. Stable, preview, and insider releases each publish
+standalone archives and use isolated Homebrew casks and WinGet identifiers.
 
 ## Known limitations
 
