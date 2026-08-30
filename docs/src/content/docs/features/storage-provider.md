@@ -31,11 +31,12 @@ All of Squad's data — sessions, decisions, agent memories, event logs — flow
 - **Production** can use SQLite, cloud storage, or a database.
 - **Multi-team deployments** can route different squads to different backends.
 
-The interface is minimal — just 12 core async methods[^1]:
+The interface is minimal — just 13 core async methods[^1]:
 
 ```typescript
 read(filePath: string): Promise<string | undefined>
 write(filePath: string, data: string): Promise<void>
+createIfAbsent(filePath: string, data: string): Promise<void>
 append(filePath: string, data: string): Promise<void>
 exists(filePath: string): Promise<boolean>
 list(dirPath: string): Promise<string[]>
@@ -47,6 +48,12 @@ rename(oldPath: string, newPath: string): Promise<void>
 copy(srcPath: string, destPath: string): Promise<void>
 stat(targetPath: string): Promise<StorageStats | undefined>
 ```
+
+`createIfAbsent` is the only conditional operation: it must create the key
+**atomically and only when absent**, reject with `StateKeyConflictError` when the
+key already exists, and reject with `StateBackendUncertaintyError` when the
+outcome cannot be determined. It must never overwrite existing content.
+See [State Backends → Atomic Create-if-Absent](/features/state-backends/#atomic-create-if-absent).
 
 ---
 
@@ -111,6 +118,14 @@ export class MyCustomStorageProvider implements StorageProvider {
   async write(filePath: string, data: string): Promise<void> {
     // Write to your backend
     // Create parent directories as needed
+  }
+
+  async createIfAbsent(filePath: string, data: string): Promise<void> {
+    // Atomically create ONLY if absent — never overwrite.
+    // Throw StateKeyConflictError if the key already exists.
+    // Throw StateBackendUncertaintyError if the outcome is unknown.
+    // Use a native conditional primitive (O_EXCL open, INSERT OR IGNORE,
+    // If-None-Match: *, conditional PUT) — a read-then-write check is racy.
   }
 
   async append(filePath: string, data: string): Promise<void> {

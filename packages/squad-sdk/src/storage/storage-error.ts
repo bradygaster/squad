@@ -1,6 +1,49 @@
 import { basename } from 'path';
 
 /**
+ * Thrown by `createIfAbsent` when the key already exists in the target backend.
+ *
+ * Exactly one concurrent creator receives `void`; every other concurrent caller
+ * receives this error. Content under the key is never overwritten.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await storage.createIfAbsent('sessions/retro.md', content);
+ * } catch (err) {
+ *   if (err instanceof StateKeyConflictError) {
+ *     // Another process already created this key; read the winner's content.
+ *   }
+ * }
+ * ```
+ */
+export class StateKeyConflictError extends Error {
+  readonly name = 'StateKeyConflictError';
+  constructor(public readonly key: string) {
+    super(`State key already exists: ${key}`);
+  }
+}
+
+/**
+ * Thrown by `createIfAbsent` when the backend cannot determine with certainty
+ * whether the key was created or not (e.g. write failed after exclusive open,
+ * or CAS retry exhausted with key still absent).
+ *
+ * Distinct from {@link StateKeyConflictError}: that error means the key
+ * definitely existed; this error means the outcome is unknown. Callers should
+ * NOT assume success and should treat the operation as failed.
+ */
+export class StateBackendUncertaintyError extends Error {
+  readonly name = 'StateBackendUncertaintyError';
+  constructor(
+    public readonly operation: string,
+    public readonly reason: string,
+  ) {
+    super(`State backend uncertainty on '${operation}': ${reason}`);
+  }
+}
+
+/**
  * Sanitized storage error that strips internal filesystem paths from error messages.
  *
  * When a StorageProvider operation fails, the underlying OS error often contains

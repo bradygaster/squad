@@ -16,6 +16,7 @@ import type { SquadTool, SquadToolResult } from '../adapter/types.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import { StateKeyConflictError, StateBackendUncertaintyError } from '../storage/storage-error.js';
 import type { SquadState } from '../state/squad-state.js';
 import { validateStateKey } from '../state-backend.js';
 import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
@@ -110,6 +111,11 @@ export interface StateDeleteRequest {
 
 export interface StateListRequest {
   dir?: string;
+}
+
+export interface StateCreateIfAbsentRequest {
+  key: string;
+  content: string;
 }
 
 export interface StatusQuery {
@@ -1203,6 +1209,67 @@ export class ToolRegistry {
       },
     });
 
+    // squad_state_create_if_absent: Atomic create-if-absent
+    const stateCreateIfAbsent = defineTool<StateCreateIfAbsentRequest>({
+      name: 'squad_state_create_if_absent',
+      description: [
+        'Atomically create a mutable Squad state key only when it does not already exist.',
+        'Returns success to exactly one concurrent creator; all others receive a conflict error.',
+        'Never overwrites existing content.',
+        'Throws a typed conflict when the key already exists and a typed uncertainty error when the',
+        'outcome cannot be determined. Use squad_state_write for unconditional writes.',
+        'Keys are relative to .squad/; only mutable state keys are permitted.',
+      ].join(' '),
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'State key relative to .squad/' },
+          content: { type: 'string', description: 'Content to store if the key is absent' },
+        },
+        required: ['key', 'content'],
+      },
+      handler: async (args) => {
+        if ((args as unknown as Record<string, unknown>)['content'] == null ||
+            typeof (args as unknown as Record<string, unknown>)['content'] !== 'string') {
+          return {
+            textResultForLlm: 'Failed to create state: content is required and must be a string',
+            resultType: 'failure' as const,
+            error: 'content is required',
+          };
+        }
+        try {
+          const key = normalizeStateToolKey(args.key);
+          validateMutableStateToolKey(key);
+          await this.storage.createIfAbsent(path.join(this.squadRoot, key), args.content);
+          return {
+            textResultForLlm: `State created: ${key}`,
+            resultType: 'success',
+            toolTelemetry: { key },
+          };
+        } catch (error) {
+          if (error instanceof StateKeyConflictError) {
+            return {
+              textResultForLlm: `State key already exists (conflict): ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+              resultType: 'failure',
+              error: 'conflict',
+            };
+          }
+          if (error instanceof StateBackendUncertaintyError) {
+            return {
+              textResultForLlm: `State create outcome uncertain: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+              resultType: 'failure',
+              error: 'uncertainty',
+            };
+          }
+          return {
+            textResultForLlm: `Failed to create state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
     // Register all tools
     this.tools.set('squad_route', squadRoute);
     this.tools.set('squad_decide', squadDecide);
@@ -1212,6 +1279,7 @@ export class ToolRegistry {
     this.tools.set('squad_state_append', stateAppend);
     this.tools.set('squad_state_delete', stateDelete);
     this.tools.set('squad_state_list', stateList);
+    this.tools.set('squad_state_create_if_absent', stateCreateIfAbsent);
     this.tools.set('squad_state_health', stateHealth);
     this.tools.set('memory.classify', memoryClassify);
     this.tools.set('memory.write', memoryWrite);
