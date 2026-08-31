@@ -196,10 +196,10 @@
     "ink": "^7.1.1",
     "react": "^19.2.8",
     "jsonc-parser": "^3.3.1",
-    "vscode-jsonrpc": "^9.0.1"
+    "vscode-jsonrpc": "^9.0.2"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "typescript": "^6.0.3",
     "ink-testing-library": "^4.0.0"
