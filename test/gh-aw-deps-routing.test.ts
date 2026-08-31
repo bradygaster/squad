@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WAVE_1_BASENAMES = new Set([
@@ -126,22 +127,9 @@ function compileSafeOutputs(workflowId: string): Record<string, Record<string, u
   );
 
   const compiled = readFileSync(resolve(workflowDir, `${workflowId}.lock.yml`), 'utf8');
-  const lines = compiled.split(/\r?\n/);
-  const configStart = lines.findIndex(
-    line => line.includes('/safeoutputs/config.json') && line.includes('<<'),
-  );
-  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-  const configEnd = delimiter
-    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-    : -1;
-
-  expect(configStart, `${workflowId} must compile safe-output config`).toBeGreaterThanOrEqual(0);
-  expect(delimiter, `${workflowId} safe-output delimiter must be present`).toBeDefined();
-  expect(configEnd, `${workflowId} safe-output config must terminate`).toBeGreaterThan(configStart);
-  return JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-    string,
-    Record<string, unknown>
-  >;
+  const jsonText = extractSafeOutputsConfigJson(compiled);
+  expect(jsonText, `${workflowId} must compile a parseable safe-output config`).toBeDefined();
+  return JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
 }
 
 describe('gh-aw dependency dispatcher routing (#1748 S3)', () => {
