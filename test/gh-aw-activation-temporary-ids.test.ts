@@ -172,6 +172,58 @@ describe('gh-aw: temporary-ID targeting in squad-plan-activate (#1962)', () => {
     expect(stepBody('**2c. Create Task Issues:**')).toMatch(/#aw_epic\{K\}/);
   });
 
+  it('uses a verified real number when 2b reused a deduped prior-phase epic', () => {
+    // 2b dedups epics by title against prior phases. A reused epic was never minted in
+    // this run, so it has no entry in gh-aw's temporary-ID map — passing `#aw_epic{K}`
+    // for it would be an unresolvable parent reference. The prose must carve this out
+    // instead of applying the temporary ID unconditionally.
+    const parentLine = stepBody('**2c. Create Task Issues:**');
+
+    expect(
+      /minted this epic in this run/i.test(parentLine),
+      'Task parent targeting must condition the temporary ID on the epic having been ' +
+        'minted in this run.',
+    ).toBe(true);
+
+    expect(
+      /matched a pre-existing epic by title[\s\S]*?verified real number/i.test(parentLine),
+      'A dedup-by-title/prior-phase epic match must be targeted by its verified real ' +
+        'number, not a temporary ID this run never minted.',
+    ).toBe(true);
+
+    expect(
+      /never pass a temporary ID that was not minted this run/i.test(parentLine),
+      'The prose must forbid passing a temporary ID that was not minted this run.',
+    ).toBe(true);
+  });
+
+  it('never leaves an unresolved temporary ID in the sub-issue fallback body reference', () => {
+    // gh-aw leaves an `#aw_…` reference it cannot resolve in the body VERBATIM, so a
+    // reused/pre-existing parent written as a temporary ID would ship a literal
+    // "#aw_epic3" string to the user. The fallback must branch on provenance.
+    const start = workflow.indexOf('##### Sub-issue Fallback');
+    expect(start, '"##### Sub-issue Fallback" is missing').toBeGreaterThan(-1);
+    const rest = workflow.slice(start);
+    const nextHeading = rest.slice(1).search(/\n#{1,5} /);
+    const fallback = (nextHeading === -1 ? rest : rest.slice(0, nextHeading + 1)).replace(/\s+/g, ' ');
+
+    expect(
+      /if that parent was minted this run/i.test(fallback),
+      'The fallback must use a temporary ID only for a parent minted in this run.',
+    ).toBe(true);
+
+    expect(
+      /pre-existing or was matched by dedup[\s\S]*?verified real number/i.test(fallback),
+      'A pre-existing or deduped parent must be written as its verified real number.',
+    ).toBe(true);
+
+    expect(
+      /leaves an unresolved `#aw_…` reference in the body verbatim/i.test(fallback),
+      'The prose must state WHY: an unresolved temporary ID is not stripped, so it ' +
+        'would ship to the user as a meaningless literal.',
+    ).toBe(true);
+  });
+
   it('uses the triggering issue\'s own real number as the epic parent', () => {
     // The one place a real number IS correct: the intent issue that triggered the run
     // already exists and its number is independently known.
