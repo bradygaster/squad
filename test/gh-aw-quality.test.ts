@@ -884,7 +884,22 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // names as making a raise legitimate. #1962's follow-up trims bought some room back
   // but not enough: combined source measures 164.8 KB after both changes, still over
   // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
-  const SOURCE_GROWTH_BUDGET_KB = 170;
+  //
+  // Raised 170 → 173 KB by #1963, which makes both activation paths report actual
+  // accepted label-operation outcomes and fixes the `Activation bindings:` JSON to carry
+  // quoted temporary-ID references. Nearly all of that prose lands inside the
+  // `squad-plan-activate` and `squad-plan-accept` inline skill blocks; only the shared
+  // ontology's binding contract is ambient, and "keeps the ambient prompt under 40 KB"
+  // still passes at ~32 KB — again the condition above that makes a raise legitimate.
+  //
+  // Measured after rebasing onto dev (i.e. with #1966 already squash-merged, so this
+  // counts #1963's bytes only): 175 485 B = 171.4 KB. 172 KB would leave 643 B of
+  // headroom, which reproduces the near-zero-margin failure mode described above; 173 KB
+  // leaves 1 667 B. Deliberately not set higher: #1964 is projected to push the combined
+  // total to ~180 002 B = 175.8 KB, but it has not merged, and pre-raising this guard for
+  // an unmerged branch would hide growth that has not happened yet. #1964 raises it when
+  // it lands, against its own measurement.
+  const SOURCE_GROWTH_BUDGET_KB = 173;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {

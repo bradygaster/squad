@@ -315,8 +315,13 @@ describe('#1959: fast-path label sets stay at parity with squad-plan-activate', 
   });
 
   it('reports labels actually applied, never merely intended', () => {
+    // #1963 tightened this sentence: a run cannot know a label was "actually applied" —
+    // safe outputs land after the agent turn — so the claim is now an *accepted*
+    // `add_labels` call for that same issue, with create-issue explicitly ruled out as
+    // evidence. #1959's original guarantee (never skipped/deferred/merely intended) is
+    // preserved verbatim inside the tightened sentence.
     expect(acceptProse).toMatch(
-      /Report only the labels a successful `add_labels` call actually applied; never a label that was skipped, deferred, or merely intended/i,
+      /Report only the labels an accepted `add_labels` call carried for that same issue; never a label that was skipped, deferred, or merely intended, and never one attributed to `create-issue`/i,
     );
   });
 });

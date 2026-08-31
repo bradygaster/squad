@@ -287,7 +287,7 @@ Structured data:
     const workflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8').replace(/\r\n/g, '\n');
     expect(workflow).toContain('Activation bindings:');
     expect(workflow).toContain('"task":"{plan # cell}"');
-    expect(workflow).toContain('"epic_issue":{created epic issue number}');
+    expect(workflow).toContain('"epic_issue":"{epic issue reference}"');
     expect(workflow).toContain('"epic_agents":["{all distinct lowercased Agent cells');
   });
 
