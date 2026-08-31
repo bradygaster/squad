@@ -91,7 +91,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
