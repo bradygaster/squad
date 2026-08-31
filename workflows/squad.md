@@ -102,8 +102,13 @@ safe-outputs:
     protected-files: allowed
     max-patch-files: 500
     expires: 14d
+  # Capacity: largest supported activation is 50 issues. `max` counts safe-output
+  # ITEMS (tool calls), not label names within a call, and an over-limit item is
+  # dropped with only a warning. Derivation: `squad-plan-activate` >
+  # "Activation capacity budget".
   create-issue:
     labels: [squad]
+    # 50 worst-case issues + 25 bounded margin.
     max: 75
   add-labels:
     allowed: [squad, "squad:*"]
@@ -111,7 +116,9 @@ safe-outputs:
     issues: true
     pull-requests: false
     target: "*"
-    max: 80
+    # 50 calls worst case (one per issue); 100 label names worst case (2 each).
+    # 110 covers both readings of `max`. Do not reduce below create-issue max.
+    max: 110
   add-comment:
     max: 20
     target: "*"
@@ -1742,6 +1749,33 @@ After EVERY `create-issue` call: verify returned issue number, stop on failure, 
 
 Count expected issues before starting. If total > 50: recommend phased activation (`/squad plan activate phase {N}`) and proceed with the current phase only. If total > 30: use compact issue bodies (scope + acceptance criteria only; omit elaboration).
 
+**Activation capacity budget.** The largest activation supported in a single run is
+**50 issues** — the `enterprise` profile's `max_issues: 50` (the highest documented
+profile limit) and the same threshold the phased-activation rule above enforces. Worst
+case for an activation of that size:
+
+| Safe output | Worst case at 50 issues | Configured `max` | Bounded margin |
+|---|---|---|---|
+| `create-issue` | 50 items — one per epic/task | 75 | 25 |
+| `add_labels` | 50 items — one per created issue | 110 | 60 |
+| Labels *within* one `add_labels` call | 2 — `squad` + one `squad:{agent}` | not governed by `max` | — |
+| Label names across the whole run | 100 — 50 × 2 | 110 | 10 |
+
+**`max` limits safe-output items (tool calls), not label names inside a call.** gh-aw's
+collector counts NDJSON items per type and rejects the item that would exceed the cap
+(`collect_ndjson_output.cjs`: `Too many items of type '{type}'. Maximum allowed: {max}.`).
+One `add_labels` call carrying two labels therefore consumes **one** item, not two.
+gh-aw's injected tool constraint phrases the same number as "Maximum 110 label(s) can be
+added"; `max: 110` is deliberately sized to cover the worst case under **both** readings —
+50 calls and 100 label names — so no interpretation of the cap can justify skipping a
+label operation. Never batch several issues' labels into one call to conserve budget
+(it breaks the per-issue correspondence rule), and never stop labeling early because the
+budget looks tight: it is sized for the full documented maximum.
+
+**An over-limit item is dropped, not failed.** gh-aw logs a rejected item as a warning and
+continues, so a run can finish green with label operations missing. Cap overflow does not
+announce itself — Step 2e is the only thing that detects it.
+
 ##### Label Pre-flight
 
 **Roster binding gate — run this before any `create-issue` call.**
@@ -1835,7 +1869,18 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 - Size: Project field if available, else body line
 - Label application: same as epics — call `add_labels` on the verified task issue number with this task's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
 
-**2d. Self-Validation:** Compare created/recognized task count vs expected (use the plan's declared total — not the safe-output cap). If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
+**2d. Self-Validation:** Compare created/recognized task count vs expected (use the plan's declared total — not the safe-output cap). If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as a guessed reason for a partial run — name a cap only when Step 2e observed one actually being reached.
+
+**2e. Label-Operation Reconciliation — an activation is not complete until every activated item's labels are accounted for.**
+
+While Steps 2b/2c run, keep two counts: `activated` (issues created or recognized this run) and `labeled` (issues whose `add_labels` call returned successfully). An `add_labels` call that was never made, was rejected, or returned an error counts as **unlabeled**. At the end of Step 2, compare them:
+
+1. `labeled == activated` → the activation is complete; proceed to Step 3.
+2. `labeled < activated` → **this is an incomplete activation, not a successful one.** Call `report_incomplete` with a `reason` naming the shortfall (`{labeled} of {activated} activated issues received their labels`) and `details` listing **every affected work item — its issue number, its title, and the label set it should have received**. gh-aw treats `report_incomplete` as a failure signal even when the agent exits successfully, so this is what stops a truncated run from being recorded as a clean one.
+
+**Cap exhaustion is a reportable, nameable cause.** A safe-output item rejected for exceeding `max` is dropped with only a warning — it never fails the run on its own and it never appears as an error to the agent. If the Step 2e shortfall is because a cap was reached, say so explicitly in the `report_incomplete` `reason`, name which cap (`create-issue` 75 or `add_labels` 110) and list the work items that did not fit, and recommend `/squad plan activate phase {N}`. This is the one case where a cap may be named as the cause — because it was observed here, not guessed.
+
+**Never report a clean activation you did not perform.** Emitting an `activated` or `phases-activated` artifact that lists every item as activated while `labeled < activated`, or that omits the shortfall entirely, is a false success report — precisely the silent truncation this reconciliation exists to prevent.
 
 Labels must have descriptions and intentional colors when they already exist in the
 repository. A label auto-provisioned by `add-labels`'s `create-if-missing` on a fresh
