@@ -881,9 +881,9 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // lives entirely inside the `squad-plan-accept` inline `## skill:` block, so gh-aw
   // strips it from the ambient prompt — "keeps the ambient prompt under 40 KB" is
   // unaffected and still passing, which is exactly the condition the comment above
-  // names as making a raise legitimate. At 160 KB the guard had ~37 bytes of headroom
-  // left after #1962, so it had stopped measuring growth and started blocking any
-  // correct change; 170 KB restores a usable margin without removing the signal.
+  // names as making a raise legitimate. #1962's follow-up trims bought some room back
+  // but not enough: combined source measures 164.8 KB after both changes, still over
+  // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
   const SOURCE_GROWTH_BUDGET_KB = 170;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 

@@ -1280,7 +1280,7 @@ another identity during acceptance.
 
 For each work item, `create-issue`:
 - Title: work item title
-- Temporary ID: `temporary_id` is **required** on every `create-issue` call in this workflow (`require-temporary-id: true`), so mint a unique one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. It must match `^#?aw_[A-Za-z0-9_]{3,12}$` and must not repeat within this run — gh-aw does not reject a duplicate, it silently lets the last writer own the mapping.
+- Temporary ID: `temporary_id` is required on every `create-issue` call (`require-temporary-id: true`). Mint one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. Must match `^#?aw_[A-Za-z0-9_]{3,12}$` and be unique in this run — gh-aw silently lets a duplicate's last writer own the mapping.
 - Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not lowercased verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat). For a phase issue created in this run, pass its `#aw_ph{N}` temporary ID — `create-issue` resolves it. The flat-plan root is the triggering issue's own real number. Never guess a number for an issue this run created.
@@ -1823,7 +1823,7 @@ hyphens, spaces, and `:` are illegal.
 in the accepted plan. Task: `#aw_task{N}`, `{N}` = that task's own `#` cell with every
 character outside `A-Za-z0-9` replaced by `_` (`2.3` → `#aw_task2_3`). If a derived ID
 exceeds 12 characters after `aw_`, drop the `epic`/`task` word (`#aw_e{K}` / `#aw_t{N}`)
-rather than truncating the number — two items must never collapse onto one ID.
+rather than truncating the number.
 
 **Uniqueness is your responsibility.** gh-aw does not reject a duplicate `temporary_id`; it
 silently lets the last `create-issue` using it own the mapping, so every later reference
@@ -1892,12 +1892,11 @@ In the same turn as each `create-issue` call in Steps 2b/2c, call `add_labels` w
 `item_number` set to that call's `temporary_id` and exactly the label set Steps 4-8 computed
 for that issue — `squad` alone, or `squad` plus the one `squad:{agent}` label the
 correspondence rule (Step 7) certified. Do not wait for a returned issue number; none
-arrives. gh-aw resolves `add_labels` after the `create-issue` that minted the ID, so
-`create-issue` first and `add_labels` immediately after is the supported order.
-`create-if-missing` creates any label that does not yet exist before applying it;
-re-applying an already-present label on a rerun is a no-op, so this is safe under the Step 1
-idempotent-rerun path. Never emit `add_labels` for an item whose `create-issue` call was not
-made in this run, and never reuse another item's temporary ID.
+arrives. gh-aw resolves `add_labels` after the `create-issue` that minted the ID, so that
+order is the supported one. `create-if-missing` creates any label that does not yet exist
+before applying it; re-applying an already-present label on a rerun is a no-op, so this is
+safe under the Step 1 idempotent-rerun path. Never emit `add_labels` for an item whose
+`create-issue` call was not made in this run.
 
 ##### Transient Failure Handling
 
@@ -1905,7 +1904,7 @@ On `5xx` response from `create-issue`: wait briefly and retry once. On second fa
 
 ##### Sub-issue Fallback
 
-When setting a `parent` sub-issue relationship returns `404` or `422` (feature disabled or repo plan): degrade gracefully — record the intended parent as a body reference, then continue. Write it as the parent's temporary ID (`Parent: #aw_epic{K}`); gh-aw rewrites an `#aw_…` reference in an issue body to the real `#{number}`, so no number is predicted. Use a literal `Parent: #{issue_number}` only for a pre-existing, verified parent. Never fail activation over sub-issue API unavailability.
+When setting a `parent` sub-issue relationship returns `404` or `422` (feature disabled or repo plan): degrade gracefully — record the intended parent as a body reference, then continue. If that parent was minted this run, write its temporary ID (`Parent: #aw_epic{K}`); gh-aw rewrites an `#aw_…` body reference to the real `#{number}`, so no number is predicted. If the parent is pre-existing or was matched by dedup, write its verified real number (`Parent: #{issue_number}`) — gh-aw leaves an unresolved `#aw_…` reference in the body verbatim, so a temporary ID it never minted would ship as a meaningless literal. Never fail activation over sub-issue API unavailability.
 
 ##### Step 2: Create Issues — Full Hierarchy
 
@@ -1915,7 +1914,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 
 **2b. Create Epic Issues:** `create-issue` per epic (dedup by title `[Epic] {name}` if already exists from prior phase).
 - Title: `[Epic] {name}`
-- Temporary ID: `temporary_id: "#aw_epic{K}"` per the Temporary-ID Contract, where `{K}` is this epic's 1-based position in the accepted plan. Required — the call is rejected without it.
+- Temporary ID: `temporary_id: "#aw_epic{K}"` per the Temporary-ID Contract. Required — the call is rejected without it.
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct roster value → mint `squad:{that agent}`; exactly `@copilot` → mint `squad:copilot`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
 - Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
 - Parent: sub-issue of root intent issue — the triggering issue's own real number, which is known independently of this run's creations
@@ -1931,10 +1930,10 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 > **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one `create-issue` call → one `add_labels` call, repeated per task. Do not pause for a returned issue number between the two calls; none is returned.
 
 - Title: task title
-- Temporary ID: `temporary_id: "#aw_task{N}"` per the Temporary-ID Contract, where `{N}` is this task's own `#` cell with non-alphanumeric characters replaced by `_`. Required, and unique across every epic and task in this run.
+- Temporary ID: `temporary_id: "#aw_task{N}"` per the Temporary-ID Contract. Required, and unique across every epic and task in this run.
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
 - Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
-- Parent: sub-issue of EPIC (not root) — pass the epic's `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. Never guess the epic's real number.
+- Parent: sub-issue of EPIC (not root). If 2b minted this epic in this run, pass its `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. If 2b instead matched a pre-existing epic by title (a prior phase created it), that epic has no temporary ID in this run — pass its verified real number. Never guess the epic's real number, and never pass a temporary ID that was not minted this run.
 - Milestone: same as parent epic
 - Size: Project field if available, else body line
 - Label application: same as epics — call `add_labels` with `item_number` set to this task's temporary ID and the task's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
@@ -1949,10 +1948,10 @@ is expected, not a failure, and must not be reported as one.
 ##### Step 3: Native Dependency Edges
 
 Declare `blocked_by` on the `create-issue` call itself, passing the blocking item's
-temporary ID (`#aw_task{N}` / `#aw_epic{K}`) — `blocked_by` resolves temporary IDs, so this
-needs no real issue number. Use a verified real number only for a dependency on a
-pre-existing issue. Never call a write API with a guessed number to add an edge. Graceful
-fallback to a body reference. Never fail activation over edge creation.
+temporary ID (`#aw_task{N}` / `#aw_epic{K}`) — `blocked_by` resolves temporary IDs. Use a
+verified real number only for a dependency on a pre-existing issue. Never call a write API
+with a guessed number to add an edge. Graceful fallback to a body reference. Never fail
+activation over edge creation.
 
 ##### Step 4: Post Activation Record
 

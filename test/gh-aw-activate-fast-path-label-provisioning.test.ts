@@ -126,7 +126,20 @@ describe('#1959: fast-path add_labels targets an explicit, verified item', () =>
     expect(tempIdBullet).toContain('#aw_ph{N}');
     expect(tempIdBullet).toContain('#aw_wi{N}');
     expect(tempIdBullet).toContain('^#?aw_[A-Za-z0-9_]{3,12}$');
-    expect(tempIdBullet).toMatch(/must not repeat within this run/i);
+    // Uniqueness invariant. #1962's follow-up (528ba9b0) byte-tightened the wording from
+    // "must not repeat within this run" to "be unique in this run" — the same contract,
+    // fewer bytes. Accept either phrasing, but keep requiring BOTH the uniqueness mandate
+    // and the silent-duplicate hazard that motivates it, so the invariant cannot be
+    // dropped by quietly rewording it away.
+    expect(
+      /(must not repeat within|be unique in) this run/i.test(tempIdBullet),
+      'The "Temporary ID:" bullet must state the per-run uniqueness requirement.',
+    ).toBe(true);
+    expect(
+      /silently lets (the|a duplicate's) last writer own the mapping/i.test(tempIdBullet),
+      'The bullet must keep the reason uniqueness matters: gh-aw does not reject a ' +
+        'duplicate temporary_id, it silently lets the last writer own the mapping.',
+    ).toBe(true);
     // The phase-issue parent linkage from #1962 must still resolve via temporary ID.
     expect(acceptProse).toMatch(/pass its `#aw_ph\{N\}` temporary ID/i);
   });
