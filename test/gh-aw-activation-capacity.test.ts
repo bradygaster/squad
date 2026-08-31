@@ -5,35 +5,53 @@
  *
  * `workflows/squad.md` promises a `squad` (and where certified, `squad:{agent}`) label on
  * every issue an activation creates. Those labels are applied by the `add-labels` safe
- * output, which is governed by a `max`. Two independent problems made a large activation
- * able to lose label operations *while still reporting a clean success*:
+ * output, which is governed by a `max`. Two problems let a large activation lose label
+ * operations *while the run still reported success*:
  *
  * 1. **`max` is ambiguous in gh-aw's own surface area.** The compiler injects the tool
  *    constraint as "Maximum {N} label(s) can be added", which reads as a budget of label
- *    *names*. The runtime enforces something different — see below. An agent that believed
- *    the label reading would conclude a 50-issue activation (up to 100 label names) had
- *    overrun its budget and could stop labeling early or batch issues together.
- * 2. **An over-limit item is dropped, not failed.** gh-aw v0.87.10's collector
- *    (`actions/setup/js/collect_ndjson_output.cjs`) rejects the offending item and
- *    `continue`s, pushing a string into `errors`. Those errors are emitted with
- *    `core.warning(...)`, never `core.setFailed(...)`. The run finishes green with label
- *    operations missing. Nothing in the run announces the truncation.
+ *    *names*. The runtime counts operations instead. At the previous `max: 80`, an agent
+ *    that believed the label reading would conclude a 50-issue activation (up to 100 label
+ *    names) had overrun its budget, and could stop labeling early or batch issues together.
+ *    This is agent self-truncation, and it was reachable at 80.
+ * 2. **Neither enforcement layer fails the run.** Even when a cap is genuinely hit, the
+ *    workflow run still concludes successfully, so nothing forces the truncation to
+ *    surface. See below.
+ *
+ * Note what is *not* claimed: at `max: 80`, 50 `add_labels` calls did **not** overflow the
+ * operation cap. Runtime truncation was not reachable at the documented maximum. The cap
+ * moves to 110 to defeat the misleading injected wording and to hold a bounded margin —
+ * not to fix a proven 80-item overflow.
  *
  * ## Runtime semantics this suite is written against (gh-aw v0.87.10, the CI pin)
  *
- * `collect_ndjson_output.cjs`:
+ * **Cap enforcement is dual (Safe Outputs Specification MCE4) and neither half is fatal.**
+ * Invocation time — `safe_outputs_handlers.cjs`, `enforcePerTypeMax` via
+ * `appendSafeOutputCounted`, applied whenever `max` is explicitly configured (it is here):
  *
  * ```js
- * const typeCount = parsedItems.filter(existing => existing.type === itemType).length;
- * const maxAllowed = getMaxAllowedForType(itemType, expectedOutputTypes);
- * if (typeCount >= maxAllowed) {
- *   errors.push(`Line ${i + 1}: Too many items of type '${itemType}'. Maximum allowed: ${maxAllowed}.`);
- *   continue;  // <- the item is DROPPED
+ * if (current >= maxAllowed) {
+ *   throw { code: -32602, message: `E002: ${type} limit reached — ${current} of ${maxAllowed} already used this run`, ... };
  * }
  * ```
  *
- * `max` therefore caps **safe-output items (tool calls) of that type**, not label names
- * inside one call. One `add_labels` call carrying two labels costs one item, not two.
+ * That is a JSON-RPC error the agent **does** observe. Collection time —
+ * `collect_ndjson_output.cjs` — is the second half: a surplus item is dropped with
+ * `continue` and reported via `core.warning`. Neither path calls `core.setFailed`, so the
+ * run concludes successfully with label operations missing.
+ *
+ * `max` therefore caps **operations of that type**, not label names inside one call. One
+ * `add_labels` call carrying two labels costs one unit of budget, not two.
+ *
+ * **`report_incomplete` does not turn the run red.** gh-aw's own tool description claims it
+ * is "treated as a failure signal even when the agent exits successfully" — misleading in
+ * precisely the way this issue is about. In the pinned runtime,
+ * `report_incomplete_handler.cjs` emits `core.warning` only, and `handle_agent_failure.cjs`
+ * contains no `core.setFailed` or `process.exit`: its "failure handling" opens or updates an
+ * `[aw] {workflow} reported incomplete result` tracking issue/comment. That is a durable,
+ * human-actionable record — it satisfies #1961's "explicit incomplete result" — but the run
+ * conclusion stays green. No narrower supported mechanism in v0.87.10 makes it red, so the
+ * workflow states that limitation rather than implying a failure it cannot produce.
  *
  * ## The capacity calculation this suite locks in
  *
@@ -55,9 +73,11 @@
  *
  * ## Out of scope (sibling issues — do not broaden these assertions here)
  *
- * - #1962 temporary-ID linkage between `create_issue` and `add_labels`. This suite is
- *   deliberately neutral about *how* an `add_labels` call identifies its target, so it
- *   does not conflict with that change.
+ * - #1962 / PR #1965 temporary-ID linkage between `create_issue` and `add_labels`. This
+ *   suite stays neutral about *how* an `add_labels` call identifies its target. It does
+ *   assert that Step 2e's incomplete report names a temporary ID rather than a real issue
+ *   number for items created during the run, because demanding a number that does not yet
+ *   exist would reintroduce the very assumption #1962 removes.
  * - #1959 `/squad activate` fast-path parity.
  * - #1963 label-result reporting beyond the explicit overflow/incomplete signal.
  * - #1960 broad safe-output contract coverage; #1958 E4 evidence.
@@ -161,21 +181,40 @@ describe('gh-aw: activation capacity is calculated, recorded, and bounded (#1961
         'calls) rather than label names within a call.',
     ).toBe(true);
     expect(
-      /consumes \*\*one\*\* item, not two/i.test(activateProse) || /one\*\* item, not two/i.test(activateProse),
-      'The workflow must show that a two-label call costs one item, so the agent cannot ' +
-        'conclude it must ration labels.',
+      /consumes \*\*one\*\* unit\s*of budget, not two/i.test(activateProse),
+      'The workflow must show that a two-label call costs one unit of budget, so the ' +
+        'agent cannot conclude it must ration labels.',
     ).toBe(true);
   });
 
-  it('warns that an over-limit item is dropped with a warning rather than failing the run', () => {
-    // gh-aw's collector pushes a string into `errors` and the job emits it via
-    // core.warning — never core.setFailed. Truncation is invisible unless the
-    // workflow itself detects it.
+  it('describes cap enforcement as dual and non-fatal, without overstating either half', () => {
+    // Pinned-runtime semantics, both halves:
+    //   invocation time  — safe_outputs_handlers.cjs enforcePerTypeMax/appendSafeOutputCounted
+    //                      throw JSON-RPC -32602 "E002: {type} limit reached", which the
+    //                      agent DOES observe;
+    //   collection time  — collect_ndjson_output.cjs drops the surplus item via core.warning.
+    // Neither calls core.setFailed, so the run still concludes successfully.
     expect(
-      /dropped, not failed/i.test(activateProse),
-      'The workflow must state that an over-limit safe-output item is dropped rather ' +
-        'than failing the run — this is why self-validation is mandatory.',
+      /enforced twice/i.test(activateProse),
+      'The workflow must describe both halves of cap enforcement rather than only the ' +
+        'collector drop.',
     ).toBe(true);
+    expect(
+      /E002/.test(activateSkill),
+      'The invocation-time rejection must be named by its actual error, since the agent ' +
+        'can observe it.',
+    ).toBe(true);
+    expect(
+      /neither layer fails the run/i.test(activateProse),
+      'The workflow must state that neither enforcement layer fails the run — that is ' +
+        'why self-validation is mandatory.',
+    ).toBe(true);
+    // Guard against the inverse overclaim: the agent is NOT blind to cap rejections.
+    expect(
+      /never appears as an error to the agent/i.test(activateProse),
+      'The workflow must not claim the agent never sees a cap error — invocation-time ' +
+        'enforcement surfaces E002 to the agent.',
+    ).toBe(false);
     expect(activateProse).toMatch(/finish green|still succeeds/i);
   });
 });
@@ -192,7 +231,7 @@ describe('gh-aw: configured caps cover the worst case under both readings of max
   });
 
   it('add-labels covers one CALL per activated issue (the runtime reading)', () => {
-    // Runtime semantics: max caps NDJSON items of type add_labels.
+    // Runtime semantics: max caps add_labels operations, not label names.
     expect(addLabelsMax).toBeGreaterThanOrEqual(maxIssues);
   });
 
@@ -300,36 +339,78 @@ describe('gh-aw: self-validation reconciles activated items with label operation
   });
 
   it('counts a missing, rejected, or errored label call as unlabeled', () => {
-    // A dropped over-limit item produces no error the agent can see, so "no
-    // successful result" — not "an observed error" — must be the failing condition.
+    // Absence-of-success, not presence-of-error, must be the failing condition. The agent
+    // does see an E002 rejection at invocation time, but a call can also simply never be
+    // made, and a surplus item can be dropped downstream with only a warning. Reconciling
+    // on counts covers all three; reconciling on observed errors does not.
     expect(
       /never made, was rejected, or returned an error counts as \*\*unlabeled\*\*/i.test(activateProse),
-      'A label call that was never made must count as unlabeled, otherwise a dropped ' +
-        'item is invisible to the reconciliation.',
+      'A label call that was never made must count as unlabeled, otherwise a lost ' +
+        'operation is invisible to the reconciliation.',
     ).toBe(true);
   });
 
   it('escalates a shortfall to report_incomplete identifying every affected work item', () => {
     const reconciliation = activateSkill.slice(activateSkill.indexOf('**2e. Label-Operation Reconciliation'));
+    const reconciliationProse = reconciliation.replace(/\s+/g, ' ');
     expect(reconciliation).toContain('report_incomplete');
     expect(
-      /issue number, its title, and the label set it should have received/i.test(
-        reconciliation.replace(/\s+/g, ' '),
+      /the identifier you used to target its `add_labels` call, its title, and the label set it should have received/i.test(
+        reconciliationProse,
       ),
-      'The incomplete report must identify affected work items specifically enough to ' +
-        'act on.',
+      'The incomplete report must identify affected work items specifically enough to act on.',
     ).toBe(true);
   });
 
-  it('states why report_incomplete is the mechanism that prevents a green truncated run', () => {
-    // gh-aw's report_incomplete is a first-class failure signal: handle_agent_failure
-    // activates failure handling even when the agent exits 0. That property is the
-    // whole reason this is the right primitive.
+  it('does not demand a real issue number for items created during the run', () => {
+    // gh-aw defers issue creation to the post-agent safe-output job, so no real number
+    // exists during the agent turn. Requiring one here would reintroduce exactly the
+    // invalid-number assumption #1962 exists to remove.
+    const reconciliation = activateSkill.slice(activateSkill.indexOf('**2e. Label-Operation Reconciliation'));
+    const reconciliationProse = reconciliation.replace(/\s+/g, ' ');
+    expect(
+      /stable temporary ID, not a GitHub issue number/i.test(reconciliationProse),
+      'For an item created this run the report must name its temporary ID, because no ' +
+        'issue number exists yet.',
+    ).toBe(true);
+    expect(
+      /already existed and was recognized rather than created/i.test(reconciliationProse),
+      'A real issue number may only be quoted for a pre-existing, recognized item.',
+    ).toBe(true);
+    expect(
+      /Never predict, infer, or invent a number/i.test(reconciliationProse),
+      'The report must forbid inventing an issue number to fill the identifier field.',
+    ).toBe(true);
+  });
+
+  it('states report_incomplete semantics accurately — a tracking record, not a red run', () => {
+    // Verified against pinned gh-aw v0.87.10 rather than gh-aw's own tool description
+    // (which says "treated as a failure signal even when the agent exits successfully"
+    // — misleading in exactly the way this issue is about):
+    //   report_incomplete_handler.cjs   -> core.warning only.
+    //   handle_agent_failure.cjs        -> contains no core.setFailed / process.exit;
+    //                                      "failure handling" opens/updates an
+    //                                      "[aw] ... reported incomplete result" issue.
+    // The run still concludes successfully. The workflow must say so, so the agent does
+    // not assume a red run is carrying the signal for it.
+    expect(
+      /reported incomplete result/i.test(activateProse),
+      'The workflow must name the durable artifact report_incomplete actually produces.',
+    ).toBe(true);
+    expect(
+      /does \*\*not\*\* change the run's conclusion/i.test(activateProse),
+      'The workflow must state that report_incomplete does not change the run conclusion.',
+    ).toBe(true);
+    expect(
+      /never rely on a red run/i.test(activateProse),
+      'The workflow must forbid relying on a failed run to carry the incompletion signal.',
+    ).toBe(true);
+    // Guard against reintroducing the overclaim this test previously asserted.
     expect(
       /failure signal even when the agent exits successfully/i.test(activateProse),
-      'The workflow must record why report_incomplete (not noop, not a comment) is the ' +
-        'primitive that stops a truncated run being recorded as clean.',
-    ).toBe(true);
+      'The workflow must not repeat gh-aw\'s misleading "failure signal" phrasing: the ' +
+        'pinned runtime emits a warning and a tracking issue, and never fails the run.',
+    ).toBe(false);
   });
 
   it('forbids emitting a clean activation artifact when labels are missing', () => {
