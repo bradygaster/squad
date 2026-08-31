@@ -74,10 +74,14 @@
  * ## Out of scope (sibling issues — do not broaden these assertions here)
  *
  * - #1962 / PR #1965 temporary-ID linkage between `create_issue` and `add_labels`. This
- *   suite stays neutral about *how* an `add_labels` call identifies its target. It does
- *   assert that Step 2e's incomplete report names a temporary ID rather than a real issue
- *   number for items created during the run, because demanding a number that does not yet
- *   exist would reintroduce the very assumption #1962 removes.
+ *   branch is stacked on PR #1965, so that mechanism is present — but this suite still
+ *   asserts nothing about *how* an `add_labels` call targets its item; PR #1965's own
+ *   suite (`gh-aw-activation-temporary-ids.test.ts`) owns that contract. The one place
+ *   the two meet is Step 2e's incomplete report, which must name the `temporary_id`
+ *   minted under #1965's Temporary-ID Contract for items created this run, and a real
+ *   number only where #1965 says one is verified (dedup-by-title or idempotent rerun).
+ *   Demanding a number that does not yet exist would reintroduce the assumption #1962
+ *   removes, so that single assertion is in scope here.
  * - #1959 `/squad activate` fast-path parity.
  * - #1963 label-result reporting beyond the explicit overflow/incomplete signal.
  * - #1960 broad safe-output contract coverage; #1958 E4 evidence.
@@ -363,19 +367,25 @@ describe('gh-aw: self-validation reconciles activated items with label operation
   });
 
   it('does not demand a real issue number for items created during the run', () => {
-    // gh-aw defers issue creation to the post-agent safe-output job, so no real number
-    // exists during the agent turn. Requiring one here would reintroduce exactly the
-    // invalid-number assumption #1962 exists to remove.
+    // gh-aw defers issue creation to the safe-output job, so no real number exists during
+    // the agent turn. Requiring one here would reintroduce exactly the invalid-number
+    // assumption #1962 (PR #1965) removes. Now that this branch is stacked on #1965, the
+    // identifier is named concretely as that PR's `temporary_id` rather than abstractly.
     const reconciliation = activateSkill.slice(activateSkill.indexOf('**2e. Label-Operation Reconciliation'));
     const reconciliationProse = reconciliation.replace(/\s+/g, ' ');
     expect(
-      /stable temporary ID, not a GitHub issue number/i.test(reconciliationProse),
-      'For an item created this run the report must name its temporary ID, because no ' +
-        'issue number exists yet.',
+      /`temporary_id` you minted under the Temporary-ID Contract/i.test(reconciliationProse),
+      "For an item created this run the report must name the temporary_id minted under " +
+        "#1965's Temporary-ID Contract, because no issue number exists yet.",
     ).toBe(true);
     expect(
-      /already existed and was recognized rather than created/i.test(reconciliationProse),
-      'A real issue number may only be quoted for a pre-existing, recognized item.',
+      /not a GitHub issue number/i.test(reconciliationProse),
+      'The report must say explicitly that the identifier is not an issue number.',
+    ).toBe(true);
+    expect(
+      /matched by dedup-by-title, or an issue recognized by Step 1's idempotent-rerun path/i.test(reconciliationProse),
+      'A real number may only be quoted where independently verified — a dedup-by-title ' +
+        'match or an idempotent-rerun recognition, matching #1965 reused-issue rules.',
     ).toBe(true);
     expect(
       /Never predict, infer, or invent a number/i.test(reconciliationProse),

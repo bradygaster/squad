@@ -146,11 +146,28 @@ describe('gh-aw: fresh-repo label provisioning in squad-plan-activate (#1955)', 
     ).toBe(true);
   });
 
-  it('never calls add_labels before create-issue has returned and been verified', () => {
+  it('forbids the invalid "wait for a returned real issue number" contract (#1962)', () => {
+    // The original version of this rule told the model to wait until create-issue
+    // "returned and been verified" before calling add_labels. gh-aw never returns a real
+    // issue number to the agent — creation is deferred to the safe-output job — so that
+    // instruction was unsatisfiable and is exactly the defect #1962 corrects. The prose
+    // must now say the opposite: do not wait, because no number arrives.
     expect(
       /never call `add_labels` before/i.test(activateProse),
-      'The prose must explicitly forbid calling add_labels before create-issue has ' +
-        'returned a real issue number — there is nothing to target yet.',
+      'The old "never call add_labels before create-issue has returned a real issue ' +
+        'number" rule must be gone — it encoded the invalid assumption #1962 fixes.',
+    ).toBe(false);
+
+    expect(
+      /do not wait for a returned issue number/i.test(activateProse),
+      'The prose must explicitly tell the model NOT to wait for a returned issue ' +
+        'number, since gh-aw never provides one during the run.',
+    ).toBe(true);
+
+    expect(
+      /does \*\*not\*\* return a real GitHub issue number/i.test(activateProse),
+      'The Hallucination Guard must state plainly that create-issue does not return a ' +
+        'real issue number during the run.',
     ).toBe(true);
   });
 
