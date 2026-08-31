@@ -232,7 +232,7 @@ describe('gh-aw: add-labels compiles into the real safe-output handler config (#
     // install it into `.github/workflows/` via `gh aw add`. Mirror that real deployment
     // layout, matching .github/workflows/squad-ci.yml's own compile gate.
     cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
-    execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict', '--approve'], {
+    execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict', '--approve', '--no-check-update'], {
       cwd: workspace,
       encoding: 'utf8',
       stdio: 'pipe',
