@@ -105,6 +105,13 @@ safe-outputs:
   create-issue:
     labels: [squad]
     max: 75
+  add-labels:
+    allowed: [squad, "squad:*"]
+    create-if-missing: true
+    issues: true
+    pull-requests: false
+    target: "*"
+    max: 80
   add-comment:
     max: 20
     target: "*"
@@ -1772,7 +1779,23 @@ Count expected issues before starting. If total > 50: recommend phased activatio
    name the value and the issue it applied to. Omitting the heading while omitting the label
    reports a clean run that did not happen.
 
-Then verify labels `squad` and each roster-bound `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
+**Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
+`create-if-missing: true`) auto-creates `squad` and any `squad:{agent}` label the first
+time this run needs it — a fresh repository with zero Squad labels requires no manual
+provisioning and is never a prerequisite gap. `create-issue`'s own `labels:` field cannot
+do this: GitHub silently drops label names that do not already exist in the target
+repository instead of creating them, which is the behavior that previously produced the
+"prerequisite gap" reported here. Do not rely on `create-issue`'s `labels:` field alone
+to land a label on a fresh repository.
+
+Immediately after each `create-issue` call in Steps 2b/2c returns its real issue number,
+call `add_labels` targeting that number with exactly the label set Steps 4-8 above
+computed for that issue — `squad` alone, or `squad` plus the one `squad:{agent}` label
+the correspondence rule (Step 7) certified. `create-if-missing` creates any label that
+does not yet exist before applying it; re-applying an already-present label on a rerun is
+a no-op, so this is safe under the Step 1 idempotent-rerun path. Never call `add_labels`
+before the matching `create-issue` call has returned and been verified — there is no
+issue number to target yet.
 
 ##### Transient Failure Handling
 
@@ -1794,14 +1817,15 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 - Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
 - Parent: sub-issue of root intent issue
 - Milestone: assigned
+- Label application: once `create-issue` returns and the epic's issue number is verified, call `add_labels` on that number with this epic's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
 
 **⚠️ DO NOT STOP after epics. Tasks MUST follow immediately.**
 
 **2c. Create Task Issues:** `create-issue` per task in dependency order.
 
 > **⚠️ ATOMIC CONTRACT — strictly one task at a time:**
-> For each task: compose ONLY that task's body → call `create-issue` immediately → verify the returned issue number → then move to the next task.
-> **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one call → one verify, repeated per task.
+> For each task: compose ONLY that task's body → call `create-issue` immediately → verify the returned issue number → call `add_labels` on that verified number with the task's computed label set → then move to the next task.
+> **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one call → one verify → one label-application call, repeated per task.
 
 - Title: task title
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
@@ -1809,10 +1833,14 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 - Parent: sub-issue of EPIC (not root)
 - Milestone: same as parent epic
 - Size: Project field if available, else body line
+- Label application: same as epics — call `add_labels` on the verified task issue number with this task's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
 
 **2d. Self-Validation:** Compare created/recognized task count vs expected (use the plan's declared total — not the safe-output cap). If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
 
-Labels must have descriptions and intentional colors.
+Labels must have descriptions and intentional colors when they already exist in the
+repository. A label auto-provisioned by `add-labels`'s `create-if-missing` on a fresh
+repository instead receives gh-aw's deterministic color and an empty description — that
+is expected, not a failure, and must not be reported as one.
 
 ##### Step 3: Native Dependency Edges
 

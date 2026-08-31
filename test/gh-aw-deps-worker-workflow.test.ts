@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 // #1748 slice S2: `squad-deps-worker.md` gains Wave 1 `protected-files.exclude`
 // entries. The Wave 1 basenames (npm/yarn/pnpm + NuGet CPM + Go) are excluded
@@ -95,21 +96,10 @@ function compileWorker(workflowId: string): Record<string, unknown> {
   );
 
   const compiled = readFileSync(resolve(workflowDir, `${workflowId}.lock.yml`), 'utf8');
-  const lines = compiled.split(/\r?\n/);
-  const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-  const configEnd = delimiter
-    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-    : -1;
+  const jsonText = extractSafeOutputsConfigJson(compiled);
+  expect(jsonText, `compiled ${workflowId} must write a parseable safe-output config`).toBeDefined();
 
-  expect(configStart, `compiled ${workflowId} must write the safe-output config`).toBeGreaterThanOrEqual(0);
-  expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
-  expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
-
-  const safeOutputs = JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-    string,
-    Record<string, unknown>
-  >;
+  const safeOutputs = JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
   return safeOutputs.create_pull_request;
 }
 
@@ -509,17 +499,9 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
           resolve(workflowDir, 'squad-implement-worker.lock.yml'),
           'utf8',
         );
-        const lines = compiled.split(/\r?\n/);
-        const configStart = lines.findIndex(
-          line => line.includes('/safeoutputs/config.json') && line.includes('<<'),
-        );
-        const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-        const configEnd = delimiter
-          ? lines.findIndex((line, idx) => idx > configStart && line.trim() === delimiter)
-          : -1;
-        const safeOutputs = JSON.parse(
-          lines.slice(configStart + 1, configEnd).join('\n'),
-        ) as Record<string, Record<string, unknown>>;
+        const jsonText = extractSafeOutputsConfigJson(compiled);
+        expect(jsonText, 'mutated squad-implement-worker must compile a parseable safe-output config').toBeDefined();
+        const safeOutputs = JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
         const compiledProtectedFiles = (
           safeOutputs.create_pull_request?.protected_files ?? []
         ) as string[];

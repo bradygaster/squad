@@ -173,7 +173,7 @@ jobs:
         # than skipping — a skipped gate is indistinguishable from no gate. This
         # includes the shell input security contract gate (#1834) and the compile
         # contract (#1732).
-        run: gh extension install --pin v0.86.2 github/gh-aw
+        run: gh extension install --pin v0.87.10 github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Build
@@ -694,8 +694,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
-      - name: Install gh-aw v0.86.2 (pinned)
-        run: gh extension install --pin v0.86.2 github/gh-aw
+      - name: Install gh-aw v0.87.10 (pinned)
+        run: gh extension install --pin v0.87.10 github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
 
