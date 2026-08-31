@@ -19,7 +19,9 @@
  *   - `item_number` is mandatory, with the silent triggering-issue fallback named
  *   - reused/pre-existing issues are targeted by verified real numbers instead
  *   - base `squad`, single certified owner, `@copilot`, multi-owner, and non-roster
- *     behavior stays at parity with `squad-plan-activate`
+ *     behavior stays at parity with `squad-plan-activate` — including the `@copilot`
+ *     mapping stated in the *primary* Step 2 label computation, not only in the
+ *     provisioning prose, and omit-and-record (not a hard stop) for an uncertified owner
  *   - the origin intent issue is never an `add_labels` target
  *   - reruns stay idempotent
  *
@@ -183,12 +185,27 @@ describe('#1959: fast-path label sets stay at parity with squad-plan-activate', 
     expect(labelRule).toMatch(/only from that task's certified binding/i);
   });
 
-  it('maps @copilot to squad:copilot, matching the full activation path', () => {
+  it('maps @copilot to squad:copilot in the primary label computation itself', () => {
+    // The bug this guards: the Step 2 `- Labels:` bullet is the *primary* computation —
+    // it says "the frozen row `Owner` lowercased", which turns `@copilot` into the
+    // invalid `squad:@copilot`. Stating the mapping only in the provisioning section
+    // below leaves the primary rule wrong, and a model following the bullet literally
+    // still emits the bad label. Assert against the extracted bullet, not the whole
+    // skill, so a correct-elsewhere/wrong-here workflow cannot pass.
+    const labelRule = acceptSkill.match(/^- Labels:.*$/m)?.[0] ?? '';
+    expect(labelRule, 'Step 2 must have a "- Labels:" computation bullet').not.toBe('');
+    expect(
+      /Map `@copilot` to `squad:copilot`/.test(labelRule),
+      'The `- Labels:` bullet must carry the @copilot mapping inline.',
+    ).toBe(true);
+    expect(
+      /never `squad:@copilot`/.test(labelRule),
+      'The `- Labels:` bullet must forbid the lowercased-verbatim form explicitly.',
+    ).toBe(true);
+
+    // Still stated in the provisioning section, and identical to the full path.
     expect(acceptProse).toMatch(/`@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`/);
     expect(activateProse).toMatch(/`@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`/);
-    // The pre-mutation roster gate must not treat @copilot as an uncertified value,
-    // or the mapping above would be unreachable.
-    expect(acceptProse).toMatch(/the special value `@copilot` excepted/i);
   });
 
   it('gives a multi-owner phase issue only squad, and records the omission', () => {
@@ -203,15 +220,60 @@ describe('#1959: fast-path label sets stay at parity with squad-plan-activate', 
     expect(activateProse).toMatch(/multi-owner epic: apply only `squad`/i);
   });
 
-  it('keeps the pre-mutation stop as the fast path\'s non-roster contract', () => {
-    // The fast path is stricter than squad-plan-activate here: it refuses to mutate at
-    // all rather than creating an issue with an omitted label. That is preserved, and
-    // it is why no uncertified value can reach add_labels.
-    expect(acceptProse).toMatch(/stop before mutation and require `\/squad plan revise`/i);
+  it('omits and records a non-roster owner instead of stopping, matching full activation', () => {
+    // #1959 requires parity with squad-plan-activate. The fast path previously stopped
+    // before any mutation on an uncertified Owner; that is now aligned to omit-and-record
+    // so both activation paths behave identically for the same plan.
+    const labelRule = acceptSkill.match(/^- Labels:.*$/m)?.[0] ?? '';
+    expect(
+      /An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values`/.test(
+        labelRule,
+      ),
+      'The primary label computation must carry the omit-and-record rule inline, not ' +
+        'defer it to prose elsewhere in the skill.',
+    ).toBe(true);
+
     expect(acceptProse).toMatch(
-      /An `Owner` that is neither a certified roster name nor `@copilot` already stopped this run before mutation/i,
+      /An individual `Owner` matching no certified active roster name and not `@copilot` does \*\*not\*\* stop the run/i,
     );
-    expect(acceptProse).toMatch(/no uncertified value can ever reach `add_labels`/i);
+    expect(acceptProse).toMatch(
+      /create that issue with the base `squad` label only, omit the owner label, continue, and record the value under `Non-roster agent values`/i,
+    );
+    expect(acceptProse).toMatch(
+      /an uncertified value can reach `add_labels` only as the base `squad` label/i,
+    );
+
+    // The old stop must be gone — a lingering `/squad plan revise` hard stop would
+    // contradict the rule above and reintroduce the divergence.
+    expect(
+      acceptProse,
+      'The pre-mutation stop on an uncertified Owner must be removed, not merely ' +
+        'supplemented — otherwise the fast path still diverges from squad-plan-activate.',
+    ).not.toMatch(/stop before mutation and require `\/squad plan revise`/i);
+
+    // Parity: squad-plan-activate's own omit-and-record rule.
+    expect(activateProse).toMatch(
+      /MUST NOT become a\s+`squad:\{agent\}` label: apply only `squad` for that issue/i,
+    );
+  });
+
+  it('still stops before mutation when the roster itself is unreadable', () => {
+    // ROSTER_UNREADABLE is a different failure: no certified set exists at all, so
+    // omit-and-record has nothing to certify against. squad-plan-activate stops here
+    // too — this is parity, not a leftover of the removed per-owner stop.
+    expect(acceptProse).toMatch(
+      /If TG-2 emitted a `ROSTER_UNREADABLE:` line, stop before mutation and report that named reason/i,
+    );
+    expect(activateProse).toMatch(/If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP:/);
+  });
+
+  it('requires the Non-roster agent values heading the omissions feed', () => {
+    // The omit-and-record rule is only coherent if the heading it records into is
+    // actually mandated. Without this, "record it" points at nothing.
+    expect(acceptProse).toMatch(
+      /Whenever an accepted `Owner` did not become a `squad:\{owner\}` label — a multi-owner phase issue, or a value certified by neither the roster nor `@copilot` — a `Non-roster agent values` heading is \*\*required\*\* in this summary, naming the value and the issue it applied to/i,
+    );
+    expect(acceptProse).toMatch(/Omitting the label while omitting the heading reports a clean run that did not happen/i);
   });
 
   it('never targets the triggering intent issue with an owner label', () => {
