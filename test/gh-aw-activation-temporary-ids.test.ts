@@ -247,6 +247,32 @@ describe('gh-aw: temporary-ID targeting in squad-plan-activate (#1962)', () => {
       'blocked_by must be declared on the create-issue call, not applied afterwards.',
     ).toBe(true);
   });
+
+  it('names the 2d self-validation count with one consistent term', () => {
+    // The reviewer flagged a mixed-terminology hazard: comparing a "requested/recognized"
+    // count but then reporting it as `created={N}` left {N} undefined. One term, defined
+    // once, and both report_incomplete parameters bound explicitly to it.
+    //
+    // 2d is the last bold step, so bound the slice at the next heading too — otherwise it
+    // swallows Step 4, whose separate "created/recognized" binding wording belongs to #1963.
+    const marker = '**2d. Self-Validation:**';
+    const start = activateSkill.indexOf(marker);
+    expect(start, `"${marker}" is missing`).toBeGreaterThan(-1);
+    const rest = activateSkill.slice(start + marker.length);
+    const end = rest.search(/\n#{1,5} |\n\*\*\d[a-z]?\./);
+    const body = (end === -1 ? rest : rest.slice(0, end)).replace(/\s+/g, ' ');
+
+    expect(body, '2d must define the counted quantity once, as the created count').toMatch(
+      /\*\*created count\*\* is the number of `create-issue` calls this run emitted/i,
+    );
+    // Nothing may reintroduce a competing noun for the same quantity.
+    expect(body, '2d must not mix in a second term for the same count').not.toMatch(
+      /requested\/recognized|created\/recognized|requested count|recognized count/i,
+    );
+    // Both parameters must state what they carry, so {N} and {M} are unambiguous.
+    expect(body).toMatch(/`created=\{N\}` set to that created count/);
+    expect(body).toMatch(/`expected=\{M\}` set to the declared total/);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1827,8 +1827,7 @@ rather than truncating the number.
 
 **Uniqueness is your responsibility.** gh-aw does not reject a duplicate `temporary_id`; it
 silently lets the last `create-issue` using it own the mapping, so every later reference
-lands on the wrong issue. Confirm each ID is unused before calling. Epics and tasks share one
-namespace, hence the distinct prefixes.
+lands on the wrong issue. Confirm each ID is unused; epics and tasks share one namespace.
 
 **Explicit targeting is mandatory.** Every `add_labels` call MUST pass `item_number`. Omitting
 it does not fail — it silently labels the **triggering intent issue**, branding the user's own
@@ -1933,12 +1932,12 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 - Temporary ID: `temporary_id: "#aw_task{N}"` per the Temporary-ID Contract. Required, and unique across every epic and task in this run.
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
 - Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
-- Parent: sub-issue of EPIC (not root). If 2b minted this epic in this run, pass its `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. If 2b instead matched a pre-existing epic by title (a prior phase created it), that epic has no temporary ID in this run — pass its verified real number. Never guess the epic's real number, and never pass a temporary ID that was not minted this run.
+- Parent: sub-issue of EPIC (not root). If 2b minted this epic in this run, pass its `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. If 2b instead matched a pre-existing epic by title, that epic has no temporary ID in this run — pass its verified real number. Never guess the epic's real number, and never pass a temporary ID that was not minted this run.
 - Milestone: same as parent epic
 - Size: Project field if available, else body line
 - Label application: same as epics — call `add_labels` with `item_number` set to this task's temporary ID and the task's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
 
-**2d. Self-Validation:** Compare requested/recognized task count vs expected (use the plan's declared total — not the safe-output cap). If the requested count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last task's temporary ID — never noop, and never substitute a guessed issue number. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
+**2d. Self-Validation:** The **created count** is the number of `create-issue` calls this run emitted. Compare it against the plan's declared total (not the safe-output cap). If it is lower: call `report_incomplete` immediately with `created={N}` set to that created count, `expected={M}` set to the declared total, and the last task's temporary ID — never noop, and never substitute a guessed issue number. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
 
 Labels must have descriptions and intentional colors when they already exist in the
 repository. A label auto-provisioned by `add-labels`'s `create-if-missing` on a fresh
