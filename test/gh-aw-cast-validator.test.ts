@@ -249,7 +249,11 @@ describe('GH-AW Cast final-tree validator', () => {
 
   it('finds the materialized skill and runs the exact validator successfully', () => {
     const fixture = createFixture();
-    materializeSkill(fixture.root);
+    materializeSkill(
+      fixture.root,
+      undefined,
+      materializedSkillSource().replace(/\n/g, '\r\n'),
+    );
     const invocationDirectory = join(fixture.root, 'nested', 'invocation-directory');
     mkdirSync(invocationDirectory, { recursive: true });
     const result = runValidatorCommand(fixture, invocationDirectory);

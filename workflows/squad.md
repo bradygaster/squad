@@ -835,6 +835,7 @@ esac
 validator_skill="$(sed -n '1p' "$validator_matches")"
 validator_script="${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
 if ! awk '
+  { sub(/\r$/, "", $0) }
   $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->" { if (inside || seen) exit 41; inside = seen = 1; next }
   $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_END -->" { if (!inside || ended) exit 42; inside = 0; ended = 1; next }
   inside { print }
