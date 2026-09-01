@@ -49,7 +49,7 @@ After the agent's own files are seeded, these templates are not read again at ru
 | `fact-checker-charter.md` | `agents/fact-checker/charter.md` |
 | `fact-checker-policy.md` | `agents/fact-checker/policy.md` (Fact Checker methodology) |
 | `history.md` | New agent `history.md` when a team member is added |
-| `Rai-charter.md` | `agents/Rai/charter.md` |
+| `rai-charter.md` | `agents/Rai/charter.md` |
 | `rai-policy.md` | `agents/Rai/policy.md` (RAI check taxonomy) |
 | `roster.md` | Roster entry format guidance for `team.md` |
 | `run-output.md` | Standard run output format for agent responses |
