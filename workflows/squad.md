@@ -819,6 +819,7 @@ on disk by gh-aw before the agent runs.
 <!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->
 ```bash
 set -euo pipefail
+cd "${GITHUB_WORKSPACE:?}"
 
 validator_matches="${RUNNER_TEMP:?}/squad-cast-validator-matches.txt"
 find "${GITHUB_WORKSPACE}" -name "SKILL.md" -maxdepth 6 \
@@ -833,7 +834,7 @@ case "$validator_count" in
 esac
 validator_skill="$(sed -n '1p' "$validator_matches")"
 validator_script="${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
-awk '
+if ! awk '
   $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->" { if (inside || seen) exit 41; inside = seen = 1; next }
   $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_END -->" { if (!inside || ended) exit 42; inside = 0; ended = 1; next }
   inside { print }
@@ -842,7 +843,10 @@ awk '
   | tr -d '\r\n' \
   | base64 --decode \
   | gzip --decompress \
-  > "$validator_script"
+  > "$validator_script"; then
+  echo "Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data." >&2
+  exit 1
+fi
 
 validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 node --check "$validator_script"

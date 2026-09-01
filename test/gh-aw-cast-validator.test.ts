@@ -172,9 +172,12 @@ function materializeSkill(
   write(root, path, content);
 }
 
-function runValidatorCommand(fixture: ReturnType<typeof createFixture>) {
+function runValidatorCommand(
+  fixture: ReturnType<typeof createFixture>,
+  cwd = fixture.root,
+) {
   return spawnSync('bash', ['-c', validatorCommand()], {
-    cwd: fixture.root,
+    cwd,
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -223,7 +226,9 @@ describe('GH-AW Cast final-tree validator', () => {
   it('finds the materialized skill and runs the exact validator successfully', () => {
     const fixture = createFixture();
     materializeSkill(fixture.root);
-    const result = runValidatorCommand(fixture);
+    const invocationDirectory = join(fixture.root, 'nested', 'invocation-directory');
+    mkdirSync(invocationDirectory, { recursive: true });
+    const result = runValidatorCommand(fixture, invocationDirectory);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe('Cast validation passed.\n');
     expect(authorizesPullRequest(result)).toBe(true);
@@ -263,6 +268,22 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(/base64|gzip|invalid|error/i);
+    expect(result.stderr).toContain('Cast validator payload extraction failed');
+    expect(authorizesPullRequest(result)).toBe(false);
+  });
+
+  it('fails clearly when the materialized payload markers are malformed', () => {
+    const fixture = createFixture();
+    const corrupt = materializedSkillSource().replace(
+      '<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->',
+      '<!-- BROKEN_CAST_VALIDATOR_B64_BEGIN -->',
+    );
+    materializeSkill(fixture.root, undefined, corrupt);
+    const result = runValidatorCommand(fixture);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      'Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data.',
+    );
     expect(authorizesPullRequest(result)).toBe(false);
   });
 
