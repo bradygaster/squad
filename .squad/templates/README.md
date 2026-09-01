@@ -56,27 +56,46 @@ After the agent's own files are seeded, these templates are not read again at ru
 | `scribe-charter.md` | `agents/scribe/charter.md` |
 | `skill.md` | Skeleton for new skill files under `.github/skills/` |
 
+### Subtrees
+
+`squad init` copies this directory **recursively**, so every subtree below ships into
+`.squad/templates/` in a new project. None of them are stale, and none should be deleted
+wholesale — each has a distinct consumer.
+
+| Subtree | Kind | Consumer |
+|---------|------|----------|
+| `casting/` | Runtime input | Init Mode reads this **directory** to allocate character names for a custom universe (`.copilot/skills/init-mode/SKILL.md`). Deleting it breaks custom-universe casting. |
+| `identity/` | Bootstrap template | Seeds `.squad/identity/now.md` and `wisdom.md`. Registered in `TEMPLATE_MANIFEST` under `identity/`. |
+| `scripts/` | User copy-source | Documented for users to copy from — `cp -r .squad/templates/scripts/notes/ scripts/notes/` (see the state-backends doc). |
+| `skills/` | Bootstrap template | Source for skills the `TEMPLATE_MANIFEST` installs **to `.github/skills/`** (destinations are `../.github/skills/...`). The installed copy under `.github/skills/` is what agents load. |
+| `workflows/` | User copy-source | Documented for users to copy from — `cp .squad/templates/workflows/*.yml .github/workflows/` (see the CI/CD integration doc). |
+
 ---
 
 ## Invariant
 
-Nothing should be added to `.squad/templates/` without also being registered in the CLI's
-`TEMPLATE_MANIFEST` (`packages/squad-cli/src/cli/core/templates.ts`) as **either**:
+Nothing should be added to the **top level** of `.squad/templates/` without also being
+registered in the CLI's `TEMPLATE_MANIFEST` (`packages/squad-cli/src/cli/core/templates.ts`)
+as **either**:
 
 1. A **runtime input** (coordinator reads it by path) — include the reader and situation in
    the on-demand table above.
 2. A **bootstrap template** (used once to seed a generated file) — include the target in the
    bootstrap table above.
 
-If a file in this directory is neither, it is a stale copy and safe to remove. See #1436 for
-the cleanup tracker.
+If a **top-level file** is neither, it is a stale copy and safe to remove. See #1436 for the
+cleanup tracker.
+
+This rule does **not** extend to the subtrees above: each is accounted for in the subtree
+table, and absence from the two top-level tables does not make a subtree stale. New subtrees
+must be added to the subtree table.
 
 ---
 
-## Historical note — `workflows/` and `skills/` subtrees
+## Historical note — `skills/` subtree
 
-Earlier Squad versions copied `.github/workflows/` and `.github/skills/` content into
-`.squad/templates/workflows/` and `.squad/templates/skills/` as well. Those copies were never
-read at runtime — they were stale duplicates. The `TEMPLATE_MANIFEST` now routes workflows
-directly to `.github/workflows/` and skills directly to `.github/skills/`. If your project
-still has these subdirectories under `.squad/templates/`, they are safe to delete. See #1436.
+Earlier Squad versions copied `.github/skills/` content into `.squad/templates/skills/` and
+agents were expected to load it from there. That is no longer how it works: the
+`TEMPLATE_MANIFEST` installs skills **to `.github/skills/`**, and that installed copy is the
+one agents load. The `skills/` subtree here remains the *source* for that install, so it must
+not be deleted from this directory. See #1436.
