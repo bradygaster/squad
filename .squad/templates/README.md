@@ -45,8 +45,7 @@ After the agent's own files are seeded, these templates are not read again at ru
 | File | Used to seed |
 |------|-------------|
 | `charter.md` | New agent `charter.md` when a team member is added |
-| `copilot-instructions.md` | `.github/copilot-instructions.md` for the repo |
-| `fact-checker-charter.md` | `agents/fact-checker/charter.md` |
+| `copilot-instructions.md` | `.github/copilot-instructions.md` for the repo || `fact-checker-charter.md` | `agents/fact-checker/charter.md` |
 | `fact-checker-policy.md` | `agents/fact-checker/policy.md` (Fact Checker methodology) |
 | `history.md` | New agent `history.md` when a team member is added |
 | `rai-charter.md` | `agents/Rai/charter.md` |
@@ -55,6 +54,12 @@ After the agent's own files are seeded, these templates are not read again at ru
 | `run-output.md` | Standard run output format for agent responses |
 | `scribe-charter.md` | `agents/scribe/charter.md` |
 | `skill.md` | Skeleton for new skill files under `.github/skills/` |
+
+`README.md` — this file — is the one top-level entry in neither table above. It is not a
+runtime input and seeds nothing; it ships as this directory's own documentation, arriving in
+a project through the same recursive copy, and is registered in `TEMPLATE_MANIFEST` so
+`squad upgrade` keeps it current. Classified here rather than left unlisted, since the
+Invariant below requires every top-level file to be accounted for.
 
 ### Subtrees
 
