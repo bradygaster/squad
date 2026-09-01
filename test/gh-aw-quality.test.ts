@@ -920,8 +920,9 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // left, so the guard still bites on genuine growth.
   //
   // Raised 181 -> 183 KB by the Cast validator's deterministic disk-extraction and
-  // SHA-256 authentication command. The command remains inside the `squad-cast`
-  // inline skill, so gh-aw strips it from the ambient prompt and loads it on demand.
+  // SHA-256 authentication command. That command is authored between marker comments
+  // inside the `squad-cast` inline skill in workflows/squad.md; gh-aw strips the full
+  // skill from the ambient prompt and loads it on demand.
   const SOURCE_GROWTH_BUDGET_KB = 183;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
