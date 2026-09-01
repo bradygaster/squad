@@ -43,9 +43,9 @@ function extractFrontmatter(filePath: string): string {
 function extractResearchSkill(content: string): string {
   const start = content.indexOf('## skill: `squad-research`');
   if (start === -1) throw new Error('squad-research skill heading not found');
-  const rest = content.slice(start + 1);
-  const nextIdx = rest.indexOf('\n## skill:');
-  return nextIdx === -1 ? content.slice(start) : content.slice(start, start + 1 + nextIdx);
+  const skill = content.slice(start);
+  const nextIdx = skill.indexOf('\n## skill:');
+  return nextIdx === -1 ? skill : skill.slice(0, nextIdx);
 }
 
 /** Extract the `## skill: \`squad-research\`` Step 5 verification checklist block. */
@@ -185,9 +185,9 @@ describe('gh-aw: /squad research online-documentation capability', () => {
     expect(start, '§3.2 Research Findings template must exist in the planning ontology').toBeGreaterThan(-1);
     // Scope to the §3.2 template block (up to the next ### heading) so a stray
     // match elsewhere in the file can't satisfy this.
-    const rest = ontology.slice(start + 1);
+    const rest = ontology.slice(start);
     const nextHeading = rest.search(/\n### \d/);
-    const section = nextHeading === -1 ? ontology.slice(start) : ontology.slice(start, start + 1 + nextHeading);
+    const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
     expect(section).toContain('### Online sources');
     expect(section).toMatch(/`consulted`/);
     expect(section).toMatch(/`unavailable/);
