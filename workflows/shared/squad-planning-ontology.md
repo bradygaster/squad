@@ -141,6 +141,11 @@ The issue body IS the intent. No special format required, but structured intents
 |---|--------|------|-------------|
 | 1 | <link/file/doc> | <codebase/docs/external> | <insight> |
 
+### Online sources
+<`consulted` — list the URLs fetched this run (each also cited above); or
+`unavailable — <reason>` when no external documentation was fetched. Makes
+degradation observable: never claim `consulted` for a page not actually fetched.>
+
 ### Findings
 #### Finding 1: <title>
 <Evidence and analysis>

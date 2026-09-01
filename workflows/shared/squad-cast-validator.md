@@ -1,6 +1,6 @@
 ## skill: `squad-cast-validator`
 ---
-description: Materialize and execute the deterministic GH-AW Cast final-tree validator.
+description: Store the reviewed GH-AW Cast final-tree validator as a disk-only payload.
 ---
 
 # GH-AW Cast final-tree validator
