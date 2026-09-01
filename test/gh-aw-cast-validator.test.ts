@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
+import { requirePosixShell } from './posix-shell';
 
 const validator = join(process.cwd(), 'scripts', 'validate-gh-aw-cast.mjs');
 const helperPath = join(process.cwd(), 'workflows', 'shared', 'squad-cast-validator.md');
@@ -189,7 +190,8 @@ function runValidatorCommand(
   fixture: ReturnType<typeof createFixture>,
   cwd = fixture.root,
 ) {
-  return spawnSync('bash', ['-c', validatorCommand()], {
+  const shell = process.platform === 'win32' ? requirePosixShell() : 'bash';
+  return spawnSync(shell, ['-c', validatorCommand()], {
     cwd,
     encoding: 'utf8',
     env: {
