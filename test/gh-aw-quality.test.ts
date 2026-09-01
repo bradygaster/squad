@@ -893,9 +893,9 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // still passes at ~32 KB — again the condition above that makes a raise legitimate.
   //
   // Measured after rebasing onto dev (i.e. with #1966 already squash-merged, so this
-  // counts #1963's bytes only): 175 485 B = 171.4 KB. 172 KB would leave 643 B of
+  // counts #1963's bytes only): 175 519 B = 171.4 KB. 172 KB would leave 609 B of
   // headroom, which reproduces the near-zero-margin failure mode described above; 173 KB
-  // leaves 1 667 B. Deliberately not set higher: #1964 is projected to push the combined
+  // leaves 1 633 B. Deliberately not set higher: #1964 is projected to push the combined
   // total to ~180 002 B = 175.8 KB, but it has not merged, and pre-raising this guard for
   // an unmerged branch would hide growth that has not happened yet. #1964 raises it when
   // it lands, against its own measurement.

@@ -217,6 +217,36 @@ describe('gh-aw: Activation bindings carry resolvable issue references (#1963)',
     expect(ontologyProse).toMatch(/It does not assert the label was\s*observed on the issue/);
     expect(ontologyProse).toMatch(/consumers MUST treat it as a failure rather than skipping or repairing it/);
   });
+
+  it('never lets the ontology describe bindings as recording labels that were applied', () => {
+    // Regression guard for a real drift caught in review on this PR: the `Activation
+    // bindings:` paragraph said bindings record "epic labels reported as applied" while
+    // the paragraph directly below it correctly defined reported labels as *accepted*
+    // operations. The ontology is the file most likely to be read standalone, so the
+    // strong claim there silently re-introduced the exact defect this change removes —
+    // one consistently-wrong place became two inconsistently-wrong ones.
+    //
+    // This is deliberately a narrow, shape-targeted negative rather than a ban on the
+    // word "applied". The same file legitimately says safe outputs "are applied after
+    // the agent turn" — that sentence is the *justification* for the weaker claim, so a
+    // blanket match would forbid the correct prose along with the incorrect prose.
+    expect(
+      ontologyProse,
+      'The ontology must not say bindings record labels "reported as applied". Reported ' +
+        'labels assert an accepted add_labels operation, never observed application.',
+    ).not.toMatch(/(?:reported|recorded|listed)\s+as\s+applied/i);
+    expect(
+      ontologyProse,
+      'No binding field may be described as a label already applied to, or present on, the issue.',
+    ).not.toMatch(/labels?\s+(?:already\s+)?(?:applied\s+to|present\s+on)\s+the\s+issue/i);
+
+    // Positive half: the binding paragraph must state the accepted-operation semantics
+    // and point a standalone reader at the definition, so the fix cannot be reverted to
+    // a vaguer wording that merely dodges the negatives above.
+    expect(ontologyProse).toMatch(
+      /epic labels reported as accepted label operations \(defined below\)/,
+    );
+  });
 });
 
 describe('post-activation checker resolves binding references and fails closed (#1963)', () => {
@@ -312,9 +342,10 @@ describe('post-activation checker resolves binding references and fails closed (
 
 const GH_AW_INSTALL_HINT =
   '`gh aw` is required to compile the workflow this gate inspects. Install it with ' +
-  '`gh extension install github/gh-aw` (matches .github/workflows/squad-ci.yml). This ' +
-  'gate fails closed rather than skipping: an unmeasured contract is indistinguishable ' +
-  'from a violated one (#1834).';
+  '`gh extension install --pin v0.87.10 github/gh-aw` (the same pin ' +
+  '.github/workflows/squad-ci.yml uses, so local strict-compile and lock output match ' +
+  'CI). This gate fails closed rather than skipping: an unmeasured contract is ' +
+  'indistinguishable from a violated one (#1834).';
 
 describe('gh-aw: the activation summary contract compiles in strict mode (#1963)', () => {
   let compiledLock: string | null = null;

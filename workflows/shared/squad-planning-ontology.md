@@ -313,8 +313,8 @@ block containing a non-empty array. Each entry
 maps a plan task number and raw agent assignment to its task issue reference,
 epic identifier, epic issue reference, and the epic's complete distinct agent
 set from the full accepted plan (including other activation phases). It records both task and derived
-epic labels reported as applied, or their omission reasons (`multi-owner` or
-`non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
+epic labels reported as accepted label operations (defined below), or their omission reasons
+(`multi-owner` or `non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
 records the actual `squad:copilot` label. This mapping is mandatory for
 `phases-activated` and `activated` artifacts. It remains in the body rather than
 the safe-output `data` envelope because gh-aw expands nested data schemas beyond
