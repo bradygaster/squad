@@ -839,7 +839,7 @@ not describe this as a post-agent or independently fail-closed gate.
 
 ##### Step 8: Open PR
 
-`create-pull-request`: branch `squad/cast-{repo}`, title `[squad] Cast your Squad — {description}`, body with team summary. Append to the PR body: "After merging, return to the originating issue and rerun `{canonical_command}` to resume your work." Enumerate every concrete path from the validated Step 6 payload allowlist as the file request; do not add any other path.
+`create-pull-request`: branch `squad/cast-{repo}`, title `[squad] Cast your Squad — {description}`, body with team summary. Append to the PR body: "After merging, return to the originating issue and rerun `{canonical_command}` to resume your work." When this Cast run was invoked directly on an issue (not the Auto-Cast Pivot in TG-3, which forbids closing keywords per its own rule above), append a standalone final body line in the form `Closes #{issue_number}` so merging this PR automatically closes the issue that invoked `/squad cast`. Replace `{issue_number}` with the resolved numeric target issue number from Trigger Context — never emit the braces or reference a different issue — and omit the documentation backticks from the actual PR body. Enumerate every concrete path from the validated Step 6 payload allowlist as the file request; do not add any other path.
 
 ##### Step 9: Post Completion
 

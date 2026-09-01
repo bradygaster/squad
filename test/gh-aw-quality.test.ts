@@ -2587,6 +2587,81 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// gh-aw: Cast PR closes its originating issue on merge (#1974)
+//
+// A direct `/squad cast` command opens a PR that scaffolds the team. Prior to
+// this change, that PR never referenced the invoking issue with a closing
+// keyword, so merging it left the issue open. The Auto-Cast Pivot (TG-3) is a
+// different code path that opens a Cast PR as a *side effect* of another
+// command (e.g. `/squad plan`) finding no team yet -- that PR must NOT close
+// the underlying work issue, since only the team was cast, not the requested
+// work. Step 8 must therefore add the closing keyword only for the direct
+// invocation, while TG-3's existing prohibition (tested above) stays intact.
+// ---------------------------------------------------------------------------
+describe('gh-aw: Cast PR closes its originating issue on merge (#1974)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+  const cast = squadContent.match(
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+  )?.[0] ?? '';
+  const step8 = cast.match(/##### Step 8: Open PR\n[\s\S]*?(?=\n##### Step 9)/)?.[0] ?? '';
+
+  it('Step 8 exists and configures the branch/title used by direct Cast', () => {
+    expect(step8.length, 'Step 8: Open PR section should be found in the cast skill').toBeGreaterThan(0);
+    expect(step8).toContain('`create-pull-request`');
+    expect(step8).toContain('branch `squad/cast-{repo}`');
+    expect(step8).toContain('title `[squad] Cast your Squad — {description}`');
+  });
+
+  it('Step 8 templates a closing line with the resolved issue number for a direct Cast invocation', () => {
+    expect(step8).toMatch(/append a standalone final body line in the form `Closes #\{issue_number\}`/);
+    expect(step8).toMatch(/merging this PR automatically closes the issue that invoked `\/squad cast`/);
+    expect(step8).toMatch(/Replace `\{issue_number\}` with the resolved numeric target issue number/);
+  });
+
+  it('the closing keyword is scoped to the resolved target issue, never a different issue', () => {
+    expect(step8).toMatch(/resolved numeric target issue number from Trigger Context/i);
+    expect(step8).toMatch(/never .*reference a different issue/i);
+  });
+
+  it('explicitly excludes the Auto-Cast Pivot (TG-3), which forbids closing keywords', () => {
+    expect(step8).toMatch(/not the Auto-Cast Pivot in TG-3, which forbids closing keywords/i);
+    // TG-3's own prohibition (asserted elsewhere) must still be present and unweakened.
+    expect(squadContent).toMatch(
+      /MUST NOT contain.*Fixes.*Closes.*Resolves/i,
+    );
+  });
+
+  it('instructs omitting placeholder braces and documentation backticks from the real PR body', () => {
+    expect(step8).toMatch(/never emit the braces/i);
+    expect(step8).toMatch(/omit the documentation backticks from the actual PR body/i);
+  });
+
+  it('preserves existing Step 8 PR content: team summary and the post-merge rerun instruction', () => {
+    expect(step8).toContain('body with team summary');
+    expect(step8).toMatch(
+      /return to the originating issue and rerun `\{canonical_command\}` to resume your work/,
+    );
+  });
+
+  it('preserves the Step 6 payload allowlist enumeration instruction', () => {
+    expect(step8).toMatch(
+      /Enumerate every concrete path from the validated Step 6 payload allowlist as the file request/,
+    );
+    expect(step8).toMatch(/do not add any other path/);
+  });
+
+  it('does not weaken auto-close-issue: false, which still guards Connect/Adopt/Cast-Member/Auto-Pivot', () => {
+    // The literal Closes # line (not gh-aw's built-in auto-close-issue) is what closes the
+    // issue for direct Cast, so the shared safe-output config can stay false for every other
+    // create-pull-request call in this workflow (Connect, Adopt, Cast-Member, Auto-Cast Pivot).
+    const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+    const safeOutputs = extractSafeOutputs(frontmatter);
+    const pr = safeOutputs['create-pull-request'] as Record<string, unknown>;
+    expect(pr['auto-close-issue']).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // gh-aw: Threat detection taxonomy regression (#1701)
 //
 // Verifies that Squad's label registry correctly distinguishes detection
