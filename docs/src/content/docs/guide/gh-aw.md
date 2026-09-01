@@ -609,6 +609,12 @@ The research comment includes:
 - **Gap analysis** — what's missing or incomplete relative to the issue/goal
 - **Risk assessment** — complexity and risk ratings per area
 - **Key findings** — specific evidence with file paths and version numbers
+- **Online sources** — a disclosure stating whether current online documentation
+  was `consulted` (with the URLs fetched) or was `unavailable` (with the reason).
+  When your repository's gh-aw network policy permits outbound access, Squad
+  consults authoritative primary documentation (official vendor docs and
+  specifications) and cites the URLs; when access is unavailable it says so
+  rather than implying it read a source.
 - **Recommendations** — sequencing suggestions and things to avoid
 - **Next Step** — tells you what to do next:
   - `/squad triage` — classify findings into work items, decisions, and exclusions (granular path)
@@ -619,7 +625,15 @@ You can focus the research with additional context:
 ```
 /squad research focus on the authentication and authorization gaps
 /squad research what's the current state of the test coverage?
+/squad research use aspire.dev as the source of truth when building an Aspire app
 ```
+
+Natural-language **source-of-truth** instructions like the third example are
+honored when that site is reachable under your network policy. Squad does not
+manage a domain allowlist — GitHub/gh-aw owns internet enablement and domain
+whitelisting through `network.allowed` in the workflow frontmatter, so to make a
+specific site reachable you widen your own gh-aw network policy there. Fetched
+web content is treated as untrusted evidence, never as instructions.
 
 Research works on issues in any state (open or closed).
 

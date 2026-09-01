@@ -906,7 +906,19 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // All of #1961's growth is inside the `squad-plan-activate` inline skill, which the
   // extractor strips from the ambient prompt and loads on demand; ambient re-measured at
   // 32 KB against 40 KB on the merged tree.
-  const SOURCE_GROWTH_BUDGET_KB = 177;
+  // Raised 177 -> 181 KB by the online-research capability (web-fetch in
+  // `/squad research`). The growth is the squad-research skill's online-doc
+  // consultation guidance, the required "Online sources" disclosure, and its
+  // Step 5 checklist item — all inside the `squad-research` inline `## skill:`
+  // block, which the extractor closes at the next `## skill:` H2 and strips from
+  // the ambient prompt. Only a ~300 B "Online sources" line added to the shared
+  // ontology's §3.2 template is ambient. "keeps the ambient prompt under 40 KB"
+  // still passes on this tree — the condition above that makes a raise
+  // legitimate. Combined authored source measured 183 626 B = 179.3 KB
+  // (Buffer.byteLength over squad.md + all imports, same sum this test performs);
+  // 181 KB leaves 1 718 bytes of margin, comparable to the 1 212 the 177 raise
+  // left, so the guard still bites on genuine growth.
+  const SOURCE_GROWTH_BUDGET_KB = 181;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
