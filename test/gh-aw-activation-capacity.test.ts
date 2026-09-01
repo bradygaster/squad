@@ -333,13 +333,26 @@ describe('gh-aw: self-validation reconciles activated items with label operation
     ).toBe(true);
   });
 
-  it('compares expected activated items against successful label operations', () => {
-    expect(activateProse).toMatch(/`activated`.*issues created or recognized/i);
-    expect(activateProse).toMatch(/`labeled`.*add_labels.*returned successfully/i);
+  it('compares expected activated items against accepted label operations', () => {
+    // Anchored to the exact definitions rather than `.*`-joined fragments: activateProse is
+    // the whole flattened skill, so a loose pattern can satisfy itself with wording from a
+    // different section (verified -- a distant "was accepted" masked a reverted definition).
+    expect(activateProse).toMatch(/`activated` \(issues created or recognized this run\)/i);
+    expect(activateProse).toMatch(/`labeled` \(issues whose `add_labels` call was accepted\)/i);
     expect(
       /labeled < activated/.test(activateSkill),
       'The reconciliation must compare the two counts explicitly.',
     ).toBe(true);
+  });
+
+  it('states the counts track accepted operations, not labels present on GitHub', () => {
+    // #1963 settled the vocabulary: an accepted safe output is queued, not applied. Step 2e
+    // counts `add_labels` calls, so its reason string and count definition must not claim
+    // the labels reached the issue -- nothing in this run reads labels back. Guarding the
+    // negative too, because the over-claim reappears as an innocuous-looking verb.
+    expect(activateProse).toMatch(/never state or imply that a counted label was applied/i);
+    expect(activateProse).not.toMatch(/activated issues received their labels/i);
+    expect(activateProse).not.toMatch(/proof that every label landed/i);
   });
 
   it('counts a missing, rejected, or errored label call as unlabeled', () => {
