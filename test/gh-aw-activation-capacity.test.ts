@@ -442,7 +442,13 @@ describe('gh-aw: self-validation reconciles activated items with label operation
       'Emitting an activated/phases-activated artifact while labeled < activated must be ' +
         'named as a false success report.',
     ).toBe(true);
-    expect(activateProse).toMatch(/phases-activated.*artifact.*while.*labeled < activated|activated.*artifact/i);
+    // Anchored to the whole sentence. The previous form ended in an `|activated.*artifact`
+    // alternative, and since alternation binds loosest the entire pattern collapsed to that
+    // branch -- it matched any mention of the artifact and would have passed with the
+    // `labeled < activated` condition deleted. Verified by deleting it.
+    expect(activateProse).toMatch(
+      /An `activated` or `phases-activated` artifact listing every item as activated while `labeled < activated`/i,
+    );
   });
 
   it('still forbids blaming a cap that was never actually reached', () => {
