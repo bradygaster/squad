@@ -64,7 +64,7 @@ wholesale — each has a distinct consumer.
 
 | Subtree | Kind | Consumer |
 |---------|------|----------|
-| `casting/` | Runtime input | Init Mode reads this **directory** to allocate character names for a custom universe (`.copilot/skills/init-mode/SKILL.md`). Deleting it breaks custom-universe casting. |
+| `casting/` | Runtime input | Custom-universe character lists, read during Init Mode casting when a user names a universe that has no built-in list. See `casting-reference.md` for the casting algorithm. Deleting it removes those name pools. |
 | `identity/` | Bootstrap template | Seeds `.squad/identity/now.md` and `wisdom.md`. Registered in `TEMPLATE_MANIFEST` under `identity/`. |
 | `scripts/` | User copy-source | Documented for users to copy from — `cp -r .squad/templates/scripts/notes/ scripts/notes/` (see the state-backends doc). |
 | `skills/` | Bootstrap template | Source for skills the `TEMPLATE_MANIFEST` installs **to `.github/skills/`** (destinations are `../.github/skills/...`). The installed copy under `.github/skills/` is what agents load. |
@@ -74,17 +74,23 @@ wholesale — each has a distinct consumer.
 
 ## Invariant
 
-Nothing should be added to the **top level** of `.squad/templates/` without also being
-registered in the CLI's `TEMPLATE_MANIFEST` (`packages/squad-cli/src/cli/core/templates.ts`)
-as **either**:
+Anything added to the **top level** of `.squad/templates/` should be classified as **either**:
 
 1. A **runtime input** (coordinator reads it by path) — include the reader and situation in
    the on-demand table above.
 2. A **bootstrap template** (used once to seed a generated file) — include the target in the
    bootstrap table above.
 
-If a **top-level file** is neither, it is a stale copy and safe to remove. See #1436 for the
-cleanup tracker.
+New top-level files should also be registered in the CLI's `TEMPLATE_MANIFEST`
+(`packages/squad-cli/src/cli/core/templates.ts`) so `squad upgrade` can maintain them.
+
+**Absence from these tables means unclassified, not stale.** Do not treat it as license to
+delete. The tables above are not yet a complete inventory of what ships here, and several
+top-level files are consumed in ways neither table records — `notes-protocol.md`, for
+example, is not in either table and is not manifest-registered, yet the state-backends doc
+tells users to `cp .squad/templates/notes-protocol.md .squad/notes-protocol.md`. Removing a
+file requires positive evidence that nothing reads or copies it; classify first, and only
+then remove. See #1436 for the cleanup tracker.
 
 This rule does **not** extend to the subtrees above: each is accounted for in the subtree
 table, and absence from the two top-level tables does not make a subtree stale. New subtrees
