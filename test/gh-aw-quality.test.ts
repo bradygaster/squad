@@ -2612,14 +2612,15 @@ describe('gh-aw: Cast PR closes its originating issue on merge (#1974)', () => {
     expect(step8).toContain('title `[squad] Cast your Squad — {description}`');
   });
 
-  it('Step 8 appends a literal `Closes #{issue_number}` line for a direct Cast invocation', () => {
-    expect(step8).toMatch(/append a standalone final body line:\s*`Closes #\{issue_number\}`/);
+  it('Step 8 templates a closing line with the resolved issue number for a direct Cast invocation', () => {
+    expect(step8).toMatch(/append a standalone final body line in the form `Closes #\{issue_number\}`/);
     expect(step8).toMatch(/merging this PR automatically closes the issue that invoked `\/squad cast`/);
+    expect(step8).toMatch(/Replace `\{issue_number\}` with the resolved numeric target issue number/);
   });
 
   it('the closing keyword is scoped to the resolved target issue, never a different issue', () => {
-    expect(step8).toMatch(/resolved target issue from Trigger Context/i);
-    expect(step8).toMatch(/never a different issue/i);
+    expect(step8).toMatch(/resolved numeric target issue number from Trigger Context/i);
+    expect(step8).toMatch(/never .*reference a different issue/i);
   });
 
   it('explicitly excludes the Auto-Cast Pivot (TG-3), which forbids closing keywords', () => {
@@ -2630,8 +2631,9 @@ describe('gh-aw: Cast PR closes its originating issue on merge (#1974)', () => {
     );
   });
 
-  it('instructs writing the literal keyword without surrounding backticks in the real PR body', () => {
-    expect(step8).toMatch(/no surrounding backticks in the actual PR body/i);
+  it('instructs omitting placeholder braces and documentation backticks from the real PR body', () => {
+    expect(step8).toMatch(/never emit the braces/i);
+    expect(step8).toMatch(/omit the documentation backticks from the actual PR body/i);
   });
 
   it('preserves existing Step 8 PR content: team summary and the post-merge rerun instruction', () => {
