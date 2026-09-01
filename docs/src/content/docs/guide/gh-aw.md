@@ -731,11 +731,11 @@ So a correct summary says a label operation was **accepted**. It must not claim 
 label was applied, landed, verified, confirmed, or checked on the issue.
 
 This vocabulary exists for a concrete reason. Labels do not ride along with issue
-creation: `create-issue`'s own `labels:` field cannot create a missing label —
-GitHub silently drops label names the repository does not already have instead of
-creating them — so it is never evidence that a label landed. Labels therefore
-travel as separate `add_labels` calls, and "accepted" is the strongest thing the
-run can truthfully say about one.
+creation: a label reaches an activated issue through exactly one route, an
+accepted `add_labels` operation targeting that issue. `create-issue`'s own
+`labels:` field never lands a label the activation run can claim, so it is never
+evidence that a label arrived. Labels therefore travel as separate `add_labels`
+calls, and "accepted" is the strongest thing the run can truthfully say about one.
 
 Practical consequence: an accepted summary is strong evidence, not proof. To
 confirm what actually landed, read the issues themselves:
@@ -746,12 +746,19 @@ gh issue list --label squad --json number,title,labels
 
 #### Activation is capped, and shortfalls are reported
 
-A single activation run is bounded by two safe-output caps:
+A single activation run is bounded. **The user-facing ceiling is 50 issues per
+activation run.** Plan for that number.
 
-| Safe output | Cap | Covers |
-|-------------|-----|--------|
-| `create-issue` | 75 | Issues created in one run |
-| `add-labels` | 110 | Label operations in one run |
+The two underlying safe-output caps are set above that ceiling on purpose, so
+they are headroom rather than the limit you should size against:
+
+| Safe output | Cap | Derivation |
+|-------------|-----|------------|
+| `create-issue` | 75 | 50 worst-case issues plus 25 bounded margin |
+| `add-labels` | 110 | Covers both readings of the worst case — 50 calls (one per issue) and 100 label names (two each) |
+
+`max` counts safe-output **items (tool calls)**, not label names, and it is
+enforced at invocation and collection — neither enforcement fails the run.
 
 Two different shortfalls are checked separately, and they are not
 interchangeable — the trigger, the wording, and the remedy differ:
@@ -778,9 +785,10 @@ workflow forbids offering a cap as a guessed explanation, so an incomplete repor
 will not always attribute the shortfall to one.
 
 Work items created in the same run are identified in that report by the temporary
-IDs the run minted (`#aw_epic{K}`, `#aw_task{N}`, `#aw_wi{N}`) rather than by
-issue number, because at that point creation is still deferred and no real number
-exists yet.
+IDs the run minted — `#aw_epic{K}` and `#aw_task{N}` on the hierarchical path,
+`#aw_ph{N}` for a fast-path phase issue and `#aw_wi{N}` for a fast-path work item
+— rather than by issue number, because at that point creation is still deferred
+and no real number exists yet.
 
 Do not read a green run as a complete activation. Check for that tracking issue.
 
@@ -792,12 +800,23 @@ accepted operations. This is the most directly checkable surface Squad emits: a
 deterministic post-activation checker compares those bindings against the labels
 actually present on the issues.
 
-You can do the same check by hand — read the bindings out of the activation
-comment, then compare them against reality:
+You can do the same check by hand. Listing labels proves a label exists somewhere,
+but not that it landed on the *right* issue — so read the bindings out of the
+activation comment and compare them per issue:
 
 ```bash
+# 1. Find the Activation bindings: block on the issue you activated
+gh issue view {origin-issue} --json comments --jq '.comments[].body'
+
+# 2. For each binding, compare its recorded issue and label against reality
+gh issue view {issue} --json title,labels
+
+# Broad sweep: every Squad-labeled issue at once
 gh issue list --label squad --json number,title,labels
 ```
+
+A binding whose `label` does not match the labels actually on that issue is the
+discrepancy the checker exists to catch.
 
 Where an owner did not become a `squad:{agent}` label — a multi-owner epic, or an
 owner matching no roster name — the summary carries a required `Non-roster agent
