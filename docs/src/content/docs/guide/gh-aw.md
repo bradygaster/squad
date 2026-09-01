@@ -64,6 +64,11 @@ gh pr edit --add-reviewer @copilot
 gh pr checks --watch
 ```
 
+> Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skills
+> alongside the workflows, and it deliberately does not stage `.github/aw/logs/`.
+> Downloaded workflow logs are local diagnostic output — see [ignoring downloaded
+> logs](#open-the-bootstrap-pull-request) before you commit.
+
 After the bootstrap PR is reviewed and merged, open an issue in your repo and
 write `/squad cast` in the body or a comment. Squad analyzes your codebase,
 composes a team of specialist agents, and opens a second PR with the result.
@@ -134,6 +139,9 @@ The installed top-level workflow set is:
 - `squad-deps-worker.md` and `squad-deps-worker.lock.yml`
 - `squad-review.md` and `squad-review.lock.yml`
 
+`gh aw add` also installs the Squad skills under `.github/skills/`, which is why
+the bootstrap commit stages that path alongside the workflows.
+
 > **Branch note:** `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
 
 This registers the Squad workflow in your repository's agentic workflow
@@ -148,6 +156,15 @@ On a clean repository, `gh aw add` reports these expected safe-update changes:
 
 - Restricted secrets: `SQUAD_GITHUB_APP_PRIVATE_KEY` and `SQUAD_GITHUB_TOKEN`
 - Action: `bradygaster/squad/.github/actions/squad-init`
+
+> **These are referenced names, not prerequisites.** `gh aw add` lists the secrets
+> the workflows *reference* so you can approve that surface — it is not asking you
+> to supply them. Both secrets are optional, they need not exist, and you do not
+> need to create either one to enlist a repository. Single-repo activation runs on
+> the built-in `github.token`. Configure these only for cross-repo access or
+> elevated permissions — see [enhanced permissions with a GitHub
+> App](#optional-enhanced-permissions-with-a-github-app) and [PAT
+> fallback](#optional-pat-fallback).
 
 Review the report before approving it. If it contains only those documented
 entries, complete the first-install approval with:
@@ -683,12 +700,110 @@ After this, the plan is ready to activate.
 /squad plan activate
 ```
 
-Creates GitHub issues from the accepted plan with proper labels (`squad`,
+Creates GitHub issues from the accepted plan with Squad labels (`squad`,
 `squad:{agent-name}`), acceptance criteria, dependency references, and phase
 assignments. Flat plans create one child issue per planned task directly under
 the originating issue; they do not add a duplicate epic. Dependencies use native
 `blockedBy` edges when the installed safe-output tool supports them, otherwise
 they remain explicit `Depends On` references in each issue body.
+
+#### Labels are created automatically
+
+You do not need to pre-create any label. Activation applies labels through the
+`add-labels` safe output, which is configured with `allowed: [squad, "squad:*"]`
+and `create-if-missing: true`, so `squad` and each `squad:{agent}` label is
+created the first time a run needs it. A fresh repository with zero Squad labels
+requires no manual label setup.
+
+A label created this way receives gh-aw's deterministic color and an **empty
+description**. That is expected on a fresh repository, not a failure. Labels that
+already exist are left as they are, and re-applying a label on a rerun is a no-op.
+
+#### "Accepted" in an activation summary does not mean "applied"
+
+Activation summaries report **accepted operations**, and that word is exact.
+Issue creation and labeling are gh-aw *safe outputs*: during the agent's turn the
+run can only queue an operation against a target and observe that it was
+accepted. gh-aw applies the queued operations afterward, in a separate post-agent
+job. Nothing in the run reads labels back from GitHub.
+
+So a correct summary says a label operation was **accepted**. It must not claim a
+label was applied, landed, verified, confirmed, or checked on the issue.
+
+This vocabulary exists for a concrete reason. Labels do not ride along with issue
+creation: `create-issue`'s own `labels:` field cannot create a missing label —
+GitHub silently drops label names the repository does not already have instead of
+creating them — so it is never evidence that a label landed. Labels therefore
+travel as separate `add_labels` calls, and "accepted" is the strongest thing the
+run can truthfully say about one.
+
+Practical consequence: an accepted summary is strong evidence, not proof. To
+confirm what actually landed, read the issues themselves:
+
+```bash
+gh issue list --label squad --json number,title,labels
+```
+
+#### Activation is capped, and shortfalls are reported
+
+A single activation run is bounded by two safe-output caps:
+
+| Safe output | Cap | Covers |
+|-------------|-----|--------|
+| `create-issue` | 75 | Issues created in one run |
+| `add-labels` | 110 | Label operations in one run |
+
+Two different shortfalls are checked separately, and they are not
+interchangeable — the trigger, the wording, and the remedy differ:
+
+| Shortfall | Trigger | What the report says |
+|-----------|---------|----------------------|
+| Issues not created | Created count is below the plan's declared total | `N of M issues created so far — rerun the identical activation command to continue.` |
+| Labels not applied | An activated issue had no `add_labels` call accepted | `{labeled} of {activated} activated issues had a label operation accepted` |
+
+Either one calls `report_incomplete`. **This does not fail the run.** The workflow
+run still concludes `success`, so `gh run view --json conclusion` is not a way to
+detect a truncated activation. The durable, user-visible signal is a tracking
+issue in your repository titled `[aw] ... reported incomplete result`, which
+gh-aw opens or updates:
+
+```bash
+gh issue list --search '"reported incomplete result" in:title' --state all
+```
+
+If a cap was actually reached, the report names which cap and lists the work
+items that did not fit, and recommends `/squad plan activate phase {N}` to
+continue in smaller batches. A cap is named only when it was *observed* — the
+workflow forbids offering a cap as a guessed explanation, so an incomplete report
+will not always attribute the shortfall to one.
+
+Work items created in the same run are identified in that report by the temporary
+IDs the run minted (`#aw_epic{K}`, `#aw_task{N}`, `#aw_wi{N}`) rather than by
+issue number, because at that point creation is still deferred and no real number
+exists yet.
+
+Do not read a green run as a complete activation. Check for that tracking issue.
+
+#### Verifying an activation: the bindings block
+
+Every phase and full activation artifact includes an `Activation bindings:`
+fenced JSON block — one entry per created or recognized task, built only from
+accepted operations. This is the most directly checkable surface Squad emits: a
+deterministic post-activation checker compares those bindings against the labels
+actually present on the issues.
+
+You can do the same check by hand — read the bindings out of the activation
+comment, then compare them against reality:
+
+```bash
+gh issue list --label squad --json number,title,labels
+```
+
+Where an owner did not become a `squad:{agent}` label — a multi-owner epic, or an
+owner matching no roster name — the summary carries a required `Non-roster agent
+values` heading naming the value and the issue, and the matching binding records
+an omission reason. An omission is always reported explicitly, never left for you
+to infer.
 
 ### Incremental phase acceptance
 
@@ -1186,7 +1301,9 @@ can leave the installed sources at a different revision than the SHA you intend.
 | `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile --strict`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
-| Plan activation creates fewer issues than the accepted plan declares | The run ended before every missing issue was created | Re-run the identical activation command — title matching resumes without duplicating existing issues |
+| Plan activation creates fewer issues than the accepted plan declares | The run ended early, or it reached the `create-issue` (75) or `add-labels` (110) safe-output cap | Look for an `[aw] ... reported incomplete result` tracking issue — it names the shortfall and, when a cap was reached, which cap and what did not fit. Re-run the identical activation command (title matching resumes without duplicating existing issues), or activate one phase at a time with `/squad plan activate phase {N}` |
+| Activation run is green but some issues are missing or unlabeled | `report_incomplete` records truncation without failing the run | A green run is not proof of a complete activation. Check for the `[aw] ... reported incomplete result` tracking issue, then verify with `gh issue list --label squad` |
+| A Squad label has no description and an unexpected color | It was auto-created on a fresh repo by `create-if-missing` | Expected, not a failure. Edit the label if you want a description or a specific color |
 | `/squad implement` cannot create a PR | Actions is not allowed to create pull requests | Enable **Allow GitHub Actions to create and approve pull requests** in repository Actions settings |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
 | Standalone activation fails before init | `SQUAD_CLI_VERSION` is invalid or its release assets are unavailable | Correct the variable or select a published release, then use **Re-run failed jobs** |
