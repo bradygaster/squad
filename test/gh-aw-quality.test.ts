@@ -885,21 +885,28 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // but not enough: combined source measures 164.8 KB after both changes, still over
   // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
   //
-  // Raised 170 → 173 KB by #1963, which makes both activation paths report actual
+  // Raised 170 -> 173 KB by #1963, which makes both activation paths report actual
   // accepted label-operation outcomes and fixes the `Activation bindings:` JSON to carry
   // quoted temporary-ID references. Nearly all of that prose lands inside the
   // `squad-plan-activate` and `squad-plan-accept` inline skill blocks; only the shared
   // ontology's binding contract is ambient, and "keeps the ambient prompt under 40 KB"
-  // still passes at ~32 KB — again the condition above that makes a raise legitimate.
+  // still passes at ~32 KB - the condition above that makes a raise legitimate.
   //
-  // Measured after rebasing onto dev (i.e. with #1966 already squash-merged, so this
-  // counts #1963's bytes only): 175 519 B = 171.4 KB. 172 KB would leave 609 B of
-  // headroom, which reproduces the near-zero-margin failure mode described above; 173 KB
-  // leaves 1 633 B. Deliberately not set higher: #1964 is projected to push the combined
-  // total to ~180 002 B = 175.8 KB, but it has not merged, and pre-raising this guard for
-  // an unmerged branch would hide growth that has not happened yet. #1964 raises it when
-  // it lands, against its own measurement.
-  const SOURCE_GROWTH_BUDGET_KB = 173;
+  // Raised 173 -> 177 KB by #1961, which bounds activation label capacity and makes
+  // truncation explicit. #1963 deliberately did not pre-raise for this branch and
+  // projected it would land at ~180 002 B; measured on the actual merge of #1961 into
+  // dev (with #1963 already merged) the combined authored source is 180 036 B = 175.8 KB,
+  // within 34 bytes of that projection.
+  //
+  // 176 KB would pass by only 188 bytes, which reproduces the near-zero-margin failure
+  // mode this guard already hit once: before the 160 -> 170 raise it sat 21-28 bytes from
+  // its ceiling, so two independently compliant PRs could not coexist and correct changes
+  // failed on byte count alone. 177 KB leaves 1 212 bytes, so the guard still bites on
+  // genuine growth without re-creating a threshold the next change trips by accident.
+  // All of #1961's growth is inside the `squad-plan-activate` inline skill, which the
+  // extractor strips from the ambient prompt and loads on demand; ambient re-measured at
+  // 32 KB against 40 KB on the merged tree.
+  const SOURCE_GROWTH_BUDGET_KB = 177;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
