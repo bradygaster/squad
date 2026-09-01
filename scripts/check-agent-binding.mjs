@@ -3,9 +3,39 @@ import { pathToFileURL } from 'node:url';
 
 const ACTIVATION_ARTIFACTS = new Set(['activated', 'phases-activated']);
 const VALID_OMISSIONS = new Set(['multi-owner', 'non-roster']);
+const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
+const RESOLVED_REFERENCE = /^#?(\d+)$/;
 
 function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+/**
+ * Resolve a binding issue reference to a real issue number.
+ *
+ * Activation writes these as quoted `#`-prefixed strings so gh-aw's temporary-ID
+ * substitution — a plain text replacement that does not skip fenced code blocks and keeps
+ * the `#` — yields valid JSON. A reference the runtime resolved arrives as `"#42"`; one it
+ * could not resolve arrives verbatim as `"#aw_task3"`, which means that `create-issue`
+ * never landed. Fail closed on the latter rather than skipping the binding. Bare integers
+ * stay accepted so artifacts written before this contract still validate.
+ */
+function resolveIssueReference(value, description, invalidMessage) {
+  if (Number.isInteger(value)) {
+    if (value < 1) throw new Error(invalidMessage);
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (TEMPORARY_ID.test(trimmed)) {
+      throw new Error(
+        `${description} "${trimmed}" is an unresolved temporary ID — the referenced issue was never created`,
+      );
+    }
+    const resolved = RESOLVED_REFERENCE.exec(trimmed);
+    if (resolved && Number(resolved[1]) >= 1) return Number(resolved[1]);
+  }
+  throw new Error(invalidMessage);
 }
 
 export function parseStructuredData(comment) {
@@ -82,26 +112,29 @@ function validateReportedOutcome(binding, prefix, expected) {
 }
 
 function validateTaskBinding(binding, roster) {
-  if (!binding || typeof binding !== 'object' || !Number.isInteger(binding.issue) || binding.issue < 1) {
+  if (!binding || typeof binding !== 'object') {
     throw new Error('binding has no valid issue number');
   }
-  if (!Number.isInteger(binding.epic_issue) || binding.epic_issue < 1) {
-    throw new Error(`issue #${binding.issue}: missing epic issue linkage`);
-  }
-  if (!normalize(binding.task)) throw new Error(`issue #${binding.issue}: binding has no plan task number`);
-  if (!normalize(binding.epic)) throw new Error(`issue #${binding.issue}: missing epic linkage`);
+  const issue = resolveIssueReference(binding.issue, 'binding issue', 'binding has no valid issue number');
+  const epicIssue = resolveIssueReference(
+    binding.epic_issue,
+    `issue #${issue}: epic_issue`,
+    `issue #${issue}: missing epic issue linkage`,
+  );
+  if (!normalize(binding.task)) throw new Error(`issue #${issue}: binding has no plan task number`);
+  if (!normalize(binding.epic)) throw new Error(`issue #${issue}: missing epic linkage`);
   const agent = normalize(binding.agent);
-  if (!agent) throw new Error(`issue #${binding.issue}: binding has no agent`);
+  if (!agent) throw new Error(`issue #${issue}: binding has no agent`);
   if (!Array.isArray(binding.epic_agents) || binding.epic_agents.length === 0) {
-    throw new Error(`issue #${binding.issue}: epic_agents must be a non-empty array`);
+    throw new Error(`issue #${issue}: epic_agents must be a non-empty array`);
   }
   const epicAgents = [...new Set(binding.epic_agents.map(normalize).filter(Boolean))].sort();
   if (epicAgents.length !== binding.epic_agents.length || !epicAgents.includes(agent)) {
-    throw new Error(`issue #${binding.issue}: epic_agents are empty, duplicated, or exclude the task agent`);
+    throw new Error(`issue #${issue}: epic_agents are empty, duplicated, or exclude the task agent`);
   }
   const expected = expectedLabel(agent, roster);
-  validateReportedOutcome(binding, '', expected);
-  return { epicAgents, expected };
+  validateReportedOutcome({ ...binding, issue }, '', expected);
+  return { issue, epicIssue, epicAgents, expected };
 }
 
 function validateActualLabels(issue, labels, expected) {
@@ -139,32 +172,33 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
   const seen = new Set();
   const epics = new Map();
   const epicIssuesByIdentifier = new Map();
-  for (const binding of artifact.bindings) {
-    const { epicAgents, expected } = validateTaskBinding(binding, roster);
-    if (seen.has(binding.issue)) throw new Error(`issue #${binding.issue}: duplicate binding`);
-    seen.add(binding.issue);
-    validateActualLabels(binding.issue, labelsByIssue.get(binding.issue), expected);
+  for (const rawBinding of artifact.bindings) {
+    const { issue, epicIssue, epicAgents, expected } = validateTaskBinding(rawBinding, roster);
+    const binding = { ...rawBinding, issue, epic_issue: epicIssue };
+    if (seen.has(issue)) throw new Error(`issue #${issue}: duplicate binding`);
+    seen.add(issue);
+    validateActualLabels(issue, labelsByIssue.get(issue), expected);
 
     const epicIdentifier = normalize(binding.epic);
     const priorEpicIssue = epicIssuesByIdentifier.get(epicIdentifier);
-    if (priorEpicIssue !== undefined && priorEpicIssue !== binding.epic_issue) {
+    if (priorEpicIssue !== undefined && priorEpicIssue !== epicIssue) {
       throw new Error(`epic ${epicIdentifier}: maps to multiple epic issue numbers`);
     }
-    epicIssuesByIdentifier.set(epicIdentifier, binding.epic_issue);
+    epicIssuesByIdentifier.set(epicIdentifier, epicIssue);
 
-    const epic = epics.get(binding.epic_issue) ?? {
+    const epic = epics.get(epicIssue) ?? {
       epic: epicIdentifier,
       agents: epicAgents,
       bindings: [],
     };
     if (epic.epic !== epicIdentifier) {
-      throw new Error(`epic issue #${binding.epic_issue}: conflicting epic identifiers`);
+      throw new Error(`epic issue #${epicIssue}: conflicting epic identifiers`);
     }
     if (epic.agents.join('\0') !== epicAgents.join('\0')) {
-      throw new Error(`epic issue #${binding.epic_issue}: inconsistent epic_agents sets`);
+      throw new Error(`epic issue #${epicIssue}: inconsistent epic_agents sets`);
     }
     epic.bindings.push(binding);
-    epics.set(binding.epic_issue, epic);
+    epics.set(epicIssue, epic);
   }
 
   for (const [epicIssue, epic] of epics) {

@@ -1351,8 +1351,9 @@ semantics, so this is safe under Step 1a's idempotency path. Labels must have
 descriptions and intentional colors when they already exist; a label auto-provisioned
 by `create-if-missing` on a fresh repository instead receives gh-aw's deterministic
 color and an empty description — that is expected, not a failure, and must not be
-reported as one. Report only the labels a successful `add_labels` call actually
-applied; never a label that was skipped, deferred, or merely intended.
+reported as one. Report only the labels an accepted `add_labels` call carried for that
+same issue; never a label that was skipped, deferred, or merely intended, and never one
+attributed to `create-issue` (see Step 4, Label reporting).
 
 ##### Step 3: Preserve Dependencies
 
@@ -1377,11 +1378,26 @@ and whether dependencies use native edges or the body-reference fallback. Never
 claim an epic, phase issue, sub-issue relationship, or native dependency edge
 that was not created.
 
+**Label reporting — accepted operations only.** Identical semantics to
+`squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
+an accepted `add_labels` operation targeting that issue. Report `squad:{owner}` only when
+this run made an `add_labels` call carrying that label and targeting that same issue — by
+its own `temporary_id`, or by its verified real number for a reused issue. A successful
+`create-issue` is **not** evidence: its `labels:` field cannot land a label on a fresh
+repository, so no summary may say a label was carried by, applied by, or included in issue
+creation. Never report a label merely computed, intended, skipped, or deferred, never borrow
+another item's label operation, and never report an accepted operation as an omission.
+
+`add_labels` is a safe output: this run knows only that the call was accepted for a specific
+target, never the GitHub API result. State it at that strength — never write that a label
+was verified, confirmed, or checked on the issue, because nothing here reads labels back.
+
 Whenever an accepted `Owner` did not become a `squad:{owner}` label — a multi-owner
 phase issue, or a value certified by neither the roster nor `@copilot` — a
 `Non-roster agent values` heading is **required** in this summary, naming the value
 and the issue it applied to. Omitting the label while omitting the heading reports a
-clean run that did not happen.
+clean run that did not happen. Conversely, never emit the heading for an owner that
+*did* become an accepted label — that manufactures a defect that did not occur.
 
 ##### Step 5: Update Fast-Path Lifecycle
 
@@ -1901,12 +1917,16 @@ Step 2e, not the cap machinery, is what notices.
    `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
    epic, or the previous call. Verify per issue; membership across the run is not evidence.
 8. **Report what was applied, not what was intended.** The activation summary may name a
-   `squad:{agent}` label for an issue only after that issue's `create-issue` call returned
-   successfully carrying it. Never state a label that was skipped, omitted, deferred, or
-   assumed. Whenever an `Agent` value did not become a label — multi-owner epic, uncertified
-   name, unavailable label — the `Non-roster agent values` heading is **required**, and must
-   name the value and the issue it applied to. Omitting the heading while omitting the label
-   reports a clean run that did not happen.
+   `squad:{agent}` label for an issue only after an `add_labels` call carrying that label
+   was accepted for that same issue — targeted by its own `temporary_id`, or by its verified
+   real number for a reused issue. A successful `create-issue` is **not** evidence: its
+   `labels:` field cannot land a label on a fresh repository, so a label is never "carried
+   by" issue creation. Never state a label that was skipped, omitted, deferred, or assumed,
+   and never report an accepted label operation as an omission. Whenever an `Agent` value did
+   not become a label — multi-owner epic, uncertified name, unavailable label — the
+   `Non-roster agent values` heading is **required**, and must name the value and the issue
+   it applied to. Omitting the heading while omitting the label reports a clean run that did
+   not happen. See Step 4's Label reporting section for the full contract.
 
 **Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
 `create-if-missing: true`) auto-creates `squad` and any `squad:{agent}` label the first
@@ -1999,9 +2019,31 @@ activation over edge creation.
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from successful `create-issue` results. Emit one object per created/recognized task:
+Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Emit one object per created/recognized task:
 
-`{"task":"{plan # cell}","issue":{created task issue number},"epic":"{Epic cell}","epic_issue":{created epic issue number},"agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{lowercased Agent cell}","epic_label":"squad:{sole lowercased epic task agent}"}`. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
+`{"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{lowercased Agent cell}","epic_label":"squad:{sole lowercased epic task agent}"}`. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
+
+###### Issue references in bindings — quoted, never bare
+
+`issue` and `epic_issue` are **JSON strings**, never bare numbers, and never a real number
+for an issue this run created.
+
+- **Created this run:** that item's own `temporary_id`, quoted — `"issue":"#aw_task{N}"`,
+  `"epic_issue":"#aw_epic{K}"`. gh-aw rewrites an `#aw_…` reference in a comment body to
+  `#{real number}` once the issue exists, so the posted artifact carries the real number
+  without this run predicting one.
+- **Reused or pre-existing** (Step 1 idempotent rerun, dedup-by-title): its verified real
+  number in the same quoted form — `"issue":"#123"`. One shape covers both.
+
+**The quoting is load-bearing.** gh-aw's substitution is a plain text replacement over the
+whole body — it does not skip fenced code blocks — and it keeps the `#`. Bare,
+`"issue":#aw_task1` becomes `"issue":#42`, which is invalid JSON and fails the whole block.
+Quoted, `"issue":"#aw_task1"` becomes `"issue":"#42"`, which parses. Never emit a bare
+`#aw_…`, a bare number, or a `{created task issue number}` placeholder in these two fields.
+
+An `#aw_…` surviving into the posted artifact was never resolved — that `create-issue` did
+not land. Leave it rather than repairing it by hand: the consumer fails closed on it, which
+is correct.
 
 For a multi-owner epic, omit `epic_label` and set `"epic_omission_reason":"multi-owner"` on each of its task bindings. For a task whose agent is not certified by TG-2, omit `label` and set `"omission_reason":"non-roster"`; if that task is the epic's sole owner, likewise omit `epic_label` and set `"epic_omission_reason":"non-roster"`. Never omit a created task from `bindings`, never infer an issue number, and never emit an empty array. The deterministic post-activation workflow treats missing, empty, malformed, or unresolved bindings as a failure. The safe-output schema deliberately uses one uniform task-binding shape because gh-aw's data schema dialect does not support conditional `if`/`then` or `allOf`; the checker enforces activation-only presence and cross-row epic consistency.
 
@@ -2010,6 +2052,40 @@ Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1"
 Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order + the `Activation bindings:` JSON array.
 
 Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}]}` with an "All Phases Activated" heading and the accumulated `Activation bindings:` JSON array.
+
+###### Label reporting — accepted operations only
+
+A label reaches an activated issue through exactly one route: an accepted `add_labels`
+operation targeting that issue. `create-issue`'s `labels:` field never lands a label this
+workflow can claim — it silently drops names the repository lacks — so it is never evidence.
+
+**The rule.** Report `squad:{agent}` for an issue only when this run made an `add_labels`
+call that carried that label and targeted that same issue — by its own `temporary_id`, or by
+its verified real number for a reused issue. Every `label` and `epic_label` in the bindings
+block, and every label named in the prose or issue tables, MUST trace to such a call.
+
+**Forbidden:** reporting a label because `create-issue` succeeded or its `labels:` field
+named it (a successful `create-issue` means an issue was requested — nothing more); reporting
+a label that was computed or intended but whose `add_labels` call was never made, was
+skipped, or was rejected; reporting a label from another item's `add_labels` call
+(per-issue correspondence holds exactly as in Label Pre-flight Step 7); and reporting an
+omission when that item's call was in fact made and accepted — a silent under-claim is as
+wrong as an over-claim.
+
+**What "accepted" means.** `add_labels` is a safe output: the call is accepted and queued
+this turn, and gh-aw applies it in the post-agent job. This run has evidence only that the
+operation was accepted *for a specific target*, never the GitHub API result. State it at
+that strength — never write that a label was "verified", "confirmed on the issue", or
+"checked", because nothing here reads labels back. The deterministic post-activation checker
+compares these bindings against the labels actually present; over-claiming defeats it.
+
+**Omission is reported, never inferred.** Whenever an `Agent` value did not become a
+`squad:{agent}` label — multi-owner epic, uncertified name, or a label operation not made or
+not accepted — the `Non-roster agent values` heading is **required**, naming the value and
+the issue it applied to, and the matching binding carries its `omission_reason` /
+`epic_omission_reason`. Applying bare `squad` while omitting the heading reports a clean run
+that did not happen. Conversely, never emit the heading for an owner that *did* become an
+accepted label — that manufactures a defect.
 
 ##### Step 5: Update Lifecycle
 
