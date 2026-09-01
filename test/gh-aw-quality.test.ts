@@ -918,7 +918,12 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // (Buffer.byteLength over squad.md + all imports, same sum this test performs);
   // 181 KB leaves 1 718 bytes of margin, comparable to the 1 212 the 177 raise
   // left, so the guard still bites on genuine growth.
-  const SOURCE_GROWTH_BUDGET_KB = 181;
+  //
+  // Raised 181 -> 183 KB by the Cast validator's deterministic disk-extraction and
+  // SHA-256 authentication command. That command is authored between marker comments
+  // inside the `squad-cast` inline skill in workflows/squad.md; gh-aw strips the full
+  // skill from the ambient prompt and loads it on demand.
+  const SOURCE_GROWTH_BUDGET_KB = 183;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
