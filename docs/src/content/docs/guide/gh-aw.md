@@ -715,6 +715,13 @@ and `create-if-missing: true`, so `squad` and each `squad:{agent}` label is
 created the first time a run needs it. A fresh repository with zero Squad labels
 requires no manual label setup.
 
+> **Two names, one operation.** `add-labels` (hyphenated) is the *configuration
+> key* in the workflow's `safe-outputs` block — that is the spelling to search for
+> in `squad.md` and the one the caps below apply to. `add_labels` (underscored) is
+> the *tool call* the agent makes at run time, and it is the spelling that appears
+> in activation summaries and incomplete reports. They refer to the same
+> operation; this page uses whichever form matches the surface being described.
+
 A label created this way receives gh-aw's deterministic color and an **empty
 description**. That is expected on a fresh repository, not a failure. Labels that
 already exist are left as they are, and re-applying a label on a rerun is a no-op.
