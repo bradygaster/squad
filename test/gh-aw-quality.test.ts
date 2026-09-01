@@ -898,15 +898,14 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // dev (with #1963 already merged) the combined authored source is 180 036 B = 175.8 KB,
   // within 34 bytes of that projection.
   //
-  // 176 KB would pass by only 188 bytes, which reproduces the near-zero-margin failure
-  // mode this guard already hit once: before the 160 -> 170 raise it sat 21-28 bytes from
-  // its ceiling, so two independently compliant PRs could not coexist and correct changes
-  // failed on byte count alone. 177 KB leaves 1 212 bytes, so the guard still bites on
-  // genuine growth without re-creating a threshold the next change trips by accident.
-  // All of #1961's growth is inside the `squad-plan-activate` inline skill, which the
-  // extractor strips from the ambient prompt and loads on demand; ambient re-measured at
-  // 32 KB against 40 KB on the merged tree.
-  const SOURCE_GROWTH_BUDGET_KB = 177;
+  // This guard previously sat 21-28 bytes from its ceiling, so two independently compliant
+  // PRs could not coexist and correct changes failed on byte count alone. 179 KB leaves
+  // roughly 1.5 KB on this tree, so it still bites on genuine growth without re-creating a
+  // threshold the next change trips by accident.
+  // All of #1961's growth and the Cast validator's deterministic disk-extraction command
+  // are inside inline skills, which the extractor strips from the ambient prompt and loads
+  // on demand; ambient re-measured at 32 KB against 40 KB on the merged tree.
+  const SOURCE_GROWTH_BUDGET_KB = 179;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {

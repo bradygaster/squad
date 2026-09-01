@@ -811,9 +811,53 @@ its charter from scratch.
 
 Natural-language review is not the gate. Immediately before requesting safe
 output, create `$RUNNER_TEMP/squad-cast-payload.json` as a JSON array containing
-every concrete Step 6 payload path, invoke the `skill` tool on
-`squad-cast-validator`, then run the exact command it returns. Do not rewrite,
-shorten, or substitute the validator.
+every concrete Step 6 payload path, then run the exact command below. Do not
+invoke or load `squad-cast-validator` into model context, and do not rewrite,
+shorten, or substitute this command. The inline skill is already materialized
+on disk by gh-aw before the agent runs.
+
+<!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->
+```bash
+set -euo pipefail
+
+validator_matches="${RUNNER_TEMP:?}/squad-cast-validator-matches.txt"
+find "${GITHUB_WORKSPACE}" -name "SKILL.md" -maxdepth 6 \
+  -path "*/squad-cast-validator/SKILL.md" -print > "$validator_matches"
+validator_count="$(wc -l < "$validator_matches" | tr -d '[:space:]')"
+case "$validator_count" in
+  0) echo "Cast validator skill not found under GITHUB_WORKSPACE." >&2; exit 1 ;;
+  1) ;;
+  *) printf 'Expected exactly one Cast validator skill, found %s:\n' "$validator_count" >&2
+     sed 's/^/  /' "$validator_matches" >&2
+     exit 1 ;;
+esac
+validator_skill="$(sed -n '1p' "$validator_matches")"
+validator_script="${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
+awk '
+  $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->" { if (inside || seen) exit 41; inside = seen = 1; next }
+  $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_END -->" { if (!inside || ended) exit 42; inside = 0; ended = 1; next }
+  inside { print }
+  END { if (!seen || inside || !ended) exit 43 }
+' "$validator_skill" \
+  | tr -d '\r\n' \
+  | base64 --decode \
+  | gzip --decompress \
+  > "$validator_script"
+
+validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
+node --check "$validator_script"
+validator_output="$(
+  node "$validator_script" \
+    --root "$PWD" \
+    --payload "${RUNNER_TEMP:?}/squad-cast-payload.json"
+)"
+printf '%s\n' "$validator_output"
+if [ "$validator_output" != "Cast validation passed." ]; then
+  printf 'Cast validator did not emit the exact authorization output: <%s>\n' "$validator_output" >&2
+  exit 1
+fi
+```
+<!-- SQUAD:CAST-VALIDATOR-COMMAND:END -->
 
 The validator deterministically parses the final registry, routing, team, and
 coordinator; compares active IDs, names, charter directories, and routing;
@@ -823,7 +867,8 @@ case-sensitively with the explicit payload and final tree; and rejects
 inactive/support roles, standalone templates/state, non-GH-AW clients, internal
 source paths, globs, placeholders, and fictional/inactive sample labels.
 
-Only a zero exit status with `Cast validation passed.` authorizes the
+Only a zero exit status from this command with exact output
+`Cast validation passed.` authorizes the
 `create-pull-request` request. If the command is unavailable, cannot be
 materialized exactly, or exits nonzero, post one actionable `add-comment`
 containing its complete failure list and telling the user to rerun
