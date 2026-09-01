@@ -2625,7 +2625,7 @@ describe('gh-aw: Cast PR closes its originating issue on merge (#1974)', () => {
   it('explicitly excludes the Auto-Cast Pivot (TG-3), which forbids closing keywords', () => {
     expect(step8).toMatch(/not the Auto-Cast Pivot in TG-3, which forbids closing keywords/i);
     // TG-3's own prohibition (asserted elsewhere) must still be present and unweakened.
-    expect(cast === squadContent ? squadContent : squadContent).toMatch(
+    expect(squadContent).toMatch(
       /MUST NOT contain.*Fixes.*Closes.*Resolves/i,
     );
   });
