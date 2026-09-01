@@ -129,6 +129,14 @@ On a clean repo, `gh aw add` reports these expected safe updates and **nothing e
 - Action: **`bradygaster/squad/.github/actions/squad-init`**
 <!-- allowlist-end -->
 
+> **These are referenced names, not prerequisites.** `gh aw add` lists the secrets
+> the workflows *reference* so you can approve that surface — it is not asking you
+> to supply them. Both secrets are optional, they need not exist, and neither is
+> required to enlist a repository. Single-repo activation runs on the built-in
+> `github.token`. Configure them only for cross-repo access or elevated
+> permissions. Auth precedence: GitHub App token, then the PAT, then
+> `github.token`. Never block an enlistment waiting for a credential.
+
 If — and only if — the report contains exactly those documented entries, complete
 the one-time approval:
 
