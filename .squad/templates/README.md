@@ -45,7 +45,8 @@ After the agent's own files are seeded, these templates are not read again at ru
 | File | Used to seed |
 |------|-------------|
 | `charter.md` | New agent `charter.md` when a team member is added |
-| `copilot-instructions.md` | `.github/copilot-instructions.md` for the repo || `fact-checker-charter.md` | `agents/fact-checker/charter.md` |
+| `copilot-instructions.md` | `.github/copilot-instructions.md` for the repo |
+| `fact-checker-charter.md` | `agents/fact-checker/charter.md` |
 | `fact-checker-policy.md` | `agents/fact-checker/policy.md` (Fact Checker methodology) |
 | `history.md` | New agent `history.md` when a team member is added |
 | `rai-charter.md` | `agents/Rai/charter.md` |
@@ -69,7 +70,7 @@ wholesale — each has a distinct consumer.
 
 | Subtree | Kind | Consumer |
 |---------|------|----------|
-| `casting/` | Runtime input | Custom-universe character lists, read during Init Mode casting when a user names a universe that has no built-in list. See `casting-reference.md` for the casting algorithm. Deleting it removes those name pools. |
+| `casting/` | Shipped data, no known consumer | Custom-universe character lists. No shipped template or skill references this directory, so nothing is known to read it at runtime — see #1972, which decides whether a consumer was lost or the directory is vestigial. Treat as unclassified: do not delete pending that outcome. `casting-reference.md` documents the casting algorithm itself. |
 | `identity/` | Bootstrap template | Seeds `.squad/identity/now.md` and `wisdom.md`. Registered in `TEMPLATE_MANIFEST` under `identity/`. |
 | `scripts/` | User copy-source | Documented for users to copy from — `cp -r .squad/templates/scripts/notes/ scripts/notes/` (see the state-backends doc). |
 | `skills/` | Bootstrap template | Source for skills the `TEMPLATE_MANIFEST` installs **to `.github/skills/`** (destinations are `../.github/skills/...`). The installed copy under `.github/skills/` is what agents load. |
