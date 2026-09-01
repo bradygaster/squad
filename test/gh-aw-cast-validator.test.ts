@@ -172,8 +172,8 @@ function sha256(content: string | Buffer): string {
 function replaceValidatorPayload(source: string, program: string): string {
   const encoded = gzipSync(Buffer.from(program)).toString('base64');
   return source.replace(
-    /(?<=<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n)[A-Za-z0-9+/\r\n=]+(?=\r?\n<!-- SQUAD_CAST_VALIDATOR_B64_END -->)/,
-    encoded,
+    /(<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n)[A-Za-z0-9+/\r\n=]+(\r?\n<!-- SQUAD_CAST_VALIDATOR_B64_END -->)/,
+    `$1${encoded}$2`,
   );
 }
 
