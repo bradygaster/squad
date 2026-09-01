@@ -1276,23 +1276,83 @@ Do not create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
 accepted plan row. Freeze a binding for each task number containing that row's
-original `Owner` and `Depends On` values. If any `Owner` does not match a certified
-active roster name, stop before mutation and require `/squad plan revise`; never
-substitute, re-route, or fall back to another identity during acceptance.
+original `Owner` and `Depends On` values. If TG-2 emitted a `ROSTER_UNREADABLE:`
+line, stop before mutation and report that named reason. An individual `Owner`
+matching no certified active roster name and not `@copilot` does **not** stop the
+run — matching `squad-plan-activate`, create that issue with the base `squad` label
+only, omit the owner label, continue, and record the value under
+`Non-roster agent values` (Step 4). Never substitute, re-route, or fall back to
+another identity during acceptance.
 
 For each work item, `create-issue`:
 - Title: work item title
 - Temporary ID: `temporary_id` is required on every `create-issue` call (`require-temporary-id: true`). Mint one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. Must match `^#?aw_[A-Za-z0-9_]{3,12}$` and be unique in this run — gh-aw silently lets a duplicate's last writer own the mapping.
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not lowercased verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat). For a phase issue created in this run, pass its `#aw_ph{N}` temporary ID — `create-issue` resolves it. The flat-plan root is the triggering issue's own real number. Never guess a number for an issue this run created.
 - Size: set Project field if available, else body `**Size:**` line
+- Label application: in the same turn as this `create-issue` call, call `add_labels` with `item_number` set to this item's own temporary ID and this item's computed label set (see Fast-Path Label Provisioning). `create-if-missing` provisions `squad`/`squad:{owner}` on a fresh repository automatically.
 
 Copy every frozen `Depends On` value into the created issue body. Cross-phase
 deps: look up real issue numbers from prior acceptance comments without changing
 the declared task dependencies.
 
-Create in dependency order. Labels must have descriptions and colors.
+Create in dependency order.
+
+##### Fast-Path Label Provisioning
+
+`create-issue`'s own `labels:` field cannot provision a label: GitHub silently drops
+label names that do not already exist in the target repository instead of creating
+them, so on a fresh repository every fast-path issue would come out unlabeled. The
+`add-labels` safe output (`allowed: [squad, "squad:*"]`, `create-if-missing: true`) is
+the only operation here that creates a missing label, and it is the same one
+`squad-plan-activate` uses — both activation paths provision labels identically, so
+`/squad activate` needs no manual label setup on a fresh repository.
+
+In the same turn as each `create-issue` call in Step 2, call `add_labels` with:
+
+- `item_number` — that same `create-issue` call's `temporary_id` (`#aw_ph{N}` for a
+  phase issue, `#aw_wi{N}` for a work item). For an issue this run did **not** create
+  — one recognized by Step 1a's idempotency check or matched by title — pass its
+  verified real number instead; a temporary ID maps only issues this run created.
+- `labels` — exactly the set computed below for that one issue, and nothing else.
+
+**Explicit targeting is mandatory.** Every `add_labels` call MUST pass `item_number`.
+Omitting it does not fail — it silently applies the labels to the **triggering intent
+issue**, branding the user's own request with an activated item's owner label. Never
+reuse another item's temporary ID, and never emit `add_labels` for an item whose
+`create-issue` call was not made in this run. `create-issue` returns no real issue
+number during this run, so never predict or infer one and never pause between the two
+calls waiting for one; gh-aw resolves `add_labels` after the `create-issue` that
+minted the ID, so `create-issue` first and `add_labels` immediately after is the
+supported order.
+
+**Label set, per issue:**
+
+- Work item: `squad`, plus `squad:{owner}` derived from that row's own frozen
+  certified `Owner`, lowercased. `@copilot` maps to the existing `squad:copilot`
+  routing label — never `squad:@copilot`. Re-read each row's frozen `Owner`; never
+  inherit the phase issue's owner or carry the previous row's value forward.
+- Phase issue: `squad`, plus `squad:{owner}` only when every accepted row in that
+  phase names one and the same owner. Two or more distinct owners is a multi-owner
+  phase: apply only `squad`, choose none of them, and record it under a
+  `Non-roster agent values` heading in the Step 4 summary.
+- The triggering intent issue is never an `add_labels` target. It is the flat-plan
+  parent, not an activated item, and receives no owner label from this run.
+
+An `Owner` that is neither a certified roster name nor `@copilot` never becomes a
+`squad:{owner}` label: send `squad` alone for that issue and record the value under
+`Non-roster agent values` in the Step 4 summary — the same omit-and-record contract
+`squad-plan-activate` uses, so an uncertified value can reach `add_labels` only as
+the base `squad` label.
+
+Re-applying an already-present label on a rerun is a no-op under add-only merge
+semantics, so this is safe under Step 1a's idempotency path. Labels must have
+descriptions and intentional colors when they already exist; a label auto-provisioned
+by `create-if-missing` on a fresh repository instead receives gh-aw's deterministic
+color and an empty description — that is expected, not a failure, and must not be
+reported as one. Report only the labels a successful `add_labels` call actually
+applied; never a label that was skipped, deferred, or merely intended.
 
 ##### Step 3: Preserve Dependencies
 
@@ -1316,6 +1376,12 @@ Report the exact number of created task issues, their actual parent hierarchy,
 and whether dependencies use native edges or the body-reference fallback. Never
 claim an epic, phase issue, sub-issue relationship, or native dependency edge
 that was not created.
+
+Whenever an accepted `Owner` did not become a `squad:{owner}` label — a multi-owner
+phase issue, or a value certified by neither the roster nor `@copilot` — a
+`Non-roster agent values` heading is **required** in this summary, naming the value
+and the issue it applied to. Omitting the label while omitting the heading reports a
+clean run that did not happen.
 
 ##### Step 5: Update Fast-Path Lifecycle
 

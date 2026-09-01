@@ -877,18 +877,27 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // regression guard: it keeps unbounded authoring growth visible without pretending
   // authored bytes are delivered bytes.
   //
-  // 160 -> 168 (#1961, stacked on #1965). Raised per this guard's own stated criterion,
-  // not to make a red test green. Evidence:
+  // Raised 160 → 170 KB by #1959. The fast-path label-provisioning contract it adds
+  // lives entirely inside the `squad-plan-accept` inline `## skill:` block, so gh-aw
+  // strips it from the ambient prompt — "keeps the ambient prompt under 40 KB" is
+  // unaffected and still passing, which is exactly the condition the comment above
+  // names as making a raise legitimate. #1962's follow-up trims bought some room back
+  // but not enough: combined source measures 164.8 KB after both changes, still over
+  // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
+  //
+  // Raised 170 → 172 KB by #1961, on the same stated criterion and measured, not
+  // guessed. Combined source on this branch is 173 241 B (169.2 KB) once #1961's
+  // capacity contract sits on top of #1959/#1962. Evidence:
   //   - Ambient prompt (the canonical budget) is 32.0 KB against 40 KB — healthy.
-  //   - All of the growth is inside the `squad-plan-activate` inline skill, which the
-  //     extractor strips from the ambient prompt and loads on demand.
-  //   - Neither contributing PR was individually over: #1965 alone measured 163 812 B
-  //     and #1961 alone 163 819 B, against the old 163 840 B ceiling — 28 and 21 bytes
-  //     of headroom. The old value left less headroom than a single paragraph, so two
-  //     independently-compliant PRs could not coexist. That is a stale threshold, not
-  //     unbounded growth.
-  // 168 KB keeps ~3.6 KB of headroom, so the guard still bites on real growth.
-  const SOURCE_GROWTH_BUDGET_KB = 168;
+  //   - All of #1961's growth is inside the `squad-plan-activate` inline skill, which
+  //     the extractor strips from the ambient prompt and loads on demand.
+  // 170 would technically pass, but by only 839 bytes. That is the same failure mode
+  // this guard already hit once: before the 160 → 170 raise it sat 21-28 bytes from
+  // its ceiling, which is less headroom than a single paragraph, so two independently
+  // compliant PRs could not coexist and correct changes failed on byte count alone.
+  // 172 KB restores ~2.8 KB of real margin, so the guard still bites on genuine growth
+  // without re-creating a threshold that any next change trips by accident.
+  const SOURCE_GROWTH_BUDGET_KB = 172;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
