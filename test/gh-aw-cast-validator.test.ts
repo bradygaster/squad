@@ -239,6 +239,9 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(helperSource()).not.toMatch(/cat\s+<</);
     expect(workflow).not.toContain('invoke the `skill` tool on');
     expect(workflow).toContain('Do not\ninvoke or load `squad-cast-validator` into model context');
+    expect(command).toMatch(
+      /find "\$\{GITHUB_WORKSPACE\}" -maxdepth 6 -name "SKILL\.md"/,
+    );
     expect(command.indexOf('validator_expected_sha256=')).toBeLessThan(
       command.indexOf('node --check "$validator_script"'),
     );

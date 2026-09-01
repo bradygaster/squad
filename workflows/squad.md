@@ -823,7 +823,7 @@ set -euo pipefail
 cd "${GITHUB_WORKSPACE:?}"
 
 validator_matches="${RUNNER_TEMP:?}/squad-cast-validator-matches.txt"
-find "${GITHUB_WORKSPACE}" -name "SKILL.md" -maxdepth 6 \
+find "${GITHUB_WORKSPACE}" -maxdepth 6 -name "SKILL.md" \
   -path "*/squad-cast-validator/SKILL.md" -print > "$validator_matches"
 validator_count="$(wc -l < "$validator_matches" | tr -d '[:space:]')"
 case "$validator_count" in
