@@ -154,6 +154,18 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toMatch(/bot-trigger warning|bot trigger/i);
     });
 
+    // The permission above is only safe because it is paired with a hard halt
+    // on anything else.  Asserting the allowance alone would keep passing if
+    // the STOP were deleted -- i.e. if the narrow exception silently became a
+    // blanket "warnings are fine".  Assert the gate itself, not just the
+    // carve-out.  Newlines are collapsed first because the sentence wraps.
+    it('halts on any error or any warning beyond the documented one', () => {
+      const flat = content.replace(/\s+/g, ' ');
+      expect(flat).toMatch(
+        /\*\*STOP\*\* on any error, or on \*\*any additional warning\*\* beyond that single documented one\./,
+      );
+    });
+
     it('keeps the default workflow token read-only', () => {
       expect(content).toContain('default_workflow_permissions=read');
     });
