@@ -211,46 +211,13 @@ Squad automatically picks the right response speed based on your request complex
 
 ---
 
-## SDK-first mode
+## SDK-first mode (deprecated)
 
-Define your team in TypeScript instead of maintaining markdown files manually. Write a `squad.config.ts` with type-safe builder functions, and `squad build` generates the `.squad/` governance markdown.
+`squad init --sdk` is deprecated and will be removed in v2 because its TypeScript configuration model does not represent the full Squad feature set. Use `squad init` and maintain the generated markdown directly for new teams.
 
-```typescript
-import { defineSquad, defineTeam, defineAgent, defineRouting } from '@bradygaster/squad-sdk';
+Existing `squad.config.ts` projects can continue using `squad build` and `squad build --check` during the transition.
 
-export default defineSquad({
-  team: defineTeam({
-    name: 'Core Squad',
-    description: 'The main engineering team',
-    members: ['@edie', '@mcmanus'],
-  }),
-  agents: [
-    defineAgent({
-      name: 'edie',
-      role: 'TypeScript Engineer',
-      model: 'claude-sonnet-5',
-      capabilities: [{ name: 'type-system', level: 'expert' }],
-    }),
-  ],
-  routing: defineRouting({
-    rules: [{ pattern: 'feature-*', agents: ['@edie'], tier: 'standard' }],
-    defaultAgent: '@coordinator',
-  }),
-});
-```
-
-**Get started:**
-
-```bash
-squad init --sdk          # New project with SDK config
-squad migrate --to sdk    # Convert existing .squad/ to TypeScript
-squad build               # Generate .squad/ from config
-squad build --check       # Validate in CI without writing
-```
-
-Builder functions: `defineTeam()`, `defineAgent()`, `defineRouting()`, `defineCeremony()`, `defineHooks()`, `defineCasting()`, `defineTelemetry()`, `defineSkill()`, `defineSquad()`.
-
-→ [Full guide: SDK-First Mode](sdk-first-mode.md)
+→ [Legacy SDK-First Mode compatibility guide](sdk-first-mode.md)
 
 ---
 
@@ -532,7 +499,7 @@ Squad maintains a clear ownership model:
 |------|-------|--------------|
 | `.github/agents/squad.agent.md` | Squad (overwritten on upgrade) | No — your changes will be lost |
 | `.squad/` | You and your team | Yes — this is your team's state |
-| `squad.config.ts` | You | Yes — your SDK-first config |
+| `squad.config.ts` | You | Legacy SDK-first projects only |
 | Everything else | You | Yes |
 
 ---
@@ -542,7 +509,7 @@ Squad maintains a clear ownership model:
 | Command | What it does |
 |---------|-------------|
 | `squad init` | Initialize Squad in the current repo |
-| `squad init --sdk` | Initialize with SDK-first TypeScript config |
+| `squad init --sdk` | Deprecated; compatibility only until v2 |
 | `squad init --global` | Initialize a personal squad (cross-project) |
 | `squad build` | Generate `.squad/` from `squad.config.ts` |
 | `squad build --check` | Validate generated files match disk (for CI) |
@@ -556,7 +523,7 @@ Squad maintains a clear ownership model:
 | `squad import <file> --force` | Import, archiving existing agents |
 | `squad plugin install <name>` | Install a plugin from the marketplace |
 | `squad plugin list` | List installed plugins |
-| `squad migrate --to sdk` | Convert existing squad to SDK-first config |
+| `squad migrate --to sdk` | Deprecated; do not start new SDK-first migrations |
 | `squad migrate --from ai-team` | Migrate from `.ai-team/` to `.squad/` |
 | `squad subsquads` | Manage SubSquads |
 | `squad status` | Show team status and global config |

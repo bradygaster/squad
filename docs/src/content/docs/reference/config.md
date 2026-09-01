@@ -13,7 +13,10 @@ That's it. Squad works out of the box. Everything below is optional.
 
 ## squad.config.ts
 
-For type-safe SDK-First configuration, create this at your project root:
+> [!CAUTION]
+> SDK-first configuration is deprecated. `squad init --sdk` will be removed in v2. The reference below remains for existing projects using `squad build`.
+
+Legacy SDK-first projects may define this file at the project root:
 
 ```typescript
 import {

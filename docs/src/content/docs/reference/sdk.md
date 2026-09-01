@@ -90,6 +90,9 @@ Use `result.errors` and `result.warnings` when presenting validation results. Th
 
 ## SDK-First Builders
 
+> [!CAUTION]
+> SDK-first team configuration is deprecated. `squad init --sdk` will be removed in v2. These builders remain documented for existing `squad.config.ts` projects during the transition.
+
 Builders validate typed team definitions before they are written to `.squad/` by `squad build`.
 
 ```typescript

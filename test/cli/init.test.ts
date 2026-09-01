@@ -3,13 +3,14 @@
  * Tests that the init command creates expected files in a temp directory
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, rm, readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
+import { runInit as runInitFromSource } from '../../packages/squad-cli/src/cli/core/init.js';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-init-${randomBytes(4).toString('hex')}`);
@@ -49,6 +50,21 @@ describe('CLI: init command', () => {
     const content = await readFile(agentPath, 'utf-8');
     expect(content).toContain('Squad');
     expect(content).toContain('version:');
+  });
+
+  it('warns that --sdk is deprecated while preserving compatibility', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runInitFromSource(TEST_ROOT, { sdk: true });
+
+      const output = log.mock.calls.flat().join('\n');
+      expect(output).toContain('squad init --sdk');
+      expect(output).toContain('deprecated');
+      expect(output).toContain('removed in v2');
+      expect(existsSync(join(TEST_ROOT, 'squad.config.ts'))).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('should stamp CLI version in squad.agent.md during init (#321)', async () => {

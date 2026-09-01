@@ -37,7 +37,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Creates a markdown-based squad layout under .squad/ plus default agent`);
     console.log(`workflows under .github/. Safe to re-run — existing files are preserved.\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--sdk${RESET}                       Use SDK builder syntax (squad.config.ts)`);
+    console.log(`  ${BOLD}--sdk${RESET}                       Deprecated: generate squad.config.ts (removed in v2)`);
     console.log(`  ${BOLD}--roles${RESET}                     Seed the team with built-in base roles`);
     console.log(`  ${BOLD}--global${RESET}                    Initialize in the personal (global) squad directory`);
     console.log(`  ${BOLD}--no-workflows${RESET}              Skip writing GitHub Actions workflows`);

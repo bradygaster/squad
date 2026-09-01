@@ -57,6 +57,8 @@ describe('printCommandHelp', () => {
     const blob = logs.join('\n');
     expect(blob).toContain('squad init');
     expect(blob).toContain('9.9.9-test');
+    expect(blob).toContain('--sdk');
+    expect(blob).toContain('Deprecated');
     expect(blob).toContain('Usage:');
   });
 
@@ -195,6 +197,12 @@ describe.skipIf(!cliBuilt)('squad <cmd> --help end-to-end', () => {
 
   afterAll(() => {
     rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('top-level help marks --sdk as deprecated', async () => {
+    const { stdout, stderr } = await runSquad(['--help'], tempDir);
+    const out = stdout + stderr;
+    expect(out).toContain('--sdk (deprecated; removed in v2)');
   });
 
   it('init --help prints help and does NOT scaffold files', async () => {

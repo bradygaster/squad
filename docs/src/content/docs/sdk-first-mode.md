@@ -1,5 +1,8 @@
 # SDK-First Squad Mode
 
+> [!CAUTION]
+> **Deprecated.** `squad init --sdk` will be removed in v2 because `squad.config.ts` does not represent the full Squad feature set. Use markdown-first `squad init` for new teams. Existing projects can continue using `squad build` during the transition.
+
 > **Phase 1** — Type-safe team configuration with builder functions.
 
 Squad now supports **SDK-First Mode**: define your team in TypeScript with full type safety, runtime validation, and editor autocomplete. Instead of manually maintaining markdown files in `.squad/`, you write clean TypeScript, and `squad build` generates the governance markdown.
@@ -35,19 +38,19 @@ In SDK-First Mode:
 
 This replaces manual `.squad/team.md`, `.squad/routing.md`, and agent charters with a single source of truth in code.
 
-**When to use SDK mode:** For a comparison of SDK-first mode versus CLI mode, see the [Getting started guide](/guide#how-teams-form-init-mode).
+The remaining sections document compatibility for teams that already use SDK-first mode. Do not adopt this mode for a new team.
 
 ---
 
-## Quick Start
+## Maintaining an existing SDK-first project
 
-### 1. Install the SDK
+### 1. Keep the SDK dependency installed
 
 ```bash
 npm install @bradygaster/squad-sdk
 ```
 
-### 2. Create `squad.config.ts`
+### 2. Maintain the existing `squad.config.ts`
 
 ```typescript
 import {
@@ -104,50 +107,25 @@ This generates:
 
 ---
 
-## Start a new SDK-first project
+## Legacy initialization
 
 ```bash
 squad init --sdk
 ```
 
-This generates `.squad/` markdown files and a `squad.config.ts` at your project root using the `defineSquad()` builder syntax. Your TypeScript config is the source of truth — edit it, then run `squad build` to regenerate `.squad/`.
+This deprecated command remains available temporarily for compatibility testing. It generates `.squad/` markdown files and a `squad.config.ts` at your project root using the `defineSquad()` builder syntax. Do not use it for new production teams.
 
 For the full team initialization flow, see [How teams form (Init Mode)](/guide#how-teams-form-init-mode) in the getting started guide.
 
 ---
 
-## Migrating an Existing Squad to SDK-First
-
-```bash
-squad migrate --to sdk        # generate squad.config.ts from existing .squad/
-squad migrate --to sdk --dry-run  # preview without writing
-```
-
-The migrate command reads your existing `.squad/` files (team.md, routing.md, agent charters) and generates a `squad.config.ts` that reproduces your current configuration using typed builders.
-
-### What Gets Migrated
-
-| Source | Generated |
-|--------|-----------|
-| `.squad/team.md` roster | `defineTeam({ members: [...] })` |
-| `.squad/agents/*/charter.md` | `defineAgent({ name, role, ... })` per agent |
-| `.squad/routing.md` rules | `defineRouting({ rules: [...] })` |
-| `.squad/ceremonies.md` | `defineCeremony()` entries |
-| `.squad/casting/policy.json` | `defineCasting()` block |
-
-### What's Preserved (Not Migrated)
-
-- `decisions.md` — append-only ledger, stays as-is
-- `agents/*/history.md` — personal knowledge, stays as-is
-- `orchestration-log/`, `log/` — append-only archives
-
-### Reverting to Markdown
+## Migrating away from SDK-first mode
 
 ```bash
 squad migrate --to markdown
 ```
 
-This runs `squad build` to ensure `.squad/` is current, then removes `squad.config.ts`.
+This runs `squad build` to ensure `.squad/` is current, then removes `squad.config.ts`. Review the generated markdown before deleting the TypeScript configuration from version control.
 
 ### Legacy Migration
 
