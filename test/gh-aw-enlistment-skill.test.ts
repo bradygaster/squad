@@ -53,9 +53,18 @@ describe('gh-aw-enlistment skill', () => {
 
   describe('discoverability — frontmatter trigger phrases', () => {
     const content = readLF(CANONICAL);
+    // Assert against the PARSED triggers array, not raw text. `toContain` on the
+    // whole document would still pass if a phrase were deleted from the
+    // frontmatter and merely mentioned in prose — which is the exact regression
+    // this block exists to catch, since a phrase in prose is not discoverable.
+    // `skill.triggers` is the same array the runtime matcher iterates
+    // (packages/squad-sdk/src/skills/index.ts), so this tests the real path.
+    const skill = parseSkillFile(SKILL_ID, content);
 
-    it('declares a triggers block', () => {
-      expect(content).toMatch(/^triggers:/m);
+    it('declares a non-empty triggers block in frontmatter', () => {
+      expect(skill, 'skill should parse').toBeDefined();
+      expect(Array.isArray(skill!.triggers), 'triggers should parse to an array').toBe(true);
+      expect(skill!.triggers.length, 'triggers must not be empty').toBeGreaterThan(0);
     });
 
     // The three trigger phrases the skill must be discoverable by.
@@ -65,7 +74,10 @@ describe('gh-aw-enlistment skill', () => {
       'install Squad gh-aw workflows',
     ]) {
       it(`is discoverable by "${phrase}"`, () => {
-        expect(content).toContain(phrase);
+        expect(
+          skill!.triggers,
+          `"${phrase}" must be a frontmatter trigger, not merely present somewhere in the document`,
+        ).toContain(phrase);
       });
     }
   });

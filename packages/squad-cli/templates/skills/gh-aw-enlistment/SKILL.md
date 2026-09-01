@@ -4,17 +4,7 @@ description: "Enlist a repository into Squad by installing the supported GitHub 
 domain: "github-integration, agentic-workflows, ci-bootstrap, safety-gated-automation"
 confidence: "high"
 source: "Operationalized from the authoritative Squad gh-aw guide (docs/src/content/docs/guide/gh-aw.md) covering the supported install → compile → validate → bootstrap-PR path."
-triggers:
-  - "set up Squad agentic workflows"
-  - "enlist this repo in Squad"
-  - "enlist my repository in Squad"
-  - "install Squad gh-aw workflows"
-  - "install Squad agentic workflows"
-  - "add Squad gh aw workflows"
-  - "bootstrap Squad in this repo"
-  - "onboard this repo to Squad"
-  - "set up /squad slash commands"
-  - "gh aw add squad"
+triggers: [set up Squad agentic workflows, enlist this repo in Squad, enlist my repository in Squad, install Squad gh-aw workflows, install Squad agentic workflows, add Squad gh aw workflows, bootstrap Squad in this repo, onboard this repo to Squad, set up /squad slash commands, gh aw add squad]
 tools:
   - name: "gh"
     description: "GitHub CLI — repo identity, Actions permissions, PR creation, review request, and check watching."

@@ -79,7 +79,7 @@ Load these files from `github/gh-aw` (they are not available locally).
 
 - `.github/skills/agentic-workflow-designer/SKILL.md`
 After loading the matching workflow prompt or skill, follow it directly:
-- Enlist a repository into Squad via gh-aw (install the supported `/squad` workflow bootstrap): `.squad/skills/gh-aw-enlistment/SKILL.md` — use for "set up Squad agentic workflows", "enlist this repo in Squad", or "install Squad gh-aw workflows"
+- Enlist a repository into Squad via gh-aw (install the supported `/squad` workflow bootstrap): `.squad/skills/gh-aw-enlistment/SKILL.md` — **this one is local to this repository**, not fetched from `github/gh-aw`. Use for "set up Squad agentic workflows", "enlist this repo in Squad", or "install Squad gh-aw workflows"
 - Design workflows from scratch via interview: `skills/agentic-workflow-designer/SKILL.md`
 - Create new workflows: `.github/aw/create-agentic-workflow.md`
 - Update existing workflows: `.github/aw/update-agentic-workflow.md`
