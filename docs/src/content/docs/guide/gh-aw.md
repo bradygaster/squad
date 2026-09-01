@@ -1168,7 +1168,7 @@ gh aw compile --strict
 ```
 
 Confirm all four source files and generated locks reference `SQUAD_SHA`, review
-the workflow diff, then commit them together. With gh-aw v0.86.2, do not use
+the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
 `gh aw update` for this immutable-pin flow: its stored source branch and cooldown
 can leave the installed sources at a different revision than the SHA you intend.
 

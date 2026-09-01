@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REVIEWER = read('workflows/squad-review.md');
@@ -128,23 +129,12 @@ function compileReviewer(): CompiledContract {
   );
 
   const lock = readFileSync(resolve(workflowDir, 'squad-review.lock.yml'), 'utf8').replace(/\r\n/g, '\n');
-  const lines = lock.split('\n');
-  const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-  const configEnd = delimiter
-    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-    : -1;
-
-  expect(configStart, 'compiled reviewer must write safe-output config').toBeGreaterThanOrEqual(0);
-  expect(delimiter, 'safe-output config must use a parseable heredoc').toBeDefined();
-  expect(configEnd, 'safe-output config heredoc must terminate').toBeGreaterThan(configStart);
+  const jsonText = extractSafeOutputsConfigJson(lock);
+  expect(jsonText, 'compiled reviewer must write a parseable safe-output config').toBeDefined();
 
   return {
     lock,
-    safeOutputs: JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-      string,
-      Record<string, unknown>
-    >,
+    safeOutputs: JSON.parse(jsonText!) as Record<string, Record<string, unknown>>,
   };
 }
 

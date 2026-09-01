@@ -105,6 +105,14 @@ safe-outputs:
   create-issue:
     labels: [squad]
     max: 75
+    require-temporary-id: true
+  add-labels:
+    allowed: [squad, "squad:*"]
+    create-if-missing: true
+    issues: true
+    pull-requests: false
+    target: "*"
+    max: 80
   add-comment:
     max: 20
     target: "*"
@@ -1262,22 +1270,84 @@ Do not create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
 accepted plan row. Freeze a binding for each task number containing that row's
-original `Owner` and `Depends On` values. If any `Owner` does not match a certified
-active roster name, stop before mutation and require `/squad plan revise`; never
-substitute, re-route, or fall back to another identity during acceptance.
+original `Owner` and `Depends On` values. If TG-2 emitted a `ROSTER_UNREADABLE:`
+line, stop before mutation and report that named reason. An individual `Owner`
+matching no certified active roster name and not `@copilot` does **not** stop the
+run — matching `squad-plan-activate`, create that issue with the base `squad` label
+only, omit the owner label, continue, and record the value under
+`Non-roster agent values` (Step 4). Never substitute, re-route, or fall back to
+another identity during acceptance.
 
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
+- Temporary ID: `temporary_id` is required on every `create-issue` call (`require-temporary-id: true`). Mint one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. Must match `^#?aw_[A-Za-z0-9_]{3,12}$` and be unique in this run — gh-aw silently lets a duplicate's last writer own the mapping.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not lowercased verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
-- Parent: phase issue (hierarchical) or root (flat)
+- Parent: phase issue (hierarchical) or root (flat). For a phase issue created in this run, pass its `#aw_ph{N}` temporary ID — `create-issue` resolves it. The flat-plan root is the triggering issue's own real number. Never guess a number for an issue this run created.
 - Size: set Project field if available, else body `**Size:**` line
+- Label application: in the same turn as this `create-issue` call, call `add_labels` with `item_number` set to this item's own temporary ID and this item's computed label set (see Fast-Path Label Provisioning). `create-if-missing` provisions `squad`/`squad:{owner}` on a fresh repository automatically.
 
 Copy every frozen `Depends On` value into the created issue body. Cross-phase
 deps: look up real issue numbers from prior acceptance comments without changing
 the declared task dependencies.
 
-Create in dependency order. Labels must have descriptions and colors.
+Create in dependency order.
+
+##### Fast-Path Label Provisioning
+
+`create-issue`'s own `labels:` field cannot provision a label: GitHub silently drops
+label names that do not already exist in the target repository instead of creating
+them, so on a fresh repository every fast-path issue would come out unlabeled. The
+`add-labels` safe output (`allowed: [squad, "squad:*"]`, `create-if-missing: true`) is
+the only operation here that creates a missing label, and it is the same one
+`squad-plan-activate` uses — both activation paths provision labels identically, so
+`/squad activate` needs no manual label setup on a fresh repository.
+
+In the same turn as each `create-issue` call in Step 2, call `add_labels` with:
+
+- `item_number` — that same `create-issue` call's `temporary_id` (`#aw_ph{N}` for a
+  phase issue, `#aw_wi{N}` for a work item). For an issue this run did **not** create
+  — one recognized by Step 1a's idempotency check or matched by title — pass its
+  verified real number instead; a temporary ID maps only issues this run created.
+- `labels` — exactly the set computed below for that one issue, and nothing else.
+
+**Explicit targeting is mandatory.** Every `add_labels` call MUST pass `item_number`.
+Omitting it does not fail — it silently applies the labels to the **triggering intent
+issue**, branding the user's own request with an activated item's owner label. Never
+reuse another item's temporary ID, and never emit `add_labels` for an item whose
+`create-issue` call was not made in this run. `create-issue` returns no real issue
+number during this run, so never predict or infer one and never pause between the two
+calls waiting for one; gh-aw resolves `add_labels` after the `create-issue` that
+minted the ID, so `create-issue` first and `add_labels` immediately after is the
+supported order.
+
+**Label set, per issue:**
+
+- Work item: `squad`, plus `squad:{owner}` derived from that row's own frozen
+  certified `Owner`, lowercased. `@copilot` maps to the existing `squad:copilot`
+  routing label — never `squad:@copilot`. Re-read each row's frozen `Owner`; never
+  inherit the phase issue's owner or carry the previous row's value forward.
+- Phase issue: `squad`, plus `squad:{owner}` only when every accepted row in that
+  phase names one and the same owner. Two or more distinct owners is a multi-owner
+  phase: apply only `squad`, choose none of them, and record it under a
+  `Non-roster agent values` heading in the Step 4 summary.
+- The triggering intent issue is never an `add_labels` target. It is the flat-plan
+  parent, not an activated item, and receives no owner label from this run.
+
+An `Owner` that is neither a certified roster name nor `@copilot` never becomes a
+`squad:{owner}` label: send `squad` alone for that issue and record the value under
+`Non-roster agent values` in the Step 4 summary — the same omit-and-record contract
+`squad-plan-activate` uses, so an uncertified value can reach `add_labels` only as
+the base `squad` label.
+
+Re-applying an already-present label on a rerun is a no-op under add-only merge
+semantics, so this is safe under Step 1a's idempotency path. Labels must have
+descriptions and intentional colors when they already exist; a label auto-provisioned
+by `create-if-missing` on a fresh repository instead receives gh-aw's deterministic
+color and an empty description — that is expected, not a failure, and must not be
+reported as one. Report only the labels an accepted `add_labels` call carried for that
+same issue; never a label that was skipped, deferred, or merely intended, and never one
+attributed to `create-issue` (see Step 4, Label reporting).
 
 ##### Step 3: Preserve Dependencies
 
@@ -1301,6 +1371,27 @@ Report the exact number of created task issues, their actual parent hierarchy,
 and whether dependencies use native edges or the body-reference fallback. Never
 claim an epic, phase issue, sub-issue relationship, or native dependency edge
 that was not created.
+
+**Label reporting — accepted operations only.** Identical semantics to
+`squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
+an accepted `add_labels` operation targeting that issue. Report `squad:{owner}` only when
+this run made an `add_labels` call carrying that label and targeting that same issue — by
+its own `temporary_id`, or by its verified real number for a reused issue. A successful
+`create-issue` is **not** evidence: its `labels:` field cannot land a label on a fresh
+repository, so no summary may say a label was carried by, applied by, or included in issue
+creation. Never report a label merely computed, intended, skipped, or deferred, never borrow
+another item's label operation, and never report an accepted operation as an omission.
+
+`add_labels` is a safe output: this run knows only that the call was accepted for a specific
+target, never the GitHub API result. State it at that strength — never write that a label
+was verified, confirmed, or checked on the issue, because nothing here reads labels back.
+
+Whenever an accepted `Owner` did not become a `squad:{owner}` label — a multi-owner
+phase issue, or a value certified by neither the roster nor `@copilot` — a
+`Non-roster agent values` heading is **required** in this summary, naming the value
+and the issue it applied to. Omitting the label while omitting the heading reports a
+clean run that did not happen. Conversely, never emit the heading for an owner that
+*did* become an accepted label — that manufactures a defect that did not occur.
 
 ##### Step 5: Update Fast-Path Lifecycle
 
@@ -1729,7 +1820,38 @@ description: Activate an accepted plan by creating the epic and task issues on G
 
 ##### Hallucination Guard
 
-After EVERY `create-issue` call: verify returned issue number, stop on failure, NEVER predict issue numbers.
+`create-issue` does **not** return a real GitHub issue number during this run — gh-aw defers
+creation to the safe-output job, so the agent sees only a success acknowledgement. NEVER
+predict, infer, or "read back" a number for an issue this run created, and never wait for
+one. Use a real number only when verified independently: a pre-existing issue matched by
+title, the triggering issue, or one recorded in a prior run's artifact.
+
+##### Temporary-ID Contract
+
+Every `create-issue` call MUST carry a `temporary_id`, and every operation pointing back at
+that issue MUST reuse the identical value. `require-temporary-id: true` enforces the first
+half — a call without one is rejected. The second half is yours.
+
+**Form.** Matches `^#?aw_[A-Za-z0-9_]{3,12}$`. Write the canonical `#aw_…` form. Dots,
+hyphens, spaces, and `:` are illegal.
+
+**Minting — derive, never invent.** Epic: `#aw_epic{K}`, `{K}` = the epic's 1-based position
+in the accepted plan. Task: `#aw_task{N}`, `{N}` = that task's own `#` cell with every
+character outside `A-Za-z0-9` replaced by `_` (`2.3` → `#aw_task2_3`). If a derived ID
+exceeds 12 characters after `aw_`, drop the `epic`/`task` word (`#aw_e{K}` / `#aw_t{N}`)
+rather than truncating the number.
+
+**Uniqueness is your responsibility.** gh-aw does not reject a duplicate `temporary_id`; it
+silently lets the last `create-issue` using it own the mapping, so every later reference
+lands on the wrong issue. Confirm each ID is unused; epics and tasks share one namespace.
+
+**Explicit targeting is mandatory.** Every `add_labels` call MUST pass `item_number`. Omitting
+it does not fail — it silently labels the **triggering intent issue**, branding the user's own
+request with an activated item's owner label.
+
+**Existing and reused issues.** An issue recognized by Step 1's idempotent-rerun path or a
+dedup-by-title match has a real, verified number: target it by that number, not a temporary
+ID, which only maps issues this run created.
 
 ##### Output Budget Awareness
 
@@ -1765,14 +1887,35 @@ Count expected issues before starting. If total > 50: recommend phased activatio
    `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
    epic, or the previous call. Verify per issue; membership across the run is not evidence.
 8. **Report what was applied, not what was intended.** The activation summary may name a
-   `squad:{agent}` label for an issue only after that issue's `create-issue` call returned
-   successfully carrying it. Never state a label that was skipped, omitted, deferred, or
-   assumed. Whenever an `Agent` value did not become a label — multi-owner epic, uncertified
-   name, unavailable label — the `Non-roster agent values` heading is **required**, and must
-   name the value and the issue it applied to. Omitting the heading while omitting the label
-   reports a clean run that did not happen.
+   `squad:{agent}` label for an issue only after an `add_labels` call carrying that label
+   was accepted for that same issue — targeted by its own `temporary_id`, or by its verified
+   real number for a reused issue. A successful `create-issue` is **not** evidence: its
+   `labels:` field cannot land a label on a fresh repository, so a label is never "carried
+   by" issue creation. Never state a label that was skipped, omitted, deferred, or assumed,
+   and never report an accepted label operation as an omission. Whenever an `Agent` value did
+   not become a label — multi-owner epic, uncertified name, unavailable label — the
+   `Non-roster agent values` heading is **required**, and must name the value and the issue
+   it applied to. Omitting the heading while omitting the label reports a clean run that did
+   not happen. See Step 4's Label reporting section for the full contract.
 
-Then verify labels `squad` and each roster-bound `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
+**Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
+`create-if-missing: true`) auto-creates `squad` and any `squad:{agent}` label the first
+time this run needs it — a fresh repository with zero Squad labels requires no manual
+provisioning and is never a prerequisite gap. `create-issue`'s own `labels:` field cannot
+do this: GitHub silently drops label names that do not already exist in the target
+repository instead of creating them, which is the behavior that previously produced the
+"prerequisite gap" reported here. Do not rely on `create-issue`'s `labels:` field alone
+to land a label on a fresh repository.
+
+In the same turn as each `create-issue` call in Steps 2b/2c, call `add_labels` with
+`item_number` set to that call's `temporary_id` and exactly the label set Steps 4-8 computed
+for that issue — `squad` alone, or `squad` plus the one `squad:{agent}` label the
+correspondence rule (Step 7) certified. Do not wait for a returned issue number; none
+arrives. gh-aw resolves `add_labels` after the `create-issue` that minted the ID, so that
+order is the supported one. `create-if-missing` creates any label that does not yet exist
+before applying it; re-applying an already-present label on a rerun is a no-op, so this is
+safe under the Step 1 idempotent-rerun path. Never emit `add_labels` for an item whose
+`create-issue` call was not made in this run.
 
 ##### Transient Failure Handling
 
@@ -1780,7 +1923,7 @@ On `5xx` response from `create-issue`: wait briefly and retry once. On second fa
 
 ##### Sub-issue Fallback
 
-When setting a `parent` sub-issue relationship returns `404` or `422` (feature disabled or repo plan): degrade gracefully — record the intended parent as a body reference (`Parent: #{issue_number}`), then continue. Never fail activation over sub-issue API unavailability.
+When setting a `parent` sub-issue relationship returns `404` or `422` (feature disabled or repo plan): degrade gracefully — record the intended parent as a body reference, then continue. If that parent was minted this run, write its temporary ID (`Parent: #aw_epic{K}`); gh-aw rewrites an `#aw_…` body reference to the real `#{number}`, so no number is predicted. If the parent is pre-existing or was matched by dedup, write its verified real number (`Parent: #{issue_number}`) — gh-aw leaves an unresolved `#aw_…` reference in the body verbatim, so a temporary ID it never minted would ship as a meaningless literal. Never fail activation over sub-issue API unavailability.
 
 ##### Step 2: Create Issues — Full Hierarchy
 
@@ -1790,33 +1933,44 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 
 **2b. Create Epic Issues:** `create-issue` per epic (dedup by title `[Epic] {name}` if already exists from prior phase).
 - Title: `[Epic] {name}`
+- Temporary ID: `temporary_id: "#aw_epic{K}"` per the Temporary-ID Contract. Required — the call is rejected without it.
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct roster value → mint `squad:{that agent}`; exactly `@copilot` → mint `squad:copilot`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
 - Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
-- Parent: sub-issue of root intent issue
+- Parent: sub-issue of root intent issue — the triggering issue's own real number, which is known independently of this run's creations
 - Milestone: assigned
+- Label application: in the same turn as this `create-issue` call, call `add_labels` with `item_number` set to this epic's `#aw_epic{K}` temporary ID and this epic's computed label set (see Label Pre-flight). A dedup-by-title match instead targets that existing issue's verified real number. `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
 
 **⚠️ DO NOT STOP after epics. Tasks MUST follow immediately.**
 
 **2c. Create Task Issues:** `create-issue` per task in dependency order.
 
 > **⚠️ ATOMIC CONTRACT — strictly one task at a time:**
-> For each task: compose ONLY that task's body → call `create-issue` immediately → verify the returned issue number → then move to the next task.
-> **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one call → one verify, repeated per task.
+> For each task: compose ONLY that task's body → call `create-issue` immediately, carrying that task's `temporary_id` → call `add_labels` with `item_number` set to that same temporary ID and the task's computed label set → then move to the next task.
+> **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one `create-issue` call → one `add_labels` call, repeated per task. Do not pause for a returned issue number between the two calls; none is returned.
 
 - Title: task title
+- Temporary ID: `temporary_id: "#aw_task{N}"` per the Temporary-ID Contract. Required, and unique across every epic and task in this run.
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
 - Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
-- Parent: sub-issue of EPIC (not root)
+- Parent: sub-issue of EPIC (not root). If 2b minted this epic in this run, pass its `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. If 2b instead matched a pre-existing epic by title, that epic has no temporary ID in this run — pass its verified real number. Never guess the epic's real number, and never pass a temporary ID that was not minted this run.
 - Milestone: same as parent epic
 - Size: Project field if available, else body line
+- Label application: same as epics — call `add_labels` with `item_number` set to this task's temporary ID and the task's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
 
-**2d. Self-Validation:** Compare created/recognized task count vs expected (use the plan's declared total — not the safe-output cap). If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
+**2d. Self-Validation:** The **created count** is the number of `create-issue` calls this run emitted. Compare it against the plan's declared total (not the safe-output cap). If it is lower: call `report_incomplete` immediately with `created={N}` set to that created count, `expected={M}` set to the declared total, and the last task's temporary ID — never noop, and never substitute a guessed issue number. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
 
-Labels must have descriptions and intentional colors.
+Labels must have descriptions and intentional colors when they already exist in the
+repository. A label auto-provisioned by `add-labels`'s `create-if-missing` on a fresh
+repository instead receives gh-aw's deterministic color and an empty description — that
+is expected, not a failure, and must not be reported as one.
 
 ##### Step 3: Native Dependency Edges
 
-Add `blockedBy` via API for tasks and epics. Graceful fallback. Never fail activation over edge creation.
+Declare `blocked_by` on the `create-issue` call itself, passing the blocking item's
+temporary ID (`#aw_task{N}` / `#aw_epic{K}`) — `blocked_by` resolves temporary IDs. Use a
+verified real number only for a dependency on a pre-existing issue. Never call a write API
+with a guessed number to add an edge. Graceful fallback to a body reference. Never fail
+activation over edge creation.
 
 ##### Step 4: Post Activation Record
 
@@ -1824,9 +1978,31 @@ Add `blockedBy` via API for tasks and epics. Graceful fallback. Never fail activ
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from successful `create-issue` results. Emit one object per created/recognized task:
+Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Emit one object per created/recognized task:
 
-`{"task":"{plan # cell}","issue":{created task issue number},"epic":"{Epic cell}","epic_issue":{created epic issue number},"agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{lowercased Agent cell}","epic_label":"squad:{sole lowercased epic task agent}"}`. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
+`{"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{lowercased Agent cell}","epic_label":"squad:{sole lowercased epic task agent}"}`. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
+
+###### Issue references in bindings — quoted, never bare
+
+`issue` and `epic_issue` are **JSON strings**, never bare numbers, and never a real number
+for an issue this run created.
+
+- **Created this run:** that item's own `temporary_id`, quoted — `"issue":"#aw_task{N}"`,
+  `"epic_issue":"#aw_epic{K}"`. gh-aw rewrites an `#aw_…` reference in a comment body to
+  `#{real number}` once the issue exists, so the posted artifact carries the real number
+  without this run predicting one.
+- **Reused or pre-existing** (Step 1 idempotent rerun, dedup-by-title): its verified real
+  number in the same quoted form — `"issue":"#123"`. One shape covers both.
+
+**The quoting is load-bearing.** gh-aw's substitution is a plain text replacement over the
+whole body — it does not skip fenced code blocks — and it keeps the `#`. Bare,
+`"issue":#aw_task1` becomes `"issue":#42`, which is invalid JSON and fails the whole block.
+Quoted, `"issue":"#aw_task1"` becomes `"issue":"#42"`, which parses. Never emit a bare
+`#aw_…`, a bare number, or a `{created task issue number}` placeholder in these two fields.
+
+An `#aw_…` surviving into the posted artifact was never resolved — that `create-issue` did
+not land. Leave it rather than repairing it by hand: the consumer fails closed on it, which
+is correct.
 
 For a multi-owner epic, omit `epic_label` and set `"epic_omission_reason":"multi-owner"` on each of its task bindings. For a task whose agent is not certified by TG-2, omit `label` and set `"omission_reason":"non-roster"`; if that task is the epic's sole owner, likewise omit `epic_label` and set `"epic_omission_reason":"non-roster"`. Never omit a created task from `bindings`, never infer an issue number, and never emit an empty array. The deterministic post-activation workflow treats missing, empty, malformed, or unresolved bindings as a failure. The safe-output schema deliberately uses one uniform task-binding shape because gh-aw's data schema dialect does not support conditional `if`/`then` or `allOf`; the checker enforces activation-only presence and cross-row epic consistency.
 
@@ -1835,6 +2011,40 @@ Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1"
 Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order + the `Activation bindings:` JSON array.
 
 Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}]}` with an "All Phases Activated" heading and the accumulated `Activation bindings:` JSON array.
+
+###### Label reporting — accepted operations only
+
+A label reaches an activated issue through exactly one route: an accepted `add_labels`
+operation targeting that issue. `create-issue`'s `labels:` field never lands a label this
+workflow can claim — it silently drops names the repository lacks — so it is never evidence.
+
+**The rule.** Report `squad:{agent}` for an issue only when this run made an `add_labels`
+call that carried that label and targeted that same issue — by its own `temporary_id`, or by
+its verified real number for a reused issue. Every `label` and `epic_label` in the bindings
+block, and every label named in the prose or issue tables, MUST trace to such a call.
+
+**Forbidden:** reporting a label because `create-issue` succeeded or its `labels:` field
+named it (a successful `create-issue` means an issue was requested — nothing more); reporting
+a label that was computed or intended but whose `add_labels` call was never made, was
+skipped, or was rejected; reporting a label from another item's `add_labels` call
+(per-issue correspondence holds exactly as in Label Pre-flight Step 7); and reporting an
+omission when that item's call was in fact made and accepted — a silent under-claim is as
+wrong as an over-claim.
+
+**What "accepted" means.** `add_labels` is a safe output: the call is accepted and queued
+this turn, and gh-aw applies it in the post-agent job. This run has evidence only that the
+operation was accepted *for a specific target*, never the GitHub API result. State it at
+that strength — never write that a label was "verified", "confirmed on the issue", or
+"checked", because nothing here reads labels back. The deterministic post-activation checker
+compares these bindings against the labels actually present; over-claiming defeats it.
+
+**Omission is reported, never inferred.** Whenever an `Agent` value did not become a
+`squad:{agent}` label — multi-owner epic, uncertified name, or a label operation not made or
+not accepted — the `Non-roster agent values` heading is **required**, naming the value and
+the issue it applied to, and the matching binding carries its `omission_reason` /
+`epic_omission_reason`. Applying bare `squad` while omitting the heading reports a clean run
+that did not happen. Conversely, never emit the heading for an owner that *did* become an
+accepted label — that manufactures a defect.
 
 ##### Step 5: Update Lifecycle
 

@@ -389,6 +389,18 @@ describe('gh-aw: safe-output configuration', () => {
     expect(ci, 'create-issue block must exist').toBeDefined();
     expect(ci['max'], 'create-issue max must be 75 — do not reduce below this').toBe(75);
   });
+
+  it('add-labels exists and can auto-provision squad labels on a fresh repo (#1955)', () => {
+    const al = safeOutputs['add-labels'];
+    expect(al, 'add-labels block must exist').toBeDefined();
+    expect(al['create-if-missing'], 'add-labels must set create-if-missing so a fresh repo with no squad labels does not silently drop them').toBe(true);
+    expect(al['allowed']).toEqual(['squad', 'squad:*']);
+    expect(al['issues'], 'add-labels must be allowed to target issues').toBe(true);
+    expect(al['target'], 'add-labels must target created issues, not only the triggering one').toBe('*');
+    // One add_labels call per created issue; must cover the largest possible
+    // create-issue run (max 75) with headroom, never less.
+    expect(al['max'] as number).toBeGreaterThanOrEqual(safeOutputs['create-issue']['max'] as number);
+  });
 });
 
 describe('#1916: lifecycle comment updates use a deterministic safe-output job', () => {
@@ -864,7 +876,30 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // "keeps the ambient prompt under 40 KB". The check below is only a source-GROWTH
   // regression guard: it keeps unbounded authoring growth visible without pretending
   // authored bytes are delivered bytes.
-  const SOURCE_GROWTH_BUDGET_KB = 160;
+  //
+  // Raised 160 → 170 KB by #1959. The fast-path label-provisioning contract it adds
+  // lives entirely inside the `squad-plan-accept` inline `## skill:` block, so gh-aw
+  // strips it from the ambient prompt — "keeps the ambient prompt under 40 KB" is
+  // unaffected and still passing, which is exactly the condition the comment above
+  // names as making a raise legitimate. #1962's follow-up trims bought some room back
+  // but not enough: combined source measures 164.8 KB after both changes, still over
+  // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
+  //
+  // Raised 170 → 173 KB by #1963, which makes both activation paths report actual
+  // accepted label-operation outcomes and fixes the `Activation bindings:` JSON to carry
+  // quoted temporary-ID references. Nearly all of that prose lands inside the
+  // `squad-plan-activate` and `squad-plan-accept` inline skill blocks; only the shared
+  // ontology's binding contract is ambient, and "keeps the ambient prompt under 40 KB"
+  // still passes at ~32 KB — again the condition above that makes a raise legitimate.
+  //
+  // Measured after rebasing onto dev (i.e. with #1966 already squash-merged, so this
+  // counts #1963's bytes only): 175 519 B = 171.4 KB. 172 KB would leave 609 B of
+  // headroom, which reproduces the near-zero-margin failure mode described above; 173 KB
+  // leaves 1 633 B. Deliberately not set higher: #1964 is projected to push the combined
+  // total to ~180 002 B = 175.8 KB, but it has not merged, and pre-raising this guard for
+  // an unmerged branch would hide growth that has not happened yet. #1964 raises it when
+  // it lands, against its own measurement.
+  const SOURCE_GROWTH_BUDGET_KB = 173;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1276,10 +1311,16 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
   // but can exceed the 5s vitest default under full-suite parallel contention.
   it('strict-compiles and preserves prompt/config behavior', () => {
     const compiled = lockText();
-    expect(compiled).toContain('"auto_close_issue":false');
-    expect(compiled).toContain('"data_enabled":true');
-    expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
-    expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
+    // gh-aw v0.87.x (bumped from v0.86.2 for #1955's add-labels/create-if-missing
+    // support) now emits this JSON config only embedded inside a double-quoted YAML
+    // env var value, so every `"` is backslash-escaped (`\"key\":value`) rather than
+    // appearing as bare JSON. De-escape before matching so this assertion holds
+    // regardless of which quoting style a given compiler version chooses.
+    const unescaped = compiled.replace(/\\"/g, '"');
+    expect(unescaped).toContain('"auto_close_issue":false');
+    expect(unescaped).toContain('"data_enabled":true');
+    expect(unescaped).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
+    expect(unescaped).toContain('"enum":["research","plan","plan-accepted"');
     // gh-aw records runtime-import paths relative to the repo root, so with the
     // real `.github/workflows/` deployment layout these are prefixed accordingly.
     expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
@@ -1932,23 +1973,44 @@ describe('gh-aw: Plan Activate hardening behaviors', () => {
 
   it('includes label pre-flight step before issue creation', () => {
     expect(content).toContain('Label Pre-flight');
-    expect(content).toMatch(/squad.*label.*exist|label.*squad.*exist/i);
+    const preflight = (content.match(/##### Label Pre-flight\n([\s\S]*?)(?=\n#####|\n####)/)?.[1] ?? '').replace(
+      /\s+/g,
+      ' '
+    );
+    expect(preflight).toMatch(/squad.*label.*exist|label.*squad.*exist/i);
   });
 
-  it('label pre-flight does not claim impossible label creation', () => {
-    // Workflow has issues: read and no create-label safe-output; must not claim it can create labels
+  it('label pre-flight grounds any label-creation claim in the add-labels safe output (#1955)', () => {
+    // Forward-port note (#1955): the workflow used to have no way to create a missing
+    // label at all, so any claim of "it creates labels" would have been a hallucinated
+    // capability. That gap is now closed by a real `add-labels` safe output with
+    // `create-if-missing: true` — the claim is legitimate, but it must be attributed to
+    // that declared mechanism, not to bare `issues: write` permission or vague
+    // "safe-output permissions handle the write" hand-waving with no named mechanism.
     const preflight = content.match(/##### Label Pre-flight\n([\s\S]*?)(?=\n#####|\n####)/)?.[1] ?? '';
-    expect(preflight).not.toMatch(/create them|safe-output permissions handle the write|no additional token scope/i);
+    expect(preflight, 'Label Pre-flight section must exist').not.toBe('');
+    expect(preflight).not.toMatch(/safe-output permissions handle the write|no additional token scope/i);
+    expect(preflight).toMatch(/add-labels|add_labels/);
+    expect(preflight).toMatch(/create-if-missing/);
   });
 
-  it('label pre-flight reports missing labels as prerequisite gap', () => {
-    expect(content).toMatch(/prerequisite gap|prerequisite/i);
-    expect(content).toMatch(/issues: write/i);
-    expect(content).toMatch(/create-label.*safe-output|safe-output.*create-label/i);
+  it('label pre-flight declares add-labels/create-if-missing instead of an unconfigured gap (#1955)', () => {
+    // Forward-port note (#1955): this used to assert the OPPOSITE — that missing labels
+    // were reported as an unconfigured "prerequisite gap" requiring a nonexistent
+    // `create-label` safe-output. That was the defect #1955 fixes: gh-aw's real
+    // mechanism is `add-labels` with `create-if-missing: true`, declared in frontmatter.
+    expect(content).toContain('add-labels:');
+    expect(content).toContain('create-if-missing: true');
+    expect(content).not.toContain('create-label:');
+    expect(content).not.toMatch(/create-label.*safe-output|safe-output.*create-label/i);
   });
 
-  it('label pre-flight continues activation and omits unavailable labels with report', () => {
-    expect(content).toMatch(/unavailable labels are omitted and reported|omitted and reported/i);
+  it('label pre-flight auto-provisions missing labels instead of omitting them (#1955)', () => {
+    // Forward-port note (#1955): this used to assert labels that don't yet exist are
+    // "omitted and reported, not silently applied" — the exact fresh-repo defect #1955
+    // reports. The fix auto-creates them via create-if-missing instead of omitting them.
+    expect(content).not.toMatch(/unavailable labels are omitted and reported/i);
+    expect(content).toMatch(/auto-creates|auto-provision/i);
   });
 
   it('includes transient failure handling with single retry', () => {
