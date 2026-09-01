@@ -876,7 +876,15 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // "keeps the ambient prompt under 40 KB". The check below is only a source-GROWTH
   // regression guard: it keeps unbounded authoring growth visible without pretending
   // authored bytes are delivered bytes.
-  const SOURCE_GROWTH_BUDGET_KB = 160;
+  //
+  // Raised 160 → 170 KB by #1959. The fast-path label-provisioning contract it adds
+  // lives entirely inside the `squad-plan-accept` inline `## skill:` block, so gh-aw
+  // strips it from the ambient prompt — "keeps the ambient prompt under 40 KB" is
+  // unaffected and still passing, which is exactly the condition the comment above
+  // names as making a raise legitimate. #1962's follow-up trims bought some room back
+  // but not enough: combined source measures 164.8 KB after both changes, still over
+  // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
+  const SOURCE_GROWTH_BUDGET_KB = 170;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
