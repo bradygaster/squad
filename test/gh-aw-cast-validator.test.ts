@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -164,6 +165,18 @@ function validatorCommand(): string {
   return command;
 }
 
+function sha256(content: string | Buffer): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function replaceValidatorPayload(source: string, program: string): string {
+  const encoded = gzipSync(Buffer.from(program)).toString('base64');
+  return source.replace(
+    /(?<=<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n)[A-Za-z0-9+/\r\n=]+(?=\r?\n<!-- SQUAD_CAST_VALIDATOR_B64_END -->)/,
+    encoded,
+  );
+}
+
 function materializeSkill(
   root: string,
   path = '.github/skills/squad-cast-validator/SKILL.md',
@@ -205,10 +218,15 @@ describe('GH-AW Cast final-tree validator', () => {
     )?.[1];
     expect(encoded, 'embedded validator payload must remain extractable').toBeDefined();
     const embedded = gunzipSync(Buffer.from((encoded as string).replace(/\s/g, ''), 'base64'));
-    const normalizeLf = (value: string) => value.replace(/\r\n/g, '\n');
-    expect(normalizeLf(embedded.toString('utf8'))).toBe(
-      normalizeLf(readFileSync(validator, 'utf8')),
-    );
+    const canonical = readFileSync(validator);
+    const normalizedEmbedded = Buffer.from(embedded.toString('utf8').replace(/\r\n/g, '\n'));
+    expect(normalizedEmbedded).toEqual(canonical);
+
+    const commandDigest = validatorCommand().match(
+      /validator_expected_sha256="([a-f0-9]{64})"/,
+    )?.[1];
+    expect(commandDigest, 'runtime command must pin the canonical validator digest').toBeDefined();
+    expect(commandDigest).toBe(sha256(canonical));
   });
 
   it('keeps validator bytes and transcription instructions out of the agent command', () => {
@@ -221,6 +239,12 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(helperSource()).not.toMatch(/cat\s+<</);
     expect(workflow).not.toContain('invoke the `skill` tool on');
     expect(workflow).toContain('Do not\ninvoke or load `squad-cast-validator` into model context');
+    expect(command.indexOf('validator_expected_sha256=')).toBeLessThan(
+      command.indexOf('node --check "$validator_script"'),
+    );
+    expect(command.indexOf('node --check "$validator_script"')).toBeLessThan(
+      command.indexOf('validator_output="$('),
+    );
   });
 
   it('finds the materialized skill and runs the exact validator successfully', () => {
@@ -287,17 +311,29 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(authorizesPullRequest(result)).toBe(false);
   });
 
-  it('runs node --check before executing a syntactically corrupt validator', () => {
+  it('rejects a syntactically corrupt validator at the digest boundary before execution', () => {
     const fixture = createFixture();
-    const invalidProgram = gzipSync(Buffer.from('const = ;\n')).toString('base64');
-    const corrupt = materializedSkillSource().replace(
-      /(?<=<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n)[A-Za-z0-9+/\r\n=]+(?=\r?\n<!-- SQUAD_CAST_VALIDATOR_B64_END -->)/,
-      invalidProgram,
-    );
+    const corrupt = replaceValidatorPayload(materializedSkillSource(), 'const = ;\n');
     materializeSkill(fixture.root, undefined, corrupt);
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toMatch(/SyntaxError|syntax error/i);
+    expect(result.stderr).toContain('Cast validator SHA-256 mismatch');
+    expect(result.stdout).not.toContain('Cast validation passed.');
+    expect(authorizesPullRequest(result)).toBe(false);
+  });
+
+  it('rejects a syntactically valid impostor that prints the exact success sentinel', () => {
+    const fixture = createFixture();
+    const impostor = replaceValidatorPayload(
+      materializedSkillSource(),
+      "console.log('Cast validation passed.');\n",
+    );
+    materializeSkill(fixture.root, undefined, impostor);
+    const result = runValidatorCommand(fixture);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(
+      /Cast validator SHA-256 mismatch: expected 82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc, got [a-f0-9]{64}\./,
+    );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
   });

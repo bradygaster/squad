@@ -843,12 +843,23 @@ if ! awk '
   | tr -d '\r\n' \
   | base64 --decode \
   | gzip --decompress \
+  | sed 's/\r$//' \
   > "$validator_script"; then
   echo "Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data." >&2
   exit 1
 fi
 
 validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
+validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"
+validator_actual_sha256="$(
+  node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
+    "$validator_script"
+)"
+if [ "$validator_actual_sha256" != "$validator_expected_sha256" ]; then
+  printf 'Cast validator SHA-256 mismatch: expected %s, got %s.\n' \
+    "$validator_expected_sha256" "$validator_actual_sha256" >&2
+  exit 1
+fi
 node --check "$validator_script"
 validator_output="$(
   node "$validator_script" \
