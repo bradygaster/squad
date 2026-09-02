@@ -68,6 +68,32 @@ function distributedWorkflowFiles(): string[] {
 }
 
 /**
+ * Build `GIT_CONFIG_*` env vars so config can be forced on every git process in
+ * the subtree without mutating the developer's global config.
+ */
+function gitConfigEnv(config: Record<string, string>): Record<string, string> {
+  const keys = Object.keys(config);
+  if (keys.length === 0) return {};
+  const env: Record<string, string> = { GIT_CONFIG_COUNT: String(keys.length) };
+  keys.forEach((key, i) => {
+    env[`GIT_CONFIG_KEY_${i}`] = key;
+    env[`GIT_CONFIG_VALUE_${i}`] = config[key] as string;
+  });
+  return env;
+}
+
+/**
+ * A git environment that makes committing impossible: signing is demanded and
+ * the signing program cannot exist. Any code path that tries to create a commit
+ * dies here; a path that never commits is unaffected.
+ */
+const SIGNING_HOSTILE_GIT_CONFIG: Record<string, string> = {
+  'commit.gpgsign': 'true',
+  'tag.gpgsign': 'true',
+  'gpg.program': join(tmpdir(), 'squad-no-such-signing-program-8f3a1c'),
+};
+
+/**
  * Run `gh aw add` on one local Markdown file in a throwaway git repo and return
  * everything the CLI printed. `gh aw add` runs its markdown security scan before
  * it compiles, so the scan verdict is present even when a later phase fails.
@@ -80,14 +106,20 @@ function distributedWorkflowFiles(): string[] {
  * an exact path. (Each file gets its own workspace, so there is no cross-file
  * name collision to avoid -- the explicit name is purely for that assertion.)
  */
-function scanOutput(absPath: string, index: number): string {
+function scanOutput(absPath: string, index: number, extraGitConfig: Record<string, string> = {}): string {
   mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
   const workspace = mkdtempSync(join(TEST_WORKSPACES_DIR, 'secscan-'));
-  execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+
+  // Injected via GIT_CONFIG_* so it applies to every git process in the tree,
+  // including any git that `gh aw` shells out to, without touching global config.
+  const env = { ...process.env, ...gitConfigEnv(extraGitConfig) };
+
+  execFileSync('git', ['init', '--quiet'], { cwd: workspace, env });
 
   const result = spawnSync('gh', ['aw', 'add', absPath, '-n', `scan-target-${index}`], {
     cwd: workspace,
     encoding: 'utf8',
+    env,
   });
 
   if (result.error) {
@@ -140,4 +172,27 @@ describe('gh-aw: distributed workflows survive the public `gh aw add` security s
       ).toBe(false);
     },
   );
+
+  // -------------------------------------------------------------------------
+  // Portability: this gate must not depend on being able to create a commit.
+  //
+  // A developer or runner with `commit.gpgsign=true` set globally and no usable
+  // signing key would otherwise fail here BEFORE the scanner ever ran, turning a
+  // real installability gate into an environment-dependent one. The scan repo is
+  // therefore never committed to.
+  //
+  // Executing under a signing-hostile config proves that property instead of
+  // merely documenting it: signing is demanded and `gpg.program` points at a
+  // path that cannot exist, so any reintroduced `git commit` fails outright.
+  // -------------------------------------------------------------------------
+  it('scans successfully in a repo where committing is impossible (no signing key)', () => {
+    expect(existsSync(SIGNING_HOSTILE_GIT_CONFIG['gpg.program'] as string)).toBe(false);
+
+    const output = scanOutput(join(WORKFLOWS_DIR, 'squad.md'), 9001, SIGNING_HOSTILE_GIT_CONFIG);
+
+    // The scan ran and cleared: reached gh-aw, not blocked by git tooling.
+    expect(/Security scan (?:failed|found)/i.test(output)).toBe(false);
+    expect(output).toMatch(/Added workflow|\.github\/workflows/i);
+    expect(output).not.toMatch(/gpg|signing|failed to write commit/i);
+  });
 });
