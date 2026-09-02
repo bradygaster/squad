@@ -55,16 +55,16 @@ steps:
     shell: bash
     run: |
       set -euo pipefail
-      validator_runner="${RUNNER_TEMP:?}/run-squad-cast-validator"
+      validator_runner="${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"
       cat > "$validator_runner" <<'SQUAD_CAST_VALIDATOR_RUNNER'
       #!/usr/bin/env bash
       set -u -o pipefail
       cd "${GITHUB_WORKSPACE:?}"
 
-      stderr_file="${RUNNER_TEMP:?}/squad-cast-validator.stderr"
+      stderr_file="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stderr"
       validator_script="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs"
-      validator_output="${RUNNER_TEMP:?}/squad-cast-validator.stdout"
-      expected_output="${RUNNER_TEMP:?}/squad-cast-validator.expected"
+      validator_output="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stdout"
+      expected_output="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.expected"
 
       fail_cast() {
         local stage="$1"
@@ -122,7 +122,7 @@ steps:
       : > "$stderr_file"
       node "$validator_script" \
         --root "$PWD" \
-        --payload "${RUNNER_TEMP:?}/squad-cast-payload.json" \
+        --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json" \
         > "$validator_output" 2> "$stderr_file"
       status=$?
       if [ "$status" -ne 0 ]; then
@@ -1002,17 +1002,18 @@ its charter from scratch.
 ##### Step 7: Deterministic final-tree validation
 
 Natural-language review is not the gate. Immediately before requesting safe
-output, create `$RUNNER_TEMP/squad-cast-payload.json` as a JSON array containing
-every concrete Step 6 payload path, then invoke the prepared runner with the
-exact command below. Do not transcribe validator bytes, and do not invoke or
-load `squad-cast-validator` into model context. The runner was prepared before
-this turn and deterministically executes the plaintext validator resource that
-gh-aw installed at `.github/workflows/shared/squad-cast-validator.mjs` under
-`$GITHUB_WORKSPACE`.
+output, create
+`$GITHUB_WORKSPACE/.github/workflows/squad-cast-payload.json` as a JSON array
+containing every concrete Step 6 payload path, then invoke the prepared runner
+with the exact command below. Do not transcribe validator bytes, and do not invoke or
+load `squad-cast-validator` into model context. The runner was
+prepared before this turn under the sandbox-visible `$GITHUB_WORKSPACE` and
+deterministically executes the plaintext validator resource that gh-aw installed
+at `.github/workflows/shared/squad-cast-validator.mjs`.
 
 <!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->
 ```bash
-"${RUNNER_TEMP:?}/run-squad-cast-validator"
+"${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"
 ```
 <!-- SQUAD:CAST-VALIDATOR-COMMAND:END -->
 

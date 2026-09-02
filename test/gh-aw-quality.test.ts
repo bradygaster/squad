@@ -1479,6 +1479,13 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     )?.[0] ?? '';
     const normalizedRunnerStep = runnerStep.replace(/\\"/g, '"');
     expect(normalizedRunnerStep).toContain('cat > "$validator_runner"');
+    expect(normalizedRunnerStep).toContain(
+      'validator_runner="${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"',
+    );
+    expect(normalizedRunnerStep).toContain(
+      '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
+    );
+    expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
     expect(normalizedRunnerStep).toContain('validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
@@ -2670,7 +2677,9 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
     expect(candidateCast).toMatch(
       /only exit status zero with stdout exactly\s+`Cast validation passed\.` authorizes exactly one `create-pull-request`/s,
     );
-    expect(candidateCast).toContain('"${RUNNER_TEMP:?}/run-squad-cast-validator"');
+    expect(candidateCast).toContain(
+      '"${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"',
+    );
     expect(candidateCast).toMatch(/Do not transcribe validator bytes, and do not invoke or\s+load/);
     expect(candidateCast).toContain('emits one JSON\nrecord on stdout');
     expect(candidateCast.match(
@@ -2758,7 +2767,7 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
 
   it('enforces mutually exclusive factual Cast terminal outcomes', () => {
     expect(cast).toContain('Deterministic final-tree validation');
-    expect(cast).toContain('$RUNNER_TEMP/squad-cast-payload.json');
+    expect(cast).toContain('$GITHUB_WORKSPACE/.github/workflows/squad-cast-payload.json');
     expect(cast).toContain('squad-cast-validator');
     assertTruthfulCastTerminalContract(squadContent);
   });

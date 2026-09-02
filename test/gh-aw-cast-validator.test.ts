@@ -120,8 +120,8 @@ Architecture, Implementation, Quality
 function createFixture(): { root: string; payload: string; runnerTemp: string } {
   const root = mkdtempSync(join(tmpdir(), 'gh-aw-cast-validator-'));
   workspaces.push(root);
-  const runnerTemp = join(root, 'runner-temp');
-  mkdirSync(runnerTemp, { recursive: true });
+  const runnerTemp = mkdtempSync(join(tmpdir(), 'gh-aw-cast-runner-temp-'));
+  workspaces.push(runnerTemp);
   write(root, '.squad/team.md', teamMarkdown());
   write(root, '.squad/routing.md', routingMarkdown());
   write(root, '.squad/casting/registry.json', JSON.stringify({
@@ -137,7 +137,8 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   }
   write(root, '.github/agents/squad.agent.md', coordinatorMarkdown());
   write(root, 'meet-the-squad.md', '# Meet the Squad\n');
-  const payload = join(runnerTemp, 'squad-cast-payload.json');
+  const payload = join(root, '.github', 'workflows', 'squad-cast-payload.json');
+  mkdirSync(dirname(payload), { recursive: true });
   writeFileSync(payload, JSON.stringify(corePayload), 'utf8');
   return { root, payload, runnerTemp };
 }
@@ -211,7 +212,7 @@ function materializeRunner(
   fixture: ReturnType<typeof createFixture>,
   source = validatorRunnerSource(),
 ): string {
-  const runner = join(fixture.runnerTemp, 'run-squad-cast-validator');
+  const runner = join(fixture.root, '.github', 'workflows', 'run-squad-cast-validator');
   writeFileSync(runner, source, 'utf8');
   chmodSync(runner, 0o500);
   return runner;
@@ -307,7 +308,9 @@ describe('GH-AW Cast final-tree validator', () => {
     const command = validatorCommand();
     const runner = validatorRunnerSource();
     const workflow = readFileSync(workflowPath, 'utf8');
-    expect(command.trim()).toBe('"${RUNNER_TEMP:?}/run-squad-cast-validator"');
+    expect(command.trim()).toBe(
+      '"${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"',
+    );
     expect(command).not.toMatch(/[A-Za-z0-9+/]{256}/);
     expect(command).not.toMatch(/cat\s+<<|base64|gzip|awk|validator_expected_sha256/);
     expect(command).not.toContain('H4sI');
@@ -318,6 +321,7 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(runner).toContain(
       'validator_script="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs"',
     );
+    expect(runner).not.toContain('RUNNER_TEMP');
     expect(runner.indexOf('validator_expected_sha256=')).toBeLessThan(
       runner.indexOf('node --check "$validator_script"'),
     );
@@ -335,8 +339,11 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe('Cast validation passed.\n');
     expect(authorizesPullRequest(result)).toBe(true);
+    expect(fixture.payload.startsWith(fixture.root)).toBe(true);
+    expect(fixture.payload.startsWith(fixture.runnerTemp)).toBe(false);
     // Never copied or extracted into $RUNNER_TEMP -- executed in place from $GITHUB_WORKSPACE.
     expect(existsSync(join(fixture.runnerTemp, 'validate-gh-aw-cast.mjs'))).toBe(false);
+    expect(existsSync(join(fixture.runnerTemp, 'run-squad-cast-validator'))).toBe(false);
   });
 
   it('fails clearly when the installed validator resource is missing', () => {
