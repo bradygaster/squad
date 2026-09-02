@@ -21,15 +21,23 @@ const RESOLVED_REFERENCE = /^#?(\d+)$/;
 // knows a call was *accepted for a specific target* — never that GitHub applied it. Word
 // boundaries keep this from matching substrings ("unverified", "prechecked").
 const FORBIDDEN_LABEL_CLAIM_WORDS = ['applied', 'received', 'landed', 'verified', 'confirmed', 'checked'];
-// A line is treated as a compliant, honest non-claim (never flagged) when it explicitly
+// A clause is treated as a compliant, honest non-claim (never flagged) when it explicitly
 // negates the outcome — e.g. "not verified", "never confirmed" — since that is the accurate,
 // honest statement the contract requires, not an over-claim.
 const NEGATION_NEARBY = /\b(never|not|no|n't|without|cannot|can't|won't|isn't|wasn't|doesn't|didn't|nor)\b/i;
-// Scope the forbidden-word scan to lines that are actually reporting a label operation —
+// Scope the forbidden-word scan to clauses that are actually reporting a label operation —
 // mentioning "label"/"labels" or a `squad:*` token — rather than scanning the whole comment.
 // A blanket scan would false-positive on an unrelated quoted task title like "Verified Email
 // Addresses" sitting in the created-issues table.
 const LABEL_OPERATION_CONTEXT = /\blabels?\b|\bsquad:[a-z0-9_.-]+\b/i;
+// Protects a `squad:{agent}` token's colon from being mistaken for a clause boundary while
+// splitting a line into clauses. Requires each embedded `.` to be followed by another name
+// character (e.g. `squad:kint.jones`), so a sentence-ending period right after an agent name
+// (`squad:kint.`) is left alone as a real delimiter, not swallowed into the token.
+const SQUAD_TOKEN = /\bsquad:([a-z0-9_-]+(?:\.[a-z0-9_-]+)*)/gi;
+// Placeholder standing in for a protected token's colon while clauses are split; chosen to
+// never collide with real comment text.
+const SQUAD_COLON_PLACEHOLDER = '\u0000';
 
 function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -103,20 +111,45 @@ function stripQuotedAndCode(line) {
 }
 
 /**
+ * Split a line into clauses on clause/sentence-ending punctuation (`.`, `,`, `;`, `:`) so a
+ * negation and a certainty claim are only ever treated as connected when they actually share
+ * the same clause. Without this, "No issues were skipped: Label squad:kint was verified for
+ * #42." would let the unrelated negation on "skipped" blanket-suppress the real, separate
+ * claim that follows the colon — and a claim about a *different* subject sharing a line with
+ * a label mention (e.g. "Reported squad:kint for issue #123, its verified real number") would
+ * wrongly inherit label-operation context from a clause it isn't part of.
+ *
+ * `squad:{agent}` tokens are protected first so the colon inside them is never itself treated
+ * as a clause boundary.
+ */
+function splitClauses(line) {
+  const guarded = line.replace(SQUAD_TOKEN, (_match, agent) => `squad${SQUAD_COLON_PLACEHOLDER}${agent}`);
+  return guarded
+    .split(/[.,;:]+/)
+    .map(clause => clause.replaceAll(SQUAD_COLON_PLACEHOLDER, ':'))
+    .filter(clause => clause.trim().length > 0);
+}
+
+/**
  * Reject standalone certainty claims ("applied", "received", "landed", "verified",
  * "confirmed", "checked") in an activation/acceptance comment's label-operation reporting.
  * `add_labels` is a safe output applied in a post-agent job — the run only ever knows a call
  * was *accepted* for a target, never that GitHub actually applied it. A summary claiming more
  * than that is over-claiming an outcome nothing here observed.
  *
- * Deliberately scoped, not a blanket whole-comment scan:
+ * Deliberately scoped, not a blanket whole-comment or whole-line scan:
  *   - Markdown table rows (`| ... |`) are skipped — that's where quoted work-item titles live.
  *   - Fenced code blocks, inline code, and quoted strings are stripped before matching, so a
  *     quoted title or JSON fragment containing a forbidden word never counts.
- *   - Only lines that actually mention label vocabulary (`label`/`labels`/`squad:*`) are
- *     scanned — an unrelated line elsewhere in the comment is out of scope.
- *   - A line that explicitly negates the claim ("was not verified", "never confirmed") is the
- *     honest, compliant statement the contract requires, so it is never flagged.
+ *   - Each line is split into clauses (see `splitClauses`), and label-operation context
+ *     (`label`/`labels`/`squad:*`), the forbidden word, and any negation must all be found
+ *     within the *same* clause. This is what lets a genuinely unrelated negation elsewhere on
+ *     the line ("No issues were skipped: ... was verified ...") fail to suppress a real claim,
+ *     while a forbidden word describing an unrelated subject in a different clause on the same
+ *     line as a label mention ("Reported squad:kint for issue #123, its verified real number")
+ *     is correctly out of scope — its clause carries no label-operation context at all.
+ *   - A clause that explicitly negates the claim ("was not verified", "never confirmed") is
+ *     the honest, compliant statement the contract requires, so it is never flagged.
  *
  * No-op for artifact types outside the activation contract (fast-path `plan-accepted` /
  * `phases-accepted` and granular `activated` / `phases-activated`).
@@ -129,15 +162,17 @@ export function assertAcceptedOnlyLabelWording(commentBody, artifactType) {
     const trimmed = rawLine.trim();
     if (!trimmed || trimmed.startsWith('|')) continue;
     const scrubbed = stripQuotedAndCode(trimmed);
-    if (!LABEL_OPERATION_CONTEXT.test(scrubbed)) continue;
-    if (NEGATION_NEARBY.test(scrubbed)) continue;
-    for (const word of FORBIDDEN_LABEL_CLAIM_WORDS) {
-      if (new RegExp(`\\b${word}\\b`, 'i').test(scrubbed)) {
-        throw new Error(
-          `label-operation report uses forbidden certainty claim "${word}" — report label ` +
-            `operations as accepted only, never applied/received/landed/verified/confirmed/` +
-            `checked: "${trimmed}"`,
-        );
+    for (const clause of splitClauses(scrubbed)) {
+      if (!LABEL_OPERATION_CONTEXT.test(clause)) continue;
+      if (NEGATION_NEARBY.test(clause)) continue;
+      for (const word of FORBIDDEN_LABEL_CLAIM_WORDS) {
+        if (new RegExp(`\\b${word}\\b`, 'i').test(clause)) {
+          throw new Error(
+            `label-operation report uses forbidden certainty claim "${word}" — report label ` +
+              `operations as accepted only, never applied/received/landed/verified/confirmed/` +
+              `checked: "${trimmed}"`,
+          );
+        }
       }
     }
   }

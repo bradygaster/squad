@@ -18,9 +18,11 @@
  *   3. The deterministic checker (`scripts/check-agent-binding.mjs`) validates `plan-accepted`
  *      / `phases-accepted` bindings exactly like `activated` / `phases-activated`, and rejects
  *      standalone certainty claims ("applied", "received", "landed", "verified", "confirmed",
- *      "checked") in label-operation reporting — scoped to actual label-operation lines, never
- *      a blanket whole-comment scan, so quoted titles, unrelated sections, negations, and
- *      substrings never false-positive.
+ *      "checked") in label-operation reporting — scoped per-clause (not per-line or a blanket
+ *      whole-comment scan), so quoted titles, unrelated sections, substrings, a forbidden word
+ *      describing an unrelated subject sharing a line with a label token, and negations never
+ *      false-positive, while a negation elsewhere on the line never blanket-suppresses a real,
+ *      separate claim.
  *   4. The CI collector actually passes fast-path artifact comments to that checker.
  *
  * Out of scope (per the E4 preflight package A brief): workflow discriminators, docs
@@ -438,6 +440,31 @@ Label squad:kint: add_labels accepted for #42.
     // matches this comment, but the scoped checker must not flag it.
     expect(/\bverified\b/i.test(comment)).toBe(true);
     expect(assertAcceptedOnlyLabelWording(comment, 'activated')).toEqual({ skipped: false });
+  });
+
+  // --- Regression: negation/claim scope must bind to a clause, not the whole line.
+
+  it('regression: an unrelated negation earlier on the line must not blanket-suppress a real, separate claim', () => {
+    // "No issues were skipped" negates "skipped", not "verified" — the claim after the colon
+    // is a genuinely separate clause and is a real, standalone certainty claim.
+    expect(() =>
+      assertAcceptedOnlyLabelWording(
+        'No issues were skipped: Label squad:kint was verified for #42.',
+        'activated',
+      ),
+    ).toThrow(/forbidden certainty claim/);
+  });
+
+  it('regression: a forbidden word describing a different subject on the same line as a label token must not flag', () => {
+    // "its verified real number" describes the reused issue number, not the label operation —
+    // this is the exact, sanctioned "or by its verified real number for a reused issue" wording
+    // from the Label operations accepted contract (workflows/squad.md), and must pass.
+    expect(
+      assertAcceptedOnlyLabelWording(
+        'Reported squad:kint for issue #123, its verified real number (reused this run).',
+        'activated',
+      ),
+    ).toEqual({ skipped: false });
   });
 });
 
