@@ -34,6 +34,7 @@ permissions:
 concurrency:
   group: "squad-${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}"
   cancel-in-progress: false
+  job-discriminator: ${{ github.run_id }}
 network:
   allowed:
     - defaults

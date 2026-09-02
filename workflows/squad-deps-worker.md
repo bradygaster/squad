@@ -25,6 +25,7 @@ permissions:
 concurrency:
   group: "squad-deps-${{ github.event.inputs.issue_number }}"
   cancel-in-progress: false
+  job-discriminator: ${{ github.run_id }}
 network:
   allowed:
     - defaults
