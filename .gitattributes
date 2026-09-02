@@ -53,8 +53,5 @@ Dockerfile.* text eol=lf
 # perpetually dirty tree (#1788).
 *.snap text eol=lf
 
-# Squad: the gh-aw resource probe is authenticated byte-for-byte before agent startup.
-workflows/shared/squad-gh-aw-resource-probe.txt text eol=lf
-
 # Squad: union merge for append-only team state files
 .squad/fact-checker/audit-trail.md merge=union
