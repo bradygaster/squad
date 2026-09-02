@@ -371,8 +371,14 @@ describe('gh-aw: self-validation reconciles activated items with label operation
     const reconciliation = activateSkill.slice(activateSkill.indexOf('**2e. Label-Operation Reconciliation'));
     const reconciliationProse = reconciliation.replace(/\s+/g, ' ');
     expect(reconciliation).toContain('report_incomplete');
+    // Wording was tightened by the E4 preflight package A fast-path artifact-integrity fix:
+    // "the label set it should have received" used the forbidden certainty word "received"
+    // to describe a label operation that never happened, even though it was worded as
+    // something the item merely lacked rather than a claim that it landed. The reworded
+    // phrase states the identical fact — which label set the missing operation targeted —
+    // without a word the runtime label-operation reporting contract now bans outright.
     expect(
-      /the identifier you used to target its `add_labels` call, its title, and the label set it should have received/i.test(
+      /the identifier you used to target its `add_labels` call, its title, and the label set that missing operation targeted/i.test(
         reconciliationProse,
       ),
       'The incomplete report must identify affected work items specifically enough to act on.',
