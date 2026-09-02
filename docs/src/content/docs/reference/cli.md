@@ -75,6 +75,7 @@ prerequisites, all supported methods, and update commands.
 | `squad nap` | Context hygiene (compress, prune, archive .squad/ state) | Yes |
 | `squad nap --deep` | Thorough cleanup with recursive descent | Yes |
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |
+| `squad nap --json` | Emit machine-readable nap metrics and actions | Yes |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) | No |
 | `squad --version` | Print installed version | No |
 

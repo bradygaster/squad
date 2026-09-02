@@ -15,7 +15,11 @@ This is a periodic maintenance activity. Run whenever charter/history bloat is s
 ## Process
 
 ### Step 1: Audit
-Read all agent charters and histories. Measure byte sizes. Identify:
+Run `squad nap --dry-run --json` first. This is a read-only preview: it measures the team and modifies nothing. Capture the measured baseline from `before.charterBytes`, `before.skillBytes`, `before.charterReducibleBytes`, and `before.historyReducibleBytes`.
+
+`charterReducibleBytes` and `historyReducibleBytes` tell you exactly how many bytes are above the Step 3 targets before you start. Nap measures charters and skills; it never rewrites them. Charter trimming remains a deliberate, judgment-driven agent action.
+
+Then read agent charters and histories to identify:
 
 - **Boilerplate** — sections repeated across ≥3 charters with <10% variation (collaboration, model, boundaries template)
 - **Shared knowledge** — domain knowledge duplicated in 2+ charters (incident postmortems, technical patterns)
@@ -43,12 +47,17 @@ For each identified pattern:
 - Remove session-specific metadata (dates, branch names, requester names)
 
 ### Step 4: Report
-Output a savings table:
+Run `squad nap --dry-run --json` again after the deliberate reskill edits. Populate the savings table only from measured `squad nap --json` values — never from estimates.
 
-| Agent | Charter Before | Charter After | History Before | History After | Saved |
-|-------|---------------|---------------|----------------|---------------|-------|
+| Area | Before | After | Above Target Before | Saved |
+|------|--------|-------|---------------------|-------|
+| Charters | `{baseline.before.charterBytes}` | `{final.before.charterBytes}` | `{baseline.before.charterReducibleBytes}` | `{baseline.before.charterBytes - final.before.charterBytes}` |
+| Skills | `{baseline.before.skillBytes}` | `{final.before.skillBytes}` | n/a | `{baseline.before.skillBytes - final.before.skillBytes}` |
+| Histories | `{baseline.before.historyBytes}` | `{final.before.historyBytes}` | `{baseline.before.historyReducibleBytes}` | `{baseline.before.historyBytes - final.before.historyBytes}` |
 
 Include totals and percentage reduction.
+
+Do not report a savings number that did not come from a measured `squad nap --json` run. `charterReducibleBytes` and `historyReducibleBytes` tell you exactly how much is above target before you start; use those fields for reducibility, not vibes.
 
 ## Patterns
 
@@ -90,3 +99,5 @@ Preferred: {model}
 - Don't remove Model preference line (coordinator needs it for model selection)
 - Don't touch `.squad/decisions.md` during reskill
 - Don't remove the tagline blockquote — it's the charter's soul in one line
+- Don't hand-estimate, invent, or round-trip savings figures through vibes; if the number didn't come from `squad nap --json`, don't report it
+- Don't automate charter rewriting — nap measures charters and skills, but identity edits stay deliberate and judgment-driven

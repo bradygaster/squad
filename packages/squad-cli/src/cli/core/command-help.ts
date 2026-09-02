@@ -204,10 +204,11 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
 
   nap: (version) => {
     header('nap', version, 'Context hygiene — compress, prune, archive .squad/ state');
-    console.log(`Usage: squad nap [--deep] [--dry-run]\n`);
+    console.log(`Usage: squad nap [--deep] [--dry-run] [--json]\n`);
     console.log(`Options:`);
     console.log(`  ${BOLD}--deep${RESET}                      Thorough cleanup, including older history`);
-    console.log(`  ${BOLD}--dry-run${RESET}                   Preview changes without writing\n`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   Preview changes without writing (report shows a DRY RUN banner and conditional verbs)`);
+    console.log(`  ${BOLD}--json${RESET}                      Emit machine-readable JSON ({ dryRun, before, after, actions }) for CI/diffing\n`);
   },
 
   memory: (version) => {

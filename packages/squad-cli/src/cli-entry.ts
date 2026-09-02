@@ -226,8 +226,8 @@ async function main(): Promise<void> {
     console.log(`                       start --tunnel --model claude-sonnet-4.6`);
     console.log(`                       start --tunnel --command "gh copilot"`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
-    console.log(`             Usage: nap [--deep] [--dry-run]`);
-    console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
+    console.log(`             Usage: nap [--deep] [--dry-run] [--json]`);
+    console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only), --json (machine-readable)`);
     console.log(`  ${BOLD}memory${RESET}     Governed memory operations`);
     console.log(`             Usage: memory write --content "..." --class LOCAL`);
     console.log(`             Diagnostics: --log-level info|debug or --verbose`);
@@ -976,8 +976,16 @@ async function main(): Promise<void> {
     }
     const deep = args.includes('--deep');
     const dryRun = args.includes('--dry-run');
+    const json = args.includes('--json');
     const result = await runNap({ squadDir, deep, dryRun });
-    console.log(formatNapReport(result, !!process.env['NO_COLOR']));
+    if (json) {
+      // Stable machine-readable shape mirroring NapResult so downstream
+      // tooling can diff before/after and assert on savings deterministically.
+      // Follows the health.ts:795 `--json` precedent (2-space indent).
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(formatNapReport(result, !!process.env['NO_COLOR']));
+    }
     return;
   }
 

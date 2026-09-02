@@ -26,6 +26,13 @@ export interface NapResult {
   before: NapMetrics;
   after: NapMetrics;
   actions: NapAction[];
+  /**
+   * True when the run was invoked with `dryRun: true` (no files were written).
+   * Consumed by {@link formatNapReport} to produce a distinct preview banner
+   * and conditional action verbs, and surfaced verbatim in `--json` output so
+   * downstream tooling can diff previews vs real runs deterministically.
+   */
+  dryRun: boolean;
 }
 
 export interface NapMetrics {
@@ -35,6 +42,27 @@ export interface NapMetrics {
   logBytes: number;
   decisionBytes: number;
   inboxFiles: number;
+  /**
+   * Total bytes across every `.squad/agents/*\/charter.md`. Read-only —
+   * nap never modifies charters (charters are identity; see
+   * `.squad/decisions/inbox/flight-nap-reskill-scope.md` §C non-goals).
+   */
+  charterBytes: number;
+  /** Total bytes across every `.md` file under `.squad/skills/` (recursive). */
+  skillBytes: number;
+  /**
+   * Sum over agents of `max(0, charterSize - CHARTER_TARGET)`. The excess
+   * bytes over the reskill skill's stated charter target. Purely a
+   * measurement — nap does not reduce it.
+   */
+  charterReducibleBytes: number;
+  /**
+   * Sum over agents of `max(0, historySize - HISTORY_TARGET)`. The excess
+   * bytes over the reskill skill's stated history target. Nap's compression
+   * (>15KB threshold) is a coarser primitive than this target, so this number
+   * is a lower bound on what a targeted reskill pass could reclaim.
+   */
+  historyReducibleBytes: number;
 }
 
 export interface NapAction {
@@ -54,6 +82,15 @@ const KEEP_ENTRIES_DEFAULT = 5;
 const KEEP_ENTRIES_DEEP = 3;
 const JOURNAL_FILE = '.nap-journal';
 const TOKENS_PER_KB = 250;
+
+// Reskill skill targets — used ONLY for reducibility measurement, not for
+// mutation. Provenance so the numbers are traceable, not magic:
+//   packages/squad-cli/templates/skills/reskill/SKILL.md line 31 —
+//     "Charters — target ≤1.5KB per agent"
+const CHARTER_TARGET = 1536;               // 1.5 KB
+//   packages/squad-cli/templates/skills/reskill/SKILL.md line 39 —
+//     "Histories — target ≤8KB per agent"
+const HISTORY_TARGET = 8 * 1024;           // 8 KB
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -118,17 +155,36 @@ function daysAgoFromLine(line: string): number | null {
 
 function collectMetrics(squadDir: string): NapMetrics {
   const agentsDir = path.join(squadDir, 'agents');
+  const skillsDir = path.join(squadDir, 'skills');
   const orchLogDir = path.join(squadDir, 'orchestration-log');
   const logDir = path.join(squadDir, 'log');
   const decisionsFile = path.join(squadDir, 'decisions.md');
   const inboxDir = path.join(squadDir, 'decisions', 'inbox');
 
   let historyBytes = 0;
+  let historyReducibleBytes = 0;
+  let charterBytes = 0;
+  let charterReducibleBytes = 0;
   if (storage.existsSync(agentsDir)) {
     for (const name of storage.listSync(agentsDir)) {
       if (!storage.isDirectorySync(path.join(agentsDir, name))) continue;
       const hf = path.join(agentsDir, name, 'history.md');
-      historyBytes += fileSize(hf);
+      const hSize = fileSize(hf);
+      historyBytes += hSize;
+      historyReducibleBytes += Math.max(0, hSize - HISTORY_TARGET);
+      const cf = path.join(agentsDir, name, 'charter.md');
+      const cSize = fileSize(cf);
+      charterBytes += cSize;
+      charterReducibleBytes += Math.max(0, cSize - CHARTER_TARGET);
+    }
+  }
+
+  // Skills: recursive .md walk under .squad/skills/. SKILL.md is the
+  // canonical filename but nap should count any markdown a skill ships with.
+  let skillBytes = 0;
+  if (storage.existsSync(skillsDir)) {
+    for (const f of collectFiles(skillsDir)) {
+      if (f.endsWith('.md')) skillBytes += fileSize(f);
     }
   }
 
@@ -152,6 +208,10 @@ function collectMetrics(squadDir: string): NapMetrics {
     logBytes,
     decisionBytes,
     inboxFiles,
+    charterBytes,
+    skillBytes,
+    charterReducibleBytes,
+    historyReducibleBytes,
   };
 }
 
@@ -524,7 +584,7 @@ export async function runNap(options: NapOptions): Promise<NapResult> {
   const actions: NapAction[] = [];
 
   if (!storage.existsSync(squadDir)) {
-    return { before: emptyMetrics(), after: emptyMetrics(), actions };
+    return { before: emptyMetrics(), after: emptyMetrics(), actions, dryRun };
   }
 
   // Journal safety check
@@ -571,7 +631,7 @@ export async function runNap(options: NapOptions): Promise<NapResult> {
   // Collect after metrics
   const after = dryRun ? estimateAfterMetrics(before, actions) : collectMetrics(squadDir);
 
-  return { before, after, actions };
+  return { before, after, actions, dryRun };
 }
 
 /**
@@ -583,7 +643,7 @@ export function runNapSync(options: NapOptions): NapResult {
   const actions: NapAction[] = [];
 
   if (!storage.existsSync(squadDir)) {
-    return { before: emptyMetrics(), after: emptyMetrics(), actions };
+    return { before: emptyMetrics(), after: emptyMetrics(), actions, dryRun };
   }
 
   if (checkJournal(squadDir)) {
@@ -621,10 +681,36 @@ export function runNapSync(options: NapOptions): NapResult {
 
   const after = dryRun ? estimateAfterMetrics(before, actions) : collectMetrics(squadDir);
 
-  return { before, after, actions };
+  return { before, after, actions, dryRun };
 }
 
 // ─── Report formatting ──────────────────────────────────────────────────
+
+/**
+ * Rewrite an action description into conditional-verb form for dry-run
+ * reports. The action strings themselves are stored in past tense because
+ * that is the "real run" wording; the formatter is the single place that
+ * knows the run mode, so it rewrites at display time. This keeps action
+ * descriptions immutable across the code path and lets consumers (including
+ * `--json` and tests) see the raw past-tense description regardless.
+ */
+function dryRunifyDescription(description: string): string {
+  // Prefix map from past tense → conditional. Anchored at start so we don't
+  // rewrite the word "Compressed" if it ever appears mid-sentence.
+  const rewrites: Array<[RegExp, string]> = [
+    [/^Compressed\b/, 'Would compress'],
+    [/^Pruned\b/, 'Would prune'],
+    [/^Merged\b/, 'Would merge'],
+    [/^Archived\b/, 'Would archive'],
+    [/^Archival skipped\b/, 'Would skip archival'],
+    [/^Archival refused\b/, 'Would refuse archival'],
+    [/^Archival aborted\b/, 'Would abort archival'],
+  ];
+  for (const [pattern, replacement] of rewrites) {
+    if (pattern.test(description)) return description.replace(pattern, replacement);
+  }
+  return description;
+}
 
 export function formatNapReport(result: NapResult, noColor?: boolean): string {
   const nc = noColor ?? !!process.env['NO_COLOR'];
@@ -635,15 +721,39 @@ export function formatNapReport(result: NapResult, noColor?: boolean): string {
   const R = nc ? '' : '\x1b[0m';
   const sep = '-'.repeat(40);
 
-  const { before, after, actions } = result;
+  const { before, after, actions, dryRun } = result;
   const saved = before.totalBytes - after.totalBytes;
   const tokensSaved = humanTokens(Math.max(0, saved));
 
   const lines: string[] = [];
 
+  // Dry-run banner — top of the report, regardless of action count. Users
+  // must be able to distinguish a preview from a real run at a glance.
+  // (See Flight §A gap 3; nap.ts:256/276/309/629 were unconditionally past
+  // tense, making a preview textually indistinguishable from truth.)
+  if (dryRun) {
+    if (nc) {
+      lines.push(`[DRY RUN] no files were modified`);
+    } else {
+      lines.push(`${Y}${B}🔍 DRY RUN${R} ${Y}— no files were modified${R}`);
+    }
+    lines.push('');
+  }
+
   if (actions.length === 0) {
-    lines.push(`${nc ? '' : '😴 '}${B}Nap complete${R} - nothing to clean up.`);
+    const verb = dryRun ? 'Nap preview' : 'Nap complete';
+    const tail = dryRun ? 'nothing would be cleaned up.' : 'nothing to clean up.';
+    lines.push(`${nc ? '' : '😴 '}${B}${verb}${R} - ${tail}`);
     lines.push(`${D}Total: ${humanBytes(before.totalBytes)} (${humanTokens(before.totalBytes)} tokens est.)${R}`);
+    // Even with no actions the reducibility measurement is useful — it is the
+    // whole point of the primitive: reveal charter/history bytes that a
+    // targeted reskill pass could reclaim, without running any mutation.
+    if (before.charterBytes > 0 || before.skillBytes > 0) {
+      lines.push(`${D}Charters: ${humanBytes(before.charterBytes)} (reducible ${humanBytes(before.charterReducibleBytes)}), Skills: ${humanBytes(before.skillBytes)}${R}`);
+    }
+    if (before.historyReducibleBytes > 0) {
+      lines.push(`${D}History reducible: ${humanBytes(before.historyReducibleBytes)} over target (${humanBytes(HISTORY_TARGET)}/agent)${R}`);
+    }
     return lines.join('\n');
   }
 
@@ -653,7 +763,8 @@ export function formatNapReport(result: NapResult, noColor?: boolean): string {
 
   // Before/after summary
   lines.push(`${B}Overall${R}`);
-  lines.push(`  ${humanBytes(before.totalBytes)} ${D}->${R} ${G}${humanBytes(after.totalBytes)}${R} ${D}(saved ~${tokensSaved} tokens)${R}`);
+  const arrow = dryRun ? `${D}(would become)${R}` : `${D}->${R}`;
+  lines.push(`  ${humanBytes(before.totalBytes)} ${arrow} ${G}${humanBytes(after.totalBytes)}${R} ${D}(${dryRun ? 'would save' : 'saved'} ~${tokensSaved} tokens)${R}`);
   lines.push('');
 
   // Category breakdown
@@ -662,6 +773,12 @@ export function formatNapReport(result: NapResult, noColor?: boolean): string {
     ['History', before.historyBytes, after.historyBytes],
     ['Logs', before.logBytes, after.logBytes],
     ['Decisions', before.decisionBytes, after.decisionBytes],
+    // Charters and skills are always identical in before/after (nap never
+    // touches them). They show up here so the reader can see what fraction
+    // of the total is fixed vs. reclaimable — the whole point of the
+    // measurement addition.
+    ['Charters', before.charterBytes, after.charterBytes],
+    ['Skills', before.skillBytes, after.skillBytes],
   ];
   for (const [name, b, a] of categories) {
     if (b === 0 && a === 0) continue;
@@ -674,11 +791,26 @@ export function formatNapReport(result: NapResult, noColor?: boolean): string {
     lines.push(`  Inbox: ${before.inboxFiles} file${before.inboxFiles !== 1 ? 's' : ''} -> ${after.inboxFiles}`);
   }
 
+  // Reducibility panel — the answer to "how much of my per-spawn prompt is
+  // charter/history that a targeted reskill could reclaim?" without running
+  // any mutation. Only shown when there is something reducible.
+  if (before.charterReducibleBytes > 0 || before.historyReducibleBytes > 0) {
+    lines.push('');
+    lines.push(`${B}Reducible (vs. reskill targets)${R}`);
+    if (before.charterReducibleBytes > 0) {
+      lines.push(`  ${D}Charters over ${humanBytes(CHARTER_TARGET)}/agent:${R} ${humanBytes(before.charterReducibleBytes)}`);
+    }
+    if (before.historyReducibleBytes > 0) {
+      lines.push(`  ${D}Histories over ${humanBytes(HISTORY_TARGET)}/agent:${R} ${humanBytes(before.historyReducibleBytes)}`);
+    }
+  }
+
   lines.push('');
   lines.push(`${B}Actions${R} (${actions.length})`);
   for (const a of actions) {
     const tag = actionTag(a.type, nc);
-    lines.push(`  ${tag} ${a.description}`);
+    const desc = dryRun ? dryRunifyDescription(a.description) : a.description;
+    lines.push(`  ${tag} ${desc}`);
   }
 
   lines.push('');
@@ -701,7 +833,18 @@ function actionTag(type: NapAction['type'], noColor: boolean): string {
 }
 
 function emptyMetrics(): NapMetrics {
-  return { totalFiles: 0, totalBytes: 0, historyBytes: 0, logBytes: 0, decisionBytes: 0, inboxFiles: 0 };
+  return {
+    totalFiles: 0,
+    totalBytes: 0,
+    historyBytes: 0,
+    logBytes: 0,
+    decisionBytes: 0,
+    inboxFiles: 0,
+    charterBytes: 0,
+    skillBytes: 0,
+    charterReducibleBytes: 0,
+    historyReducibleBytes: 0,
+  };
 }
 
 function estimateAfterMetrics(before: NapMetrics, actions: NapAction[]): NapMetrics {
@@ -726,5 +869,16 @@ function estimateAfterMetrics(before: NapMetrics, actions: NapAction[]): NapMetr
     logBytes: Math.max(0, before.logBytes - logSaved),
     decisionBytes: Math.max(0, before.decisionBytes - decisionSaved),
     inboxFiles: Math.max(0, before.inboxFiles - inboxMerged),
+    // Nap never modifies charters or skills (Flight §C non-goals) — pass
+    // through unchanged. Fabricating deltas here would be a lie the caller
+    // couldn't distinguish from truth.
+    charterBytes: before.charterBytes,
+    skillBytes: before.skillBytes,
+    charterReducibleBytes: before.charterReducibleBytes,
+    // historyReducibleBytes is nominally affected by compression, but the
+    // aggregate doesn't decompose from an aggregate historyBytes delta — we
+    // don't know per-file after-sizes here. Honest choice: pass through.
+    // The real (non-dry-run) collectMetrics reports truth on the next run.
+    historyReducibleBytes: before.historyReducibleBytes,
   };
 }

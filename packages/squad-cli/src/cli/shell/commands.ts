@@ -228,7 +228,11 @@ function handleNap(args: string[], context: CommandContext): CommandResult {
     const squadDir = path.join(context.teamRoot, '.squad');
     const deep = args.includes('--deep');
     const dryRun = args.includes('--dry-run');
+    const json = args.includes('--json');
     const result = runNapSync({ squadDir, deep, dryRun });
+    if (json) {
+      return { handled: true, output: JSON.stringify(result, null, 2) };
+    }
     return { handled: true, output: formatNapReport(result, !!process.env['NO_COLOR']) };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

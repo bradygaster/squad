@@ -658,6 +658,10 @@ describe('Nap — Report formatting', () => {
         logBytes: 40000,
         decisionBytes: 25000,
         inboxFiles: 3,
+        charterBytes: 0,
+        skillBytes: 0,
+        charterReducibleBytes: 0,
+        historyReducibleBytes: 0,
       },
       after: {
         totalFiles: 35,
@@ -666,11 +670,16 @@ describe('Nap — Report formatting', () => {
         logBytes: 10000,
         decisionBytes: 25000,
         inboxFiles: 0,
+        charterBytes: 0,
+        skillBytes: 0,
+        charterReducibleBytes: 0,
+        historyReducibleBytes: 0,
       },
       actions: [
         { type: 'compress', target: 'agents/hockney/history.md', description: 'Compressed history', bytesSaved: 40000 },
         { type: 'prune', target: 'log/old.md', description: 'Pruned old log', bytesSaved: 30000 },
       ],
+      dryRun: false,
       ...overrides,
     };
   }
