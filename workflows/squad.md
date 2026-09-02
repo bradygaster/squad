@@ -43,6 +43,8 @@ imports:
   - shared/squad-cast-validator.md
   - shared/squad-planning-ontology.md
   - shared/squad-planning-policy.md
+resources:
+  - shared/squad-gh-aw-resource-probe.txt
 tools:
   bash: true
   web-fetch:
@@ -50,6 +52,30 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 steps:
+  - name: Assert experimental gh-aw resource delivery
+    shell: bash
+    run: |
+      set -euo pipefail
+      probe="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-gh-aw-resource-probe.txt"
+      expected_sha256="dba0c331c0b0fda06539bd9245dda72bd9c36cca6962726147b03168c1d97a73"
+      if [ ! -f "$probe" ]; then
+        printf 'Experimental gh-aw resource probe is missing: %s\n' "$probe" >&2
+        exit 1
+      fi
+      if [ ! -r "$probe" ]; then
+        printf 'Experimental gh-aw resource probe is not readable: %s\n' "$probe" >&2
+        exit 1
+      fi
+      actual_sha256="$(
+        node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
+          "$probe"
+      )"
+      if [ "$actual_sha256" != "$expected_sha256" ]; then
+        printf 'Experimental gh-aw resource probe SHA-256 mismatch: expected %s, got %s.\n' \
+          "$expected_sha256" "$actual_sha256" >&2
+        exit 1
+      fi
+      printf 'Experimental gh-aw resource delivery verified.\n'
   - name: Prepare deterministic Cast validator runner
     shell: bash
     run: |
