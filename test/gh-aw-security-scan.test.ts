@@ -72,26 +72,18 @@ function distributedWorkflowFiles(): string[] {
  * everything the CLI printed. `gh aw add` runs its markdown security scan before
  * it compiles, so the scan verdict is present even when a later phase fails.
  *
- * Each file gets its own workspace and an explicit `-n` name: `workflows/squad.md`
- * and `workflows/shared/squad.md` share a basename, and gh-aw aborts the whole
- * batch on that collision — which would silently leave later files unscanned.
+ * No commit is created: an empty `git init` is enough for gh-aw here, and
+ * avoiding `git commit` keeps the gate immune to developer/CI machines that set
+ * `commit.gpgsign=true` globally without a usable signing key.
+ *
+ * `-n` pins the installed name so the sandbox-leak self-check below can look for
+ * an exact path. (Each file gets its own workspace, so there is no cross-file
+ * name collision to avoid -- the explicit name is purely for that assertion.)
  */
 function scanOutput(absPath: string, index: number): string {
   mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
   const workspace = mkdtempSync(join(TEST_WORKSPACES_DIR, 'secscan-'));
   execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-  // gh-aw expects a repo with history; an empty commit is enough and keeps the
-  // CLI from treating the scratch repo as unusable and looking elsewhere.
-  execFileSync('git', ['commit', '--quiet', '--allow-empty', '-m', 'init'], {
-    cwd: workspace,
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: 'squad-test',
-      GIT_AUTHOR_EMAIL: 'squad-test@example.invalid',
-      GIT_COMMITTER_NAME: 'squad-test',
-      GIT_COMMITTER_EMAIL: 'squad-test@example.invalid',
-    },
-  });
 
   const result = spawnSync('gh', ['aw', 'add', absPath, '-n', `scan-target-${index}`], {
     cwd: workspace,
