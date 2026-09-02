@@ -122,7 +122,6 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   workspaces.push(root);
   const runnerTemp = mkdtempSync(join(tmpdir(), 'gh-aw-cast-runner-temp-'));
   workspaces.push(runnerTemp);
-  mkdirSync(runnerTemp, { recursive: true });
   write(root, '.squad/team.md', teamMarkdown());
   write(root, '.squad/routing.md', routingMarkdown());
   write(root, '.squad/casting/registry.json', JSON.stringify({
