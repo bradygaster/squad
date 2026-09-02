@@ -72,16 +72,17 @@ kubectl describe pod -n squad <pod>
 |---|---|---|
 | `Error: Cannot find module` | Image built from wrong working directory or missing `node_modules` | Rebuild image with correct `WORKDIR` and `RUN npm ci` |
 | `SyntaxError` or `ERR_MODULE_NOT_FOUND` | Node.js version mismatch | Pin `node:22-alpine` in Dockerfile; check `engines` field in `package.json` |
-| Exits 0 silently | `CMD` runs `npx squad init` instead of `squad watch --execute` | Fix Dockerfile `CMD` to `["npx", "@bradygaster/squad-cli", "watch", "--execute"]` |
+| Exits 0 silently | `CMD` runs `squad init` instead of `squad watch --execute` | Fix Dockerfile `CMD` to `["squad", "watch", "--execute"]` |
 | `No .squad/ directory found` | `.squad/team.md` not present in image or on volume | Bake `.squad/` into image (Strategy A) or mount a ConfigMap volume (Strategy B) — see [Container Image ref](/squad/docs/reference/container-image/#volume-mount-strategies) |
 
 **CLI path check:**
 
 ```bash
-kubectl exec -n squad <pod> -- which squad || kubectl exec -n squad <pod> -- npx @bradygaster/squad-cli --version
+kubectl exec -n squad <pod> -- squad --version
 ```
 
-If `squad` is not found, the package is not installed in the image. Rebuild with `RUN npm install -g @bradygaster/squad-cli` or use `npx @bradygaster/squad-cli` as the entrypoint.
+If `squad` is not found, the CLI is not installed in the image. Build from the
+standalone bundle image or install the CLI before setting the entrypoint.
 
 ---
 

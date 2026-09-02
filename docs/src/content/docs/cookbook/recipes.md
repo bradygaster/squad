@@ -68,7 +68,10 @@ Export often — at the end of each project or after a major milestone. Your squ
 
 > "We're ready to ship v1.2.0 — run the release process: changelog, tags, and publish"
 
-Squad uses a three-branch model: dev → preview → main. The guard workflow blocks `.squad/` from reaching production. Tag from main only. Full lifecycle: prepare on dev, validate on preview, merge to main, tag, release.
+Squad uses `dev` for integration and `main` for stable releases. Dispatching
+`squad-release.yml` from `dev` creates an npm/GitHub preview; dispatching
+`squad-promote.yml` performs a validated, sanitized `dev`-to-`main` merge and
+explicitly starts the stable release after pushing `main`.
 
 ### Open Source Maintainer
 

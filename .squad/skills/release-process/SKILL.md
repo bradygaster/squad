@@ -1,6 +1,6 @@
 ---
 name: "release-process"
-description: "Pre-release validation, npm publish procedures, and post-publish verification"
+description: "Prepare, publish, recover, and verify Squad insider, preview, and stable releases"
 domain: "release"
 confidence: "high"
 source: "earned"
@@ -8,223 +8,230 @@ source: "earned"
 
 # Release Process
 
-> Earned knowledge from the v0.9.0→v0.9.1 and v0.9.4 incidents. Every agent involved in releases MUST read this before starting release work.
-> See also: `.github/skills/release-process/SKILL.md` for the Copilot-facing runbook.
+This is the canonical Squad release runbook. Squad has three release channels
+and two long-lived branches:
 
-## SCOPE
+| Source | Version | GitHub | npm | Standalone | Homebrew/WinGet |
+|--------|---------|--------|-----|------------|-----------------|
+| Insider dispatch from `dev` | Generated `X.Y.Z-insider.N` | Prerelease | `insider` | Yes | Yes |
+| Release dispatch from `dev` | `X.Y.Z-preview.N` | Prerelease | `preview` | Yes | Yes |
+| Push to `main` by promotion workflow | `X.Y.Z` | Stable/latest | `latest` | Yes | Yes |
 
-✅ THIS SKILL PRODUCES:
-- Pre-release validation checks that prevent broken publishes
-- Correct npm publish commands (never workspace-scoped)
-- Fallback procedures when CI workflows fail
-- Post-publish verification steps
+The repository does not use a staging `preview` branch. Preview is a release
+channel, not a branch.
 
-❌ THIS SKILL DOES NOT PRODUCE:
-- Feature implementation or test code
-- Architecture decisions
-- Documentation content
+## Non-negotiable rules
 
-## Confidence: high
+1. Never create release tags or GitHub Releases manually. `squad-release.yml`
+   creates both.
+2. Never reuse a version. A preview such as `0.14.0-preview.1` and stable
+   `0.14.0` are separate immutable releases.
+3. Keep the root, SDK, and CLI versions identical.
+4. Set the CLI's SDK dependency floor to `>=VERSION`; prerelease workspaces do
+   not match an older stable range.
+5. Add an exact `## [VERSION]` entry to `CHANGELOG.md`.
+6. Merge release preparation to `dev` and wait for CI before dispatching.
+7. Keep separate Homebrew casks and WinGet identifiers for each channel.
 
-Established through the v0.9.1 incident (8-hour recovery) and reinforced by the v0.9.4 release delay (PRs #1042, #1043, #1044). Every rule below is battle-tested.
+## Required credentials
 
-## Context
+Configure these GitHub Actions secrets:
 
-Squad publishes two npm packages: `@bradygaster/squad-sdk` and `@bradygaster/squad-cli`. The release pipeline flows: dev → preview → main → GitHub Release → npm publish. Brady (project owner) triggers releases — the coordinator does NOT.
+- `NPM_TOKEN`: an automation-capable npm publish token that does not require an
+  interactive OTP.
+- `HOMEBREW_TAP_TOKEN`: a classic GitHub PAT with `public_repo`, owned by an
+  account that has write access to `bradygaster/homebrew-squad`.
+- `WINGET_CREATE_GITHUB_TOKEN`: a classic GitHub PAT with `public_repo`, owned
+  by the account that maintains `tamirdresher/winget-pkgs`.
 
-## Rules (Non-Negotiable)
+## Prepare a release
 
-### 0. Verify `dev` and `main` Share Ancestry BEFORE Starting Any Release-Prep Work
-
-> Source: 2026-08-13 orphaned-history incident, PR #1699. `dev`'s history was silently reset on 2026-07-13 (a dependabot bump became a brand-new root commit with zero shared history with `main`). Nothing in normal release-prep work (version bump, CHANGELOG entry, changeset consolidation, CI) surfaces this — `dev` builds and tests green the whole time because none of it touches `main`'s history. The break is invisible until the very last step: opening the `dev` → `main` promotion PR, which GitHub then reports as flatly unmergeable, with `git merge-tree` refusing outright and no reviewable diff.
-
-**Before touching version numbers or the CHANGELOG, run:**
-
-```bash
-git merge-base upstream/dev upstream/main
-```
-
-If this returns a commit SHA (exit 0), proceed normally. **If it returns nothing (exit 1), STOP.** The promotion PR will be unmergeable no matter how clean `dev`'s own release content is — fix ancestry first via a separate `chore: restore shared ancestry` PR (merge `main` into `dev` with `--allow-unrelated-histories`; do not rebase if `dev` has a `non_fast_forward` ruleset, since rebase requires a force-push and rewrites every commit under every open PR). See `.squad/decisions/inbox/data-restore-dev-main-ancestry.md` for the full worked example and the diff-based verification technique used to prove a dev-wins conflict resolution was safe.
-
-### 1. Coordinator Does NOT Publish
-
-The coordinator routes work and manages agents. It does NOT run `npm publish`, trigger release workflows, or make release decisions. Brady owns the release trigger. If an agent or the coordinator is asked to publish, escalate to Brady.
-
-### 2. Pre-Publish Dependency Validation
-
-Before ANY release is tagged, scan every `packages/*/package.json` for:
-- `file:` references (workspace leak — the v0.9.0 root cause)
-- `link:` references
-- Absolute paths in dependency values
-- Non-semver version strings
-
-**Command:**
-```bash
-grep -r '"file:\|"link:\|"/' packages/*/package.json
-```
-If anything matches, STOP. Do not proceed. Fix the reference first.
-
-### 3. Never Use `npm -w` for Publishing
-
-`npm -w packages/squad-sdk publish` hangs silently when 2FA is enabled. Always `cd` into the package directory:
+Verify `dev` and `main` share ancestry before changing versions:
 
 ```bash
-cd packages/squad-sdk && npm publish --access public
-cd packages/squad-cli && npm publish --access public
+git fetch origin dev main
+git merge-base origin/dev origin/main
 ```
 
-### 4. Fallback Protocol
+If that command returns no commit, stop and repair ancestry in a separate PR.
 
-If `workflow_dispatch` or the publish workflow fails:
-1. Try once more (ONE retry, not four)
-2. If it fails again → local publish immediately
-3. Do NOT attempt GitHub UI file operations to fix workflow indexing
-4. GitHub has a ~15min workflow cache TTL after file renames/deletes — waiting helps, retrying doesn't
+Choose a unique SemVer version and update all package manifests:
 
-### 5. Post-Publish Smoke Test
-
-After every publish, verify in a clean shell:
 ```bash
-npm install -g @bradygaster/squad-cli@latest
-squad --version    # should match published version
-squad doctor       # should pass in a test repo
+VERSION=0.14.0-preview.1
+npm version "$VERSION" --workspaces --include-workspace-root --no-git-tag-version
+npm pkg set "dependencies.@bradygaster/squad-sdk=>=$VERSION" \
+  --workspace @bradygaster/squad-cli
+npm install --package-lock-only
 ```
 
-If the smoke test fails, rollback immediately.
+This updates the root package, both workspaces, and the lockfile. Confirm:
 
-### 6. npm Token Must Be Automation Type
-
-NPM_TOKEN in CI must be an Automation token (not a user token with 2FA prompts). User tokens with `auth-and-writes` 2FA cause silent hangs in non-interactive environments.
-
-### 7. No Draft GitHub Releases
-
-Never create draft GitHub Releases. The `release: published` event only fires when a release is published — drafts don't trigger the npm publish workflow.
-
-### 8. Version Format
-
-Semantic versioning only: `MAJOR.MINOR.PATCH` (e.g., `0.9.1`). Four-part versions like `0.8.21.4` are NOT valid semver and will break npm publish.
-
-### 9. SKIP_BUILD_BUMP=1 in CI
-
-Set this environment variable in all CI build steps to prevent the build script from mutating versions during CI runs.
-
-## Release Checklist (Quick Reference)
-
-```
-□ All tests passing on dev
-□ No file:/link: references in packages/*/package.json
-□ Root package.json version matches sub-packages (v0.9.4 lesson — PR #1043)
-□ CHANGELOG.md has ## [$VERSION] section (not just [Unreleased]) (v0.9.4 lesson — PR #1042)
-□ Version bumps committed: npm version $VERSION --workspaces --include-workspace-root --no-git-tag-version
-□ npm auth verified (Automation token)
-□ No draft GitHub Releases pending
-□ Local build + test: npm run build && npx vitest run
-□ Push dev → CI green
-□ Promote dev → preview (squad-promote workflow)
-□ Preview CI green (squad-preview validates)
-□ Promote preview → main
-□ squad-release auto-creates GitHub Release
-□ squad-npm-publish auto-triggers (⚠️ may be BLOCKED — see GITHUB_TOKEN limitation below)
-□ If publish didn't trigger: gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
-□ Monitor publish workflow
-□ Post-publish smoke test
-```
-
-## Known Gotchas
-
-| Gotcha | Impact | Mitigation |
-|--------|--------|------------|
-| npm workspaces rewrite `"*"` → `"file:../path"` | Broken global installs | Preflight scan in CI (squad-npm-publish.yml) |
-| GitHub Actions workflow cache (~15min TTL) | 422 on workflow_dispatch after file renames | Wait 15min or use local publish fallback |
-| `npm -w publish` hangs with 2FA | Silent hang, no error | Never use `-w` for publish |
-| Draft GitHub Releases | npm publish workflow doesn't trigger | Never create drafts |
-| User npm tokens with 2FA | EOTP errors in CI | Use Automation token type |
-| Root package.json version drift (v0.9.4) | squad-release.yml fails CHANGELOG check | Always bump all 3 package.json files together (PR #1043) |
-| CHANGELOG.md missing `## [$VERSION]` (v0.9.4) | squad-release.yml exits with error | Convert `[Unreleased]` → `[$VERSION] - YYYY-MM-DD` before promoting to main (PR #1042) |
-| GITHUB_TOKEN can't trigger downstream workflows (v0.9.4) | squad-npm-publish.yml never fires | Manual `gh workflow run` or use PAT/GitHub App token (see below) |
-| Lockfile integrity check rejects workspace packages (v0.9.4) | False failures in squad-npm-publish.yml | Only validate packages resolved from npm registry (`startsWith('https://')`) (PR #1044) |
-| `prebuild` version bump breaks workspace linking (v0.9.4) | Local builds fail after bump-build.mjs runs | `git checkout -- package.json packages/*/package.json` then fresh install |
-| `dev` and `main` silently drift to unrelated histories (2026-08-13) | `dev` → `main` promotion PR is flatly unmergeable, no reviewable diff | Run `git merge-base upstream/dev upstream/main` BEFORE starting release-prep; see Rule 0 above |
-
-## v0.9.4 Incident Learnings
-
-> Source: v0.9.4 release session. PRs #1042, #1043, #1044.
-
-### Root Package.json Version Must Match Sub-Packages
-
-`squad-release.yml` reads version from ROOT `package.json` (lines 31-35):
 ```bash
-VERSION=$(node -e "console.log(require('./package.json').version)")
-if ! grep -q "## \[$VERSION\]" CHANGELOG.md; then
-  echo "::error::Version $VERSION not found in CHANGELOG.md"
-  exit 1
-fi
-```
-If root package.json is behind (e.g., 0.9.1 while sub-packages are 0.9.4), the release workflow FAILS. This was the root cause of the v0.9.4 release delay — PR #1043 fixed it.
-
-**Rule:** When bumping versions, ALWAYS bump all 3 package.json files together:
-```bash
-npm version $VERSION --workspaces --include-workspace-root --no-git-tag-version
-```
-
-### CHANGELOG.md Must Have Version Entry
-
-`squad-release.yml` validates that `CHANGELOG.md` contains `## [$VERSION]`. If the version section is still `[Unreleased]` and no `[$VERSION]` section exists, the release workflow exits with error. PR #1042 fixed this for v0.9.4.
-
-**Rule:** Before promoting to main, convert `[Unreleased]` to `[$VERSION] - YYYY-MM-DD` in CHANGELOG.md and add a fresh `[Unreleased]` section above it.
-
-### GITHUB_TOKEN Event Propagation Limitation (CRITICAL)
-
-When `squad-release.yml` creates a GitHub Release using the default `GITHUB_TOKEN`, the `release: published` event does NOT trigger `squad-npm-publish.yml`. This is a GitHub security feature to prevent infinite workflow loops.
-
-**Workaround:** After the release workflow succeeds and creates the tag + GitHub Release, manually trigger the publish workflow:
-```bash
-gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
-```
-IMPORTANT: Use `--ref main` to ensure the workflow runs against the main branch (where the release artifacts exist).
-
-**Permanent fix (TODO):** Use a PAT or GitHub App token in `squad-release.yml` instead of `GITHUB_TOKEN`.
-
-### Lockfile Integrity — Workspace Package Handling
-
-The lockfile stability check in `squad-npm-publish.yml` (line 82) filters packages for integrity hashes. Workspace packages resolve to bare relative paths (e.g., `packages/squad-sdk`), NOT `file:` URLs. The check must filter for registry-resolved packages only (`startsWith('https://')`). PR #1044 fixed this.
-
-### Prebuild Version Bump Breaks Local Workspace Resolution
-
-`scripts/bump-build.mjs` runs during `npm run prebuild` and bumps versions like `0.9.4` → `0.9.4-build.1`. This breaks workspace linking because CLI depends on exact `"@bradygaster/squad-sdk": "0.9.4"` but SDK becomes `0.9.4-build.1`.
-
-**Fix for local dev:**
-```bash
-git checkout -- package.json packages/*/package.json
-rm -rf node_modules packages/*/node_modules
-npm install
+node -p "require('semver').valid('$VERSION')"
+grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+grep -F "## [$VERSION]" CHANGELOG.md
 npm run build
+npx vitest run
 ```
 
-### The Full Promotion Chain (v0.9.4 Documented)
+Release preparation lands through a normal PR to `dev`. Do not push directly to
+`main`.
 
+## Publish a preview release
+
+Preview versions must contain a prerelease suffix, for example
+`0.14.0-preview.1`.
+
+After the release-preparation PR is merged and `dev` CI is green:
+
+```bash
+VERSION=0.14.0-preview.1
+gh workflow run squad-release.yml \
+  --ref dev \
+  -f confirm_tag="v$VERSION"
+gh run watch
 ```
-dev → preview → main (via squad-promote.yml)
-main push → squad-release.yml validates CHANGELOG, creates tag + GitHub Release
-release published → squad-npm-publish.yml (⚠️ BLOCKED by GITHUB_TOKEN limitation)
-manual workaround → gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
+
+The workflow:
+
+1. Requires the dispatch ref to be `dev`.
+2. Rejects a stable `X.Y.Z` version.
+3. Creates `v$VERSION` and a GitHub prerelease.
+4. Publishes both npm packages with `--tag preview`.
+5. Uploads six standalone archives and `SHA256SUMS.txt`.
+6. Updates the `squad-preview` Homebrew cask and
+   `bradygaster.Squad.Preview` WinGet package.
+
+Install the resulting preview:
+
+```bash
+npm install -g @bradygaster/squad-cli@preview
 ```
 
-### npm Publish Workflow Dispatch Target
+The same preview is available through `brew install --cask squad-preview` and
+`winget install --id bradygaster.Squad.Preview --exact`.
 
-When using `workflow_dispatch` to trigger `squad-npm-publish.yml`, the default ref is the repo's default branch (`dev`). Always specify `--ref main` explicitly to ensure the workflow runs against the branch with the release tag and latest workflow fixes.
+## Publish an insider release
 
-## CI Gate: Workspace Publish Policy
+Start an on-demand snapshot from `dev`:
 
-The `publish-policy` job in `squad-ci.yml` scans all workflow files for bare `npm publish` commands that are missing `-w`/`--workspace` flags. Any workflow that attempts a non-workspace-scoped publish will fail CI. This prevents accidental root-level publishes that would push the wrong `package.json` to npm.
+```bash
+gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
+gh run watch
+```
 
-See `.github/workflows/squad-ci.yml` → `publish-policy` job for implementation details.
+The workflow computes the next immutable `X.Y.Z-insider.N` version, publishes
+npm `insider`, creates a GitHub prerelease, uploads standalone bundles, updates
+the `squad-insider` Homebrew cask, and opens or reuses the
+`bradygaster.Squad.Insider` WinGet PR.
 
-## Related
+## Publish a stable release
 
-- Issues: #556–#564 (release:next)
-- v0.9.4 fixes: PR #1042 (CHANGELOG), PR #1043 (root package.json), PR #1044 (lockfile integrity)
-- Retro: `.squad/decisions/inbox/surgeon-v091-retrospective.md`
-- CI audit: `.squad/decisions/inbox/booster-ci-audit.md`
-- Copilot-level skill: `.github/skills/release-process/SKILL.md`
-- Playbook: `PUBLISH-README.md` (repo root)
+Stable versions must be exactly `X.Y.Z`. Prepare and merge the stable version
+to `dev`, then optionally validate the sanitized merge without changing
+`main`:
+
+```bash
+gh workflow run squad-promote.yml --ref dev -f dry_run=true
+gh run watch
+```
+
+Start the real promotion:
+
+```bash
+gh workflow run squad-promote.yml --ref dev -f dry_run=false
+gh run watch
+```
+
+`squad-promote.yml`:
+
+1. Merges `origin/dev` directly into `main`.
+2. Removes `.ai-team/`, `.squad/`, `.ai-team-templates/`, `team-docs/`, and
+   `docs/proposals/` from the release tree.
+3. Rejects unresolved conflicts, prerelease versions, mismatched package
+   versions, and missing changelog entries.
+4. Installs dependencies, builds, and runs release tests.
+5. Pushes `main` and explicitly dispatches `squad-release.yml`.
+
+The explicit dispatch is required because GitHub suppresses push-triggered
+workflow runs for commits authenticated with `GITHUB_TOKEN`. The release
+workflow creates the stable tag and GitHub Release, publishes npm `latest`,
+uploads standalone archives, updates Homebrew, and opens or reuses the WinGet
+PR.
+
+## Verify publication
+
+Use `insider`, `preview`, or `latest` for `DIST_TAG`:
+
+```bash
+VERSION=0.14.0
+DIST_TAG=latest
+
+npm view @bradygaster/squad-sdk "dist-tags.$DIST_TAG"
+npm view @bradygaster/squad-cli "dist-tags.$DIST_TAG"
+gh release view "v$VERSION"
+```
+
+The npm values must equal `VERSION`. The GitHub Release must contain:
+
+```text
+squad-linux-x64.tar.gz
+squad-linux-arm64.tar.gz
+squad-darwin-x64.tar.gz
+squad-darwin-arm64.tar.gz
+squad-win32-x64.zip
+squad-win32-arm64.zip
+SHA256SUMS.txt
+```
+
+For every release, also verify the channel's Homebrew cask (`squad`,
+`squad-preview`, or `squad-insider`) and WinGet identifier
+(`bradygaster.Squad`, `.Preview`, or `.Insider`) reference the new version.
+
+## Recovery
+
+The top-level release workflow intentionally does not republish after its tag
+already exists. Rerun the failed child job, or dispatch the reusable workflow
+from the branch that owns that release channel while building from the
+immutable tag.
+
+Stable recovery:
+
+```bash
+VERSION=0.14.0
+gh workflow run squad-npm-publish.yml --ref main \
+  -f version="$VERSION" -f source_ref="v$VERSION"
+gh workflow run squad-standalone-release.yml --ref main \
+  -f upload=true -f release_tag="v$VERSION" -f source_ref="v$VERSION"
+```
+
+Preview recovery:
+
+```bash
+VERSION=0.14.0-preview.1
+gh workflow run squad-npm-publish.yml --ref dev \
+  -f version="$VERSION" -f source_ref="v$VERSION"
+gh workflow run squad-standalone-release.yml --ref dev \
+  -f upload=true -f release_tag="v$VERSION" -f source_ref="v$VERSION"
+```
+
+Publication is idempotent. Existing package versions and release assets are
+verified rather than overwritten. npm publication fails instead of silently
+moving `latest` or `preview` away from an existing version.
+
+## After a stable release
+
+Prepare the next development version in a normal PR to `dev`:
+
+```bash
+NEXT_VERSION=0.15.0-preview.1
+npm version "$NEXT_VERSION" --workspaces --include-workspace-root --no-git-tag-version
+npm pkg set "dependencies.@bradygaster/squad-sdk=>=$NEXT_VERSION" \
+  --workspace @bradygaster/squad-cli
+npm install --package-lock-only
+```
+
+Do not merge `main` back into `dev`; the promotion commit already has `dev` as
+its parent, while the stripped internal state intentionally remains only on
+`dev`.

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_tag:
-        description: 'Type v followed by the package.json version (for example v0.13.1)'
+        description: 'Confirm the release tag (for example v0.14.0-preview.1 or v0.14.0)'
         required: true
         type: string
 
@@ -22,7 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       created: ${{ steps.check_tag.outputs.exists == 'false' }}
+      stable_release: ${{ steps.version.outputs.stable_release }}
       tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -32,43 +34,112 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate manual release request
-        if: github.event_name == 'workflow_dispatch'
+      - name: Resolve release channel
+        id: version
         env:
           CONFIRM_TAG: ${{ inputs.confirm_tag }}
+          EVENT_NAME: ${{ github.event_name }}
           RELEASE_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          expected_tag="v$(node -p 'require("./package.json").version')"
-          if [ "${RELEASE_REF}" != "refs/heads/dev" ]; then
-            echo "::error::Manual standalone releases must be dispatched from dev, not ${RELEASE_REF}."
+
+          version="$(node -p 'require("./package.json").version')"
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$version" =~ $semver_re ]]; then
+            echo "::error::package.json version '$version' is not valid strict SemVer."
             exit 1
           fi
-          if [ "${CONFIRM_TAG}" != "${expected_tag}" ]; then
-            echo "::error::confirm_tag must be ${expected_tag}, got ${CONFIRM_TAG}."
-            exit 1
+
+          stable_release=false
+          if [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            stable_release=true
           fi
-          echo "Confirmed manual standalone release ${expected_tag} from dev."
+          preview_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$'
+
+          expected_tag="v${version}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$CONFIRM_TAG" != "$expected_tag" ]; then
+              echo "::error::confirm_tag must be $expected_tag, got $CONFIRM_TAG."
+              exit 1
+            fi
+            if [ "$RELEASE_REF" = "refs/heads/dev" ]; then
+              if [[ ! "$version" =~ $preview_re ]]; then
+                echo "::error::Manual dev releases require a prerelease version such as 0.14.0-preview.1."
+                exit 1
+              fi
+            elif [ "$RELEASE_REF" = "refs/heads/main" ]; then
+              if [ "$stable_release" != "true" ]; then
+                echo "::error::Manual main releases require a stable MAJOR.MINOR.PATCH version."
+                exit 1
+              fi
+            else
+              echo "::error::Release dispatches must run from dev or main, not $RELEASE_REF."
+              exit 1
+            fi
+          else
+            if [ "$RELEASE_REF" != "refs/heads/main" ]; then
+              echo "::error::Automatic stable releases must run from main, not $RELEASE_REF."
+              exit 1
+            fi
+            if [ "$stable_release" != "true" ]; then
+              echo "::error::The main branch requires a stable MAJOR.MINOR.PATCH version."
+              exit 1
+            fi
+          fi
+
+          echo "stable_release=$stable_release" >> "$GITHUB_OUTPUT"
+          echo "tag=$expected_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved $expected_tag (stable: $stable_release)."
 
       - name: Run tests
         run: node --test test/*.test.cjs
 
       - name: Validate version consistency
         run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
+          set -euo pipefail
+          VERSION="$(node -p 'require("./package.json").version')"
+          node - "$VERSION" <<'NODE'
+          const { readFileSync } = require('node:fs');
+
+          const version = process.argv[2];
+          const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+          const sdk = readJson('packages/squad-sdk/package.json');
+          const cli = readJson('packages/squad-cli/package.json');
+          const lock = readJson('package-lock.json');
+          const dependency = cli.dependencies?.['@bradygaster/squad-sdk'];
+          const lockDependency =
+            lock.packages?.['packages/squad-cli']?.dependencies?.['@bradygaster/squad-sdk'];
+
+          for (const [path, actual] of [
+            ['package-lock.json root workspace', lock.packages?.['']?.version],
+            ['packages/squad-sdk/package.json', sdk.version],
+            ['packages/squad-cli/package.json', cli.version],
+            ['package-lock.json SDK workspace', lock.packages?.['packages/squad-sdk']?.version],
+            ['package-lock.json CLI workspace', lock.packages?.['packages/squad-cli']?.version],
+          ]) {
+            if (actual !== version) {
+              throw new Error(`${path} version '${actual}' does not match root version '${version}'.`);
+            }
+          }
+
+          if (version.includes('-')) {
+            const expected = `>=${version}`;
+            if (dependency !== expected || lockDependency !== expected) {
+              throw new Error(
+                `Preview releases require the CLI SDK dependency and lockfile entry to be '${expected}'.`,
+              );
+            }
+          } else if (dependency?.includes('-') || lockDependency?.includes('-')) {
+            throw new Error('Stable releases cannot retain a prerelease SDK dependency floor.');
+          }
+          NODE
+
           if ! grep -q "## \[$VERSION\]" CHANGELOG.md 2>/dev/null; then
             echo "::error::Version $VERSION not found in CHANGELOG.md — update CHANGELOG.md before release"
             exit 1
           fi
           echo "✅ Version $VERSION validated in CHANGELOG.md"
-
-      - name: Read version from package.json
-        id: version
-        run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "📦 Version: $VERSION (tag: v$VERSION)"
 
       - name: Check if tag already exists
         id: check_tag
@@ -93,19 +164,53 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STABLE_RELEASE: ${{ steps.version.outputs.stable_release }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
-            --latest
+          if [ "$STABLE_RELEASE" = "true" ]; then
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --title "${{ steps.version.outputs.tag }}" \
+              --generate-notes \
+              --latest
+          else
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --title "${{ steps.version.outputs.tag }}" \
+              --generate-notes \
+              --prerelease
+          fi
 
       - name: Verify release
-        if: steps.check_tag.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STABLE_RELEASE: ${{ steps.version.outputs.stable_release }}
         run: |
+          expected_prerelease=true
+          if [ "$STABLE_RELEASE" = "true" ]; then
+            expected_prerelease=false
+          fi
+
+          actual_prerelease="$(gh release view "${{ steps.version.outputs.tag }}" --json isPrerelease --jq '.isPrerelease')"
+          if [ "$actual_prerelease" != "$expected_prerelease" ]; then
+            echo "::error::Release ${{ steps.version.outputs.tag }} prerelease state is $actual_prerelease; expected $expected_prerelease."
+            exit 1
+          fi
+
           gh release view "${{ steps.version.outputs.tag }}"
           echo "✅ Release ${{ steps.version.outputs.tag }} created and verified."
+
+  npm:
+    name: Publish npm packages
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    uses: ./.github/workflows/squad-npm-publish.yml
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    with:
+      version: ${{ needs.release.outputs.version }}
+      source_ref: ${{ needs.release.outputs.tag }}
 
   standalone:
     name: Publish standalone bundles
@@ -114,6 +219,9 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/squad-standalone-release.yml
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
     with:
       upload: true
       release_tag: ${{ needs.release.outputs.tag }}

@@ -1,124 +1,82 @@
 # Release Checklist
 
-This document outlines the steps for preparing and shipping Squad releases. Follow the appropriate checklist based on the release type.
+Squad supports on-demand insider and preview releases from `dev`, plus stable
+releases from `main`. Channel names identify release streams, not branches.
 
-## Pre-Release Steps (All Releases)
+## All releases
 
-- [ ] Ensure all PRs targeting the release branch are merged and reviewed
-- [ ] Pull latest `dev` branch: `git pull origin dev`
-- [ ] Run full test suite: `npm test`
-- [ ] All tests pass (53+ tests for current version)
-- [ ] Review CHANGELOG.md for accuracy and completeness
-- [ ] Review and update CONTRIBUTORS.md with v0.X.X section listing key contributions
-- [ ] Verify package.json version matches intended release version
+- [ ] `git merge-base origin/dev origin/main` returns a commit.
+- [ ] The root, SDK, and CLI `package.json` versions are identical.
+- [ ] The CLI SDK dependency and lockfile entry are `>=VERSION`.
+- [ ] The version is valid SemVer and has never been published.
+- [ ] `CHANGELOG.md` contains `## [VERSION]`.
+- [ ] The release-preparation PR is merged to `dev`.
+- [ ] `dev` CI is green.
+- [ ] `NPM_TOKEN` is configured for non-interactive publishing.
+- [ ] `HOMEBREW_TAP_TOKEN` is a classic PAT with `public_repo` from a
+      collaborator on `bradygaster/homebrew-squad`.
+- [ ] `WINGET_CREATE_GITHUB_TOKEN` is a classic PAT with `public_repo`.
 
-## Patch Release (e.g., 0.4.2 → 0.4.3)
+## Preview release
 
-**Purpose:** Bug fixes and patches with no new features or breaking changes.
+- [ ] Version is `X.Y.Z-preview.N`, not stable `X.Y.Z`.
+- [ ] Dispatch:
 
-### Steps
+  ```bash
+  gh workflow run squad-release.yml --ref dev -f confirm_tag=vX.Y.Z-preview.N
+  ```
 
-1. Create patch branch: `git checkout -b squad/patch-{version}`
-2. Update `package.json` version: increment patch number (e.g., 0.4.2 → 0.4.3)
-3. Add `CHANGELOG.md` entry with date:
-   ```markdown
-   ## [0.4.3] — YYYY-MM-DD
-   
-   ### Fixed
-   - Description of fix
-   ```
-4. Commit: `git commit -m "chore: v0.4.3 patch release"`
-5. Push and create PR: `git push origin squad/patch-{version}`
-6. Get review and merge to `dev`
-7. Merge `dev` → `main`
-8. CI automatically creates GitHub release
+- [ ] GitHub marks `vX.Y.Z-preview.N` as a prerelease.
+- [ ] npm `preview` points to the version for both packages.
+- [ ] The release has six standalone archives and `SHA256SUMS.txt`.
+- [ ] `squad-preview` references the new Homebrew version.
+- [ ] A `bradygaster.Squad.Preview` WinGet PR exists or is already upstream.
 
-## Minor Release (e.g., 0.4.2 → 0.5.0)
+## Insider release
 
-**Purpose:** New features with backward compatibility. Commonly used for feature cadence releases.
+- [ ] Dispatch `squad-insider-publish.yml` from `dev`.
+- [ ] npm `insider` points to the generated `X.Y.Z-insider.N` version.
+- [ ] GitHub marks the same version as a prerelease.
+- [ ] The release has six standalone archives and `SHA256SUMS.txt`.
+- [ ] `squad-insider` references the new Homebrew version.
+- [ ] A `bradygaster.Squad.Insider` WinGet PR exists or is already upstream.
 
-### Steps
+## Stable release
 
-1. Create release branch: `git checkout -b squad/{issue}-release-hardening`
-2. Update `package.json` version: increment minor number (e.g., 0.4.2 → 0.5.0)
-3. Update all affected workflow files and templates:
-   - `.github/workflows/squad-preview.yml`
-   - `.github/workflows/squad-release.yml`
-   - `templates/workflows/squad-preview.yml`
-   - `templates/workflows/squad-release.yml`
-4. Add `CHANGELOG.md` entry with new features:
-   ```markdown
-   ## [0.5.0] — Unreleased
-   
-   ### Added
-   - Feature description
-   - Another feature
-   ```
-5. Test all changes locally and in CI
-6. Commit: `git commit -m "chore: v0.5.0 release hardening — version bump, CI validation, docs"`
-7. Push and create PR: `git push origin squad/{issue}-release-hardening`
-8. Get review and merge to `dev`
-9. Merge `dev` → `main`
-10. CI automatically creates GitHub release
+- [ ] Version is exactly `X.Y.Z`.
+- [ ] Optional dry run passes:
 
-## Major Release (e.g., 0.4.2 → 1.0.0)
+  ```bash
+  gh workflow run squad-promote.yml --ref dev -f dry_run=true
+  ```
 
-**Purpose:** Breaking changes, significant refactors, or major feature releases.
+- [ ] Dispatch the promotion:
 
-### Steps
+  ```bash
+  gh workflow run squad-promote.yml --ref dev -f dry_run=false
+  ```
 
-1. Create release branch: `git checkout -b squad/major-{version}-release`
-2. Update `package.json` version: increment major number (e.g., 0.4.2 → 1.0.0)
-3. Add migration guide if needed (breaking changes documentation)
-4. Update all affected files (same as minor release)
-5. Update `CHANGELOG.md` with detailed breaking changes section:
-   ```markdown
-   ## [1.0.0] — Unreleased
-   
-   ### Breaking Changes
-   - Clear description of breaking change
-   - Migration guidance
-   
-   ### Added
-   - New feature
-   ```
-6. Comprehensive testing and validation
-7. Commit and push with clear messaging
-8. Create PR with detailed description of breaking changes
-9. Get thorough review and merge to `dev`
-10. Merge `dev` → `main`
-11. CI automatically creates GitHub release
+- [ ] The promotion merges `dev` directly to `main`.
+- [ ] `.ai-team/`, `.squad/`, `.ai-team-templates/`, `team-docs/`, and
+      `docs/proposals/` are absent from `main`.
+- [ ] Promotion explicitly dispatches `squad-release.yml` after pushing `main`.
+- [ ] GitHub marks `vX.Y.Z` as the latest stable release.
+- [ ] npm `latest` points to the version for both packages.
+- [ ] The release has six standalone archives and `SHA256SUMS.txt`.
+- [ ] The Homebrew cask references the new version.
+- [ ] A WinGet update PR exists or the version is already upstream.
 
-## CI Validation Steps
+## Do not do manually
 
-The following checks run automatically in CI (no manual action required):
+- Do not create or push the release tag.
+- Do not create or edit the GitHub Release.
+- Do not move npm dist-tags manually.
+- Do not push directly to `main`.
+- Do not use or recreate a staging `preview` branch.
 
-### In `squad-preview.yml` (Preview Branch)
+## Recovery
 
-- Runs full test suite
-- Validates no `.ai-team/` or `.squad/` files are tracked
-- Validates package.json contains a version
-- **NEW:** Validates version consistency with CHANGELOG.md
-
-### In `squad-release.yml` (Main Branch)
-
-- Runs full test suite
-- Reads version from package.json
-- Checks if tag already exists (prevents duplicate releases)
-- **NEW:** Validates version consistency with CHANGELOG.md
-- Creates git tag (e.g., `v0.5.0`)
-- Creates GitHub Release with auto-generated notes
-- Verifies release was created successfully
-
-## Key Requirements
-
-- **CHANGELOG.md must have entry** for every release version (validated in CI)
-- **Version consistency** between `package.json` and CHANGELOG.md is enforced
-- **All tests must pass** before release can proceed
-- **No `.ai-team/` or `.squad/` files** on preview or main branches
-
-## References
-
-- [GitHub Actions Workflows](../.github/workflows/)
-- [Package Configuration](../package.json)
-- [Changelog](../CHANGELOG.md)
+Fix the credential or service failure and rerun the failed child job. If a
+manual backfill is required, dispatch `squad-npm-publish.yml` or
+`squad-standalone-release.yml` with `source_ref=vVERSION`. Use `--ref dev` for
+preview or insider releases and `--ref main` for stable releases.
