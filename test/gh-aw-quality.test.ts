@@ -9,7 +9,7 @@
  */
 
 import { afterAll, describe, it, expect } from 'vitest';
-import { cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
@@ -639,12 +639,12 @@ describe('gh-aw: shared component imports', () => {
 
     it('fails closed before the agent for a missing or modified installed probe', () => {
       const script = extractNamedStepScript(frontmatter, stepName);
-      const shell = requirePosixShell();
+      const bash = process.platform === 'win32' ? requirePosixShell() : 'bash';
       const workspace = createTestWorkspace('gh-aw-resource-probe-');
       const installedProbe = join(workspace, '.github', 'workflows', probeResource);
       mkdirSync(dirname(installedProbe), { recursive: true });
 
-      const missing = spawnSync(shell, ['-c', script], {
+      const missing = spawnSync(bash, ['-c', script], {
         cwd: workspace,
         encoding: 'utf8',
         env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
@@ -653,7 +653,7 @@ describe('gh-aw: shared component imports', () => {
       expect(missing.stderr).toContain('Experimental gh-aw resource probe is missing');
 
       writeFileSync(installedProbe, 'tampered\n');
-      const modified = spawnSync(shell, ['-c', script], {
+      const modified = spawnSync(bash, ['-c', script], {
         cwd: workspace,
         encoding: 'utf8',
         env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
@@ -662,13 +662,49 @@ describe('gh-aw: shared component imports', () => {
       expect(modified.stderr).toContain('Experimental gh-aw resource probe SHA-256 mismatch');
 
       cpSync(probePath, installedProbe);
-      const verified = spawnSync(shell, ['-c', script], {
+      const verified = spawnSync(bash, ['-c', script], {
         cwd: workspace,
         encoding: 'utf8',
         env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
       });
       expect(verified.status).toBe(0);
       expect(verified.stdout).toContain('Experimental gh-aw resource delivery verified');
+    });
+
+    it.skipIf(
+      process.platform === 'win32' ||
+      typeof process.getuid !== 'function' ||
+      process.getuid() === 0,
+    )('fails closed before the agent for an unreadable installed probe', () => {
+      const script = extractNamedStepScript(frontmatter, stepName);
+      const workspace = createTestWorkspace('gh-aw-resource-probe-unreadable-');
+      const installedProbe = join(workspace, '.github', 'workflows', probeResource);
+      const bash = 'bash';
+      mkdirSync(dirname(installedProbe), { recursive: true });
+      cpSync(probePath, installedProbe);
+
+      try {
+        chmodSync(installedProbe, 0o000);
+        const permissionCheck = spawnSync(
+          bash,
+          ['-c', '[ ! -r "$1" ]', 'bash', installedProbe],
+          { encoding: 'utf8' },
+        );
+        expect(
+          permissionCheck.status,
+          'fixture must be unreadable to Bash before exercising the workflow branch',
+        ).toBe(0);
+
+        const unreadable = spawnSync(bash, ['-c', script], {
+          cwd: workspace,
+          encoding: 'utf8',
+          env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
+        });
+        expect(unreadable.status).not.toBe(0);
+        expect(unreadable.stderr).toContain('Experimental gh-aw resource probe is not readable');
+      } finally {
+        chmodSync(installedProbe, 0o600);
+      }
     });
   });
 
