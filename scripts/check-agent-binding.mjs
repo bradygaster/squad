@@ -71,6 +71,22 @@ function resolveIssueReference(value, description, invalidMessage) {
   throw new Error(invalidMessage);
 }
 
+/**
+ * Best-effort issue number extraction for label prefetching. Unlike
+ * `resolveIssueReference()`, this never throws: an unresolved/malformed
+ * reference is simply skipped here so `validateTaskBinding()` can report the
+ * real error (e.g. an unresolved temporary ID) instead of a misleading
+ * "labels could not be resolved" failure.
+ */
+function extractIssueNumber(value) {
+  if (Number.isInteger(value)) return value;
+  if (typeof value === 'string') {
+    const resolved = RESOLVED_REFERENCE.exec(value.trim());
+    if (resolved) return Number(resolved[1]);
+  }
+  return undefined;
+}
+
 export function parseStructuredData(comment) {
   const blocks = [...comment.matchAll(/Structured data:\s*```json\s*([\s\S]*?)```/gi)];
   if (blocks.length === 0) {
@@ -366,7 +382,7 @@ async function main() {
     if (!artifact || !ACTIVATION_ARTIFACTS.has(artifact.squad_artifact)) continue;
     assertAcceptedOnlyLabelWording(comment.body ?? '', artifact.squad_artifact);
     const issues = Array.isArray(artifact.bindings)
-      ? artifact.bindings.flatMap(binding => [binding?.issue, binding?.epic_issue]).filter(Number.isInteger)
+      ? artifact.bindings.flatMap(binding => [extractIssueNumber(binding?.issue), extractIssueNumber(binding?.epic_issue)]).filter(Number.isInteger)
       : [];
     const labels = await fetchLabels(args.repo, [...new Set(issues)], token);
     const result = validateActivation(artifact, roster, labels, comment.issue);
