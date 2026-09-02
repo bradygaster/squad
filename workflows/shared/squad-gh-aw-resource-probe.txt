@@ -1,0 +1,3 @@
+Squad gh-aw resource delivery probe.
+Experiment: bradygaster/squad#1982
+This plaintext file has no executable or runtime behavior.

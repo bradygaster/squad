@@ -242,6 +242,28 @@ committed. If a `.gitignore` is missing from `.github/aw/logs/`, add one there:
 
 Once pushed, the `/squad` slash command is live on your repo.
 
+### Experimental gh-aw resource probe (`dev` test zone)
+
+Issue #1982 adds a gh-aw-only plaintext probe to the `@dev` dispatcher. It tests
+whether a direct install delivers top-level `resources:` beside the installed
+workflow. The probe does not change Cast behavior or any CLI/SDK install path;
+the existing Base64 Cast validator remains authoritative.
+
+In a disposable test repository, install or refresh only the dispatcher:
+
+```bash
+gh aw add bradygaster/squad/workflows/squad.md@dev --force
+gh aw compile squad --strict
+test -r .github/workflows/shared/squad-gh-aw-resource-probe.txt
+```
+
+Review the source, generated lockfile, and plaintext probe before committing the
+test-zone update. Then comment `/squad cast` on a test issue. A missing,
+unreadable, or modified probe fails the pre-agent assertion explicitly; a valid
+probe leaves the current Cast path unchanged. After updating `@dev`, rerun the
+same Cast issue to confirm the installed resource is used without changing the
+expected Cast PR contents.
+
 ### Optional: pin a CLI version
 
 Activation downloads a self-contained GitHub Release bundle; it does not install
