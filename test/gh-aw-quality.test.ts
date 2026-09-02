@@ -300,9 +300,25 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data' || name === 'messages') continue;
+      if (name === 'data' || name === 'messages' || name === 'jobs') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
+      expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
+      expect(max, `${name}.max should be ≤ 1000`).toBeLessThanOrEqual(1000);
+      expect(Number.isInteger(max), `${name}.max should be an integer`).toBe(true);
+    }
+  });
+
+  it('each custom safe-output job has a bounded max value', () => {
+    const jobsBlock = frontmatter.match(
+      /^  jobs:\n([\s\S]*?)(?=^  [\w-]+:)/m,
+    )?.[1] ?? '';
+    const jobs = [...jobsBlock.matchAll(
+      /^    ([\w-]+):\n([\s\S]*?)(?=^    [\w-]+:|(?![\s\S]))/gm,
+    )];
+    expect(jobs.length).toBeGreaterThan(0);
+    for (const [, name, config] of jobs) {
+      const max = Number(config.match(/^      max:\s*(\d+)\s*$/m)?.[1]);
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
       expect(max, `${name}.max should be ≤ 1000`).toBeLessThanOrEqual(1000);
       expect(Number.isInteger(max), `${name}.max should be an integer`).toBe(true);
@@ -923,7 +939,15 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // SHA-256 authentication command. That command is authored between marker comments
   // inside the `squad-cast` inline skill in workflows/squad.md; gh-aw strips the full
   // skill from the ambient prompt and loads it on demand.
-  const SOURCE_GROWTH_BUDGET_KB = 183;
+  // Raised 183 -> 189 KB by the truthful Cast terminal contract and its typed
+  // post-agent failure job. The ambient 40 KB guard still passes; the behavioral
+  // detail is confined to the on-demand `squad-cast` skill, while the safe job is
+  // required executable policy rather than ambient model guidance.
+  // Raised 189 -> 194 KB when the authenticated extraction and validation sequence
+  // moved from agent-transcribed prompt text into a deterministic pre-agent runner.
+  // The runner also emits a machine-readable factual failure record. The Cast skill
+  // shrank, and the ambient prompt remains below its independently enforced 40 KB cap.
+  const SOURCE_GROWTH_BUDGET_KB = 194;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1372,6 +1396,54 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).toContain(
       "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
     );
+  }, 20000);
+
+  it('compiles Cast failure into a queryable post-agent job that fails the run', () => {
+    const compiled = lockText();
+    const failureJob = compiled.match(
+      /^  cast_failure:\n[\s\S]*?(?=^  conclusion:)/m,
+    )?.[0] ?? '';
+    const conclusionNeeds = compiled.match(
+      /^  conclusion:\n    needs:\n([\s\S]*?)(?=    if:)/m,
+    )?.[1] ?? '';
+    expect(failureJob).toContain('name: Fail incomplete Cast');
+    expect(failureJob).toContain('runs-on: ubuntu-slim');
+    expect(failureJob).toContain("contains(needs.agent.outputs.output_types, 'cast_failure')");
+    expect(failureJob).toContain("item.type === 'cast_failure'");
+    expect(failureJob).toContain("item.type === 'create_pull_request'");
+    expect(failureJob).toContain('process.env.GH_AW_AGENT_OUTPUT');
+    expect(failureJob).toContain('Cast did not complete.');
+    expect(failureJob).toContain('core.setFailed');
+    expect(conclusionNeeds).toContain('- cast_failure');
+  }, 20000);
+
+  it('prepares the materialized Cast validator runner outside the agent prompt', () => {
+    const compiled = lockText();
+    const runnerStep = compiled.match(
+      /      - name: Prepare deterministic Cast validator runner\n[\s\S]*?(?=\n      - (?:continue-on-error:|name:))/,
+    )?.[0] ?? '';
+    const normalizedRunnerStep = runnerStep.replace(/\\"/g, '"');
+    expect(normalizedRunnerStep).toContain('cat > "$validator_runner"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"');
+    expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
+    expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
+    expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
+      compiled.indexOf('name: Restore inline skills from activation artifact'),
+    );
+  }, 20000);
+
+  it('keeps the v0.87.10 completion hook neutral when a custom safe job fails', () => {
+    const compiled = lockText();
+    const completionStep = compiled.match(
+      /      - name: Update reaction comment with completion status\n[\s\S]*?(?=\n  detection:)/,
+    )?.[0] ?? '';
+    expect(completionStep).toContain('GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}');
+    expect(completionStep).toContain('GH_AW_SAFE_OUTPUTS_RESULT: ${{ needs.safe_outputs.result }}');
+    expect(completionStep).not.toContain('needs.cast_failure.result');
+    expect(completionStep).toContain(
+      'This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success.',
+    );
+    expect(completionStep).not.toMatch(/runSuccess[^\\n]*completed successfully/i);
   }, 20000);
 
   it('preserves the standalone release selection in the compiled install step (#1884)', () => {
@@ -2530,6 +2602,56 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
   const cast = squadContent.match(
     /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
   )?.[0] ?? '';
+  const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+
+  function assertTruthfulCastTerminalContract(workflow: string): void {
+    const candidateCast = workflow.match(
+      /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+    )?.[0] ?? '';
+    const failureBranch = candidateCast.match(
+      /For outcomes 2 or 3[\s\S]*?(?=\n##### Step 8:)/,
+    )?.[0] ?? '';
+
+    expect(candidateCast).toMatch(
+      /only exit status zero with stdout exactly\s+`Cast validation passed\.` authorizes exactly one `create-pull-request`/s,
+    );
+    expect(candidateCast).toContain('"${RUNNER_TEMP:?}/run-squad-cast-validator"');
+    expect(candidateCast).toContain('Do not transcribe validator bytes or extraction commands');
+    expect(candidateCast).toContain('emits one JSON\nrecord on stdout');
+    expect(candidateCast.match(
+      /<!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->[\s\S]*?<!-- SQUAD:CAST-VALIDATOR-COMMAND:END -->/,
+    )?.[0]).not.toMatch(/base64|gzip|awk|validator_expected_sha256/);
+    expect(failureBranch).toContain('## ❌ Cast did not complete');
+    expect(failureBranch).toContain('No team or Cast pull request was delivered.');
+    expect(failureBranch).toContain('complete stderr exactly as observed');
+    expect(failureBranch).toContain('One `add-comment`');
+    expect(failureBranch).toContain('One `cast_failure`');
+    expect(failureBranch).toContain('identical `stage`, `command_category`,');
+    expect(failureBranch).toContain('Never call `noop` or `report_incomplete`');
+    expect(failureBranch).toContain('never\ncall `create-pull-request`');
+    expect(failureBranch).toContain('rerun `/squad cast`');
+    expect(failureBranch).toContain('Do not suggest re-materializing, reinstalling, or');
+    expect(failureBranch).toContain('runs only when this output is emitted');
+    expect(failureBranch).toContain('cannot detect that omission');
+    expect(failureBranch).toContain('or independently\ngate `create-pull-request`');
+    expect(failureBranch).toContain('cannot prevent a pull\nrequest that is materialized concurrently');
+    expect(failureBranch).not.toMatch(/failure signal is independently enforced/i);
+    expect(failureBranch).not.toMatch(/(?:fail-closed|independent(?:ly)? fail-closed) gate/i);
+    expect(failureBranch).not.toMatch(/call `noop` and stop/i);
+    expect(failureBranch).not.toMatch(/re-?materialize the (?:committed )?(?:validator )?payload/i);
+
+    for (const [stage, category] of [
+      ['discovery', 'validator skill discovery'],
+      ['uniqueness', 'validator skill uniqueness'],
+      ['extraction', 'validator payload extraction'],
+      ['integrity', 'SHA-256 authentication'],
+      ['syntax', 'node --check'],
+      ['validation', 'validator execution'],
+    ]) {
+      expect(candidateCast).toContain(`\`${stage}\``);
+      expect(candidateCast).toContain(`\`${category}\``);
+    }
+  }
 
   it('uses an explicit fresh-artifact payload allowlist instead of staging .squad wholesale', () => {
     expect(cast).toContain('Never stage `.squad/` wholesale');
@@ -2581,13 +2703,58 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
     expect(cast).toContain('must be self-contained for the final Cast tree');
   });
 
-  it('runs the deterministic final-tree validator immediately before safe output', () => {
+  it('enforces mutually exclusive factual Cast terminal outcomes', () => {
     expect(cast).toContain('Deterministic final-tree validation');
     expect(cast).toContain('$RUNNER_TEMP/squad-cast-payload.json');
     expect(cast).toContain('squad-cast-validator');
-    expect(cast).toMatch(/Only a zero exit status.*authorizes.*`create-pull-request`/s);
-    expect(cast).toMatch(/exits nonzero.*`add-comment`.*`noop`/s);
-    expect(cast).toMatch(/does not expose an independent\s+post-agent hook/s);
+    assertTruthfulCastTerminalContract(squadContent);
+  });
+
+  it('configures one bounded durable Cast failure output that calls core.setFailed', () => {
+    const castFailureJob = frontmatter.match(
+      /^  jobs:\n    cast-failure:[\s\S]*?(?=^  data:)/m,
+    )?.[0] ?? '';
+    expect(castFailureJob).not.toBe('');
+    expect(castFailureJob).toContain('max: 1');
+    expect(castFailureJob).toContain('runs-on: ubuntu-slim');
+    expect(castFailureJob).toContain("item.type === 'cast_failure'");
+    expect(castFailureJob).toContain("item.type === 'create_pull_request'");
+    expect(castFailureJob).toContain('cannot prevent a concurrently materialized pull request');
+    expect(castFailureJob).toContain('process.env.GH_AW_AGENT_OUTPUT');
+    expect(castFailureJob).toContain('core.setFailed');
+    expect(castFailureJob).toContain('Cast did not complete.');
+    expect(castFailureJob).toContain('failure.stderr');
+    expect(castFailureJob).toContain("['validation', 'validator execution']");
+    expect(castFailureJob).toContain("['syntax', 'node --check']");
+  });
+
+  it('does not treat gh-aw run conclusion or report_incomplete as proof of Cast success', () => {
+    expect(frontmatter).toContain(
+      'run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."',
+    );
+    expect(cast).toContain('Built-in `report_incomplete` only warns');
+    expect(cast).toContain('it does not fail the run');
+    expect(cast).toContain('Only a linked Cast PR is the success signal');
+    expect(cast).toContain('A red `cast_failure` job can therefore still select this\nneutral hook; it does not select `run-failure`');
+  });
+
+  it('kills claims that the post-agent job independently enforces failure or PR authorization', () => {
+    const overclaimMutation = squadContent
+      .replace(
+        /When the agent emits `cast_failure`, the typed job[\s\S]*?gate `create-pull-request`\./,
+        'The failure signal is independently enforced after the agent and fail-closed for create-pull-request.',
+      );
+    expect(() => assertTruthfulCastTerminalContract(overclaimMutation)).toThrow();
+  });
+
+  it('kills restoration of the old add-comment plus noop success-shaped path', () => {
+    const oldPathMutation = squadContent
+      .replace(
+        /- One `cast_failure` with the identical[\s\S]*?complete `stderr`\./,
+        '- Call `noop` and stop.',
+      )
+      .replace('Never call `noop` or `report_incomplete`', 'Call `noop`');
+    expect(() => assertTruthfulCastTerminalContract(oldPathMutation)).toThrow();
   });
 });
 

@@ -6,8 +6,8 @@ description: Store the reviewed GH-AW Cast final-tree validator as a disk-only p
 # GH-AW Cast final-tree validator
 
 This inline skill is a disk-only validator container. Do not invoke or load it
-into model context. The dispatcher supplies a short command that locates this
-materialized `SKILL.md` and extracts the compressed validator directly on disk.
+into model context. Before the agent turn, the workflow prepares a runner that
+locates this materialized `SKILL.md` and extracts the validator directly on disk.
 
 <!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->
 H4sIAAAAAAACCrU723LbOJbvqco/II6rScYSlcy87MqtaB3HPe0px8na7u3dkeQIIiEJbYpQA6BtRdQ87gfsJ+6XbB1cSJAiHc90rV8k4XLuOBcc+PWrXiZ4
