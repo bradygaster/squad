@@ -78,7 +78,7 @@ function resolveIssueReference(value, description, invalidMessage) {
  * real error (e.g. an unresolved temporary ID) instead of a misleading
  * "labels could not be resolved" failure.
  */
-function extractIssueNumber(value) {
+export function extractIssueNumber(value) {
   if (Number.isInteger(value)) return value;
   if (typeof value === 'string') {
     const resolved = RESOLVED_REFERENCE.exec(value.trim());
