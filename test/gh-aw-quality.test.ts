@@ -300,9 +300,25 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data' || name === 'messages') continue;
+      if (name === 'data' || name === 'messages' || name === 'jobs') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
+      expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
+      expect(max, `${name}.max should be ≤ 1000`).toBeLessThanOrEqual(1000);
+      expect(Number.isInteger(max), `${name}.max should be an integer`).toBe(true);
+    }
+  });
+
+  it('each custom safe-output job has a bounded max value', () => {
+    const jobsBlock = frontmatter.match(
+      /^  jobs:\n([\s\S]*?)(?=^  [\w-]+:)/m,
+    )?.[1] ?? '';
+    const jobs = [...jobsBlock.matchAll(
+      /^    ([\w-]+):\n([\s\S]*?)(?=^    [\w-]+:|(?![\s\S]))/gm,
+    )];
+    expect(jobs.length).toBeGreaterThan(0);
+    for (const [, name, config] of jobs) {
+      const max = Number(config.match(/^      max:\s*(\d+)\s*$/m)?.[1]);
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
       expect(max, `${name}.max should be ≤ 1000`).toBeLessThanOrEqual(1000);
       expect(Number.isInteger(max), `${name}.max should be an integer`).toBe(true);
@@ -388,6 +404,18 @@ describe('gh-aw: safe-output configuration', () => {
     const ci = safeOutputs['create-issue'];
     expect(ci, 'create-issue block must exist').toBeDefined();
     expect(ci['max'], 'create-issue max must be 75 — do not reduce below this').toBe(75);
+  });
+
+  it('add-labels exists and can auto-provision squad labels on a fresh repo (#1955)', () => {
+    const al = safeOutputs['add-labels'];
+    expect(al, 'add-labels block must exist').toBeDefined();
+    expect(al['create-if-missing'], 'add-labels must set create-if-missing so a fresh repo with no squad labels does not silently drop them').toBe(true);
+    expect(al['allowed']).toEqual(['squad', 'squad:*']);
+    expect(al['issues'], 'add-labels must be allowed to target issues').toBe(true);
+    expect(al['target'], 'add-labels must target created issues, not only the triggering one').toBe('*');
+    // One add_labels call per created issue; must cover the largest possible
+    // create-issue run (max 75) with headroom, never less.
+    expect(al['max'] as number).toBeGreaterThanOrEqual(safeOutputs['create-issue']['max'] as number);
   });
 });
 
@@ -864,7 +892,62 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // "keeps the ambient prompt under 40 KB". The check below is only a source-GROWTH
   // regression guard: it keeps unbounded authoring growth visible without pretending
   // authored bytes are delivered bytes.
-  const SOURCE_GROWTH_BUDGET_KB = 160;
+  //
+  // Raised 160 → 170 KB by #1959. The fast-path label-provisioning contract it adds
+  // lives entirely inside the `squad-plan-accept` inline `## skill:` block, so gh-aw
+  // strips it from the ambient prompt — "keeps the ambient prompt under 40 KB" is
+  // unaffected and still passing, which is exactly the condition the comment above
+  // names as making a raise legitimate. #1962's follow-up trims bought some room back
+  // but not enough: combined source measures 164.8 KB after both changes, still over
+  // 160, so the raise stays. 170 KB leaves a usable margin without removing the signal.
+  //
+  // Raised 170 -> 173 KB by #1963, which makes both activation paths report actual
+  // accepted label-operation outcomes and fixes the `Activation bindings:` JSON to carry
+  // quoted temporary-ID references. Nearly all of that prose lands inside the
+  // `squad-plan-activate` and `squad-plan-accept` inline skill blocks; only the shared
+  // ontology's binding contract is ambient, and "keeps the ambient prompt under 40 KB"
+  // still passes at ~32 KB - the condition above that makes a raise legitimate.
+  //
+  // Raised 173 -> 177 KB by #1961, which bounds activation label capacity and makes
+  // truncation explicit. #1963 deliberately did not pre-raise for this branch and
+  // projected it would land at ~180 002 B; measured on the actual merge of #1961 into
+  // dev (with #1963 already merged) the combined authored source is 180 036 B = 175.8 KB,
+  // within 34 bytes of that projection.
+  //
+  // 176 KB would pass by only 188 bytes, which reproduces the near-zero-margin failure
+  // mode this guard already hit once: before the 160 -> 170 raise it sat 21-28 bytes from
+  // its ceiling, so two independently compliant PRs could not coexist and correct changes
+  // failed on byte count alone. 177 KB leaves 1 212 bytes, so the guard still bites on
+  // genuine growth without re-creating a threshold the next change trips by accident.
+  // All of #1961's growth is inside the `squad-plan-activate` inline skill, which the
+  // extractor strips from the ambient prompt and loads on demand; ambient re-measured at
+  // 32 KB against 40 KB on the merged tree.
+  // Raised 177 -> 181 KB by the online-research capability (web-fetch in
+  // `/squad research`). The growth is the squad-research skill's online-doc
+  // consultation guidance, the required "Online sources" disclosure, and its
+  // Step 5 checklist item — all inside the `squad-research` inline `## skill:`
+  // block, which the extractor closes at the next `## skill:` H2 and strips from
+  // the ambient prompt. Only a ~300 B "Online sources" line added to the shared
+  // ontology's §3.2 template is ambient. "keeps the ambient prompt under 40 KB"
+  // still passes on this tree — the condition above that makes a raise
+  // legitimate. Combined authored source measured 183 626 B = 179.3 KB
+  // (Buffer.byteLength over squad.md + all imports, same sum this test performs);
+  // 181 KB leaves 1 718 bytes of margin, comparable to the 1 212 the 177 raise
+  // left, so the guard still bites on genuine growth.
+  //
+  // Raised 181 -> 183 KB by the Cast validator's deterministic disk-extraction and
+  // SHA-256 authentication command. That command is authored between marker comments
+  // inside the `squad-cast` inline skill in workflows/squad.md; gh-aw strips the full
+  // skill from the ambient prompt and loads it on demand.
+  // Raised 183 -> 189 KB by the truthful Cast terminal contract and its typed
+  // post-agent failure job. The ambient 40 KB guard still passes; the behavioral
+  // detail is confined to the on-demand `squad-cast` skill, while the safe job is
+  // required executable policy rather than ambient model guidance.
+  // Raised 189 -> 194 KB when the authenticated extraction and validation sequence
+  // moved from agent-transcribed prompt text into a deterministic pre-agent runner.
+  // The runner also emits a machine-readable factual failure record. The Cast skill
+  // shrank, and the ambient prompt remains below its independently enforced 40 KB cap.
+  const SOURCE_GROWTH_BUDGET_KB = 194;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1276,10 +1359,16 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
   // but can exceed the 5s vitest default under full-suite parallel contention.
   it('strict-compiles and preserves prompt/config behavior', () => {
     const compiled = lockText();
-    expect(compiled).toContain('"auto_close_issue":false');
-    expect(compiled).toContain('"data_enabled":true');
-    expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
-    expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
+    // gh-aw v0.87.x (bumped from v0.86.2 for #1955's add-labels/create-if-missing
+    // support) now emits this JSON config only embedded inside a double-quoted YAML
+    // env var value, so every `"` is backslash-escaped (`\"key\":value`) rather than
+    // appearing as bare JSON. De-escape before matching so this assertion holds
+    // regardless of which quoting style a given compiler version chooses.
+    const unescaped = compiled.replace(/\\"/g, '"');
+    expect(unescaped).toContain('"auto_close_issue":false');
+    expect(unescaped).toContain('"data_enabled":true');
+    expect(unescaped).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
+    expect(unescaped).toContain('"enum":["research","plan","plan-accepted"');
     // gh-aw records runtime-import paths relative to the repo root, so with the
     // real `.github/workflows/` deployment layout these are prefixed accordingly.
     expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
@@ -1307,6 +1396,54 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).toContain(
       "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
     );
+  }, 20000);
+
+  it('compiles Cast failure into a queryable post-agent job that fails the run', () => {
+    const compiled = lockText();
+    const failureJob = compiled.match(
+      /^  cast_failure:\n[\s\S]*?(?=^  conclusion:)/m,
+    )?.[0] ?? '';
+    const conclusionNeeds = compiled.match(
+      /^  conclusion:\n    needs:\n([\s\S]*?)(?=    if:)/m,
+    )?.[1] ?? '';
+    expect(failureJob).toContain('name: Fail incomplete Cast');
+    expect(failureJob).toContain('runs-on: ubuntu-slim');
+    expect(failureJob).toContain("contains(needs.agent.outputs.output_types, 'cast_failure')");
+    expect(failureJob).toContain("item.type === 'cast_failure'");
+    expect(failureJob).toContain("item.type === 'create_pull_request'");
+    expect(failureJob).toContain('process.env.GH_AW_AGENT_OUTPUT');
+    expect(failureJob).toContain('Cast did not complete.');
+    expect(failureJob).toContain('core.setFailed');
+    expect(conclusionNeeds).toContain('- cast_failure');
+  }, 20000);
+
+  it('prepares the materialized Cast validator runner outside the agent prompt', () => {
+    const compiled = lockText();
+    const runnerStep = compiled.match(
+      /      - name: Prepare deterministic Cast validator runner\n[\s\S]*?(?=\n      - (?:continue-on-error:|name:))/,
+    )?.[0] ?? '';
+    const normalizedRunnerStep = runnerStep.replace(/\\"/g, '"');
+    expect(normalizedRunnerStep).toContain('cat > "$validator_runner"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"');
+    expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
+    expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
+    expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
+      compiled.indexOf('name: Restore inline skills from activation artifact'),
+    );
+  }, 20000);
+
+  it('keeps the v0.87.10 completion hook neutral when a custom safe job fails', () => {
+    const compiled = lockText();
+    const completionStep = compiled.match(
+      /      - name: Update reaction comment with completion status\n[\s\S]*?(?=\n  detection:)/,
+    )?.[0] ?? '';
+    expect(completionStep).toContain('GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}');
+    expect(completionStep).toContain('GH_AW_SAFE_OUTPUTS_RESULT: ${{ needs.safe_outputs.result }}');
+    expect(completionStep).not.toContain('needs.cast_failure.result');
+    expect(completionStep).toContain(
+      'This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success.',
+    );
+    expect(completionStep).not.toMatch(/runSuccess[^\\n]*completed successfully/i);
   }, 20000);
 
   it('preserves the standalone release selection in the compiled install step (#1884)', () => {
@@ -1932,23 +2069,44 @@ describe('gh-aw: Plan Activate hardening behaviors', () => {
 
   it('includes label pre-flight step before issue creation', () => {
     expect(content).toContain('Label Pre-flight');
-    expect(content).toMatch(/squad.*label.*exist|label.*squad.*exist/i);
+    const preflight = (content.match(/##### Label Pre-flight\n([\s\S]*?)(?=\n#####|\n####)/)?.[1] ?? '').replace(
+      /\s+/g,
+      ' '
+    );
+    expect(preflight).toMatch(/squad.*label.*exist|label.*squad.*exist/i);
   });
 
-  it('label pre-flight does not claim impossible label creation', () => {
-    // Workflow has issues: read and no create-label safe-output; must not claim it can create labels
+  it('label pre-flight grounds any label-creation claim in the add-labels safe output (#1955)', () => {
+    // Forward-port note (#1955): the workflow used to have no way to create a missing
+    // label at all, so any claim of "it creates labels" would have been a hallucinated
+    // capability. That gap is now closed by a real `add-labels` safe output with
+    // `create-if-missing: true` — the claim is legitimate, but it must be attributed to
+    // that declared mechanism, not to bare `issues: write` permission or vague
+    // "safe-output permissions handle the write" hand-waving with no named mechanism.
     const preflight = content.match(/##### Label Pre-flight\n([\s\S]*?)(?=\n#####|\n####)/)?.[1] ?? '';
-    expect(preflight).not.toMatch(/create them|safe-output permissions handle the write|no additional token scope/i);
+    expect(preflight, 'Label Pre-flight section must exist').not.toBe('');
+    expect(preflight).not.toMatch(/safe-output permissions handle the write|no additional token scope/i);
+    expect(preflight).toMatch(/add-labels|add_labels/);
+    expect(preflight).toMatch(/create-if-missing/);
   });
 
-  it('label pre-flight reports missing labels as prerequisite gap', () => {
-    expect(content).toMatch(/prerequisite gap|prerequisite/i);
-    expect(content).toMatch(/issues: write/i);
-    expect(content).toMatch(/create-label.*safe-output|safe-output.*create-label/i);
+  it('label pre-flight declares add-labels/create-if-missing instead of an unconfigured gap (#1955)', () => {
+    // Forward-port note (#1955): this used to assert the OPPOSITE — that missing labels
+    // were reported as an unconfigured "prerequisite gap" requiring a nonexistent
+    // `create-label` safe-output. That was the defect #1955 fixes: gh-aw's real
+    // mechanism is `add-labels` with `create-if-missing: true`, declared in frontmatter.
+    expect(content).toContain('add-labels:');
+    expect(content).toContain('create-if-missing: true');
+    expect(content).not.toContain('create-label:');
+    expect(content).not.toMatch(/create-label.*safe-output|safe-output.*create-label/i);
   });
 
-  it('label pre-flight continues activation and omits unavailable labels with report', () => {
-    expect(content).toMatch(/unavailable labels are omitted and reported|omitted and reported/i);
+  it('label pre-flight auto-provisions missing labels instead of omitting them (#1955)', () => {
+    // Forward-port note (#1955): this used to assert labels that don't yet exist are
+    // "omitted and reported, not silently applied" — the exact fresh-repo defect #1955
+    // reports. The fix auto-creates them via create-if-missing instead of omitting them.
+    expect(content).not.toMatch(/unavailable labels are omitted and reported/i);
+    expect(content).toMatch(/auto-creates|auto-provision/i);
   });
 
   it('includes transient failure handling with single retry', () => {
@@ -2444,6 +2602,56 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
   const cast = squadContent.match(
     /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
   )?.[0] ?? '';
+  const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+
+  function assertTruthfulCastTerminalContract(workflow: string): void {
+    const candidateCast = workflow.match(
+      /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+    )?.[0] ?? '';
+    const failureBranch = candidateCast.match(
+      /For outcomes 2 or 3[\s\S]*?(?=\n##### Step 8:)/,
+    )?.[0] ?? '';
+
+    expect(candidateCast).toMatch(
+      /only exit status zero with stdout exactly\s+`Cast validation passed\.` authorizes exactly one `create-pull-request`/s,
+    );
+    expect(candidateCast).toContain('"${RUNNER_TEMP:?}/run-squad-cast-validator"');
+    expect(candidateCast).toContain('Do not transcribe validator bytes or extraction commands');
+    expect(candidateCast).toContain('emits one JSON\nrecord on stdout');
+    expect(candidateCast.match(
+      /<!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->[\s\S]*?<!-- SQUAD:CAST-VALIDATOR-COMMAND:END -->/,
+    )?.[0]).not.toMatch(/base64|gzip|awk|validator_expected_sha256/);
+    expect(failureBranch).toContain('## ❌ Cast did not complete');
+    expect(failureBranch).toContain('No team or Cast pull request was delivered.');
+    expect(failureBranch).toContain('complete stderr exactly as observed');
+    expect(failureBranch).toContain('One `add-comment`');
+    expect(failureBranch).toContain('One `cast_failure`');
+    expect(failureBranch).toContain('identical `stage`, `command_category`,');
+    expect(failureBranch).toContain('Never call `noop` or `report_incomplete`');
+    expect(failureBranch).toContain('never\ncall `create-pull-request`');
+    expect(failureBranch).toContain('rerun `/squad cast`');
+    expect(failureBranch).toContain('Do not suggest re-materializing, reinstalling, or');
+    expect(failureBranch).toContain('runs only when this output is emitted');
+    expect(failureBranch).toContain('cannot detect that omission');
+    expect(failureBranch).toContain('or independently\ngate `create-pull-request`');
+    expect(failureBranch).toContain('cannot prevent a pull\nrequest that is materialized concurrently');
+    expect(failureBranch).not.toMatch(/failure signal is independently enforced/i);
+    expect(failureBranch).not.toMatch(/(?:fail-closed|independent(?:ly)? fail-closed) gate/i);
+    expect(failureBranch).not.toMatch(/call `noop` and stop/i);
+    expect(failureBranch).not.toMatch(/re-?materialize the (?:committed )?(?:validator )?payload/i);
+
+    for (const [stage, category] of [
+      ['discovery', 'validator skill discovery'],
+      ['uniqueness', 'validator skill uniqueness'],
+      ['extraction', 'validator payload extraction'],
+      ['integrity', 'SHA-256 authentication'],
+      ['syntax', 'node --check'],
+      ['validation', 'validator execution'],
+    ]) {
+      expect(candidateCast).toContain(`\`${stage}\``);
+      expect(candidateCast).toContain(`\`${category}\``);
+    }
+  }
 
   it('uses an explicit fresh-artifact payload allowlist instead of staging .squad wholesale', () => {
     expect(cast).toContain('Never stage `.squad/` wholesale');
@@ -2495,13 +2703,133 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
     expect(cast).toContain('must be self-contained for the final Cast tree');
   });
 
-  it('runs the deterministic final-tree validator immediately before safe output', () => {
+  it('enforces mutually exclusive factual Cast terminal outcomes', () => {
     expect(cast).toContain('Deterministic final-tree validation');
     expect(cast).toContain('$RUNNER_TEMP/squad-cast-payload.json');
     expect(cast).toContain('squad-cast-validator');
-    expect(cast).toMatch(/Only a zero exit status.*authorizes.*`create-pull-request`/s);
-    expect(cast).toMatch(/exits nonzero.*`add-comment`.*`noop`/s);
-    expect(cast).toMatch(/does not expose an independent\s+post-agent hook/s);
+    assertTruthfulCastTerminalContract(squadContent);
+  });
+
+  it('configures one bounded durable Cast failure output that calls core.setFailed', () => {
+    const castFailureJob = frontmatter.match(
+      /^  jobs:\n    cast-failure:[\s\S]*?(?=^  data:)/m,
+    )?.[0] ?? '';
+    expect(castFailureJob).not.toBe('');
+    expect(castFailureJob).toContain('max: 1');
+    expect(castFailureJob).toContain('runs-on: ubuntu-slim');
+    expect(castFailureJob).toContain("item.type === 'cast_failure'");
+    expect(castFailureJob).toContain("item.type === 'create_pull_request'");
+    expect(castFailureJob).toContain('cannot prevent a concurrently materialized pull request');
+    expect(castFailureJob).toContain('process.env.GH_AW_AGENT_OUTPUT');
+    expect(castFailureJob).toContain('core.setFailed');
+    expect(castFailureJob).toContain('Cast did not complete.');
+    expect(castFailureJob).toContain('failure.stderr');
+    expect(castFailureJob).toContain("['validation', 'validator execution']");
+    expect(castFailureJob).toContain("['syntax', 'node --check']");
+  });
+
+  it('does not treat gh-aw run conclusion or report_incomplete as proof of Cast success', () => {
+    expect(frontmatter).toContain(
+      'run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."',
+    );
+    expect(cast).toContain('Built-in `report_incomplete` only warns');
+    expect(cast).toContain('it does not fail the run');
+    expect(cast).toContain('Only a linked Cast PR is the success signal');
+    expect(cast).toContain('A red `cast_failure` job can therefore still select this\nneutral hook; it does not select `run-failure`');
+  });
+
+  it('kills claims that the post-agent job independently enforces failure or PR authorization', () => {
+    const overclaimMutation = squadContent
+      .replace(
+        /When the agent emits `cast_failure`, the typed job[\s\S]*?gate `create-pull-request`\./,
+        'The failure signal is independently enforced after the agent and fail-closed for create-pull-request.',
+      );
+    expect(() => assertTruthfulCastTerminalContract(overclaimMutation)).toThrow();
+  });
+
+  it('kills restoration of the old add-comment plus noop success-shaped path', () => {
+    const oldPathMutation = squadContent
+      .replace(
+        /- One `cast_failure` with the identical[\s\S]*?complete `stderr`\./,
+        '- Call `noop` and stop.',
+      )
+      .replace('Never call `noop` or `report_incomplete`', 'Call `noop`');
+    expect(() => assertTruthfulCastTerminalContract(oldPathMutation)).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gh-aw: Cast PR closes its originating issue on merge (#1974)
+//
+// A direct `/squad cast` command opens a PR that scaffolds the team. Prior to
+// this change, that PR never referenced the invoking issue with a closing
+// keyword, so merging it left the issue open. The Auto-Cast Pivot (TG-3) is a
+// different code path that opens a Cast PR as a *side effect* of another
+// command (e.g. `/squad plan`) finding no team yet -- that PR must NOT close
+// the underlying work issue, since only the team was cast, not the requested
+// work. Step 8 must therefore add the closing keyword only for the direct
+// invocation, while TG-3's existing prohibition (tested above) stays intact.
+// ---------------------------------------------------------------------------
+describe('gh-aw: Cast PR closes its originating issue on merge (#1974)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+  const cast = squadContent.match(
+    /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
+  )?.[0] ?? '';
+  const step8 = cast.match(/##### Step 8: Open PR\n[\s\S]*?(?=\n##### Step 9)/)?.[0] ?? '';
+
+  it('Step 8 exists and configures the branch/title used by direct Cast', () => {
+    expect(step8.length, 'Step 8: Open PR section should be found in the cast skill').toBeGreaterThan(0);
+    expect(step8).toContain('`create-pull-request`');
+    expect(step8).toContain('branch `squad/cast-{repo}`');
+    expect(step8).toContain('title `[squad] Cast your Squad — {description}`');
+  });
+
+  it('Step 8 templates a closing line with the resolved issue number for a direct Cast invocation', () => {
+    expect(step8).toMatch(/append a standalone final body line in the form `Closes #\{issue_number\}`/);
+    expect(step8).toMatch(/merging this PR automatically closes the issue that invoked `\/squad cast`/);
+    expect(step8).toMatch(/Replace `\{issue_number\}` with the resolved numeric target issue number/);
+  });
+
+  it('the closing keyword is scoped to the resolved target issue, never a different issue', () => {
+    expect(step8).toMatch(/resolved numeric target issue number from Trigger Context/i);
+    expect(step8).toMatch(/never .*reference a different issue/i);
+  });
+
+  it('explicitly excludes the Auto-Cast Pivot (TG-3), which forbids closing keywords', () => {
+    expect(step8).toMatch(/not the Auto-Cast Pivot in TG-3, which forbids closing keywords/i);
+    // TG-3's own prohibition (asserted elsewhere) must still be present and unweakened.
+    expect(squadContent).toMatch(
+      /MUST NOT contain.*Fixes.*Closes.*Resolves/i,
+    );
+  });
+
+  it('instructs omitting placeholder braces and documentation backticks from the real PR body', () => {
+    expect(step8).toMatch(/never emit the braces/i);
+    expect(step8).toMatch(/omit the documentation backticks from the actual PR body/i);
+  });
+
+  it('preserves existing Step 8 PR content: team summary and the post-merge rerun instruction', () => {
+    expect(step8).toContain('body with team summary');
+    expect(step8).toMatch(
+      /return to the originating issue and rerun `\{canonical_command\}` to resume your work/,
+    );
+  });
+
+  it('preserves the Step 6 payload allowlist enumeration instruction', () => {
+    expect(step8).toMatch(
+      /Enumerate every concrete path from the validated Step 6 payload allowlist as the file request/,
+    );
+    expect(step8).toMatch(/do not add any other path/);
+  });
+
+  it('does not weaken auto-close-issue: false, which still guards Connect/Adopt/Cast-Member/Auto-Pivot', () => {
+    // The literal Closes # line (not gh-aw's built-in auto-close-issue) is what closes the
+    // issue for direct Cast, so the shared safe-output config can stay false for every other
+    // create-pull-request call in this workflow (Connect, Adopt, Cast-Member, Auto-Cast Pivot).
+    const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+    const safeOutputs = extractSafeOutputs(frontmatter);
+    const pr = safeOutputs['create-pull-request'] as Record<string, unknown>;
+    expect(pr['auto-close-issue']).toBe(false);
   });
 });
 

@@ -1,21 +1,15 @@
 ## skill: `squad-cast-validator`
 ---
-description: Materialize and execute the deterministic GH-AW Cast final-tree validator.
+description: Store the reviewed GH-AW Cast final-tree validator as a disk-only payload.
 ---
 
 # GH-AW Cast final-tree validator
 
-Materialize and run the reviewed validator exactly as shown after writing the
-explicit payload JSON. The compressed program is the byte-for-byte content of
-`scripts/validate-gh-aw-cast.mjs` in the workflow source repository. It uses
-only Node.js built-ins and does not read network data.
+This inline skill is a disk-only validator container. Do not invoke or load it
+into model context. Before the agent turn, the workflow prepares a runner that
+locates this materialized `SKILL.md` and extracts the validator directly on disk.
 
-```bash
-cat <<'SQUAD_CAST_VALIDATOR_B64' \
-  | tr -d '\n' \
-  | base64 --decode \
-  | gzip --decompress \
-  > "${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
+<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->
 H4sIAAAAAAACCrU723LbOJbvqco/II6rScYSlcy87MqtaB3HPe0px8na7u3dkeQIIiEJbYpQA6BtRdQ87gfsJ+6XbB1cSJAiHc90rV8k4XLuOBcc+PWrXiZ4
 b0bTHknvUcpi8vLFyxd0tWZcou3LFwiRRyqkuN6kUQd+coLjn2hCKgMx5cVvIbE0P3ZoztkKeQC2PxfecQkZ/cZo2kGcCJbcE1RZucZyWVkLAzcMsP5ydVFd
 m/EElr58EbFUSHT6+ers65eT/7r4fPIRDdAICPJC8XuG454keBWuYq/jDnKWSZou9sYjLGC8x8mCCsk34W+Cpc1LllRI9uSKNUtoVF2woHKZzXp4QVIpemp5
@@ -64,12 +58,4 @@ qvHvPJKm8QWekcStHi1qk5bOEyw/2dS041aTo/KA0Lj6CtB53KcbT+6k8/Lq1jS6jtR72q77yva2m3cP
 lbEPUdtUVgNaaq43numegg/9Oduk+9qdvIF/z1jQvXcDjpzV4S6eoFVfTj7P5VB1tYcTuKSxaQkS6t0LSgCHaXg42q+8g5o++Tig4cmbCUCTMmGoNvNWmKa+
 04VnaxgW9YTaDNu4qf5XYM1ZRIQI1Yt/+9D9ydwWdMQSEqpRf6oyLRNYgZY5pgmJ++O0i+o5bMG3RUoeqTxlMVy2vHuy61Vcie5dpxqenFpUa810+947beTn
 Em7IFjqoGubhBqbgaDe1GQ08Ifun+QJiErbwvTopaywEicPykbaKko6moA/3ww9I/6dXCC2mMOOJasdU/umrvikIl5zMjUS01WgU/wfPs/TH0TYAAA==
-SQUAD_CAST_VALIDATOR_B64
-
-node "${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs" \
-  --root "$PWD" \
-  --payload "${RUNNER_TEMP:?}/squad-cast-payload.json"
-```
-
-Do not request any safe output unless this exact command exits zero and prints
-`Cast validation passed.`.
+<!-- SQUAD_CAST_VALIDATOR_B64_END -->
