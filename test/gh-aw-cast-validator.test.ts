@@ -493,6 +493,41 @@ describe('GH-AW Cast final-tree validator', () => {
       ].join('\n'),
     ]);
   });
+
+  it('fails malformed agent output with a deterministic diagnostic', async () => {
+    const failures = await runCastFailureJobOutput('{not-json');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/^Unable to read Cast failure output: /);
+  });
+
+  it('fails non-object output items with a deterministic diagnostic', async () => {
+    const failures = await runCastFailureJobOutput(JSON.stringify({
+      items: [null, { type: 'cast_failure' }],
+    }));
+    expect(failures).toEqual(['Cast failure output item 0 is not an object.']);
+  });
+
+  it('diagnoses conflicting failure and pull-request outputs without claiming prevention', async () => {
+    const failures = await runCastFailureJobOutput(JSON.stringify({
+      items: [
+        {
+          type: 'cast_failure',
+          stage: 'validation',
+          command_category: 'validator execution',
+          exit_status: '1',
+          stderr: 'Cast validation failed.',
+        },
+        { type: 'create_pull_request' },
+      ],
+    }));
+    expect(failures).toEqual([
+      [
+        'Conflicting Cast terminal outputs: found 1 create_pull_request item(s) with cast_failure.',
+        'This post-agent diagnostic cannot prevent a concurrently materialized pull request.',
+      ].join('\n'),
+    ]);
+  });
+
   it('accepts a self-contained descriptive Cast tree', () => {
     const fixture = createFixture();
     const result = validate(fixture.root, fixture.payload);
