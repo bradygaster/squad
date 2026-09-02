@@ -48,10 +48,240 @@ tools:
   github:
     mode: gh-proxy
     toolsets: [default]
+steps:
+  - name: Prepare deterministic Cast validator runner
+    shell: bash
+    run: |
+      set -euo pipefail
+      validator_runner="${RUNNER_TEMP:?}/run-squad-cast-validator"
+      cat > "$validator_runner" <<'SQUAD_CAST_VALIDATOR_RUNNER'
+      #!/usr/bin/env bash
+      set -u -o pipefail
+      cd "${GITHUB_WORKSPACE:?}"
+
+      stderr_file="${RUNNER_TEMP:?}/squad-cast-validator.stderr"
+      validator_matches="${RUNNER_TEMP:?}/squad-cast-validator-matches.txt"
+      validator_script="${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
+      validator_output="${RUNNER_TEMP:?}/squad-cast-validator.stdout"
+      expected_output="${RUNNER_TEMP:?}/squad-cast-validator.expected"
+
+      fail_cast() {
+        local stage="$1"
+        local command_category="$2"
+        local exit_status="$3"
+        node - "$stage" "$command_category" "$exit_status" "$stderr_file" <<'NODE'
+      const fs = require('node:fs');
+      const [stage, commandCategory, exitStatus, stderrPath] = process.argv.slice(2);
+      process.stdout.write(`${JSON.stringify({
+        outcome: 'cast_failure',
+        stage,
+        command_category: commandCategory,
+        exit_status: exitStatus,
+        stderr: fs.readFileSync(stderrPath, 'utf8'),
+      })}\n`);
+      NODE
+        cat "$stderr_file" >&2
+        exit "$exit_status"
+      }
+
+      : > "$stderr_file"
+      find "${GITHUB_WORKSPACE}" -maxdepth 6 -name "SKILL.md" \
+        -path "*/squad-cast-validator/SKILL.md" -print \
+        > "$validator_matches" 2> "$stderr_file"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "discovery" "validator skill discovery" "$status"
+      fi
+
+      validator_count="$(wc -l < "$validator_matches" | tr -d '[:space:]')"
+      case "$validator_count" in
+        0)
+          printf 'Cast validator skill not found under GITHUB_WORKSPACE.\n' > "$stderr_file"
+          fail_cast "discovery" "validator skill discovery" "1"
+          ;;
+        1) ;;
+        *)
+          {
+            printf 'Expected exactly one Cast validator skill, found %s:\n' "$validator_count"
+            sed 's/^/  /' "$validator_matches"
+          } > "$stderr_file"
+          fail_cast "uniqueness" "validator skill uniqueness" "1"
+          ;;
+      esac
+      validator_skill="$(sed -n '1p' "$validator_matches")"
+
+      : > "$stderr_file"
+      {
+        awk '
+          { sub(/\r$/, "", $0) }
+          $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->" { if (inside || seen) exit 41; inside = seen = 1; next }
+          $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_END -->" { if (!inside || ended) exit 42; inside = 0; ended = 1; next }
+          inside { print }
+          END { if (!seen || inside || !ended) exit 43 }
+        ' "$validator_skill" \
+          | tr -d '\r\n' \
+          | base64 --decode \
+          | gzip --decompress \
+          | sed 's/\r$//'
+      } > "$validator_script" 2> "$stderr_file"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        printf '%s\n' \
+          'Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data.' \
+          >> "$stderr_file"
+        fail_cast "extraction" "validator payload extraction" "$status"
+      fi
+
+      validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
+      validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"
+      : > "$stderr_file"
+      validator_actual_sha256="$(
+        node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
+          "$validator_script" 2> "$stderr_file"
+      )"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "integrity" "SHA-256 authentication" "$status"
+      fi
+      if [ "$validator_actual_sha256" != "$validator_expected_sha256" ]; then
+        printf 'Cast validator SHA-256 mismatch: expected %s, got %s.\n' \
+          "$validator_expected_sha256" "$validator_actual_sha256" > "$stderr_file"
+        fail_cast "integrity" "SHA-256 authentication" "1"
+      fi
+
+      : > "$stderr_file"
+      node --check "$validator_script" > /dev/null 2> "$stderr_file"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "syntax" "node --check" "$status"
+      fi
+
+      : > "$stderr_file"
+      node "$validator_script" \
+        --root "$PWD" \
+        --payload "${RUNNER_TEMP:?}/squad-cast-payload.json" \
+        > "$validator_output" 2> "$stderr_file"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "validation" "validator execution" "$status"
+      fi
+
+      printf 'Cast validation passed.\n' > "$expected_output"
+      if ! cmp -s "$expected_output" "$validator_output"; then
+        validator_observed="$(cat "$validator_output")"
+        printf 'Cast validator did not emit the exact authorization output: <%s>\n' \
+          "$validator_observed" > "$stderr_file"
+        fail_cast "validation" "validator execution" "1"
+      fi
+      cat "$validator_output"
+      SQUAD_CAST_VALIDATOR_RUNNER
+      chmod 500 "$validator_runner"
 safe-outputs:
   messages:
     append-only-comments: true
+    run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."
+    run-failure: "🤖 [{workflow_name}]({run_url}) {status}. The requested result was not delivered."
     pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
+  jobs:
+    cast-failure:
+      name: Fail incomplete Cast
+      description: "Fail a Cast run from an emitted factual failure record."
+      runs-on: ubuntu-slim
+      max: 1
+      inputs:
+        stage:
+          description: "Bounded Cast failure stage."
+          required: true
+          type: string
+        command_category:
+          description: "Exact command category for the stage."
+          required: true
+          type: string
+        exit_status:
+          description: "Observed command exit status, or unavailable when the command did not start."
+          required: true
+          type: string
+        stderr:
+          description: "Complete observed stderr without diagnosis or rewriting, including an empty string."
+          required: true
+          type: string
+      steps:
+        - name: Fail Cast terminal outcome
+          uses: actions/github-script@v9
+          with:
+            script: |
+              const fs = await import('node:fs');
+              const outputPath = process.env.GH_AW_AGENT_OUTPUT;
+              if (!outputPath) {
+                core.setFailed('GH_AW_AGENT_OUTPUT is unavailable for the Cast failure job.');
+                return;
+              }
+              let output;
+              try {
+                output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+              } catch (error) {
+                core.setFailed(`Unable to read Cast failure output: ${error instanceof Error ? error.message : String(error)}`);
+                return;
+              }
+              if (!output || !Array.isArray(output.items)) {
+                core.setFailed('Cast failure output does not contain an items array.');
+                return;
+              }
+              const malformedIndex = output.items.findIndex(
+                item => item === null || typeof item !== 'object' || Array.isArray(item),
+              );
+              if (malformedIndex !== -1) {
+                core.setFailed(`Cast failure output item ${malformedIndex} is not an object.`);
+                return;
+              }
+              const failures = output.items.filter(item => item.type === 'cast_failure');
+              if (failures.length !== 1) {
+                core.setFailed(`Expected exactly one cast_failure item, found ${failures.length}.`);
+                return;
+              }
+              const pullRequests = output.items.filter(item => item.type === 'create_pull_request');
+              if (pullRequests.length > 0) {
+                core.setFailed([
+                  `Conflicting Cast terminal outputs: found ${pullRequests.length} create_pull_request item(s) with cast_failure.`,
+                  'This post-agent diagnostic cannot prevent a concurrently materialized pull request.',
+                ].join('\n'));
+                return;
+              }
+
+              const categories = new Map([
+                ['discovery', 'validator skill discovery'],
+                ['uniqueness', 'validator skill uniqueness'],
+                ['extraction', 'validator payload extraction'],
+                ['integrity', 'SHA-256 authentication'],
+                ['syntax', 'node --check'],
+                ['validation', 'validator execution'],
+              ]);
+              const failure = failures[0];
+              if (!categories.has(failure.stage)) {
+                core.setFailed(`Invalid Cast failure stage: ${String(failure.stage)}`);
+                return;
+              }
+              if (failure.command_category !== categories.get(failure.stage)) {
+                core.setFailed(`Invalid command category for Cast failure stage ${failure.stage}.`);
+                return;
+              }
+              if (!/^(?:[0-9]{1,3}|unavailable)$/.test(String(failure.exit_status))) {
+                core.setFailed(`Invalid Cast failure exit status: ${String(failure.exit_status)}`);
+                return;
+              }
+              if (typeof failure.stderr !== 'string') {
+                core.setFailed('Cast failure stderr must be a string.');
+                return;
+              }
+
+              core.setFailed([
+                'Cast did not complete.',
+                `Stage: ${failure.stage}`,
+                `Command category: ${failure.command_category}`,
+                `Exit status: ${failure.exit_status}`,
+                'Stderr:',
+                failure.stderr,
+              ].join('\n'));
   data:
     type: object
     properties:
@@ -812,67 +1042,15 @@ its charter from scratch.
 
 Natural-language review is not the gate. Immediately before requesting safe
 output, create `$RUNNER_TEMP/squad-cast-payload.json` as a JSON array containing
-every concrete Step 6 payload path, then run the exact command below. Do not
-invoke or load `squad-cast-validator` into model context, and do not rewrite,
-shorten, or substitute this command. The inline skill is already materialized
-on disk by gh-aw before the agent runs.
+every concrete Step 6 payload path, then invoke the prepared runner with the
+exact command below. Do not transcribe validator bytes or extraction commands,
+and do not invoke or load `squad-cast-validator` into model context. The runner
+was prepared before this turn and deterministically consumes the validator
+skill that gh-aw materialized on disk.
 
 <!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->
 ```bash
-set -euo pipefail
-cd "${GITHUB_WORKSPACE:?}"
-
-validator_matches="${RUNNER_TEMP:?}/squad-cast-validator-matches.txt"
-find "${GITHUB_WORKSPACE}" -maxdepth 6 -name "SKILL.md" \
-  -path "*/squad-cast-validator/SKILL.md" -print > "$validator_matches"
-validator_count="$(wc -l < "$validator_matches" | tr -d '[:space:]')"
-case "$validator_count" in
-  0) echo "Cast validator skill not found under GITHUB_WORKSPACE." >&2; exit 1 ;;
-  1) ;;
-  *) printf 'Expected exactly one Cast validator skill, found %s:\n' "$validator_count" >&2
-     sed 's/^/  /' "$validator_matches" >&2
-     exit 1 ;;
-esac
-validator_skill="$(sed -n '1p' "$validator_matches")"
-validator_script="${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
-if ! awk '
-  { sub(/\r$/, "", $0) }
-  $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->" { if (inside || seen) exit 41; inside = seen = 1; next }
-  $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_END -->" { if (!inside || ended) exit 42; inside = 0; ended = 1; next }
-  inside { print }
-  END { if (!seen || inside || !ended) exit 43 }
-' "$validator_skill" \
-  | tr -d '\r\n' \
-  | base64 --decode \
-  | gzip --decompress \
-  | sed 's/\r$//' \
-  > "$validator_script"; then
-  echo "Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data." >&2
-  exit 1
-fi
-
-validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
-validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"
-validator_actual_sha256="$(
-  node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
-    "$validator_script"
-)"
-if [ "$validator_actual_sha256" != "$validator_expected_sha256" ]; then
-  printf 'Cast validator SHA-256 mismatch: expected %s, got %s.\n' \
-    "$validator_expected_sha256" "$validator_actual_sha256" >&2
-  exit 1
-fi
-node --check "$validator_script"
-validator_output="$(
-  node "$validator_script" \
-    --root "$PWD" \
-    --payload "${RUNNER_TEMP:?}/squad-cast-payload.json"
-)"
-printf '%s\n' "$validator_output"
-if [ "$validator_output" != "Cast validation passed." ]; then
-  printf 'Cast validator did not emit the exact authorization output: <%s>\n' "$validator_output" >&2
-  exit 1
-fi
+"${RUNNER_TEMP:?}/run-squad-cast-validator"
 ```
 <!-- SQUAD:CAST-VALIDATOR-COMMAND:END -->
 
@@ -884,19 +1062,86 @@ case-sensitively with the explicit payload and final tree; and rejects
 inactive/support roles, standalone templates/state, non-GH-AW clients, internal
 source paths, globs, placeholders, and fictional/inactive sample labels.
 
-Only a zero exit status from this command with exact output
-`Cast validation passed.` authorizes the
-`create-pull-request` request. If the command is unavailable, cannot be
-materialized exactly, or exits nonzero, post one actionable `add-comment`
-containing its complete failure list and telling the user to rerun
-`{canonical_command}`; call `noop` and stop. Do not call `create-pull-request`,
-and do not describe partial output as a successful Cast.
+Treat the validator command as one terminal branch point. On success it emits
+only `Cast validation passed.`. On failure it exits nonzero, emits one JSON
+record on stdout containing the bounded stage, command category, exit status,
+and complete stderr, and repeats that stderr verbatim on stderr. Use that record
+without rewriting it. Do not infer a root cause from the repository, generated
+files, or the stage that failed.
 
-This is the strongest deterministic boundary available in gh-aw's single-agent
-architecture: it runs against the agent's final working tree immediately before
-the built-in safe-output request. gh-aw does not expose an independent
-post-agent hook that can conditionally authorize `create-pull-request`, so do
-not describe this as a post-agent or independently fail-closed gate.
+Exactly one of these mutually exclusive outcomes is allowed:
+
+1. **Validated success** — only exit status zero with stdout exactly
+   `Cast validation passed.` authorizes exactly one `create-pull-request`
+   request. Do not emit `cast_failure`, `report_incomplete`, `noop`, or a
+   failure `add-comment`.
+2. **Validation rejected** — when the authenticated validator runs and exits
+   nonzero, do not request a PR. Classify the stage as `validation` and the
+   command category as `validator execution`.
+3. **Validator unavailable or pre-validation failure** — when discovery,
+   uniqueness, extraction, integrity, or syntax does not complete, do not
+   request a PR. Classify only from the observed command boundary:
+
+   | Stage | Command category |
+   |---|---|
+   | `discovery` | `validator skill discovery` |
+   | `uniqueness` | `validator skill uniqueness` |
+   | `extraction` | `validator payload extraction` |
+   | `integrity` | `SHA-256 authentication` |
+   | `syntax` | `node --check` |
+
+For outcomes 2 or 3, emit exactly two safe outputs:
+
+- One `add-comment` on the triggering issue with this factual shape:
+
+  ````markdown
+  ## ❌ Cast did not complete
+
+  No team or Cast pull request was delivered.
+
+  - **Stage:** `{stage}`
+  - **Command category:** `{command_category}`
+  - **Exit status:** `{exit_status}`
+  - **Stderr:**
+
+    ```text
+    {complete stderr exactly as observed, including empty output}
+    ```
+
+  **Next action:** After the reported failure is corrected or confirmed
+  transient, rerun `/squad cast`. Cast reruns remain safe and reuse any open
+  Cast PR.
+  ````
+
+- One `cast_failure` with the identical `stage`, `command_category`,
+  `exit_status`, and complete `stderr`. The typed post-agent safe-output job
+  runs only when this output is emitted. It validates the bounded record and
+  calls `core.setFailed`, making the GitHub Actions run conclude `failure`.
+
+Then stop. Never call `noop` or `report_incomplete` on a Cast failure, never
+call `create-pull-request`, and never describe Cast, team state, or delivery as
+successful or complete. Do not suggest re-materializing, reinstalling, or
+rewriting the committed validator payload.
+
+The PR authorization remains inside the agent turn. Pinned gh-aw v0.87.10 has no
+unconditional post-agent verifier or conditional authorization hook for
+`create-pull-request`. When the agent emits `cast_failure`, the typed job
+independently validates that emitted bounded record and turns the run red. The
+job is skipped when `cast_failure` is omitted, so it cannot detect that omission,
+rerun the validator, inspect the discarded agent workspace, or independently
+gate `create-pull-request`. It diagnoses a `cast_failure` and
+`create_pull_request` emitted together, but the custom job and built-in safe
+outputs run separately after the agent; this diagnosis cannot prevent a pull
+request that is materialized concurrently.
+
+Built-in `report_incomplete` only warns and creates or updates a durable tracking
+issue; it does not fail the run. The factual failure comment and, when emitted,
+the red `cast_failure` job are the Cast failure signals. The generic completion
+hook is deliberately neutral because pinned gh-aw chooses `run-success` from
+the agent and consolidated `safe_outputs` results without considering the
+custom job result. A red `cast_failure` job can therefore still select this
+neutral hook; it does not select `run-failure`. Processing completion does not
+indicate Cast success. Only a linked Cast PR is the success signal.
 
 ##### Step 8: Open PR
 
