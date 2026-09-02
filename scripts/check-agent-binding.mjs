@@ -1,10 +1,35 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-const ACTIVATION_ARTIFACTS = new Set(['activated', 'phases-activated']);
+// `activated` / `phases-activated` come from the granular `/squad plan activate` path
+// (`squad-plan-activate`); `plan-accepted` / `phases-accepted` come from the recommended
+// `/squad activate` fast path (`squad-plan-accept`). Both paths create or recognize issues
+// and apply labels the same way, so both carry the same mandatory `Activation bindings:`
+// contract — see workflows/shared/squad-planning-ontology.md and the E4 preflight package A
+// fast-path artifact-integrity fix.
+const ACTIVATION_ARTIFACTS = new Set(['activated', 'phases-activated', 'plan-accepted', 'phases-accepted']);
+const ACTIVATION_ARTIFACT_PATTERN = new RegExp(
+  `"squad_artifact"\\s*:\\s*"?(?:${[...ACTIVATION_ARTIFACTS].join('|')})`,
+  'i',
+);
 const VALID_OMISSIONS = new Set(['multi-owner', 'non-roster']);
 const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 const RESOLVED_REFERENCE = /^#?(\d+)$/;
+
+// Standalone certainty claims a label-operation report may never make: safe outputs like
+// `add_labels` are applied in a post-agent job, so an activation/acceptance run only ever
+// knows a call was *accepted for a specific target* — never that GitHub applied it. Word
+// boundaries keep this from matching substrings ("unverified", "prechecked").
+const FORBIDDEN_LABEL_CLAIM_WORDS = ['applied', 'received', 'landed', 'verified', 'confirmed', 'checked'];
+// A line is treated as a compliant, honest non-claim (never flagged) when it explicitly
+// negates the outcome — e.g. "not verified", "never confirmed" — since that is the accurate,
+// honest statement the contract requires, not an over-claim.
+const NEGATION_NEARBY = /\b(never|not|no|n't|without|cannot|can't|won't|isn't|wasn't|doesn't|didn't|nor)\b/i;
+// Scope the forbidden-word scan to lines that are actually reporting a label operation —
+// mentioning "label"/"labels" or a `squad:*` token — rather than scanning the whole comment.
+// A blanket scan would false-positive on an unrelated quoted task title like "Verified Email
+// Addresses" sitting in the created-issues table.
+const LABEL_OPERATION_CONTEXT = /\blabels?\b|\bsquad:[a-z0-9_.-]+\b/i;
 
 function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -41,7 +66,7 @@ function resolveIssueReference(value, description, invalidMessage) {
 export function parseStructuredData(comment) {
   const blocks = [...comment.matchAll(/Structured data:\s*```json\s*([\s\S]*?)```/gi)];
   if (blocks.length === 0) {
-    if (/Structured data:/i.test(comment) && /"squad_artifact"\s*:\s*"?(?:phases-)?activated/i.test(comment)) {
+    if (/Structured data:/i.test(comment) && ACTIVATION_ARTIFACT_PATTERN.test(comment)) {
       throw new Error('activation structured data block could not be parsed');
     }
     return null;
@@ -63,6 +88,60 @@ export function parseStructuredData(comment) {
     }
   }
   return parsed;
+}
+
+/**
+ * Strip content a forbidden-word scan must never see as a claim: fenced/inline code and
+ * quoted strings. A quoted work-item title ("Verified Email Addresses") or a JSON fragment
+ * inside backticks is data being described, not a certainty claim about a label operation.
+ */
+function stripQuotedAndCode(line) {
+  return line
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/"[^"]*"/g, ' ')
+    .replace(/'[^']*'/g, ' ');
+}
+
+/**
+ * Reject standalone certainty claims ("applied", "received", "landed", "verified",
+ * "confirmed", "checked") in an activation/acceptance comment's label-operation reporting.
+ * `add_labels` is a safe output applied in a post-agent job — the run only ever knows a call
+ * was *accepted* for a target, never that GitHub actually applied it. A summary claiming more
+ * than that is over-claiming an outcome nothing here observed.
+ *
+ * Deliberately scoped, not a blanket whole-comment scan:
+ *   - Markdown table rows (`| ... |`) are skipped — that's where quoted work-item titles live.
+ *   - Fenced code blocks, inline code, and quoted strings are stripped before matching, so a
+ *     quoted title or JSON fragment containing a forbidden word never counts.
+ *   - Only lines that actually mention label vocabulary (`label`/`labels`/`squad:*`) are
+ *     scanned — an unrelated line elsewhere in the comment is out of scope.
+ *   - A line that explicitly negates the claim ("was not verified", "never confirmed") is the
+ *     honest, compliant statement the contract requires, so it is never flagged.
+ *
+ * No-op for artifact types outside the activation contract (fast-path `plan-accepted` /
+ * `phases-accepted` and granular `activated` / `phases-activated`).
+ */
+export function assertAcceptedOnlyLabelWording(commentBody, artifactType) {
+  if (!ACTIVATION_ARTIFACTS.has(artifactType)) return { skipped: true };
+  const body = typeof commentBody === 'string' ? commentBody : '';
+  const withoutFences = body.replace(/```[\s\S]*?```/g, ' ');
+  for (const rawLine of withoutFences.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('|')) continue;
+    const scrubbed = stripQuotedAndCode(trimmed);
+    if (!LABEL_OPERATION_CONTEXT.test(scrubbed)) continue;
+    if (NEGATION_NEARBY.test(scrubbed)) continue;
+    for (const word of FORBIDDEN_LABEL_CLAIM_WORDS) {
+      if (new RegExp(`\\b${word}\\b`, 'i').test(scrubbed)) {
+        throw new Error(
+          `label-operation report uses forbidden certainty claim "${word}" — report label ` +
+            `operations as accepted only, never applied/received/landed/verified/confirmed/` +
+            `checked: "${trimmed}"`,
+        );
+      }
+    }
+  }
+  return { skipped: false };
 }
 
 export function parseRoster(teamMarkdown) {
@@ -250,6 +329,7 @@ async function main() {
   for (const comment of comments) {
     const artifact = parseStructuredData(comment.body ?? '');
     if (!artifact || !ACTIVATION_ARTIFACTS.has(artifact.squad_artifact)) continue;
+    assertAcceptedOnlyLabelWording(comment.body ?? '', artifact.squad_artifact);
     const issues = Array.isArray(artifact.bindings)
       ? artifact.bindings.flatMap(binding => [binding?.issue, binding?.epic_issue]).filter(Number.isInteger)
       : [];

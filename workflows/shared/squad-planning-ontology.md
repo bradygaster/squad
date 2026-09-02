@@ -321,7 +321,10 @@ set from the full accepted plan (including other activation phases). It records 
 epic labels reported as accepted label operations (defined below), or their omission reasons
 (`multi-owner` or `non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
 records the actual `squad:copilot` label. This mapping is mandatory for
-`phases-activated` and `activated` artifacts. It remains in the body rather than
+`phases-activated`, `activated`, `phases-accepted`, and `plan-accepted` artifacts —
+every fast-path (`/squad activate`) and granular (`/squad plan activate`) artifact
+that creates or recognizes issues carries it; neither path may omit it or ship an
+empty array. It remains in the body rather than
 the safe-output `data` envelope because gh-aw expands nested data schemas beyond
 GitHub's expression-size limit. The post-activation checker can still
 fail closed without matching model-authored titles.

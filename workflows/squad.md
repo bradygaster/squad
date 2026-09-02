@@ -1703,7 +1703,7 @@ by `create-if-missing` on a fresh repository instead receives gh-aw's determinis
 color and an empty description — that is expected, not a failure, and must not be
 reported as one. Report only the labels an accepted `add_labels` call carried for that
 same issue; never a label that was skipped, deferred, or merely intended, and never one
-attributed to `create-issue` (see Step 4, Label reporting).
+attributed to `create-issue` (see Step 4, Label operations accepted).
 
 ##### Step 3: Preserve Dependencies
 
@@ -1720,16 +1720,33 @@ were preserved in issue bodies without native edges.
 ##### Step 4: Post Summary
 
 Artifact data varies:
-- Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table
-- Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table
+- Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table + the `Activation bindings:` JSON array.
+- Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table + the `Activation bindings:` JSON array.
 
 Report the exact number of created task issues, their actual parent hierarchy,
 and whether dependencies use native edges or the body-reference fallback. Never
 claim an epic, phase issue, sub-issue relationship, or native dependency edge
 that was not created.
 
-**Label reporting — accepted operations only.** Identical semantics to
-`squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
+**Every phase and full acceptance artifact body MUST include an `Activation
+bindings:` fenced JSON block containing a non-empty array** — the identical
+binding shape, quoting, and omission-reason semantics as `squad-plan-activate`
+Step 4's contract: one object per created/recognized work item with
+`task`/`issue`/`epic`/`epic_issue`/`agent`/`epic_agents`, plus `label` or
+`omission_reason`, and `epic_label` or `epic_omission_reason` (`multi-owner` or
+`non-roster`). `issue` and `epic_issue` are quoted JSON strings — that item's own
+`temporary_id` when created this run, its verified real number when reused —
+never bare numbers; a surviving `#aw_…` reference means `create-issue` never
+landed and must be left unresolved rather than repaired. Never omit a created
+or recognized task from `bindings`, never infer an issue number, and never
+emit an empty array — the deterministic post-activation checker treats a
+missing, empty, malformed, or unresolved bindings block on a `plan-accepted`
+or `phases-accepted` artifact as a failure exactly as it does for `activated`
+and `phases-activated`.
+
+###### Label operations accepted
+
+Identical semantics to `squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
 an accepted `add_labels` operation targeting that issue. Report `squad:{owner}` only when
 this run made an `add_labels` call carrying that label and targeting that same issue — by
 its own `temporary_id`, or by its verified real number for a reused issue. A successful
@@ -2266,7 +2283,7 @@ Step 2e, not the cap machinery, is what notices.
    each `create-issue` call, re-read the agent from that issue's own source — a task's own
    `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
    epic, or the previous call. Verify per issue; membership across the run is not evidence.
-8. **Report what was applied, not what was intended.** The activation summary may name a
+8. **Report what was accepted, not what was intended.** The activation summary may name a
    `squad:{agent}` label for an issue only after an `add_labels` call carrying that label
    was accepted for that same issue — targeted by its own `temporary_id`, or by its verified
    real number for a reused issue. A successful `create-issue` is **not** evidence: its
@@ -2276,7 +2293,7 @@ Step 2e, not the cap machinery, is what notices.
    not become a label — multi-owner epic, uncertified name, unavailable label — the
    `Non-roster agent values` heading is **required**, and must name the value and the issue
    it applied to. Omitting the heading while omitting the label reports a clean run that did
-   not happen. See Step 4's Label reporting section for the full contract.
+   not happen. See Step 4's Label operations accepted section for the full contract.
 
 **Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
 `create-if-missing: true`) auto-creates `squad` and any `squad:{agent}` label the first
@@ -2344,7 +2361,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 While Steps 2b/2c run, keep two counts: `activated` (issues created or recognized this run) and `labeled` (issues whose `add_labels` call was accepted). An `add_labels` call that was never made, was rejected, or returned an error counts as **unlabeled**. These counts track *label operations*, not labels present on GitHub: acceptance means the call was queued for a specific target this turn, and gh-aw applies it in the post-agent job. Never state or imply that a counted label was applied, landed, or was confirmed on the issue — nothing here reads labels back. At the end of Step 2:
 
 1. `labeled == activated` → the activation is complete; proceed to Step 3.
-2. `labeled < activated` → **this is an incomplete activation, not a successful one.** Call `report_incomplete` with a `reason` naming the shortfall (`{labeled} of {activated} activated issues had a label operation accepted`) and `details` listing **every affected work item — the identifier you used to target its `add_labels` call, its title, and the label set it should have received**. For an item created this run that identifier is the `temporary_id` you minted under the Temporary-ID Contract (`#aw_epic{K}` / `#aw_task{N}`) — not a GitHub issue number, because creation is deferred to the safe-output job and no real number exists yet. Quote a real number only where one is independently verified: an epic or task matched by dedup-by-title, or an issue recognized by Step 1's idempotent-rerun path. Never predict, infer, or invent a number. `report_incomplete` logs a warning and opens or updates a durable `[aw] ... reported incomplete result` tracking issue; it does **not** change the run's conclusion — the run still reports success. That record and the rule below keep a truncated activation from passing as clean, so never rely on a red run to carry the signal.
+2. `labeled < activated` → **this is an incomplete activation, not a successful one.** Call `report_incomplete` with a `reason` naming the shortfall (`{labeled} of {activated} activated issues had a label operation accepted`) and `details` listing **every affected work item — the identifier you used to target its `add_labels` call, its title, and the label set that missing operation targeted**. For an item created this run that identifier is the `temporary_id` you minted under the Temporary-ID Contract (`#aw_epic{K}` / `#aw_task{N}`) — not a GitHub issue number, because creation is deferred to the safe-output job and no real number exists yet. Quote a real number only where one is independently verified: an epic or task matched by dedup-by-title, or an issue recognized by Step 1's idempotent-rerun path. Never predict, infer, or invent a number. `report_incomplete` logs a warning and opens or updates a durable `[aw] ... reported incomplete result` tracking issue; it does **not** change the run's conclusion — the run still reports success. That record and the rule below keep a truncated activation from passing as clean, so never rely on a red run to carry the signal.
 
 **Cap exhaustion is a reportable, nameable cause.** If the shortfall is because a cap was reached, say so in the `reason`, name which cap (`create-issue` 75 or `add_labels` 110) and list the work items that did not fit, and recommend `/squad plan activate phase {N}`. This is the one case where a cap may be named as the cause: it was observed, not guessed. Do not infer a cap from a rejection you never received, and do not treat the absence of an `E002` error as proof that every label operation was accepted: the count comparison, not the error stream, is the authority.
 
@@ -2403,7 +2420,7 @@ Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin
 
 Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}]}` with an "All Phases Activated" heading and the accumulated `Activation bindings:` JSON array.
 
-###### Label reporting — accepted operations only
+###### Label operations accepted
 
 A label reaches an activated issue through exactly one route: an accepted `add_labels`
 operation targeting that issue. `create-issue`'s `labels:` field never lands a label this
