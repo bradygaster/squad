@@ -1,15 +1,15 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { compileFunction, constants as vmConstants } from 'node:vm';
-import { gunzipSync, gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { requirePosixShell } from './posix-shell';
 
 const validator = join(process.cwd(), 'scripts', 'validate-gh-aw-cast.mjs');
-const helperPath = join(process.cwd(), 'workflows', 'shared', 'squad-cast-validator.md');
+const resourcePath = join(process.cwd(), 'workflows', 'shared', 'squad-cast-validator.mjs');
+const installedResourceRelativePath = '.github/workflows/shared/squad-cast-validator.mjs';
 const workflowPath = join(process.cwd(), 'workflows', 'squad.md');
 const workspaces: string[] = [];
 
@@ -148,12 +148,8 @@ function validate(root: string, payload: string) {
   });
 }
 
-function helperSource(): string {
-  return readFileSync(helperPath, 'utf8');
-}
-
-function materializedSkillSource(): string {
-  return helperSource().replace(/^## skill: `squad-cast-validator`\r?\n/, '');
+function resourceSource(): string {
+  return readFileSync(resourcePath, 'utf8');
 }
 
 function validatorCommand(): string {
@@ -202,18 +198,11 @@ function sha256(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
 }
 
-function replaceValidatorPayload(source: string, program: string): string {
-  const encoded = gzipSync(Buffer.from(program)).toString('base64');
-  return source.replace(
-    /(<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n)[A-Za-z0-9+/\r\n=]+(\r?\n<!-- SQUAD_CAST_VALIDATOR_B64_END -->)/,
-    `$1${encoded}$2`,
-  );
-}
-
-function materializeSkill(
+/** Install the validator resource at its fixed installed location under the fixture workspace. */
+function installResource(
   root: string,
-  path = '.github/skills/squad-cast-validator/SKILL.md',
-  content = materializedSkillSource(),
+  content = resourceSource(),
+  path = installedResourceRelativePath,
 ): void {
   write(root, path, content);
 }
@@ -294,16 +283,10 @@ afterEach(() => {
 });
 
 describe('GH-AW Cast final-tree validator', () => {
-  it('ships the reviewed validator byte-for-byte in the materialized inline skill', () => {
-    const helper = helperSource();
-    const encoded = helper.match(
-      /<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n([A-Za-z0-9+/\r\n=]+)\r?\n<!-- SQUAD_CAST_VALIDATOR_B64_END -->/,
-    )?.[1];
-    expect(encoded, 'embedded validator payload must remain extractable').toBeDefined();
-    const embedded = gunzipSync(Buffer.from((encoded as string).replace(/\s/g, ''), 'base64'));
+  it('ships the reviewed validator byte-for-byte as the installed plaintext resource', () => {
     const canonical = readFileSync(validator);
-    const normalizedEmbedded = Buffer.from(embedded.toString('utf8').replace(/\r\n/g, '\n'));
-    expect(normalizedEmbedded).toEqual(canonical);
+    const installed = readFileSync(resourcePath);
+    expect(installed).toEqual(canonical);
 
     const commandDigest = validatorRunnerSource().match(
       /validator_expected_sha256="([a-f0-9]{64})"/,
@@ -312,7 +295,15 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(commandDigest).toBe(sha256(canonical));
   });
 
-  it('keeps validator bytes and extraction logic out of the agent command', () => {
+  it('declares the validator as a top-level gh-aw resource, not an imported skill', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const resourcesBlock = workflow.match(/^resources:\n((?:  - .+\n)+)/m)?.[1] ?? '';
+    expect(resourcesBlock).toContain('shared/squad-cast-validator.mjs');
+    const importsBlock = workflow.match(/^imports:\n((?:  - .+\n)+)/m)?.[1] ?? '';
+    expect(importsBlock).not.toContain('squad-cast-validator');
+  });
+
+  it('keeps validator bytes out of the agent command', () => {
     const command = validatorCommand();
     const runner = validatorRunnerSource();
     const workflow = readFileSync(workflowPath, 'utf8');
@@ -320,12 +311,12 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(command).not.toMatch(/[A-Za-z0-9+/]{256}/);
     expect(command).not.toMatch(/cat\s+<<|base64|gzip|awk|validator_expected_sha256/);
     expect(command).not.toContain('H4sI');
-    expect(helperSource()).not.toMatch(/cat\s+<</);
     expect(workflow).not.toContain('invoke the `skill` tool on');
-    expect(workflow).toContain('do not invoke or load `squad-cast-validator` into model context');
-    expect(workflow).toContain('Do not transcribe validator bytes or extraction commands');
-    expect(runner).toMatch(
-      /find "\$\{GITHUB_WORKSPACE\}" -maxdepth 6 -name "SKILL\.md"/,
+    expect(workflow).toMatch(/do not invoke or\s+load `squad-cast-validator` into model context/);
+    expect(workflow).toContain('Do not transcribe validator bytes');
+    expect(runner).not.toMatch(/base64|gzip|awk|SKILL\.md/);
+    expect(runner).toContain(
+      'validator_script="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs"',
     );
     expect(runner.indexOf('validator_expected_sha256=')).toBeLessThan(
       runner.indexOf('node --check "$validator_script"'),
@@ -335,113 +326,49 @@ describe('GH-AW Cast final-tree validator', () => {
     );
   });
 
-  it('finds the materialized skill and runs the exact validator successfully', () => {
+  it('finds the installed validator resource and runs it directly from GITHUB_WORKSPACE', () => {
     const fixture = createFixture();
-    materializeSkill(
-      fixture.root,
-      undefined,
-      materializedSkillSource().replace(/\n/g, '\r\n'),
-    );
+    installResource(fixture.root);
     const invocationDirectory = join(fixture.root, 'nested', 'invocation-directory');
     mkdirSync(invocationDirectory, { recursive: true });
     const result = runValidatorCommand(fixture, invocationDirectory);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe('Cast validation passed.\n');
     expect(authorizesPullRequest(result)).toBe(true);
-    const normalizeLf = (value: string) => value.replace(/\r\n/g, '\n');
-    expect(
-      normalizeLf(readFileSync(join(fixture.runnerTemp, 'validate-gh-aw-cast.mjs'), 'utf8')),
-    ).toBe(normalizeLf(readFileSync(validator, 'utf8')));
+    // Never copied or extracted into $RUNNER_TEMP -- executed in place from $GITHUB_WORKSPACE.
+    expect(existsSync(join(fixture.runnerTemp, 'validate-gh-aw-cast.mjs'))).toBe(false);
   });
 
-  it('fails clearly when the materialized validator skill is missing', () => {
+  it('fails clearly when the installed validator resource is missing', () => {
     const fixture = createFixture();
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Cast validator skill not found under GITHUB_WORKSPACE.');
+    expect(result.stderr).toContain('Cast validator resource is missing');
     expect(authorizesPullRequest(result)).toBe(false);
   });
 
-  it('fails clearly when multiple materialized validator skills match', () => {
+  it.skipIf(
+    process.platform === 'win32' ||
+    typeof process.getuid !== 'function' ||
+    process.getuid() === 0,
+  )('fails clearly when the installed validator resource is unreadable', () => {
     const fixture = createFixture();
-    materializeSkill(fixture.root);
-    materializeSkill(fixture.root, '.claude/skills/squad-cast-validator/SKILL.md');
-    const result = runValidatorCommand(fixture);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Expected exactly one Cast validator skill, found 2:');
-    expect(result.stderr).toContain('.github/skills/squad-cast-validator/SKILL.md');
-    expect(result.stderr).toContain('.claude/skills/squad-cast-validator/SKILL.md');
-    expect(authorizesPullRequest(result)).toBe(false);
+    installResource(fixture.root);
+    const installedPath = join(fixture.root, installedResourceRelativePath);
+    try {
+      chmodSync(installedPath, 0o000);
+      const result = runValidatorCommand(fixture);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('Cast validator resource is not readable');
+      expect(authorizesPullRequest(result)).toBe(false);
+    } finally {
+      chmodSync(installedPath, 0o600);
+    }
   });
 
-  it('fails integrity checks when the materialized payload is corrupt', () => {
+  it('fails integrity checks when the installed resource is modified', () => {
     const fixture = createFixture();
-    const corrupt = materializedSkillSource().replace(
-      /(<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->\r?\n)H/,
-      '$1!',
-    );
-    materializeSkill(fixture.root, undefined, corrupt);
-    const result = runValidatorCommand(fixture);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toMatch(/base64|gzip|invalid|error/i);
-    expect(result.stderr).toContain('Cast validator payload extraction failed');
-    expect(authorizesPullRequest(result)).toBe(false);
-  });
-
-  it('fails clearly when the materialized payload markers are malformed', () => {
-    const fixture = createFixture();
-    const corrupt = materializedSkillSource().replace(
-      '<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->',
-      '<!-- BROKEN_CAST_VALIDATOR_B64_BEGIN -->',
-    );
-    materializeSkill(fixture.root, undefined, corrupt);
-    const result = runValidatorCommand(fixture);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(
-      'Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data.',
-    );
-    expect(authorizesPullRequest(result)).toBe(false);
-  });
-
-  it('rejects a syntactically corrupt validator at the digest boundary before execution', () => {
-    const fixture = createFixture();
-    const corrupt = replaceValidatorPayload(materializedSkillSource(), 'const = ;\n');
-    materializeSkill(fixture.root, undefined, corrupt);
-    const result = runValidatorCommand(fixture);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Cast validator SHA-256 mismatch');
-    expect(result.stdout).not.toContain('Cast validation passed.');
-    expect(authorizesPullRequest(result)).toBe(false);
-  });
-
-  it('rejects authenticated validator bytes that fail node --check', () => {
-    const fixture = createFixture();
-    const invalidProgram = 'const = ;\n';
-    materializeSkill(
-      fixture.root,
-      undefined,
-      replaceValidatorPayload(materializedSkillSource(), invalidProgram),
-    );
-    const authenticatedInvalidRunner = validatorRunnerSource().replace(
-      /validator_expected_sha256="[a-f0-9]{64}"/,
-      `validator_expected_sha256="${sha256(invalidProgram)}"`,
-    );
-
-    const result = runValidatorCommand(fixture, fixture.root, authenticatedInvalidRunner);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('SyntaxError');
-    expect(result.stderr).toContain('validate-gh-aw-cast.mjs');
-    expect(result.stdout).not.toContain('Cast validation passed.');
-    expect(authorizesPullRequest(result)).toBe(false);
-  });
-
-  it('rejects a syntactically valid impostor that prints the exact success sentinel', () => {
-    const fixture = createFixture();
-    const impostor = replaceValidatorPayload(
-      materializedSkillSource(),
-      "console.log('Cast validation passed.');\n",
-    );
-    materializeSkill(fixture.root, undefined, impostor);
+    installResource(fixture.root, "console.log('Cast validation passed.');\n");
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
@@ -451,9 +378,26 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(authorizesPullRequest(result)).toBe(false);
   });
 
+  it('rejects authenticated validator bytes that fail node --check', () => {
+    const fixture = createFixture();
+    const invalidProgram = 'const = ;\n';
+    installResource(fixture.root, invalidProgram);
+    const authenticatedInvalidRunner = validatorRunnerSource().replace(
+      /validator_expected_sha256="[a-f0-9]{64}"/,
+      `validator_expected_sha256="${sha256(invalidProgram)}"`,
+    );
+
+    const result = runValidatorCommand(fixture, fixture.root, authenticatedInvalidRunner);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('SyntaxError');
+    expect(result.stderr).toContain('squad-cast-validator.mjs');
+    expect(result.stdout).not.toContain('Cast validation passed.');
+    expect(authorizesPullRequest(result)).toBe(false);
+  });
+
   it('preserves validator failures and cannot authorize an invalid Cast tree', () => {
     const fixture = createFixture();
-    materializeSkill(fixture.root);
+    installResource(fixture.root);
     write(
       fixture.root,
       '.github/agents/squad.agent.md',
@@ -470,37 +414,13 @@ describe('GH-AW Cast final-tree validator', () => {
     const missing = createFixture();
     const missingResult = runValidatorCommand(missing);
 
-    const ambiguous = createFixture();
-    materializeSkill(ambiguous.root);
-    materializeSkill(ambiguous.root, '.claude/skills/squad-cast-validator/SKILL.md');
-    const ambiguousResult = runValidatorCommand(ambiguous);
-
-    const extraction = createFixture();
-    materializeSkill(
-      extraction.root,
-      undefined,
-      materializedSkillSource().replace(
-        '<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->',
-        '<!-- BROKEN_CAST_VALIDATOR_B64_BEGIN -->',
-      ),
-    );
-    const extractionResult = runValidatorCommand(extraction);
-
     const integrity = createFixture();
-    materializeSkill(
-      integrity.root,
-      undefined,
-      replaceValidatorPayload(materializedSkillSource(), "console.log('Cast validation passed.');\n"),
-    );
+    installResource(integrity.root, "console.log('Cast validation passed.');\n");
     const integrityResult = runValidatorCommand(integrity);
 
     const syntax = createFixture();
     const invalidProgram = 'const = ;\n';
-    materializeSkill(
-      syntax.root,
-      undefined,
-      replaceValidatorPayload(materializedSkillSource(), invalidProgram),
-    );
+    installResource(syntax.root, invalidProgram);
     const syntaxResult = runValidatorCommand(
       syntax,
       syntax.root,
@@ -511,7 +431,7 @@ describe('GH-AW Cast final-tree validator', () => {
     );
 
     const validation = createFixture();
-    materializeSkill(validation.root);
+    installResource(validation.root);
     write(
       validation.root,
       '.github/agents/squad.agent.md',
@@ -520,9 +440,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const validationResult = runValidatorCommand(validation);
 
     for (const { stage, commandCategory, result } of [
-      { stage: 'discovery', commandCategory: 'validator skill discovery', result: missingResult },
-      { stage: 'uniqueness', commandCategory: 'validator skill uniqueness', result: ambiguousResult },
-      { stage: 'extraction', commandCategory: 'validator payload extraction', result: extractionResult },
+      { stage: 'discovery', commandCategory: 'validator resource discovery', result: missingResult },
       { stage: 'integrity', commandCategory: 'SHA-256 authentication', result: integrityResult },
       { stage: 'syntax', commandCategory: 'node --check', result: syntaxResult },
       { stage: 'validation', commandCategory: 'validator execution', result: validationResult },
@@ -560,7 +478,7 @@ describe('GH-AW Cast final-tree validator', () => {
   it('preserves empty stderr when a validator command is unavailable', async () => {
     const failures = await runCastFailureJob({
       stage: 'discovery',
-      command_category: 'validator skill discovery',
+      command_category: 'validator resource discovery',
       exit_status: 'unavailable',
       stderr: '',
     });
@@ -568,48 +486,13 @@ describe('GH-AW Cast final-tree validator', () => {
       [
         'Cast did not complete.',
         'Stage: discovery',
-        'Command category: validator skill discovery',
+        'Command category: validator resource discovery',
         'Exit status: unavailable',
         'Stderr:',
         '',
       ].join('\n'),
     ]);
   });
-
-  it('fails malformed agent output with a deterministic diagnostic', async () => {
-    const failures = await runCastFailureJobOutput('{not-json');
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toMatch(/^Unable to read Cast failure output: /);
-  });
-
-  it('fails non-object output items with a deterministic diagnostic', async () => {
-    const failures = await runCastFailureJobOutput(JSON.stringify({
-      items: [null, { type: 'cast_failure' }],
-    }));
-    expect(failures).toEqual(['Cast failure output item 0 is not an object.']);
-  });
-
-  it('diagnoses conflicting failure and pull-request outputs without claiming prevention', async () => {
-    const failures = await runCastFailureJobOutput(JSON.stringify({
-      items: [
-        {
-          type: 'cast_failure',
-          stage: 'validation',
-          command_category: 'validator execution',
-          exit_status: '1',
-          stderr: 'Cast validation failed.',
-        },
-        { type: 'create_pull_request' },
-      ],
-    }));
-    expect(failures).toEqual([
-      [
-        'Conflicting Cast terminal outputs: found 1 create_pull_request item(s) with cast_failure.',
-        'This post-agent diagnostic cannot prevent a concurrently materialized pull request.',
-      ].join('\n'),
-    ]);
-  });
-
   it('accepts a self-contained descriptive Cast tree', () => {
     const fixture = createFixture();
     const result = validate(fixture.root, fixture.payload);

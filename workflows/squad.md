@@ -40,11 +40,10 @@ network:
     - defaults
 imports:
   - shared/squad.md
-  - shared/squad-cast-validator.md
   - shared/squad-planning-ontology.md
   - shared/squad-planning-policy.md
 resources:
-  - shared/squad-gh-aw-resource-probe.txt
+  - shared/squad-cast-validator.mjs
 tools:
   bash: true
   web-fetch:
@@ -52,30 +51,6 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 steps:
-  - name: Assert experimental gh-aw resource delivery
-    shell: bash
-    run: |
-      set -euo pipefail
-      probe="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-gh-aw-resource-probe.txt"
-      expected_sha256="dba0c331c0b0fda06539bd9245dda72bd9c36cca6962726147b03168c1d97a73"
-      if [ ! -f "$probe" ]; then
-        printf 'Experimental gh-aw resource probe is missing: %s\n' "$probe" >&2
-        exit 1
-      fi
-      if [ ! -r "$probe" ]; then
-        printf 'Experimental gh-aw resource probe is not readable: %s\n' "$probe" >&2
-        exit 1
-      fi
-      actual_sha256="$(
-        node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
-          "$probe"
-      )"
-      if [ "$actual_sha256" != "$expected_sha256" ]; then
-        printf 'Experimental gh-aw resource probe SHA-256 mismatch: expected %s, got %s.\n' \
-          "$expected_sha256" "$actual_sha256" >&2
-        exit 1
-      fi
-      printf 'Experimental gh-aw resource delivery verified.\n'
   - name: Prepare deterministic Cast validator runner
     shell: bash
     run: |
@@ -87,8 +62,7 @@ steps:
       cd "${GITHUB_WORKSPACE:?}"
 
       stderr_file="${RUNNER_TEMP:?}/squad-cast-validator.stderr"
-      validator_matches="${RUNNER_TEMP:?}/squad-cast-validator-matches.txt"
-      validator_script="${RUNNER_TEMP:?}/validate-gh-aw-cast.mjs"
+      validator_script="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs"
       validator_output="${RUNNER_TEMP:?}/squad-cast-validator.stdout"
       expected_output="${RUNNER_TEMP:?}/squad-cast-validator.expected"
 
@@ -112,54 +86,16 @@ steps:
       }
 
       : > "$stderr_file"
-      find "${GITHUB_WORKSPACE}" -maxdepth 6 -name "SKILL.md" \
-        -path "*/squad-cast-validator/SKILL.md" -print \
-        > "$validator_matches" 2> "$stderr_file"
-      status=$?
-      if [ "$status" -ne 0 ]; then
-        fail_cast "discovery" "validator skill discovery" "$status"
+      if [ ! -f "$validator_script" ]; then
+        printf 'Cast validator resource is missing: %s\n' "$validator_script" > "$stderr_file"
+        fail_cast "discovery" "validator resource discovery" "1"
       fi
-
-      validator_count="$(wc -l < "$validator_matches" | tr -d '[:space:]')"
-      case "$validator_count" in
-        0)
-          printf 'Cast validator skill not found under GITHUB_WORKSPACE.\n' > "$stderr_file"
-          fail_cast "discovery" "validator skill discovery" "1"
-          ;;
-        1) ;;
-        *)
-          {
-            printf 'Expected exactly one Cast validator skill, found %s:\n' "$validator_count"
-            sed 's/^/  /' "$validator_matches"
-          } > "$stderr_file"
-          fail_cast "uniqueness" "validator skill uniqueness" "1"
-          ;;
-      esac
-      validator_skill="$(sed -n '1p' "$validator_matches")"
-
-      : > "$stderr_file"
-      {
-        awk '
-          { sub(/\r$/, "", $0) }
-          $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_BEGIN -->" { if (inside || seen) exit 41; inside = seen = 1; next }
-          $0 == "<!-- SQUAD_CAST_VALIDATOR_B64_END -->" { if (!inside || ended) exit 42; inside = 0; ended = 1; next }
-          inside { print }
-          END { if (!seen || inside || !ended) exit 43 }
-        ' "$validator_skill" \
-          | tr -d '\r\n' \
-          | base64 --decode \
-          | gzip --decompress \
-          | sed 's/\r$//'
-      } > "$validator_script" 2> "$stderr_file"
-      status=$?
-      if [ "$status" -ne 0 ]; then
-        printf '%s\n' \
-          'Cast validator payload extraction failed; expected one marker pair with valid base64+gzip data.' \
-          >> "$stderr_file"
-        fail_cast "extraction" "validator payload extraction" "$status"
+      if [ ! -r "$validator_script" ]; then
+        printf 'Cast validator resource is not readable: %s\n' "$validator_script" > "$stderr_file"
+        fail_cast "discovery" "validator resource discovery" "1"
       fi
-
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
+
       validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"
       : > "$stderr_file"
       validator_actual_sha256="$(
@@ -276,9 +212,7 @@ safe-outputs:
               }
 
               const categories = new Map([
-                ['discovery', 'validator skill discovery'],
-                ['uniqueness', 'validator skill uniqueness'],
-                ['extraction', 'validator payload extraction'],
+                ['discovery', 'validator resource discovery'],
                 ['integrity', 'SHA-256 authentication'],
                 ['syntax', 'node --check'],
                 ['validation', 'validator execution'],
@@ -1070,10 +1004,11 @@ its charter from scratch.
 Natural-language review is not the gate. Immediately before requesting safe
 output, create `$RUNNER_TEMP/squad-cast-payload.json` as a JSON array containing
 every concrete Step 6 payload path, then invoke the prepared runner with the
-exact command below. Do not transcribe validator bytes or extraction commands,
-and do not invoke or load `squad-cast-validator` into model context. The runner
-was prepared before this turn and deterministically consumes the validator
-skill that gh-aw materialized on disk.
+exact command below. Do not transcribe validator bytes, and do not invoke or
+load `squad-cast-validator` into model context. The runner was prepared before
+this turn and deterministically executes the plaintext validator resource that
+gh-aw installed at `.github/workflows/shared/squad-cast-validator.mjs` under
+`$GITHUB_WORKSPACE`.
 
 <!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->
 ```bash
@@ -1106,14 +1041,12 @@ Exactly one of these mutually exclusive outcomes is allowed:
    nonzero, do not request a PR. Classify the stage as `validation` and the
    command category as `validator execution`.
 3. **Validator unavailable or pre-validation failure** — when discovery,
-   uniqueness, extraction, integrity, or syntax does not complete, do not
+   integrity, or syntax does not complete, do not
    request a PR. Classify only from the observed command boundary:
 
    | Stage | Command category |
    |---|---|
-   | `discovery` | `validator skill discovery` |
-   | `uniqueness` | `validator skill uniqueness` |
-   | `extraction` | `validator payload extraction` |
+   | `discovery` | `validator resource discovery` |
    | `integrity` | `SHA-256 authentication` |
    | `syntax` | `node --check` |
 

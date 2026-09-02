@@ -193,15 +193,6 @@ function extractResources(frontmatter: string): string[] {
   return resources;
 }
 
-function extractNamedStepScript(frontmatter: string, stepName: string): string {
-  const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = frontmatter.match(
-    new RegExp(`^  - name: ${escapedName}\\n    shell: bash\\n    run: \\|\\n([\\s\\S]*?)(?=^  - name:|\\n\\S)`, 'm'),
-  );
-  if (!match) throw new Error(`No bash step named "${stepName}" found`);
-  return match[1].split('\n').map(line => line.replace(/^ {6}/, '')).join('\n').trim();
-}
-
 function extractWorkflowDispatchInputs(frontmatter: string): Record<string, Record<string, string>> {
   const inputs: Record<string, Record<string, string>> = {};
   const lines = frontmatter.split('\n');
@@ -603,109 +594,22 @@ describe('gh-aw: shared component imports', () => {
     expect(imports.length).toBeGreaterThan(0);
   });
 
-  describe('#1982: experimental gh-aw resource delivery probe', () => {
-    const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
-    const probeResource = 'shared/squad-gh-aw-resource-probe.txt';
-    const probePath = join(WORKFLOWS_DIR, probeResource);
-    const expectedDigest = 'dba0c331c0b0fda06539bd9245dda72bd9c36cca6962726147b03168c1d97a73';
-    const stepName = 'Assert experimental gh-aw resource delivery';
+  it('declares the plaintext Cast validator resource, not an imported skill', () => {
+    const resource = 'shared/squad-cast-validator.mjs';
+    const resourcePath = join(WORKFLOWS_DIR, resource);
+    expect(extractResources(frontmatter)).toEqual([resource]);
+    expect(imports).not.toContain('shared/squad-cast-validator.md');
+    expect(existsSync(resourcePath)).toBe(true);
+    expect(existsSync(join(SHARED_DIR, 'squad-cast-validator.md'))).toBe(false);
+    expect(existsSync(join(SHARED_DIR, 'squad-gh-aw-resource-probe.txt'))).toBe(false);
 
-    it('declares the plaintext probe on the top-level direct-install workflow only', () => {
-      expect(extractResources(frontmatter)).toEqual([probeResource]);
-      expect(existsSync(probePath)).toBe(true);
-      expect(readText(probePath)).toContain('Experiment: bradygaster/squad#1982');
-      expect(readText(probePath)).toContain('no executable or runtime behavior');
-
-      for (const sharedFile of [
-        'squad.md',
-        'squad-cast-validator.md',
-        'squad-planning-ontology.md',
-        'squad-planning-policy.md',
-      ]) {
-        expect(readText(join(SHARED_DIR, sharedFile))).not.toMatch(/^resources:/m);
-      }
-    });
-
-    it('pins the exact plaintext bytes and checks missing, unreadable, and mismatched resources', () => {
-      const actualDigest = createHash('sha256').update(readFileSync(probePath)).digest('hex');
-      const script = extractNamedStepScript(frontmatter, stepName);
-
-      expect(actualDigest).toBe(expectedDigest);
-      expect(script).toContain(`expected_sha256="${expectedDigest}"`);
-      expect(script).toContain('if [ ! -f "$probe" ]');
-      expect(script).toContain('if [ ! -r "$probe" ]');
-      expect(script).toContain('Experimental gh-aw resource probe SHA-256 mismatch');
-    });
-
-    it('fails closed before the agent for a missing or modified installed probe', () => {
-      const script = extractNamedStepScript(frontmatter, stepName);
-      const bash = process.platform === 'win32' ? requirePosixShell() : 'bash';
-      const workspace = createTestWorkspace('gh-aw-resource-probe-');
-      const installedProbe = join(workspace, '.github', 'workflows', probeResource);
-      mkdirSync(dirname(installedProbe), { recursive: true });
-
-      const missing = spawnSync(bash, ['-c', script], {
-        cwd: workspace,
-        encoding: 'utf8',
-        env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
-      });
-      expect(missing.status).not.toBe(0);
-      expect(missing.stderr).toContain('Experimental gh-aw resource probe is missing');
-
-      writeFileSync(installedProbe, 'tampered\n');
-      const modified = spawnSync(bash, ['-c', script], {
-        cwd: workspace,
-        encoding: 'utf8',
-        env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
-      });
-      expect(modified.status).not.toBe(0);
-      expect(modified.stderr).toContain('Experimental gh-aw resource probe SHA-256 mismatch');
-
-      cpSync(probePath, installedProbe);
-      const verified = spawnSync(bash, ['-c', script], {
-        cwd: workspace,
-        encoding: 'utf8',
-        env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
-      });
-      expect(verified.status).toBe(0);
-      expect(verified.stdout).toContain('Experimental gh-aw resource delivery verified');
-    });
-
-    it.skipIf(
-      process.platform === 'win32' ||
-      typeof process.getuid !== 'function' ||
-      process.getuid() === 0,
-    )('fails closed before the agent for an unreadable installed probe', () => {
-      const script = extractNamedStepScript(frontmatter, stepName);
-      const workspace = createTestWorkspace('gh-aw-resource-probe-unreadable-');
-      const installedProbe = join(workspace, '.github', 'workflows', probeResource);
-      const bash = 'bash';
-      mkdirSync(dirname(installedProbe), { recursive: true });
-      cpSync(probePath, installedProbe);
-
-      try {
-        chmodSync(installedProbe, 0o000);
-        const permissionCheck = spawnSync(
-          bash,
-          ['-c', '[ ! -r "$1" ]', 'bash', installedProbe],
-          { encoding: 'utf8' },
-        );
-        expect(
-          permissionCheck.status,
-          'fixture must be unreadable to Bash before exercising the workflow branch',
-        ).toBe(0);
-
-        const unreadable = spawnSync(bash, ['-c', script], {
-          cwd: workspace,
-          encoding: 'utf8',
-          env: { ...process.env, GITHUB_WORKSPACE: workspace, RUNNER_TEMP: workspace },
-        });
-        expect(unreadable.status).not.toBe(0);
-        expect(unreadable.stderr).toContain('Experimental gh-aw resource probe is not readable');
-      } finally {
-        chmodSync(installedProbe, 0o600);
-      }
-    });
+    for (const sharedFile of [
+      'squad.md',
+      'squad-planning-ontology.md',
+      'squad-planning-policy.md',
+    ]) {
+      expect(readText(join(SHARED_DIR, sharedFile))).not.toMatch(/^resources:/m);
+    }
   });
 
   it('each imported file exists in workflows/shared/', () => {
@@ -1090,7 +994,15 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // Raised 194 -> 196 KB by #1982's gh-aw-only resource assertion. The deterministic
   // step runs before the agent and does not enter its prompt; the separate ambient
   // prompt budget remains the authoritative delivered-context guard.
-  const SOURCE_GROWTH_BUDGET_KB = 196;
+  // Lowered 196 -> 187 KB by #1984: replaced the gzip+Base64-encoded validator skill
+  // wrapper (`shared/squad-cast-validator.md`, imported) and the experimental probe
+  // resource with a canonical plaintext top-level `resources:` sidecar
+  // (`shared/squad-cast-validator.mjs`). Resources are installed verbatim by gh-aw but
+  // are not summed into this budget (they were never part of the imported/ambient
+  // source), so removing the large embedded payload from `imports:` drops the total.
+  // Combined authored source now measures ~186.1 KB; 187 KB leaves a similar margin to
+  // prior raises so the guard still bites on genuine growth.
+  const SOURCE_GROWTH_BUDGET_KB = 187;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -2759,7 +2671,7 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
       /only exit status zero with stdout exactly\s+`Cast validation passed\.` authorizes exactly one `create-pull-request`/s,
     );
     expect(candidateCast).toContain('"${RUNNER_TEMP:?}/run-squad-cast-validator"');
-    expect(candidateCast).toContain('Do not transcribe validator bytes or extraction commands');
+    expect(candidateCast).toMatch(/Do not transcribe validator bytes, and do not invoke or\s+load/);
     expect(candidateCast).toContain('emits one JSON\nrecord on stdout');
     expect(candidateCast.match(
       /<!-- SQUAD:CAST-VALIDATOR-COMMAND:BEGIN -->[\s\S]*?<!-- SQUAD:CAST-VALIDATOR-COMMAND:END -->/,
@@ -2784,9 +2696,7 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
     expect(failureBranch).not.toMatch(/re-?materialize the (?:committed )?(?:validator )?payload/i);
 
     for (const [stage, category] of [
-      ['discovery', 'validator skill discovery'],
-      ['uniqueness', 'validator skill uniqueness'],
-      ['extraction', 'validator payload extraction'],
+      ['discovery', 'validator resource discovery'],
       ['integrity', 'SHA-256 authentication'],
       ['syntax', 'node --check'],
       ['validation', 'validator execution'],
