@@ -126,6 +126,15 @@ describe('install.sh', () => {
   it('verifies the release checksum before installing', () => {
     expect(install).toContain('SHA256SUMS.txt');
     expect(install).toMatch(/Checksum mismatch/);
+    expect(install).toMatch(/Checksum download failed/);
+    expect(install).toMatch(/Expected exactly one checksum entry/);
+    expect(install).toMatch(/sha256sum' or 'shasum' is required/);
+    expect(install).toMatch(
+      /fetch "\$checksum_url" "\$tmp\/SHA256SUMS\.txt" \\\n\s+\|\| err "Checksum download failed:/,
+    );
+    expect(install.indexOf('info "Checksum verified"')).toBeLessThan(
+      install.indexOf('tar -xzf'),
+    );
   });
 
   it('supports VERSION, PREFIX and REPO overrides', () => {

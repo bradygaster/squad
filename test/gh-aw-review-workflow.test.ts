@@ -1,9 +1,10 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REVIEWER = read('workflows/squad-review.md');
@@ -128,23 +129,12 @@ function compileReviewer(): CompiledContract {
   );
 
   const lock = readFileSync(resolve(workflowDir, 'squad-review.lock.yml'), 'utf8').replace(/\r\n/g, '\n');
-  const lines = lock.split('\n');
-  const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-  const configEnd = delimiter
-    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-    : -1;
-
-  expect(configStart, 'compiled reviewer must write safe-output config').toBeGreaterThanOrEqual(0);
-  expect(delimiter, 'safe-output config must use a parseable heredoc').toBeDefined();
-  expect(configEnd, 'safe-output config heredoc must terminate').toBeGreaterThan(configStart);
+  const jsonText = extractSafeOutputsConfigJson(lock);
+  expect(jsonText, 'compiled reviewer must write a parseable safe-output config').toBeDefined();
 
   return {
     lock,
-    safeOutputs: JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-      string,
-      Record<string, unknown>
-    >,
+    safeOutputs: JSON.parse(jsonText!) as Record<string, Record<string, unknown>>,
   };
 }
 
@@ -219,11 +209,18 @@ describe('gh-aw advisory Squad reviewer', () => {
     }
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
     for (const name of installOrder) {
-      execFileSync(
+      const result = spawnSync(
         'gh',
         ['aw', 'compile', name.slice(0, -3), '--strict', '--approve', '--no-check-update'],
         { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
       );
+      const diagnostics = `${result.stdout}\n${result.stderr}`;
+      expect(result.error, `failed to launch gh aw for ${name}`).toBeUndefined();
+      expect(result.status, `strict compile failed for ${name}:\n${diagnostics}`).toBe(0);
+      expect(
+        diagnostics,
+        `${name} must not emit the workflow_dispatch concurrency warning in a clean consumer install`,
+      ).not.toContain('concurrency.job-discriminator');
     }
 
     const installed = readdirSync(workflowDir, { withFileTypes: true })
@@ -241,6 +238,32 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad.md',
     ]);
   }, 30000);
+
+  it('detects a missing workflow_dispatch job discriminator during strict compilation', () => {
+    const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-discriminator-mutation-'));
+    compileWorkspaces.push(workspace);
+    const workflowDir = resolve(workspace, '.github', 'workflows');
+    mkdirSync(workflowDir, { recursive: true });
+    cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
+
+    const workerPath = resolve(workflowDir, 'squad-deps-worker.md');
+    const worker = readFileSync(workerPath, 'utf8').replace(/\r\n/g, '\n');
+    expect(worker).toContain('  job-discriminator: ${{ github.run_id }}\n');
+    writeFileSync(workerPath, worker.replace('  job-discriminator: ${{ github.run_id }}\n', ''));
+    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+
+    const result = spawnSync(
+      'gh',
+      ['aw', 'compile', 'squad-deps-worker', '--strict', '--no-check-update', '--no-emit'],
+      { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+    );
+    const diagnostics = `${result.stdout}\n${result.stderr}`;
+    expect(result.error, 'failed to launch gh aw for discriminator mutation').toBeUndefined();
+    expect(result.status, `mutated workflow must remain compilable:\n${diagnostics}`).toBe(0);
+    expect(diagnostics).toContain(
+      'workflow_dispatch workflow has no concurrency.job-discriminator',
+    );
+  }, 20000);
 
   it('keeps all consumer install surfaces on the coherent four-workflow order', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {

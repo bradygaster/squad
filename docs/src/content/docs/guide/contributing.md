@@ -8,7 +8,7 @@ This guide covers everything you need to know: from setting up your local enviro
 
 Before contributing, ensure you have:
 
-- **Node.js** ≥20.0.0
+- **Node.js** 22.5.0 or later
 - **npm** ≥10.0.0 (for workspace support)
 - **Git** with SSH agent (for package resolution)
 - **gh CLI** (for GitHub integration testing)
@@ -33,7 +33,9 @@ squad/
 - **squad-sdk**: Core runtime, agent orchestration, tool registry. No CLI dependencies.
 - **squad-cli**: Command-line interface. Depends on squad-sdk.
 
-Each package has independent versioning via changesets. A change to squad-sdk may bump only squad-sdk; a change to CLI bumps only squad-cli.
+Changesets record which packages a PR affects. Release preparation aligns the
+root, SDK, and CLI versions because the automated release pipeline publishes
+them together.
 
 ## Getting Started
 
@@ -179,9 +181,14 @@ All docs in v1 are **internal only**. No public docs site until v2.
 
 ## Local Development Versioning
 
-When developing Squad locally, set the package version to `{next-version}-preview`. For example, if the last published version is `0.8.5.1`, the local dev version should be `0.8.6-preview`.
+When developing Squad locally, use a valid prerelease version such as
+`{next-version}-preview.1`. For example, after `0.13.0`, the next development
+version can be `0.14.0-preview.1`.
 
-This convention makes `squad version` show the preview tag locally, clearly indicating you're running unreleased source code, not the published npm package. The release agent will bump this to the final version at publish time, then immediately back to the next preview version for continued development.
+This convention makes `squad version` clearly identify unreleased source. An
+on-demand release from `dev` publishes that exact version to npm `preview`.
+Stable release preparation replaces it with `X.Y.Z` before promotion to
+`main`.
 
 ### Making the `squad` Command Use Your Local Build
 
@@ -233,28 +240,27 @@ Update help text and README for npm distribution. Add squad status command to do
 
 ### Release Workflow
 
-The team runs changesets on the `main` branch (via GitHub Actions):
+Changesets are required for package source changes, but maintainers prepare
+release versions explicitly and keep all three package manifests in lockstep.
 
-```bash
-npx changeset publish
-```
+- Manual dispatch of `squad-release.yml` from `dev` publishes
+  `X.Y.Z-preview.N` as a GitHub prerelease and npm `preview`.
+- Dispatching `squad-promote.yml` validates and sanitizes a direct
+  `dev`-to-`main` merge.
+- The resulting `main` push publishes stable `X.Y.Z` as npm `latest`, standalone
+  archives, Homebrew, and WinGet.
 
-This:
-1. Bumps versions in `package.json`
-2. Generates `CHANGELOG.md` entries
-3. Publishes to npm
-4. Creates GitHub releases
-
-You don't need to manually version — changesets handle it.
+The workflows create tags and GitHub Releases. Maintainers do not create those
+manually.
 
 ## Branch Strategy
 
 - **main** — Stable, published releases. All merges include changesets.
-- **preview** — Staging branch for release candidates (promote: dev → preview → main).
-- **bradygaster/dev** — Integration branch. **All PRs from forks must target this branch**, not `main`.
+- **dev** — Integration branch. **All PRs from forks must target this branch**, not `main`.
 - **user/issue-slug** — Feature branches from users or agents.
 
-> **Note:** The `insider` npm tag (`@bradygaster/squad-cli@insider`) publishes from `dev` via manual workflow dispatch. There is no separate insider branch.
+> **Note:** `preview` and `insider` are npm release channels, not branches.
+> Both publish from `dev` through separate manual workflows.
 
 ## Continuous Integration
 
