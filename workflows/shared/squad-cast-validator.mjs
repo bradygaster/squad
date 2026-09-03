@@ -255,7 +255,7 @@ function validateCapabilities(coordinator, active, routingRows, errors) {
     errors.push('coordinator: pending, uncast, or zero capability markers are forbidden');
   }
   for (const [id, displayName] of Object.entries(BUILTIN_DISPLAY_NAMES)) {
-    if (new RegExp(`\\b${displayName}\\b`).test(block)) {
+    if (new RegExp(`\\b${displayName}\\b`, 'i').test(block)) {
       errors.push(`coordinator: capability block must not list built-in "${id}" as a specialist`);
     }
   }

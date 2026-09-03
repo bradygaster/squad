@@ -417,7 +417,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 53f6e8ed254bc1fe3a49a5964297562803f6190a06b7547b31e26108b17ef09b, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 5b8e1432de63c78488ee7ff6da4e67ea0c91044582109f678153c231704a0097, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);

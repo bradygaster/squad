@@ -121,7 +121,7 @@ steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="53f6e8ed254bc1fe3a49a5964297562803f6190a06b7547b31e26108b17ef09b"
+      validator_expected_sha256="5b8e1432de63c78488ee7ff6da4e67ea0c91044582109f678153c231704a0097"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
