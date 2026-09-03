@@ -1300,8 +1300,8 @@ gh aw add \
 customizations first, then reapply them before the final compile. Never customize
 generated `.lock.yml` files.
 
-Existing local imports are not guaranteed to refresh with the top-level files.
-Fetch every Squad shared import at the same SHA:
+Existing local imports and resources are not guaranteed to refresh with the
+top-level files. Fetch every Squad shared import and resource at the same SHA:
 
 ```bash
 mkdir -p .github/workflows/shared
@@ -1310,8 +1310,8 @@ curl --fail --silent --show-error --location \
   "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad.md" \
   --output .github/workflows/shared/squad.md
 curl --fail --silent --show-error --location \
-  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-cast-validator.md" \
-  --output .github/workflows/shared/squad-cast-validator.md
+  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-cast-validator.mjs" \
+  --output .github/workflows/shared/squad-cast-validator.mjs
 curl --fail --silent --show-error --location \
   "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-ontology.md" \
   --output .github/workflows/shared/squad-planning-ontology.md

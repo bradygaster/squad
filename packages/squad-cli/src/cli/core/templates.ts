@@ -136,8 +136,8 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
-    source: 'Rai-charter.md',
-    destination: 'templates/Rai-charter.md',
+    source: 'rai-charter.md',
+    destination: 'templates/rai-charter.md',
     overwriteOnUpgrade: true,
     description: 'Rai RAI reviewer charter template',
   },
