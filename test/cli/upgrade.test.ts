@@ -6,11 +6,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, chmodSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, ensureCastingDefaults, selfUpgradeCli } from '@bradygaster/squad-cli/core/upgrade';
+import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, ensureCastingDefaults, selfUpgradeCli, migrateLegacyRaiAgent } from '@bradygaster/squad-cli/core/upgrade';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
@@ -672,5 +672,80 @@ describe('CLI: upgrade command', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  // Detects whether the host filesystem is case-sensitive. macOS (APFS,
+  // default) and Windows are case-insensitive-but-case-preserving: a
+  // directory named `Rai` and one named `rai` collapse to the same inode, so
+  // the "both legacy and canonical exist" scenario can only be physically
+  // reproduced on case-sensitive filesystems (Linux CI).
+  const caseSensitivityProbeDir = join(tmpdir(), `.case-probe-${randomBytes(4).toString('hex')}`);
+  mkdirSync(join(caseSensitivityProbeDir, 'CaseProbe'), { recursive: true });
+  const isCaseSensitiveFs = !existsSync(join(caseSensitivityProbeDir, 'caseprobe'));
+  rmSync(caseSensitivityProbeDir, { recursive: true, force: true });
+
+  describe('legacy .squad/agents/Rai/ migration', () => {
+    // runInit (beforeEach, above) currently scaffolds the built-in agent
+    // directory using the mixed-case name `Rai`, reproducing the legacy
+    // on-disk state that `squad upgrade` must migrate to the canonical
+    // lowercase `rai`. Assertions below read the directory listing directly
+    // (rather than `existsSync`) because macOS/Windows are case-insensitive
+    // but case-preserving: `existsSync('.../rai')` would report a false
+    // positive even when only the legacy `Rai` entry physically exists.
+    it('renames .squad/agents/Rai/ to .squad/agents/rai/ on upgrade, preserving content', async () => {
+      const agentsDir = join(TEST_ROOT, '.squad', 'agents');
+      expect(readdirSync(agentsDir)).toContain('Rai');
+
+      const legacyCharter = readFileSync(join(agentsDir, 'Rai', 'charter.md'), 'utf8');
+
+      await runUpgrade(TEST_ROOT);
+
+      const entries = readdirSync(agentsDir);
+      expect(entries).toContain('rai');
+      expect(entries).not.toContain('Rai');
+
+      const migratedCharter = readFileSync(join(agentsDir, 'rai', 'charter.md'), 'utf8');
+      expect(migratedCharter).toBe(legacyCharter);
+    });
+
+    it('is idempotent: a second upgrade run does not recreate Rai/ or duplicate rai/', async () => {
+      const agentsDir = join(TEST_ROOT, '.squad', 'agents');
+
+      await runUpgrade(TEST_ROOT);
+
+      // Simulate user customization of the migrated canonical charter to
+      // prove the second run neither duplicates nor clobbers it.
+      const charterPath = join(agentsDir, 'rai', 'charter.md');
+      const customized = readFileSync(charterPath, 'utf8') + '\n## Custom note\n';
+      writeFileSync(charterPath, customized);
+
+      await runUpgrade(TEST_ROOT, { force: true });
+
+      const entries = readdirSync(agentsDir);
+      const raiEntries = entries.filter(e => e.toLowerCase() === 'rai');
+      expect(raiEntries).toEqual(['rai']);
+      expect(readFileSync(charterPath, 'utf8')).toBe(customized);
+    });
+
+    it.skipIf(!isCaseSensitiveFs)(
+      'migrateLegacyRaiAgent() preserves an existing canonical rai/ and only tombstones the legacy Rai/ copy',
+      async () => {
+        const agentsDir = join(TEST_ROOT, '.squad', 'agents');
+
+        // Simulate a partial upgrade on a case-sensitive filesystem where both
+        // the legacy and canonical directories ended up present. Only
+        // reachable on a case-sensitive filesystem — `Rai/` and `rai/` would
+        // otherwise collapse into the same directory entry.
+        mkdirSync(join(agentsDir, 'rai'), { recursive: true });
+        writeFileSync(join(agentsDir, 'rai', 'charter.md'), '# canonical customized charter');
+
+        const result = migrateLegacyRaiAgent(TEST_ROOT);
+
+        expect(result.migrated).toEqual([]);
+        expect(readdirSync(agentsDir)).not.toContain('Rai');
+        expect(readdirSync(agentsDir)).toContain('rai');
+        expect(readFileSync(join(agentsDir, 'rai', 'charter.md'), 'utf8')).toBe('# canonical customized charter');
+      },
+    );
   });
 });

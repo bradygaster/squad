@@ -594,12 +594,21 @@ describe('gh-aw: shared component imports', () => {
     expect(imports.length).toBeGreaterThan(0);
   });
 
-  it('declares the plaintext Cast validator resource, not an imported skill', () => {
+  it('declares the plaintext Cast validator resource and canonical built-in charter resources, not imported skills', () => {
     const resource = 'shared/squad-cast-validator.mjs';
     const resourcePath = join(WORKFLOWS_DIR, resource);
-    expect(extractResources(frontmatter)).toEqual([resource]);
+    const builtinResources = [
+      'shared/builtins/scribe-charter.md',
+      'shared/builtins/ralph-charter.md',
+      'shared/builtins/rai-charter.md',
+      'shared/builtins/fact-checker-charter.md',
+    ];
+    expect(extractResources(frontmatter)).toEqual([resource, ...builtinResources]);
     expect(imports).not.toContain('shared/squad-cast-validator.md');
     expect(existsSync(resourcePath)).toBe(true);
+    for (const builtinResource of builtinResources) {
+      expect(existsSync(join(WORKFLOWS_DIR, builtinResource))).toBe(true);
+    }
     expect(existsSync(join(SHARED_DIR, 'squad-cast-validator.md'))).toBe(false);
     expect(existsSync(join(SHARED_DIR, 'squad-gh-aw-resource-probe.txt'))).toBe(false);
 
@@ -1002,7 +1011,18 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // source), so removing the large embedded payload from `imports:` drops the total.
   // Combined authored source now measures ~186.1 KB; 187 KB leaves a similar margin to
   // prior raises so the guard still bites on genuine growth.
-  const SOURCE_GROWTH_BUDGET_KB = 187;
+  // Raised 187 -> 191 KB by the gh-aw Cast built-in preservation change: `squad-cast`
+  // Step 4 now defines the permanent four-built-in support set (scribe, ralph, rai,
+  // fact-checker), preserves their materialized directories during bootstrap cleanup,
+  // and requires a dedicated `## Built-in Support Agents` section in generated
+  // team.md/coordinator output plus their four charter paths in the safe-output
+  // payload. The canonical charter *content* for those four built-ins is shipped as
+  // `resources:` (`shared/builtins/*-charter.md`), which — like the validator sidecar
+  // above — is installed verbatim by gh-aw and is not summed into this budget; only the
+  // added prose describing how to preserve/reference them grew the authored source.
+  // Combined authored source now measures ~190.3 KB; 191 KB leaves a similar tight
+  // margin to prior raises so the guard still bites on genuine growth.
+  const SOURCE_GROWTH_BUDGET_KB = 191;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1486,7 +1506,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="53f6e8ed254bc1fe3a49a5964297562803f6190a06b7547b31e26108b17ef09b"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
@@ -2628,7 +2648,7 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
     expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
     expect(squadContent).toContain('exact active casting-registry `persistent_name`');
     expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
-    expect(squadContent).toContain('Do not route to inactive/support roles');
+    expect(squadContent).toContain('Do not route to the four built-ins or any other inactive/support role');
   });
 });
 
