@@ -1506,7 +1506,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="5b8e1432de63c78488ee7ff6da4e67ea0c91044582109f678153c231704a0097"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
