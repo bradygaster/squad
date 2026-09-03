@@ -19,7 +19,28 @@ const CORE_PAYLOAD = [
   'meet-the-squad.md',
 ];
 
-const SUPPORT_ROLE_PATTERN = /\b(?:Scribe|Ralph|Rai|RAI|Fact Checker)\b/i;
+// The four built-in support agents are permanent, non-configurable, and
+// always present in a GH-AW Cast, separate from selected Cast specialists.
+// There is no mechanism to add, remove, or rename members of this set.
+const REQUIRED_BUILTIN_IDS = ['fact-checker', 'ralph', 'rai', 'scribe'];
+const BUILTIN_DISPLAY_NAMES = {
+  scribe: 'Scribe',
+  ralph: 'Ralph',
+  rai: 'Rai',
+  'fact-checker': 'Fact Checker',
+};
+const REQUIRED_BUILTIN_CHARTERS = REQUIRED_BUILTIN_IDS
+  .map((id) => `.squad/agents/${id}/charter.md`)
+  .sort();
+// The canonical resource a gh-aw "Materialize canonical built-in support
+// agents" step copies from verbatim before the agent ever runs. The final
+// emitted `.squad/agents/{id}/charter.md` must remain byte-identical to it —
+// this is the only way to prove a `squad init` or agent rewrite never
+// clobbered the materialized built-in after the deterministic copy step.
+const BUILTIN_CANONICAL_DIR = '.github/workflows/shared/builtins';
+const BUILTIN_SECTION_HEADING = '## Built-in Support Agents';
+const CAST_SOURCES_HEADING = '## Cast sources';
+const BUILTIN_NAME_ROW_PATTERN = /^\|\s*(Scribe|Ralph|Rai|Fact Checker)\s*\|/gmi;
 const PLACEHOLDER_PATTERN = /\b(?:pending|uncast)\b|(?:specialists|taskTypes|hints)=0\b/i;
 const FORBIDDEN_REFERENCE_PATTERNS = [
   ['standalone template', /^\.squad\/templates\//],
@@ -29,6 +50,7 @@ const FORBIDDEN_REFERENCE_PATTERNS = [
 ];
 const BARE_INTERNAL_PATH_PATTERN =
   /(?:^|[\s`"'(])((?:packages\/[^/\s`"')]+\/src|src\/(?:agents|casting|cli|client|config|coordinator|hooks|runtime|tools))\/[^\s`"')]+)/gm;
+
 
 function parseArgs(argv) {
   const args = new Map();
@@ -51,6 +73,45 @@ function parseArgs(argv) {
 
 function readText(root, relativePath) {
   return readFileSync(join(root, ...relativePath.split('/')), 'utf8').replace(/\r\n/g, '\n');
+}
+
+/** Raw file bytes, with no text normalization, for true byte-for-byte comparison. */
+function readBytes(root, relativePath) {
+  return readFileSync(join(root, ...relativePath.split('/')));
+}
+
+/**
+ * Every materialized built-in charter must remain byte-for-byte identical to
+ * the canonical resource shipped with the workflow. A deterministic step
+ * copies the canonical resource verbatim before the agent runs; if `squad
+ * init` or the Cast agent later rewrites, paraphrases, or reinterprets one of
+ * these files, this is the only check that catches the divergence.
+ */
+function validateBuiltinCharterFidelity(root, errors) {
+  for (const id of REQUIRED_BUILTIN_IDS) {
+    const canonicalPath = `${BUILTIN_CANONICAL_DIR}/${id}-charter.md`;
+    const materializedPath = `.squad/agents/${id}/charter.md`;
+    let canonicalBytes;
+    try {
+      canonicalBytes = readBytes(root, canonicalPath);
+    } catch (error) {
+      errors.push(`builtin: canonical resource ${canonicalPath} for "${id}" is missing or unreadable (${error.message})`);
+      continue;
+    }
+    let materializedBytes;
+    try {
+      materializedBytes = readBytes(root, materializedPath);
+    } catch (error) {
+      errors.push(`builtin: materialized charter ${materializedPath} for "${id}" is missing or unreadable (${error.message})`);
+      continue;
+    }
+    if (!canonicalBytes.equals(materializedBytes)) {
+      errors.push(
+        `builtin: ${materializedPath} is not byte-identical to the canonical resource `
+        + `${canonicalPath} — built-in charters must never be regenerated, edited, or reinterpreted`,
+      );
+    }
+  }
 }
 
 function normalizePayloadPath(value) {
@@ -99,6 +160,31 @@ function extractLocalReferences(markdown) {
     references.push(match[1].replace(/[.,;:]+$/, ''));
   }
   return [...new Set(references)];
+}
+
+/**
+ * Extract the body of a single `## Heading` section (up to the next `##`
+ * heading or end of document). Requires the heading to appear exactly once;
+ * returns null and records an error otherwise.
+ */
+function extractSingleSection(markdown, heading, sourceLabel, errors) {
+  const headingRe = new RegExp(`^${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm');
+  const matches = markdown.match(headingRe) ?? [];
+  if (matches.length !== 1) {
+    errors.push(`${sourceLabel}: expected exactly one "${heading}" heading, found ${matches.length}`);
+    return null;
+  }
+  const idx = markdown.search(headingRe);
+  const afterHeadingLine = markdown.slice(idx + markdown.slice(idx).indexOf('\n') + 1);
+  const nextHeadingIdx = afterHeadingLine.search(/^##\s/m);
+  return nextHeadingIdx === -1 ? afterHeadingLine : afterHeadingLine.slice(0, nextHeadingIdx);
+}
+
+/** Charter-path references (`.squad/agents/{id}/charter.md`) found in a markdown fragment. */
+function charterReferences(markdown) {
+  return extractLocalReferences(markdown)
+    .filter((reference) => /^\.squad\/agents\/[^/]+\/charter\.md$/.test(reference))
+    .sort();
 }
 
 function parseRouting(routing, activeNames, errors) {
@@ -172,6 +258,9 @@ function parseRegistry(root, errors) {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(member.id) || typeof member.name !== 'string' || !member.name.trim()) {
       errors.push(`registry: invalid active member ${JSON.stringify(member)}`);
     }
+    if (REQUIRED_BUILTIN_IDS.includes(member.id)) {
+      errors.push(`registry: built-in id "${member.id}" must not be an active specialist registry entry`);
+    }
   }
   return active;
 }
@@ -209,6 +298,11 @@ function validateCapabilities(coordinator, active, routingRows, errors) {
   }
   if (PLACEHOLDER_PATTERN.test(block)) {
     errors.push('coordinator: pending, uncast, or zero capability markers are forbidden');
+  }
+  for (const [id, displayName] of Object.entries(BUILTIN_DISPLAY_NAMES)) {
+    if (new RegExp(`\\b${displayName}\\b`, 'i').test(block)) {
+      errors.push(`coordinator: capability block must not list built-in "${id}" as a specialist`);
+    }
   }
   for (const member of active) {
     if (!block.includes(member.name)) {
@@ -254,7 +348,7 @@ export function validateCastTree({ root, payloadPath }) {
   const active = parseRegistry(root, errors);
   const activeNames = new Set(active.map(({ name }) => name));
   const activeCharters = active.map(({ id }) => `.squad/agents/${id}/charter.md`);
-  const expectedPayload = new Set([...CORE_PAYLOAD, ...activeCharters]);
+  const expectedPayload = new Set([...CORE_PAYLOAD, ...activeCharters, ...REQUIRED_BUILTIN_CHARTERS]);
   for (const path of payload) {
     if (!expectedPayload.has(path)) errors.push(`payload: unexpected path ${path}`);
   }
@@ -275,13 +369,16 @@ export function validateCastTree({ root, payloadPath }) {
       .filter((entry) => statSync(join(agentsPath, entry)).isDirectory())
       .sort();
     const activeIds = active.map(({ id }) => id).sort();
-    if (JSON.stringify(materializedIds) !== JSON.stringify(activeIds)) {
+    const expectedIds = [...new Set([...activeIds, ...REQUIRED_BUILTIN_IDS])].sort();
+    if (JSON.stringify(materializedIds) !== JSON.stringify(expectedIds)) {
       errors.push(
-        `tree: materialized agent directories must exactly match active registry IDs `
-        + `(expected ${activeIds.join(', ')}, found ${materializedIds.join(', ')})`,
+        `tree: materialized agent directories must exactly match active registry IDs plus the `
+        + `four required built-ins (expected ${expectedIds.join(', ')}, found ${materializedIds.join(', ')})`,
       );
     }
   }
+
+  validateBuiltinCharterFidelity(root, errors);
 
   let team = '';
   let routing = '';
@@ -295,22 +392,51 @@ export function validateCastTree({ root, payloadPath }) {
     return errors;
   }
 
-  if (SUPPORT_ROLE_PATTERN.test(team)) {
-    errors.push('team: inactive/support roles must not be advertised by the GH-AW Cast roster');
-  }
-  if (SUPPORT_ROLE_PATTERN.test(coordinator)) {
-    errors.push('coordinator: inactive/support roles are forbidden in GH-AW Cast output');
-  }
-
-  const teamCharters = extractLocalReferences(team)
-    .filter((reference) => /^\.squad\/agents\/[^/]+\/charter\.md$/.test(reference))
-    .sort();
-  if (JSON.stringify(teamCharters) !== JSON.stringify([...activeCharters].sort())) {
+  const teamCharters = charterReferences(team);
+  const expectedTeamCharters = [...new Set([...activeCharters, ...REQUIRED_BUILTIN_CHARTERS])].sort();
+  if (JSON.stringify(teamCharters) !== JSON.stringify(expectedTeamCharters)) {
     errors.push(
-      `team: charter references must exactly match active registry members `
-      + `(expected ${activeCharters.sort().join(', ')}, found ${teamCharters.join(', ')})`,
+      `team: charter references must exactly match active specialists plus the four required `
+      + `built-ins (expected ${expectedTeamCharters.join(', ')}, found ${teamCharters.join(', ')})`,
     );
   }
+
+  const membersSection = extractSingleSection(team, '## Members', 'team', errors);
+  if (membersSection !== null) {
+    const leakedBuiltinCharters = charterReferences(membersSection)
+      .filter((reference) => REQUIRED_BUILTIN_CHARTERS.includes(reference));
+    if (leakedBuiltinCharters.length > 0) {
+      errors.push(`team: Members roster must not reference built-in charters: ${leakedBuiltinCharters.join(', ')}`);
+    }
+    const builtinRows = [...membersSection.matchAll(BUILTIN_NAME_ROW_PATTERN)].map((match) => match[1]);
+    if (builtinRows.length > 0) {
+      errors.push(`team: Members roster must not list built-in agents as specialists: ${[...new Set(builtinRows)].join(', ')}`);
+    }
+  }
+
+  const builtinSection = extractSingleSection(team, BUILTIN_SECTION_HEADING, 'team', errors);
+  if (builtinSection !== null) {
+    const builtinSectionCharters = charterReferences(builtinSection);
+    if (JSON.stringify(builtinSectionCharters) !== JSON.stringify(REQUIRED_BUILTIN_CHARTERS)) {
+      errors.push(
+        `team: "${BUILTIN_SECTION_HEADING}" must reference exactly the four required built-in charters `
+        + `(expected ${REQUIRED_BUILTIN_CHARTERS.join(', ')}, found ${builtinSectionCharters.join(', ')})`,
+      );
+    }
+  }
+
+  const castSourcesSection = extractSingleSection(coordinator, CAST_SOURCES_HEADING, 'coordinator', errors);
+  if (castSourcesSection !== null) {
+    const castSourcesBuiltinCharters = charterReferences(castSourcesSection)
+      .filter((reference) => REQUIRED_BUILTIN_CHARTERS.includes(reference));
+    if (JSON.stringify(castSourcesBuiltinCharters) !== JSON.stringify(REQUIRED_BUILTIN_CHARTERS)) {
+      errors.push(
+        `coordinator: "${CAST_SOURCES_HEADING}" must reference exactly the four required built-in charters `
+        + `(expected ${REQUIRED_BUILTIN_CHARTERS.join(', ')}, found ${castSourcesBuiltinCharters.join(', ')})`,
+      );
+    }
+  }
+  extractSingleSection(coordinator, BUILTIN_SECTION_HEADING, 'coordinator', errors);
 
   const routingRows = parseRouting(routing, activeNames, errors);
   validateCapabilities(coordinator, active, routingRows, errors);

@@ -594,12 +594,21 @@ describe('gh-aw: shared component imports', () => {
     expect(imports.length).toBeGreaterThan(0);
   });
 
-  it('declares the plaintext Cast validator resource, not an imported skill', () => {
+  it('declares the plaintext Cast validator resource and canonical built-in charter resources, not imported skills', () => {
     const resource = 'shared/squad-cast-validator.mjs';
     const resourcePath = join(WORKFLOWS_DIR, resource);
-    expect(extractResources(frontmatter)).toEqual([resource]);
+    const builtinResources = [
+      'shared/builtins/scribe-charter.md',
+      'shared/builtins/ralph-charter.md',
+      'shared/builtins/rai-charter.md',
+      'shared/builtins/fact-checker-charter.md',
+    ];
+    expect(extractResources(frontmatter)).toEqual([resource, ...builtinResources]);
     expect(imports).not.toContain('shared/squad-cast-validator.md');
     expect(existsSync(resourcePath)).toBe(true);
+    for (const builtinResource of builtinResources) {
+      expect(existsSync(join(WORKFLOWS_DIR, builtinResource))).toBe(true);
+    }
     expect(existsSync(join(SHARED_DIR, 'squad-cast-validator.md'))).toBe(false);
     expect(existsSync(join(SHARED_DIR, 'squad-gh-aw-resource-probe.txt'))).toBe(false);
 
@@ -1002,7 +1011,18 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // source), so removing the large embedded payload from `imports:` drops the total.
   // Combined authored source now measures ~186.1 KB; 187 KB leaves a similar margin to
   // prior raises so the guard still bites on genuine growth.
-  const SOURCE_GROWTH_BUDGET_KB = 187;
+  // Raised 187 -> 191 KB by the gh-aw Cast built-in preservation change: `squad-cast`
+  // Step 4 now defines the permanent four-built-in support set (scribe, ralph, rai,
+  // fact-checker), preserves their materialized directories during bootstrap cleanup,
+  // and requires a dedicated `## Built-in Support Agents` section in generated
+  // team.md/coordinator output plus their four charter paths in the safe-output
+  // payload. The canonical charter *content* for those four built-ins is shipped as
+  // `resources:` (`shared/builtins/*-charter.md`), which — like the validator sidecar
+  // above — is installed verbatim by gh-aw and is not summed into this budget; only the
+  // added prose describing how to preserve/reference them grew the authored source.
+  // Combined authored source now measures ~190.3 KB; 191 KB leaves a similar tight
+  // margin to prior raises so the guard still bites on genuine growth.
+  const SOURCE_GROWTH_BUDGET_KB = 191;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1486,12 +1506,65 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
-    expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
-      compiled.indexOf('name: Restore inline skills from activation artifact'),
+    // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):
+    // it must run AFTER the base-branch/ambient restores that can reintroduce a
+    // stale committed .squad snapshot, and still before the agent turn begins.
+    expect(compiled.indexOf('name: Restore inline skills from activation artifact')).toBeLessThan(
+      compiled.indexOf('name: Prepare deterministic Cast validator runner'),
     );
+    expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
+      compiled.indexOf('name: Execute GitHub Copilot CLI'),
+    );
+  }, 20000);
+
+  it('materializes built-in charters after init and every late restore, and before the Cast agent turn', () => {
+    const compiled = lockText();
+
+    // Job-level guarantee: the agent job cannot start until the activation
+    // job (which runs `squad init --preset default` when no cast exists yet)
+    // has completed.
+    expect(compiled).toMatch(/\n {2}agent:\n {4}needs: activation\n/);
+    const activationJobIndex = compiled.indexOf('\n  activation:\n');
+    const agentJobIndex = compiled.indexOf('\n  agent:\n');
+    expect(activationJobIndex).toBeGreaterThan(-1);
+    expect(agentJobIndex).toBeGreaterThan(activationJobIndex);
+
+    const initIndex = compiled.indexOf('name: Initialize Squad team');
+    const materializeIndex = compiled.indexOf('name: Materialize canonical built-in support agents');
+    expect(initIndex).toBeGreaterThan(-1);
+    expect(materializeIndex).toBeGreaterThan(initIndex);
+
+    // Materialization is a pre-agent-step: it must run strictly after every
+    // restore step that can reintroduce a stale committed `.squad/` snapshot
+    // late in the job (base-branch restore, both ambient-folder restores,
+    // inline sub-agent/skill restores), and strictly before the Cast agent
+    // turn (Copilot CLI execution) starts.
+    for (const priorRestore of [
+      'name: Restore Squad state from activation artifact',
+      'name: Restore agent config folders from base branch',
+      'name: Restore inline sub-agents from activation artifact',
+      'name: Restore inline skills from activation artifact',
+    ]) {
+      const restoreIndex = compiled.indexOf(priorRestore);
+      expect(restoreIndex, `${priorRestore} must be present`).toBeGreaterThan(-1);
+      expect(materializeIndex, `${priorRestore} must precede materialization`).toBeGreaterThan(restoreIndex);
+    }
+    // Both occurrences of the unconditional ambient-folder restore (gh-aw emits
+    // it once after the activation-artifact download and again after PR
+    // checkout) must precede materialization too.
+    const ambientRestoreIndices = [...compiled.matchAll(/name: Restore ambient folders from activation artifact/g)]
+      .map((match) => match.index ?? -1);
+    expect(ambientRestoreIndices.length).toBeGreaterThanOrEqual(2);
+    for (const restoreIndex of ambientRestoreIndices) {
+      expect(materializeIndex).toBeGreaterThan(restoreIndex);
+    }
+
+    const agentExecutionIndex = compiled.indexOf('name: Execute GitHub Copilot CLI');
+    expect(agentExecutionIndex).toBeGreaterThan(-1);
+    expect(agentExecutionIndex).toBeGreaterThan(materializeIndex);
   }, 20000);
 
   it('keeps the v0.87.10 completion hook neutral when a custom safe job fails', () => {
@@ -2628,7 +2701,7 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
     expect(squadContent).toContain('headers `Work Type | Route To | Examples`');
     expect(squadContent).toContain('exact active casting-registry `persistent_name`');
     expect(squadContent).toContain('multiple names comma-separated and no prose or annotations');
-    expect(squadContent).toContain('Do not route to inactive/support roles');
+    expect(squadContent).toContain('Do not route to the four built-ins or any other inactive/support role');
   });
 });
 
