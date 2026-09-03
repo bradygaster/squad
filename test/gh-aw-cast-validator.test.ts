@@ -26,6 +26,13 @@ const builtins = [
   { id: 'fact-checker', name: 'Fact Checker' },
 ];
 
+/** Byte-for-byte canonical content of a built-in charter, as shipped with the workflow. */
+function builtinCanonicalContent(id: string): Buffer {
+  return readFileSync(join(process.cwd(), 'workflows', 'shared', 'builtins', `${id}-charter.md`));
+}
+
+const builtinCanonicalRelativePath = '.github/workflows/shared/builtins';
+
 const corePayload = [
   '.squad/team.md',
   '.squad/routing.md',
@@ -38,7 +45,7 @@ const corePayload = [
   'meet-the-squad.md',
 ];
 
-function write(root: string, path: string, content: string): void {
+function write(root: string, path: string, content: string | Buffer): void {
   const fullPath = join(root, ...path.split('/'));
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, content, 'utf8');
@@ -171,7 +178,12 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
     write(root, `.squad/agents/${member.id}/charter.md`, `# ${member.name} — ${member.role}\n`);
   }
   for (const builtin of builtins) {
-    write(root, `.squad/agents/${builtin.id}/charter.md`, `# ${builtin.name}\n`);
+    const canonical = builtinCanonicalContent(builtin.id);
+    // Mirrors the gh-aw resource materialization: the canonical charter is
+    // installed under .github/workflows/shared/builtins/, then copied
+    // verbatim to .squad/agents/{id}/charter.md by a deterministic step.
+    write(root, `${builtinCanonicalRelativePath}/${builtin.id}-charter.md`, canonical);
+    write(root, `.squad/agents/${builtin.id}/charter.md`, canonical);
   }
   write(root, '.github/agents/squad.agent.md', coordinatorMarkdown());
   write(root, 'meet-the-squad.md', '# Meet the Squad\n');
@@ -417,7 +429,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 5b8e1432de63c78488ee7ff6da4e67ea0c91044582109f678153c231704a0097, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -623,6 +635,49 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/materialized agent directories must exactly match/i);
     expect(result.stderr).toContain('watcher');
+  });
+
+  it('rejects a built-in charter that has been regenerated or edited (byte mismatch vs. canonical resource)', () => {
+    const fixture = createFixture();
+    write(
+      fixture.root,
+      '.squad/agents/ralph/charter.md',
+      `${builtinCanonicalContent('ralph').toString('utf8')}\n<!-- reinterpreted by the Cast agent -->\n`,
+    );
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(
+      /builtin: \.squad\/agents\/ralph\/charter\.md is not byte-identical to the canonical resource \.github\/workflows\/shared\/builtins\/ralph-charter\.md/i,
+    );
+  });
+
+  it('rejects a built-in charter with a trivial byte-level divergence (trailing newline) from the canonical resource', () => {
+    const fixture = createFixture();
+    write(fixture.root, '.squad/agents/scribe/charter.md', `${builtinCanonicalContent('scribe').toString('utf8')}\n`);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/builtin: \.squad\/agents\/scribe\/charter\.md is not byte-identical/i);
+  });
+
+  it('rejects a Cast tree whose canonical built-in resource is missing from .github/workflows/shared/builtins', () => {
+    const fixture = createFixture();
+    rmSync(join(fixture.root, builtinCanonicalRelativePath, 'fact-checker-charter.md'), { force: true });
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(
+      /builtin: canonical resource \.github\/workflows\/shared\/builtins\/fact-checker-charter\.md for "fact-checker" is missing or unreadable/i,
+    );
+  });
+
+  it('accepts a built-in charter that is byte-identical to the canonical resource for all four built-ins', () => {
+    const fixture = createFixture();
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(0);
+    for (const builtin of builtins) {
+      expect(
+        readFileSync(join(fixture.root, '.squad', 'agents', builtin.id, 'charter.md')),
+      ).toEqual(builtinCanonicalContent(builtin.id));
+    }
   });
 
   it('rejects a built-in registered as an active specialist in the casting registry', () => {
