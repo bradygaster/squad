@@ -238,7 +238,8 @@ describe('createTeam', () => {
     it('creates agent charter and history files for each member', async () => {
       const result = await createTeam(tempDir, minimalProposal);
       for (const name of result.membersCreated) {
-        const base = join(tempDir, '.squad', 'agents', name.toLowerCase());
+        const dirName = name === 'Fact Checker' ? 'fact-checker' : name.toLowerCase();
+        const base = join(tempDir, '.squad', 'agents', dirName);
         expect(existsSync(join(base, 'charter.md'))).toBe(true);
         expect(existsSync(join(base, 'history.md'))).toBe(true);
       }

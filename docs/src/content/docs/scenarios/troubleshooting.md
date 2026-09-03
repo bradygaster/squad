@@ -8,40 +8,25 @@ Common issues and fixes for Squad installation and usage.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `squad: command not found` | Squad CLI not installed or not in PATH | Run `npm install -g @bradygaster/squad-cli` or use `npx @bradygaster/squad-cli` |
-| `No .squad/ directory found` | Not in a git repo or Squad not initialized | Run `git init` then `npx squad init` |
+| `squad: command not found` | Squad CLI not installed or not in PATH | Install it using a method in the [Installation guide](../get-started/installation.md) |
+| `No .squad/ directory found` | Not in a git repo or Squad not initialized | Run `git init` then `squad init` |
 | `Cannot find agent "{name}"` | Agent doesn't exist in `.squad/agents/` | Check `.squad/team.md` for roster, or re-run casting |
 | `gh: command not found` | GitHub CLI not installed | Install from [cli.github.com](https://cli.github.com/) then `gh auth login` |
-| `Node.js version error` | Node.js version below v20 | Upgrade Node.js to v20+ (see below) |
+| `Node.js version error` | npm install uses Node.js below v22.5 | Upgrade Node.js to v22.5+ or use a standalone install (see below) |
 
 ---
 
-## `npx github:bradygaster/squad` appears to hang
+## An old GitHub-based install command appears to hang
 
-**Problem:** Running the install command shows a frozen npm spinner. Nothing happens.
+**Problem:** An installation command copied from an older guide shows a frozen
+npm spinner.
 
-**Cause:** npm resolves `github:` package specifiers via `git+ssh://git@github.com/...`. If no SSH agent is running (or your key isn't loaded), git prompts for your passphrase on the TTY — but npm's progress spinner overwrites the prompt, making it invisible. This is an npm TTY handling issue, not a Squad bug.
+**Cause:** The legacy GitHub package path was removed. It depended on npm's git
+transport and could hide SSH prompts behind the progress spinner.
 
-**Fix (choose one):**
-
-1. **Start your SSH agent first** (recommended):
-   ```bash
-   eval "$(ssh-agent -s)"
-   ssh-add
-   ```
-   Then re-run `npx github:bradygaster/squad`.
-
-2. **Disable npm's progress spinner** to reveal the prompt:
-   ```bash
-   npx --progress=false github:bradygaster/squad
-   ```
-
-3. **Use HTTPS instead of SSH** by configuring git:
-   ```bash
-   git config --global url."https://github.com/".insteadOf git@github.com:
-   ```
-
-**Reference:** [#30](https://github.com/bradygaster/squad/issues/30)
+**Fix:** Install Squad through npm, Homebrew, WinGet, the verified install
+script, or a release archive, then run `squad init`. See the
+[Installation guide](../get-started/installation.md).
 
 ---
 
@@ -94,9 +79,12 @@ See [Cross-organization authentication](./cross-org-auth) for detailed setup ins
 
 ## Node.js version too old
 
-**Problem:** `npx github:bradygaster/squad` fails with an engine compatibility error, or Squad behaves unexpectedly.
+**Problem:** An npm install fails with an engine compatibility error, or Squad
+behaves unexpectedly.
 
-**Cause:** Squad requires Node.js 20.0.0 or later (LTS), enforced via `engines` in `package.json`.
+**Cause:** The Squad npm package requires Node.js 22.5.0 or later, enforced via
+`engines` in `package.json`. Standalone installs vendor their own runtime and
+are not affected.
 
 **Fix:**
 
@@ -104,7 +92,7 @@ See [Cross-organization authentication](./cross-org-auth) for detailed setup ins
 node --version
 ```
 
-If below v20, upgrade to the latest LTS:
+If below v22.5, upgrade to the latest LTS:
 - **nvm (macOS/Linux):** `nvm install --lts && nvm use --lts`
 - **nvm-windows:** `nvm install lts && nvm use lts`
 - **Direct download:** [nodejs.org](https://nodejs.org/)
@@ -123,7 +111,7 @@ If below v20, upgrade to the latest LTS:
    ```bash
    ls .github/agents/squad.agent.md
    ```
-   If missing, re-run `npx github:bradygaster/squad`.
+   If missing, re-run `squad init`.
 
 2. Restart your Copilot session — close and reopen the terminal or editor.
 
@@ -131,17 +119,18 @@ If below v20, upgrade to the latest LTS:
 
 ## Upgrade doesn't change anything
 
-**Problem:** Running `npx github:bradygaster/squad upgrade` completes but nothing changes.
+**Problem:** Running `squad upgrade` completes but nothing changes.
 
-**Cause:** You may already be on the latest version, or npm cached an old version.
+**Cause:** You may already have the latest Squad-owned templates for the
+installed CLI version.
 
 **Fix:**
 
 1. Check current version in `.github/agents/squad.agent.md` (frontmatter `version:` field).
 
-2. Clear npm cache and retry:
+2. Update the CLI through the same channel used to install it, then retry:
    ```bash
-   npx --yes github:bradygaster/squad upgrade
+   squad upgrade
    ```
 
 ---

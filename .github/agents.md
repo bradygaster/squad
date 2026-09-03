@@ -97,7 +97,7 @@ All commands are issued as comments on a GitHub issue. Prefix: `/squad`.
 
 | Command | Purpose | Preconditions | Repo artifacts | User sees |
 |---------|---------|---------------|----------------|-----------|
-| `/squad research` | Deep-dive analysis of the issue and repository | Issue exists with intent | Comment with `squad_artifact: research` data | Structured research findings |
+| `/squad research` | Deep-dive analysis of the issue and repository; consults current online technical documentation when the repo's gh-aw network policy permits | Issue exists with intent | Comment with `squad_artifact: research` data | Structured research findings |
 | `/squad triage` | Classify research findings into work, decisions, and exclusions | Research artifact exists | Comment with `squad_artifact: triage` data | Categorized findings table |
 | `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Triage artifact exists | Updated `triage` artifact | Revised triage |
 | `/squad plan` | Generate combined program + implementation plan (fast path) | Triage artifact exists | Comment with `squad_artifact: plan` data | Combined plan |

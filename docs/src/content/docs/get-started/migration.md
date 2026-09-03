@@ -37,16 +37,15 @@ Never used Squad before? Start here.
 
 ### Prerequisites
 
-- Node.js 20 or later
-- npm 9 or later
+- Git
 - A GitHub account with [GitHub Copilot](https://github.com/features/copilot) enabled
 - `gh` CLI authenticated (`gh auth status` should show you logged in)
+- Node.js 22.5 or later only when installing with npm or npx
 
 ### Install
 
-```bash
-npm install -g @bradygaster/squad-cli
-```
+Choose npm, Homebrew, WinGet, the verified install script, or a direct release
+archive in the [Installation guide](installation.md).
 
 ### Initialize a Project
 
@@ -301,7 +300,7 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 ```yaml
 - uses: actions/setup-node@v4
   with:
-    node-version: '20'
+    node-version: '22'
 
 - name: Install Squad
   run: npm install -g @bradygaster/squad-cli@latest
@@ -316,7 +315,8 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 
 - Set `GITHUB_TOKEN` as an environment variable. Squad requires it for GitHub Copilot operations.
 - Pin to a specific version (e.g., `@0.8.25`) in CI to avoid surprise upgrades, or use `@latest` to stay current.
-- Node.js 20+ is required. Update your workflow's `setup-node` action if needed.
+- Node.js 22.5+ is required for npm-based CI. The standalone action and bundles
+  vendor Node.js.
 
 ---
 
@@ -458,27 +458,27 @@ Common causes:
 
 - Missing `.squad/` directory — run `squad init`.
 - Missing `GITHUB_TOKEN` — see [GITHUB_TOKEN issues](#github_token-issues) above.
-- Node.js too old — upgrade to Node.js 20+.
+- Node.js too old for an npm install — upgrade to Node.js 22.5+.
 - Corrupted `.squad/` files — back up, remove, and reinitialize.
 
 ### Node.js version too old
 
-Squad requires Node.js 20 or later. Check your version:
+The Squad npm package requires Node.js 22.5 or later. Check your version:
 
 ```bash
 node --version
 ```
 
-If below 20, upgrade via [nodejs.org](https://nodejs.org/) or your preferred version manager:
+If below 22.5, upgrade via [nodejs.org](https://nodejs.org/) or your preferred version manager:
 
 ```bash
 # nvm
-nvm install 20
-nvm use 20
+nvm install 22
+nvm use 22
 
 # fnm
-fnm install 20
-fnm use 20
+fnm install 22
+fnm use 22
 ```
 
 ---

@@ -11,15 +11,16 @@ CI runners behind a corporate firewall, locked-down build agents, and air-gapped
 mirrors. It is also simply a faster install for anyone who does not otherwise
 have a Node toolchain.
 
-`npm install -g @bradygaster/squad-cli` remains fully supported and is still the
-recommended path for day-to-day development.
+`npm install -g @bradygaster/squad-cli` remains fully supported. All install
+methods provide the same Squad CLI; choose based on your platform and whether
+your environment can reach the npm registry.
 
 ## Install
 
 ### macOS and Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh | sh
 ```
 
 The installer picks the right bundle for your platform, verifies it against the
@@ -34,7 +35,7 @@ release `SHA256SUMS.txt`, unpacks it into `$PREFIX/lib/squad`, and symlinks
 
 ```sh
 # pin a version and install somewhere specific
-curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh \
+curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh \
   | VERSION="v0.13.1" PREFIX="$HOME/tools" sh
 ```
 
@@ -55,7 +56,8 @@ add the folder to your `PATH`.
 Install with Homebrew:
 
 ```sh
-brew install --cask bradygaster/squad/squad
+brew tap bradygaster/squad
+brew install --cask squad
 ```
 
 Or use the install script above, which works on macOS too.
@@ -120,8 +122,8 @@ brew install --cask copilot-cli                   # Homebrew
 ## Using it in CI
 
 The bundles are what make an npm-free CI job possible — including the
-[gh-aw](/features/gh-aw/) activation job, which previously required `npx` and so
-could not run on a runner without npm registry access.
+[gh-aw](/features/gh-aw/) activation job, which previously required registry
+access and could not run on an isolated runner.
 
 The release workflow still uses npm at bundle-build time because there is no
 practical npm-free way to assemble the dependency tree. That workflow uses the
@@ -146,7 +148,7 @@ Point `repository:` at an internal mirror if your runners cannot reach
   env:
     SQUAD_VERSION: v0.13.1
   run: |
-    curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/install.sh \
+    curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh \
       | VERSION="${SQUAD_VERSION}" PREFIX="${HOME}/.local" sh
     echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
@@ -167,21 +169,13 @@ docker build -t squad:local .
 docker run --rm -e GITHUB_TOKEN=... -v "$PWD/.squad:/app/.squad" squad:local
 ```
 
-The image sets `SQUAD_STANDALONE_HOME=/opt/squad`, which is what makes
-`squad init` inside the container write an npx-free MCP spec (below).
+The image sets `SQUAD_STANDALONE_HOME=/opt/squad`, which makes `squad init`
+inside the container write a registry-independent MCP spec.
 
 ## The squad_state MCP server
 
 `squad init` writes a `squad_state` MCP entry into `.mcp.json` so Copilot can
-reach Squad's state tools. Normally that entry launches through `npx`:
-
-```json
-{ "command": "npx", "args": ["-y", "@bradygaster/squad-cli@0.11.0", "state-mcp"] }
-```
-
-That would defeat the purpose here — the CLI would install fine from a bundle,
-then the MCP server would fail to start on the first run because npm is
-unreachable. When Squad is running from a bundle it instead writes:
+reach Squad's state tools. A bundle install writes the local executable directly:
 
 ```json
 { "command": "/opt/squad/squad", "args": ["state-mcp"] }
@@ -221,10 +215,15 @@ They are generated from the release's own `SHA256SUMS.txt`:
 node scripts/generate-packaging.mjs --version v0.11.0
 ```
 
-That writes `dist-packaging/homebrew/squad.rb` and the three winget manifests
-(version, installer, locale). The release workflow runs this automatically and
-attaches the result as a `packaging-manifests` artifact; a maintainer submits
-them to the tap and to `winget-pkgs`.
+That writes a channel-specific Homebrew cask (`squad.rb`, `squad-preview.rb`,
+or `squad-insider.rb`) and three channel-specific winget manifests (version,
+installer, locale). The release workflow runs this automatically, updates the
+Homebrew tap, and opens a pull request against `winget-pkgs`.
+The `packaging-manifests` artifact is retained for audit and manual recovery.
+Homebrew updates are available as soon as the release workflow finishes;
+WinGet updates become available after the community repository accepts the
+generated pull request. Stable, preview, and insider releases each publish
+standalone archives and use isolated Homebrew casks and WinGet identifiers.
 
 ## Known limitations
 

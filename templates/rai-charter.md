@@ -14,7 +14,7 @@
 
 - `.squad/rai/policy.md` — Canonical RAI policy (terms, anti-patterns, taxonomy)
 - `.squad/rai/audit-trail.md` — Evidence log (append-only, redacted)
-- `.squad/agents/Rai/history.md` — Learnings across sessions
+- `.squad/agents/rai/history.md` — Learnings across sessions
 
 ## Traffic Light Verdicts
 
