@@ -38,8 +38,10 @@ export function stampVersion(filePath: string, version: string): void {
   content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${version} -->`);
   // Replace version in the Identity section's Version line
   content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m, `- **Version:** ${version}`);
-  // Replace {version} placeholder in the greeting instruction so it's unambiguous
-  content = content.replace(/`Squad v\{version\}`/g, `\`Squad v${version}\``);
+  // Replace the greeting instruction's version literal so it's unambiguous.
+  // Matches both the unresolved `{version}` placeholder and an already-resolved
+  // semver (e.g. from a prior stamp) so re-running this idempotently refreshes it.
+  content = content.replace(/`Squad v[^`]*`/g, `\`Squad v${version}\``);
   storage.writeSync(filePath, content);
 }
 
