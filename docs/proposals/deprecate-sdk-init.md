@@ -10,6 +10,7 @@
 Deprecate `squad init --sdk` immediately and remove it in v2. Keep the flag functional during the transition, but print a warning and stop recommending it for new teams.
 
 Existing `squad.config.ts` projects retain `squad build` compatibility during the transition.
+This decision deprecates the file-authoring mode, not the programmatic `@bradygaster/squad-sdk` APIs.
 
 ## Rationale
 
