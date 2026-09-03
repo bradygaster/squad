@@ -136,8 +136,8 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
-    source: 'Rai-charter.md',
-    destination: 'templates/Rai-charter.md',
+    source: 'rai-charter.md',
+    destination: 'templates/rai-charter.md',
     overwriteOnUpgrade: true,
     description: 'Rai RAI reviewer charter template',
   },
@@ -333,6 +333,17 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     destination: 'templates/session-init-reference.md',
     overwriteOnUpgrade: true,
     description: 'Session init reference — coordinator procedures run at session start',
+  },
+  // Templates directory README (squad-owned) — explains which files are runtime inputs
+  // vs bootstrap templates so contributors and users don't accidentally delete load-bearing files.
+  // Source is `README.md` (not a renamed variant) because `squad init` seeds `.squad/templates/`
+  // with a verbatim recursive copy of the SDK templates directory — the file only reaches new
+  // projects if its canonical name already matches the destination name.
+  {
+    source: 'README.md',
+    destination: 'templates/README.md',
+    overwriteOnUpgrade: true,
+    description: 'Templates directory guide — runtime inputs vs bootstrap templates',
   },
   
   // Workflows (squad-owned, overwrite on upgrade)

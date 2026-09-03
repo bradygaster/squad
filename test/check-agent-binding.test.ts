@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  extractIssueNumber,
   parseRoster,
   parseStructuredData,
   validateActivation,
@@ -287,7 +288,7 @@ Structured data:
     const workflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8').replace(/\r\n/g, '\n');
     expect(workflow).toContain('Activation bindings:');
     expect(workflow).toContain('"task":"{plan # cell}"');
-    expect(workflow).toContain('"epic_issue":{created epic issue number}');
+    expect(workflow).toContain('"epic_issue":"{epic issue reference}"');
     expect(workflow).toContain('"epic_agents":["{all distinct lowercased Agent cells');
   });
 
@@ -311,5 +312,37 @@ Structured data:
       1: ['squad', 'squad:kint'],
       2: ['squad', 'squad:kint'],
     }), 9)).toThrow('does not match comment issue');
+  });
+});
+
+describe('extractIssueNumber() label-prefetch reference resolution (#1980)', () => {
+  it('passes a bare integer through unchanged', () => {
+    expect(extractIssueNumber(42)).toBe(42);
+  });
+
+  it('resolves a quoted "#42" reference to 42', () => {
+    expect(extractIssueNumber('#42')).toBe(42);
+  });
+
+  it('returns undefined for an unresolved temporary ID like "#aw_task1"', () => {
+    expect(extractIssueNumber('#aw_task1')).toBeUndefined();
+  });
+
+  it('returns undefined for non-numeric garbage', () => {
+    expect(extractIssueNumber('not-a-number')).toBeUndefined();
+  });
+
+  it("extracts only the resolvable issue numbers from a mixed-reference binding list, matching main()'s label-prefetch usage", () => {
+    // Mirrors main()'s `bindings.flatMap(binding => [extractIssueNumber(binding?.issue), extractIssueNumber(binding?.epic_issue)]).filter(Number.isInteger)`
+    // with a quoted resolved reference, a bare integer, and an unresolved temporary ID mixed
+    // together, since that is exactly the shape a real activation artifact produces.
+    const bindings = [
+      { issue: '#17', epic_issue: 6 },
+      { issue: 18, epic_issue: '#aw_task2' },
+    ];
+    const issues = bindings
+      .flatMap(binding => [extractIssueNumber(binding?.issue), extractIssueNumber(binding?.epic_issue)])
+      .filter(Number.isInteger);
+    expect(issues).toEqual([17, 6, 18]);
   });
 });

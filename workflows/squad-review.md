@@ -36,6 +36,7 @@ permissions:
 concurrency:
   group: "squad-review-${{ github.event.inputs.issue_number || github.event.pull_request.number || github.run_id }}"
   cancel-in-progress: true
+  job-discriminator: ${{ github.run_id }}
 network:
   allowed:
     - defaults

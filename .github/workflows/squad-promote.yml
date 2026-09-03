@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run — show what would happen without pushing'
+        description: 'Dry run - validate the sanitized merge without pushing main'
         required: false
         default: 'false'
         type: choice
@@ -15,11 +15,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
-  dev-to-preview:
-    name: Promote dev → preview
+  dev-to-main:
+    name: Promote sanitized dev to main
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
@@ -27,98 +28,124 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Fetch all branches
-        run: git fetch --all
-
-      - name: Show current state (dry run info)
+      - name: Prepare sanitized stable promotion
+        id: prepare
         run: |
-          echo "=== dev HEAD ===" && git log origin/dev -1 --oneline
-          echo "=== preview HEAD ===" && git log origin/preview -1 --oneline
-          echo "=== Files that would be stripped ==="
-          git diff origin/preview..origin/dev --name-only | grep -E "^(\.(ai-team|squad|ai-team-templates)|team-docs/|docs/proposals/)" || echo "(none)"
+          set -euo pipefail
 
-      - name: Merge dev → preview (strip forbidden paths)
-        if: ${{ inputs.dry_run == 'false' }}
-        run: |
-          git checkout preview
+          git fetch origin \
+            '+refs/heads/dev:refs/remotes/origin/dev' \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            --tags
+          echo "=== dev HEAD ==="
+          git log origin/dev -1 --oneline
+          echo "=== main HEAD ==="
+          git log origin/main -1 --oneline
+
+          if git merge-base --is-ancestor origin/dev origin/main; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "main already contains dev; nothing to promote."
+            exit 0
+          fi
+
+          git checkout -B main origin/main
           git merge origin/dev --no-commit --no-ff -X theirs || true
 
-          # Strip forbidden paths from merge commit
+          unmerged="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$unmerged" ]; then
+            echo "::error::The dev-to-main merge left unresolved conflicts:"
+            printf '%s\n' "$unmerged"
+            exit 1
+          fi
+
           git rm -rf --cached --ignore-unmatch \
             .ai-team/ \
             .squad/ \
             .ai-team-templates/ \
             team-docs/ \
-            "docs/proposals/" || true
+            docs/proposals/
 
-          # Commit if there are staged changes
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: promote dev → preview (v$(node -e "console.log(require('./package.json').version)"))"
-            git push origin preview
-            echo "✅ Pushed preview branch"
-          else
-            echo "ℹ️ Nothing to commit — preview is already up to date"
-          fi
-
-      - name: Dry run complete
-        if: ${{ inputs.dry_run == 'true' }}
-        run: echo "🔍 Dry run complete — no changes pushed."
-
-  preview-to-main:
-    name: Promote preview → main (release)
-    needs: dev-to-preview
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Fetch all branches
-        run: git fetch --all
-
-      - name: Show current state
-        run: |
-          echo "=== preview HEAD ===" && git log origin/preview -1 --oneline
-          echo "=== main HEAD ===" && git log origin/main -1 --oneline
-          echo "=== Version ===" && node -e "console.log('v' + require('./package.json').version)"
-
-      - name: Validate preview is release-ready
-        run: |
-          git checkout preview
-          VERSION=$(node -e "console.log(require('./package.json').version)")
-          if ! grep -q "## \[$VERSION\]" CHANGELOG.md 2>/dev/null; then
-            echo "::error::Version $VERSION not found in CHANGELOG.md — update before releasing"
+          forbidden="$(git ls-files | grep -E '^(\.(ai-team|squad|ai-team-templates)/|team-docs/|docs/proposals/)' || true)"
+          if [ -n "$forbidden" ]; then
+            echo "::error::Forbidden internal files remain in the release tree:"
+            printf '%s\n' "$forbidden"
             exit 1
           fi
-          echo "✅ Version $VERSION has CHANGELOG entry"
 
-          # Verify no forbidden files on preview
-          FORBIDDEN=$(git ls-files | grep -E "^(\.(ai-team|squad|ai-team-templates)/|team-docs/|docs/proposals/)" || true)
-          if [ -n "$FORBIDDEN" ]; then
-            echo "::error::Forbidden files found on preview: $FORBIDDEN"
+          version="$(node -p 'require("./package.json").version')"
+          stable_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$version" =~ $stable_re ]]; then
+            echo "::error::Stable promotion requires a MAJOR.MINOR.PATCH version, got '$version'."
             exit 1
           fi
-          echo "✅ No forbidden files on preview"
 
-      - name: Merge preview → main
-        if: ${{ inputs.dry_run == 'false' }}
+          for manifest in packages/squad-sdk/package.json packages/squad-cli/package.json; do
+            package_version="$(node -p "require('./${manifest}').version")"
+            if [ "$package_version" != "$version" ]; then
+              echo "::error::$manifest version '$package_version' does not match root version '$version'."
+              exit 1
+            fi
+          done
+          sdk_dependency="$(node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']")"
+          lock_dependency="$(node -p "require('./package-lock.json').packages['packages/squad-cli'].dependencies['@bradygaster/squad-sdk']")"
+          if [[ "$sdk_dependency" == *-* ]] || [[ "$lock_dependency" == *-* ]]; then
+            echo "::error::Stable promotion cannot retain a prerelease SDK dependency floor."
+            exit 1
+          fi
+
+          if ! grep -Fq "## [$version]" CHANGELOG.md; then
+            echo "::error::Version $version is missing from CHANGELOG.md."
+            exit 1
+          fi
+
+          git diff --cached --check
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Prepared sanitized stable release v$version."
+          git diff --cached --stat
+
+      - name: Install dependencies
+        if: steps.prepare.outputs.changed == 'true'
+        run: npm ci
+
+      - name: Build release tree
+        if: steps.prepare.outputs.changed == 'true'
+        # Internal .squad sources have already been removed from the release
+        # index, so avoid the root prebuild template synchronization.
+        run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
+
+      - name: Run release tests
+        if: steps.prepare.outputs.changed == 'true'
+        run: node --test test/*.test.cjs
+
+      - name: Push main and start stable release
+        if: steps.prepare.outputs.changed == 'true' && inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.prepare.outputs.version }}
         run: |
-          git checkout main
-          git merge origin/preview --no-ff -m "chore: promote preview → main (v$(node -e "console.log(require('./package.json').version)"))"
-          git push origin main
-          echo "✅ Pushed main — squad-release.yml will tag and publish the release"
+          set -euo pipefail
+          git commit -m "chore: promote dev to main (v${VERSION})"
+          git push origin HEAD:main
+          # Pushes authenticated with GITHUB_TOKEN do not emit another workflow
+          # run, so explicitly dispatch the stable release at the pushed ref.
+          gh workflow run squad-release.yml \
+            --ref main \
+            -f confirm_tag="v${VERSION}"
+          echo "Pushed main and dispatched stable release v${VERSION}."
 
-      - name: Dry run complete
-        if: ${{ inputs.dry_run == 'true' }}
-        run: echo "🔍 Dry run complete — no changes pushed."
+      - name: Report dry run
+        if: steps.prepare.outputs.changed == 'true' && inputs.dry_run == 'true'
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: echo "Dry run passed for sanitized stable release v${VERSION}; main was not changed."

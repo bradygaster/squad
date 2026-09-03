@@ -2,7 +2,7 @@ name: Squad CI
 
 on:
   pull_request:
-    branches: [dev, preview, main]
+    branches: [dev, main]
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [dev]
@@ -339,6 +339,29 @@ jobs:
               console.error('Fix: ensure workspace versions match, then npm install at repo root.');
               process.exit(1);
             }
+            const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const sdk = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
+            const cli = JSON.parse(fs.readFileSync('packages/squad-cli/package.json', 'utf8'));
+            const versions = new Set([root.version, sdk.version, cli.version]);
+            if (versions.size !== 1) {
+              console.error('::error::Root, SDK, and CLI versions must match.');
+              process.exit(1);
+            }
+            const dependency = cli.dependencies?.['@bradygaster/squad-sdk'];
+            const lockDependency =
+              lock.packages?.['packages/squad-cli']?.dependencies?.['@bradygaster/squad-sdk'];
+            if (sdk.version.includes('-')) {
+              const expected = '>=' + sdk.version;
+              if (dependency !== expected || lockDependency !== expected) {
+                console.error(
+                  '::error::Preview versions require the CLI SDK dependency and lockfile entry to be ' + expected,
+                );
+                process.exit(1);
+              }
+            } else if (dependency?.includes('-') || lockDependency?.includes('-')) {
+              console.error('::error::Stable versions cannot retain a prerelease SDK dependency floor.');
+              process.exit(1);
+            }
             console.log('✅ All workspace packages resolve to local file: links');
           "
           echo "✅ All workspace packages resolve to local links" >> "$GITHUB_STEP_SUMMARY"
@@ -390,7 +413,17 @@ jobs:
         run: |
           VIOLATIONS=0
           for wf in .github/workflows/*.yml; do
-            BARE=$(grep -n 'npm.*publish' "$wf" | grep -v '#' | grep -v '\-w ' | grep -v '\-\-workspace' | grep -v 'echo ' | grep -v 'grep ' | grep -v 'name:' || true)
+            BARE=$(awk '
+              /^[[:space:]]*#/ { next }
+              {
+                command = $0
+                sub(/^[[:space:]]*-[[:space:]]*/, "", command)
+                sub(/^run:[[:space:]]*/, "", command)
+                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/) {
+                  print NR ":" $0
+                }
+              }
+            ' "$wf")
             if [ -n "$BARE" ]; then
               echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
               echo "$BARE"

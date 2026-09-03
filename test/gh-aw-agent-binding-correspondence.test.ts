@@ -155,10 +155,24 @@ describe('gh-aw: agent-binding correspondence (#1859, #1860)', () => {
   });
 
   it('requires the summary to report labels applied, not intended', () => {
+    // #1860 required the summary to record what happened rather than restate the plan,
+    // and pinned the sentence that made `create-issue` the evidence. #1963 found that
+    // evidence to be unsound: `create-issue`'s `labels:` field silently drops names the
+    // repository lacks (#1959), so a successful call proves nothing about labels. The
+    // condition is now an accepted `add_labels` call for that same issue — strictly
+    // stronger, and #1860's own defect (squad:kint attributed to an epic that never
+    // received it) is still caught, now for the right reason.
     expect(
-      /only after that issue's `create-issue` call returned successfully carrying it/i.test(prose),
+      /only after an `add_labels` call carrying that label\s+was accepted for that same issue/i.test(prose),
       `#1860: the summary attributed squad:kint to epic #6, which never received it. ` +
         `The summary must be a record of what happened, not a restatement of the plan.`,
+    ).toBe(true);
+
+    expect(
+      /A successful `create-issue` is \*\*not\*\* evidence/i.test(prose),
+      `#1963: create-issue must be ruled out explicitly. Leaving it unaddressed lets a ` +
+        `run cite issue creation as proof a label landed, which is exactly the ` +
+        `over-claim #1860 reported.`,
     ).toBe(true);
 
     expect(

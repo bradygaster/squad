@@ -58,9 +58,10 @@ describe('TEMPLATE_MANIFEST routing (iter-5: no doc dumping into .squad/ root)',
       'skill.md': 'templates/skill.md',
       'issue-lifecycle.md': 'templates/issue-lifecycle.md',
       'scribe-charter.md': 'templates/scribe-charter.md',
-      'Rai-charter.md': 'templates/Rai-charter.md',
+      'rai-charter.md': 'templates/rai-charter.md',
       'fact-checker-charter.md': 'templates/fact-checker-charter.md',
       'rai-policy.md': 'templates/rai-policy.md',
+      'README.md': 'templates/README.md',
     };
 
     for (const [source, dest] of Object.entries(expected)) {

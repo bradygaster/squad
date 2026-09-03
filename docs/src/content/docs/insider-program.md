@@ -17,15 +17,20 @@ The Insider Program gives you continuous access to development builds of Squad. 
 
 ## How It Works
 
-Insider builds are published from the `dev` branch to the npm `insider` dist-tag via a manual workflow dispatch. There is no separate `insider` branch — `dev` is the single source of truth for all development.
+Insider builds are published from the `dev` branch through a manual workflow
+dispatch. Each run creates an immutable GitHub prerelease, publishes npm
+`insider`, updates the `squad-insider` Homebrew cask, and opens or updates the
+`bradygaster.Squad.Insider` WinGet package. There is no separate `insider`
+branch — `dev` is the single source of truth for all development.
 
 ```
-dev (development)  → npm @insider tag (on demand)
-  ↓
-preview (staging)  → release candidate validation
-  ↓
-main (stable)      → npm @latest tag
+dev (development)       → insider prerelease + npm/Homebrew/WinGet (on demand)
+dev (release candidate) → preview prerelease + npm/Homebrew/WinGet (on demand)
+main (stable)           → stable release + npm/Homebrew/WinGet (automatic)
 ```
+
+`preview` is a release channel, not a branch. Stable promotion sanitizes and
+merges `dev` directly into `main`.
 
 ---
 
@@ -33,8 +38,17 @@ main (stable)      → npm @latest tag
 
 ### Install Insider Build
 
+Choose one method:
+
 ```bash
 npm install -g @bradygaster/squad-cli@insider
+
+brew tap bradygaster/squad
+brew install --cask squad-insider
+```
+
+```powershell
+winget install --id bradygaster.Squad.Insider --exact
 ```
 
 ### Upgrade Existing Repo to Insider
@@ -43,6 +57,9 @@ npm install -g @bradygaster/squad-cli@insider
 npm install -g @bradygaster/squad-cli@insider
 squad upgrade
 ```
+
+For Homebrew or WinGet, upgrade the `squad-insider` cask or
+`bradygaster.Squad.Insider` package, then run `squad upgrade`.
 
 This updates Squad-owned files (`squad.agent.md`, workflows, templates) to the latest insider build. Your `.squad/` team state (agents, decisions, casting, history) is always preserved.
 
@@ -97,7 +114,11 @@ Want to go back to stable releases?
 npm install -g @bradygaster/squad-cli@latest
 ```
 
-This installs the latest stable version. Your `.squad/` state is safe — it'll work with any version.
+Homebrew users switch from `squad-insider` to `squad`; WinGet users switch from
+`bradygaster.Squad.Insider` to `bradygaster.Squad`. Uninstall the insider
+package first because each channel provides the same `squad` command.
+
+Your `.squad/` state is safe — it works with any version.
 
 ---
 
@@ -113,7 +134,8 @@ This installs the latest stable version. Your `.squad/` state is safe — it'll 
 
 ### Q: How often do insider builds update?
 
-**A:** Whenever maintainers trigger the insider publish workflow from `dev`. Run `npm install -g @bradygaster/squad-cli@insider` again to fetch the latest.
+**A:** Whenever maintainers trigger the insider publish workflow from `dev`.
+Upgrade through npm, Homebrew, or WinGet to fetch the latest snapshot.
 
 ### Q: Will my team state be preserved?
 
@@ -127,6 +149,9 @@ This installs the latest stable version. Your `.squad/` state is safe — it'll 
 npm install -g @bradygaster/squad-cli@latest   # Back to stable
 squad upgrade                                   # Apply stable version
 ```
+
+Homebrew and WinGet users should uninstall the insider package, install the
+stable package, and then run `squad upgrade`.
 
 Then [report the issue](https://github.com/bradygaster/squad/issues).
 
