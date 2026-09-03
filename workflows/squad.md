@@ -54,7 +54,11 @@ tools:
   github:
     mode: gh-proxy
     toolsets: [default]
-steps:
+# pre-agent-steps (not steps:): runs after gh-aw's native base-branch/ambient
+# restores that can reintroduce a stale committed .squad/ snapshot late in the
+# job, so this stays the last writer of the four built-in charters before the
+# agent turn begins.
+pre-agent-steps:
   - name: Materialize canonical built-in support agents
     shell: bash
     run: |

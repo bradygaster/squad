@@ -1509,9 +1509,62 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(normalizedRunnerStep).toContain('validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
-    expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
-      compiled.indexOf('name: Restore inline skills from activation artifact'),
+    // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):
+    // it must run AFTER the base-branch/ambient restores that can reintroduce a
+    // stale committed .squad snapshot, and still before the agent turn begins.
+    expect(compiled.indexOf('name: Restore inline skills from activation artifact')).toBeLessThan(
+      compiled.indexOf('name: Prepare deterministic Cast validator runner'),
     );
+    expect(compiled.indexOf('name: Prepare deterministic Cast validator runner')).toBeLessThan(
+      compiled.indexOf('name: Execute GitHub Copilot CLI'),
+    );
+  }, 20000);
+
+  it('materializes built-in charters after init and every late restore, and before the Cast agent turn', () => {
+    const compiled = lockText();
+
+    // Job-level guarantee: the agent job cannot start until the activation
+    // job (which runs `squad init --preset default` when no cast exists yet)
+    // has completed.
+    expect(compiled).toMatch(/\n {2}agent:\n {4}needs: activation\n/);
+    const activationJobIndex = compiled.indexOf('\n  activation:\n');
+    const agentJobIndex = compiled.indexOf('\n  agent:\n');
+    expect(activationJobIndex).toBeGreaterThan(-1);
+    expect(agentJobIndex).toBeGreaterThan(activationJobIndex);
+
+    const initIndex = compiled.indexOf('name: Initialize Squad team');
+    const materializeIndex = compiled.indexOf('name: Materialize canonical built-in support agents');
+    expect(initIndex).toBeGreaterThan(-1);
+    expect(materializeIndex).toBeGreaterThan(initIndex);
+
+    // Materialization is a pre-agent-step: it must run strictly after every
+    // restore step that can reintroduce a stale committed `.squad/` snapshot
+    // late in the job (base-branch restore, both ambient-folder restores,
+    // inline sub-agent/skill restores), and strictly before the Cast agent
+    // turn (Copilot CLI execution) starts.
+    for (const priorRestore of [
+      'name: Restore Squad state from activation artifact',
+      'name: Restore agent config folders from base branch',
+      'name: Restore inline sub-agents from activation artifact',
+      'name: Restore inline skills from activation artifact',
+    ]) {
+      const restoreIndex = compiled.indexOf(priorRestore);
+      expect(restoreIndex, `${priorRestore} must be present`).toBeGreaterThan(-1);
+      expect(materializeIndex, `${priorRestore} must precede materialization`).toBeGreaterThan(restoreIndex);
+    }
+    // Both occurrences of the unconditional ambient-folder restore (gh-aw emits
+    // it once after the activation-artifact download and again after PR
+    // checkout) must precede materialization too.
+    const ambientRestoreIndices = [...compiled.matchAll(/name: Restore ambient folders from activation artifact/g)]
+      .map((match) => match.index ?? -1);
+    expect(ambientRestoreIndices.length).toBeGreaterThanOrEqual(2);
+    for (const restoreIndex of ambientRestoreIndices) {
+      expect(materializeIndex).toBeGreaterThan(restoreIndex);
+    }
+
+    const agentExecutionIndex = compiled.indexOf('name: Execute GitHub Copilot CLI');
+    expect(agentExecutionIndex).toBeGreaterThan(-1);
+    expect(agentExecutionIndex).toBeGreaterThan(materializeIndex);
   }, 20000);
 
   it('keeps the v0.87.10 completion hook neutral when a custom safe job fails', () => {
