@@ -54,7 +54,11 @@ tools:
   github:
     mode: gh-proxy
     toolsets: [default]
-steps:
+# pre-agent-steps (not steps:): runs after gh-aw's native base-branch/ambient
+# restores that can reintroduce a stale committed .squad/ snapshot late in the
+# job, so this stays the last writer of the four built-in charters before the
+# agent turn begins.
+pre-agent-steps:
   - name: Materialize canonical built-in support agents
     shell: bash
     run: |
@@ -121,7 +125,7 @@ steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="5b8e1432de63c78488ee7ff6da4e67ea0c91044582109f678153c231704a0097"
+      validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
