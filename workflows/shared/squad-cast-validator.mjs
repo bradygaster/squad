@@ -32,6 +32,12 @@ const BUILTIN_DISPLAY_NAMES = {
 const REQUIRED_BUILTIN_CHARTERS = REQUIRED_BUILTIN_IDS
   .map((id) => `.squad/agents/${id}/charter.md`)
   .sort();
+// The canonical resource a gh-aw "Materialize canonical built-in support
+// agents" step copies from verbatim before the agent ever runs. The final
+// emitted `.squad/agents/{id}/charter.md` must remain byte-identical to it —
+// this is the only way to prove a `squad init` or agent rewrite never
+// clobbered the materialized built-in after the deterministic copy step.
+const BUILTIN_CANONICAL_DIR = '.github/workflows/shared/builtins';
 const BUILTIN_SECTION_HEADING = '## Built-in Support Agents';
 const CAST_SOURCES_HEADING = '## Cast sources';
 const BUILTIN_NAME_ROW_PATTERN = /^\|\s*(Scribe|Ralph|Rai|Fact Checker)\s*\|/gmi;
@@ -67,6 +73,45 @@ function parseArgs(argv) {
 
 function readText(root, relativePath) {
   return readFileSync(join(root, ...relativePath.split('/')), 'utf8').replace(/\r\n/g, '\n');
+}
+
+/** Raw file bytes, with no text normalization, for true byte-for-byte comparison. */
+function readBytes(root, relativePath) {
+  return readFileSync(join(root, ...relativePath.split('/')));
+}
+
+/**
+ * Every materialized built-in charter must remain byte-for-byte identical to
+ * the canonical resource shipped with the workflow. A deterministic step
+ * copies the canonical resource verbatim before the agent runs; if `squad
+ * init` or the Cast agent later rewrites, paraphrases, or reinterprets one of
+ * these files, this is the only check that catches the divergence.
+ */
+function validateBuiltinCharterFidelity(root, errors) {
+  for (const id of REQUIRED_BUILTIN_IDS) {
+    const canonicalPath = `${BUILTIN_CANONICAL_DIR}/${id}-charter.md`;
+    const materializedPath = `.squad/agents/${id}/charter.md`;
+    let canonicalBytes;
+    try {
+      canonicalBytes = readBytes(root, canonicalPath);
+    } catch (error) {
+      errors.push(`builtin: canonical resource ${canonicalPath} for "${id}" is missing or unreadable (${error.message})`);
+      continue;
+    }
+    let materializedBytes;
+    try {
+      materializedBytes = readBytes(root, materializedPath);
+    } catch (error) {
+      errors.push(`builtin: materialized charter ${materializedPath} for "${id}" is missing or unreadable (${error.message})`);
+      continue;
+    }
+    if (!canonicalBytes.equals(materializedBytes)) {
+      errors.push(
+        `builtin: ${materializedPath} is not byte-identical to the canonical resource `
+        + `${canonicalPath} — built-in charters must never be regenerated, edited, or reinterpreted`,
+      );
+    }
+  }
 }
 
 function normalizePayloadPath(value) {
@@ -332,6 +377,8 @@ export function validateCastTree({ root, payloadPath }) {
       );
     }
   }
+
+  validateBuiltinCharterFidelity(root, errors);
 
   let team = '';
   let routing = '';
