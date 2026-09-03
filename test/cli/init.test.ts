@@ -10,7 +10,6 @@ import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { runInit as runInitFromSource } from '../../packages/squad-cli/src/cli/core/init.js';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-init-${randomBytes(4).toString('hex')}`);
@@ -55,7 +54,7 @@ describe('CLI: init command', () => {
   it('warns that --sdk is deprecated while preserving compatibility', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      await runInitFromSource(TEST_ROOT, { sdk: true });
+      await runInit(TEST_ROOT, { sdk: true });
 
       const output = log.mock.calls.flat().join('\n');
       expect(output).toContain('squad init --sdk');

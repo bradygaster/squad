@@ -79,19 +79,9 @@ This creates:
 .github/agents/squad.agent.md  — coordinator agent
 .squad/                        — team state directory
 ```
-### Configuration (optional)
-For typed configuration, create a `squad.config.ts` at your project root:
-```typescript
-import { defineConfig } from '@bradygaster/squad-sdk';
-export default defineConfig({
-  team: {
-    name: 'my-squad',
-    root: '.squad',
-    description: 'My project team',
-  },
-});
-```
-`defineConfig()` gives you full autocomplete and validation. But you don't need it to get started — Squad works out of the box with sensible defaults.
+### Configuration
+
+Configure the team through the portable markdown files generated under `.squad/`. The former typed `squad.config.ts` authoring mode is deprecated and should not be used for new teams.
 
 ---
 ## Troubleshooting

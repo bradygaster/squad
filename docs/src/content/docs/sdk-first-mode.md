@@ -1,11 +1,10 @@
 # SDK-First Squad Mode
 
-> [!CAUTION]
-> **Deprecated.** `squad init --sdk` will be removed in v2 because `squad.config.ts` does not represent the full Squad feature set. Use markdown-first `squad init` for new teams. Existing projects can continue using `squad build` during the transition.
+> ⚠️ **Deprecated.** `squad init --sdk` will be removed in v2 because `squad.config.ts` does not represent the full Squad feature set. Use markdown-first `squad init` for new teams. Existing projects can continue using `squad build` during the transition.
 
 > **Phase 1** — Type-safe team configuration with builder functions.
 
-Squad now supports **SDK-First Mode**: define your team in TypeScript with full type safety, runtime validation, and editor autocomplete. Instead of manually maintaining markdown files in `.squad/`, you write clean TypeScript, and `squad build` generates the governance markdown.
+Legacy SDK-First Mode defines a team in TypeScript and uses `squad build` to generate governance markdown. This page remains available only for teams maintaining an existing `squad.config.ts`.
 
 ---
 
@@ -462,7 +461,7 @@ defineAgent({
 
 You manually maintain this file and agent charters.
 
-### After (SDK-First)
+### Existing SDK-first project
 
 ```typescript
 export default defineSquad({
@@ -497,7 +496,7 @@ Run `squad build` and the markdown is generated. Version control your TypeScript
 
 ## Examples
 
-### Full SDK-First Config
+### Full legacy SDK-first config
 
 ```typescript
 import {

@@ -153,22 +153,9 @@ Squad writes the personal configuration to a platform-specific path:
 | macOS | `~/Library/Application Support/squad/` |
 | Windows | `%APPDATA%\squad\` |
 
-## Optional: Typed configuration
+## Configuration
 
-You can create a `squad.config.ts` file at your project root to enable typed configuration. This step is optional — Squad works with sensible defaults without it.
-
-```typescript
-import { defineConfig } from '@bradygaster/squad-sdk';
-
-export default defineConfig({
-  agents: {
-    dir: '.github/agents',
-  },
-  squad: {
-    dir: '.squad',
-  },
-});
-```
+Use the portable markdown files under `.squad/` for new teams. The former typed `squad.config.ts` authoring mode is deprecated and will be removed in v2. Existing typed-config projects can continue using `squad build` during the transition.
 
 ## Troubleshoot
 

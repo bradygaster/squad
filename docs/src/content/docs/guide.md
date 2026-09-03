@@ -44,7 +44,7 @@ Squad works across multiple interfaces — GitHub Copilot CLI, VS Code, Squad CL
 - **GitHub Copilot CLI** — Day-to-day conversational work with your squad (recommended)
 - **VS Code** — Same experience, editor-integrated
 - **Squad CLI** — Setup, diagnostics, monitoring (`squad init`, `squad doctor`, `squad watch`)
-- **SDK** — Build tools on top of Squad with `squad.config.ts`
+- **SDK** — Build programmatic integrations with `@bradygaster/squad-sdk`
 - **Copilot Coding Agent** — Autonomous issue processing via `@copilot`
 
 **Multi-platform support:** Squad also works with Azure DevOps (work items, PRs via `az boards`/`az repos`), GitLab Issues, and Microsoft Planner through pluggable platform adapters. See [Enterprise Platforms](features/enterprise-platforms.md) for details.
@@ -227,7 +227,7 @@ Squad names agents from fictional universes — Apollo 13 / NASA Mission Control
 
 Casting is **persistent** — once an agent receives a name, it keeps that name across sessions. The casting registry lives in `.squad/casting/registry.json`. You control which universes are available through a policy allowlist and can set per-universe capacity limits.
 
-In SDK-first mode, configure casting with `defineCasting()`:
+Existing SDK-first projects can configure casting with `defineCasting()`:
 
 ```typescript
 defineCasting({
@@ -247,7 +247,7 @@ Skills are reusable knowledge patterns that agents load on demand. They live in 
 
 Skills have a confidence lifecycle: `low` → `medium` → `high`, and track their source: `manual` (you wrote it), `observed` (agent saw a pattern), `earned` (validated through use), or `extracted` (imported from another project).
 
-In SDK-first mode, define skills with `defineSkill()`:
+Existing SDK-first projects can define skills with `defineSkill()`:
 
 ```typescript
 defineSkill({
@@ -274,7 +274,7 @@ Skills accumulate as you work. After a few sessions, your team has a knowledge b
 
 Ceremonies are structured team meetings. Squad ships with two default ceremonies — Design Review (triggers before multi-agent work) and Retrospective (triggers after failures). You can trigger ceremonies manually, create custom ones, or disable them. Configuration lives in `.squad/ceremonies.md`.
 
-In SDK-first mode, define ceremonies with `defineCeremony()`:
+Existing SDK-first projects can define ceremonies with `defineCeremony()`:
 
 ```typescript
 defineCeremony({

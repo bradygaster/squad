@@ -90,8 +90,7 @@ Use `result.errors` and `result.warnings` when presenting validation results. Th
 
 ## SDK-First Builders
 
-> [!CAUTION]
-> SDK-first team configuration is deprecated. `squad init --sdk` will be removed in v2. These builders remain documented for existing `squad.config.ts` projects during the transition.
+> ⚠️ **Deprecated authoring mode.** `squad init --sdk` will be removed in v2. These builders remain documented for existing `squad.config.ts` projects and programmatic SDK consumers during the transition.
 
 Builders validate typed team definitions before they are written to `.squad/` by `squad build`.
 
@@ -343,4 +342,4 @@ Use the [generated API reference](./api/) for the complete list of current expor
 - [Generated API reference](./api/) - exhaustive TypeDoc output
 - [Configuration reference](./config.md) - file format and migration details
 - [Tools and hooks](./tools-and-hooks.md) - focused orchestration examples
-- [SDK-First Mode](../sdk-first-mode.md) - builder workflow and `squad build`
+- [Legacy SDK-First Mode](../sdk-first-mode.md) - compatibility for existing builder workflows

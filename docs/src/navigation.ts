@@ -167,7 +167,7 @@ export const NAV_SECTIONS: NavSection[] = [
 ];
 export const STANDALONE_PAGES = [
   { title: "What's New", slug: 'whatsnew' },
-  { title: 'SDK-First Mode', slug: 'sdk-first-mode' },
+  { title: 'Legacy SDK-First Mode', slug: 'sdk-first-mode' },
   { title: 'Community', slug: 'community' },
   { title: 'Insider Program', slug: 'insider-program' },
 ];
