@@ -23,7 +23,10 @@
  * Out of scope (per #1955's delegated task boundaries): running the E4 live end-to-end
  * test, and the `squad-plan-accept` fast-path's own separate create-issue/label logic
  * (only reachable when a flat `plan` artifact exists with no `program`/`implementation`
- * artifacts — see workflows/squad.md's `squad-plan-accept` skill).
+ * artifacts — see workflows/squad.md's `squad-plan-accept` skill). #1959 subsequently
+ * brought that fast path onto the same pattern; its own contract is locked in
+ * `gh-aw-activate-fast-path-label-provisioning.test.ts`, and the boundary test below now
+ * asserts the parity instead of the former gap.
  */
 
 import { afterAll, describe, it, expect } from 'vitest';
@@ -195,7 +198,7 @@ describe('gh-aw: fresh-repo label provisioning in squad-plan-activate (#1955)', 
     expect(activateProse).toMatch(/Re-runs are idempotent via title match/i);
   });
 
-  it('does not touch the separate squad-plan-accept fast-path label logic (out of scope)', () => {
+  it('extends the same provisioning pattern to the squad-plan-accept fast path (#1959)', () => {
     const acceptStart = workflow.indexOf('## skill: `squad-plan-accept`');
     expect(acceptStart, '"## skill: `squad-plan-accept`" is missing from workflows/squad.md').toBeGreaterThan(-1);
     // squad-plan-accept has no "## end skill" marker of its own; its body runs until the
@@ -204,11 +207,11 @@ describe('gh-aw: fresh-repo label provisioning in squad-plan-activate (#1955)', 
     expect(acceptEnd, '"## skill: `squad-plan-revise`" is missing from workflows/squad.md').toBeGreaterThan(acceptStart);
 
     const acceptSkill = workflow.slice(acceptStart, acceptEnd);
-    // #1955 is scoped to squad-plan-activate only; squad-plan-accept's own
-    // create-issue/label fast path (reachable only for a flat plan with no
-    // program/implementation artifacts) is intentionally unmodified here.
-    expect(acceptSkill).not.toContain('add_labels');
-    expect(acceptSkill).not.toContain('create-if-missing');
+    // #1955 landed provisioning in squad-plan-activate only. #1959 applied the same
+    // add_labels + create-if-missing pattern to the fast path, so the two activation
+    // paths now provision labels identically. Assert the parity rather than the old gap.
+    expect(acceptSkill).toContain('add_labels');
+    expect(acceptSkill).toContain('create-if-missing');
   });
 });
 

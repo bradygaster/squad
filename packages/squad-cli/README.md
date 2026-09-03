@@ -8,9 +8,13 @@ The programmable multi-agent CLI for GitHub Copilot. Build an AI team, assign ro
 
 ### Prerequisites
 
-- **Node.js ≥ 20** — Squad requires modern JavaScript runtime features
-- **GitHub Copilot** — provides the AI backend for agent orchestration and code analysis
-- **GitHub CLI** (`gh`) — required for issue/PR operations and the work loop
+- **Git** — Squad stores team state in a repository
+- **GitHub Copilot CLI** — provides the AI backend and is installed separately
+- **GitHub CLI** (`gh`) — required only for GitHub issue, pull request, and work-loop operations
+
+Node.js 22.5 or later is required for npm installs. The standalone
+methods below vendor Node.js and do not require npm or access to the npm
+registry.
 
 ### Install from npm
 
@@ -21,12 +25,49 @@ npm install -g @bradygaster/squad-cli@latest
 # Project-local
 npm install --save-dev @bradygaster/squad-cli
 
-# One-shot (no install)
-npx @bradygaster/squad-cli
+# Preview channel
+npm install -g @bradygaster/squad-cli@preview
 
 # Insider channel (pre-release builds)
 npm install -g @bradygaster/squad-cli@insider
 ```
+
+### Install without npm
+
+**macOS with Homebrew:**
+
+```bash
+brew tap bradygaster/squad
+brew install --cask squad
+
+# Early-release channels
+brew install --cask squad-preview
+brew install --cask squad-insider
+```
+
+**Windows with WinGet:**
+
+```powershell
+winget install --id bradygaster.Squad --exact
+
+# Early-release channels
+winget install --id bradygaster.Squad.Preview --exact
+winget install --id bradygaster.Squad.Insider --exact
+```
+
+Only one channel can own the `squad` command at a time. Uninstall the current
+cask or package before switching channels.
+
+**macOS or Linux with the verified install script:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/main/scripts/install.sh | sh
+```
+
+You can also download the archive for your platform directly from
+[GitHub Releases](https://github.com/bradygaster/squad/releases/latest).
+See [Standalone Install](https://bradygaster.github.io/squad/docs/features/standalone-install/)
+for checksums, custom install locations, and CI usage.
 
 ### Verify Installation
 
@@ -339,15 +380,19 @@ gh auth status
 
 **Node.js version mismatch**
 
-Squad requires Node.js ≥ 20. Check your version:
+The npm package requires Node.js 22.5 or later. Check your version:
 
 ```bash
 node --version
 ```
 
+Standalone installations vendor a compatible runtime and do not use the system
+Node.js installation.
+
 **ESM import errors**
 
-Squad is an ESM-only module. If you see import errors, ensure your Node.js version is 20+.
+Squad is an ESM-only module. If you see import errors from an npm installation,
+ensure your Node.js version is 22.5 or later.
 
 ## Links
 

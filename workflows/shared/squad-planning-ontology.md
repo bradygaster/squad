@@ -141,6 +141,11 @@ The issue body IS the intent. No special format required, but structured intents
 |---|--------|------|-------------|
 | 1 | <link/file/doc> | <codebase/docs/external> | <insight> |
 
+### Online sources
+<`consulted` — list the URLs fetched this run (each also cited above); or
+`unavailable — <reason>` when no external documentation was fetched. Makes
+degradation observable: never claim `consulted` for a page not actually fetched.>
+
 ### Findings
 #### Finding 1: <title>
 <Evidence and analysis>
@@ -310,16 +315,37 @@ been run, and an omitted row is not a pass.
 
 The activation artifact body also carries an `Activation bindings:` fenced JSON
 block containing a non-empty array. Each entry
-maps a plan task number and raw agent assignment to its returned task issue number,
-epic identifier, returned epic issue number, and the epic's complete distinct agent
+maps a plan task number and raw agent assignment to its task issue reference,
+epic identifier, epic issue reference, and the epic's complete distinct agent
 set from the full accepted plan (including other activation phases). It records both task and derived
-epic labels actually applied, or their omission reasons (`multi-owner` or
-`non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
+epic labels reported as accepted label operations (defined below), or their omission reasons
+(`multi-owner` or `non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
 records the actual `squad:copilot` label. This mapping is mandatory for
-`phases-activated` and `activated` artifacts. It remains in the body rather than
+`phases-activated`, `activated`, `phases-accepted`, and `plan-accepted` artifacts —
+every fast-path (`/squad activate`) and granular (`/squad plan activate`) artifact
+that creates or recognizes issues carries it; neither path may omit it or ship an
+empty array. It remains in the body rather than
 the safe-output `data` envelope because gh-aw expands nested data schemas beyond
 GitHub's expression-size limit. The post-activation checker can still
 fail closed without matching model-authored titles.
+
+**Issue references are quoted strings, never bare numbers.** `issue` and `epic_issue`
+carry a `#`-prefixed reference in a JSON string: an item's own gh-aw `temporary_id`
+(`"#aw_task3"`) when this run created it, or its verified real number (`"#123"`) when the
+item was reused or matched by title. The agent never learns a created issue's real number
+during its turn, so it never writes one; gh-aw rewrites `#aw_…` references in a comment body
+to `#{real number}` once the issue exists. Quoting is required for validity: that
+substitution is plain text replacement across the whole body — it does not skip fenced code
+blocks — and preserves the `#`, so bare `"issue":#aw_task3` becomes invalid `"issue":#42`
+while quoted becomes `"issue":"#42"`. A reference still matching `#aw_…` was never resolved;
+consumers MUST treat it as a failure rather than skipping or repairing it.
+
+**Reported labels mean accepted label operations.** A `label` / `epic_label` asserts that an
+`add_labels` safe output carrying that label was accepted for that same issue, targeted by
+its temporary ID or verified real number. It does not assert the label was observed on the
+issue — safe outputs are applied after the agent turn — and never means it was carried by
+`create-issue`, whose `labels:` field cannot create a missing label. Verifying bindings
+against the labels actually present is the post-activation checker's job.
 
 ---
 

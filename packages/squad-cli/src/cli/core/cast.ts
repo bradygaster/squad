@@ -404,7 +404,7 @@ function generateCharter(member: CastMember & { _personality?: string; _backstor
   if (catalogCharter) return catalogCharter;
 
   const personality = personalityForRole(member.role, { personality: member._personality });
-  const nameLower = member.name.toLowerCase();
+  const nameLower = memberId(member.name);
 
   // If CastingEngine provided a backstory, use it in the charter preamble
   const preamble = member._backstory || personality;
@@ -476,6 +476,24 @@ function generateHistory(member: CastMember, projectDescription: string): string
 }
 
 // ── Built-in agents ────────────────────────────────────────────────
+
+// The four built-in support agents always materialize under these exact
+// lowercase kebab-case directory/registry IDs, regardless of display-name
+// casing or spacing (`member.name.toLowerCase()` alone turns "Fact Checker"
+// into "fact checker" — a space, not a hyphen — and leaves "Rai" ambiguous
+// against other built-in scaffolders). Canonical built-in contract: scribe,
+// ralph, rai, fact-checker.
+const BUILTIN_IDS: Record<string, string> = {
+  'Scribe': 'scribe',
+  'Ralph': 'ralph',
+  'Rai': 'rai',
+  'Fact Checker': 'fact-checker',
+};
+
+/** Resolve a member's directory/registry ID: the authoritative built-in ID when the name is one of the four built-ins, otherwise the existing lowercased-name behavior for specialists. */
+function memberId(name: string): string {
+  return BUILTIN_IDS[name] ?? name.toLowerCase();
+}
 
 function scribeMember(): CastMember {
   return { name: 'Scribe', role: 'Session Logger', scope: 'Maintaining decisions.md, cross-agent context sharing, orchestration logging, session logging, git commits', emoji: '📋' };
@@ -592,7 +610,7 @@ function RaiCharter(): string {
 
 - \`.squad/rai/policy.md\` — Canonical RAI policy (terms, anti-patterns, taxonomy)
 - \`.squad/rai/audit-trail.md\` — Evidence log (append-only, redacted)
-- \`.squad/agents/Rai/history.md\` — Learnings across sessions
+- \`.squad/agents/rai/history.md\` — Learnings across sessions
 
 ## Traffic Light Verdicts
 
@@ -640,7 +658,7 @@ Before starting work, run \`git rev-parse --show-toplevel\` to find the repo roo
 
 Read \`.squad/rai/policy.md\` for the canonical check definitions.
 Append findings to \`.squad/rai/audit-trail.md\` (redacted — never raw secrets or harmful text).
-After making a decision others should know, write it to \`.squad/decisions/inbox/Rai-{brief-slug}.md\`.
+After making a decision others should know, write it to \`.squad/decisions/inbox/rai-{brief-slug}.md\`.
 `;
 }
 
@@ -649,7 +667,7 @@ After making a decision others should know, write it to \`.squad/decisions/inbox
 function buildMembersTable(allMembers: CastMember[]): string {
   let table = `## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n`;
   for (const m of allMembers) {
-    const nameLower = m.name.toLowerCase();
+    const nameLower = memberId(m.name);
     let status = '✅ Active';
     if (m.role === 'Session Logger') status = '📋 Silent';
     if (m.role === 'Work Monitor') status = '🔄 Monitor';
@@ -700,7 +718,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
   // Create agent directories and files
   for (const member of allMembers) {
-    const nameLower = member.name.toLowerCase();
+    const nameLower = memberId(member.name);
     const agentDir = join(agentsDir, nameLower);
 
     const charterPath = join(agentDir, 'charter.md');
@@ -805,7 +823,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const registryAgents: Record<string, object> = {};
   const snapshotAgents: string[] = [];
   for (const member of allMembers) {
-    const nameLower = member.name.toLowerCase();
+    const nameLower = memberId(member.name);
     registryAgents[nameLower] = {
       created_at: now,
       persistent_name: member.name,
@@ -853,7 +871,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
   // Sync new agents into squad.config.ts (if present)
   for (const member of allMembers) {
-    await addAgentToConfig(teamRoot, member.name.toLowerCase(), member.role);
+    await addAgentToConfig(teamRoot, memberId(member.name), member.role);
   }
 
   // Re-advertise the cast in .github/agents/squad.agent.md (#1608). Cast

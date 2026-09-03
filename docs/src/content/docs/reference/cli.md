@@ -10,15 +10,19 @@ Everything you need to run Squad from the command line — commands, shell inter
 ## Installation
 
 ```bash
-# Global install (recommended)
+# npm (requires Node.js 22.5+)
 npm install -g @bradygaster/squad-cli
 
-# One-off with npx
-npx @bradygaster/squad-cli init
+# macOS
+brew install --cask bradygaster/squad/squad
 
-# Latest from GitHub (bleeding edge)
-squad init
+# Windows
+winget install --id bradygaster.Squad --exact
 ```
+
+The verified install script and direct archives provide npm-free options for
+macOS and Linux too. See [Installation](../get-started/installation.md) for
+prerequisites, all supported methods, and update commands.
 
 ---
 
