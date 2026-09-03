@@ -62,7 +62,7 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 - Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
 - Spawn agents as needed, collect results
 - **⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
-- If multiple items exist in the same category, process them in parallel (spawn multiple agents)
+- If multiple items exist in the same category, take the highest-priority ones first and stay within the dispatch caps (max 2 active domain agents per request, max 3 tasks in flight, max 1 in-flight task per agent — Ralph itself is exempt, spawned domain agents are not). Queue the rest and say what is queued. Spawn agents in parallel only for items that are provably independent — never speculatively.
 
 **Step 4 — Periodic check-in** (every 3-5 rounds):
 

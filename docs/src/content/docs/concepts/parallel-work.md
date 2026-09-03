@@ -1,5 +1,5 @@
 # Parallel Work & Models
-Squad launches independent work in parallel by default — multiple agents working simultaneously, no waiting. It also picks the right AI model for each agent based on what they're doing, so you get quality where it counts and speed everywhere else.
+Squad dispatches the minimum sufficient set of agents for a task, and runs genuinely independent work in parallel — no artificial sequencing, and no agents spawned just to look busy. It also picks the right AI model for each agent based on what they're doing, so you get quality where it counts and speed everywhere else.
 
 ---
 ## Try This
@@ -14,19 +14,18 @@ Work on issues #12, #15, and #18 at the same time
 ```
 
 ---
-## How Parallel Execution Works
-When the coordinator receives a multi-part task, it follows a fan-out pattern:
+## How Dispatch Works
+When the coordinator receives a multi-part task, it dispatches the minimum sufficient set, then fans out only across work it has proven independent:
 ```mermaid
 graph TD
     A["Coordinator<br/>receives work"]
-    B["Dependency<br/>Analysis"]
-    C["Agent A<br/>background"]
-    D["Agent B<br/>background"]
-    E["Agent C<br/>background"]
+    B["Scope &amp; Dependency<br/>Analysis"]
+    C["Primary owner<br/>(always)"]
+    D["Second owner<br/>only if independent"]
+    E["Queued<br/>(over cap / not yet needed)"]
     F["Result A"]
     G["Result B"]
-    H["Result C"]
-    I["Collect &<br/>Synthesize"]
+    I["Collect &amp;<br/>Synthesize"]
 
     A --> B
     B --> C
@@ -34,45 +33,39 @@ graph TD
     B --> E
     C --> F
     D --> G
-    E --> H
     F --> I
     G --> I
-    H --> I
 ```
-1. **Dependency Analysis** — Check if tasks have data dependencies (A needs output from B).
-2. **Fan-Out** — Launch all independent agents in parallel using background mode.
-3. **Wait** — Coordinator polls agent status until all complete.
-4. **Collect** — Aggregate results, check for errors, route to next step.
+1. **Scope & Dependency Analysis** — Identify the primary owner, then check whether any *other* concern is genuinely independent (different module, different owner, non-overlapping files).
+2. **Dispatch minimum sufficient** — One primary owner by default. Add a second agent only for a genuinely independent concern or a reviewer the task actually requires.
+3. **Wait** — Coordinator polls agent status until in-flight work completes.
+4. **Collect** — Aggregate results, check for errors, dispatch the next step only if the accepted scope requires it.
 ### Example
 > "Implement user authentication: API endpoints, frontend form, tests, and documentation"
-Coordinator spawns **4 agents in parallel**:
-- Backend → API endpoints
-- Frontend → Login/signup form
-- Tester → Integration tests
-- DevRel → Auth documentation
-All work simultaneously. No agent waits unless there's a code dependency.
+Coordinator dispatches **2 agents** — the two provably independent concerns:
+- Backend → API endpoints (`src/api/`)
+- Frontend → Login/signup form (`src/ui/`)
+Tests and documentation are **not** pre-spawned. They're dispatched after the implementation exists and shows they're actually needed — that's downstream work, not parallel work.
 
 ---
 ## Background vs. Sync
 
 | Mode | When Used | Behavior |
 |------|-----------|----------|
-| **Background** | Independent work, no data dependencies | Agents run in parallel, coordinator polls for completion |
+| **Background** | Work that is genuinely independent of everything else in flight | Agents run in parallel, coordinator polls for completion |
 | **Sync** | One agent needs another's output | Agents run sequentially, coordinator waits |
 | **Sync** | Reviewer gate (Lead must approve first) | Agent runs, coordinator waits for [review](your-team.md#reviewer-protocol) decision |
 
-### Background (Fan-Out)
+Pick the mode from the actual dependency, not from a default. The question is *"is anyone waiting on this result right now?"* — if yes, `sync`; if no and it's independent of everything in flight, `background`.
+### Background (Independent Work)
 ```mermaid
 graph LR
     A["Coordinator"] --> B["Agent 1<br/>background"]
     A --> C["Agent 2<br/>background"]
-    A --> D["Agent 3<br/>background"]
     B --> E["Result 1"]
     C --> F["Result 2"]
-    D --> G["Result 3"]
     E --> H["Coordinator<br/>collects all"]
     F --> H
-    G --> H
 ```
 Agents don't see each other's output until the coordinator collects and synthesizes.
 ### Sync (Dependencies & Gates)
@@ -87,20 +80,19 @@ graph TD
     G --> H["Reviewer<br/>sync gates"]
 ```
 Each step blocks until the previous completes.
-### Eager Execution
-Squad's default is **eager parallelism** — launch everything that can run, let the coordinator handle synchronization.
-- **Faster throughput** — no artificial sequencing
-- **Better utilization** — multiple agents saturate available compute
-- **Resilient** — if one agent stalls, others keep working
-Trade-off: increased API cost. If cost is a concern:
-```
-Work sequentially to save costs
-```
+### Minimum Sufficient Dispatch
+Squad's default is **minimum sufficient dispatch** — the fewest agents that can finish the work, dispatched immediately. Speed comes from routing fast, not from routing wide.
+- **One primary agent by default** — the owner whose domain is the actual concern.
+- **A second agent only** for a genuinely independent concern or a required reviewer. Two agents that would edit the same files are one agent.
+- **No speculative agents** — testers, docs writers, and scaffolders are dispatched when the upstream result shows they're needed, not "because they'll obviously be needed."
+- **Real parallelism is preserved** — when you can name two distinct concerns with different owners and non-overlapping files, they run at the same time.
 ### Deadlock Avoidance
 When agents have circular dependencies (A needs B, B needs A), the coordinator detects the cycle and asks you to pick a resolution: run A first, run B first, or redesign.
-### Concurrency Limits
-- **Default:** 5 agents in parallel
-- **Adjustable:** `"Run at most 2 agents at once"` → Coordinator batches work accordingly
+### Dispatch Limits
+- **Per request:** 2 domain agents. Exceeding it takes an explicit `"Team, ..."` request, or a task that provably spans 3+ modules with different primaries.
+- **In flight:** 3 domain agents at once, 1 task per agent. Over the cap, work queues and the coordinator says what's queued.
+- **Exempt:** Scribe (background logging) and Ralph (monitor) never count against the caps.
+- **Adjustable:** `"Run at most 2 agents at once"` → coordinator batches work accordingly. `.squad/routing.md` and `.squad/team.md` can tighten the numbers for your repo.
 
 ---
 ## Model Selection
@@ -232,7 +224,7 @@ Squad uses `merge=union` for append-only log files to avoid conflicts across wor
 
 ---
 ## Tips
-- Eager parallelism is the default. Only switch to sequential if cost is a real concern.
+- Minimum sufficient dispatch is the default — one owner, plus a second only for genuinely independent work. Ask for `"Team, ..."` when you really do want the whole roster.
 - Start conservative with @copilot's capability profile and expand as you see what it handles well.
 - Use `squad:copilot` labels with [issue-driven development](../scenarios/issue-driven-dev.md) for background processing with review gates.
 - Fallback chains are silent — you won't notice model switches unless you ask `"what model did Kane use?"`.
@@ -243,11 +235,11 @@ Squad uses `merge=union` for append-only log files to avoid conflicts across wor
 ```
 Build the new dashboard feature — everyone work in parallel
 ```
-Coordinator spawns all relevant agents (Frontend, Backend, Tester, DevRel) simultaneously.
+An explicit "everyone" request lifts the per-request cap: the coordinator dispatches the relevant owners (Frontend, Backend, Tester, DevRel) and names the modules each is taking.
 ```
 Work on issues #12, #15, and #18 at the same time
 ```
-Spawns 3 agents in parallel, one per issue.
+Works the issues in priority order within the in-flight cap. Independent issues run at the same time; the rest queue and the coordinator tells you what's queued.
 ```
 Implement the API first, then write tests — do it sequentially
 ```

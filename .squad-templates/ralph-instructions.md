@@ -18,7 +18,8 @@
     • Agent persona, tone, or verbosity for session output
 
   YOU CANNOT override via this file:
-    • Parallelism — Ralph always spawns agents for all actionable issues simultaneously
+    • Dispatch caps — Ralph works the highest-priority actionable issues within the
+      team's caps (see `.squad/routing.md`); it never spawns an agent per issue
     • Core eligibility filter (squad/squad:* label required, not blocked, not assigned)
     • The underlying `gh` / Copilot CLI command used to spawn each session
 
@@ -45,12 +46,24 @@
 ## Ralph, Go!
 
 Read this file for your full instructions.  Follow ALL sections.
-MAXIMIZE PARALLELISM — spawn agents for ALL actionable issues simultaneously.
+MINIMUM SUFFICIENT DISPATCH — work the highest-priority actionable issues first,
+within the dispatch caps.  Never spawn an agent for every actionable issue.
+
+### Dispatch Caps
+
+- At most **2** active domain agents per request.
+- At most **3** tasks in flight at once, and at most **1** in-flight task per agent.
+- Ralph itself is exempt from these caps; every domain agent Ralph spawns is not.
+- **No speculative work** — do not pre-spawn testers, docs writers, or scaffolders for
+  issues nobody is working yet.  Queue the rest and say what is queued.
+- `.squad/routing.md` and `.squad/team.md` may tighten these numbers.  When they do,
+  the repo's values win.
 
 ### Issue Selection
 
-Work on every open, unblocked, unassigned issue labeled `squad` or `squad:{member}`.
-Skip issues that are assigned to a human, blocked, or marked `status:on-hold`.
+Work the open, unblocked, unassigned issues labeled `squad` or `squad:{member}` in
+priority order — highest priority first, up to the caps above.  Skip issues that are
+assigned to a human, blocked, or marked `status:on-hold`.  Everything else queues.
 
 ### Post-Task Actions
 

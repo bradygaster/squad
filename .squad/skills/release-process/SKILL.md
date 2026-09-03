@@ -33,6 +33,31 @@ channel, not a branch.
 6. Merge release preparation to `dev` and wait for CI before dispatching.
 7. Keep separate Homebrew casks and WinGet identifiers for each channel.
 
+## Hard rules (enforced by Surgeon and Booster)
+
+These grew out of the 2026-03-23 v0.9.0→v0.9.1 incident (CLI shipped with a
+`file:` dependency reference; publish infra failures turned a 10-minute fix
+into an 8-hour outage) and are now non-negotiable for anyone touching release
+or publish CI:
+
+- `NPM_TOKEN` must be an Automation-type token, never a user token with 2FA —
+  2FA prompts hang unattended workflows.
+- Scan `packages/*/package.json` for `file:`/`link:` references before any tag
+  or publish; block the release if found.
+- Semantic versioning is law (`MAJOR.MINOR.PATCH`). 4-part versions (e.g.
+  `0.8.21.4`) are not valid SemVer and must never be used.
+- Never create draft GitHub Releases — the `release: published` event won't
+  fire.
+- Set versions with a `node -e` script and commit immediately before building;
+  `SKIP_BUILD_BUMP=1` alone does not reliably stop `bump-build.mjs` from
+  mutating versions.
+- Never use `npm -w` to publish — always `cd` into the package directory.
+- Fallback protocol: if `workflow_dispatch` fails twice, switch to local
+  publish immediately. No GitHub UI retry loops.
+- Post-publish smoke test is mandatory: `npm install -g
+  @bradygaster/squad-cli@latest && squad --version && squad doctor` in a clean
+  shell; roll back on failure.
+
 ## Required credentials
 
 Configure these GitHub Actions secrets:

@@ -19,7 +19,12 @@ FIDO independently reviewed and reproduced PR #1831 for #1793, approving with ni
 - CI structurally cannot verify a working-tree condition, because CI always starts from a fresh checkout. Such proofs require a local adversarial repro.
 ## 📌 Team update — 2026-08-22T19:42:25-07:00
 
-Three-turn review of PR #1832 (issue #1824). 
+Three-turn review of PR #1832 (issue #1824).
+
+> **Historical — process superseded.** Review is now capped at **2 passes**; a Pass-2 disagreement
+> routes to a single Flight arbitration instead of a Pass 3. This entry is the evidence that
+> produced that cap (`.copilot/skills/reviewer-protocol/SKILL.md` §Review Pass Cap). The *findings*
+> below remain valid; the three-pass shape does not.
 
 **Pass 1 — APPROVE WITH NITS:** Reproduced all claims (mutation 1 & 2 load-bearing, injection-safe via env, acceptance test holds). Nits: HTML comment parsing, greedy last-token, 102 skip figure.
 

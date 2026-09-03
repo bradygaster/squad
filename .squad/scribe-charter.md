@@ -1,5 +1,10 @@
 # Scribe
 
+> ⚠️ **SUPERSEDED — not an active charter.** This is a stale scaffolding copy of the Scribe
+> template, kept for provenance only. The authoritative Scribe charter is
+> `.squad/agents/scribe/charter.md` (it carries the Archival Safety Rules this copy lacks).
+> The product template lives at `.squad-templates/scribe-charter.md`. Do not follow this file.
+
 > The team's memory. Silent, always present, never forgets.
 
 ## Identity

@@ -60,6 +60,10 @@ PR #1831 merged as `9378a379` for #1793. EECOM shipped local CRLF working-tree d
 
 Rework of PR #1832 under Reviewer Rejection Protocol (Procedures locked out after FIDO Pass 2 found BLOCKING dispatch regression).
 
+> **Historical — process superseded.** Review is now capped at **2 passes**; the Pass-3
+> verification below would today be a single Flight arbitration.
+> See `.copilot/skills/reviewer-protocol/SKILL.md`.
+
 **Problem:** Bare workflow_dispatch commands (implement, research, etc.) regress to loud failure. PC-1 requires /squad token; dispatch sends bare command value. Pre-fix worked; post-fix: NO_COMMAND → PC-3 hard fail.
 
 **Solution:** Commit 6e7628c5 — add Step PC-0 normalization layer before PC-1:

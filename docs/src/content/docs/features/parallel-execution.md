@@ -8,62 +8,60 @@
 Have three agents work on this in parallel: UI mockups, API spec, and database schema
 ```
 
-**Try this to work multiple issues simultaneously:**
+**Try this to work multiple issues in priority order:**
 ```
 Work on issues #12, #15, and #18 at the same time
 ```
 
-**Try this to control concurrency for cost savings:**
+**Try this to tighten the dispatch caps further:**
 ```
 Run at most 2 agents at once to save costs
 ```
 
-Squad launches independent work in parallel by default — multiple agents work simultaneously, no waiting. You control concurrency limits and can force sequential execution when needed.
+Squad dispatches the minimum sufficient set of agents for a task, and runs genuinely independent work in parallel. You control the caps and can force sequential execution when needed.
 
 ---
 
-## How Parallel Execution Works
+## How Dispatch Works
 
-Squad runs agents in parallel whenever possible. The fan-out pattern launches all independent agents simultaneously, waits for results, then proceeds — no sequential bottlenecks unless data dependencies or reviewer gates require them.
-
-## How Parallel Execution Works
+Squad routes fast and routes minimally: one primary owner by default, a second agent only for a genuinely independent concern or a required reviewer. Work that is provably independent runs at the same time — nothing is sequenced artificially, and nothing is spawned speculatively.
 
 When the coordinator receives work:
 
-1. **Dependency Analysis** — Check if tasks have data dependencies (A needs output from B).
-2. **Fan-Out** — Launch all independent agents in parallel using `mode: "background"`.
-3. **Wait** — Coordinator polls agent status until all complete.
-4. **Collect** — Aggregate results, check for errors, route to next step.
+1. **Scope & Dependency Analysis** — Identify the primary owner, then check whether any other concern is genuinely independent (different module, different owner, non-overlapping files) or has a data dependency (A needs output from B).
+2. **Dispatch minimum sufficient** — Launch the primary owner now. Add a second agent only when the independence test passes. Independent agents use `mode: "background"`.
+3. **Wait** — Coordinator polls agent status until in-flight work completes.
+4. **Collect** — Aggregate results, check for errors, dispatch the next step only if the accepted scope requires it.
 
 ### Example: Feature Implementation
 
 > "Implement user authentication: API endpoints, frontend form, tests, and documentation"
 
-Coordinator spawns **4 agents in parallel**:
-- Backend → API endpoints
-- Frontend → Login/signup form
-- Tester → Integration tests
-- DevRel → Auth documentation
+Coordinator dispatches **2 agents** — the two provably independent concerns:
+- Backend → API endpoints (`src/api/`)
+- Frontend → Login/signup form (`src/ui/`)
 
-All work simultaneously. No agent waits for another unless there's a code dependency.
+Both run at the same time. Tests and documentation are **not** pre-spawned — they are downstream work, dispatched once the implementation exists and shows they're actually needed.
 
 ## Background vs Sync Mode
 
+Pick the mode from the actual dependency, not from a default. Ask: *is anyone waiting on this result right now?* If yes → `sync`. If no, and it is genuinely independent of everything else in flight → `background`.
+
 | Mode | When to Use | Behavior |
 |------|-------------|----------|
-| `background` | Independent work, no data dependencies | Agent runs in parallel, coordinator polls for completion |
+| `background` | Work that is genuinely independent of everything else in flight | Agent runs in parallel, coordinator polls for completion |
 | `sync` | Data dependency (one agent needs output from another) | Agent runs sequentially, coordinator waits |
 | `sync` | Reviewer gate (Lead must approve before continuing) | Agent runs, coordinator waits for review decision |
 
 ### Background Mode
 
-Used for **fan-out parallelism**:
+Used for work **already known to be independent**:
 
 ```
-Coordinator → [Agent1, Agent2, Agent3] (background)
-                ↓        ↓        ↓
-              Result1  Result2  Result3
-                ↓        ↓        ↓
+Coordinator → [Agent1, Agent2] (background)
+                ↓        ↓
+              Result1  Result2
+                ↓        ↓
             Coordinator collects all
 ```
 
@@ -83,19 +81,23 @@ Coordinator → Agent1 (sync) → Result1
 
 Each step blocks until the previous completes.
 
-## Eager Execution Philosophy
+## Minimum Sufficient Dispatch
 
-Squad's default is **eager parallelism** — launch everything that can run, let the coordinator handle synchronization. Benefits:
+Squad's default is **minimum sufficient dispatch** — the fewest agents that can complete the work, dispatched immediately. Speed comes from routing fast, not from routing wide.
 
-- **Faster throughput** — No artificial sequencing.
-- **Better resource utilization** — Multiple agents saturate available compute.
-- **Resilient to blocking** — If one agent stalls, others keep working.
+- **One primary agent by default.** The single owner whose domain is the actual concern. The roster is not surveyed for everyone who "could usefully start work."
+- **A second agent only** for a genuinely independent concern or a reviewer the task requires. Two agents that would edit the same files are one agent.
+- **No speculative agents.** Testers, docs writers, and scaffolders are dispatched when an upstream result shows they're needed.
+- **No automatic follow-up chains.** When an agent completes, the coordinator reports. Follow-up work is launched only when the accepted scope requires it.
+- **Genuine parallelism is preserved.** Name two distinct concerns with different owners and non-overlapping files, and they run at the same time.
 
-Trade-off: Increased API cost (multiple agents running simultaneously). If cost is a concern, tell the coordinator:
+If you want the whole roster on something, say so explicitly:
+
+> "Team, everyone take a pass at the dashboard feature"
+
+If cost is the concern, the other direction works too:
 
 > "Work sequentially to save costs"
-
-Coordinator switches to sync mode for all agents.
 
 ## Deadlock Avoidance
 
@@ -119,42 +121,41 @@ Choose resolution:
 Some tasks require **sequential review**:
 
 1. Agent writes code → Draft PR
-2. Lead reviews → Approves or rejects
-3. If approved → Merge and close
-4. If rejected → Reassign or escalate (agent is **locked out**)
+2. Lead reviews → Approves, flags a nit, or rejects
+3. If approved (CI green) → Merge and close
+4. If a nit (< 5 changed lines, no logic/security/API change) → Author fixes it in the same PR, no lockout
+5. If a substantive rejection → Reassign or escalate (agent is **locked out** of that artifact)
 
 This is a **sync gate** — the next step cannot proceed until the reviewer completes.
 
-## Parallel Execution Logs
+## Dispatch Logs
 
-The coordinator logs parallel execution in `.squad/orchestration-log/`:
+The coordinator logs dispatch in `.squad/orchestration-log/`:
 
 ```
-[2024-01-15 14:30:00] FAN-OUT: Spawning 4 agents (Backend, Frontend, Tester, DevRel)
+[2024-01-15 14:30:00] DISPATCH: 2 agents (Backend src/api/, Frontend src/ui/) — independent concerns
 [2024-01-15 14:30:15] AGENT: Backend started (background)
 [2024-01-15 14:30:16] AGENT: Frontend started (background)
-[2024-01-15 14:30:17] AGENT: Tester started (background)
-[2024-01-15 14:30:18] AGENT: DevRel started (background)
 [2024-01-15 14:35:42] COLLECT: Backend completed (success)
 [2024-01-15 14:36:10] COLLECT: Frontend completed (success)
-[2024-01-15 14:36:55] COLLECT: DevRel completed (success)
-[2024-01-15 14:38:20] COLLECT: Tester completed (success)
-[2024-01-15 14:38:21] FAN-IN: All agents complete
+[2024-01-15 14:36:11] COLLECT: All in-flight agents complete
 ```
 
-## Parallel Limits
+## Dispatch Limits
 
-The coordinator respects concurrency limits to avoid rate limits or resource exhaustion:
+The coordinator respects dispatch caps to keep work focused and avoid rate limits or resource exhaustion:
 
-- **Default:** 5 agents in parallel
-- **Adjustable:** `"Run at most 3 agents at once"` → Coordinator batches work in groups of 3
+- **Per request:** 2 domain agents. Exceeding it takes an explicit `"Team, ..."` request, or a task that provably spans 3+ modules with different primaries.
+- **In flight:** 3 domain agents at once, and 1 in-flight task per agent. Over the cap, work queues and the coordinator says what's queued.
+- **Exempt:** Scribe (background logging) and Ralph (monitor) never count against the caps.
+- **Adjustable:** `"Run at most 2 agents at once"` → Coordinator batches work in groups of 2. `.squad/routing.md` and `.squad/team.md` can tighten these numbers per repo.
 
 ## Sample Prompts
 
 ```
 Build the new dashboard feature — everyone work in parallel
 ```
-Coordinator spawns all relevant agents (Frontend, Backend, Tester, DevRel) simultaneously.
+An explicit "everyone" request lifts the per-request cap: the coordinator dispatches the relevant owners (Frontend, Backend, Tester, DevRel) and names the modules each is taking.
 
 ```
 Implement the API first, then write tests — do it sequentially
@@ -164,12 +165,12 @@ Forces sync mode: Backend runs, completes, then Tester starts.
 ```
 Work on issues #12, #15, and #18 at the same time
 ```
-Spawns 3 agents in parallel, one per issue. Assumes no dependencies between issues.
+Works the issues in priority order within the in-flight cap. Independent issues run at the same time; the rest queue and the coordinator says what's queued.
 
 ```
 Run at most 2 agents at once to save costs
 ```
-Sets concurrency limit. Coordinator batches work: runs 2, waits for completion, runs next 2.
+Tightens the in-flight cap. Coordinator batches work: runs 2, waits for completion, runs the next 2.
 
 ```
 Why is Tester waiting? Show me the dependency graph.

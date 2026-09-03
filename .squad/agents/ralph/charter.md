@@ -38,7 +38,7 @@ When active (work-monitor loop running), Ralph periodically reads `.squad/orches
 - `verdict: "indeterminate"` → treat identically to `warn`/`block` per the enforcement mode (per Q Recommendation #6: unverifiable compliance ≠ free pass)
 - `verdict: "error"` → log the audit script error; do not block; surface to coordinator for investigation
 
-Ralph does NOT rerun the audit script — that is Scribe's job. Ralph only reads and acts on verdicts already written.
+Ralph does NOT rerun the audit script — that is Scribe's job. Ralph only reads and acts on verdicts already written. DispatchGuard is opt-in: if no verdicts file exists for the session, there is nothing to consume and Ralph continues monitoring silently — it does not spawn an audit to create one.
 
 ### Alert format (warn/block)
 

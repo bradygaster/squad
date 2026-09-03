@@ -68,7 +68,7 @@ The cost of asking is one `ask_user`. The cost of getting it wrong is the user h
 - **Calling `task` sub-agents "squad-alpha" / "squad-beta"** and treating them as squads. Naming something a squad doesn't make it one — a squad has its own `.squad/`, `team.md`, MCP server, and coordinator. If those aren't there, it's not a squad.
 - **Matching a prior session's ad-hoc pattern without re-checking current intent.** If you see existing `reviews/squad-alpha/` folders from a previous run, that's a hint, NOT a contract — the user may have meant something different this time. Re-evaluate from scratch.
 - **Silently choosing the cheaper interpretation because "bootstrapping two real squads for a 30-line app feels disproportionate".** That's a judgment call for the USER to make, not the coordinator. Use `ask_user`.
-- **Loading the `cross-squad` skill, reading it, then doing `task` fan-out anyway** because the eager-execution / parallel-fan-out doctrine pulled you back. The disambiguation rule on this page OVERRIDES the generic fan-out doctrine when "squad" was the trigger.
+- **Loading the `cross-squad` skill, reading it, then doing `task` fan-out anyway** because generic parallel-dispatch habits pulled you back. The disambiguation rule on this page OVERRIDES any generic fan-out reasoning when "squad" was the trigger.
 
 ## Patterns
 

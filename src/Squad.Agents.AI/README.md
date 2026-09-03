@@ -152,7 +152,7 @@ Parsed URI query keys: `teamRoot`, `cliPath`, `cwd`, `cliArgs` (semicolon-separa
 
 ## Coordinator agent selection
 
-`SquadAgent` exists to wrap a Squad coordinator team, so it passes `--agent squad` to the underlying `copilot.exe` child process by default. That tells the CLI to load `.github/agents/squad.agent.md` as the agent definition — which is what teaches the coordinator to eager-execute, fan out, and dispatch through the `task` tool. Without it, the CLI uses its built-in generic agent and the coordinator role-plays responses inline instead of spawning real subagents — producing SDK behavior that does NOT match running `copilot --agent squad` interactively against the same team root.
+`SquadAgent` exists to wrap a Squad coordinator team, so it passes `--agent squad` to the underlying `copilot.exe` child process by default. That tells the CLI to load `.github/agents/squad.agent.md` as the agent definition — which is what teaches the coordinator to route work under minimum-sufficient dispatch, run genuinely independent work in parallel, and dispatch through the `task` tool. Without it, the CLI uses its built-in generic agent and the coordinator role-plays responses inline instead of spawning real subagents — producing SDK behavior that does NOT match running `copilot --agent squad` interactively against the same team root.
 
 | Scenario | What the SDK does |
 |---|---|

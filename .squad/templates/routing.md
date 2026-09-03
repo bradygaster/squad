@@ -44,11 +44,11 @@ When triaging, the Lead should ask:
 
 ## Rules
 
-1. **Eager by default** — spawn all agents who could usefully start work, including anticipatory downstream work.
+1. **Minimum sufficient dispatch** — spawn the fewest agents that can complete the task. Default is one agent: the primary owner. Do not spawn speculative or anticipatory downstream work.
 2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks.
 3. **Quick facts → coordinator answers directly.** Don't spawn an agent for "what port does the server run on?"
 4. **When two agents could handle it**, pick the one whose domain is the primary concern.
-5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
-6. **Anticipate downstream work.** If a feature is being built, spawn the tester to write test cases from requirements simultaneously.
+5. **"Team, ..." → bounded fan-out.** Spawn at most 2 domain agents (3 in flight overall), and only for concerns you can name with different owners and non-overlapping files.
+6. **No anticipatory downstream work.** Tests, docs, and scaffolding are dispatched after the upstream result exists and shows they are needed — not launched alongside. Choose `sync` vs `background` from the actual dependency, not by default.
 7. **Issue-labeled work** — when a `squad:{member}` label is applied to an issue, route to that member. The Lead handles all `squad` (base label) triage.
 8. **@copilot routing** — when evaluating issues, check @copilot's capability profile in `team.md`. Route 🟢 good-fit tasks to `squad:copilot`. Flag 🟡 needs-review tasks for PR review. Keep 🔴 not-suitable tasks with squad members.

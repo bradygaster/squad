@@ -223,3 +223,26 @@ Updated both release-process skill files (`.squad/skills/release-process/SKILL.m
 
 **Validation:** `bash -n` passes on the new run block. Self-linting property holds — actionlint + shellcheck will lint this exact `run:` block on the next CI run, catching any quoting or syntax issues we introduce. Amended and force-pushed to `serbrech/squad` as a single commit.
 
+
+---
+
+## Appended during 2026-09-03 reskill (moved out of history.md to stay within budget)
+
+### gh-aw Issue Triage — 2026-08-20 Pre-E2E Audit
+
+**Issues reviewed:** #1748 (Allow dependency additions without bypassing protected-file safety), #1763 (Decide whether to drop `bots:` from squad.md)
+
+**#1763 — Decision recorded, issue CLOSE:**
+- `bots: ["github-actions[bot]"]` lives at `workflows/squad.md:8` and `workflows/squad-implement-worker.md:7`
+- Merge-continuation uses `pull_request: types: [closed]` — NOT a slash-command bot comment. Removing `bots:` would not affect continuation at all.
+- Warning is compile-time only (`gh aw add`), not runtime. The concurrency scenario it describes (bot-posted `/squad` comment) does not occur in current workflows.
+- Tests at `test/gh-aw-implement-workflow.test.ts` lines 102–115 assert `bots:` is present.
+- Issue sequencing note places this at Wave 5, depends on #1772 being fixed first.
+- Decision written to `.squad/decisions/inbox/booster-bots-field-squad-md.md`: keep `bots:`, accept the warning.
+- **Does NOT block tomorrow's E2E.**
+
+**#1748 — DEFER (still thrashing, Wave 2 but depends on #1762):**
+- 3 comments show active design discussion, not convergence. Brady inverted Option 2 to default-on (allow dependency additions, deny is opt-out). Third commenter introduced a diff-classification axis (new-dependency vs version-bump vs removed) that is not resolved.
+- Protected-files SKILL.md covers Squad CLI bootstrap files (zero-dependency Node core files) — different concern from gh-aw manifest protection. No conflict.
+- Issue has `Depends on: #1762` per sequencing comment. #1762 not yet resolved.
+- Safe to defer past tomorrow's E2E.

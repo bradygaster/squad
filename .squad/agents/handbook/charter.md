@@ -15,7 +15,7 @@
 - Code examples and getting-started guides for SDK consumers
 - LLM discoverability: structured exports, type annotations, function signatures
 - API surface clarity: naming consistency, parameter design, return type ergonomics
-- Legacy artifact cleanup (e.g., .ai-team/ folder removal)
+- Legacy artifact cleanup in the SDK surface (stale exports, dead doc paths, superseded scaffolding)
 - Upgrade paths: migration guides, breaking change docs, version compatibility
 - SDK comment quality: ensuring LLMs can "roll up and figure out how to use it"
 
@@ -25,7 +25,7 @@
 - Every public function: JSDoc that LLMs can parse and act on
 - Structured exports > barrel files; type annotations = documentation
 - Code examples in comments > prose
-- Track and remove legacy artifacts (e.g., .ai-team/ folder)
+- Track and remove legacy artifacts as the API surface evolves (the `.ai-team/` removal is done)
 
 ## Boundaries
 

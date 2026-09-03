@@ -27,18 +27,18 @@ These apply to **every** operation that moves content out of a file — decision
 history summarization. Archival is a two-half operation (append to a destination, trim from a
 source). When the halves come apart, archival silently becomes deletion.
 
-**1. The destination must be git-tracked — check before writing.**
+**1. The destination must be verified committable — measure before writing.**
 
 ```bash
 git ls-files --error-unmatch <destination>
 ```
 
-Exit 0 → proceed. Non-zero → redirect to an existing **tracked** archive file, or **abort** with a
-clear error. `.squad/` is git-excluded in many checkouts. Under that condition already-tracked
-files still commit, but **newly created files silently never do** — so the trim from the tracked
-source commits while the destination never does. Never create a new timestamped archive file and
-assume it will commit. Never move content out of a tracked file into a destination that cannot be
-committed.
+Exit 0 → proceed. Non-zero → the destination is not committable yet: either `git add` it and
+re-measure, or redirect to an existing **tracked** archive file, or **abort** with a clear error.
+Never assume a new timestamped archive will commit — measure it. `.squad/` is git-excluded in many
+checkouts. Under that condition already-tracked files still commit, but **newly created files
+silently never do** — so the trim from the tracked source commits while the destination never does.
+Never move content out of a tracked file into a destination that cannot be committed.
 
 **2. Append first, verify, then delete — in that order.**
 

@@ -20,13 +20,13 @@ I'm building a cross-platform CLI pomodoro timer in Python:
 - Focus mode: blocks domains via /etc/hosts (with undo)
 - --report flag for weekly stats table
 
-Set up the team. I want this done fast — everyone works at once.
+Set up the team.
 ```
 
 **What it demonstrates:**
-- Parallel fan-out on a small, well-scoped project
-- Backend handles timer logic while systems agent tackles cross-platform notifications
-- Tester writes test cases from spec while implementation is in flight
+- Minimum sufficient dispatch on a small, well-scoped project
+- Backend owns timer logic; cross-platform notifications are a genuinely independent concern for a second agent
+- Tests are written once real behavior exists to test, not dispatched speculatively alongside implementation
 
 ---
 
@@ -39,8 +39,8 @@ Set up the team and start building.
 ```
 
 **What it demonstrates:**
-- Agents own distinct pipeline components (parser, template engine, RSS, file I/O)
-- Tester writes test cases from spec while others build in parallel
+- One owner builds the generator's pipeline components as a single cohesive unit
+- Tests are added once the pipeline produces real output, not speculatively alongside it
 - Front matter format decisions propagate via decisions.md
 
 ---
@@ -61,9 +61,9 @@ Start building — I want to play in 20 minutes.
 ```
 
 **What it demonstrates:**
-- Frontend, audio, and input handling built in parallel
-- Tester writes Playwright tests while game is under construction
-- Fast iteration with visible progress across agents
+- One owner builds frontend, audio, and input handling as a single feature
+- Tests are added once the game runs, not dispatched speculatively during construction
+- Fast iteration with visible progress
 
 ---
 
@@ -82,9 +82,9 @@ Build engine and sample adventure simultaneously. Content writer and engine buil
 ```
 
 **What it demonstrates:**
-- Natural split between engine logic and content creation
-- Both streams run fully in parallel with shared data format decisions
-- Tester writes test cases from spec before implementation completes
+- Natural split between engine logic and content creation — two independent owners, non-overlapping files
+- Both streams run in parallel with shared data format decisions
+- Tests are added once the engine has real behavior to verify
 
 ---
 
@@ -101,13 +101,13 @@ Strategic card duel game (browser, inspired by MTG):
 - HTML/CSS grid battlefield showing fields, hands, graveyards
 - Card hover preview
 
-One agent designs cards/balance, another builds engine/rules, another builds UI, tester validates combat math. Go.
+Team, go — one agent designs cards/balance, another builds engine/rules, another builds UI. Have someone validate combat math once the engine is real.
 ```
 
 **What it demonstrates:**
-- Deep parallelism requiring early data format alignment via decisions.md
-- UI scaffolding proceeds while card design is underway
-- Scribe's decision propagation becomes critical (mana curve affects engine and AI)
+- An explicit `Team, ...` request to broaden participation beyond the default one or two agents
+- Card design and engine/rules are independent enough to run in parallel; UI follows once the data model is set
+- Combat math validation happens once there's a real engine to check, not speculatively alongside design
 
 ---
 
@@ -128,12 +128,12 @@ Output:
 
 Design: Clean, modern, developer-focused. Monospace headings, proportional body. Dark code blocks with copy button. Mobile responsive. Fast — no JS for reading (JS only for dark mode and copy).
 
-Build parser, template engine, RSS generator, static output (dist/). Include `node build.js` script. Set up team and build in one session.
+Build parser, template engine, RSS generator, static output (dist/). Include `node build.js` script. Set up the team and build in one session.
 ```
 
 **What it demonstrates:**
 - Meta-demo where Squad builds its own publishing tool
-- All components (parser, templating, RSS, CSS) build in parallel
+- One owner builds the pipeline end to end; CSS/design can run as a second, genuinely independent agent
 - Finished product is visual, functional, and self-documenting
 
 ---
@@ -157,13 +157,13 @@ Build an event-driven e-commerce store:
 
 Each service with its own Dockerfile. Include docker-compose.yml. Orders return 202 Accepted, status polled/pushed via WebSocket.
 
-Set up a team. One agent per service. Coordinate on API contracts and event schemas early, then build in parallel.
+Set up the team. Team, one agent per service — coordinate on API contracts and event schemas early, then build in parallel.
 ```
 
 **What it demonstrates:**
-- True microservice parallelism with contract-first coordination
+- An explicit `Team, ...` request to justify more than the default one or two agents — five genuinely independent services
 - Event schema decisions must propagate early via Scribe
-- API gateway scaffolds while downstream services build independently
+- Each service builds independently once contracts are agreed
 
 ---
 
@@ -180,13 +180,13 @@ Build a project management dashboard (React + TypeScript, Node.js/Express):
 
 Full Playwright test suite covering login, CRUD, drag-and-drop, filtering, real-time sync (two browser contexts). Write Gherkin feature files FIRST, then implement Playwright step definitions. Runnable with `npx playwright test`.
 
-Set up the team. Write Gherkin specs and test skeletons before implementation starts, update as UI takes shape.
+Set up the team. Team, write Gherkin specs and test skeletons first since I want test-first development, then build frontend and backend against them.
 ```
 
 **What it demonstrates:**
-- Test-first development with Gherkin specs written before implementation
-- Frontend and backend build in parallel while tests scaffold
-- Anticipatory work pattern: tests and implementation converge without blocking
+- An explicit `Team, ...` request for test-first development, since Gherkin specs are asked for up front rather than added speculatively
+- Frontend and backend are independent owners that build against the agreed specs in parallel
+- Tests and implementation converge without one blocking the other
 
 ---
 
@@ -224,13 +224,13 @@ Build a cloud-native app with Aspire (read https://aspire.dev/):
 - Service discovery via Aspire (no hardcoded URLs)
 - Health checks and OpenTelemetry tracing
 
-Team organized by Aspire integration: AppHost/discovery, Redis caching, PostgreSQL, Blazor frontend, background worker. Tester validates service discovery and end-to-end data flow. Set up the team.
+Team, organize by Aspire integration: AppHost/discovery, Redis caching, PostgreSQL, Blazor frontend, background worker. Set up the team.
 ```
 
 **What it demonstrates:**
-- Agents specialized by infrastructure component rather than traditional roles
+- An explicit `Team, ...` request to justify five agents, each owning a genuinely independent infrastructure component
 - AppHost coordinates wiring while service agents build independently
-- Infrastructure decisions (service names, connection strings) propagate via decisions.md
+- Infrastructure decisions (service names, connection strings) propagate via decisions.md; service discovery gets validated once the services are real
 
 ---
 
@@ -257,13 +257,13 @@ Target:
 
 Preserve all business logic. SOAP→REST with same data structures, MSMQ→Service Bus compatible format.
 
-Team: web app migration, WCF-to-API, Windows Service-to-Functions, shared models, Azure infrastructure, CI/CD, tester. Start with migration plan.
+Team, this spans web app migration, WCF-to-API, Windows Service-to-Functions, shared models, Azure infrastructure, and CI/CD. Start with a migration plan before dividing up the work.
 ```
 
 **What it demonstrates:**
-- Realistic enterprise migration from legacy .NET Framework to modern Azure
+- An explicit `Team, ...` request for a project with genuinely independent migration streams
 - Agents analyze unfamiliar code and translate to Azure-native patterns
-- Business logic preservation while modernizing infrastructure (WCF→REST, MSMQ→Service Bus)
+- Business logic preservation while modernizing infrastructure (WCF→REST, MSMQ→Service Bus); testing follows once the ported services exist
 
 ---
 
@@ -282,13 +282,13 @@ Build multiplayer space trading game (browser-based):
 
 Tech: Node.js, PostgreSQL, WebSocket, vanilla HTML/CSS/Canvas.
 
-One agent per system: economy/trading, galaxy generator/map, combat, multiplayer/networking, frontend UI, tester. Economy and galaxy work simultaneously — agree on star system data format early. Go.
+Team, one agent per system: economy/trading, galaxy generator/map, combat, multiplayer/networking, frontend UI. Economy and galaxy work simultaneously — agree on star system data format early. Go.
 ```
 
 **What it demonstrates:**
-- Complex game with 6+ agents owning distinct but interoperating systems
+- An explicit `Team, ...` request to justify five agents, each owning a distinct, interoperating system
 - Data format decisions shared early and respected across all agents
-- Economy and galaxy agents work in parallel from turn 1
+- Economy and galaxy agents work in parallel from turn 1; tests are added once each system has real behavior to verify
 
 ---
 
@@ -304,13 +304,13 @@ Build recipe app with image recognition (React Native Expo, Python FastAPI, SQLi
 - Shopping list: auto-generate missing ingredients
 - Dietary filters: vegetarian, vegan, gluten-free, dairy-free
 
-One agent: React Native frontend. One: FastAPI backend + DB. One: vision/AI integration. One: recipe curation/seed data. Tester: API tests with mocked vision responses. Set up team.
+Team, split this into: React Native frontend, FastAPI backend + DB, vision/AI integration, recipe curation/seed data. Set up the team.
 ```
 
 **What it demonstrates:**
-- Cross-platform mobile + backend + AI integration in one project
+- An explicit `Team, ...` request to justify four agents on a cross-platform mobile + backend + AI project
 - Recipe curator and AI integration agent work simultaneously with shared taxonomy
-- Tester mocks vision API responses for deterministic testing before real integration
+- API tests with mocked vision responses are added once the integration exists, not dispatched ahead of it
 
 ---
 
@@ -326,13 +326,13 @@ Build self-service DevOps platform (React, Go, PostgreSQL, Docker):
 - Secrets management: encrypted storage
 - Execution history: searchable logs with status, duration, artifacts
 
-Team: frontend (drag-and-drop), backend (execution engine), Docker/infrastructure, security (secrets), tester. Set up team.
+Team: frontend (drag-and-drop), backend (execution engine), Docker/infrastructure, security (secrets). Set up the team.
 ```
 
 **What it demonstrates:**
-- Agents with diverse expertise (UI, containers, cryptography) on one product
+- An explicit `Team, ...` request to justify four agents with diverse expertise (UI, containers, cryptography)
 - Execution engine and pipeline designer build in parallel with shared data model
-- Security agent works independently on secrets encryption
+- Security agent works independently on secrets encryption; tests follow once the pipeline runs
 
 ---
 
@@ -349,13 +349,13 @@ Build browser-based roguelike dungeon crawler:
 - Permadeath: high score table with name, class, floor, cause of death
 - Save: save-on-exit only (LocalStorage)
 
-One agent per: dungeon gen, combat + AI, items + loot, rendering + fog of war, tester. All build simultaneously with shared tile/entity data model. Start building.
+Team, one agent per: dungeon gen, combat + AI, items + loot, rendering + fog of war. All build simultaneously with shared tile/entity data model. Start building.
 ```
 
 **What it demonstrates:**
-- Four independently buildable systems converging on shared data model
+- An explicit `Team, ...` request for four independently buildable systems converging on a shared data model
 - Early data model decision via decisions.md enables full parallelism
-- Tester validates game math from specs while systems are under construction
+- Game math gets validated once each system exists, not speculatively during construction
 
 ---
 
@@ -374,13 +374,13 @@ Build real-time collaborative whiteboard using React Flow (React + TypeScript, N
 - Export: PNG and SVG
 - Persistence: PostgreSQL (nodes, edges, viewport), auto-save every 30s
 
-Frontend agent: React Flow + drag-and-drop. Networking: WebSocket sync + conflict resolution. Backend: rooms + persistence. Tester: Playwright multi-user drag-and-drop tests. Set up team.
+Team: frontend (React Flow + drag-and-drop), networking (WebSocket sync + conflict resolution), backend (rooms + persistence). Set up the team.
 ```
 
 **What it demonstrates:**
-- Networking and frontend agents coordinate closely on React Flow data model
-- Frontend leverages React Flow's built-in features while networking syncs across users
-- Tester writes multi-context Playwright tests for real-time sync validation
+- An explicit `Team, ...` request to justify three agents on genuinely independent concerns
+- Networking and frontend agents coordinate closely on the React Flow data model
+- Multi-user Playwright tests are added once real-time sync exists to validate
 
 ---
 
@@ -396,13 +396,13 @@ Build mobile-first PWA dice roller (React + TypeScript, Three.js/React Three Fib
 - Score history: roll log, replay animations, export JSON
 - Sound effects, haptic feedback, night mode
 
-One agent: 3D dice/physics. One: PWA/gesture handling. One: multiplayer backend (rooms, WebSocket, scores). One: game logic. Tester: mobile Playwright for touch + multiplayer. Set up team.
+Team, one agent: 3D dice/physics. One: PWA/gesture handling. One: multiplayer backend (rooms, WebSocket, scores). One: game logic. Set up the team.
 ```
 
 **What it demonstrates:**
-- Mobile-first project with agents specialized by concern (3D, touch, networking, logic)
+- An explicit `Team, ...` request to justify four agents specialized by concern (3D, touch, networking, logic)
 - 3D and gesture agents coordinate on tap-to-roll triggers and animation states
-- PWA requirements and mobile testing showcase production mobile app concerns
+- Mobile Playwright tests for touch and multiplayer are added once the features exist to test
 
 ---
 

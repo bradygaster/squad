@@ -159,26 +159,32 @@ squad > Write a blog post about our new casting system
 ### How Messages Get to Agents
 
 1. **You type a message** → Shell receives it
-2. **Coordinator reads it** → Determines which agent(s) can usefully start
-3. **Agents launch in parallel** → All applicable agents work simultaneously
+2. **Coordinator reads it** → Identifies the primary owner, plus a second agent only if there's a genuinely independent concern
+3. **Agents launch** → The primary owner starts immediately; a second agent runs alongside it in parallel if the independence test passes
 4. **Agents write results** → To `.squad/` (decisions, history, skills, etc.)
 5. **Shell streams updates** → You see progress in real-time
 
 ### Parallel Execution
 
-When you give a task that multiple agents can handle:
+Squad dispatches the minimum sufficient set of agents, not the whole roster:
 
 ```
 squad > Build the login page
 ```
 
 The coordinator might spawn:
-- McManus (frontend) → building the UI
-- Verbal (backend) → setting up auth endpoints
-- Fenster (tester) → writing test cases
-- Kobayashi (scribe) → logging everything
+- McManus (frontend) → owns the login page
+- Verbal (backend) → owns the auth endpoints (a genuinely independent concern)
 
-All at once. All in parallel.
+Two owners, running in parallel. Testers and scribes aren't pre-spawned "just in case" — they're dispatched once there's something real to test or log.
+
+Want the whole roster on it? Ask explicitly:
+
+```
+squad > Team, build the login page — frontend, backend, and tests, all at once
+```
+
+`Team` tells the coordinator to broaden participation. It's an explicit request, not the default.
 
 ---
 

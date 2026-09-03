@@ -26,10 +26,12 @@ here only when their agent names also exist in the casting registry.
 
 ## Rules
 
-1. **Eager by default** — spawn all agents who could usefully start work, including anticipatory downstream work.
-2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks.
+1. **Minimum sufficient dispatch** — spawn the fewest agents that can complete the task. Default is **one agent**: the primary owner of the work type. Do not spawn speculative or "could usefully start" agents.
+2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. Scribe does not count against any cap.
 3. **Quick facts → coordinator answers directly.** Don't spawn an agent for "what port does the server run on?"
-4. **When two agents could handle it**, pick the one whose domain is the primary concern.
-5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
-6. **Anticipate downstream work.** If a feature is being built, spawn the tester to write test cases from requirements simultaneously.
-7. **Issue-labeled work** — when a `squad:{member}` label is applied to an issue, route to that member. The Lead handles all `squad` (base label) triage.
+4. **When two agents could handle it**, pick the one whose domain is the primary concern. The other is an advisory reviewer, never a co-implementer.
+5. **Dispatch caps.** At most **2** domain agents per request, at most **3** in flight at once, at most **1** in-flight task per agent. Exceeding the fan-out cap requires an explicit `"Team, ..."` from the user or a task that provably spans 3+ modules with different primaries — name the modules.
+6. **No anticipatory downstream work.** Tests, docs, and scaffolding are dispatched after the upstream result exists and shows they are needed — not launched alongside "because they'll obviously be needed."
+7. **Sync vs background is a dependency question,** not a default. Use `sync` when someone is waiting on the result; use `background` only for proven-independent work launched in the same turn.
+8. **Stop conditions** — report instead of spawning more when: acceptance criteria are met, two consecutive agent turns produce no file changes, two agents have edited the same file in one wave, the change set exceeds 20 files or shows unrequested deletions, an agent reports blocked, or a cap in rule 5 is reached.
+9. **Issue-labeled work** — when a `squad:{member}` label is applied to an issue, route to that member. The Lead handles all `squad` (base label) triage.

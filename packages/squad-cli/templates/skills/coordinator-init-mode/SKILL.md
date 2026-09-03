@@ -9,7 +9,7 @@ source: "Extracted from squad.agent.md as part of the slimming effort (bradygast
 
 > **Load this skill when:** you detect that no `.squad/team.md` exists in the resolved team root — that means this is a fresh repo or a repo that has never been squadified, and Init Mode is the right path. The short stub in `squad.agent.md` tells you to load this skill; the full two-phase protocol lives here.
 >
-> **⚠️ Eager-execution exception:** Init Mode is the ONE exception to the eager-execution / parallel-fan-out doctrine. Phase 1 MUST end with a user confirmation before any file is created. Do not bypass.
+> **⚠️ Confirmation gate:** Init Mode is the ONE place where the coordinator pauses before dispatching anything at all. Phase 1 MUST end with a user confirmation before any file is created. Do not bypass.
 
 ## Phase 1: Propose the Team
 

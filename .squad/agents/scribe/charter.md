@@ -27,11 +27,15 @@ Applies to **every** operation that moves content out of a file — decision arc
 summarization. Archival is a two-half operation (append to a destination, trim from a source).
 When the halves come apart, archival silently becomes deletion.
 
-**1. The destination must be git-tracked — check before writing.**
-`git ls-files --error-unmatch <destination>`. Exit 0 → proceed. Non-zero → redirect to an existing
-**tracked** archive, or **abort**. `.squad/` is git-excluded in this repo: already-tracked files
-still commit, but **new files silently never do**, so the trim commits while the destination never
-does. Never create a new timestamped archive file and assume it will commit.
+**1. The destination must be verified committable — measure before writing.**
+`git ls-files --error-unmatch <destination>`. Exit 0 → proceed. Non-zero → the destination is not
+committable yet: either `git add` it and re-measure, or redirect to an existing **tracked** archive,
+or **abort**. Never assume a new timestamped archive will commit — measure it. `.squad/` is
+git-excluded in many checkouts — under that condition already-tracked files still commit but **new
+files silently never do**, so the trim commits while the destination never does. In *this* repo only
+the `.gitignore`d paths are excluded (`.squad/log/`, `.squad/decisions/inbox/`,
+`.squad/orchestration-log/`, `.squad/sessions/`, `.squad/config.json`), so a new timestamped archive
+under `.squad/agents/` **can** be tracked — but never assume it. Measure.
 
 **2. Append first, verify, then delete.** Append, re-read the destination, confirm every moved
 heading is literally present **and** the entry count grew by exactly the number moved. Only then
@@ -71,13 +75,13 @@ After substantial work:
 
 Scribe runs with **full tool access** in its own spawned session. The coordinator's `tools:` allowlist does not restrict Scribe — Scribe is a sub-agent with its own tool context. This means Scribe CAN use `create`, `edit`, `grep`, and any file-write tool, even when the coordinator cannot.
 
-## DispatchGuard
+## DispatchGuard (opt-in audit mode)
 
-**Scribe is the mechanical audit engine for dispatch compliance.** When spawned in DispatchGuard mode (see `### Session Init — DispatchGuard Auto-Bootstrap` in `squad.agent.md`), Scribe reads the session's ledger and audits each coordinator turn against the dispatch contract.
+**Scribe is the mechanical audit engine for dispatch compliance.** DispatchGuard is **opt-in** — Scribe runs it only when a spawn prompt explicitly asks for DispatchGuard mode with `SESSION_ID` and `TEAM_ROOT` resolved. There is no automatic session-start bootstrap. Do not spawn DispatchGuard speculatively.
 
 ### DispatchGuard Trigger
 
-The coordinator spawns Scribe in DispatchGuard mode at session start with `SESSION_ID` and `TEAM_ROOT` resolved. Scribe then:
+When spawned in DispatchGuard mode, Scribe:
 
 1. Reads `.squad/orchestration-log/dispatchguard/ledger-{SESSION_ID}.jsonl`
 2. Calls `.squad/hooks/dispatch-audit.ps1` (Windows) or `.squad/hooks/dispatch-audit.sh` (Linux/macOS) once per un-audited coordinator turn
@@ -100,7 +104,7 @@ Append each verdict object from `dispatch-audit.ps1` / `dispatch-audit.sh` as a 
 DispatchGuard: {N} turns audited, {M} violations (mode: warn|block).
 ```
 
-If no ledger exists yet (empty session): `DispatchGuard: no ledger — session not yet instrumented.`
+If no ledger exists yet (uninstrumented session): `DispatchGuard: no ledger — session not instrumented.`
 
 ## Boundaries
 

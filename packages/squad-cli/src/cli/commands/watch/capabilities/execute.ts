@@ -107,33 +107,37 @@ export function buildAgentPrompt(
 
   if (hasInstructions) {
     return [
-      'Ralph, Go! Read .squad/ralph-instructions.md for your full instructions. Follow ALL sections there. MAXIMIZE PARALLELISM — spawn agents for ALL actionable issues simultaneously.',
+      'Ralph, Go! Read .squad/ralph-instructions.md for your full instructions. Follow ALL sections there. MINIMUM SUFFICIENT DISPATCH — work the highest-priority actionable issues first and respect the dispatch caps in .squad/routing.md and .squad/team.md. Do NOT spawn an agent for every issue.',
       '',
       'Here are the current open squad issues:',
       issueList,
       '',
-      'Task: Read the issues, follow your instructions in .squad/ralph-instructions.md, and work on what\'s actionable.',
-      'WHY: Keep the squad pipeline moving — no idle work.',
-      'Success: Issues get branches, PRs, and progress.',
-      'Escalation: If blocked, comment on the issue and move to next.',
+      'Task: Read the issues, follow your instructions in .squad/ralph-instructions.md, and work the highest-priority actionable items within the caps.',
+      'Dispatch caps: at most 2 active domain agents per request, at most 3 tasks in flight at once, at most 1 in-flight task per agent. You (Ralph) do not count against these caps; every domain agent you spawn does.',
+      'No speculative work: do not pre-spawn testers, docs writers, or scaffolders for issues nobody is working yet. Queue the remaining issues and say what is queued.',
+      'WHY: Keep the squad pipeline moving on what matters most — throughput, not agent count.',
+      'Success: The top-priority issues get branches, PRs, and progress; the rest stay queued and visible.',
+      'Escalation: If blocked, comment on the issue and move to the next actionable item.',
     ].join('\n');
   }
 
   // Fallback when ralph-instructions.md does not exist
   return [
-    'You are Ralph, the autonomous work monitor. Review the open squad issues below and work on every actionable one. Skip issues that are blocked, waiting on external input, or already assigned.',
+    'You are Ralph, the autonomous work monitor. Review the open squad issues below and work the highest-priority actionable ones first. Skip issues that are blocked, waiting on external input, or already assigned.',
     '',
     'Here are the current open squad issues:',
     issueList,
     '',
-    'Task: Triage the list, pick up unblocked/unassigned issues, create branches and PRs.',
-    'WHY: Keep the squad pipeline moving — no idle work.',
-    'Success: Issues get branches, PRs, and progress.',
-    'Escalation: If blocked, comment on the issue and move to next.',
+    'Task: Triage the list, pick up the highest-priority unblocked/unassigned issues, create branches and PRs.',
+    'Dispatch caps: at most 2 active domain agents per request, at most 3 tasks in flight at once, at most 1 in-flight task per agent. You (Ralph) do not count against these caps; every domain agent you spawn does.',
+    'No speculative work: do not pre-spawn agents for issues nobody is working yet. Queue the remaining issues and say what is queued.',
+    'WHY: Keep the squad pipeline moving on what matters most — throughput, not agent count.',
+    'Success: The top-priority issues get branches, PRs, and progress; the rest stay queued and visible.',
+    'Escalation: If blocked, comment on the issue and move to the next actionable item.',
   ].join('\n');
 }
 
-/** Spawn a single agent session for all eligible issues. */
+/** Spawn a single agent session to work the eligible issues under the dispatch caps. */
 async function executeAll(
   issues: ExecutableWorkItem[],
   context: WatchContext,

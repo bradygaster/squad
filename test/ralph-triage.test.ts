@@ -184,8 +184,19 @@ describe('ralph triage parser helpers', () => {
     });
 
     it('handles "—" as secondary (should be null)', () => {
-      const modules = parseModuleOwnership(ROUTING_MD);
-      expect(modules.find((module) => module.modulePath === 'src/ralph/')?.secondary).toBeNull();
+      // Dedicated fixture (not live routing.md — that table's rows/ownership
+      // shift as the team is recast, which previously made this assertion
+      // flaky when the referenced module path or its secondary changed).
+      const markdown = [
+        '## Module Ownership',
+        '',
+        '| Module | Primary | Secondary |',
+        '|--------|---------|-----------|',
+        '| `src/fixture/` | Fenster | — |',
+      ].join('\n');
+
+      const modules = parseModuleOwnership(markdown);
+      expect(modules.find((module) => module.modulePath === 'src/fixture/')?.secondary).toBeNull();
     });
 
     it('returns empty array for missing section', () => {

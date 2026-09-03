@@ -187,7 +187,7 @@ Squad spawns multiple agents simultaneously — frontend builds the UI, backend 
 > Add input validation to the form
 ```
 
-Squad checks `routing.md`, picks the best match, and may launch anticipatory agents (e.g., tester writes validation test cases while the implementer builds).
+Squad checks `routing.md`, picks the best match, and may launch parallel agents only when the work items are already proven independent (e.g., tester writes validation test cases while the implementer builds).
 
 ### Quick questions — no spawn
 

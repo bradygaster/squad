@@ -20,10 +20,10 @@ I'm building a cross-platform CLI pomodoro timer in Python. It should support:
 - Desktop notifications on macOS, Windows, and Linux
 - A --report flag that prints weekly stats as a table
 
-Set up the team. I want this done fast — everyone works at once.
+Set up the team.
 ```
 
-**Shows:** Parallel fan-out on a small project. Backend handles timer logic, tester writes test cases from the spec while implementation is in flight.
+**Shows:** Minimum sufficient dispatch — one owner builds the timer end to end. Tests are written once there's real behavior to test, not speculatively alongside it.
 
 ---
 
@@ -37,10 +37,10 @@ Build a browser-based Snake game using vanilla HTML, CSS, and JavaScript. No fra
 - Progressive speed increase every 5 points
 - A retro CRT-style visual effect using CSS filters
 
-Start building immediately — I want to play this in 20 minutes.
+Start building — I want to play this in 20 minutes.
 ```
 
-**Shows:** Fast iteration — frontend, audio, and input handling all built in parallel. Tester writes Playwright tests while the game is being built.
+**Shows:** One owner builds frontend, audio, and input handling as a single cohesive feature. Fast iteration, no agents added before there's something for them to do.
 
 ---
 
@@ -58,10 +58,10 @@ I'm building a React dashboard that shows sales metrics. Stack: React 19, Vite, 
 - Dark mode toggle
 - Playwright E2E tests for every major interaction
 
-Set up the team and start with the backend data layer.
+Set up the team. Start with the backend data layer, then the frontend once the API is stable.
 ```
 
-**Shows:** Agents specialize (frontend on Recharts, backend on Express/SQLite, tester on Playwright). Decisions about chart library and data format propagate automatically.
+**Shows:** Backend owns the data layer first; frontend builds on the stable API second. Playwright tests are added once there's a working UI to test, not dispatched speculatively up front.
 
 ---
 
@@ -79,7 +79,7 @@ Build a cloud-native distributed app with Aspire. I want:
 Use the latest .NET 9 templates as a starting point.
 ```
 
-**Shows:** Full-stack cloud-native development. Agents handle service discovery, container orchestration, and distributed tracing setup in parallel.
+**Shows:** One agent owns the AppHost and service wiring — the genuinely independent concern (Redis cache) can run as a second agent alongside it. Say `Team, ...` if you want frontend, backend, and tracing all going at once.
 
 ---
 

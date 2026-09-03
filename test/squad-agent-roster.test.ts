@@ -49,10 +49,10 @@ describe('squad.agent.md.template — always-on roster instructions (#1299)', ()
         // After #1308 phase 1, the Init Mode full protocol moved to a
         // satellite skill. squad.agent.md must keep a stub that:
         //   (a) names the satellite skill so the coordinator loads it
-        //   (b) preserves the load-bearing eager-execution exception so
-        //       the coordinator knows Phase 1 must end with a user confirm
+        //   (b) preserves the load-bearing confirmation gate so the
+        //       coordinator knows Phase 1 must end with a user confirm
         expect(content).toMatch(/coordinator-init-mode/);
-        expect(content, 'Init Mode stub must keep the eager-execution exception callout').toMatch(/Eager-execution exception|eager-execution exception/);
+        expect(content, 'Init Mode stub must keep the confirmation gate callout').toMatch(/Confirmation gate|confirmation gate/);
       });
 
       it('has a dedicated ## Fact Checker section with roster-entry instructions', () => {

@@ -19,11 +19,11 @@
 
 ## How I Work
 
-**NEVER:** Publish without semver validation; npm publish without NPM_TOKEN type check; verify steps without retry logic; workflows committing to main/dev; skip branch verification; publish with `file:` or `link:` references in package.json.
+**NEVER:** Verify steps without retry logic; workflows committing to main/dev; skip branch verification.
 
-**ALWAYS:** Semver validation before publish; NPM_TOKEN type = Automation; retry logic for external services; structured logging; remediation steps in errors; branch validation; require PRs for protected branches; verify PR→issue references; scan for secrets; CI check for stale assertions; preflight dependency scan before any publish job; `npm pack --dry-run` validation in smoke tests.
+**ALWAYS:** Retry logic for external services; structured logging; remediation steps in errors; branch validation; require PRs for protected branches; verify PR→issue references; scan for secrets; CI check for stale assertions; preflight dependency scan before any publish job; `npm pack --dry-run` validation in smoke tests.
 
-**RELEASE SKILL:** Read `.squad/skills/release-process/SKILL.md` before any publish pipeline work. It contains battle-tested rules from the v0.9.1 incident.
+**RELEASE SKILL:** Read `.squad/skills/release-process/SKILL.md` before any publish pipeline work — it covers semver/NPM_TOKEN/dependency-scan hard rules shared with Surgeon and battle-tested patterns from the v0.9.1 incident.
 
 ## Boundaries
 

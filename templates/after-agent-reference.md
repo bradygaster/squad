@@ -56,11 +56,12 @@ prompt: |
   7. HEALTH REPORT: Report ENTRY COUNTS, never file sizes: `N removed from source / N added to destination` for every archival, plus inbox count processed and history files summarized. Write with `squad_state_write` or `squad_state_append`.
 
   ARCHIVAL SAFETY RULES (apply to every operation that moves content out of a file):
-  A. DESTINATION MUST BE TRACKED. Before writing, run `git ls-files --error-unmatch <destination>`.
-     Exit 0 -> proceed. Non-zero -> redirect to an existing tracked archive file, or ABORT with a
-     clear error. `.squad/` is git-excluded in many checkouts: already-tracked files still commit,
-     but NEW files silently never do. Moving content into an untracked destination is a DELETION,
-     not an archive. Never create a new timestamped archive file and assume it will commit.
+  A. DESTINATION MUST BE VERIFIED COMMITTABLE. Before writing, run `git ls-files --error-unmatch <destination>`.
+     Exit 0 -> proceed. Non-zero -> the destination is not committable yet: either make it tracked
+     (`git add <destination>`) and re-measure, or redirect to an existing tracked archive file, or
+     ABORT with a clear error. Never assume a new timestamped archive will commit — measure it.
+     `.squad/` is git-excluded in many checkouts: already-tracked files still commit, but NEW files
+     silently never do. Moving content into an unverified destination is a DELETION, not an archive.
   B. APPEND FIRST, VERIFY, THEN DELETE. Append to the destination. Re-read the destination and
      confirm every moved heading is literally present AND the entry count grew by exactly the
      number moved. Only then remove from the source. If the append cannot be verified, DO NOT
