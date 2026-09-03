@@ -117,6 +117,21 @@ describe('gh-aw: /squad research online-documentation capability', () => {
     expect(researchSkill).toContain('masquerade as one that consulted a source');
   });
 
+  it('preserves full public documentation URLs without weakening general URL sanitization', () => {
+    const safeOutputsMatch = frontmatter.match(
+      /^safe-outputs:\n((?:[ \t].*\n?)*)/m
+    );
+    expect(safeOutputsMatch, 'safe-outputs: block should exist in frontmatter').not.toBeNull();
+    expect(safeOutputsMatch![1]).toMatch(
+      /allowed-domains:\n\s+- learn\.microsoft\.com\n\s+- aspire\.dev/
+    );
+    expect(researchSkill).toMatch(/Preserve\s+each public documentation URL in full/);
+    expect(researchSkill).toContain('do not replace the path with `/redacted`');
+    expect(researchSkill).toMatch(
+      /Never include URL userinfo, credentials, access tokens,[\s\S]*secret-bearing query parameters/
+    );
+  });
+
   it('lists Online sources as a required labeled section of the artifact', () => {
     // The structural contract MUST-contain list includes Online sources. Bound
     // the match to the enumeration SENTENCE (up to its terminating period) so it
