@@ -339,7 +339,9 @@ We're building in the open. If something feels off, [open an issue](https://gith
 - **Check status anytime.** `squad status` shows your global squad directory and which projects are connected.
 - **Skills are the payoff.** The more projects you work across, the more skills accumulate. After a month, your agents have a real knowledge base tailored to how *you* build software.
 - **It's just files.** Your personal squad directory is a folder on your machine. You can browse it, edit it, back it up, copy it to another machine manually. No magic, no cloud, no lock-in. But **always back up or version-control your `.squad/` state**.
-- **Global install matters.** `npm install -g @bradygaster/squad-cli` gives you the `squad` command everywhere. Without it, you'd need `npx` in each project. Global CLI + global squad = full portability.
+- **Install the CLI once.** npm, Homebrew, WinGet, and standalone installs all
+  give you the `squad` command everywhere. Global CLI + global squad = full
+  portability.
 
 ---
 

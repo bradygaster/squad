@@ -91,6 +91,33 @@ function bareVersion(tag) {
   return tag.replace(/^v/, '');
 }
 
+export function releaseChannel(tag) {
+  const version = bareVersion(tag);
+  if (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+    return 'stable';
+  }
+  if (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-preview\.(0|[1-9]\d*)$/.test(version)) {
+    return 'preview';
+  }
+  if (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-insider\.(0|[1-9]\d*)$/.test(version)) {
+    return 'insider';
+  }
+  throw new Error(
+    `Unsupported release version "${version}". Expected X.Y.Z, X.Y.Z-preview.N, or X.Y.Z-insider.N.`,
+  );
+}
+
+export function homebrewToken(version) {
+  const channel = releaseChannel(version);
+  return channel === 'stable' ? 'squad' : `squad-${channel}`;
+}
+
+export function wingetPackageIdentifier(version) {
+  const channel = releaseChannel(version);
+  if (channel === 'stable') return PACKAGE_IDENTIFIER;
+  return `${PACKAGE_IDENTIFIER}.${channel[0].toUpperCase()}${channel.slice(1)}`;
+}
+
 /**
  * Parse a `sha256  filename` listing into { asset: sha } .
  * Accepts both the GNU (`hash  name`) and BSD (`SHA256 (name) = hash`) shapes.
@@ -142,12 +169,27 @@ function assetUrl(repo, tag, asset) {
  */
 export function renderHomebrewCask({ version, repo, checksums }) {
   const v = bareVersion(version);
+  const channel = releaseChannel(version);
+  const token = homebrewToken(version);
   const armAsset = 'squad-darwin-arm64.tar.gz';
   const intelAsset = 'squad-darwin-x64.tar.gz';
   const armSha = requireAsset(checksums, armAsset);
   const intelSha = requireAsset(checksums, intelAsset);
+  const livecheck = channel === 'stable'
+    ? `
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+`
+    : '';
+  const channelLabel = channel === 'stable' ? '' : ` (${channel} channel)`;
+  const conflicts = ['squad', 'squad-preview', 'squad-insider']
+    .filter((candidate) => candidate !== token)
+    .map((candidate) => `    "${candidate}"`)
+    .join(',\n');
 
-  return `cask "squad" do
+  return `cask "${token}" do
   arch arm: "arm64", intel: "x64"
 
   version "${v}"
@@ -157,13 +199,12 @@ export function renderHomebrewCask({ version, repo, checksums }) {
   url "https://github.com/${repo}/releases/download/v#{version}/squad-darwin-#{arch}.tar.gz",
       verified: "github.com/${repo}/"
   name "Squad"
-  desc "Programmable multi-agent runtime for GitHub Copilot"
+  desc "Programmable multi-agent runtime for GitHub Copilot${channelLabel}"
   homepage "${HOMEPAGE}"
-
-  livecheck do
-    url :url
-    strategy :github_latest
-  end
+${livecheck}
+  conflicts_with cask: [
+${conflicts},
+  ]
 
   depends_on macos: ">= :big_sur"
 
@@ -185,9 +226,10 @@ end
 }
 
 export function renderWingetVersion({ version }) {
+  const identifier = wingetPackageIdentifier(version);
   return `# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.${WINGET_SCHEMA}.schema.json
 
-PackageIdentifier: ${PACKAGE_IDENTIFIER}
+PackageIdentifier: ${identifier}
 PackageVersion: ${bareVersion(version)}
 DefaultLocale: en-US
 ManifestType: version
@@ -205,6 +247,7 @@ ManifestVersion: ${WINGET_SCHEMA}
  */
 export function renderWingetInstaller({ version, repo, checksums, releaseDate }) {
   const v = bareVersion(version);
+  const identifier = wingetPackageIdentifier(version);
   const targets = [
     { arch: 'x64', asset: 'squad-win32-x64.zip', dir: 'squad-win32-x64' },
     { arch: 'arm64', asset: 'squad-win32-arm64.zip', dir: 'squad-win32-arm64' },
@@ -224,7 +267,7 @@ export function renderWingetInstaller({ version, repo, checksums, releaseDate })
 
   return `# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.${WINGET_SCHEMA}.schema.json
 
-PackageIdentifier: ${PACKAGE_IDENTIFIER}
+PackageIdentifier: ${identifier}
 PackageVersion: ${v}
 MinimumOSVersion: 10.0.17763.0
 InstallerType: zip
@@ -239,15 +282,18 @@ ManifestVersion: ${WINGET_SCHEMA}
 }
 
 export function renderWingetLocale({ version, repo }) {
+  const channel = releaseChannel(version);
+  const identifier = wingetPackageIdentifier(version);
+  const channelLabel = channel === 'stable' ? '' : ` ${channel[0].toUpperCase()}${channel.slice(1)}`;
   return `# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.${WINGET_SCHEMA}.schema.json
 
-PackageIdentifier: ${PACKAGE_IDENTIFIER}
+PackageIdentifier: ${identifier}
 PackageVersion: ${bareVersion(version)}
 PackageLocale: en-US
 Publisher: Brady Gaster
 PublisherUrl: https://github.com/bradygaster
 PublisherSupportUrl: https://github.com/${repo}/issues
-PackageName: Squad
+PackageName: Squad${channelLabel}
 PackageUrl: ${HOMEPAGE}
 License: MIT
 LicenseUrl: https://github.com/${repo}/blob/HEAD/LICENSE
@@ -285,21 +331,26 @@ function main() {
     written.push(path.relative(process.cwd(), file));
   };
 
-  emit(path.join(brewDir, 'squad.rb'), renderHomebrewCask({ ...args, checksums }));
-  emit(path.join(wingetDir, `${PACKAGE_IDENTIFIER}.yaml`), renderWingetVersion(args));
+  const brewToken = homebrewToken(args.version);
+  const wingetIdentifier = wingetPackageIdentifier(args.version);
+  emit(path.join(brewDir, `${brewToken}.rb`), renderHomebrewCask({ ...args, checksums }));
+  emit(path.join(wingetDir, `${wingetIdentifier}.yaml`), renderWingetVersion(args));
   emit(
-    path.join(wingetDir, `${PACKAGE_IDENTIFIER}.installer.yaml`),
+    path.join(wingetDir, `${wingetIdentifier}.installer.yaml`),
     renderWingetInstaller({ ...args, checksums, releaseDate }),
   );
-  emit(path.join(wingetDir, `${PACKAGE_IDENTIFIER}.locale.en-US.yaml`), renderWingetLocale(args));
+  emit(
+    path.join(wingetDir, `${wingetIdentifier}.locale.en-US.yaml`),
+    renderWingetLocale(args),
+  );
 
   console.log(`\nGenerated packaging manifests for ${args.version}:\n`);
   for (const file of written) console.log(`  ${file}`);
   console.log(`
 Next steps:
-  Homebrew — copy squad.rb into the tap repo (Casks/squad.rb) and open a PR.
+  Homebrew — copy ${brewToken}.rb into the tap repo (Casks/${brewToken}.rb).
   winget   — copy the winget/ directory into
-             winget-pkgs/manifests/b/bradygaster/Squad/${bareVersion(args.version)}/
+             winget-pkgs/manifests/b/${wingetIdentifier.replaceAll('.', '/')}/${bareVersion(args.version)}/
              then validate with: winget validate --manifest <dir>
 `);
 }

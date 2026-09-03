@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -90,21 +91,9 @@ function compiledWorkerSafeOutputs(): Record<string, Record<string, unknown>> {
   );
 
   const compiled = readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8');
-  const lines = compiled.split(/\r?\n/);
-  const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-  const configEnd = delimiter
-    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-    : -1;
-
-  expect(configStart, 'compiled worker must write the safe-output config').toBeGreaterThanOrEqual(0);
-  expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
-  expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
-
-  return JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-    string,
-    Record<string, unknown>
-  >;
+  const jsonText = extractSafeOutputsConfigJson(compiled);
+  expect(jsonText, 'compiled worker must write a parseable safe-output config').toBeDefined();
+  return JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
 }
 
 describe('gh-aw implement workflows', () => {
