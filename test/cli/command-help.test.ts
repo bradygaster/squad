@@ -58,7 +58,7 @@ describe('printCommandHelp', () => {
     expect(blob).toContain('squad init');
     expect(blob).toContain('9.9.9-test');
     expect(blob).toContain('--sdk');
-    expect(blob).toContain('Deprecated');
+    expect(blob).toContain('deprecated; removed in v2');
     expect(blob).toContain('Usage:');
   });
 

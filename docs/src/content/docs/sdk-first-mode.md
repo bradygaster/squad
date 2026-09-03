@@ -1,4 +1,4 @@
-# SDK-First Squad Mode
+# Legacy SDK-First Squad Mode
 
 > ⚠️ **Deprecated.** `squad init --sdk` will be removed in v2 because `squad.config.ts` does not represent the full Squad feature set. Use markdown-first `squad init` for new teams. Existing projects can continue using `squad build` during the transition.
 
