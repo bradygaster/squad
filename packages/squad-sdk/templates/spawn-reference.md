@@ -123,6 +123,11 @@ prompt: |
   whenever they are available:
   - `squad_state_read` / `squad_state_list` for decisions, history, logs, and inbox entries
   - `squad_state_write` / `squad_state_append` for durable updates
+  - `squad_state_create_if_absent` when exactly one canonical artifact must exist
+    (retrospectives, session logs, claim markers). It creates the key atomically
+    only when absent and never overwrites; on `error: "conflict"` another agent
+    already won, and on `error: "uncertainty"` the outcome is unknown — do not
+    assume success and do not overwrite in either case.
   - `squad_state_delete` after Scribe merges inbox entries
   - `squad_state_health` when diagnosing backend availability
   - `squad_decide` for team-relevant decisions

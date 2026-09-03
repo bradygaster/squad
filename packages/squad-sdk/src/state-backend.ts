@@ -9,9 +9,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { openSync, writeSync as fsWriteSync, closeSync, mkdirSync as fsMkdirSync, unlinkSync as fsUnlinkSync, realpathSync as fsRealpathSync } from 'node:fs';
 import path from 'node:path';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 import type { StorageProvider, StorageStats } from './storage/storage-provider.js';
+import { StateKeyConflictError, StateBackendUncertaintyError } from './storage/storage-error.js';
 
 const storage = new FSStorageProvider();
 
@@ -119,9 +121,23 @@ function isExpectedMissing(err: unknown): boolean {
 
 export type StateBackendType = 'local' | 'external-stub' | 'orphan' | 'two-layer';
 
+// Re-export for callers who import directly from state-backend.
+export { StateKeyConflictError, StateBackendUncertaintyError } from './storage/storage-error.js';
+
 export interface StateBackend {
   read(relativePath: string): string | undefined;
   write(relativePath: string, content: string): void;
+  /**
+   * Atomically create a key only when absent. Returns void on success
+   * (this caller is the sole creator). Throws {@link StateKeyConflictError}
+   * if the key already exists. Throws {@link StateBackendUncertaintyError}
+   * if the outcome cannot be determined with certainty. Never overwrites.
+   *
+   * Repository identity is verified at backend construction. If the repository
+   * is inaccessible or ambiguous at operation time, the method fails with
+   * {@link StateBackendUncertaintyError} rather than silently expanding scope.
+   */
+  createIfAbsent(relativePath: string, content: string): void;
   exists(relativePath: string): boolean;
   list(relativeDir: string): string[];
   delete(relativePath: string): boolean;
@@ -217,6 +233,62 @@ function gitExecOrThrow(args: string[], cwd: string): string {
     const stderr = (err as { stderr?: string }).stderr ?? '';
     const msg = err instanceof Error ? err.message : String(err);
     throw new GitExecError(`git ${args.join(' ')}`, msg, stderr);
+  }
+}
+
+/**
+ * Fail-closed repository identity check for atomic create operations.
+ *
+ * `git rev-parse --git-dir` is NOT sufficient on its own: git walks up the
+ * directory tree, so a non-repository directory nested inside a repository
+ * resolves to the *enclosing* repository. Using that would silently widen the
+ * operation's scope and write state into a repository the caller never named.
+ *
+ * This asserts that `cwd` is the working-tree root of a real repository by
+ * comparing the realpath of `cwd` against `git rev-parse --show-toplevel`.
+ * Any failure, mismatch, or bare/ambiguous repository fails closed with
+ * {@link StateBackendUncertaintyError} — never a silent fallback.
+ */
+function assertRepositoryIdentity(cwd: string, operation: string): void {
+  let toplevel: string;
+  try {
+    toplevel = gitExecOrThrow(['rev-parse', '--show-toplevel'], cwd);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new StateBackendUncertaintyError(operation, `repository inaccessible: ${msg}`);
+  }
+
+  if (!toplevel) {
+    throw new StateBackendUncertaintyError(
+      operation,
+      'repository identity ambiguous: git reported no working-tree root',
+    );
+  }
+
+  let actual: string;
+  let expected: string;
+  try {
+    actual = fsRealpathSync(path.resolve(toplevel));
+    expected = fsRealpathSync(path.resolve(cwd));
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+    throw new StateBackendUncertaintyError(
+      operation,
+      `repository identity unresolvable: realpath failed (${code})`,
+    );
+  }
+
+  // Case-insensitive compare on Windows/macOS; git and Node can disagree on drive-letter case.
+  const same = process.platform === 'linux'
+    ? actual === expected
+    : actual.toLowerCase() === expected.toLowerCase();
+
+  if (!same) {
+    throw new StateBackendUncertaintyError(
+      operation,
+      'repository identity mismatch: the target directory is not the root of its own repository ' +
+      '(it resolves to an enclosing repository), so the create would escape its intended scope',
+    );
   }
 }
 
@@ -323,6 +395,45 @@ export class WorktreeBackend implements StateBackend {
   write(relativePath: string, content: string): void {
     const key = normalizeKey(relativePath);
     storage.writeSync(path.join(this.root, key), content);
+  }
+  createIfAbsent(relativePath: string, content: string): void {
+    const key = normalizeKey(relativePath);
+    const fullPath = path.join(this.root, key);
+    // Ensure parent directory before attempting exclusive open.
+    try {
+      fsMkdirSync(path.dirname(fullPath), { recursive: true });
+    } catch (mkdirErr: unknown) {
+      throw new StateBackendUncertaintyError(
+        'local:createIfAbsent',
+        `mkdir failed for "${key}": ${(mkdirErr as NodeJS.ErrnoException).code ?? 'UNKNOWN'}`,
+      );
+    }
+    // 'wx' = O_WRONLY | O_CREAT | O_EXCL — atomic on POSIX and Windows.
+    let fd: number;
+    try {
+      fd = openSync(fullPath, 'wx');
+    } catch (openErr: unknown) {
+      const code = (openErr as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') throw new StateKeyConflictError(key);
+      throw new StateBackendUncertaintyError(
+        'local:createIfAbsent',
+        `exclusive open failed for "${key}": ${code ?? 'UNKNOWN'}`,
+      );
+    }
+    try {
+      const buf = Buffer.from(content, 'utf-8');
+      fsWriteSync(fd, buf);
+    } catch (writeErr: unknown) {
+      // Write failed after exclusive open: clean up the empty file so the key
+      // does not appear to exist with partial/empty content.
+      try { fsUnlinkSync(fullPath); } catch { /* best-effort cleanup */ }
+      throw new StateBackendUncertaintyError(
+        'local:createIfAbsent',
+        `write failed after exclusive open for "${key}": ${(writeErr as NodeJS.ErrnoException).code ?? 'UNKNOWN'}`,
+      );
+    } finally {
+      try { closeSync(fd); } catch { /* best-effort */ }
+    }
   }
   exists(relativePath: string): boolean {
     const key = normalizeKey(relativePath);
@@ -541,6 +652,53 @@ export class GitNotesBackend implements StateBackend {
       });
     }, `git-notes:append(${relativePath})`);
   }
+
+  createIfAbsent(relativePath: string, content: string): void {
+    const key = normalizeKey(relativePath);
+    // A conflict is a normal, expected outcome under contention — not an
+    // infrastructure fault. It is reported out of the breaker as a value so
+    // repeated legitimate conflicts cannot trip the circuit and degrade a
+    // typed conflict into a generic "circuit OPEN" error.
+    const conflict = this.breaker.execute<boolean>(() => {
+      // Verify the git repo is still accessible AND that this backend is scoped
+      // to its own repository root before starting.
+      assertRepositoryIdentity(this.cwd, `git-notes:createIfAbsent(${key})`);
+
+      let lastStderr = '';
+      for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+        // (1) Snapshot the ref and read the blob at THAT exact snapshot.
+        const oldRefSha = this.readNotesRef();
+        const blob = this.loadBlobAt(oldRefSha);
+
+        // (2) Check key existence against the snapshot, not the live tip.
+        if (Object.hasOwn(blob, key)) return true;
+
+        // (3) Write the key and attempt atomic CAS.
+        blob[key] = content;
+        const writeResult = this.atomicSaveBlob(blob, oldRefSha);
+        if (writeResult.ok) return false;
+
+        // (4) CAS lost. Re-read at the new tip to distinguish conflict from race.
+        lastStderr = writeResult.stderr;
+        const newRefSha = this.readNotesRef();
+        const newBlob = this.loadBlobAt(newRefSha);
+        if (Object.hasOwn(newBlob, key)) {
+          // Someone else created the key between our read and CAS.
+          return true;
+        }
+        // Key still absent after CAS loss — another writer changed something
+        // else. Backoff and retry.
+        if (attempt < CAS_MAX_ATTEMPTS - 1) sleepSync(jitteredBackoffMs(attempt));
+      }
+      // All retries exhausted and key is still absent — uncertain outcome.
+      throw new StateBackendUncertaintyError(
+        `git-notes:createIfAbsent(${key})`,
+        `CAS retry exhausted (${CAS_MAX_ATTEMPTS} attempts): ${lastStderr || 'ref moved between read and write'}`,
+      );
+    }, `git-notes:createIfAbsent(${relativePath})`);
+
+    if (conflict) throw new StateKeyConflictError(key);
+  }
 }
 
 export class OrphanBranchBackend implements StateBackend {
@@ -705,6 +863,89 @@ export class OrphanBranchBackend implements StateBackend {
     this.write(relativePath, existing + content);
   }
 
+  createIfAbsent(relativePath: string, content: string): void {
+    const conflictKey = normalizeKey(relativePath);
+    // Conflicts are expected under contention and are returned as a value, not
+    // thrown, so they never count as circuit-breaker failures.
+    const conflict = this.breaker.execute<boolean>(() => {
+      const key = conflictKey;
+      // Verify repository is accessible AND that this backend is scoped to its
+      // own repository root — never an enclosing repository.
+      assertRepositoryIdentity(this.cwd, `orphan:createIfAbsent(${key})`);
+
+      this.ensureBranch();
+
+      // Hash the content blob once outside the CAS loop.
+      let blobHash: string;
+      try {
+        blobHash = gitExecWithInputAndRetry(['hash-object', '-w', '--stdin'], this.cwd, content);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new StateBackendUncertaintyError(
+          `orphan:createIfAbsent(${key})`,
+          `failed to hash content: ${msg}`,
+        );
+      }
+
+      const segments = key.split('/');
+      let lastStderr = '';
+
+      for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+        // (1) Snapshot the current branch head.
+        const parentCommit = gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd);
+
+        // (2) Check key existence at this exact snapshot.
+        const existsAtSnapshot = parentCommit
+          ? gitExecMaybeMissing(['cat-file', '-t', `${parentCommit}:${key}`], this.cwd) !== null
+          : false;
+        if (existsAtSnapshot) return true;
+
+        // (3) Get the current tree.
+        let currentTree: string;
+        if (parentCommit) {
+          const treeResult = gitExecMaybeMissing(['rev-parse', `${parentCommit}^{tree}`], this.cwd);
+          currentTree = treeResult ?? gitExecWithInputAndRetry(['mktree'], this.cwd, '');
+        } else {
+          try { currentTree = gitExecWithInputAndRetry(['mktree'], this.cwd, ''); }
+          catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new StateBackendUncertaintyError(`orphan:createIfAbsent(${key})`, `mktree failed: ${msg}`);
+          }
+        }
+
+        // (4) Build new tree with key added.
+        const newTree = this.updateTree(currentTree, segments, blobHash);
+        let newCommit: string;
+        try {
+          const parentArgs = parentCommit ? ['-p', parentCommit] : [];
+          newCommit = gitExecWithRetry(['commit-tree', newTree, ...parentArgs, '-m', `Create-if-absent ${key}`], this.cwd);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new StateBackendUncertaintyError(`orphan:createIfAbsent(${key})`, `commit-tree failed: ${msg}`);
+        }
+
+        // (5) CAS: update-ref expected=snapshot.
+        const writeResult = tryUpdateRef(`refs/heads/${this.branch}`, newCommit, parentCommit, this.cwd);
+        if (writeResult.ok) return false;
+
+        // (6) CAS lost — re-check if key now exists.
+        lastStderr = writeResult.stderr;
+        const newParent = gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd);
+        if (newParent && gitExecMaybeMissing(['cat-file', '-t', `${newParent}:${key}`], this.cwd) !== null) {
+          // A concurrent writer created the key.
+          return true;
+        }
+        if (attempt < CAS_MAX_ATTEMPTS - 1) sleepSync(jitteredBackoffMs(attempt));
+      }
+      throw new StateBackendUncertaintyError(
+        `orphan:createIfAbsent(${conflictKey})`,
+        `CAS retry exhausted (${CAS_MAX_ATTEMPTS} attempts): ${lastStderr || 'ref moved between read and write'}`,
+      );
+    }, `orphan:createIfAbsent(${relativePath})`);
+
+    if (conflict) throw new StateKeyConflictError(conflictKey);
+  }
+
   private removeFromTree(baseTree: string, pathSegments: string[]): string {
     if (pathSegments.length === 0) throw new Error('orphan backend: empty path segments');
     if (pathSegments.length === 1) {
@@ -798,6 +1039,9 @@ export class StateBackendStorageAdapter implements StorageProvider {
   constructor(private backend: StateBackend, private squadDir: string) {}
 
   // ── Async operations ─────────────────────────────────────────────────────
+  async createIfAbsent(filePath: string, data: string): Promise<void> {
+    this.backend.createIfAbsent(this.toRelative(filePath), data);
+  }
   async read(filePath: string): Promise<string | undefined> {
     return this.backend.read(this.toRelative(filePath));
   }
@@ -993,7 +1237,37 @@ export class TwoLayerBackend implements StateBackend {
   }
 
   /**
-   * Read a single git-notes payload as parsed JSON.
+   * Atomically create a key only when absent across both layers.
+   *
+   * **Fail-closed contract for disagreement and failure:**
+   * - If orphan already has the key → {@link StateKeyConflictError}.
+   * - If orphan createIfAbsent succeeds but notes disagrees (reports conflict or
+   *   any other error) → {@link StateBackendUncertaintyError}. The caller must
+   *   NOT assume success and should investigate before retrying.
+   *
+   * Rationale: a two-layer disagreement indicates stale cross-layer state that
+   * cannot be resolved without manual inspection. Silently returning success
+   * would allow multiple creators to each believe they won.
+   */
+  createIfAbsent(key: string, value: string): void {
+    // Step 1: attempt atomic create in the authoritative orphan layer.
+    // Throws StateKeyConflictError or StateBackendUncertaintyError on failure.
+    this.orphan.createIfAbsent(key, value);
+
+    // Step 2: attempt create in the notes annotation layer (fail-closed).
+    try {
+      this.notes.createIfAbsent(key, value);
+    } catch (notesErr: unknown) {
+      // Any notes failure after orphan success is a disagreement — fail closed.
+      const msg = notesErr instanceof Error ? notesErr.message : String(notesErr);
+      throw new StateBackendUncertaintyError(
+        `two-layer:createIfAbsent(${key})`,
+        `orphan succeeded but notes layer failed: ${msg}`,
+      );
+    }
+  }
+
+  /**
    *
    * Returns `null` if no note exists on the given commit for the given ref,
    * or if the note body is not valid JSON.

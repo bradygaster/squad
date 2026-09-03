@@ -171,12 +171,135 @@ interface StateBackend {
   list(relativeDir: string): string[];
   delete(relativePath: string): boolean;
   append(relativePath: string, content: string): void;
+  createIfAbsent(relativePath: string, content: string): void;
   readonly name: string;
 }
 ```
 
 ---
+## Atomic Create-if-Absent
+
+### Overview
+
+`createIfAbsent(key, content)` creates a state key **only when it does not already exist**. Exactly one concurrent caller receives `void` (success); all others receive a typed `StateKeyConflictError`. Existing content is **never overwritten**.
+
+This is the correct primitive for workflows where multiple agents might race to register a session, claim a work item, or initialize shared state — any scenario where exactly one creator must win.
+
+### Repository Scope
+
+The operation is repository-scoped and verified. Before any git-native create,
+the backend asserts that its target directory **is the working-tree root of its
+own repository**, by comparing the realpath of that directory against
+`git rev-parse --show-toplevel`.
+
+This matters because `git rev-parse --git-dir` alone is not enough: Git walks up
+the directory tree, so a non-repository directory nested inside a repository
+silently resolves to the *enclosing* repository. Without the root check, a
+create aimed at a non-repository path would escape its intended scope and write
+state into a repository the caller never named.
+
+Any failure, mismatch, bare repository, or unresolvable path fails closed with
+`StateBackendUncertaintyError`. There is no silent fallback.
+
+### Typed Error Contracts
+
+| Thrown | Meaning | What to do |
+|--------|---------|------------|
+| `StateKeyConflictError` | Key **definitely** already exists. Another creator won. | Read the winner's content; do not retry as a create. |
+| `StateBackendUncertaintyError` | Outcome **unknown** (write failed after exclusive open, CAS retries exhausted, or two-layer disagreement). | Do NOT assume success. Inspect before retrying. |
+
+Neither error is success-shaped. A conflict or uncertainty always surfaces as a thrown error, never as a return value.
+
+### SDK Usage
+
+```typescript
+import {
+  StateKeyConflictError,
+  StateBackendUncertaintyError,
+} from '@bradygaster/squad-sdk';
+
+try {
+  backend.createIfAbsent('sessions/retro-2024-12.md', '# Retro\n');
+  // Success: this process is the sole creator
+} catch (err) {
+  if (err instanceof StateKeyConflictError) {
+    // Another process already created this key — read their content
+    const content = backend.read(err.key);
+  } else if (err instanceof StateBackendUncertaintyError) {
+    // Outcome unknown — do NOT assume success; inspect before retrying
+    console.error('Uncertain create:', err.message);
+  } else {
+    throw err;
+  }
+}
+```
+
+### Per-Backend Guarantees
+
+| Backend | Atomicity mechanism | Conflict detection | Uncertainty condition |
+|---------|--------------------|--------------------|----------------------|
+| **Local** | `open(path, 'wx')` — O_CREAT\|O_EXCL (POSIX + NTFS) | EEXIST on open | Write failure after exclusive open |
+| **Orphan branch** | CAS loop: `update-ref` with expected SHA | Key present at snapshot or at new HEAD after CAS loss | CAS retry limit exhausted with key still absent |
+| **Git notes** | CAS loop: `update-ref` with expected notes-tree SHA | Key present at snapshot or at new HEAD after CAS loss | CAS retry limit exhausted |
+| **Two-layer** | Orphan is authoritative; notes mirrors | Orphan conflict → `StateKeyConflictError` | Orphan success + notes failure/conflict → `StateBackendUncertaintyError` |
+
+**No process-local locks are used.** Atomicity is enforced by OS-level exclusive file creation (local backend) or Git's `update-ref` compare-and-swap (git-native backends).
+
+### Two-Layer Fail-Closed Contract
+
+The two-layer backend uses a **fail-closed** policy for disagreement between layers:
+
+- Orphan layer is authoritative. If it reports conflict → `StateKeyConflictError`.
+- If orphan succeeds but the notes layer fails or reports conflict (disagreement) → `StateBackendUncertaintyError`.
+
+The caller must not assume success on uncertainty. Silent partial success would allow multiple creators to each believe they won.
+
+### MCP Tool Registration
+
+The operation is exposed as the `squad_state_create_if_absent` MCP tool and appears in `tools/list` on state-mcp sessions.
+
+**Tool name:** `squad_state_create_if_absent`  
+**Parameters:** `key` (string, relative to `.squad/`), `content` (string)
+
+Result shapes:
+- `{ resultType: 'success' }` — key created
+- `{ resultType: 'failure', error: 'conflict' }` — key already existed
+- `{ resultType: 'failure', error: 'uncertainty' }` — outcome unknown
+- `{ resultType: 'failure', error: <string> }` — other error (invalid key, etc.)
+
+Only mutable state key prefixes are permitted (`sessions/`, `decisions/inbox/`, `log/`, `orchestration-log/`, `.scratch/`, `identity/`, `agents/*/history.md`, etc.). Static configuration keys (`team.md`, `routing.md`, `config.json`, etc.) are rejected.
+
+### Migration Guidance
+
+If you are currently using `write()` to initialize a key that should only be created once:
+
+```typescript
+// Before (unsafe — unconditionally overwrites):
+if (!backend.exists('sessions/init.md')) {
+  backend.write('sessions/init.md', initialContent);
+}
+
+// After (safe — exactly one concurrent caller succeeds):
+try {
+  backend.createIfAbsent('sessions/init.md', initialContent);
+} catch (err) {
+  if (!(err instanceof StateKeyConflictError)) throw err;
+}
+```
+
+The check-then-write pattern above has a TOCTOU race; `createIfAbsent` closes it.
+
+### Version
+
+`createIfAbsent` and the `squad_state_create_if_absent` MCP tool first ship in
+`@bradygaster/squad-sdk` and `@bradygaster/squad-cli` **0.14.0** (the next minor
+release after 0.13.1). Consumers pinned to `0.12.0` or `0.13.x` must upgrade the
+pin to `0.14.0`, add `squad_state_create_if_absent` to their MCP tool allowlist,
+and restart the state MCP server before the tool appears in `tools/list`.
+
+---
 ## Security
+
 State backends include hardening against common injection attacks:
 - **Path traversal:** `..` segments are rejected
 - **Null byte injection:** `\0` characters are rejected
