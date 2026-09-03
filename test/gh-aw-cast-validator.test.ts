@@ -19,6 +19,13 @@ const active = [
   { id: 'tester', name: 'Tester', role: 'Quality Engineer' },
 ];
 
+const builtins = [
+  { id: 'scribe', name: 'Scribe' },
+  { id: 'ralph', name: 'Ralph' },
+  { id: 'rai', name: 'Rai' },
+  { id: 'fact-checker', name: 'Fact Checker' },
+];
+
 const corePayload = [
   '.squad/team.md',
   '.squad/routing.md',
@@ -26,6 +33,7 @@ const corePayload = [
   '.squad/casting/history.json',
   '.squad/casting/policy.json',
   ...active.map(({ id }) => `.squad/agents/${id}/charter.md`),
+  ...builtins.map(({ id }) => `.squad/agents/${id}/charter.md`),
   '.github/agents/squad.agent.md',
   'meet-the-squad.md',
 ];
@@ -50,6 +58,14 @@ function teamMarkdown(): string {
 | Name | Role | Charter | Status |
 | --- | --- | --- | --- |
 ${active.map(({ id, name, role }) => `| ${name} | ${role} | \`.squad/agents/${id}/charter.md\` | Active |`).join('\n')}
+
+## Built-in Support Agents
+
+Mandatory support agents. Not Cast specialists and not routing destinations.
+
+| Name | Role | Charter |
+| --- | --- | --- |
+${builtins.map(({ id, name }) => `| ${name} | Built-in | \`.squad/agents/${id}/charter.md\` |`).join('\n')}
 
 ## Coding Agent
 
@@ -87,8 +103,27 @@ Use \`.squad/team.md\` and \`.squad/routing.md\` as the human-readable roster an
 Confirm identities in \`.squad/casting/registry.json\`; use \`.squad/casting/history.json\` and
 \`.squad/casting/policy.json\` only for Cast metadata. Introduce the team from \`meet-the-squad.md\`.
 
-Load only the selected charter for the member receiving work:
+## Cast sources
+
+- \`.squad/team.md\`
+- \`.squad/routing.md\`
+- \`.squad/casting/registry.json\`
+- \`.squad/casting/history.json\`
+- \`.squad/casting/policy.json\`
+- \`meet-the-squad.md\`
 ${active.map(({ id, name }) => `- ${name}: \`.squad/agents/${id}/charter.md\``).join('\n')}
+${builtins.map(({ id, name }) => `- ${name}: \`.squad/agents/${id}/charter.md\``).join('\n')}
+
+## Routing work
+
+Read the routing table, select only active registry members, load only the selected member's
+charter, delegate through the platform's available agent mechanism, and synthesize the result.
+
+## Built-in Support Agents
+
+Scribe, Ralph, Rai, and Fact Checker are mandatory always-on support agents, separate from
+selected Cast specialists. They are never selectable domain specialists and never routing-table
+destinations.
 
 <!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->
 ## Team Capabilities (generated)
@@ -134,6 +169,9 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   write(root, '.squad/casting/policy.json', '{}\n');
   for (const member of active) {
     write(root, `.squad/agents/${member.id}/charter.md`, `# ${member.name} — ${member.role}\n`);
+  }
+  for (const builtin of builtins) {
+    write(root, `.squad/agents/${builtin.id}/charter.md`, `# ${builtin.name}\n`);
   }
   write(root, '.github/agents/squad.agent.md', coordinatorMarkdown());
   write(root, 'meet-the-squad.md', '# Meet the Squad\n');
@@ -379,7 +417,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 82aa5620d81e26513658fbde210b0f8d2ac3bc7572e672b421aaa17a2832e8cc, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 5b8e1432de63c78488ee7ff6da4e67ea0c91044582109f678153c231704a0097, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -542,24 +580,105 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.stdout).toContain('Cast validation passed');
   });
 
-  it('rejects missing inactive-role charters even when routing and capability markers pass', () => {
+  it('rejects a built-in placed inside the specialist Members roster', () => {
     const fixture = createFixture();
     write(
       fixture.root,
       '.squad/team.md',
-      `${teamMarkdown()}\n| Scribe | Session Logger | \`.squad/agents/scribe/charter.md\` | Silent |\n`,
-    );
-    write(
-      fixture.root,
-      '.github/agents/squad.agent.md',
-      `${coordinatorMarkdown()}\nScribe records each delegated task.\n`,
+      teamMarkdown().replace(
+        '## Built-in Support Agents',
+        '| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | Silent |\n\n## Built-in Support Agents',
+      ),
     );
     const result = validate(fixture.root, fixture.payload);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/inactive\/support roles|scribe\/charter\.md/i);
-    expect(result.stderr).toContain(
-      'coordinator: inactive/support roles are forbidden in GH-AW Cast output',
+    expect(result.stderr).toMatch(/must not list built-in agents as specialists/i);
+    expect(result.stderr).toContain('Scribe');
+  });
+
+  it('rejects a Cast tree missing a required built-in charter (materialized directory + payload)', () => {
+    const fixture = createFixture();
+    rmSync(join(fixture.root, '.squad', 'agents', 'rai'), { recursive: true, force: true });
+    const payloadWithoutRai = JSON.parse(readFileSync(fixture.payload, 'utf8')) as string[];
+    writeFileSync(
+      fixture.payload,
+      JSON.stringify(payloadWithoutRai.filter((path) => path !== '.squad/agents/rai/charter.md')),
+      'utf8',
     );
+    write(
+      fixture.root,
+      '.squad/team.md',
+      teamMarkdown().replace('| Rai | Built-in | `.squad/agents/rai/charter.md` |\n', ''),
+    );
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/materialized agent directories must exactly match/i);
+    expect(result.stderr).toMatch(/must reference exactly the four required built-in charters/i);
+  });
+
+  it('rejects a Cast tree with an extra support agent beyond the four required built-ins', () => {
+    const fixture = createFixture();
+    write(fixture.root, '.squad/agents/watcher/charter.md', '# Watcher\n');
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/materialized agent directories must exactly match/i);
+    expect(result.stderr).toContain('watcher');
+  });
+
+  it('rejects a built-in registered as an active specialist in the casting registry', () => {
+    const fixture = createFixture();
+    write(fixture.root, '.squad/casting/registry.json', JSON.stringify({
+      agents: {
+        ...Object.fromEntries(active.map(({ id, name }) => [
+          id,
+          { persistent_name: name, status: 'active', universe: 'descriptive' },
+        ])),
+        rai: { persistent_name: 'Rai', status: 'active', universe: 'descriptive' },
+      },
+    }));
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/built-in id "rai" must not be an active specialist registry entry/i);
+  });
+
+  it('rejects a built-in routed to as a specialist routing destination', () => {
+    const fixture = createFixture();
+    write(
+      fixture.root,
+      '.squad/routing.md',
+      `${routingMarkdown()}| Memory | Scribe | Session logging |\n`,
+    );
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/target "Scribe" is not an active registry persistent_name/i);
+  });
+
+  it('rejects a built-in listed as a specialist in the Team Capabilities block', () => {
+    const fixture = createFixture();
+    write(
+      fixture.root,
+      '.github/agents/squad.agent.md',
+      coordinatorMarkdown().replace(
+        '### Available specialists\n\n| Agent | Role | Authority | Focus |\n| --- | --- | --- | --- |\n',
+        '### Available specialists\n\n| Agent | Role | Authority | Focus |\n| --- | --- | --- | --- |\n| Scribe | Session Logger | Assigned domain | Session Logger |\n',
+      ),
+    );
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/capability block must not list built-in "scribe" as a specialist/i);
+  });
+
+  it('rejects a payload missing one of the four required built-in charter paths', () => {
+    const fixture = createFixture();
+    const payloadWithoutFactChecker = JSON.parse(readFileSync(fixture.payload, 'utf8')) as string[];
+    writeFileSync(
+      fixture.payload,
+      JSON.stringify(payloadWithoutFactChecker.filter((path) => path !== '.squad/agents/fact-checker/charter.md')),
+      'utf8',
+    );
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('payload: missing active Cast path .squad/agents/fact-checker/charter.md');
   });
 
   it('rejects standalone template references absent from the final payload', () => {
