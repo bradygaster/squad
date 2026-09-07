@@ -2188,6 +2188,56 @@ Use dispatch_workflow to continue the relay:
     expect(result.status, `Gate should exit 0 for valid schema; stderr: ${result.stderr}`).toBe(0);
     rmSync(fixture);
   });
+
+  it('passes for the retrospective receiver without a synthetic issue number', () => {
+    const fixture = writeFixture('valid-retro-dispatch.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad-retro]
+    max: 1
+---
+
+# Test Worker
+
+Use dispatch_workflow to request a retrospective:
+
+\`\`\`json
+{
+  "workflow_name": "squad-retro",
+  "inputs": {
+    "retro_reason": "early-evidence",
+    "request_origin": "squad-review"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, `Gate should accept the retro receiver contract; stderr: ${result.stderr}`).toBe(0);
+    rmSync(fixture);
+  });
+
+  it('rejects a misspelled required input in the shipped retrospective relay', () => {
+    const router = readText(SQUAD_WORKFLOW);
+    expect(router).toContain('"request_origin":"manual"');
+    const fixture = writeFixture(
+      'invalid-shipped-retro-relay.md',
+      router.replace('"request_origin":"manual"', '"request_orign":"manual"'),
+    );
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must validate the shipped retro relay payload').toBe(1);
+    expect(result.stderr).toMatch(/request_origin/);
+    rmSync(fixture);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -32,9 +32,9 @@
 //       run 32316227601).
 //   (b) include a non-empty "inputs" object -- top-level "command"/"issue_number" are
 //       silently dropped by gh-aw; they must be nested under "inputs".
-//   (c) if "inputs" is present, include "issue_number" -- dispatching without an issue
-//       number causes the receiving workflow to create a junk issue (confirmed in runs
-//       32324473906, 32394811753).
+//   (c) include the receiver's required routing inputs. Issue-scoped workers require
+//       "issue_number"; the repository-scoped retrospective worker instead requires
+//       "retro_reason" and "request_origin".
 //
 // This does not prevent an LLM from emitting an empty probe at runtime, but it does
 // prevent the authoring mistake of shipping a workflow with a structurally wrong schema
@@ -78,6 +78,9 @@ const DESTRUCTIVE_DEFAULTS = new Set([
   'plan accept',
   'plan activate',
   'retire',
+]);
+const RECEIVER_REQUIRED_INPUTS = new Map([
+  ['squad-retro', ['retro_reason', 'request_origin']],
 ]);
 
 /** Collect .md files from a directory tree, skipping nothing -- these trees are small. */
@@ -177,7 +180,7 @@ function checkWorkflowDispatchActionDefaults(file, lines) {
  * `dispatch-workflow` reference in the body must:
  *   (a) include "workflow_name" with a non-empty value
  *   (b) include "inputs" as a non-empty object (not top-level command/issue_number)
- *   (c) if "inputs" is present, include "issue_number"
+ *   (c) if "inputs" is present, include the receiver's required routing inputs
  *
  * Heuristic: a code block is "adjacent" if the preceding 20 lines contain
  * `dispatch_workflow` or `dispatch-workflow`. This is intentionally liberal --
@@ -252,14 +255,21 @@ function checkDispatchWorkflowSchemas(file, lines, start) {
         kind: 'dispatch-schema-missing-inputs',
       });
     } else {
-      // (c) inputs.issue_number must be present (may be a template placeholder)
-      if (!Object.prototype.hasOwnProperty.call(payload.inputs, 'issue_number')) {
+      // (c) Validate the routing contract for the named receiver. Existing
+      // issue-scoped workers require issue_number; repository-scoped receivers
+      // must opt into their explicit alternative contract above.
+      const requiredInputs = RECEIVER_REQUIRED_INPUTS.get(payload.workflow_name) ??
+        ['issue_number'];
+      for (const requiredInput of requiredInputs) {
+        if (Object.prototype.hasOwnProperty.call(payload.inputs, requiredInput)) continue;
         violations.push({
           file: relFile,
           line: blockLine,
-          ref: 'dispatch_workflow.inputs.issue_number',
-          text: '```json (dispatch_workflow payload inputs missing issue_number)',
-          kind: 'dispatch-schema-missing-issue-number',
+          ref: `dispatch_workflow.inputs.${requiredInput}`,
+          text: `\`\`\`json (dispatch_workflow payload inputs missing ${requiredInput})`,
+          kind: requiredInput === 'issue_number'
+            ? 'dispatch-schema-missing-issue-number'
+            : 'dispatch-schema-missing-required-input',
         });
       }
     }
@@ -332,6 +342,7 @@ const DISPATCH_KINDS = new Set([
   'dispatch-schema-missing-workflow-name',
   'dispatch-schema-missing-inputs',
   'dispatch-schema-missing-issue-number',
+  'dispatch-schema-missing-required-input',
   'dispatch-schema-top-level-input',
 ]);
 
@@ -365,6 +376,6 @@ console.error('describe it without the literal `github.event.inputs.` prefix.');
 console.error('To fix destructive defaults: make the action input required, or use an inert default.');
 console.error('To fix dispatch_workflow schemas: ensure the JSON example includes:');
 console.error('  "workflow_name": "<name>",');
-console.error('  "inputs": { "issue_number": "...", ... }');
+console.error('  "inputs": { ...the named receiver routing inputs... }');
 console.error('Do not put command or issue_number at the top level -- gh-aw silently drops them.');
 process.exit(1);

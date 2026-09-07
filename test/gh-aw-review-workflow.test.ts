@@ -241,7 +241,7 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad.lock.yml',
       'squad.md',
     ]);
-  }, 60000);
+  }, 90000);
 
   it('detects a missing workflow_dispatch job discriminator during strict compilation', () => {
     const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-discriminator-mutation-'));

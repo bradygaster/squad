@@ -1443,8 +1443,8 @@ describe('Squad retrospective workflow integration', () => {
     expect(RETRO).toContain('cancel-in-progress: false');
     expect(RETRO).toContain('queue: max');
     expect(RETRO).toContain('shared/squad-retro-evidence.mjs');
-    expect(ROUTER).toContain('| `/squad retro` | Retrospective Relay |');
-    expect(ROUTER).toContain('"workflow_name": "squad-retro"');
+    expect(ROUTER).toContain('| `/squad retro` | Retro Relay |');
+    expect(ROUTER).toMatch(/"workflow_name"\s*:\s*"squad-retro"/);
     expect(REVIEWER).toContain('"request_origin": "squad-review"');
     expect(IMPLEMENTER).toContain('"request_origin": "squad-implement"');
     expect(CI).toContain(

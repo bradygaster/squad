@@ -462,7 +462,7 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad retire <name>` | Retire |
 | `/squad status` | Status |
 | `/squad review` | Review Relay |
-| `/squad retro` | Retrospective Relay |
+| `/squad retro` | Retro Relay |
 | `/squad research` | Research |
 | `/squad plan` | Plan |
 | `/squad plan revise <feedback>` | Plan Revise |
@@ -1192,26 +1192,16 @@ provenance, deduplication, and review decisions.
 
 ## skill: `squad-retro-relay`
 ---
-description: Relay an authorized `/squad retro` request to the shared retrospective worker.
+description: Relay `/squad retro` to the shared worker.
 ---
 
-Use only the typed `dispatch-workflow` safe-output. Never call the generic
-`dispatch_workflow` tool. Emit exactly one complete nested dispatch:
+Emit only this typed `dispatch-workflow`:
 
 ```json
-{
-  "workflow_name": "squad-retro",
-  "inputs": {
-    "retro_reason": "manual",
-    "request_origin": "manual"
-  }
-}
+{"workflow_name":"squad-retro","inputs":{"retro_reason":"manual","request_origin":"manual"}}
 ```
 
-Do not gather retrospective evidence, create a report, create an issue, or
-dispatch another workflow in this router. Authorization was enforced by the
-Actor Authorization Guard; the shared worker owns durable state, cooldown,
-deduplication, and reporting.
+Stop; the worker owns the retrospective lifecycle.
 
 ## skill: `squad-connect`
 ---
