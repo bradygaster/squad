@@ -148,6 +148,8 @@ describe('gh-aw implement workflows', () => {
       'group: "squad-implement-${{ github.event.inputs.issue_number || github.event.pull_request.number }}"',
     );
     expect(worker).toContain('cancel-in-progress: false');
+    expect(listInBlock(yamlBlock(workerFrontmatter, 'dispatch-workflow'), 'workflows'))
+      .toEqual(['squad', 'squad-retro']);
   });
 
   it('continues epic execution after implementation PRs merge', () => {
@@ -213,7 +215,7 @@ describe('gh-aw implement workflows', () => {
     const dispatch = safeOutputs.dispatch_workflow;
 
     expect(dispatch, 'compiled worker must retain dispatch-workflow configuration').toBeDefined();
-    expect(dispatch.aw_context_workflows).toEqual(['squad']);
+    expect(dispatch.aw_context_workflows).toEqual(['squad', 'squad-retro']);
     expect(dispatch['target-ref']).toBe('${{ github.event.repository.default_branch }}');
   }, 20000);
 
@@ -231,6 +233,7 @@ describe('gh-aw implement workflows', () => {
       'bradygaster/squad/workflows/squad-implement-worker.md@dev',
       'bradygaster/squad/workflows/squad-deps-worker.md@dev',
       'bradygaster/squad/workflows/squad-review.md@dev',
+      'bradygaster/squad/workflows/squad-retro.md@dev',
     ];
     const orderedInstallCommand = [
       'gh aw add \\',
@@ -252,7 +255,7 @@ describe('gh-aw implement workflows', () => {
     );
     expect(hasOrderedInstallCommand(reorderedGuide)).toBe(false);
     expect(guide).toMatch(
-      /Keep the dispatcher first\. `gh aw add` discovers its general worker, dependency\s+worker, and reviewer dependencies while compiling it; the explicit worker and\s+reviewer entries then confirm the complete install surface without creating\s+duplicates\./,
+      /Keep the dispatcher first\. `gh aw add` discovers its general worker, dependency\s+worker, reviewer, and retrospective dependencies while compiling it; the explicit\s+entries then confirm the complete install surface without creating duplicates\./,
     );
   });
 });
@@ -476,8 +479,11 @@ describe('gh-aw implement worker: cross-sibling refill traversal (#1779)', () =>
 
     const workerDispatch = yamlBlock(frontmatter(worker), 'dispatch-workflow');
     const dispatchMax = Number(scalarInBlock(workerDispatch, 'max'));
-    expect(dispatchMax, 'refill scope is the fix; do not paper over it by raising max').toBe(2);
-    expect(dispatchMax).toBeLessThanOrEqual(slotCap);
+    const retroWakeupBudget = 1;
+    expect(listInBlock(workerDispatch, 'workflows')).toEqual(['squad', 'squad-retro']);
+    expect(worker).toContain('emit one complete typed retrospective');
+    expect(dispatchMax - retroWakeupBudget, 'retro wakeup must not widen the refill budget').toBe(2);
+    expect(dispatchMax - retroWakeupBudget).toBeLessThanOrEqual(slotCap);
   });
 
   // Negative control: documents the pre-fix scope and proves the model above is

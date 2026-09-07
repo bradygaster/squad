@@ -566,7 +566,8 @@ gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -604,6 +605,7 @@ Review the complete generated diff before you commit:
 | `/squad retire <name>` | Remove a team member |
 | `/squad status` | Check current team |
 | `/squad implement` | Implement an issue or dispatch ready tasks from an epic |
+| `/squad retro` | Run the shared retrospective now; scheduled and evidence-driven wakeups use the same worker |
 
 ### Casting brief tip
 

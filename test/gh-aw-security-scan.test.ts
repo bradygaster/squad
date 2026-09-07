@@ -144,13 +144,14 @@ describe('gh-aw: distributed workflows survive the public `gh aw add` security s
     expect(versionProbe.status, `gh aw --version failed. ${GH_AW_INSTALL_HINT}`).toBe(0);
   });
 
-  it('enumerates the four public entrypoints plus their shared imports', () => {
+  it('enumerates the five public entrypoints plus their shared imports', () => {
     const names = distributedWorkflowFiles().map((p) => relative(WORKFLOWS_DIR, p));
     expect(names).toContain('squad.md');
     expect(names).toContain('squad-implement-worker.md');
     expect(names).toContain('squad-deps-worker.md');
     expect(names).toContain('squad-review.md');
-    expect(names.some((n) => n.startsWith('shared/'))).toBe(true);
+    expect(names).toContain('squad-retro.md');
+    expect(names.some((n) => n.split(/[\\/]/)[0] === 'shared')).toBe(true);
   });
 
   it.each(distributedWorkflowFiles().map((p, i) => [relative(REPO_ROOT, p), p, i] as const))(

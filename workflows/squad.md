@@ -344,7 +344,7 @@ safe-outputs:
     max: 20
     target: "*"
   dispatch-workflow:
-    workflows: [squad-implement-worker, squad-deps-worker, squad-review]
+    workflows: [squad-implement-worker, squad-deps-worker, squad-review, squad-retro]
     max: 3
 ---
 
@@ -462,6 +462,7 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad retire <name>` | Retire |
 | `/squad status` | Status |
 | `/squad review` | Review Relay |
+| `/squad retro` | Retrospective Relay |
 | `/squad research` | Research |
 | `/squad plan` | Plan |
 | `/squad plan revise <feedback>` | Plan Revise |
@@ -619,7 +620,7 @@ requested. First-token-wins is the contract; keep extraction anchored to
 3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `activate` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
+   - `cast-member` (1), `activate` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `retro`, `research`, `triage`, `implement`
 4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
 
@@ -747,7 +748,7 @@ When **Step AG-3** returned `REFUSE`:
    `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
 3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
 
-**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `retro`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
 
 ## Execute Mode
 
@@ -766,6 +767,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `retire` | `squad-retire` |
 | `status` | `squad-status` |
 | `review` | `squad-review-relay` |
+| `retro` | `squad-retro-relay` |
 | `research` | `squad-research` |
 | `plan` | `squad-plan` |
 | `plan revise` | `squad-plan-revise` |
@@ -1187,6 +1189,29 @@ Use only the typed `dispatch-workflow` safe-output. Never call the generic
 Do not review the diff in this router, emit a verdict, edit files, create an
 issue, or dispatch any other workflow. The independent reviewer owns all
 provenance, deduplication, and review decisions.
+
+## skill: `squad-retro-relay`
+---
+description: Relay an authorized `/squad retro` request to the shared retrospective worker.
+---
+
+Use only the typed `dispatch-workflow` safe-output. Never call the generic
+`dispatch_workflow` tool. Emit exactly one complete nested dispatch:
+
+```json
+{
+  "workflow_name": "squad-retro",
+  "inputs": {
+    "retro_reason": "manual",
+    "request_origin": "manual"
+  }
+}
+```
+
+Do not gather retrospective evidence, create a report, create an issue, or
+dispatch another workflow in this router. Authorization was enforced by the
+Actor Authorization Guard; the shared worker owns durable state, cooldown,
+deduplication, and reporting.
 
 ## skill: `squad-connect`
 ---

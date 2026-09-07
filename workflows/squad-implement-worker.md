@@ -203,8 +203,8 @@ safe-outputs:
     max: 3
     target: "*"
   dispatch-workflow:
-    workflows: [squad]
-    max: 2
+    workflows: [squad, squad-retro]
+    max: 3
     target-ref: ${{ github.event.repository.default_branch }}
 ---
 
@@ -322,6 +322,25 @@ The remaining instructions apply only to `workflow_dispatch`.
    `.squad/`.
 4. Run the smallest existing build, test, and lint commands covering the change.
 5. Review the final diff against the issue acceptance criteria.
+6. If an attempted implementation cannot complete because a build, test, or
+   review-correction failure persists, emit one complete typed retrospective
+   wakeup before reporting the incomplete result:
+
+   ```json
+   {
+     "workflow_name": "squad-retro",
+     "inputs": {
+       "retro_reason": "early-evidence",
+       "request_origin": "squad-implement"
+     }
+   }
+   ```
+
+   This is evidence delivery, not permission to run a retrospective. The shared
+   worker independently scans durable workflow and review evidence and noops
+   unless the same normalized failure crosses the configured independent-attempt
+   threshold. Do not dispatch for an open dependency, an existing pull request,
+   a closed issue, or a correction that subsequently passes.
 
 ## Open Pull Request
 

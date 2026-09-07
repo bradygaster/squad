@@ -92,7 +92,8 @@ function assertReviewerContract(workflow: string): void {
   const rows = provenanceRows(workflow);
 
   expect(tools).not.toMatch(/^\s+edit:/m);
-  expect(outputs).not.toMatch(/^\s+(dispatch-workflow|create-issue|create-pull-request|update-pull-request):/m);
+  expect(outputs).not.toMatch(/^\s+(create-issue|create-pull-request|update-pull-request):/m);
+  expect(listInBlock(yamlBlock(outputs, 'dispatch-workflow'), 'workflows')).toEqual(['squad-retro']);
   expect(listInBlock(submitReview, 'allowed-events')).toEqual(['COMMENT', 'REQUEST_CHANGES']);
   expect(submitReview).not.toContain('APPROVE');
   expect(concurrency).toContain('cancel-in-progress: true');
@@ -197,6 +198,7 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad-implement-worker.md',
       'squad-deps-worker.md',
       'squad-review.md',
+      'squad-retro.md',
     ]);
 
     const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-install-'));
@@ -232,12 +234,14 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad-deps-worker.md',
       'squad-implement-worker.lock.yml',
       'squad-implement-worker.md',
+      'squad-retro.lock.yml',
+      'squad-retro.md',
       'squad-review.lock.yml',
       'squad-review.md',
       'squad.lock.yml',
       'squad.md',
     ]);
-  }, 30000);
+  }, 60000);
 
   it('detects a missing workflow_dispatch job discriminator during strict compilation', () => {
     const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-discriminator-mutation-'));
@@ -265,7 +269,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     );
   }, 20000);
 
-  it('keeps all consumer install surfaces on the coherent four-workflow order', () => {
+  it('keeps all consumer install surfaces on the coherent five-workflow order', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
       const orders = installOrders(surface);
       expect(orders.length).toBeGreaterThan(0);
@@ -275,6 +279,7 @@ describe('gh-aw advisory Squad reviewer', () => {
           'squad-implement-worker.md',
           'squad-deps-worker.md',
           'squad-review.md',
+          'squad-retro.md',
         ]);
       }
     }
@@ -291,7 +296,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(GUIDE).toContain('`Squad-Review-Head: <SHA>`');
     expect(GUIDE).toContain('`COMMENT`');
     expect(GUIDE).toContain('`REQUEST_CHANGES`');
-    expect(GUIDE).toContain('no file-editing, workflow-dispatch, issue-creation,');
+    expect(GUIDE).toContain('no file-editing, issue-creation,');
     expect(GUIDE).toContain('Human approval remains mandatory.');
     expect(GUIDE).toContain('Because review is advisory, it is possible to merge without waiting');
     expect(GUIDE).toContain('This follow-up is only needed when the safe-update warning appears.');
@@ -316,6 +321,7 @@ describe('gh-aw advisory Squad reviewer', () => {
       'add-comment',
       'create-pull-request-review-comment',
       'submit-pull-request-review',
+      'dispatch-workflow',
     ]);
     expect(REVIEWER).toContain('Never use `APPROVE`');
     assertReviewerContract(REVIEWER);
@@ -364,7 +370,10 @@ describe('gh-aw advisory Squad reviewer', () => {
       max: 1,
       allowed_events: ['COMMENT', 'REQUEST_CHANGES'],
     });
-    expect(safeOutputs).not.toHaveProperty('dispatch_workflow');
+    expect(safeOutputs.dispatch_workflow).toMatchObject({
+      max: 1,
+      workflows: ['squad-retro'],
+    });
     expect(safeOutputs).not.toHaveProperty('create_issue');
     expect(safeOutputs).not.toHaveProperty('create_pull_request');
     expect(lock).toContain('GH_AW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}');
@@ -373,7 +382,7 @@ describe('gh-aw advisory Squad reviewer', () => {
   it('kills mutations of every important authority and provenance gate', () => {
     const mutations = [
       REVIEWER.replace('tools:\n  bash:', 'tools:\n  edit:\n  bash:'),
-      REVIEWER.replace('safe-outputs:\n  add-comment:', 'safe-outputs:\n  dispatch-workflow:\n    max: 1\n  add-comment:'),
+      REVIEWER.replace('workflows: [squad-retro]', 'workflows: [squad-retro, arbitrary-worker]'),
       REVIEWER.replace('allowed-events: [COMMENT, REQUEST_CHANGES]', 'allowed-events: [COMMENT, APPROVE]'),
       REVIEWER.replace('cancel-in-progress: true', 'cancel-in-progress: false'),
       REVIEWER.replace(

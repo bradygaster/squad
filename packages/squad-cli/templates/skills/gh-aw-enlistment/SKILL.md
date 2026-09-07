@@ -11,7 +11,7 @@ tools:
     when: "Every step: preflight identity/auth, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
-    when: "Installing the four @dev workflows and compiling them into deterministic .lock.yml files."
+    when: "Installing the five @dev workflows and compiling them into deterministic .lock.yml files."
 ---
 
 ## Context
@@ -99,14 +99,15 @@ git switch -c chore/squad-gh-aw-bootstrap
   not part of the Squad set. `gh aw add` is additive; if you see it about to
   replace an unrelated workflow, **STOP**.
 
-### 3. Install the four supported workflows — in order, dispatcher first
+### 3. Install the five supported workflows — in order, dispatcher first
 
 ```bash
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev
 ```
 
 Keep `squad.md` first: `gh aw add` discovers its worker/reviewer dependencies
@@ -117,6 +118,7 @@ creating duplicates. The installed top-level set is exactly:
 - `squad-implement-worker.md` + `squad-implement-worker.lock.yml`
 - `squad-deps-worker.md` + `squad-deps-worker.lock.yml`
 - `squad-review.md` + `squad-review.lock.yml`
+- `squad-retro.md` + `squad-retro.lock.yml`
 
 `@dev` is intentional — it tracks the branch where new modes and fixes land first.
 
@@ -158,29 +160,29 @@ gh aw compile --strict
 This must run after any first-install approval and before committing. Success
 criteria:
 
-- All four workflows compile successfully.
+- All five workflows compile successfully.
 - The **only** permitted warning is the known `squad.md` bot-trigger warning: it
   configures both slash-command and `github-actions[bot]` triggers, and the bot
   trigger is required for controlled worker-continuation dispatches.
 - **STOP** on any error, or on **any additional warning** beyond that single
   documented one.
 
-### 6. Require all four source/lock pairs to exist
+### 6. Require all five source/lock pairs to exist
 
 ```bash
-for workflow in squad squad-implement-worker squad-deps-worker squad-review; do
+for workflow in squad squad-implement-worker squad-deps-worker squad-review squad-retro; do
   test -f ".github/workflows/${workflow}.md"      || { echo "MISSING ${workflow}.md"; exit 1; }
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 ```
 
 - **STOP** and rerun `gh aw compile --strict` if any `.lock.yml` is missing. Do not
-  open or merge the bootstrap PR until all **eight** files exist and strict
+  open or merge the bootstrap PR until all **ten** files exist and strict
   compilation passes.
 
 > On Windows PowerShell, the `for`/`test -f` loop above is POSIX. Use an
 > equivalent guard (e.g. `Test-Path`) or run it under Git Bash; the *logic* — all
-> eight files must exist — is what matters.
+> ten files must exist — is what matters.
 
 ### 7. Inspect generated files, then stage only the documented surfaces
 
@@ -257,7 +259,8 @@ gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad-review.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev
 
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
@@ -321,4 +324,4 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 - ❌ **Widening the default token.** Keep `default_workflow_permissions=read`.
 - ❌ **Auto-merging.** The bootstrap PR and the later Cast PR are both
   human-reviewed. `/squad cast` runs only after the bootstrap PR merges.
-- ❌ **Opening the PR before all eight files exist and strict compile passes.**
+- ❌ **Opening the PR before all ten files exist and strict compile passes.**
