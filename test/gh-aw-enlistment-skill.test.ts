@@ -125,7 +125,7 @@ describe('gh-aw-enlistment skill', () => {
       expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
     });
 
-    it('installs all six @dev workflows and requires all twelve generated files', () => {
+    it('installs all eight @dev workflows and requires all sixteen generated files', () => {
       for (const wf of [
         'squad.md@dev',
         'squad-implement-worker.md@dev',
@@ -133,10 +133,12 @@ describe('gh-aw-enlistment skill', () => {
         'squad-deps-worker.md@dev',
         'squad-retro.md@dev',
         'squad-improvement-worker.md@dev',
+        'squad-cast.md@dev',
+        'squad-onboarding.md@dev',
       ]) {
         expect(content, `should install ${wf}`).toContain(wf);
       }
-      expect(content).toContain('all **twelve** files');
+      expect(content).toContain('all **sixteen** files');
     });
 
     it('requires a final strict compile without --approve', () => {

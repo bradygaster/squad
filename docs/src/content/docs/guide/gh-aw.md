@@ -37,7 +37,9 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-cast.md@dev \
+  bradygaster/squad/workflows/squad-onboarding.md@dev
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
@@ -129,7 +131,9 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-cast.md@dev \
+  bradygaster/squad/workflows/squad-onboarding.md@dev
 ```
 
 Keep the dispatcher first. `gh aw add` discovers its general worker, dependency
@@ -143,6 +147,8 @@ The installed top-level workflow set is:
 - `squad-deps-worker.md` and `squad-deps-worker.lock.yml`
 - `squad-retro.md` and `squad-retro.lock.yml`
 - `squad-improvement-worker.md` and `squad-improvement-worker.lock.yml`
+- `squad-cast.md` and `squad-cast.lock.yml`
+- `squad-onboarding.md` and `squad-onboarding.lock.yml`
 
 `squad-improvement-worker` is part of this standard install, not a separate
 add-on — it stays dormant until a maintainer approves a governance-scoped
@@ -195,7 +201,7 @@ gh aw compile --strict
 ```
 
 Run this exact command after any required first-install approval and before
-committing. It must report all six workflows succeeded. `squad.md` currently
+committing. It must report all eight workflows succeeded. `squad.md` currently
 emits one known warning because both slash-command and `github-actions[bot]`
 triggers are configured; the bot trigger is required for controlled worker
 continuation dispatches. Any error or any additional warning is a stop condition.
@@ -203,7 +209,7 @@ continuation dispatches. Any error or any additional warning is a stop condition
 Verify the complete source/lock surface:
 
 ```bash
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-cast squad-onboarding; do
   test -f ".github/workflows/${workflow}.md"
   test -f ".github/workflows/${workflow}.lock.yml"
 done
@@ -236,7 +242,7 @@ editor setting untracked. Delete it if you do not want the local setting, or
 stage it explicitly if your team wants to share it.
 
 > **Troubleshooting:** If the lock files are missing, rerun `gh aw compile
-> --strict`. Do not open or merge the bootstrap PR until all six source/lock
+> --strict`. Do not open or merge the bootstrap PR until all eight source/lock
 > pairs exist and strict compilation succeeds.
 
 Downloaded workflow audit data is local diagnostic output and should not be
@@ -297,8 +303,8 @@ Use this checklist for the initial bootstrap and after any workflow update:
 
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
-| Install | Run the six-workflow `gh aw add` command on a bootstrap branch | All six `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
-| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All six workflows succeed, only documented warnings remain, and all twelve source/lock files exist |
+| Install | Run the eight-workflow `gh aw add` command on a bootstrap branch | All eight `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
+| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All eight workflows succeed, only documented warnings remain, and all sixteen source/lock files exist |
 | Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |
 | Activation | Run `/squad cast` after the bootstrap PR merges | The run resolves `v0.13.1` by default, installs the standalone bundle, initializes only when no committed team exists, runs health, and uploads `squad-state` |
 | Cast persistence | Review the Cast PR before merging | The PR contains `.squad/casting/policy.json`, `registry.json`, and `history.json`, plus the team, routing, charters, Copilot agent, and `meet-the-squad.md` |
@@ -413,7 +419,7 @@ merge, change permissions or secrets, or upgrade Squad.
 
 ### Retrospective auto-implementation (opt-in)
 
-The standard install contains all six workflows, including the dormant
+The standard install contains all eight workflows, including the dormant
 improvement worker. **Report/proposal-only remains the default.** The lifecycle is
 diagnosis → durable action issue → worker → **draft PR** → human review/merge →
 later measurement of closure and recurrence. Retro never edits code, creates a
@@ -1492,7 +1498,7 @@ curl --fail --silent --show-error --location \
 gh aw compile --strict
 ```
 
-Confirm all six source files and generated locks reference `SQUAD_SHA`, review
+Confirm all eight source files and generated locks reference `SQUAD_SHA`, review
 the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
 `gh aw update` for this immutable-pin flow: its stored source branch and cooldown
 can leave the installed sources at a different revision than the SHA you intend.

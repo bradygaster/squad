@@ -568,7 +568,9 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-cast.md@dev \
+  bradygaster/squad/workflows/squad-onboarding.md@dev
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -597,7 +599,7 @@ Review the complete generated diff before you commit:
 
 #### Retrospective auto-implementation (opt-in behavior)
 
-`squad-improvement-worker` installs as part of the standard six-workflow
+`squad-improvement-worker` installs as part of the standard eight-workflow
 `gh aw add` command above — it is not a separate add-on. The two activation
 policies are separate: `squad-retro` can auto-dispatch `squad-implement-worker` on its
 own ordinary (non-proposal) action issues once you set

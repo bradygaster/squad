@@ -11,7 +11,7 @@ tools:
     when: "Every step: preflight identity/auth, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
-    when: "Installing the six @dev workflows and compiling them into deterministic .lock.yml files."
+    when: "Installing the eight @dev workflows and compiling them into deterministic .lock.yml files."
 ---
 
 ## Context
@@ -99,7 +99,7 @@ git switch -c chore/squad-gh-aw-bootstrap
   not part of the Squad set. `gh aw add` is additive; if you see it about to
   replace an unrelated workflow, **STOP**.
 
-### 3. Install the six supported workflows — in order, dispatcher first
+### 3. Install the eight supported workflows — in order, dispatcher first
 
 ```bash
 gh aw add \
@@ -108,7 +108,9 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-cast.md@dev \
+  bradygaster/squad/workflows/squad-onboarding.md@dev
 ```
 
 Keep `squad.md` first: `gh aw add` discovers its worker/reviewer dependencies
@@ -121,6 +123,8 @@ creating duplicates. The installed top-level set is exactly:
 - `squad-deps-worker.md` + `squad-deps-worker.lock.yml`
 - `squad-retro.md` + `squad-retro.lock.yml`
 - `squad-improvement-worker.md` + `squad-improvement-worker.lock.yml`
+- `squad-cast.md` + `squad-cast.lock.yml`
+- `squad-onboarding.md` + `squad-onboarding.lock.yml`
 
 `squad-improvement-worker` is part of the standard, coherent install above —
 not a separate opt-in add-on. It stays dormant until a maintainer approves a
@@ -179,29 +183,29 @@ gh aw compile --strict
 This must run after any first-install approval and before committing. Success
 criteria:
 
-- All six workflows compile successfully.
+- All eight workflows compile successfully.
 - The **only** permitted warning is the known `squad.md` bot-trigger warning: it
   configures both slash-command and `github-actions[bot]` triggers, and the bot
   trigger is required for controlled worker-continuation dispatches.
 - **STOP** on any error, or on **any additional warning** beyond that single
   documented one.
 
-### 6. Require all six source/lock pairs to exist
+### 6. Require all eight source/lock pairs to exist
 
 ```bash
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-cast squad-onboarding; do
   test -f ".github/workflows/${workflow}.md"      || { echo "MISSING ${workflow}.md"; exit 1; }
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 ```
 
 - **STOP** and rerun `gh aw compile --strict` if any `.lock.yml` is missing. Do not
-  open or merge the bootstrap PR until all **twelve** files exist and strict
+  open or merge the bootstrap PR until all **sixteen** files exist and strict
   compilation passes.
 
 > On Windows PowerShell, the `for`/`test -f` loop above is POSIX. Use an
 > equivalent guard (e.g. `Test-Path`) or run it under Git Bash; the *logic* — all
-> twelve files must exist — is what matters.
+> sixteen files must exist — is what matters.
 
 ### 7. Inspect generated files, then stage only the documented surfaces
 
@@ -280,7 +284,9 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-cast.md@dev \
+  bradygaster/squad/workflows/squad-onboarding.md@dev
 
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
@@ -344,4 +350,4 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 - ❌ **Widening the default token.** Keep `default_workflow_permissions=read`.
 - ❌ **Auto-merging.** The bootstrap PR and the later Cast PR are both
   human-reviewed. `/squad cast` runs only after the bootstrap PR merges.
-- ❌ **Opening the PR before all twelve files exist and strict compile passes.**
+- ❌ **Opening the PR before all sixteen files exist and strict compile passes.**
