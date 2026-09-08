@@ -428,7 +428,7 @@ no `squad-retro-proposal` label qualify. Existing implementation exclusions for
 Without opt-in, a human can comment `/squad implement` on an ordinary action.
 
 The caps are **five action issues per report**, one report, and **three ordinary
-dispatches per wakeup**, independent of one another. A newly created action uses
+dispatches per wake-up**, independent of one another. A newly created action uses
 a deterministic unique temporary ID: queued `create_issue` → `add_comment`
 receipt → `dispatch_workflow`, with the identical quoted `"#aw_..."` target/input.
 Existing actions use verified real issue numbers. gh-aw resolves references in

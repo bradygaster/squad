@@ -26,7 +26,8 @@
 # the App ID is not set. Auth precedence: GitHub App installation token >
 # SQUAD_GITHUB_TOKEN > github.token.
 #
-# Optional custom Squad CLI version: vars.SQUAD_CLI_VERSION, default v0.13.1.
+# Optional custom Squad CLI version: vars.SQUAD_CLI_VERSION.
+# Default is v0.13.1.
 # This is a GitHub Release tag whose standalone assets are installed without
 # npm; values without a leading `v` are normalized for older configs.
 #

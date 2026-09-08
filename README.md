@@ -614,7 +614,7 @@ that authorization at any time — it is a reserved, read-only command open to
 any actor, and it emits no output of its own.
 
 Report/proposal-only remains the default. Ordinary opt-in dispatch is capped at
-three per wakeup (five action issues per report), with one delayed retry and a
+three per wake-up (five action issues per report), with one delayed retry and a
 durable human handoff after exhaustion. Both workers produce drafts only;
 open, merged and closed-unmerged linked PRs suppress automatic duplicates.
 Human review and merge are always required.
