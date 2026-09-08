@@ -28,7 +28,6 @@
 import { afterAll, describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 const REPO_ROOT = process.cwd();
@@ -36,15 +35,10 @@ const WORKFLOWS_DIR = join(REPO_ROOT, 'workflows');
 const SHARED_DIR = join(WORKFLOWS_DIR, 'shared');
 
 /**
- * Scratch repos live OUTSIDE this repository on purpose.
- *
- * `gh aw add` resolves its target `.github/workflows/` by walking up from its
- * working directory. A scratch repo nested under the source tree (e.g.
- * `.test-workspaces/`) lets that walk escape into the real checkout, where the
- * CLI then writes a stray workflow and rewrites `.gitattributes` — polluting
- * the very tree under test. An OS-temp workspace has nothing above it to find.
+ * Create the target .github/workflows directory before `gh aw add`, so its
+ * upward discovery stops inside this throwaway repository, not the source tree.
  */
-const TEST_WORKSPACES_DIR = join(tmpdir(), 'squad-gh-aw-secscan');
+const TEST_WORKSPACES_DIR = join(REPO_ROOT, '.squad-gh-aw-secscan');
 
 const GH_AW_INSTALL_HINT =
   '`gh aw` is required to run the security scanner this gate inspects. Install it with ' +
@@ -90,7 +84,7 @@ function gitConfigEnv(config: Record<string, string>): Record<string, string> {
 const SIGNING_HOSTILE_GIT_CONFIG: Record<string, string> = {
   'commit.gpgsign': 'true',
   'tag.gpgsign': 'true',
-  'gpg.program': join(tmpdir(), 'squad-no-such-signing-program-8f3a1c'),
+  'gpg.program': join(TEST_WORKSPACES_DIR, 'squad-no-such-signing-program-8f3a1c'),
 };
 
 /**
@@ -109,6 +103,7 @@ const SIGNING_HOSTILE_GIT_CONFIG: Record<string, string> = {
 function scanOutput(absPath: string, index: number, extraGitConfig: Record<string, string> = {}): string {
   mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
   const workspace = mkdtempSync(join(TEST_WORKSPACES_DIR, 'secscan-'));
+  mkdirSync(join(workspace, '.github', 'workflows'), { recursive: true });
 
   // Injected via GIT_CONFIG_* so it applies to every git process in the tree,
   // including any git that `gh aw` shells out to, without touching global config.
@@ -120,6 +115,7 @@ function scanOutput(absPath: string, index: number, extraGitConfig: Record<strin
     cwd: workspace,
     encoding: 'utf8',
     env,
+    timeout: 60000,
   });
 
   if (result.error) {
@@ -144,13 +140,16 @@ describe('gh-aw: distributed workflows survive the public `gh aw add` security s
     expect(versionProbe.status, `gh aw --version failed. ${GH_AW_INSTALL_HINT}`).toBe(0);
   });
 
-  it('enumerates the four public entrypoints plus their shared imports', () => {
+  it('enumerates the six public entrypoints plus their shared imports', () => {
     const names = distributedWorkflowFiles().map((p) => relative(WORKFLOWS_DIR, p));
     expect(names).toContain('squad.md');
     expect(names).toContain('squad-implement-worker.md');
     expect(names).toContain('squad-deps-worker.md');
     expect(names).toContain('squad-review.md');
-    expect(names.some((n) => n.startsWith('shared/'))).toBe(true);
+    expect(names).toContain('squad-retro.md');
+    expect(names).toContain('squad-improvement-worker.md');
+    expect(names.filter(name => !name.includes('/') && !name.includes('\\'))).toHaveLength(6);
+    expect(names.some((n) => n.split(/[\\/]/)[0] === 'shared')).toBe(true);
   });
 
   it.each(distributedWorkflowFiles().map((p, i) => [relative(REPO_ROOT, p), p, i] as const))(

@@ -56,8 +56,7 @@ tools:
     toolsets: [default]
 # pre-agent-steps (not steps:): runs after gh-aw's native base-branch/ambient
 # restores that can reintroduce a stale committed .squad/ snapshot late in the
-# job, so this stays the last writer of the four built-in charters before the
-# agent turn begins.
+# job, so this stays the last writer of the four built-in charters.
 pre-agent-steps:
   - name: Materialize canonical built-in support agents
     shell: bash
@@ -168,10 +167,23 @@ pre-agent-steps:
       cat "$validator_output"
       SQUAD_CAST_VALIDATOR_RUNNER
       chmod 500 "$validator_runner"
+  - name: Validate improvement command before the agent
+    uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    with:
+      script: |
+        const { join } = require('node:path');
+        const { pathToFileURL } = require('node:url');
+        const gate = await import(pathToFileURL(join(process.env.GITHUB_WORKSPACE,
+          '.github/workflows/shared/squad-improvement-gate.mjs')).href);
+        const result = await gate.validateImprovementCommand(context.payload, process.env);
+        if (!result.ok) core.setFailed(gate.describeViolations(result.violations).join('; '));
 safe-outputs:
   allowed-domains:
     - learn.microsoft.com
     - aspire.dev
+  activation-comments: ${{ !startsWith(github.event.comment.body, '/squad approve-improvement') && !startsWith(github.event.comment.body, '/squad revoke-improvement') }}
   messages:
     append-only-comments: true
     run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."
@@ -347,7 +359,7 @@ safe-outputs:
     max: 20
     target: "*"
   dispatch-workflow:
-    workflows: [squad-implement-worker, squad-deps-worker, squad-review]
+    workflows: [squad-implement-worker, squad-deps-worker, squad-review, squad-retro, squad-improvement-worker]
     max: 3
 ---
 
@@ -390,19 +402,18 @@ failures, not commands to reinterpret as Cast.
 ### Workflow-dispatch activation guard [MANDATORY — run before any skill]
 
 `workflow_dispatch` inputs `command` and `issue_number` are both
-`required: false`, so an empty activation probe can reach this workflow. The
-`squad-implement-worker` relay fires such a probe before its real dispatch (see
-EECOM's `dispatch-workflow` `max` fix in PR #1777). That probe arrives here as a
-`workflow_dispatch` with empty inputs. It is NOT a command. Guard against it as
-the FIRST action of the run, before resolving any command or entering any skill:
+`required: false`, so an empty activation probe can reach this workflow — the
+`squad-implement-worker` relay fires one before its real dispatch (EECOM's
+`dispatch-workflow` `max` fix, PR #1777). It is NOT a command. Guard against it
+as the FIRST action of the run, before resolving any command or entering any
+skill:
 
 - When `github.event_name` is `workflow_dispatch` AND the **Dispatched command**
-  above is empty or missing: this is an empty activation probe, not a real run.
-  Emit exactly one diagnostic annotation via bash —
+  above is empty or missing: emit exactly one diagnostic annotation via bash —
   `echo "::warning::Squad workflow_dispatch fired with empty command input — empty activation probe (see PR #1777); halting with no side effects"`
   — and STOP immediately. Do NOT create an issue, do NOT post a comment, do NOT
-  enter any skill. Creating an issue here is the junk-issue defect that produced
-  fixture issues #12 and #14; never do it.
+  enter any skill; creating an issue here is the junk-issue defect behind
+  fixture issues #12 and #14.
 - When `github.event_name` is `workflow_dispatch`, the **Dispatched command** is
   non-empty and names an issue-bound mode (`research`, `triage`, `plan*`, or
   `implement`), but neither a dispatched nor a triggering `issue_number` is
@@ -410,19 +421,15 @@ the FIRST action of the run, before resolving any command or entering any skill:
   `echo "::warning::Squad workflow_dispatch for the named command is missing issue_number; halting with no side effects"`
   and STOP. Do NOT create an issue.
 
-This guard is defense-in-depth: PR #1777's `max` bump keeps the real relay
-dispatch alive, and this guard makes the surviving probe harmless and visible
-(a log annotation that survives the run) instead of silently minting junk
-issues. If the LLM ever emits a third dispatch entry, `max` alone fails again —
-this guard still holds.
+`max` alone is not enough: this guard makes the surviving probe harmless and
+visible instead of silently minting junk issues.
 
 Resolve the slash command in this order:
 
-1. **Dispatched command** (above) — when the event name is
-   `workflow_dispatch`, this input must be present for the run to proceed. If it
-   is empty, the activation guard above has already halted the run; never reach
-   this step with an empty dispatched command. When it is non-empty, it is the
-   trigger source; skip the remaining sources.
+1. **Dispatched command** (above) — on `workflow_dispatch` this input must be
+   present for the run to proceed; an empty one has already been halted by the
+   activation guard. When non-empty it is the trigger source; skip the
+   remaining sources.
 2. **Issue comment / PR conversation comment:** `github.event.comment.body` —
    the full comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
@@ -440,14 +447,13 @@ Resolve the target issue in this order:
    issue, including for merge-driven epic continuations.
 2. The triggering issue or pull request number from the event payload.
 
-**Never emit `noop` when the dispatched command is non-empty.** A workflow
-dispatch with a non-empty command is always actionable: run the named mode
-against the dispatched issue number. If the dispatched command names no mode in
-the Modes table, that is a loud failure via Step PC-3 — still never `noop`. The
-missing-`issue_number` case is handled by the activation guard above — halt with
-a log annotation, never an issue.
+**Never emit `noop` when the dispatched command is non-empty.** Run the named
+mode against the dispatched issue number. If the dispatched command names no
+mode in the Modes table, that is a loud failure via Step PC-3 — still never
+`noop`. The missing-`issue_number` case is handled by the activation guard
+above: halt with a log annotation, never an issue.
 
-The activation job already ran `squad init --preset default`, which produced a
+The activation job already ran `squad init --preset default`, producing a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
 mode REPLACES this scaffolding with a team tailored to the repository.
 
@@ -465,6 +471,9 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad retire <name>` | Retire |
 | `/squad status` | Status |
 | `/squad review` | Review Relay |
+| `/squad retro` | Retro Relay |
+| `/squad approve-improvement` | Approve Improvement |
+| `/squad revoke-improvement` | Revoke Improvement |
 | `/squad research` | Research |
 | `/squad plan` | Plan |
 | `/squad plan revise <feedback>` | Plan Revise |
@@ -491,7 +500,7 @@ Repository owners must configure Copilot setup steps separately when needed.
 **The command may appear anywhere in the body — not only at the start.** A body
 that opens with a greeting, a sentence of context, or a blank line and *then*
 carries the command is the normal shape of a first-run issue. Never assume the
-body begins with `/squad`, and never decide by eye whether a command is present.
+body begins with `/squad`, and never decide by eye whether one is present.
 
 ### Shell input security contract [MANDATORY]
 
@@ -514,8 +523,8 @@ run: |
 **Forbidden:**
 
 - `UNTRUSTED_TEMPLATE_IN_RUN` — never place an event-text expression, or anything
-  derived from one, inside a `run:` block. Actions expansion happens *before* the
-  shell starts, so shell quoting cannot protect it.
+  derived from one, inside a `run:` block. Actions expands *before* the shell
+  starts, so shell quoting cannot protect it.
 - `UNTRUSTED_COMMAND_STRING` — never build shell syntax from that text: no
   `eval`, `source`, generated script text, or `bash -c`/`sh -c` string.
 - `UNTRUSTED_PRINTF_FORMAT` — never pass it as `printf`'s first argument; that
@@ -526,9 +535,9 @@ run: |
 
 **Per-hop requirements:**
 
-1. **Actions assignment** — event text in YAML `env:` only; no such expression
-   may appear in any compiled `run:` block.
-2. **Shell variable** — plain assignment only. No `eval`, command substitution,
+1. **Actions assignment** — event text in YAML `env:` only, never in a compiled
+   `run:` block.
+2. **Shell variable** — plain assignment only; no `eval`, command substitution,
    here-doc generation, or `bash -c`.
 3. **`printf`** — literal format string; body always an argument.
 4. **Pipe** — stdin bytes between stages; never re-materialized as shell syntax.
@@ -540,39 +549,26 @@ run: |
 **Verification requirement:** the gate must inspect **compiled** gh-aw output,
 not just this markdown, and fail when a compiled `run:` block carries event
 expressions, or when parser code passes a body variable as a `printf` format,
-into `eval`/`bash -c`, or into an awk program/`awk -v`. A gate that cannot turn
-red on a fixture whose `run:` prints a raw issue-body expression is not valid.
+into `eval`/`bash -c`, or into an awk program/`awk -v`.
 
 That gate is **implemented** (#1834) in `test/gh-aw-quality.test.ts` (describe
-`gh-aw: compiled workflow shell input security contract`), backed by the scanner
-in `test/gh-aw-shell-contract.ts` and the positive-control fixture
-`test/fixtures/gh-aw-shell-contract/violating.lock.yml`. It runs in CI, which
-installs `gh aw` and compiles this workflow (see `.github/workflows/squad-ci.yml`).
-The gate fails closed: a missing compiler, an absent lock, or zero inspected
-surfaces are failures, never skips.
-
-Because the contract spans two artifacts, it is verified on two surfaces:
-
-- **Hop 1 (`UNTRUSTED_TEMPLATE_IN_RUN`)** is a property of the compiled lock, so
-  it is scanned there. Actions expands template expressions before the shell
-  starts, so an attacker-controlled event expression left in a compiled `run:`
-  block is the observable failure.
-- **Hops 2–6 (`printf`/`eval`/`bash -c`/`awk`)** live in the `/squad` parser
-  one-liners below, which gh-aw pulls in verbatim at runtime via a
-  runtime-import of this file and never inlines into the lock. That
-  runtime-imported source is therefore the only surface on which those hops can
-  be observed, and the gate scans it directly. The steps below satisfy hops 2–6
-  as written.
+`gh-aw: compiled workflow shell input security contract`), backed by
+`test/gh-aw-shell-contract.ts` and the positive-control fixture
+`test/fixtures/gh-aw-shell-contract/violating.lock.yml`. It fails closed: a
+missing compiler, an absent lock, or zero inspected surfaces are failures, never
+skips. It scans two surfaces because the contract spans two artifacts — hop 1
+(`UNTRUSTED_TEMPLATE_IN_RUN`) in the compiled lock, and hops 2–6 in the parser
+one-liners below, which gh-aw runtime-imports verbatim and never inlines into
+the lock. The steps below satisfy hops 2–6 as written.
 
 ### Step PC-0: Normalize a dispatched command [MANDATORY on `workflow_dispatch`]
 
 `workflow_dispatch` delivers a **bare** command — its input schema documents
 `cast`, `implement`, `connect org/repo`, never `/squad implement`. PC-1 scans for
-a literal `/squad` token, so a bare token yields `NO_COMMAND` and routes a valid
-manual or relayed run into the PC-3 failure path. Normalize here rather than
-loosening PC-1: on the comment and issue-body paths a missing token *is* the
-error condition and must keep failing loudly (#1824). Only dispatch is
-structurally guaranteed a command, so only it is normalized.
+a literal `/squad` token, so a bare token would yield `NO_COMMAND` and route a
+valid manual or relayed run into the PC-3 failure path. Normalize here rather
+than loosening PC-1: on the comment and issue-body paths a missing token *is*
+the error condition and must keep failing loudly (#1824).
 
 When `github.event_name` is `workflow_dispatch`, assign the **Dispatched
 command** to `SQUAD_DISPATCH_COMMAND` per hop 1 and run exactly this. Its output
@@ -582,14 +578,13 @@ is the `SQUAD_TRIGGER_BODY` PC-1 consumes:
 printf '%s\n' "$SQUAD_DISPATCH_COMMAND" | awk '{sub(/\r$/,"");sub(/^[[:space:]]+/,"");sub(/[[:space:]]+$/,"");if($0=="")next;f=1;if($0~/^\/squad([[:space:]]|$)/)print;else print "/squad " $0;exit}END{if(!f)print "EMPTY_DISPATCH"}'
 ```
 
-Normalization is idempotent: `implement` and `/squad implement` both yield
+Normalization is idempotent — `implement` and `/squad implement` both yield
 `/squad implement`, so typing the slash prefix into the dispatch box is not
-penalized. It scans the first non-empty line (#1835).
+penalized — and it scans the first non-empty line (#1835).
 
 `EMPTY_DISPATCH` means the activation guard above should already have halted the
 run. Halt with that guard's `::warning::`; never route it to PC-3, which posts a
-comment and fails the run. An empty activation probe must stay silent and
-side-effect free (PR #1777; junk issues #12 and #14).
+comment and fails the run (PR #1777; junk issues #12 and #14).
 
 On the comment and issue-body paths there is no PC-0: assign the raw body
 directly to `SQUAD_TRIGGER_BODY`.
@@ -607,11 +602,10 @@ printf '%s\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\r$/,"")} !f && match($0, /(^|[
 It scans **every** line, takes the first `/squad` token wherever it sits, and
 prints the argument text that followed it. Empty output means a bare `/squad`.
 Exactly `NO_COMMAND` means no `/squad` token exists anywhere in the body.
-
-`match()`/`substr()` extract the remainder of the **first** token. Greedy
-`sub(/^.*\/squad/,"")` strips through the *last* token on the line, so
-`/squad cast, then /squad status` resolves to `status` — a different mode than
-requested. First-token-wins is the contract; keep extraction anchored to
+`match()`/`substr()` deliberately extract the remainder of the **first** token:
+greedy `sub(/^.*\/squad/,"")` strips through the *last* token on the line, so
+`/squad cast, then /squad status` would resolve to `status` — a different mode
+than requested. First-token-wins is the contract; keep extraction anchored to
 `RSTART`/`RLENGTH`.
 
 ### Step PC-2: Route on the extracted text
@@ -622,7 +616,7 @@ requested. First-token-wins is the contract; keep extraction anchored to
 3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `activate` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
+   - `cast-member` (1), `activate` (1), `plan` (1), `approve-improvement`, `revoke-improvement`, `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `retro`, `research`, `triage`, `implement`
 4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
 
@@ -630,8 +624,7 @@ requested. First-token-wins is the contract; keep extraction anchored to
 
 Reaching this step means the run matched no mode: it cast nothing, planned
 nothing, changed nothing. Reporting success here is the #1824 defect — a green
-check and a real cast were indistinguishable, so a first-run user got an empty
-team and no signal that anything had gone wrong.
+check and a real cast were indistinguishable.
 
 1. Show the text actually present in the body:
 
@@ -648,20 +641,16 @@ team and no signal that anything had gone wrong.
    summary, never let the run finish green.
 
 Deliberate widening: this scan also matches `/squad` inside a quoted line or a
-fenced block. Excluding those would reintroduce a silent-skip path, which is the
-exact bug class this step exists to eliminate. Parsing them and surfacing the
-result is preferred over ignoring them without a trace.
+fenced block. Excluding those would reintroduce a silent-skip path, the exact
+bug class this step exists to eliminate.
 
 **Known limitation — step 4 is an instruction, not an enforced exit code.** This
-file is an LLM prompt, so "fail the run" is a directive the runtime agent is
-asked to obey, not a branch CI can execute. `test/gh-aw-command-parse.test.ts`
-proves the *declared* commands emit `NO_COMMAND` and a diagnostic quoting the
-offending text; it cannot prove the agent then exits non-zero. That gap is
-inherent to gh-aw, not an oversight — two independent reviews have flagged it.
-Steps 1–3 are load-bearing precisely because their output is observable: an
-`::error::` annotation and an issue comment survive whatever exit status the
-agent chooses. Do not drop them in favor of step 4, and do not call step 4 a
-guarantee.
+file is an LLM prompt, so "fail the run" is a directive the agent is asked to
+obey, not a branch CI can execute; `test/gh-aw-command-parse.test.ts` proves the
+*declared* commands emit `NO_COMMAND` and a diagnostic quoting the offending
+text, but cannot prove the agent then exits non-zero. Steps 1–3 are load-bearing
+because their output is observable regardless of exit status. Do not drop them
+in favor of step 4, and do not call step 4 a guarantee.
 
 ## Actor Authorization Guard
 
@@ -669,14 +658,14 @@ Run this guard after **Step PC-2** resolves the parsed mode and before **Execute
 
 ### Step AG-1: Classify the parsed mode [MANDATORY]
 
-Authorization is opt-out only for the explicit open-mode allow-list below. Never infer "read-only" from a prefix, from the absence of a mutating keyword, or from prose. Anything outside the allow-list — including empty, malformed, or future mode strings — requires authorization or should already have been stopped by **Step PC-3**. Unknown text must never bypass this guard by being treated as read-only.
+Authorization is opt-out only for the explicit open-mode allow-list below. Never infer "read-only" from a prefix, from the absence of a mutating keyword, or from prose. Anything outside the allow-list — including empty, malformed, or future mode strings — requires authorization or should already have been stopped by **Step PC-3**.
 
 Assign the parsed mode string from **Step PC-2** to `SQUAD_PARSED_MODE` and run exactly this:
 
 ```bash
 mode="${SQUAD_PARSED_MODE-}"
 case "$mode" in
-  status|review|research|plan)
+  status|review|research|plan|revoke-improvement)
     echo READ_ONLY
     ;;
   *)
@@ -688,17 +677,23 @@ esac
 - `READ_ONLY` → skip the permission lookup entirely and continue to **Execute Mode** unchanged.
 - `AUTH_REQUIRED` → continue to **Step AG-2**.
 
-**Open-mode allow-list:** `status`, `review` (advisory relay), `research`, and
-`plan` (plan preview). These commands remain available to any actor. Every
-other recognized mode changes repository state, revises or advances a durable
-planning artifact, or dispatches implementation work, so it requires
-authorization.
+**Open-mode allow-list:** `status`, `review` (advisory relay), `research`,
+`plan` (plan preview), and `revoke-improvement`. These commands remain
+available to any actor. Every other recognized mode changes repository state,
+revises or advances a durable planning artifact, or dispatches implementation
+work, so it requires authorization.
+
+`revoke-improvement` qualifies because it emits nothing and only ever REMOVES
+authority: `squad-improvement-worker`'s gate honors a revocation from any
+author, so a red refusal here would contradict a withdrawal that is honored
+anyway. `approve-improvement` grants authority and dispatches a worker, so it
+stays authorization-required.
 
 ### Step AG-2: Resolve actor permission [MANDATORY for `AUTH_REQUIRED`]
 
 When **Step AG-1** returned `AUTH_REQUIRED`, resolve the event, actor, and repository only through named YAML `env:` bindings; never embed Actions expressions inside a shell block. Use `github.event_name` for `SQUAD_EVENT_NAME`, `github.actor` for `SQUAD_TRIGGER_ACTOR`, and `github.repository` for `SQUAD_REPOSITORY`.
 
-GitHub requires write access to trigger `workflow_dispatch`. That platform authorization also covers the controlled `dispatch-workflow` relay from `squad-implement-worker`; do not look up the relay bot as though it were a human collaborator. For all issue, issue-comment, and pull-request-review-comment paths, call the collaborator-permission API for the triggering actor.
+GitHub requires write access to trigger `workflow_dispatch`. That platform authorization also covers the controlled `dispatch-workflow` relays into this router; do not look up a relay bot as though it were a human collaborator. On every issue, issue-comment, and pull-request-review-comment path, call the collaborator-permission API for the triggering actor.
 
 ```bash
 event="${SQUAD_EVENT_NAME-}"
@@ -750,7 +745,7 @@ When **Step AG-3** returned `REFUSE`:
    `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
 3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
 
-**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `retro`, `approve-improvement`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
 
 ## Execute Mode
 
@@ -758,7 +753,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 
 **MODE ISOLATION:** Execute ONLY the active mode's skill. Other modes' instructions do not apply — do not load more than one mode skill.
 
-**BREADCRUMB ≠ DELIVERABLE:** Every mode posts an acknowledgment first. This is never the deliverable — always complete ALL subsequent steps.
+**BREADCRUMB ≠ DELIVERABLE:** An acknowledgment is never the deliverable. Complete the mode; approval/revocation relays post no acknowledgment.
 
 | Parsed mode | Skill to load |
 |---|---|
@@ -769,6 +764,9 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `retire` | `squad-retire` |
 | `status` | `squad-status` |
 | `review` | `squad-review-relay` |
+| `retro` | `squad-retro-relay` |
+| `approve-improvement` | `squad-approve-improvement` |
+| `revoke-improvement` | `squad-revoke-improvement` |
 | `research` | `squad-research` |
 | `plan` | `squad-plan` |
 | `plan revise` | `squad-plan-revise` |
@@ -785,7 +783,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `plan activate` | `squad-plan-activate` |
 | `implement` | `squad-implement` |
 
-**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement) must not load them.
+**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Approve Improvement, Revoke Improvement, Implement) must not load them.
 
 If the parsed mode's skill cannot be loaded, report the failure in plain language and stop. Never improvise a mode playbook from memory.
 
@@ -794,7 +792,7 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 ## Team Guard
 
 **Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Activate, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
-**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement (these run their own pre-checks).
+**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Approve Improvement, Revoke Improvement, Implement (these run their own pre-checks).
 
 ### Step TG-1: Check Team Presence
 
@@ -802,9 +800,9 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
 ```
 
-`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`. Neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
+`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`; neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
 
-**Why committed HEAD, not local files:** an activation pre-step (e.g. `squad init --preset default`) can restore a local `.squad/` scaffold before the job runs; reading the local filesystem would return TEAM_PRESENT for that uncast scaffold. `git show HEAD:.squad/team.md` reads only committed state, so activation-restored local files are invisible to the guard.
+**Why committed HEAD, not local files:** an activation pre-step (e.g. `squad init --preset default`) can restore a local `.squad/` scaffold before the job runs, so reading the working tree would report TEAM_PRESENT for that uncast scaffold. `git show HEAD:.squad/team.md` reads only committed state.
 
 The leading `sub(/\r$/,"")` normalizes CRLF so Windows-formatted team.md classifies correctly. No commits → `git show` exits non-zero → TEAM_ABSENT.
 
@@ -1190,6 +1188,52 @@ Use only the typed `dispatch-workflow` safe-output. Never call the generic
 Do not review the diff in this router, emit a verdict, edit files, create an
 issue, or dispatch any other workflow. The independent reviewer owns all
 provenance, deduplication, and review decisions.
+
+## skill: `squad-retro-relay`
+---
+description: Relay `/squad retro` to the shared worker.
+---
+
+Emit only this typed `dispatch-workflow`:
+
+```json
+{"workflow_name":"squad-retro","inputs":{"retro_reason":"manual","request_origin":"manual"}}
+```
+
+Stop; the worker owns the retrospective lifecycle.
+
+## skill: `squad-approve-improvement`
+---
+description: Relay an approved retrospective governance proposal to the improvement worker.
+---
+
+After the existing mutating authorization guard, relay only an issue comment
+created by the authorized human. Other events, PR comments and missing IDs
+receive a refusal, never a dispatch. The worker re-fetches the exact comment,
+permission, content revision and scope. Use the typed `dispatch_workflow`
+safe-output, with nested inputs (never a generic GitHub mutation):
+
+```json
+{
+  "workflow_name": "squad-improvement-worker",
+  "inputs": {
+    "issue_number": "{issue-number}",
+    "approval_comment_id": "{triggering-comment-id}"
+  }
+}
+```
+
+No other dispatch, verdict, file edit or success comment. Never restate the
+approval. Permission to route is not approval to change a file.
+
+## skill: `squad-revoke-improvement`
+---
+description: Reserve the durable human revocation without dispatching.
+---
+
+The human comment is the durable record; the worker checks it again before
+outputs. Emit nothing, dispatch nothing, and never route this recognized command
+to PC-3 or claim unknown-command success/failure.
 
 ## skill: `squad-connect`
 ---

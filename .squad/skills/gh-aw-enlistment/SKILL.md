@@ -11,7 +11,7 @@ tools:
     when: "Every step: preflight identity/auth, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
-    when: "Installing the four @dev workflows and compiling them into deterministic .lock.yml files."
+    when: "Installing the six @dev workflows and compiling them into deterministic .lock.yml files."
 ---
 
 ## Context
@@ -99,14 +99,16 @@ git switch -c chore/squad-gh-aw-bootstrap
   not part of the Squad set. `gh aw add` is additive; if you see it about to
   replace an unrelated workflow, **STOP**.
 
-### 3. Install the four supported workflows — in order, dispatcher first
+### 3. Install the six supported workflows — in order, dispatcher first
 
 ```bash
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad-retro.md@dev \
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev
 ```
 
 Keep `squad.md` first: `gh aw add` discovers its worker/reviewer dependencies
@@ -115,8 +117,27 @@ creating duplicates. The installed top-level set is exactly:
 
 - `squad.md` + `squad.lock.yml`
 - `squad-implement-worker.md` + `squad-implement-worker.lock.yml`
-- `squad-deps-worker.md` + `squad-deps-worker.lock.yml`
 - `squad-review.md` + `squad-review.lock.yml`
+- `squad-deps-worker.md` + `squad-deps-worker.lock.yml`
+- `squad-retro.md` + `squad-retro.lock.yml`
+- `squad-improvement-worker.md` + `squad-improvement-worker.lock.yml`
+
+`squad-improvement-worker` is part of the standard, coherent install above —
+not a separate opt-in add-on. It stays dormant until a maintainer approves a
+governance-scoped retrospective proposal (see the gh-aw guide's retrospective
+auto-implementation section); installing it alongside the other five keeps the
+full stack consistent and avoids a second bootstrap pass later.
+
+Report/proposal-only is the default. Ordinary fixes require the explicit
+`"squadRetroAutoImplement": "allow"` setting in `.squad/config.json`;
+five action issues and three dispatches per wakeup remain separate caps.
+An improvement requires `/squad approve-improvement`, `Approved-Revision:`
+and exact `Approved-Path:` lines from a human with write/maintain/admin access.
+The dispatcher sends nested issue and approval-comment IDs to the worker;
+manual retries use those same IDs. `/squad revoke-improvement` is reserved
+without dispatch and is rechecked before outputs. Draft PRs and human merge
+remain mandatory; closed-unmerged PRs never cause automatic replacements.
+See the guide for content-hash calculation and the one-retry recovery policy.
 
 `@dev` is intentional — it tracks the branch where new modes and fixes land first.
 
@@ -158,29 +179,29 @@ gh aw compile --strict
 This must run after any first-install approval and before committing. Success
 criteria:
 
-- All four workflows compile successfully.
+- All six workflows compile successfully.
 - The **only** permitted warning is the known `squad.md` bot-trigger warning: it
   configures both slash-command and `github-actions[bot]` triggers, and the bot
   trigger is required for controlled worker-continuation dispatches.
 - **STOP** on any error, or on **any additional warning** beyond that single
   documented one.
 
-### 6. Require all four source/lock pairs to exist
+### 6. Require all six source/lock pairs to exist
 
 ```bash
-for workflow in squad squad-implement-worker squad-deps-worker squad-review; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
   test -f ".github/workflows/${workflow}.md"      || { echo "MISSING ${workflow}.md"; exit 1; }
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 ```
 
 - **STOP** and rerun `gh aw compile --strict` if any `.lock.yml` is missing. Do not
-  open or merge the bootstrap PR until all **eight** files exist and strict
+  open or merge the bootstrap PR until all **twelve** files exist and strict
   compilation passes.
 
 > On Windows PowerShell, the `for`/`test -f` loop above is POSIX. Use an
 > equivalent guard (e.g. `Test-Path`) or run it under Git Bash; the *logic* — all
-> eight files must exist — is what matters.
+> twelve files must exist — is what matters.
 
 ### 7. Inspect generated files, then stage only the documented surfaces
 
@@ -256,8 +277,10 @@ git switch -c chore/squad-gh-aw-bootstrap
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+  bradygaster/squad/workflows/squad-retro.md@dev \
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev
 
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
@@ -321,4 +344,4 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 - ❌ **Widening the default token.** Keep `default_workflow_permissions=read`.
 - ❌ **Auto-merging.** The bootstrap PR and the later Cast PR are both
   human-reviewed. `/squad cast` runs only after the bootstrap PR merges.
-- ❌ **Opening the PR before all eight files exist and strict compile passes.**
+- ❌ **Opening the PR before all twelve files exist and strict compile passes.**
