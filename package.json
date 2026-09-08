@@ -46,7 +46,7 @@
     "@opentelemetry/sdk-trace-base": "^2.11.0",
     "@playwright/test": "^1.63.0",
     "@typescript-eslint/eslint-plugin": "^8.69.0",
-    "@typescript-eslint/parser": "^8.61.1",
+    "@typescript-eslint/parser": "^8.69.0",
     "@vitest/coverage-v8": "^4.1.11",
     "cspell": "^10.2.2",
     "eslint": "^10.10.0",
