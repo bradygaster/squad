@@ -169,6 +169,9 @@ pre-agent-steps:
       SQUAD_CAST_VALIDATOR_RUNNER
       chmod 500 "$validator_runner"
 safe-outputs:
+  allowed-domains:
+    - learn.microsoft.com
+    - aspire.dev
   messages:
     append-only-comments: true
     run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."
@@ -1464,7 +1467,10 @@ section MUST state exactly one status so a later reader or test can assert on it
 instead of trusting silence:
 
 - `Online sources: consulted` — followed by the list of URLs actually fetched
-  this run (each URL also appears as a citation in the evidence table); or
+  this run (each URL also appears as a citation in the evidence table). Preserve
+  each public documentation URL in full, including its path; do not replace the
+  path with `/redacted`. Never include URL userinfo, credentials, access tokens,
+  or secret-bearing query parameters; omit those sensitive parts instead; or
 - `Online sources: unavailable — <reason>` — when no external documentation was
   fetched, e.g. the network policy disallowed it, no external source was needed,
   or a requested source-of-truth site was unreachable.
