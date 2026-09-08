@@ -34,9 +34,10 @@ git switch -c chore/squad-gh-aw-bootstrap
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev \
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
@@ -46,7 +47,7 @@ gh aw compile --strict --approve
 gh aw compile --strict
 
 # Verify every supported workflow has a source and generated lockfile
-for workflow in squad squad-implement-worker squad-deps-worker squad-review squad-retro; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
   test -f ".github/workflows/${workflow}.md"
   test -f ".github/workflows/${workflow}.lock.yml"
 done
@@ -125,9 +126,10 @@ compilation and human review are complete.
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev \
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev
 ```
 
 Keep the dispatcher first. `gh aw add` discovers its general worker, dependency
@@ -137,9 +139,15 @@ The installed top-level workflow set is:
 
 - `squad.md` and `squad.lock.yml`
 - `squad-implement-worker.md` and `squad-implement-worker.lock.yml`
-- `squad-deps-worker.md` and `squad-deps-worker.lock.yml`
 - `squad-review.md` and `squad-review.lock.yml`
+- `squad-deps-worker.md` and `squad-deps-worker.lock.yml`
 - `squad-retro.md` and `squad-retro.lock.yml`
+- `squad-improvement-worker.md` and `squad-improvement-worker.lock.yml`
+
+`squad-improvement-worker` is part of this standard install, not a separate
+add-on — it stays dormant until a maintainer approves a governance-scoped
+retrospective proposal (see [Retrospective
+auto-implementation](#retrospective-auto-implementation-opt-in) below).
 
 `gh aw add` also installs the Squad skills under `.github/skills/`, which is why
 the bootstrap commit stages that path alongside the workflows.
@@ -187,7 +195,7 @@ gh aw compile --strict
 ```
 
 Run this exact command after any required first-install approval and before
-committing. It must report all five workflows succeeded. `squad.md` currently
+committing. It must report all six workflows succeeded. `squad.md` currently
 emits one known warning because both slash-command and `github-actions[bot]`
 triggers are configured; the bot trigger is required for controlled worker
 continuation dispatches. Any error or any additional warning is a stop condition.
@@ -195,7 +203,7 @@ continuation dispatches. Any error or any additional warning is a stop condition
 Verify the complete source/lock surface:
 
 ```bash
-for workflow in squad squad-implement-worker squad-deps-worker squad-review squad-retro; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
   test -f ".github/workflows/${workflow}.md"
   test -f ".github/workflows/${workflow}.lock.yml"
 done
@@ -228,7 +236,7 @@ editor setting untracked. Delete it if you do not want the local setting, or
 stage it explicitly if your team wants to share it.
 
 > **Troubleshooting:** If the lock files are missing, rerun `gh aw compile
-> --strict`. Do not open or merge the bootstrap PR until all five source/lock
+> --strict`. Do not open or merge the bootstrap PR until all six source/lock
 > pairs exist and strict compilation succeeds.
 
 Downloaded workflow audit data is local diagnostic output and should not be
@@ -289,8 +297,8 @@ Use this checklist for the initial bootstrap and after any workflow update:
 
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
-| Install | Run the five-workflow `gh aw add` command on a bootstrap branch | All five `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
-| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All five workflows succeed, only documented warnings remain, and all ten source/lock files exist |
+| Install | Run the six-workflow `gh aw add` command on a bootstrap branch | All six `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
+| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All six workflows succeed, only documented warnings remain, and all twelve source/lock files exist |
 | Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |
 | Activation | Run `/squad cast` after the bootstrap PR merges | The run resolves `v0.13.1` by default, installs the standalone bundle, initializes only when no committed team exists, runs health, and uploads `squad-state` |
 | Cast persistence | Review the Cast PR before merging | The PR contains `.squad/casting/policy.json`, `registry.json`, and `history.json`, plus the team, routing, charters, Copilot agent, and `meet-the-squad.md` |
@@ -346,6 +354,8 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Implementation | `/squad implement` | Implement an issue, or start the next ready wave of an epic | Dispatches an isolated implementation worker |
 | Review | `/squad review` | Independently review the current pull request | Advisory `COMMENT` or `REQUEST_CHANGES`; human approval remains mandatory |
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
+| Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
+| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
 
 ### Where you can use slash commands
 
@@ -400,6 +410,119 @@ Reports and at most five owned action issues are automatic. Changes to
 `.squad/**`, `.github/**`, prompts, charters, routing, or governance remain
 human-reviewed proposals. The worker cannot edit files, create pull requests,
 merge, change permissions or secrets, or upgrade Squad.
+
+### Retrospective auto-implementation (opt-in)
+
+The standard install contains all six workflows, including the dormant
+improvement worker. **Report/proposal-only remains the default.** The lifecycle is
+diagnosis → durable action issue → worker → **draft PR** → human review/merge →
+later measurement of closure and recurrence. Retro never edits code, creates a
+PR, merges, marks ready or changes control-plane policy.
+
+**Ordinary fixes:** explicitly set `"squadRetroAutoImplement": "allow"` in the
+existing `.squad/config.json`. Omission or `"deny"` disables automatic dispatch;
+`"squadRetro": "deny"` disables the entire retrospective. Only open
+`github-actions[bot]` action issues with an exact standalone `Action-Key:` and
+no `squad-retro-proposal` label qualify. Existing implementation exclusions for
+`.squad`, workflow/agent definitions, manifests and protected files are unchanged.
+Without opt-in, a human can comment `/squad implement` on an ordinary action.
+
+The caps are **five action issues per report**, one report, and **three ordinary
+dispatches per wakeup**, independent of one another. A newly created action uses
+a deterministic unique temporary ID: queued `create_issue` → `add_comment`
+receipt → `dispatch_workflow`, with the identical quoted `"#aw_..."` target/input.
+Existing actions use verified real issue numbers. gh-aw resolves references in
+dependency order but does not make these writes transactional. A failed create
+can leave an unresolved dispatch; a failed comment can leave a dispatch without
+a receipt. The receiver rejects both before implementation. Queuing an output
+is not successful delivery.
+
+Every receipt records `Squad-Retro-Dispatch:`, `Action-Key:` and `Dispatch-Run:`.
+The implementation worker verifies the immediate `aw_context.workflow_id`,
+repository/default branch, live Actions run/attempt, platform bot actor, live
+action issue and matching bot receipt. A root-workflow claim or prose marker
+alone is not provenance. Retro PRs carry their key plus a **visible `text` fence**
+containing `<!-- squad:retro-action issue=N action-key=K -->`; a bare HTML comment
+would be removed by the pinned sanitizer. Loop suppression requires independent
+BOT PR authorship, the exact marker/key, worker branch and trusted source action.
+Closed source issues still prove provenance after merge; unverifiable claims and
+labels alone never suppress review/failure evidence.
+
+The six-hour drain reconciles action-owned handoffs even during report cooldown,
+with no fresh evidence, after report fingerprint resolution, or during a report
+collection outage. Incoming early requests during cooldown are preserved as
+durable pending comments. A sealed pre-agent plan constrains outputs; its
+candidate list is not model judgment. `squadRetroAutoImplementRetryHours` defaults
+to **48** (integer 1–720): at most one delayed retry follows the initial receipt.
+After the second attempt ages out with no PR, a one-time
+`Squad-Retro-Dispatch-Abandoned:` comment hands the action to a human. Receipt
+write outages cannot be counted as successful attempts; the action remains
+pending rather than pretending delivery succeeded.
+
+Open, merged **and closed-unmerged** linked implementation PRs suppress automatic
+duplicates. Branch namespaces or issue-closing references identify links; a
+bounded incomplete PR scan refuses automation. Nothing reopens or mass-closes
+issues/PRs. Investigate the refusal and use a human-managed `/squad implement`
+or manual fix, not repeated retro-origin dispatches.
+
+**Approved improvements:** governance findings are proposal-labeled action issues
+with exact `Proposed-Path:` lines. Only non-executable Markdown under
+`.squad/skills/**` or `.squad/decisions/inbox/**` is eligible, at most twenty files.
+Canonical decisions/history, charters, roster/routing/config/casting, `.github/**`,
+auth/permissions/secrets/protections, package self-upgrades and worker/gh-aw
+self-configuration (including their packaged skills) require a manual proposal.
+The actual `am` patch is checked with Git's parser, exact approved paths, file
+modes and symlink checks; bundles, renames, copies and binary patches are refused.
+The worker's `.squad/` dot-folder exception only makes its two-path allowlist
+usable; it does not exempt manifest basenames or widen the ordinary worker.
+
+First read the final published proposal and compute its content revision
+(example issue **123**; this command only reads and prints a hash):
+
+```bash
+repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+gh api "repos/$repo/issues/123" | node .github/workflows/shared/squad-improvement-gate.mjs --revision
+```
+
+Then a human with live **write, maintain or admin** permission posts a new comment
+on that issue, substituting the printed hash and the exact proposed paths:
+
+```text
+/squad approve-improvement
+Approved-Revision: {64-character SHA-256}
+Approved-Path: .squad/skills/some-skill/SKILL.md
+Approved-Path: .squad/decisions/inbox/some-note.md
+```
+
+The hash binds the numbered issue's title and complete body, with CRLF normalized.
+No quoted/fenced/indented command, edited approval, app/bot approval, missing
+permission/revision or scope mismatch is accepted. The existing dispatcher parses
+the command and runs its mutating collaborator authorization, then emits exactly
+one typed `dispatch_workflow` with nested `inputs.issue_number` and
+`inputs.approval_comment_id`. The worker is **workflow_dispatch-only**, never a
+second direct issue-comment listener. It independently fetches that exact comment
+and validates its human author/provenance, permissions, issue state, revision and
+scope, both before work and before safe outputs; it never substitutes a newer
+approval or treats a relay actor as an approver.
+
+`/squad revoke-improvement` is a reserved no-dispatch route: a later human comment
+withdraws the referenced approval. Missing/edited/stale/revoked approvals require
+a fresh comment for the current content. Manual retries select
+**Actions → Squad Improvement Worker → Run workflow**, on the default branch,
+and supply the same `issue_number` and `approval_comment_id` (the numeric suffix
+of its `#issuecomment-N` URL). Retrying is not approval. Both workers remain
+draft-only; neither reviews its own output, marks ready nor merges.
+
+**Bounds and limitations:** the evidence collector allows at most 720 API requests
+(700 original, ten cached PR reads and ten cached action provenance reads).
+Opt-in reconciliation adds at most 48: three action pages, five all-state PR
+pages and two comment pages for each of twenty candidates. Candidates rotate
+every six hours; an incomplete history requires human inspection. Live retro
+output checks add at most 14 reads; receiving ordinary-worker checks at most
+nine. Improvement authorization is bounded to fourteen reads per check, twice
+per worker run, plus two dispatcher checks. GitHub supplies no transaction
+covering a comment and a PR: revocation is checked immediately before safe
+outputs, not after publication; human review remains the final authority.
 
 ---
 
@@ -1336,9 +1459,10 @@ SQUAD_SHA="<40-character-commit-sha>"
 gh aw add \
   bradygaster/squad/workflows/squad.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-review.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-retro.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_SHA} \
   --force
 ```
 
@@ -1368,7 +1492,7 @@ curl --fail --silent --show-error --location \
 gh aw compile --strict
 ```
 
-Confirm all five source files and generated locks reference `SQUAD_SHA`, review
+Confirm all six source files and generated locks reference `SQUAD_SHA`, review
 the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
 `gh aw update` for this immutable-pin flow: its stored source branch and cooldown
 can leave the installed sources at a different revision than the SHA you intend.

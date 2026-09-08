@@ -23,21 +23,33 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev \
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev
 ```
 
 This command:
 
-1. Fetches the Squad dispatcher, general and dependency workers, and advisory reviewer
+1. Fetches the Squad dispatcher, general and dependency workers, advisory reviewer, retrospective, and approval-gated improvement worker
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
 ### Verify installation
 
-After running the command, confirm the Squad, Squad Implement Worker, and Squad
-Review workflows appear in your repository's **Actions** tab.
+After running the command, confirm all six source/lock pairs exist and strict
+compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
+Improvement Worker. The improvement worker is standard but dormant until an
+exact human approval is relayed through the dispatcher.
+
+Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
+`"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted
+to eligible Markdown paths under `.squad/skills/**` or `.squad/decisions/inbox/**`
+instead needs `/squad approve-improvement`, an `Approved-Revision:` hash and
+exact `Approved-Path:` lines. `/squad revoke-improvement` reserves the human's
+durable revocation without dispatching. Both workers open drafts, never merge
+or mark ready. See the [gh-aw guide](../docs/src/content/docs/guide/gh-aw.md)
+for revision calculation, caps and manual retry.
 
 ### Try your first command
 

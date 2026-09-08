@@ -705,8 +705,13 @@ jobs:
           fi
 
   # ── gh-aw strict compile gate ────────────────────────────────────────────
-  # Compiles all five Squad-authored workflow sources with --strict against a
-  # pinned compiler so the delivered stack is always proven compilable.
+  # Compiles all six Squad-authored workflow sources with --strict against a
+  # pinned compiler so the delivered stack is always proven compilable. All
+  # six workflows, including squad-improvement-worker, are distributed by the
+  # gh-aw-enlistment bootstrap skill/docs as part of the standard install --
+  # squad-improvement-worker stays dormant (approval-gated) until a maintainer
+  # authorizes a governance-scoped retrospective proposal, but it is not a
+  # separate opt-in add-on.
   # Runs unconditionally on every PR / push so it can be used as a required
   # status check (check name: "Squad CI / gh-aw strict compile").
   #
@@ -749,7 +754,7 @@ jobs:
           cp -r workflows/. "$COMPILE_DIR/.github/workflows/"
           git -C "$COMPILE_DIR" init --quiet
 
-      - name: Compile all five workflows (--strict) and verify lock files
+      - name: Compile all six workflows (--strict) and verify lock files
         # Failures accumulate rather than short-circuit so every result is
         # visible in one run.  A compiler that exits 0 without emitting a lock
         # file is treated as failure — silent-success is a gate gap.
@@ -757,7 +762,7 @@ jobs:
           set -euo pipefail
           FAILED=0
           echo "### Compile results" >> "$GITHUB_STEP_SUMMARY"
-          for WF in squad squad-implement-worker squad-review squad-deps-worker squad-retro; do
+          for WF in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
             printf -- '--- Compiling %s ---\n' "$WF"
             if (cd "$COMPILE_DIR" && gh aw compile "$WF" --strict --approve --no-check-update 2>&1); then
               printf '  => OK\n'
@@ -770,7 +775,7 @@ jobs:
           done
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Lock files" >> "$GITHUB_STEP_SUMMARY"
-          for LOCK in squad.lock.yml squad-implement-worker.lock.yml squad-review.lock.yml squad-deps-worker.lock.yml squad-retro.lock.yml; do
+          for LOCK in squad.lock.yml squad-implement-worker.lock.yml squad-review.lock.yml squad-deps-worker.lock.yml squad-retro.lock.yml squad-improvement-worker.lock.yml; do
             if [ ! -f "$COMPILE_DIR/.github/workflows/$LOCK" ]; then
               echo "::error::$LOCK not emitted — compiler exited 0 without writing output"
               echo "❌ missing: \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
@@ -786,4 +791,4 @@ jobs:
             exit 1
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**✅ All five workflows compiled, all five lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
+          echo "**✅ All six workflows compiled, all six lock files emitted**" >> "$GITHUB_STEP_SUMMARY"

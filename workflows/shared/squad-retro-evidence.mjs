@@ -3,16 +3,43 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  deriveActionTemporaryId,
+  deriveActionTemporaryIds,
+  extractActionKey,
+  hasTrustedActionProvenance,
+  isTrustedActionIssue,
+  findNativeLinkedPullsSync,
+  NATIVE_LINK_MAX_PAGES,
+  parseRetroActionPullMarker,
+  parseStructuredData,
+  isTrustedRetroPull,
+  parseDispatchMarker,
+  pullLinksIssue,
+} from './squad-retro-provenance.mjs';
+
+export {
+  deriveActionTemporaryId,
+  deriveActionTemporaryIds,
+  extractActionKey,
+  hasTrustedActionProvenance,
+  parseRetroActionPullMarker,
+  parseStructuredData,
+};
 
 const BOT = 'github-actions[bot]';
 const STATE_LABEL = 'squad-retro-state';
 const STATE_TITLE = 'Squad retrospective state';
+const ACTION_LABEL = 'squad-retro-action';
 const FINGERPRINT = /^(?:fail|review):[0-9a-f]{16}$/;
+const ABANDON_MARKER = /^Squad-Retro-Dispatch-Abandoned:\s*#(\d+)\s*$/m;
 const DEFAULTS = Object.freeze({
   enabled: true,
   threshold: 2,
   windowHours: 168,
   cooldownHours: 72,
+  autoImplementEnabled: false,
+  autoImplementRetryHours: 48,
 });
 const LOG_MAX_BYTES = 262144;
 const LOG_MAX_LINES = 2000;
@@ -27,12 +54,33 @@ const STATE_MAX_PAGES = 20;
 const PULL_MAX_PAGES = 10;
 const REVIEW_MAX_PAGES = 3;
 const FILE_MAX_PAGES = 3;
+// Shared caches bound verification for both failed runs and rejected PRs.
+export const SELF_PULL_VERIFICATION_LIMIT = 10;
+export const SELF_PULL_FETCH_LIMIT = 10;
 const API_REQUEST_CEILING =
   4 * STATE_MAX_PAGES +
   ACTION_RUN_MAX_PAGES +
   FAILED_RUN_LIMIT * (RUN_JOB_MAX_PAGES + LOG_REQUESTS_PER_RUN) +
   PULL_MAX_PAGES +
-  PULL_REQUEST_LIMIT * (REVIEW_MAX_PAGES + FILE_MAX_PAGES);
+  PULL_REQUEST_LIMIT * (REVIEW_MAX_PAGES + FILE_MAX_PAGES) +
+  SELF_PULL_VERIFICATION_LIMIT + SELF_PULL_FETCH_LIMIT;
+// Reconciliation adds no requests unless ordinary auto-implementation is enabled.
+export const ACTION_ISSUE_MAX_PAGES = 3;
+export const ACTION_ISSUE_CANDIDATE_LIMIT = 20;
+export const ACTION_ISSUE_COMMENT_MAX_PAGES = 2;
+export const IMPLEMENT_PULL_MAX_PAGES = 5;
+// One initial dispatch plus one retry, then a candidate is permanently
+// excluded from further auto-dispatch — bounds the retry loop structurally
+// instead of relying on the cooldown window alone.
+export const AUTO_IMPLEMENT_MAX_ATTEMPTS = 2;
+// Matches the `dispatch-workflow.max` configured for squad-implement-worker in
+// workflows/squad-retro.md's frontmatter; keep both in sync.
+export const AUTO_IMPLEMENT_MAX = 3;
+export const AUTO_IMPLEMENT_API_REQUEST_CEILING =
+  ACTION_ISSUE_MAX_PAGES +
+  ACTION_ISSUE_CANDIDATE_LIMIT * ACTION_ISSUE_COMMENT_MAX_PAGES +
+  IMPLEMENT_PULL_MAX_PAGES +
+  ACTION_ISSUE_CANDIDATE_LIMIT * NATIVE_LINK_MAX_PAGES;
 const ORIGIN_KIND = Object.freeze({
   'squad-review': 'review',
   'squad-implement': 'fail',
@@ -54,8 +102,24 @@ export function resolveRetroConfig(raw = {}) {
   if (mode !== undefined && mode !== 'allow' && mode !== 'deny') {
     throw new Error('squadRetro must be "allow" or "deny".');
   }
+  // Opt-in, defaults OFF: unlike `squadRetro` (default allow, deny to opt out),
+  // this new dispatch capability must default disabled and requires an
+  // explicit "allow" to enable, preserving today's no-auto-dispatch behavior
+  // for every existing installation.
+  const autoImplementMode = raw.squadRetroAutoImplement;
+  if (autoImplementMode !== undefined && autoImplementMode !== 'allow' && autoImplementMode !== 'deny') {
+    throw new Error('squadRetroAutoImplement must be "allow" or "deny".');
+  }
   return {
     enabled: mode !== 'deny',
+    autoImplementEnabled: autoImplementMode === 'allow',
+    autoImplementRetryHours: boundedInteger(
+      raw.squadRetroAutoImplementRetryHours,
+      DEFAULTS.autoImplementRetryHours,
+      1,
+      720,
+      'squadRetroAutoImplementRetryHours',
+    ),
     threshold: boundedInteger(
       raw.squadRetroEarlyThreshold,
       DEFAULTS.threshold,
@@ -102,17 +166,6 @@ export function evidenceFingerprint(kind, value) {
     .slice(0, 16)}`;
 }
 
-export function parseStructuredData(body) {
-  const blocks = [...String(body || '').matchAll(/```json\s*([\s\S]*?)```/gi)];
-  if (blocks.length === 0) return null;
-  try {
-    const value = JSON.parse(blocks.at(-1)[1]);
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
-
 function labelsOf(issue) {
   return (issue?.labels || []).map(label =>
     typeof label === 'string' ? label : String(label?.name || ''));
@@ -135,6 +188,135 @@ function isRetroIssue(issue) {
     label === 'squad-retro' ||
     label === 'squad-retro-state' ||
     label === 'squad-retro-action');
+}
+
+/**
+ * Permanent, structural dedup. Any squad-implement-worker pull request linked
+ * to this issue -- OPEN (a dispatch is already in flight), MERGED (the fix
+ * shipped), or CLOSED-UNMERGED (a human deliberately rejected or abandoned
+ * it) -- permanently excludes the issue from further auto-dispatch. The
+ * closed-unmerged case is the important one: re-dispatching it would relitigate
+ * a human decision automatically, so this workflow reports that state and
+ * leaves the action issue under human management instead.
+ */
+function implementPullStatus(pulls, issueNumber, repository, nativeLinkedPulls) {
+  let open = false;
+  let merged = false;
+  let closed = false;
+  for (const pull of pulls || []) {
+    if (!pullLinksIssue(pull, issueNumber, repository)) continue;
+    if (pull.state === 'open') open = true;
+    if (pull.merged || pull.merged_at) merged = true;
+    else if (pull.state === 'closed') closed = true;
+  }
+  // Native links (the PR "Development" sidebar) can attach a human PR to
+  // this issue with no closing-keyword text at all -- `pullLinksIssue` never
+  // matches these entries, so they are already confirmed for this specific
+  // issue number and always count, regardless of state.
+  for (const pull of nativeLinkedPulls || []) {
+    if (pull.state === 'open') open = true;
+    if (pull.merged) merged = true;
+    else if (pull.state === 'closed') closed = true;
+  }
+  return {
+    open,
+    merged,
+    closed,
+    linked: open || merged || closed,
+    state: merged ? 'merged' : open ? 'open' : closed ? 'closed-unmerged' : null,
+  };
+}
+
+/**
+ * Trusted provenance for an auto-dispatch candidate. A `squad-retro-action`
+ * label is NOT provenance: any human (or any workflow with `issues: write`)
+ * can apply a label to an issue they wrote. The full rule lives in
+ * `shared/squad-retro-provenance.mjs` (`hasTrustedActionProvenance`), which
+ * both this gate and the two output-boundary guards share so that the agent
+ * job and the privileged safe-outputs job cannot disagree about what counts.
+ */
+
+/**
+ * Derive the bounded, durable set of `squad-retro-action` issues eligible for
+ * opt-in auto-dispatch to squad-implement-worker.
+ *
+ * Authority is the live action issue itself, never a cache: state, labels, and
+ * provenance come from a fresh issue fetch, and prior-dispatch history comes
+ * from `Squad-Retro-Dispatch:` marker comments authored by this bot on that
+ * same issue (`collectLiveInput` maps `actionIssues[].comments` from the
+ * GitHub API, never from agent-authored issue/comment text). An issue is
+ * eligible only when ALL of:
+ *   - open, labeled `squad-retro-action`, and NOT labeled `squad-retro-proposal`
+ *     (governance/`.squad/**`/`.github/**` proposals stay human-review-only —
+ *     ordinary source/docs/regression fixes only);
+ *   - it carries trusted retrospective provenance (see
+ *     `hasTrustedActionProvenance`) — a labeled human-authored issue never
+ *     qualifies;
+ *   - no squad-implement-worker PR exists for it in ANY state;
+ *   - fewer than `AUTO_IMPLEMENT_MAX_ATTEMPTS` prior dispatch markers exist;
+ *   - either no prior dispatch marker exists, or the latest one is older than
+ *     `retryHours` (durable retry, not an unbounded loop).
+ *
+ * Returns `{ eligible, exhausted, suppressed }`: `exhausted` names the issues
+ * that used up the bounded retry budget with no pull request to show for it,
+ * and `suppressed` names the issues already carrying a linked implement pull
+ * request, with its state, so the report can hand them to a human once
+ * instead of dropping either group silently.
+ */
+export function deriveAutoImplementCandidates({
+  actionIssues = [],
+  implementPulls = [],
+  now,
+  retryHours,
+  max = AUTO_IMPLEMENT_MAX,
+  repository,
+  nativeLinkedPullsByIssue = new Map(),
+} = {}) {
+  const nowMs = Date.parse(now);
+  if (!Number.isFinite(nowMs)) throw new Error('deriveAutoImplementCandidates: now must be an ISO-8601 timestamp.');
+  const eligible = [];
+  const exhausted = [];
+  const suppressed = [];
+  for (const issue of actionIssues) {
+    if (!isTrustedActionIssue(issue) || issue.comments_truncated) continue;
+    const status = implementPullStatus(implementPulls, issue.number, repository, nativeLinkedPullsByIssue.get(issue.number));
+    if (status.linked) {
+      // A human already owns this action's implementation. Report it; never
+      // reopen, re-dispatch, or race it.
+      suppressed.push({ issue_number: issue.number, pull_state: status.state });
+      continue;
+    }
+    const botComments = (issue.comments || [])
+      .filter(comment => comment.author === BOT || comment?.user?.login === BOT);
+    const receipts = botComments.map(comment => parseDispatchMarker(comment, issue.number)).filter(Boolean);
+    const markers = [...new Map(receipts.map(marker =>
+      [marker.run_id || String(marker.at), marker.at])).values()].sort((left, right) => left - right);
+    const latestMarker = markers.at(-1);
+    // Do not abandon the second attempt while its worker may still be running.
+    if (latestMarker !== undefined && (nowMs - latestMarker) / 3600000 < retryHours) continue;
+    if (markers.length >= AUTO_IMPLEMENT_MAX_ATTEMPTS) {
+      // The retry budget is spent and nothing shipped. Surfacing it once (the
+      // caller posts a single durable `Squad-Retro-Dispatch-Abandoned:` note)
+      // converts a silent permanent drop into a visible human handoff.
+      const announced = botComments.some(comment =>
+        ABANDON_MARKER.test(String(comment.body || '')) &&
+        Number(ABANDON_MARKER.exec(String(comment.body || ''))[1]) === issue.number);
+      if (!announced) exhausted.push({ issue_number: issue.number, attempts: markers.length });
+      continue;
+    }
+    eligible.push({
+      issue_number: issue.number,
+      retry: latestMarker !== undefined,
+      action_key: extractActionKey(issue.body),
+    });
+  }
+  const bounded = Math.min(AUTO_IMPLEMENT_MAX, Math.max(0, max));
+  const byNumber = (left, right) => left.issue_number - right.issue_number;
+  return {
+    eligible: eligible.sort(byNumber).slice(0, bounded),
+    exhausted: exhausted.sort(byNumber).slice(0, bounded),
+    suppressed: suppressed.sort(byNumber).slice(0, bounded),
+  };
 }
 
 function newest(records) {
@@ -242,10 +424,8 @@ export function evaluateRetro(input) {
   for (const comment of comments) {
     if (comment.author !== BOT && comment?.user?.login !== BOT) continue;
     const data = parseStructuredData(comment.body);
-    if (!data) {
-      if (String(comment.body || '').includes('Structured data:')) malformedRecords++;
-      continue;
-    }
+    if (data === undefined) { malformedRecords++; continue; }
+    if (data === null) continue;
     if (data.schema_version !== '1') {
       malformedRecords++;
       continue;
@@ -345,8 +525,7 @@ export function evaluateRetro(input) {
     .filter(review =>
       new Date(review.submitted_at) >= cutoff &&
       review.state === 'CHANGES_REQUESTED' &&
-      !review.self_retro &&
-      !isRetroIssue(review))
+      !review.self_retro)
     .map(review => {
       const signature = `${review.theme || 'changes requested'}|${review.path_prefix || '<root>'}`;
       return {
@@ -440,7 +619,46 @@ export function evaluateRetro(input) {
     !truncationPreserved.includes(fingerprint));
   const activePending = pendingFingerprints.filter(fingerprint => !expiredPending.includes(fingerprint));
 
+  // Fail closed on a truncated collection: an incomplete action-issue or
+  // implement-pull scan cannot prove "no existing PR", so a false negative
+  // there would duplicate-dispatch. Absence of proof is not proof of absence.
+  const autoImplementCollectionComplete =
+    !collection?.action_issues_truncated &&
+    !collection?.implement_pulls_truncated &&
+    !collection?.native_links_truncated;
+  const nativeLinkedPullsByIssue = nativeLinkedPullMap(input.nativeLinkedPullsByIssue);
+  const autoImplement = config.autoImplementEnabled && autoImplementCollectionComplete
+  ? deriveAutoImplementCandidates({
+      actionIssues: input.actionIssues || [],
+      implementPulls: input.implementPulls || [],
+      now: now.toISOString(),
+      retryHours: config.autoImplementRetryHours,
+      max: AUTO_IMPLEMENT_MAX,
+      repository: input.repository || '',
+      nativeLinkedPullsByIssue,
+    })
+    : { eligible: [], exhausted: [], suppressed: [] };
+  const autoImplementCandidates = autoImplement.eligible;
+  const autoImplementExhausted = autoImplement.exhausted;
+  const autoImplementSuppressed = autoImplement.suppressed;
+  // Reconciliation is periodic maintenance, not reporting: it exists precisely
+  // for the runs where no report is due. The six-hourly schedule therefore has
+  // to reach it even when the cooldown suppresses a report or the window holds
+  // no new evidence at all.
+  const hasReconcileWork =
+    autoImplementCandidates.length + autoImplementExhausted.length > 0;
+
+  const actionMatches = (input.allActionIssues || input.actionIssues || [])
+    .filter(hasTrustedActionProvenance)
+    .map(issue => ({ issue_number: issue.number, action_key: extractActionKey(issue.body), state: issue.state }));
+  const newActionIds = config.autoImplementEnabled && autoImplementCollectionComplete
+    ? deriveActionTemporaryIds(qualifying.map(group => group.fingerprint)
+      .filter(key => !actionMatches.some(match => match.action_key === key)))
+    : [];
   const base = {
+    now: now.toISOString(),
+    repository: input.repository || '',
+    run_id: input.run_id || '',
     config,
     state_issue: stateIssue.number,
     duplicate_state_issues: Math.max(0, stateCandidates.length - 1),
@@ -468,20 +686,56 @@ export function evaluateRetro(input) {
     state_last_full_completed_at: Number.isFinite(lastFullCompletedAt)
       ? new Date(lastFullCompletedAt).toISOString()
       : null,
+    // Only the `run`, `housekeep`, and `reconcile` outcomes below ever
+    // populate these with a non-empty list — every other outcome (noop,
+    // suppress, repair, init) returns via `...base` without overriding them,
+    // so dispatch is structurally impossible outside those three paths
+    // regardless of prompt wording. The safe-outputs guard enforces the same
+    // boundary again from the trusted checkout, where the agent cannot reach.
+    auto_implement_candidates: [],
+    auto_implement_exhausted: [],
+    // Reported on every outcome: naming the action issues a human already
+    // owns costs nothing and never authorizes a mutation.
+    auto_implement_suppressed: autoImplementSuppressed,
+    // Deterministic temporary id per qualifying fingerprint, so a NEW action
+    // issue can be created, marked, and dispatched inside this same run. The
+    // id is derived from the fingerprint alone, which is what lets the output
+    // guard recompute it from the created issue's own `Action-Key:` line
+    // instead of trusting the agent's claim.
+    auto_implement_new_action_ids: [],
+    action_scan_complete: autoImplementCollectionComplete,
+    action_matches: actionMatches,
   };
 
   if (stateLedgerIncomplete) {
     return {
       ...base,
-      action: 'noop',
+      action: hasReconcileWork ? 'reconcile' : 'noop',
       reason: 'state-ledger-incomplete',
       diagnostic: 'Retrospective state comments exceeded the bounded checkpoint-tail pagination limit.',
+      auto_implement_candidates: autoImplementCandidates,
+      auto_implement_exhausted: autoImplementExhausted,
     };
   }
   if (legacyInFlight) {
     return { ...base, action: 'suppress', reason: 'trusted-state-is-in-flight' };
   }
   if (cooldownActive && triggerPath !== 'manual') {
+    // Cooldown governs REPORTING. Handoff reconciliation is independent
+    // maintenance on the six-hourly schedule, so it still runs — while the
+    // cooldown's actual job (no report, no state checkpoint, no cleared
+    // pending requests, incoming requests still durably recorded) is
+    // unchanged. `reconcile` is `suppress` plus that reconciliation.
+    if (hasReconcileWork) {
+      return {
+        ...base,
+        action: 'reconcile',
+        reason: 'cooldown-active',
+        report_suppressed: true,
+        auto_implement_candidates: autoImplementCandidates,
+        auto_implement_exhausted: autoImplementExhausted,
+      };
+    }
     return { ...base, action: 'suppress', reason: 'cooldown-active' };
   }
 
@@ -492,15 +746,33 @@ export function evaluateRetro(input) {
         ...base,
         action: 'housekeep',
         reason: 'expired-pending-requests',
+        auto_implement_candidates: autoImplementCandidates,
+        auto_implement_exhausted: autoImplementExhausted,
       };
     }
-    return {
-      ...base,
-      action: 'noop',
-      reason: evidence.length === 0 ? 'no-evidence-in-window' : 'early-threshold-not-met',
-    };
+    const reason = evidence.length === 0 ? 'no-evidence-in-window' : 'early-threshold-not-met';
+    if (hasReconcileWork) {
+      // Zero new evidence says nothing about whether an already-open action
+      // issue still needs dispatching or retrying, so this path reconciles
+      // rather than exiting silently.
+      return {
+        ...base,
+        action: 'reconcile',
+        reason,
+        report_suppressed: true,
+        auto_implement_candidates: autoImplementCandidates,
+        auto_implement_exhausted: autoImplementExhausted,
+      };
+    }
+    return { ...base, action: 'noop', reason };
   }
-  return { ...base, action: 'run' };
+  return {
+    ...base,
+    action: 'run',
+    auto_implement_candidates: autoImplementCandidates,
+    auto_implement_exhausted: autoImplementExhausted,
+    auto_implement_new_action_ids: newActionIds,
+  };
 }
 
 function ghJson(route, fields = {}) {
@@ -509,6 +781,39 @@ function ghJson(route, fields = {}) {
     args.push('-f', `${key}=${value}`);
   }
   return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+}
+
+function ghGraphql(query, variables = {}) {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [key, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue;
+    args.push(Number.isInteger(value) ? '-F' : '-f', `${key}=${value}`);
+  }
+  return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+}
+
+function nativeLinkedPullEntries(value) {
+  if (value instanceof Map) {
+    return [...value.entries()].map(([issueNumber, pulls]) => ({
+      issue_number: Number(issueNumber),
+      pulls: Array.isArray(pulls) ? pulls : [],
+    }));
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(entry => {
+      if (Array.isArray(entry)) {
+        const issueNumber = Number(entry[0]);
+        return Number.isInteger(issueNumber) ? [{ issue_number: issueNumber, pulls: Array.isArray(entry[1]) ? entry[1] : [] }] : [];
+      }
+      const issueNumber = Number(entry?.issue_number ?? entry?.issueNumber);
+      return Number.isInteger(issueNumber) ? [{ issue_number: issueNumber, pulls: Array.isArray(entry?.pulls) ? entry.pulls : [] }] : [];
+    });
+  }
+  return [];
+}
+
+function nativeLinkedPullMap(value) {
+  return new Map(nativeLinkedPullEntries(value).map(entry => [entry.issue_number, entry.pulls]));
 }
 
 function paginated(route, fields, select, maxPages = STATE_MAX_PAGES, fetchJson = ghJson) {
@@ -754,16 +1059,111 @@ function readConfig(root) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+export function collectRemediationInput(repository, config, now, fetchJson = ghJson, fetchGraphql = null) {
+  const empty = {
+    actionIssues: [], allActionIssues: [], implementPulls: [], nativeLinkedPullsByIssue: [], repository,
+    collection: {
+      auto_implement_api_request_ceiling: AUTO_IMPLEMENT_API_REQUEST_CEILING,
+      action_issues_considered: 0, action_issues_truncated: false,
+      implement_pulls_considered: 0, implement_pulls_truncated: false,
+      native_links_considered: 0, native_links_truncated: false,
+      native_link_pages_scanned: 0, native_linked_actions_suppressed: 0,
+      action_candidate_rotation: 0, action_candidates_deferred: 0,
+    },
+  };
+  if (!config.enabled || !config.autoImplementEnabled) return empty;
+  const issues = paginated(
+    `repos/${repository}/issues`,
+    { state: 'all', labels: ACTION_LABEL, sort: 'created', direction: 'asc' },
+    response => response, ACTION_ISSUE_MAX_PAGES, fetchJson,
+  );
+  const pulls = paginated(
+    `repos/${repository}/pulls`,
+    { state: 'all', sort: 'created', direction: 'desc' },
+    response => response, IMPLEMENT_PULL_MAX_PAGES, fetchJson,
+  );
+  const allActionIssues = issues.values.filter(hasTrustedActionProvenance);
+  const trustedOpenActions = allActionIssues.filter(issue => isTrustedActionIssue(issue));
+  const restLinkedIssues = trustedOpenActions.filter(issue =>
+    pulls.values.some(pull => pullLinksIssue(pull, issue.number, repository)));
+  const candidates = trustedOpenActions.filter(issue =>
+    !restLinkedIssues.some(linked => linked.number === issue.number)).sort((a, b) => a.number - b.number);
+  // Rotate a bounded comment window so exhausted or numerous open issues
+  // cannot permanently starve an older handoff.
+  const windows = Math.max(1, Math.ceil(candidates.length / ACTION_ISSUE_CANDIDATE_LIMIT));
+  const rotation = Math.floor(now.getTime() / (6 * 3600000)) % windows;
+  const selected = candidates.slice(rotation * ACTION_ISSUE_CANDIDATE_LIMIT, (rotation + 1) * ACTION_ISSUE_CANDIDATE_LIMIT);
+  const nativeLinkedPulls = new Map();
+  const nativeLinkedIssues = [];
+  const nativeFailures = [];
+  let nativePagesScanned = 0;
+  if (!issues.truncated && !pulls.truncated && fetchGraphql) {
+    for (const issue of selected) {
+      const native = findNativeLinkedPullsSync(fetchGraphql, repository, issue.number);
+      nativePagesScanned += native.pages_scanned || 0;
+      if (native.truncated) nativeFailures.push({
+        issue_number: issue.number,
+        reason: native.reason,
+        pages_scanned: native.pages_scanned,
+      });
+      if (native.pulls.length) {
+        nativeLinkedPulls.set(issue.number, native.pulls);
+        nativeLinkedIssues.push(issue);
+      }
+    }
+  }
+  const nativeTruncated = nativeFailures.length > 0;
+  const nativeLinkedNumbers = new Set(nativeLinkedIssues.map(issue => issue.number));
+  const selectedForComments = nativeTruncated
+    ? []
+    : selected.filter(issue => !nativeLinkedNumbers.has(issue.number));
+  const actionIssues = selectedForComments.map(issue => {
+    const comments = paginated(`repos/${repository}/issues/${issue.number}/comments`, {},
+      response => response, ACTION_ISSUE_COMMENT_MAX_PAGES, fetchJson);
+    return { ...issue, author: issue.user?.login, comments: comments.values, comments_truncated: comments.truncated };
+  });
+  // Include linked issues for reporting without spending their comment budget.
+  actionIssues.push(...restLinkedIssues.map(issue => ({ ...issue, comments: [] })));
+  if (!nativeTruncated) {
+    actionIssues.push(...nativeLinkedIssues.map(issue => ({ ...issue, comments: [] })));
+  }
+  return {
+    actionIssues,
+    allActionIssues,
+    implementPulls: pulls.values,
+    nativeLinkedPullsByIssue: nativeTruncated ? [] : nativeLinkedPullEntries(nativeLinkedPulls),
+    repository,
+    collection: {
+      ...empty.collection,
+      action_issues_considered: selected.length,
+      action_issues_truncated: issues.truncated,
+      action_comments_truncated: actionIssues.some(issue => issue.comments_truncated),
+      implement_pulls_considered: pulls.values.length,
+      implement_pulls_truncated: pulls.truncated || nativeTruncated,
+      native_links_considered: fetchGraphql && !issues.truncated && !pulls.truncated ? selected.length : 0,
+      native_links_truncated: nativeTruncated,
+      native_link_failures: nativeFailures,
+      native_link_pages_scanned: nativePagesScanned,
+      native_linked_actions_suppressed: nativeTruncated ? 0 : nativeLinkedIssues.length,
+      action_candidate_rotation: rotation,
+      action_candidates_deferred: Math.max(0, candidates.length - selected.length),
+    },
+  };
+}
+
 export function collectLiveInput(env = process.env, {
   fetchJson = ghJson,
   fetchLog = ghJobLog,
+  fetchGraphql = ghGraphql,
   now = new Date(),
+  remediationInput,
 } = {}) {
   const repository = env.GITHUB_REPOSITORY;
   if (!repository) throw new Error('GITHUB_REPOSITORY is required.');
   const root = env.GITHUB_WORKSPACE || process.cwd();
   const rawConfig = readConfig(root);
   const config = resolveRetroConfig(rawConfig);
+  const remediation = remediationInput || collectRemediationInput(repository, config, now, fetchJson, fetchGraphql);
   const incoming = {
     reason: env.SQUAD_RETRO_REASON || '',
     fingerprint: env.SQUAD_RETRO_REQUEST_FINGERPRINT || '',
@@ -779,6 +1179,8 @@ export function collectLiveInput(env = process.env, {
       stateComments: [],
       workflowRuns: [],
       reviews: [],
+      actionIssues: [],
+      implementPulls: [],
       incoming,
       collection: {
         api_request_ceiling: API_REQUEST_CEILING,
@@ -796,6 +1198,14 @@ export function collectLiveInput(env = process.env, {
         files_truncated: false,
         pull_requests_considered: 0,
         pull_requests_truncated: false,
+        self_pull_verification_limit: SELF_PULL_VERIFICATION_LIMIT,
+        self_pull_verifications: 0,
+        self_pulls_suppressed: 0,
+        auto_implement_api_request_ceiling: AUTO_IMPLEMENT_API_REQUEST_CEILING,
+        action_issues_considered: 0,
+        action_issues_truncated: false,
+        implement_pulls_considered: 0,
+        implement_pulls_truncated: false,
       },
     };
   }
@@ -847,6 +1257,35 @@ export function collectLiveInput(env = process.env, {
         body: comment.body,
       }));
 
+  const actionIssueCache = new Map();
+  const pullCache = new Map();
+  let selfPullFetches = 0;
+  let selfPullsSuppressed = 0;
+  let selfFailuresSuppressed = 0;
+  const isVerifiedRetroPull = pull => {
+    if (pull?.user?.login !== BOT) return false;
+    const marker = parseRetroActionPullMarker(pull.body);
+    if (!marker || extractActionKey(pull.body) !== marker.action_key) return false;
+    if (!actionIssueCache.has(marker.issue_number)) {
+      if (actionIssueCache.size >= SELF_PULL_VERIFICATION_LIMIT) return false;
+      let issue = null;
+      try { issue = fetchJson(`repos/${repository}/issues/${marker.issue_number}`, {}); } catch { /* retain unverified evidence */ }
+      actionIssueCache.set(marker.issue_number, issue);
+    }
+    return isTrustedRetroPull(pull, actionIssueCache.get(marker.issue_number));
+  };
+  const isVerifiedRetroFailure = run => (run.pull_requests || []).some(reference => {
+    if (!Number.isSafeInteger(reference?.number) || reference.number < 1) return false;
+    if (!pullCache.has(reference.number)) {
+      if (selfPullFetches >= SELF_PULL_FETCH_LIMIT) return false;
+      selfPullFetches++;
+      let pull = null;
+      try { pull = fetchJson(`repos/${repository}/pulls/${reference.number}`, {}); } catch { /* retain unverified evidence */ }
+      pullCache.set(reference.number, pull);
+    }
+    const pull = pullCache.get(reference.number);
+    return pull?.number === reference.number && pull.head?.sha === run.head_sha && isVerifiedRetroPull(pull);
+  });
   const runCollection = recentPaginated(
     `repos/${repository}/actions/runs`,
     { status: 'completed' },
@@ -863,7 +1302,8 @@ export function collectLiveInput(env = process.env, {
   const runs = runCollection.values;
   let jobsTruncated = false;
   let logsTruncated = false;
-  const workflowRuns = runs.map(run => {
+  const workflowRuns = runs.flatMap(run => {
+    if (isVerifiedRetroFailure(run)) { selfFailuresSuppressed++; return []; }
     const jobs = paginated(
       `repos/${repository}/actions/runs/${run.id}/jobs`,
       {},
@@ -898,7 +1338,7 @@ export function collectLiveInput(env = process.env, {
       maxPages: PULL_MAX_PAGES,
       maxItems: PULL_REQUEST_LIMIT,
       occurredAt: pull => pull.updated_at,
-      accept: pull => !isRetroIssue(pull),
+      accept: () => true,
     },
     fetchJson,
   );
@@ -919,6 +1359,10 @@ export function collectLiveInput(env = process.env, {
       review.state === 'CHANGES_REQUESTED' &&
       new Date(review.submitted_at) >= cutoff);
     if (pullReviews.length === 0) continue;
+    if (isVerifiedRetroPull(pull)) {
+      selfPullsSuppressed++;
+      continue;
+    }
     const files = paginated(
       `repos/${repository}/pulls/${pull.number}/files`,
       {},
@@ -939,19 +1383,22 @@ export function collectLiveInput(env = process.env, {
         low_confidence: theme.lowConfidence,
         path_prefix: pathPrefix(files.values),
         labels: pull.labels,
-        self_retro: isRetroIssue(pull),
+        self_retro: false,
       });
     }
   }
 
   return {
     now: now.toISOString(),
+    repository,
+    run_id: env.GITHUB_RUN_ID || '',
     eventName,
     config: rawConfig,
     stateIssues,
     stateComments,
     workflowRuns,
     reviews,
+    ...remediation,
     incoming,
     collection: {
       api_request_ceiling: API_REQUEST_CEILING,
@@ -974,6 +1421,13 @@ export function collectLiveInput(env = process.env, {
       pull_requests_considered: pulls.length,
       pull_requests_truncated: pullCollection.truncated || reviewsTruncated || filesTruncated,
       pull_requests_cutoff_reached: pullCollection.reached_cutoff,
+      self_pull_verification_limit: SELF_PULL_VERIFICATION_LIMIT,
+      self_pull_verifications: actionIssueCache.size,
+      self_pulls_suppressed: selfPullsSuppressed,
+      self_pull_fetches: selfPullFetches,
+      self_pull_fetch_limit: SELF_PULL_FETCH_LIMIT,
+      self_failures_suppressed: selfFailuresSuppressed,
+      ...remediation.collection,
     },
   };
 }
@@ -996,7 +1450,56 @@ export function collectionFailureContext(error, rawConfig = {}) {
     truncation_preserved_fingerprints: [],
     resolved_fingerprints: [],
     incoming_request: null,
+    auto_implement_candidates: [],
+    auto_implement_exhausted: [],
+    auto_implement_suppressed: [],
+    auto_implement_new_action_ids: [],
   };
+}
+
+export function collectRetroContext(env = process.env, options = {}) {
+  const now = options.now || new Date();
+  const rawConfig = readConfig(env.GITHUB_WORKSPACE || process.cwd());
+  const config = resolveRetroConfig(rawConfig);
+  let remediation;
+  try {
+    remediation = collectRemediationInput(
+      env.GITHUB_REPOSITORY,
+      config,
+      now,
+      options.fetchJson,
+      options.fetchGraphql || ghGraphql,
+    );
+  } catch {
+    remediation = {
+      actionIssues: [], allActionIssues: [], implementPulls: [], nativeLinkedPullsByIssue: [],
+      collection: { action_issues_truncated: true, implement_pulls_truncated: true },
+    };
+  }
+  let result;
+  try {
+    result = evaluateRetro(collectLiveInput(env, { ...options, now, remediationInput: remediation }));
+  } catch (error) {
+    result = collectionFailureContext(error, rawConfig);
+    // Reporting outages cannot erase a durable action or its dispatch receipt.
+    if (config.autoImplementEnabled && !remediation.collection.action_issues_truncated &&
+        !remediation.collection.implement_pulls_truncated &&
+        !remediation.collection.native_links_truncated) {
+      const handoffs = deriveAutoImplementCandidates({
+        ...remediation,
+        now: now.toISOString(),
+        retryHours: config.autoImplementRetryHours,
+        nativeLinkedPullsByIssue: nativeLinkedPullMap(remediation.nativeLinkedPullsByIssue),
+      });
+      result = {
+        ...result, action: handoffs.eligible.length || handoffs.exhausted.length ? 'reconcile' : 'noop',
+        auto_implement_candidates: handoffs.eligible, auto_implement_exhausted: handoffs.exhausted,
+        auto_implement_suppressed: handoffs.suppressed, action_scan_complete: true,
+        collection: remediation.collection,
+      };
+    }
+  }
+  return { ...result, now: now.toISOString(), repository: env.GITHUB_REPOSITORY || '', run_id: env.GITHUB_RUN_ID || '' };
 }
 
 function cli(args, env = process.env) {
@@ -1009,18 +1512,7 @@ function cli(args, env = process.env) {
     writeFileSync(output, `${JSON.stringify(evaluateRetro(input), null, 2)}\n`);
     return;
   }
-  // Configuration is validated before any API call so malformed settings fail
-  // closed and visibly, instead of silently defaulting.
-  const rawConfig = readConfig(env.GITHUB_WORKSPACE || process.cwd());
-  resolveRetroConfig(rawConfig);
-  let context;
-  try {
-    context = evaluateRetro(collectLiveInput(env));
-  } catch (error) {
-    // A transient collection failure must not crash the pre-agent step or drop
-    // durable pending requests: report a visible diagnostic and noop safely.
-    context = collectionFailureContext(error, rawConfig);
-  }
+  const context = collectRetroContext(env);
   writeFileSync(output, `${JSON.stringify(context, null, 2)}\n`);
 }
 

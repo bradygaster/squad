@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
+import * as guard from '../workflows/shared/squad-retro-provenance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -77,8 +77,12 @@ afterAll(() => {
   }
 });
 
-function compiledWorkerSafeOutputs(): Record<string, Record<string, unknown>> {
-  const workspace = mkdtempSync(resolve(tmpdir(), 'squad-worker-contract-'));
+let compiledWorkerLockText: string | null = null;
+
+/** The real compiled lock, compiled once per file run and memoized. */
+function compiledWorkerLock(): string {
+  if (compiledWorkerLockText !== null) return compiledWorkerLockText;
+  const workspace = mkdtempSync(resolve(ROOT, '.squad-worker-contract-'));
   compileWorkspaces.push(workspace);
   const workflowDir = resolve(workspace, '.github', 'workflows');
   mkdirSync(workflowDir, { recursive: true });
@@ -87,11 +91,24 @@ function compiledWorkerSafeOutputs(): Record<string, Record<string, unknown>> {
   execFileSync(
     'gh',
     ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
-    { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+    { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 60000 },
   );
+  compiledWorkerLockText = readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8');
+  return compiledWorkerLockText;
+}
 
-  const compiled = readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8');
-  const jsonText = extractSafeOutputsConfigJson(compiled);
+/** The `safe_outputs:` job block of a compiled lock, up to the next job key. */
+function safeOutputsJob(lock: string): string {
+  const marker = '\n  safe_outputs:\n';
+  const start = lock.indexOf(marker);
+  expect(start, 'compiled lock must contain a safe_outputs job').toBeGreaterThan(-1);
+  const body = lock.slice(start + marker.length);
+  const next = /^ {2}[\w-]+:\n/m.exec(body);
+  return next ? body.slice(0, next.index) : body;
+}
+
+function compiledWorkerSafeOutputs(): Record<string, Record<string, unknown>> {
+  const jsonText = extractSafeOutputsConfigJson(compiledWorkerLock());
   expect(jsonText, 'compiled worker must write a parseable safe-output config').toBeDefined();
   return JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
 }
@@ -224,16 +241,26 @@ describe('gh-aw implement workflows', () => {
     expect(worker).not.toMatch(/allowed-files:\r?\n\s+- "\*"/);
     expect(worker).toContain('Do not change `.github/workflows/`, `.github/agents/`, `.github/aw/`, or');
     expect(worker).toContain('blocker comment if any dependency remains open');
-    expect(worker).toContain('Check for an existing open pull request');
+    // Any linked implement pull request suppresses a new one -- open, merged,
+    // or closed without merging (gap 6). A closed-unmerged pull request is a
+    // human decision, never an invitation to retry.
+    expect(worker).toContain('Check for an existing open pull request whose branch starts with');
+    expect(worker.replace(/\s+/g, ' ')).toContain(
+      'this issue — open, merged, or closed without merging',
+    );
+    expect(worker.replace(/\s+/g, ' ')).toContain(
+      'A closed-unmerged pull request is a human decision to reject that implementation',
+    );
   });
 
   it('documents one-command installation in dependency order', () => {
     const paths = [
       'bradygaster/squad/workflows/squad.md@dev',
       'bradygaster/squad/workflows/squad-implement-worker.md@dev',
-      'bradygaster/squad/workflows/squad-deps-worker.md@dev',
       'bradygaster/squad/workflows/squad-review.md@dev',
+      'bradygaster/squad/workflows/squad-deps-worker.md@dev',
       'bradygaster/squad/workflows/squad-retro.md@dev',
+      'bradygaster/squad/workflows/squad-improvement-worker.md@dev',
     ];
     const orderedInstallCommand = [
       'gh aw add \\',
@@ -261,7 +288,615 @@ describe('gh-aw implement workflows', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Cross-sibling refill traversal (#1779)
+// Retro-origin provenance and dispatch-boundary enforcement (#2005 gaps 3, 5, 6)
+// ---------------------------------------------------------------------------
+// These are mechanical: they exercise the guard module the compiled workflows
+// actually load, not the prose next to it. Prompt wording is asserted only
+// where the prompt is the artifact under test (the interpolated marker line).
+
+describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
+  const worker = read('workflows/squad-implement-worker.md');
+  const ACTION_KEY = 'fail:0123456789abcdef';
+  const REPO = 'squad-test/example';
+  const BRANCH = 'dev';
+  const awContext = (overrides: Record<string, unknown> = {}) => JSON.stringify({
+    repo: REPO,
+    run_id: '7',
+    run_attempt: '1',
+    workflow_id: `${REPO}/.github/workflows/squad-retro.lock.yml@refs/heads/${BRANCH}`,
+    ...overrides,
+  });
+  const retroInputs = (overrides: Record<string, unknown> = {}) => ({
+    eventName: 'workflow_dispatch',
+    issueNumber: '500',
+    requestOrigin: 'squad-retro',
+    retroActionKey: ACTION_KEY,
+    awContext: awContext(),
+    repository: REPO,
+    defaultBranch: BRANCH,
+    ...overrides,
+  });
+  const kinds = (result: { violations: { kind: string }[] }) => result.violations.map(v => v.kind);
+  const actionIssueResponse = (overrides: Record<string, unknown> = {}) => ({
+    number: 500,
+    state: 'open',
+    user: { login: 'github-actions[bot]' },
+    labels: [{ name: 'squad-retro-action' }],
+    body: `Fix it.\n\nAction-Key: ${ACTION_KEY}\n`,
+    ...overrides,
+  });
+  const pullRequestItem = (overrides: Record<string, unknown> = {}) => ({
+    type: 'create_pull_request',
+    branch: 'squad/implement-500-fix',
+    body: [
+      'Closes #500',
+      '',
+      `Action-Key: ${ACTION_KEY}`,
+      guard.retroActionPullMarker(500, ACTION_KEY),
+      '<!-- squad:implement issue=500 run=7 -->',
+    ].join('\n'),
+    ...overrides,
+  });
+  const noNativeLinks = async () => ({
+    data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } } },
+  });
+  const enforce = (
+    items: Record<string, unknown>[],
+    env: Record<string, string> = {},
+    routes: (route: string) => unknown = () => actionIssueResponse(),
+    fetchGraphql: (query: string, variables: unknown) => unknown = noNativeLinks,
+  ) => guard.enforceImplementSafeOutputs({
+    GITHUB_REPOSITORY: REPO,
+    GITHUB_ACTOR: 'github-actions[bot]',
+    GITHUB_REF: 'refs/heads/dev',
+    SQUAD_IMPLEMENT_EVENT_NAME: 'workflow_dispatch',
+    SQUAD_IMPLEMENT_ISSUE_NUMBER: '500',
+    SQUAD_IMPLEMENT_REQUEST_ORIGIN: 'squad-retro',
+    SQUAD_IMPLEMENT_RETRO_ACTION_KEY: ACTION_KEY,
+    SQUAD_IMPLEMENT_AW_CONTEXT: awContext(),
+    SQUAD_IMPLEMENT_DEFAULT_BRANCH: BRANCH,
+    ...env,
+  } as never, {
+    readItems: () => items,
+    fetchGraphql,
+    fetchJson: async (route: string) => {
+      if (route.endsWith('/actions/runs/7')) return {
+        id: 7, run_attempt: 1, path: guard.RETRO_WORKFLOW_PATH, head_branch: BRANCH,
+        repository: { full_name: REPO }, head_repository: { full_name: REPO }, event: 'schedule',
+      };
+      if (route.endsWith('/500/comments')) return [{
+        user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: '2026-09-07T00:00:00Z',
+        body: guard.dispatchMarker(500, ACTION_KEY, '7', '2026-09-07T00:00:00Z'),
+      }];
+      return routes(route);
+    },
+  });
+
+  it('declares the optional typed inputs without disturbing the manual path', () => {
+    const inputs = yamlBlock(frontmatter(worker), 'inputs');
+    expect(inputs).toContain('request_origin:');
+    expect(inputs).toContain('retro_action_key:');
+    // Optional, so `/squad implement` and the merge refill keep dispatching
+    // exactly as before.
+    expect(inputs).toMatch(/request_origin:[\s\S]*?required: false/);
+    expect(inputs).toMatch(/retro_action_key:[\s\S]*?required: false/);
+    expect(inputs).toMatch(/issue_number:[\s\S]*?required: true/);
+  });
+
+  it('refuses a non-numeric issue_number, closing gh-aw temporary-id fail-open', () => {
+    // dispatch_workflow.cjs only warns on an unresolved `#aw_x` and forwards
+    // the literal. This is the receiver-side fail-closed check.
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ issueNumber: '#aw_f0123456' }))))
+      .toContain('issue-number-not-numeric');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ issueNumber: '' }))))
+      .toContain('issue-number-not-numeric');
+    expect(kinds(guard.evaluateImplementDispatchInputs({
+      eventName: 'workflow_dispatch',
+      issueNumber: 'aw_f0123456',
+      repository: REPO,
+      defaultBranch: BRANCH,
+    }))).toContain('issue-number-not-numeric');
+  });
+
+  it('leaves a manual dispatch and the merge continuation untouched', () => {
+    const manual = guard.evaluateImplementDispatchInputs({
+      eventName: 'workflow_dispatch',
+      issueNumber: '42',
+      repository: REPO,
+      defaultBranch: BRANCH,
+    });
+    expect(manual.ok).toBe(true);
+    expect(manual.origin).toBe('manual');
+    const merged = guard.evaluateImplementDispatchInputs({ eventName: 'pull_request' });
+    expect(merged.ok).toBe(true);
+    expect(merged.enforced).toBe(false);
+  });
+
+  it('refuses an unknown or half-declared origin instead of falling back to manual', () => {
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ requestOrigin: 'ralph' }))))
+      .toContain('request-origin-unknown');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ requestOrigin: '' }))))
+      .toContain('request-origin-unknown');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ retroActionKey: '' }))))
+      .toContain('retro-action-key-malformed');
+  });
+
+  it('refuses a forged retro origin whose aw_context does not name squad-retro on the default branch', () => {
+    // aw_context is an ordinary workflow_dispatch input: any actor with write
+    // access can supply one.
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ awContext: '' }))))
+      .toContain('aw-context-missing');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({ awContext: 'not json' }))))
+      .toContain('aw-context-missing');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({
+      awContext: awContext({ workflow_id: `${REPO}/.github/workflows/squad.lock.yml@refs/heads/${BRANCH}` }),
+    })))).toContain('retro-origin-caller-mismatch');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({
+      awContext: awContext({ workflow_id: `${REPO}/.github/workflows/squad-retro.lock.yml@refs/heads/attacker` }),
+    })))).toContain('retro-origin-caller-mismatch');
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({
+      awContext: awContext({ repo: 'attacker/example' }),
+    })))).toContain('retro-origin-repo-mismatch');
+  });
+
+  it('accepts a genuine retro dispatch with a correctly marked draft pull request', async () => {
+    const result = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(result.violations).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.origin).toBe('squad-retro');
+  });
+
+  it('refuses when the live action issue does not corroborate the claimed key', async () => {
+    // A forged aw_context gets no further than the authoritative issue fetch.
+    const wrongKey = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse({
+        body: 'Action-Key: fail:ffffffffffffffff\n',
+      }));
+    expect(kinds(wrongKey)).toContain('retro-action-issue-untrusted');
+
+    const human = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse({ user: { login: 'attacker' } }));
+    expect(kinds(human)).toContain('retro-action-issue-untrusted');
+
+    const proposal = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse({
+        labels: [{ name: 'squad-retro-action' }, { name: 'squad-retro-proposal' }],
+      }));
+    expect(kinds(proposal)).toContain('retro-action-issue-untrusted');
+
+    const closed = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse({ state: 'closed' }));
+    expect(kinds(closed)).toContain('retro-action-issue-untrusted');
+  });
+
+  it('requires the draft flag, the branch namespace, the key line, and one exact marker', async () => {
+    const noDraft = await enforce([pullRequestItem({ draft: false })], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(kinds(noDraft)).toContain('draft-disabled');
+
+    const strayBranch = await enforce([pullRequestItem({ branch: 'main' })], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(kinds(strayBranch)).toContain('branch-outside-implement-namespace');
+
+    const noKey = await enforce([pullRequestItem({ body: guard.retroActionPullMarker(500, ACTION_KEY) })], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(kinds(noKey)).toContain('pull-request-action-key-missing');
+
+    const noMarker = await enforce([pullRequestItem({ body: `Action-Key: ${ACTION_KEY}` })], {}, route =>
+      route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(kinds(noMarker)).toContain('pull-request-retro-marker-invalid');
+
+    const wrongIssue = await enforce([pullRequestItem({
+      body: `Action-Key: ${ACTION_KEY}\n${guard.retroActionPullMarker(999, ACTION_KEY)}`,
+    })], {}, route => route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(kinds(wrongIssue)).toContain('pull-request-retro-marker-invalid');
+
+    const doubled = await enforce([pullRequestItem({
+      body: [
+        `Action-Key: ${ACTION_KEY}`,
+        guard.retroActionPullMarker(500, ACTION_KEY),
+        guard.retroActionPullMarker(500, ACTION_KEY),
+      ].join('\n'),
+    })], {}, route => route.includes('/pulls') ? [] : actionIssueResponse());
+    expect(kinds(doubled)).toContain('pull-request-retro-marker-invalid');
+  });
+
+  it('accepts only the exact visible provenance fence, not an invisible or prose marker', () => {
+    expect(guard.parseRetroActionPullMarker(
+      `see <!-- squad:retro-action issue=500 action-key=${ACTION_KEY} --> inline`,
+    )).toBeNull();
+    expect(guard.parseRetroActionPullMarker(
+      `  <!-- squad:retro-action issue=500 action-key=${ACTION_KEY} -->`,
+    )).toBeNull();
+    expect(guard.parseRetroActionPullMarker(
+      guard.retroActionPullMarker(500, ACTION_KEY),
+    )).toEqual({ issue_number: 500, action_key: ACTION_KEY });
+    expect(guard.parseRetroActionPullMarker(`<!-- squad:retro-action issue=500 action-key=${ACTION_KEY} -->`)).toBeNull();
+    expect(guard.parseRetroActionPullMarker(`\`\`\`\`\n${guard.retroActionPullMarker(500, ACTION_KEY)}\n\`\`\`\``)).toBeNull();
+  });
+
+  it('suppresses a new pull request when ANY linked implement pull request already exists', async () => {
+    for (const existing of [
+      { number: 9, state: 'open', merged_at: null, head: { ref: 'squad/implement-500-a' } },
+      { number: 9, state: 'closed', merged_at: '2026-09-01T00:00:00Z', head: { ref: 'squad/implement-500-b' } },
+      // Closed WITHOUT merging is the gap-6 case: a human rejected it, so
+      // never open a rival pull request and never retry automatically.
+      { number: 9, state: 'closed', merged_at: null, head: { ref: 'squad/implement-500-c' } },
+    ]) {
+      const result = await enforce([pullRequestItem()], {}, route =>
+        route.includes('/pulls') ? [existing] : actionIssueResponse());
+      expect(kinds(result)).toContain('existing-implement-pull-request');
+    }
+  });
+
+  it.each([
+    ['bare with colon', 'Closes: #500'],
+    ['repo-qualified', `Closes ${REPO}#500`],
+    ['repo-qualified with colon', `Fixes: ${REPO}#500`],
+    ['full issue URL', `Resolves https://github.com/${REPO}/issues/500`],
+  ])('suppresses a CLOSED-unmerged human PR linked only by supported closing syntax (%s) (reviewer finding C)', async (_name, body) => {
+    // No `squad/implement-500-*` branch convention here: the human PR's own
+    // branch name is unrelated, and the ONLY link is GitHub's own supported
+    // closing-keyword syntax in the PR body.
+    const result = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? [{ number: 9, state: 'closed', merged_at: null, head: { ref: 'human/own-fix' }, body }] : actionIssueResponse());
+    expect(kinds(result)).toContain('existing-implement-pull-request');
+  });
+
+  it('never lets a repo-qualified reference to a DIFFERENT repository suppress dispatch', async () => {
+    const result = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls')
+        ? [{ number: 9, state: 'closed', merged_at: null, head: { ref: 'human/own-fix' }, body: 'Closes other-org/other-repo#500' }]
+        : actionIssueResponse());
+    expect(kinds(result)).not.toContain('existing-implement-pull-request');
+  });
+
+  it('ignores an unrelated issue\'s implement pull request', async () => {
+    const result = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls')
+        ? [{ number: 9, state: 'open', merged_at: null, head: { ref: 'squad/implement-501-x' } }]
+        : actionIssueResponse());
+    expect(result.ok).toBe(true);
+  });
+
+  it('lets a comment-only retro run through without spending the dedup scan', async () => {
+    let pullScans = 0;
+    const result = await enforce([{ type: 'add_comment', body: 'Blocked by an open dependency.' }], {}, route => {
+      if (route.includes('/pulls')) {
+        pullScans++;
+        return [];
+      }
+      return actionIssueResponse();
+    });
+    expect(result.ok).toBe(true);
+    expect(pullScans).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // FIDO blocker 1: an incomplete duplicate scan used to be REPORTED
+  // (`pull_scan_truncated: true`) and then ignored, so five full pages with no
+  // match returned `ok: true` and authorized a pull request that may well
+  // duplicate an older linked one sitting on page six. Incompleteness is now a
+  // refusal in its own right. The ceiling itself is unchanged: still at most
+  // five `/pulls` pages, never an unbounded walk.
+  // -------------------------------------------------------------------------
+
+  const fullPage = (page: number) =>
+    Array.from({ length: 100 }, (_unused, index) => ({
+      number: page * 100 + index,
+      state: 'open',
+      merged_at: null,
+      head: { ref: `chore/unrelated-${page}-${index}` },
+    }));
+
+  it('refuses a pull request when five FULL pages never prove the linked-PR list exhausted', async () => {
+    let pullScans = 0;
+    const result = await enforce([pullRequestItem()], {}, route => {
+      if (route.includes('/pulls')) return fullPage(++pullScans);
+      return actionIssueResponse();
+    });
+    // The exact repro: no match anywhere in the pages read, yet the list is
+    // provably incomplete, so the run must not open a rival pull request.
+    expect(result.ok).toBe(false);
+    expect(kinds(result)).toContain('implement-pull-scan-incomplete');
+    expect(kinds(result)).not.toContain('existing-implement-pull-request');
+    expect(result.pull_scan_truncated).toBe(true);
+    // Bounded: five pull pages plus the single action-issue fetch, never more.
+    expect(pullScans).toBe(guard.IMPLEMENT_PULL_SCAN_MAX_PAGES);
+    expect(pullScans + 2 + guard.ACTION_COMMENT_MAX_PAGES).toBe(guard.IMPLEMENT_GUARD_API_REQUEST_CEILING);
+  });
+
+  it('refuses when the pull list itself never came back, and names the human resolution', async () => {
+    const result = await enforce([pullRequestItem()], {}, route =>
+      route.includes('/pulls') ? { __status: 502 } : actionIssueResponse());
+    expect(result.ok).toBe(false);
+    const violation = result.violations.find(v => v.kind === 'implement-pull-scan-incomplete');
+    expect(violation).toBeDefined();
+    expect(violation).toMatchObject({
+      reason: 'pull-list-unavailable',
+      pages_scanned: 0,
+      max_pages: guard.IMPLEMENT_PULL_SCAN_MAX_PAGES,
+      branch_prefix: 'squad/implement-500-',
+      resolution: guard.IMPLEMENT_SCAN_RESOLUTION,
+    });
+    // The refusal has to be readable in the run log, since a human resolves it.
+    const [line] = guard.describeViolations([violation]);
+    expect(line).toContain('implement-pull-scan-incomplete');
+    expect(line).toContain('squad/implement-500-');
+    expect(line).toContain('/squad implement');
+  });
+
+  it('accepts an UNDER-FULL page as proof the list really is complete', async () => {
+    let pullScans = 0;
+    const result = await enforce([pullRequestItem()], {}, route => {
+      if (route.includes('/pulls')) {
+        pullScans++;
+        return [{ number: 9, state: 'open', merged_at: null, head: { ref: 'squad/implement-501-x' } }];
+      }
+      return actionIssueResponse();
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.pull_scan_truncated).toBe(false);
+    expect(pullScans).toBe(1);
+  });
+
+  it('still names a linked CLOSED-unmerged pull request found on the last readable page', async () => {
+    let pullScans = 0;
+    const result = await enforce([pullRequestItem()], {}, route => {
+      if (route.includes('/pulls')) {
+        pullScans++;
+        if (pullScans < guard.IMPLEMENT_PULL_SCAN_MAX_PAGES) return fullPage(pullScans);
+        return [
+          ...fullPage(pullScans).slice(0, 99),
+          { number: 77, state: 'closed', merged_at: null, head: { ref: 'squad/implement-500-old' } },
+        ];
+      }
+      return actionIssueResponse();
+    });
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContainEqual({
+      kind: 'existing-implement-pull-request',
+      number: 77,
+      state: 'closed',
+    });
+    // A match ends the scan conclusively: incompleteness is not also reported.
+    expect(kinds(result)).not.toContain('implement-pull-scan-incomplete');
+    expect(result.pull_scan_truncated).toBe(false);
+  });
+
+  it('keeps the comment-only diagnostic path open even when the pull list is unavailable', async () => {
+    // The refusal comment a blocked retro run posts must not be collateral
+    // damage of a dedup scan that is never spent on a comment-only batch.
+    const result = await enforce(
+      [{ type: 'add_comment', body: 'Refusing: the action issue names no reproducible failure.' }],
+      {},
+      route => (route.includes('/pulls') ? { __status: 502 } : actionIssueResponse()),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.pull_scan_truncated).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Native GitHub issue<->PR links (the PR "Development" sidebar) attach a
+  // human PR to this issue with no closing-keyword text -- or matching branch
+  // name -- anywhere in it. `pullLinksIssue` alone can never see this; only
+  // `closedByPullRequestsReferences` (queried per-issue, with
+  // `excludeUserLinked: false` and `includeClosedPrs: true`) proves it.
+  // ---------------------------------------------------------------------------
+  describe('native issue<->PR link coverage (finishing part C)', () => {
+    const nativeResponse = (nodes: { number: number; state: string }[], hasNextPage = false) => async () => ({
+      data: { repository: { issue: { closedByPullRequestsReferences: { nodes, pageInfo: { hasNextPage, endCursor: hasNextPage ? 'cursor-1' : null } } } } },
+    });
+
+    it('refuses a duplicate pull request for a native link with NO closing text at all', async () => {
+      const result = await enforce([pullRequestItem()], {}, () => actionIssueResponse(), nativeResponse([{ number: 321, state: 'OPEN' }]));
+      expect(result.ok).toBe(false);
+      expect(result.violations).toContainEqual({ kind: 'existing-implement-pull-request', number: 321, state: 'open' });
+    });
+
+    it('recognizes a native link to a CLOSED-UNMERGED human PR with no body reference', async () => {
+      const result = await enforce([pullRequestItem()], {}, () => actionIssueResponse(), nativeResponse([{ number: 322, state: 'CLOSED' }]));
+      expect(result.ok).toBe(false);
+      expect(result.violations).toContainEqual({ kind: 'existing-implement-pull-request', number: 322, state: 'closed' });
+    });
+
+    it('recognizes a native link to a MERGED human PR with no body reference', async () => {
+      const result = await enforce([pullRequestItem()], {}, () => actionIssueResponse(), nativeResponse([{ number: 323, state: 'MERGED' }]));
+      expect(result.ok).toBe(false);
+      expect(result.violations).toContainEqual({ kind: 'existing-implement-pull-request', number: 323, state: 'merged' });
+    });
+
+    it('follows a complete paginated native response across pages before concluding no link exists', async () => {
+      let calls = 0;
+      const paginatedNative = async (_query: string, variables: { after: string | null }) => {
+        calls++;
+        if (calls === 1) {
+          expect(variables.after).toBeNull();
+          return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'cursor-1' } } } } } };
+        }
+        expect(variables.after).toBe('cursor-1');
+        return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } } } };
+      };
+      const result = await enforce([pullRequestItem()], {}, route => (route.includes('/pulls') ? [] : actionIssueResponse()), paginatedNative);
+      expect(calls).toBe(2);
+      expect(result.ok).toBe(true);
+    });
+
+    it('fails closed -- refuses, never authorizes -- when the native scan errors', async () => {
+      const result = await enforce([pullRequestItem()], {}, () => actionIssueResponse(), async () => ({ __status: 503 }));
+      expect(result.ok).toBe(false);
+      expect(result.violations).toContainEqual(expect.objectContaining({ kind: 'implement-pull-scan-incomplete', reason: 'native-link-unavailable' }));
+      expect(result.violations).not.toContainEqual(expect.objectContaining({ kind: 'existing-implement-pull-request' }));
+    });
+
+    it('fails closed when the native scan never completes within its page ceiling', async () => {
+      const result = await enforce([pullRequestItem()], {}, () => actionIssueResponse(),
+        nativeResponse([], true));
+      expect(result.ok).toBe(false);
+      expect(result.violations).toContainEqual(expect.objectContaining({ kind: 'implement-pull-scan-incomplete', reason: 'native-link-page-ceiling' }));
+    });
+
+    it('exposes the primitive directly: pagination, malformed shape, and errors', async () => {
+      let pages = 0;
+      const paged = await guard.findNativeLinkedPulls(async () => {
+        pages++;
+        return pages === 1
+          ? { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ number: 1, state: 'OPEN' }], pageInfo: { hasNextPage: true, endCursor: 'c' } } } } } }
+          : { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ number: 2, state: 'MERGED' }], pageInfo: { hasNextPage: false, endCursor: null } } } } } };
+      }, REPO, 500);
+      expect(pages).toBe(2);
+      expect(paged).toEqual({
+        pulls: [{ number: 1, state: 'open', merged: false }, { number: 2, state: 'closed', merged: true }],
+        truncated: false, reason: null, pages_scanned: 2,
+      });
+
+      const malformed = await guard.findNativeLinkedPulls(async () => ({ data: { repository: { issue: null } } }), REPO, 500);
+      expect(malformed).toEqual({ pulls: [], truncated: true, reason: 'native-link-unavailable', pages_scanned: 0 });
+
+      const errored = await guard.findNativeLinkedPulls(async () => { throw new Error('network'); }, REPO, 500);
+      expect(errored).toEqual({ pulls: [], truncated: true, reason: 'native-link-unavailable', pages_scanned: 0 });
+    });
+  });
+
+  it('wires the guard into a pre-agent step and the safe-outputs boundary', () => {
+    expect(worker).toContain('shared/squad-retro-provenance.mjs');
+    expect(worker).toContain('--implement-inputs');
+    const steps = worker.match(/^ {2}steps:\r?\n([\s\S]*?)^ {2}create-pull-request:/m)?.[1] ?? '';
+    expect(steps).toContain('enforceImplementSafeOutputs');
+    expect(steps).toContain('core.setFailed');
+    expect(steps).toContain('SQUAD_IMPLEMENT_AW_CONTEXT');
+    expect(steps).toContain('SQUAD_IMPLEMENT_DEFAULT_BRANCH');
+  });
+
+  // -------------------------------------------------------------------------
+  // FIDO blocker 2: the guard module was imported from GITHUB_WORKSPACE, whose
+  // only checkout in this job is one gh-aw emits ONLY for `create_pull_request`
+  // output and ONLY at the triggering ref. Two consequences, both proven
+  // against the real gh-aw v0.87.10 compiler below: a comment-only/refusal/noop
+  // run had no checkout at all (the import threw, so the diagnostic comment was
+  // never processed), and the `pull_request: closed` continuation would have
+  // imported enforcement code from `refs/pull/N/merge`.
+  // -------------------------------------------------------------------------
+  it('compiles an UNCONDITIONAL default-branch checkout ahead of the guard, whatever the output shape', () => {
+    const job = safeOutputsJob(compiledWorkerLock());
+
+    const trustedIndex = job.indexOf('name: Checkout trusted base for the provenance guard');
+    const guardIndex = job.indexOf('name: Enforce retro-origin provenance before any output');
+    const processIndex = job.indexOf('name: Process Safe Outputs');
+    expect(trustedIndex).toBeGreaterThan(-1);
+    expect(guardIndex).toBeGreaterThan(trustedIndex);
+    expect(processIndex).toBeGreaterThan(guardIndex);
+
+    const trustedStep = job.slice(trustedIndex, guardIndex);
+    // SHA-pinned, explicitly pinned ref, credential-free, side materialization.
+    expect(trustedStep).toContain(
+      'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+    );
+    expect(trustedStep).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
+    expect(trustedStep).toContain('persist-credentials: false');
+    expect(trustedStep).toContain('path: .squad-trusted-base');
+    // Nothing may make the trusted checkout, or the guard it feeds, skippable:
+    // an `if:` that evaluates false would turn the gate into a no-op while the
+    // run still reported success and gh-aw still processed every output.
+    expect(trustedStep).not.toMatch(/\n\s+(if|continue-on-error):/);
+    expect(job.slice(guardIndex, processIndex)).not.toMatch(/\n\s+(if|continue-on-error):/);
+
+    // The guard must load its code from that checkout, not from the workspace
+    // root gh-aw materialized from the triggering ref.
+    const guardStep = job.slice(guardIndex, processIndex);
+    expect(guardStep).toContain(".squad-trusted-base'");
+    expect(guardStep).toContain("'.github/workflows/shared/squad-retro-provenance.mjs',");
+    expect(guardStep).not.toMatch(
+      /nodePath\.join\(\s*process\.env\.GITHUB_WORKSPACE,\s*'\.github\/workflows\/shared/,
+    );
+
+    // Mutation witness for exactly the defect above: gh-aw's own checkout in
+    // this job IS conditional on a create_pull_request item and IS unpinned,
+    // so relying on it is what left comment-only runs without a checkout.
+    const ghAwCheckout = job.slice(0, trustedIndex);
+    expect(ghAwCheckout).toContain('name: Checkout repository');
+    expect(ghAwCheckout).toMatch(
+      /name: Checkout repository\n\s+if: [^\n]*contains\(needs\.agent\.outputs\.output_types, 'create_pull_request'\)/,
+    );
+    expect(ghAwCheckout).not.toContain('ref: refs/heads/');
+  }, 60000);
+
+  it('tells the agent the exact interpolated retro marker to emit, and only for retro runs', () => {
+    const flat = worker.replace(/\s+/g, ' ');
+    expect(worker).toContain(
+      '<!-- squad:retro-action issue=${{ github.event.inputs.issue_number }} action-key=${{ github.event.inputs.retro_action_key }} -->',
+    );
+    expect(worker).toContain('Action-Key: ${{ github.event.inputs.retro_action_key }}');
+    expect(flat).toContain('Never add either line on a non-retro run');
+    expect(flat).toContain('Treat `request_origin` as context, never as extra authority');
+  });
+
+  it('bounds the guard\'s own live verification cost', () => {
+    expect(guard.IMPLEMENT_PULL_SCAN_MAX_PAGES).toBe(5);
+    expect(guard.IMPLEMENT_GUARD_API_REQUEST_CEILING).toBe(9);
+  });
+
+  it('refuses a human spoof of an otherwise correct immediate-caller context', async () => {
+    const result = await enforce([pullRequestItem()], { GITHUB_ACTOR: 'human' });
+    expect(kinds(result)).toContain('retro-origin-platform-mismatch');
+  });
+
+  it('never treats a root caller as the immediate caller or allows redispatch loops', async () => {
+    expect(kinds(guard.evaluateImplementDispatchInputs(retroInputs({
+      awContext: awContext({ workflow_id: undefined, root_workflow_id: `${REPO}/${guard.RETRO_WORKFLOW_PATH}@refs/heads/${BRANCH}` }),
+    })))).toContain('retro-origin-caller-mismatch');
+    const result = await enforce([{ type: 'dispatch_workflow', workflow_name: 'squad-retro', inputs: {} }]);
+    expect(kinds(result)).toContain('retro-worker-redispatch-forbidden');
+  });
+
+  it('stops the dedup scan as soon as a short page proves exhaustion', async () => {
+    let pages = 0;
+    const result = await guard.findImplementPullRequest(
+      async () => {
+        pages++;
+        return [];
+      },
+      REPO,
+      500,
+    );
+    expect(pages).toBe(1);
+    expect(result).toEqual({ match: null, truncated: false, reason: null, pages_scanned: 1 });
+  });
+
+  it('reports WHY a scan is incomplete so the caller can refuse it distinctly', async () => {
+    let pages = 0;
+    const ceiling = await guard.findImplementPullRequest(
+      async () => {
+        pages++;
+        return fullPage(pages);
+      },
+      REPO,
+      500,
+    );
+    expect(pages).toBe(guard.IMPLEMENT_PULL_SCAN_MAX_PAGES);
+    expect(ceiling).toEqual({
+      match: null,
+      truncated: true,
+      reason: 'pull-list-page-ceiling',
+      pages_scanned: guard.IMPLEMENT_PULL_SCAN_MAX_PAGES,
+    });
+
+    const unavailable = await guard.findImplementPullRequest(
+      async () => ({ __status: 403 }),
+      REPO,
+      500,
+    );
+    expect(unavailable).toEqual({
+      match: null,
+      truncated: true,
+      reason: 'pull-list-unavailable',
+      pages_scanned: 0,
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The worker refills a freed dispatch slot by asking `squad`'s implement mode to
 // re-scan a sub-tree.  WHICH sub-tree it names is the whole defect: naming the

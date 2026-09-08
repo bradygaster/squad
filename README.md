@@ -565,9 +565,10 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev
+  bradygaster/squad/workflows/squad-deps-worker.md@dev \
+  bradygaster/squad/workflows/squad-retro.md@dev \
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -594,6 +595,32 @@ Review the complete generated diff before you commit:
 
 `agentics-maintenance.yml` is a second installed workflow. Squad configures its created pull request safe output to expire after 14 days, so this workflow runs scheduled expiration cleanup and also exposes manual maintenance operations. To omit it, create `.github/workflows/aw.json` with `{"maintenance": false}` before installing. gh-aw then warns that expiration is disabled and removes the maintenance workflow.
 
+#### Retrospective auto-implementation (opt-in behavior)
+
+`squad-improvement-worker` installs as part of the standard six-workflow
+`gh aw add` command above — it is not a separate add-on. The two activation
+policies are separate: `squad-retro` can auto-dispatch `squad-implement-worker` on its
+own ordinary (non-proposal) action issues once you set
+`"squadRetroAutoImplement": "allow"` in `.squad/config.json` (only
+bot-authored retrospective issues with a valid `Action-Key:` qualify), and a
+maintainer can approve a governance-scoped retrospective proposal (paths
+under `.squad/skills/**` or `.squad/decisions/inbox/**` only) for automated
+implementation by commenting `/squad approve-improvement`, an
+`Approved-Revision:` content hash and one `Approved-Path:` line per approved
+file. The dispatcher forwards the issue and exact comment ID; the worker
+revalidates the human's permission, revision, revocations and actual patch.
+`/squad revoke-improvement` withdraws
+that authorization at any time — it is a reserved, read-only command open to
+any actor, and it emits no output of its own.
+
+Report/proposal-only remains the default. Ordinary opt-in dispatch is capped at
+three per wakeup (five action issues per report), with one delayed retry and a
+durable human handoff after exhaustion. Both workers produce drafts only;
+open, merged and closed-unmerged linked PRs suppress automatic duplicates.
+Human review and merge are always required.
+
+See [the gh-aw guide](https://bradygaster.github.io/squad/docs/guide/gh-aw/#retrospective-auto-implementation-opt-in) for the full authority model.
+
 ### Slash commands
 
 | Command | What it does |
@@ -606,6 +633,8 @@ Review the complete generated diff before you commit:
 | `/squad status` | Check current team |
 | `/squad implement` | Implement an issue or dispatch ready tasks from an epic |
 | `/squad retro` | Run the shared retrospective now; scheduled and evidence-driven wakeups use the same worker |
+| `/squad approve-improvement` | Authorize a governance-scoped retrospective proposal for `squad-improvement-worker` (write/maintain/admin only) |
+| `/squad revoke-improvement` | Withdraw a prior approval; reserved, read-only, open to anyone |
 
 ### Casting brief tip
 

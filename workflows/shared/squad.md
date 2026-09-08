@@ -1,64 +1,37 @@
 ---
 # Squad Bootstrap Component — installs and initializes Squad
 # (https://github.com/bradygaster/squad) in the activation job, then hands off
-# the generated team state to the agent job.
-#
-# This is the DISTRIBUTION version of the bootstrap, living under workflows/shared/
-# so users can pull it via:
+# the generated team state to the agent job. This is the DISTRIBUTION version,
+# living under workflows/shared/ so users can pull the standard stack via:
 #   gh aw add \
 #     bradygaster/squad/workflows/squad.md@dev \
 #     bradygaster/squad/workflows/squad-implement-worker.md@dev \
-#     bradygaster/squad/workflows/squad-deps-worker.md@dev \
 #     bradygaster/squad/workflows/squad-review.md@dev \
-#     bradygaster/squad/workflows/squad-retro.md@dev
+#     bradygaster/squad/workflows/squad-deps-worker.md@dev \
+#     bradygaster/squad/workflows/squad-retro.md@dev \
+#     bradygaster/squad/workflows/squad-improvement-worker.md@dev
 #
-# Design credit: adapted from Peli de Halleux's proven gh-aw integration in
-# github/gh-aw. Original:
-#   https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md
+# Adapted from Peli de Halleux's gh-aw integration:
+# https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md
 #
-# The Squad CLI is never installed or executed in the agent job — only the files it
-# produces (`.squad/` team state and `.github/agents/squad.agent.md`) are restored
-# there. The activation job downloads a self-contained GitHub Release bundle, runs
-# initialization, and hands the resulting state to the network-constrained agent job.
+# Activation installs the standalone release (no npm), preserves a committed
+# cast or initializes one, checks readiness, and uploads `squad-state`.
+# The agent receives .squad/ and .github/agents/squad.agent.md, never the CLI.
+# gh-aw loads that coordinator natively; engine.agent selects `--agent squad`.
+# Import `shared/squad.md` locally or pin the remote path to a commit SHA.
 #
-# Usage (as an import in your gh-aw workflow):
-#   imports:
-#     - shared/squad.md
+# Optional custom credentials for `squad init`: vars.SQUAD_GITHUB_APP_ID /
+# secrets.SQUAD_GITHUB_APP_PRIVATE_KEY / vars.SQUAD_GITHUB_APP_OWNER mint a
+# GitHub App installation token; secrets.SQUAD_GITHUB_TOKEN is the fallback if
+# the App ID is not set. Auth precedence: GitHub App installation token >
+# SQUAD_GITHUB_TOKEN > github.token.
 #
-# Usage (remote import, pinned to a ref):
-#   imports:
-#     - bradygaster/squad/workflows/shared/squad.md@latest
-#   (Pin to a SHA for reproducible builds:
-#     - bradygaster/squad/workflows/shared/squad.md@<40-char-commit-sha>)
+# Optional custom Squad CLI version: vars.SQUAD_CLI_VERSION, default v0.13.1.
+# This is a GitHub Release tag whose standalone assets are installed without
+# npm; values without a leading `v` are normalized for older configs.
 #
-# How the coordinator reaches the agent: gh-aw natively restores files under
-# `.github/agents/*.agent.md` as inline sub-agents. The `squad.agent.md` that
-# `squad init` writes is picked up by that mechanism. Additionally, `engine.agent`
-# is set to `squad`, so the compiler emits `--agent squad` on the Copilot invocation.
-#
-# `ambient-folders` adds committed `.squad/` state to gh-aw's activation checkout
-# so the roster guard can preserve an existing cast. The explicit artifact below
-# remains the fail-fast handoff for the standalone distribution.
-#
-# Optional custom credentials for `squad init`:
-#   vars.SQUAD_GITHUB_APP_ID / secrets.SQUAD_GITHUB_APP_PRIVATE_KEY / vars.SQUAD_GITHUB_APP_OWNER
-#     — mints a GitHub App installation token
-#   secrets.SQUAD_GITHUB_TOKEN
-#     — fallback if the App ID is not set
-# Auth precedence: GitHub App installation token > SQUAD_GITHUB_TOKEN > github.token
-#
-# Optional custom Squad CLI version:
-#   vars.SQUAD_CLI_VERSION
-# Default is v0.13.1.
-#   This is a GitHub Release tag whose standalone assets are installed without npm.
-#   Values without a leading `v` are normalized for compatibility with older configs.
-#
-# Optional model override:
-#   vars.SQUAD_MODEL
-#   Set to a model name or alias (e.g., 'agent', 'opus', 'gpt-5.6-sol',
-#   'claude-opus-4.6'). Omit or set to 'auto' for engine default. The gh-aw
-#   proxy resolves aliases based on model availability, so if the chosen model
-#   is unavailable the proxy walks a fallback chain automatically.
+# Optional model: vars.SQUAD_MODEL; omit or use 'auto' for the engine default.
+# gh-aw resolves aliases with availability fallback.
 #
 # State backend is pinned to `local`: the compiled agent invocation passes
 # `--disable-builtin-mcps`, so Squad's `state-mcp` bridge does not load. A non-local
@@ -552,29 +525,6 @@ steps:
       name: squad-state
       path: ${{ github.workspace }}
 ---
-
-<!--
-
-## Squad Bootstrap Component
-
-This shared component handles the entire Squad install/init lifecycle outside the
-agent sandbox:
-
-1. **`jobs.activation.steps`** — the repository is already checked out by the
-   activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), downloads the selected standalone GitHub Release bundle,
-   checks whether `.squad/team.md` already exists with roster entries (preserving
-   any previously committed cast), and only runs `squad init` if no usable team
-   is found. It then runs `squad health --json` when the installed release
-   supports it and uploads the resulting `.squad/` team state plus
-   `.github/agents/squad.agent.md` only when readiness checks pass — all inside
-   the activation job without contacting an npm registry.
-
-2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
-   into the workspace. The Squad CLI is never installed here; only the files it
-   produced are needed.
-
--->
 
 ## Working with Squad
 

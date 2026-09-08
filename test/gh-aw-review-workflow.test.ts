@@ -1,7 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
@@ -117,7 +116,7 @@ interface CompiledContract {
 }
 
 function compileReviewer(): CompiledContract {
-  const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-contract-'));
+  const workspace = mkdtempSync(resolve(ROOT, '.squad-review-contract-'));
   compileWorkspaces.push(workspace);
   const workflowDir = resolve(workspace, '.github', 'workflows');
   mkdirSync(workflowDir, { recursive: true });
@@ -126,7 +125,7 @@ function compileReviewer(): CompiledContract {
   execFileSync(
     'gh',
     ['aw', 'compile', 'squad-review', '--strict', '--no-check-update'],
-    { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+    { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 60000 },
   );
 
   const lock = readFileSync(resolve(workflowDir, 'squad-review.lock.yml'), 'utf8').replace(/\r\n/g, '\n');
@@ -196,12 +195,13 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(installOrder).toEqual([
       'squad.md',
       'squad-implement-worker.md',
-      'squad-deps-worker.md',
       'squad-review.md',
+      'squad-deps-worker.md',
       'squad-retro.md',
+      'squad-improvement-worker.md',
     ]);
 
-    const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-install-'));
+    const workspace = mkdtempSync(resolve(ROOT, '.squad-review-install-'));
     compileWorkspaces.push(workspace);
     const workflowDir = resolve(workspace, '.github', 'workflows');
     mkdirSync(workflowDir, { recursive: true });
@@ -210,12 +210,17 @@ describe('gh-aw advisory Squad reviewer', () => {
       cpSync(resolve(ROOT, 'workflows', name), resolve(workflowDir, name));
     }
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    const version = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8', timeout: 15000 });
+    expect(version.status).toBe(0);
+    expect(`${version.stdout}${version.stderr}`.trim()).toMatch(/\bv0\.87\.10$/);
     for (const name of installOrder) {
+      const started = performance.now();
       const result = spawnSync(
         'gh',
         ['aw', 'compile', name.slice(0, -3), '--strict', '--approve', '--no-check-update'],
-        { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+        { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 60000 },
       );
+      console.log(`strict-compile ${name} v0.87.10 status=${result.status} duration_ms=${Math.round(performance.now() - started)}`);
       const diagnostics = `${result.stdout}\n${result.stderr}`;
       expect(result.error, `failed to launch gh aw for ${name}`).toBeUndefined();
       expect(result.status, `strict compile failed for ${name}:\n${diagnostics}`).toBe(0);
@@ -234,6 +239,8 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad-deps-worker.md',
       'squad-implement-worker.lock.yml',
       'squad-implement-worker.md',
+      'squad-improvement-worker.lock.yml',
+      'squad-improvement-worker.md',
       'squad-retro.lock.yml',
       'squad-retro.md',
       'squad-review.lock.yml',
@@ -241,10 +248,10 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad.lock.yml',
       'squad.md',
     ]);
-  }, 90000);
+  }, 420000);
 
   it('detects a missing workflow_dispatch job discriminator during strict compilation', () => {
-    const workspace = mkdtempSync(resolve(tmpdir(), 'squad-review-discriminator-mutation-'));
+    const workspace = mkdtempSync(resolve(ROOT, '.squad-review-discriminator-mutation-'));
     compileWorkspaces.push(workspace);
     const workflowDir = resolve(workspace, '.github', 'workflows');
     mkdirSync(workflowDir, { recursive: true });
@@ -259,7 +266,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     const result = spawnSync(
       'gh',
       ['aw', 'compile', 'squad-deps-worker', '--strict', '--no-check-update', '--no-emit'],
-      { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+      { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 60000 },
     );
     const diagnostics = `${result.stdout}\n${result.stderr}`;
     expect(result.error, 'failed to launch gh aw for discriminator mutation').toBeUndefined();
@@ -269,7 +276,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     );
   }, 20000);
 
-  it('keeps all consumer install surfaces on the coherent five-workflow order', () => {
+  it('keeps all consumer install surfaces on the coherent six-workflow order', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
       const orders = installOrders(surface);
       expect(orders.length).toBeGreaterThan(0);
@@ -277,9 +284,10 @@ describe('gh-aw advisory Squad reviewer', () => {
         expect(order).toEqual([
           'squad.md',
           'squad-implement-worker.md',
-          'squad-deps-worker.md',
           'squad-review.md',
+          'squad-deps-worker.md',
           'squad-retro.md',
+          'squad-improvement-worker.md',
         ]);
       }
     }
