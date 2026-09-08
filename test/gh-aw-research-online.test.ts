@@ -122,11 +122,18 @@ describe('gh-aw: /squad research online-documentation capability', () => {
       /^safe-outputs:\n((?:[ \t].*\n?)*)/m
     );
     expect(safeOutputsMatch, 'safe-outputs: block should exist in frontmatter').not.toBeNull();
-    expect(safeOutputsMatch![1]).toMatch(
-      /allowed-domains:\n\s+- learn\.microsoft\.com\n\s+- aspire\.dev/
+    const allowedDomainsMatch = safeOutputsMatch![1].match(
+      /^  allowed-domains:\n((?:    - .+\n?)*)/m
     );
+    expect(allowedDomainsMatch, 'safe-outputs.allowed-domains should exist').not.toBeNull();
+    const allowedDomains = allowedDomainsMatch![1]
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.startsWith('- '))
+      .map(line => line.slice(2));
+    expect(allowedDomains).toEqual(['learn.microsoft.com', 'aspire.dev']);
     expect(researchSkill).toMatch(/Preserve\s+each public documentation URL in full/);
-    expect(researchSkill).toContain('do not replace the path with `/redacted`');
+    expect(researchSkill).toMatch(/do not replace the\s+path with `\/redacted`/);
     expect(researchSkill).toMatch(
       /Never include URL userinfo, credentials, access tokens,[\s\S]*secret-bearing query parameters/
     );

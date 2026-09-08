@@ -326,7 +326,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data' || name === 'messages' || name === 'jobs') continue;
+      if (name === 'data' || name === 'messages' || name === 'jobs' || name === 'allowed-domains') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
