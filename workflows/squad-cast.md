@@ -18,15 +18,226 @@ concurrency:
 network:
   allowed:
     - defaults
+resources:
+  - shared/squad.md
+  - shared/squad-cast-validator.mjs
+  - shared/builtins/scribe-charter.md
+  - shared/builtins/ralph-charter.md
+  - shared/builtins/rai-charter.md
+  - shared/builtins/fact-checker-charter.md
 tools:
   bash: true
   web-fetch:
   github:
     mode: gh-proxy
     toolsets: [default]
+# pre-agent-steps (not steps:): runs after gh-aw's native base-branch/ambient
+# restores that can reintroduce a stale committed .squad/ snapshot late in the
+# job, so this stays the last writer of the four built-in charters.
+pre-agent-steps:
+  - name: Materialize canonical built-in support agents
+    shell: bash
+    run: |
+      set -euo pipefail
+      builtins_src="${GITHUB_WORKSPACE:?}/.github/workflows/shared/builtins"
+      squad_agents="${GITHUB_WORKSPACE:?}/.squad/agents"
+      for pair in "scribe:Scribe" "ralph:Ralph" "rai:Rai" "fact-checker:Fact Checker"; do
+        id="${pair%%:*}"
+        display="${pair#*:}"
+        src="${builtins_src}/${id}-charter.md"
+        if [ ! -f "$src" ]; then
+          printf 'Canonical built-in charter resource is missing: %s\n' "$src" >&2
+          exit 1
+        fi
+        dest_dir="${squad_agents}/${id}"
+        mkdir -p "$dest_dir"
+        cp "$src" "${dest_dir}/charter.md"
+        if [ ! -f "${dest_dir}/history.md" ]; then
+          printf '# %s — History\n\n## Learnings\n\nInitial scaffold via gh-aw Cast. Ready for work.\n' "$display" > "${dest_dir}/history.md"
+        fi
+      done
+  - name: Prepare deterministic Cast validator runner
+    shell: bash
+    run: |
+      set -euo pipefail
+      validator_runner="${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"
+      cat > "$validator_runner" <<'SQUAD_CAST_VALIDATOR_RUNNER'
+      #!/usr/bin/env bash
+      set -u -o pipefail
+      cd "${GITHUB_WORKSPACE:?}"
+
+      stderr_file="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stderr"
+      validator_script="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs"
+      validator_output="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stdout"
+      expected_output="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.expected"
+
+      fail_cast() {
+        cat "$stderr_file" >&2
+        exit "${1:-1}"
+      }
+
+      : > "$stderr_file"
+      if [ ! -f "$validator_script" ]; then
+        printf 'Cast validator resource is missing: %s\n' "$validator_script" > "$stderr_file"
+        fail_cast 1
+      fi
+      if [ ! -r "$validator_script" ]; then
+        printf 'Cast validator resource is not readable: %s\n' "$validator_script" > "$stderr_file"
+        fail_cast 1
+      fi
+      validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
+
+      validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      : > "$stderr_file"
+      validator_actual_sha256="$(
+        node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
+          "$validator_script" 2> "$stderr_file"
+      )"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "$status"
+      fi
+      if [ "$validator_actual_sha256" != "$validator_expected_sha256" ]; then
+        printf 'Cast validator SHA-256 mismatch: expected %s, got %s.\n' \
+          "$validator_expected_sha256" "$validator_actual_sha256" > "$stderr_file"
+        fail_cast 1
+      fi
+
+      : > "$stderr_file"
+      node --check "$validator_script" > /dev/null 2> "$stderr_file"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "$status"
+      fi
+
+      : > "$stderr_file"
+      node "$validator_script" \
+        --root "$PWD" \
+        --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json" \
+        > "$validator_output" 2> "$stderr_file"
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        fail_cast "$status"
+      fi
+
+      printf 'Cast validation passed.\n' > "$expected_output"
+      if ! cmp -s "$expected_output" "$validator_output"; then
+        validator_observed="$(cat "$validator_output")"
+        printf 'Cast validator did not emit the exact authorization output: <%s>\n' \
+          "$validator_observed" > "$stderr_file"
+        fail_cast 1
+      fi
+      cat "$validator_output"
+      SQUAD_CAST_VALIDATOR_RUNNER
+      chmod 500 "$validator_runner"
+# post-steps (not a prompt instruction): compiled into the agent job AFTER the
+# agent output is finalized and BEFORE `Upload agent output fallback artifact`
+# and `Upload agent artifacts`. The `safe_outputs` job consumes only those
+# uploaded artifacts, so rewriting them here mechanically decides whether a
+# Cast pull request can ever be materialized. `if: always()` keeps the gate
+# reachable even when the agent step itself failed, so it always fails closed.
+post-steps:
+  - name: Machine-enforced Cast validation gate
+    if: always()
+    shell: bash
+    env:
+      GH_AW_CAST_AGENT_OUTPUT: /tmp/gh-aw/agent_output.json
+      GH_AW_CAST_SAFE_OUTPUTS: /tmp/gh-aw/safeoutputs.jsonl
+      GH_AW_CAST_PATCH_DIR: /tmp/gh-aw
+    run: |
+      set -uo pipefail
+      gate_dir="${RUNNER_TEMP:?}/squad-cast-gate"
+      mkdir -p "$gate_dir"
+      gate_stdout="${gate_dir}/validator.stdout"
+      gate_stderr="${gate_dir}/validator.stderr"
+
+      # 1. Decide mechanically whether this run is trying to materialize a Cast
+      #    pull request. Only `create_pull_request` / `update_pull_request`
+      #    items are gated; a guarded `noop` run stays green and silent.
+      node -e '
+        const fs = require("node:fs");
+        const p = process.env.GH_AW_CAST_AGENT_OUTPUT;
+        let items;
+        try { items = JSON.parse(fs.readFileSync(p, "utf8")).items ?? []; } catch { items = null; }
+        // Unreadable or malformed output is never treated as "nothing to gate".
+        if (!Array.isArray(items)) { process.stdout.write("gated"); process.exit(0); }
+        const gated = items.filter(i => i && (i.type === "create_pull_request" || i.type === "update_pull_request"));
+        process.stdout.write(gated.length > 0 ? "gated" : "ungated");
+      ' > "${gate_dir}/decision" 2>/dev/null || printf 'gated' > "${gate_dir}/decision"
+      decision="$(cat "${gate_dir}/decision")"
+
+      if [ "$decision" = "ungated" ]; then
+        echo "Cast gate: no pull-request safe output requested; nothing to authorize." \
+          >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+        exit 0
+      fi
+
+      # 2. Run the deterministic validator here, in the runner. The agent's own
+      #    claim about validation is never consulted.
+      validator_runner="${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"
+      if [ ! -x "$validator_runner" ]; then
+        printf 'Cast validator runner is missing or not executable: %s\n' "$validator_runner" > "$gate_stderr"
+        : > "$gate_stdout"
+        validator_status=1
+      else
+        "$validator_runner" > "$gate_stdout" 2> "$gate_stderr"
+        validator_status=$?
+      fi
+
+      printf 'Cast validation passed.\n' > "${gate_dir}/expected"
+      if [ "$validator_status" -eq 0 ] && cmp -s "${gate_dir}/expected" "$gate_stdout"; then
+        {
+          echo "### Cast validation gate"
+          echo ""
+          echo "Authorized: validator emitted exactly \`Cast validation passed.\`"
+        } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+        exit 0
+      fi
+
+      # 3. Fail closed. Strip every pull-request safe output and destroy the
+      #    patch/bundle before either artifact is uploaded, so the downstream
+      #    `safe_outputs` job has nothing left to materialize a Cast PR from.
+      node -e '
+        const fs = require("node:fs");
+        const gatedTypes = new Set(["create_pull_request", "update_pull_request"]);
+        const jsonPath = process.env.GH_AW_CAST_AGENT_OUTPUT;
+        try {
+          const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+          parsed.items = (parsed.items ?? []).filter(i => !(i && gatedTypes.has(i.type)));
+          fs.writeFileSync(jsonPath, JSON.stringify(parsed));
+        } catch {
+          fs.writeFileSync(jsonPath, JSON.stringify({ items: [] }));
+        }
+        const jsonlPath = process.env.GH_AW_CAST_SAFE_OUTPUTS;
+        try {
+          const kept = fs.readFileSync(jsonlPath, "utf8").split("\n").filter(line => {
+            if (!line.trim()) return false;
+            try { return !gatedTypes.has(JSON.parse(line).type); } catch { return false; }
+          });
+          fs.writeFileSync(jsonlPath, kept.length ? kept.join("\n") + "\n" : "");
+        } catch { /* absent jsonl is already non-authorizing */ }
+      '
+      rm -f "${GH_AW_CAST_PATCH_DIR:-/tmp/gh-aw}"/aw-*.patch "${GH_AW_CAST_PATCH_DIR:-/tmp/gh-aw}"/aw-*.bundle
+
+      {
+        echo "### Cast validation gate — DENIED"
+        echo ""
+        echo "The deterministic validator did not emit exactly \`Cast validation passed.\`."
+        echo "Every pull-request safe output was removed before artifact upload; no Cast PR can be created by this run."
+        echo ""
+        echo '```text'
+        echo "validator exit status: ${validator_status}"
+        echo "validator stdout: $(cat "$gate_stdout" 2>/dev/null)"
+        sed -n '1,40p' "$gate_stderr" 2>/dev/null
+        echo '```'
+      } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+      echo "::error::Cast validation gate denied pull-request materialization (validator exit ${validator_status})."
+      exit 1
 safe-outputs:
   messages:
     pull-request-created: "🤖 Squad opened [Cast PR #{item_number}]({item_url}) for native human review. Merge it to continue onboarding."
+    run-failure: "🤖 [{workflow_name}]({run_url}) {status}. No Cast pull request was created: the deterministic Cast validation gate did not authorize one."
   create-pull-request:
     title-prefix: "[Squad] Cast: "
     branch-prefix: "squad/cast-"
@@ -117,8 +328,9 @@ the active specialist registry and routing table.
 ## Cast tree and validation
 
 Generate the final Cast tree according to the existing Cast contract in
-`workflows/shared/squad.md`. Preserve the canonical built-in resources and
-build an explicit concrete payload file at
+`.github/workflows/shared/squad.md`. Preserve the canonical built-in resources
+materialized under `.squad/agents/{fact-checker,rai,ralph,scribe}/charter.md`
+without editing them, and build an explicit concrete payload file at
 `.github/workflows/squad-cast-payload.json`.
 
 The deterministic validator is mandatory. Run exactly:
@@ -130,8 +342,18 @@ The deterministic validator is mandatory. Run exactly:
 Do not bypass, rewrite, paraphrase, or success-shape its result. Only stdout
 exactly equal to `Cast validation passed.` authorizes one pull request output.
 On any discovery, integrity, syntax, or validation failure, do not request a
-pull request. Call `report_incomplete`, emit one bounded factual failure
-comment, and stop. Never claim success when validation did not authorize it.
+pull request. Call `report_incomplete` with the factual failure and stop. Never
+claim success when validation did not authorize it.
+
+Running the validator yourself is a debugging aid, not the authorization
+mechanism. Authorization is mechanical and outside your control: the
+`Machine-enforced Cast validation gate` post-agent step re-runs the same
+deterministic runner in the runner after this agent finishes, and it deletes
+every `create_pull_request` and `update_pull_request` safe output plus the
+generated patch before the artifacts are uploaded unless that independent run
+emits exactly `Cast validation passed.`. Emitting a pull-request output from an
+unvalidated tree therefore cannot produce a Cast PR — it only produces a failed
+run. Validate first, then request the output.
 
 ## Cast pull request
 

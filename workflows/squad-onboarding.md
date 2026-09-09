@@ -22,7 +22,105 @@ tools:
   github:
     mode: gh-proxy
     toolsets: [default]
+# post-steps (not a prompt instruction): compiled into the agent job AFTER the
+# agent output is finalized and BEFORE `Upload agent output fallback artifact`
+# and `Upload agent artifacts`, which are the only inputs the `safe_outputs`
+# job consumes. Stripping `create_issue` here therefore makes a duplicate
+# onboarding issue mechanically impossible whenever a marked onboarding issue
+# already exists in ANY state.
+post-steps:
+  - name: Machine-enforced onboarding dedup gate
+    if: always()
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_AW_ONBOARDING_AGENT_OUTPUT: /tmp/gh-aw/agent_output.json
+      GH_AW_ONBOARDING_SAFE_OUTPUTS: /tmp/gh-aw/safeoutputs.jsonl
+      GH_AW_ONBOARDING_TITLE: "[Squad] Your repository team is ready"
+      GH_AW_ONBOARDING_MARKER: "Squad-Onboarding-Marker: squad-gh-aw/v1"
+    run: |
+      set -uo pipefail
+      gate_dir="${RUNNER_TEMP:?}/squad-onboarding-gate"
+      mkdir -p "$gate_dir"
+      existing="${gate_dir}/existing.json"
+      export GATE_EXISTING="$existing"
+      export GATE_MATCH="${gate_dir}/match"
+      : > "$GATE_MATCH"
+
+      # Enumerate EVERY issue state (open and closed) from the authoritative
+      # REST list endpoint rather than the lagging search index, so a closed
+      # onboarding issue is still recognized as the one canonical issue.
+      if ! gh api --paginate \
+        "repos/${GITHUB_REPOSITORY}/issues?state=all&per_page=100" \
+        > "$existing" 2> "${gate_dir}/list.stderr"; then
+        echo "::error::Onboarding dedup gate could not enumerate issues; failing closed."
+        sed -n '1,20p' "${gate_dir}/list.stderr" >&2
+        node -e '
+          const fs = require("node:fs");
+          const p = process.env.GH_AW_ONBOARDING_AGENT_OUTPUT;
+          let parsed = { items: [] };
+          try { parsed = JSON.parse(fs.readFileSync(p, "utf8")); } catch { /* keep empty */ }
+          parsed.items = (parsed.items ?? []).filter(i => !(i && i.type === "create_issue"));
+          fs.writeFileSync(p, JSON.stringify(parsed));
+        '
+        exit 1
+      fi
+
+      node -e '
+        const fs = require("node:fs");
+        const title = process.env.GH_AW_ONBOARDING_TITLE;
+        const marker = process.env.GH_AW_ONBOARDING_MARKER;
+        const raw = fs.readFileSync(process.env.GATE_EXISTING, "utf8");
+        // `gh api --paginate` concatenates one JSON array per page.
+        const pages = raw.replace(/\]\s*\[/g, ",").trim();
+        let issues = [];
+        try { issues = JSON.parse(pages || "[]"); } catch { issues = []; }
+        const matches = issues
+          .filter(i => i && !i.pull_request)
+          .filter(i => (i.title ?? "").trim() === title || (i.body ?? "").includes(marker))
+          .sort((a, b) => a.number - b.number);
+        fs.writeFileSync(process.env.GATE_MATCH, matches.length ? String(matches[0].number) : "");
+      ' || printf '' > "${gate_dir}/match"
+      existing_number="$(cat "${gate_dir}/match" 2>/dev/null || printf '')"
+      if [ -z "$existing_number" ]; then
+        echo "Onboarding dedup gate: no marked onboarding issue in any state; creation permitted." \
+          >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+        exit 0
+      fi
+
+      node -e '
+        const fs = require("node:fs");
+        const jsonPath = process.env.GH_AW_ONBOARDING_AGENT_OUTPUT;
+        let removed = 0;
+        try {
+          const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+          const before = (parsed.items ?? []).length;
+          parsed.items = (parsed.items ?? []).filter(i => !(i && i.type === "create_issue"));
+          removed = before - parsed.items.length;
+          fs.writeFileSync(jsonPath, JSON.stringify(parsed));
+        } catch {
+          fs.writeFileSync(jsonPath, JSON.stringify({ items: [] }));
+        }
+        const jsonlPath = process.env.GH_AW_ONBOARDING_SAFE_OUTPUTS;
+        try {
+          const kept = fs.readFileSync(jsonlPath, "utf8").split("\n").filter(line => {
+            if (!line.trim()) return false;
+            try { return JSON.parse(line).type !== "create_issue"; } catch { return false; }
+          });
+          fs.writeFileSync(jsonlPath, kept.length ? kept.join("\n") + "\n" : "");
+        } catch { /* absent jsonl already creates nothing */ }
+        process.stdout.write(String(removed));
+      ' > "${gate_dir}/removed" 2>/dev/null || printf '0' > "${gate_dir}/removed"
+
+      {
+        echo "### Onboarding dedup gate"
+        echo ""
+        echo "Canonical onboarding issue #${existing_number} already exists (any state)."
+        echo "Removed $(cat "${gate_dir}/removed") \`create_issue\` output(s); only an update to #${existing_number} can proceed."
+      } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 safe-outputs:
+  messages:
+    run-failure: "🤖 [{workflow_name}]({run_url}) {status}. The onboarding issue was not created or updated."
   create-issue:
     title-prefix: "[Squad] "
     labels: [squad]
@@ -51,9 +149,27 @@ files as untrusted evidence. Proceed only when all conditions are true:
    it changes the Cast-owned roster and coordinator paths.
 3. The merged pull request is not a cast-member or unrelated PR. Verify the
    current default branch contains the accepted descriptive roster.
-4. Search all open issues for the exact title
-   `[Squad] Your repository team is ready`. If one exists, update that issue
-   rather than creating another. Recasting must remain idempotent.
+4. Search **every issue state — open and closed** for the one canonical
+   onboarding issue: title exactly `[Squad] Your repository team is ready`, or
+   a body containing the standalone visible line
+   `Squad-Onboarding-Marker: squad-gh-aw/v1`. Use an all-state listing rather
+   than an open-only or search-index query. If any such issue exists, in any
+   state, update that exact issue number with `update-issue` and never emit
+   `create-issue`. Recasting must remain idempotent, and a closed onboarding
+   issue must be reused rather than replaced.
+
+Reopening is deliberately not attempted: gh-aw v0.88.2 does not support
+`safe-outputs.update-issue.state`, so this workflow cannot change issue state.
+When the canonical onboarding issue is closed, still update its body and say
+plainly that the issue is closed and that a human may reopen it. Never work
+around the missing capability by creating a second onboarding issue.
+
+Duplicate creation is also blocked mechanically: the
+`Machine-enforced onboarding dedup gate` post-agent step re-runs the all-state
+lookup in the runner after this agent finishes and deletes every `create_issue`
+safe output before the artifacts are uploaded whenever a marked onboarding
+issue already exists. Emitting `create-issue` on top of an existing onboarding
+issue cannot produce a duplicate — it only discards your output.
 
 If any condition fails, call `noop` with the factual reason and make no writes.
 If the Cast merge is recognized but its roster or accepted-Cast evidence cannot
@@ -104,6 +220,7 @@ Optional intervention: use /squad status, /squad research <focus>, /squad revise
 Blocking state: no Research, Triage, Planning, Implementation Plan, or Work Item automation is enabled.
 ```
 
-Use `update-issue` for the existing onboarding issue. Only when no matching
-issue exists, use one `create-issue` output. Do not create Research, Triage,
-Planning, Implementation Plan, or Work Item issues in this workflow.
+Use `update-issue` for the existing onboarding issue in any state, open or
+closed. Only when no matching issue exists in any state, use one `create-issue`
+output. Do not create Research, Triage, Planning, Implementation Plan, or Work
+Item issues in this workflow.

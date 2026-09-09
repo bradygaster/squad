@@ -48,7 +48,7 @@ describe('automatic Cast and onboarding workflows', () => {
     expect(ONBOARDING).toContain('deduplicate-by-title: true');
     expect(ONBOARDING).toContain('required-title-prefix: "[Squad] Your repository team is ready"');
     expect(ONBOARDING).toMatch(
-      /Do not create Research, Triage,\s+Planning, Implementation Plan, or Work Item issues/,
+      /Do not create Research, Triage, Planning, Implementation Plan, or Work\s+Item issues/,
     );
   });
 

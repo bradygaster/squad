@@ -199,6 +199,8 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad-deps-worker.md',
       'squad-retro.md',
       'squad-improvement-worker.md',
+      'squad-cast.md',
+      'squad-onboarding.md',
     ]);
 
     const workspace = mkdtempSync(resolve(ROOT, '.squad-review-install-'));
@@ -235,12 +237,16 @@ describe('gh-aw advisory Squad reviewer', () => {
       .map(entry => entry.name)
       .sort();
     expect(installed).toEqual([
+      'squad-cast.lock.yml',
+      'squad-cast.md',
       'squad-deps-worker.lock.yml',
       'squad-deps-worker.md',
       'squad-implement-worker.lock.yml',
       'squad-implement-worker.md',
       'squad-improvement-worker.lock.yml',
       'squad-improvement-worker.md',
+      'squad-onboarding.lock.yml',
+      'squad-onboarding.md',
       'squad-retro.lock.yml',
       'squad-retro.md',
       'squad-review.lock.yml',
@@ -276,7 +282,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     );
   }, 20000);
 
-  it('keeps all consumer install surfaces on the coherent six-workflow order', () => {
+  it('keeps all consumer install surfaces on the coherent eight-workflow order', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
       const orders = installOrders(surface);
       expect(orders.length).toBeGreaterThan(0);
@@ -288,6 +294,8 @@ describe('gh-aw advisory Squad reviewer', () => {
           'squad-deps-worker.md',
           'squad-retro.md',
           'squad-improvement-worker.md',
+          'squad-cast.md',
+          'squad-onboarding.md',
         ]);
       }
     }

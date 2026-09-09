@@ -1499,10 +1499,10 @@ describe('Squad retrospective workflow integration', () => {
     expect(REVIEWER).toContain('"request_origin": "squad-review"');
     expect(IMPLEMENTER).toContain('"request_origin": "squad-implement"');
     expect(CI).toContain(
-      'for WF in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do',
+      'for WF in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-cast squad-onboarding; do',
     );
     expect(CI).toContain(
-      'squad-deps-worker.lock.yml squad-retro.lock.yml squad-improvement-worker.lock.yml; do',
+      'squad-deps-worker.lock.yml squad-retro.lock.yml squad-improvement-worker.lock.yml squad-cast.lock.yml squad-onboarding.lock.yml; do',
     );
   });
 

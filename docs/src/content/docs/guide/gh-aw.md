@@ -49,7 +49,7 @@ gh aw compile --strict --approve
 gh aw compile --strict
 
 # Verify every supported workflow has a source and generated lockfile
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-cast squad-onboarding; do
   test -f ".github/workflows/${workflow}.md"
   test -f ".github/workflows/${workflow}.lock.yml"
 done
@@ -1469,6 +1469,8 @@ gh aw add \
   bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-retro.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-cast.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-onboarding.md@${SQUAD_SHA} \
   --force
 ```
 

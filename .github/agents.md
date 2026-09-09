@@ -26,21 +26,34 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-cast.md@dev \
+  bradygaster/squad/workflows/squad-onboarding.md@dev
 ```
 
 This command:
 
-1. Fetches the Squad dispatcher, general and dependency workers, advisory reviewer, retrospective, and approval-gated improvement worker
+1. Fetches the Squad dispatcher, general and dependency workers, advisory reviewer, retrospective, approval-gated improvement worker, automatic Cast, and onboarding workflows
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
 ### Verify installation
 
-After running the command, confirm all six source/lock pairs exist and strict
-compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
-Improvement Worker. The improvement worker is standard but dormant until an
-exact human approval is relayed through the dispatcher.
+After running the command, run this executable check — it must exit `0` and
+must name every installed workflow, including Cast and Onboarding:
+
+```bash
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-cast squad-onboarding; do
+  test -f ".github/workflows/${workflow}.md"       || { echo "MISSING ${workflow}.md"; exit 1; }
+  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
+done
+```
+
+All eight source/lock pairs — sixteen files — must exist and `gh aw compile
+--strict` must succeed. The improvement worker is standard but dormant until an
+exact human approval is relayed through the dispatcher. `squad-cast` and
+`squad-onboarding` are event-driven and stay dormant until a Squad bootstrap or
+Cast pull request merges into the default branch.
 
 Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
 `"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted

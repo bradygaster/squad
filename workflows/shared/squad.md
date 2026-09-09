@@ -9,7 +9,9 @@
 #     bradygaster/squad/workflows/squad-review.md@dev \
 #     bradygaster/squad/workflows/squad-deps-worker.md@dev \
 #     bradygaster/squad/workflows/squad-retro.md@dev \
-#     bradygaster/squad/workflows/squad-improvement-worker.md@dev
+#     bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+#     bradygaster/squad/workflows/squad-cast.md@dev \
+#     bradygaster/squad/workflows/squad-onboarding.md@dev
 #
 # Adapted from Peli de Halleux's gh-aw integration:
 # https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md
