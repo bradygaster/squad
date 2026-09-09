@@ -30,6 +30,7 @@ const identityNeutralFiles = [
 ];
 
 const templateRoots = [
+  '.squad/skills',
   '.squad-templates',
   'templates',
   'packages/squad-cli/templates',
