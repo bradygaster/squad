@@ -102,4 +102,13 @@ describe('security review unsafe git exclusions', () => {
 
     expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(true);
   });
+
+  it('does not let a trailing comment suppress an unsafe command', () => {
+    const result = runSecurityReview(
+      '.github/agents/example.agent.md',
+      'git add -A # avoid orphaned files\n',
+    );
+
+    expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(true);
+  });
 });

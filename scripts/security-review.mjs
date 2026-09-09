@@ -205,9 +205,10 @@ for (const file of changedFiles) {
   if (UNSAFE_GIT_EXCLUDED_PATHS.some((p) => p.test(file))) continue;
   const added = addedByFile.get(file) || [];
   for (const { line, text } of added) {
-    if (UNSAFE_GIT_PROHIBITION.test(text)) continue;
     for (const { pattern, label } of GIT_UNSAFE_PATTERNS) {
-      if (pattern.test(text)) {
+      const match = pattern.exec(text);
+      const textBeforeCommand = match ? text.slice(0, match.index) : '';
+      if (match && !UNSAFE_GIT_PROHIBITION.test(textBeforeCommand)) {
         findings.push({
           category: 'unsafe-git',
           severity: 'error',
