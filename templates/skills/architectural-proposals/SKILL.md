@@ -82,8 +82,8 @@ When a proposal invalidates existing wave structure:
 ```
 ### 1. Terminal UI Library: `ink` (recommended) or alternatives?
 
-**Recommendation:** `ink`  
-**Alternatives:** `blessed`, raw readline  
+**Recommendation:** `ink`
+**Alternatives:** `blessed`, raw readline
 **Decision rationale:** Component model enables testable UI. Battle-tested ecosystem.
 
 **Needs sign-off from:** Product Lead (product direction), Runtime Engineer (runtime performance)
@@ -101,8 +101,8 @@ When a proposal invalidates existing wave structure:
 ```
 ### Risk 2: SDK Streaming Reliability
 
-**Risk:** SDK streaming events might drop messages or arrive out of order.  
-**Likelihood:** Low (SDK is production-grade).  
+**Risk:** SDK streaming events might drop messages or arrive out of order.
+**Likelihood:** Low (SDK is production-grade).
 **Impact:** High — broken streaming makes shell unusable.
 
 **Mitigation:**

@@ -139,7 +139,7 @@ $stallCount = 0
 while ($proc -and -not $proc.HasExited) {
     Start-Sleep -Seconds 15
     $currentSize = (Get-ChildItem $logDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
-    
+
     if ($currentSize -eq $lastSize) {
         $stallCount++
         if ($stallCount -ge 4) { # 60s with no progress

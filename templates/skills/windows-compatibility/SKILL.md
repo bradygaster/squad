@@ -36,7 +36,7 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Pattern:**
   ```typescript
   const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
-  
+
   function pathStartsWith(fullPath: string, prefix: string): boolean {
     if (CASE_INSENSITIVE) {
       return fullPath.toLowerCase().startsWith(prefix.toLowerCase());
