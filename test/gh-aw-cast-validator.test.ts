@@ -546,7 +546,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected e7faf8e5d7ad1926d1c40b7664438193bba54af0d5e1adf195cbc5f90341aa35, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected c82e685f1f95a0636c50f04e55345f3eb78a27b543bfe00f985648eb4d7e52d5, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -753,6 +753,57 @@ describe('GH-AW Cast final-tree validator', () => {
   });
 
   it.each([
+    { token: 'OAuth', wrongCase: 'oauth', id: 'oauth-security', head: 'Security' },
+    { token: '.NET', wrongCase: '.net', id: 'dotnet-modernization', head: 'Modernization' },
+    { token: 'gRPC', wrongCase: 'grpc', id: 'grpc-integration', head: 'Integration' },
+  ])('rejects $token evidence whose match spelling is $wrongCase', ({
+    token,
+    wrongCase,
+    id,
+    head,
+  }) => {
+    const specialist = { id, name: `${token} ${head}`, role: `${token} ${head}` };
+    const fixture = createFixture([specialist, active[1], active[2]], [
+      wrongCase,
+      'Application',
+    ]);
+    const payload = readPayload(fixture);
+    const evidence = payload.roles[0].qualifiers[0].evidence as {
+      path: string;
+      match: string;
+    };
+    evidence.match = wrongCase;
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `evidence match must be the exact repository spelling of token "${token}"`,
+    );
+  });
+
+  it.each([
+    { token: 'OAuth', wrongCase: 'oauth', id: 'oauth-security', head: 'Security' },
+    { token: '.NET', wrongCase: '.net', id: 'dotnet-modernization', head: 'Modernization' },
+    { token: 'gRPC', wrongCase: 'grpc', id: 'grpc-integration', head: 'Integration' },
+  ])('requires exact $token spelling in repository content, not $wrongCase', ({
+    token,
+    wrongCase,
+    id,
+    head,
+  }) => {
+    const specialist = { id, name: `${token} ${head}`, role: `${token} ${head}` };
+    const fixture = createFixture([specialist, active[1], active[2]], [
+      wrongCase,
+      'Application',
+    ]);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `evidence exact token "${token}" was not found with token boundaries`,
+    );
+  });
+
+  it.each([
     'Node..js',
     'C+++',
     'OAuth;',
@@ -891,6 +942,9 @@ describe('GH-AW Cast final-tree validator', () => {
     'go.sum',
     'packages.lock.json',
     'paket.lock',
+    'Package.resolved',
+    'nested/bun.lockb',
+    'gradle/gradle.lockfile',
     'custom.lock',
     'service-lock.json',
     'service-lock.yaml',

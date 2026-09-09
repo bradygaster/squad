@@ -74,6 +74,9 @@ const EVIDENCE_EXCLUDED_BASENAMES = new Set([
   'go.sum',
   'packages.lock.json',
   'paket.lock',
+  'package.resolved',
+  'bun.lockb',
+  'gradle.lockfile',
 ]);
 const REGULAR_GIT_FILE_MODES = new Set(['100644', '100755']);
 
@@ -448,7 +451,7 @@ function validateRoleSpecifications(payloadRoles, active, root, trustedSha, erro
         errors.push(`${qualifierLabel}.evidence path ${evidencePath} is excluded from Cast evidence`);
         continue;
       }
-      if (match.toLowerCase() !== String(qualifier.token).toLowerCase()) {
+      if (match !== qualifier.token) {
         errors.push(`${qualifierLabel}.evidence match must be the exact repository spelling of token "${qualifier.token}"`);
         continue;
       }

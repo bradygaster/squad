@@ -127,7 +127,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="e7faf8e5d7ad1926d1c40b7664438193bba54af0d5e1adf195cbc5f90341aa35"
+      validator_expected_sha256="c82e685f1f95a0636c50f04e55345f3eb78a27b543bfe00f985648eb4d7e52d5"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
