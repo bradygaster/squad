@@ -311,9 +311,8 @@ gh aw add reports a third secret: `ACME_DEPLOY_KEY`.
 gh api --method PUT "repos/acme/widgets/actions/permissions/workflow" ...
 gh pr create --base main ...        # wrong if the default branch isn't `main`
 
-# BAD: stages logs, .vscode settings, and anything else that changed
-git add -A
-git commit -m "add squad"
+# BAD: blanket staging captures logs, editor settings, and unrelated changes
+# Stage only the generated bootstrap paths listed above.
 ```
 
 ### ✗ Incorrect: skipping the final strict compile or auto-merging

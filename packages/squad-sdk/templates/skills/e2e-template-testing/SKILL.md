@@ -108,7 +108,8 @@ echo "# Test Project" > README.md
 echo '{"name":"test-project","version":"1.0.0"}' > package.json
 mkdir src
 echo "export function hello() { return 'world' }" > src/index.ts
-git add -A && git commit -m "init: test project"
+git add -- README.md package.json src/index.ts
+git commit -m "init: test project"
 ```
 
 Keep the project small — you only need enough for the coordinator to recognize a

@@ -78,4 +78,28 @@ describe('security review unsafe git exclusions', () => {
       ),
     ).toBe(true);
   });
+
+  it('does not treat path-scoped staging as git add dot', () => {
+    const result = runSecurityReview(
+      '.github/agents/example.agent.md',
+      'git add .squad/cross-machine/tasks/\n',
+    );
+
+    expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(false);
+  });
+
+  it('does not report explicit prohibitions as unsafe instructions', () => {
+    const result = runSecurityReview(
+      '.github/agents/example.agent.md',
+      'Never use `git add -A`; stage explicit paths instead.\n',
+    );
+
+    expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(false);
+  });
+
+  it('reports executable blanket staging commands', () => {
+    const result = runSecurityReview('.github/agents/example.agent.md', 'git add -A\n');
+
+    expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(true);
+  });
 });

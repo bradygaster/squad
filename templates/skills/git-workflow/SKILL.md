@@ -98,8 +98,11 @@ Each agent operates inside its worktree exactly like the single-issue workflow:
 ```bash
 cd ../squad-195
 
-# Work normally — commits, tests, pushes
-git add -A && git commit -m "fix: stamp bug (#195)"
+# Stage only the files changed for this issue, then inspect the commit contents
+git add -- path/to/intentionally-changed-file
+git diff --cached --stat
+git diff --cached
+git commit -m "fix: stamp bug (#195)"
 git push -u origin squad/195-fix-stamp-bug
 
 # Create PR targeting dev

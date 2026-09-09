@@ -193,17 +193,19 @@ const UNSAFE_GIT_EXCLUDED_PATHS = [
 ];
 
 const GIT_UNSAFE_PATTERNS = [
-  { pattern: /git\s+add\s+\./, label: 'git add .' },
-  { pattern: /git\s+add\s+-A/, label: 'git add -A' },
-  { pattern: /git\s+commit\s+-a/, label: 'git commit -a' },
-  { pattern: /git\s+push\s+--force/, label: 'git push --force' },
+  { pattern: /git\s+add\s+\.(?=\s|$|[;&|])/, label: 'git add .' },
+  { pattern: /git\s+add\s+-A(?=\s|$|[;&|])/, label: 'git add -A' },
+  { pattern: /git\s+commit\s+-a(?=\s|$|[;&|])/, label: 'git commit -a' },
+  { pattern: /git\s+push\s+--force(?!-with-lease)(?=\s|$|[;&|])/, label: 'git push --force' },
   { pattern: /--force-with-lease/, label: 'git push --force-with-lease' },
 ];
+const UNSAFE_GIT_PROHIBITION = /\b(?:never|do not|don't|avoid)\b|❌/i;
 
 for (const file of changedFiles) {
   if (UNSAFE_GIT_EXCLUDED_PATHS.some((p) => p.test(file))) continue;
   const added = addedByFile.get(file) || [];
   for (const { line, text } of added) {
+    if (UNSAFE_GIT_PROHIBITION.test(text)) continue;
     for (const { pattern, label } of GIT_UNSAFE_PATTERNS) {
       if (pattern.test(text)) {
         findings.push({
