@@ -542,15 +542,19 @@ When you run `/squad cast`, the workflow follows these steps:
    project structure
 3. **Team composition** — selects roles (4–7 agents: a Lead, specialists, and
    at least one quality role)
-4. **Naming** — uses descriptive role-based names by default (Lead, Frontend,
-   Backend, Tester). If you request a themed universe in your brief, Squad picks
-   character names from that universe instead — any universe works, not just the
-   15 built-in ones.
+4. **Naming** — derives one canonical functional identity per specialist: a
+   two-to-four-word title phrase ending in a supported functional head. Open
+   repository-domain qualifiers require exact-token evidence from the immutable
+   pre-Cast commit; only `Technical` and `Quality` are evidence-free structural
+   modifiers. Built-in support agents keep their fixed identities.
 5. **Scaffolding** — replaces the disposable activation scaffold with the final
    charters, routing, registry, and a compact self-contained GH-AW coordinator
-6. **Deterministic validation** — parses the final coordinator and team, checks
-   every local path against the exact-case Cast payload/tree, and verifies
-   registry, routing, charter, and generated-capability agreement
+6. **Deterministic validation** — parses the schema-v2 payload (`paths` plus
+   structured role specifications), checks every local path against the
+   exact-case Cast tree, verifies registry/routing/charter/capability agreement,
+   and resolves every repository qualifier with `git show` from the trusted
+   workflow-context commit. Working-tree-only, generated, dependency, build,
+   and `.squad/**` evidence is rejected.
 7. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
    team for review; a failed validation posts recovery guidance instead
 
@@ -561,10 +565,12 @@ workflow-created branch; when the PR shows `action_required`, approve that
 workflow run from the checks view and wait for it to finish. Merge the Cast PR
 only after its generated files, review, and repository checks are complete.
 
-The validator runs in the agent workspace immediately before the built-in
-safe-output request. gh-aw does not provide an independent post-agent hook that
-can conditionally authorize PR creation, so this is deterministic pre-output
-enforcement rather than a separate post-agent gate.
+The agent runs the validator immediately before requesting safe output. The
+automatic Cast workflow then independently reruns the hash-pinned validator in
+a post-agent machine gate and removes every pull-request output and patch before
+artifact upload unless the validator emits the exact authorization line. The
+trusted commit comes from workflow context (the merged bootstrap activation
+commit for automatic Cast), never from payload-authored data.
 
 ### The casting brief
 
@@ -638,45 +644,19 @@ merged, you can `@squad` in Copilot Chat to talk to your team.
 
 ---
 
-## Naming modes
+## Canonical functional identities
 
-Squad supports three naming conventions for your team:
+GH-AW Cast gives each non-built-in specialist one canonical functional identity,
+such as `Technical Lead`, `Payments Integration Engineer`, or `Dotnet
+Modernization`. The phrase is two to four words, at most 48 characters, and its
+last word is a supported functional head.
 
-### Descriptive (default)
-
-When you don't request a themed universe, agents get short functional names:
-Lead, Frontend, Backend, Tester, Security, Docs, etc. This is the default.
-
-### Built-in universes
-
-Squad includes 15 pre-built fictional universes (The Usual Suspects, Star Wars,
-Futurama, Marvel, etc.) with pre-vetted character names. If you ask for themed
-names without specifying a universe, Squad auto-selects the best fit based on
-your team size and project type.
-
-### Custom universes
-
-You can request **any universe** — it doesn't have to be in the built-in list.
-Just say so in your casting brief or slash command:
-
-```
-/squad cast use Doctor Who characters
-```
-
-Squad allocates character names from its knowledge of the source material.
-Spoiler-safety rules still apply (names use early introductions, avoiding
-fate-revealing titles or epithets).
-
-### Re-casting with a different naming mode
-
-You can switch naming modes at any time by re-casting:
-
-```
-/squad cast switch to Firefly universe
-/squad cast use descriptive names instead
-```
-
-All agents are renamed and their files updated accordingly.
+Repository-domain qualifiers are open-ended, but every qualifier must have
+immutable exact-token evidence in an allowed repository file at the pre-Cast
+commit. `Technical` and `Quality` are the only evidence-free structural
+modifiers. The same canonical phrase is used for the registry persistent name,
+Members Name and Role, routing target, charter heading, and lowercase kebab
+folder/ID. GH-AW Cast does not add aliases, personas, or themed character names.
 
 ---
 

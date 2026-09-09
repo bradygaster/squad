@@ -10,7 +10,6 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 
@@ -24,6 +23,11 @@ const GH_AW_INSTALL_HINT =
 afterAll(() => {
   rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
 });
+
+function temporaryWorkspace(prefix: string): string {
+  mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
+  return mkdtempSync(join(TEST_WORKSPACES_DIR, prefix));
+}
 
 interface PostStep {
   name?: string;
@@ -63,7 +67,7 @@ interface GateRun {
  * assertions, and end-to-end behavior still needs a live pilot run.
  */
 function runGate(step: PostStep, overrides: Record<string, string>): GateRun {
-  const scriptPath = join(mkdtempSync(join(tmpdir(), 'squad-gate-script-')), 'gate.sh');
+  const scriptPath = join(temporaryWorkspace('script-'), 'gate.sh');
   writeFileSync(scriptPath, step.run ?? '');
   const env = { ...process.env, ...(step.env ?? {}), ...overrides };
   try {
@@ -88,7 +92,7 @@ interface CastSandbox {
 }
 
 function castSandbox(items: unknown[], validatorBody: string | null): CastSandbox {
-  const base = mkdtempSync(join(tmpdir(), 'squad-cast-gate-'));
+  const base = temporaryWorkspace('cast-');
   const workspace = join(base, 'workspace');
   const patchDir = join(base, 'gh-aw');
   const runnerTemp = join(base, 'runner-temp');
@@ -219,6 +223,9 @@ describe('Cast validation is enforced by the runner, not by the prompt', () => {
   it('provisions the validator resource and runner the standalone workflow needs', () => {
     const front = frontmatter('workflows/squad-cast.md');
     expect(front.resources).toContain('shared/squad-cast-validator.mjs');
+    expect(front.env).toEqual({
+      SQUAD_CAST_TRUSTED_SHA: '${{ github.event.pull_request.merge_commit_sha }}',
+    });
     for (const id of ['scribe', 'ralph', 'rai', 'fact-checker']) {
       expect(front.resources).toContain(`shared/builtins/${id}-charter.md`);
     }
@@ -236,7 +243,7 @@ interface OnboardingSandbox {
 }
 
 function onboardingSandbox(items: unknown[], ghIssuesJson: string | null): OnboardingSandbox {
-  const base = mkdtempSync(join(tmpdir(), 'squad-onboarding-gate-'));
+  const base = temporaryWorkspace('onboarding-');
   const binDir = join(base, 'bin');
   const runnerTemp = join(base, 'runner-temp');
   mkdirSync(binDir, { recursive: true });

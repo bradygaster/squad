@@ -1505,8 +1505,11 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(normalizedRunnerStep).toContain(
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
+    expect(normalizedRunnerStep).toContain(
+      '--trusted-sha "${SQUAD_CAST_TRUSTED_SHA:?}"',
+    );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="d6687c02bb988a15be47a66fd3fe2c6848a81f13c9618e15c84e2c47123c6ec6"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):
@@ -2755,30 +2758,26 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
   });
 });
 
-describe('gh-aw: Cast naming-mode contract (#1907)', () => {
+describe('gh-aw: Cast canonical identity contract (#2009)', () => {
   const squadContent = readText(SQUAD_WORKFLOW);
   const cast = squadContent.match(
     /## skill: `squad-cast`\n[\s\S]*?(?=\n## skill:|$)/,
   )?.[0] ?? '';
 
-  it('defaults an unqualified Cast request to descriptive role-based names', () => {
-    expect(cast).toMatch(/No themed naming request.*descriptive mode/s);
-    expect(cast).toContain('short, unique functional names derived from roles');
-    expect(cast).toMatch(/every registry entry.*`universe`.*`"descriptive"`/s);
-    expect(cast).toMatch(/descriptive naming.*never invent.*fictional universe/s);
-    expect(cast).not.toContain('assign character names from a fictional universe');
+  it('derives every specialist surface from one canonical functional identity', () => {
+    expect(cast).toContain('Use canonical functional identities');
+    expect(cast).toMatch(/two-to-four-word title phrase.*at most 48 characters/s);
+    expect(cast).toMatch(/registry.*Members Name and Role.*routing target.*charter heading/s);
+    expect(cast).toContain('Do not add aliases, personas, codenames');
+    expect(cast).toContain('"universe": "descriptive"');
   });
 
-  it('uses an explicitly requested built-in or custom universe', () => {
-    expect(cast).toMatch(/Explicit built-in or custom universe request.*requested universe/s);
-    expect(cast).toMatch(/custom universe.*spoiler-safety rules/s);
-  });
-
-  it('auto-selects a built-in universe only for themed names with no universe', () => {
-    expect(cast).toMatch(
-      /Themed names requested without a universe.*auto-select.*built-in universe/s,
-    );
-    expect(cast).toMatch(/capacity.*shape.*fit table/s);
+  it('requires immutable evidence for open qualifiers and closes structural modifiers', () => {
+    expect(cast).toContain('Unknown domain qualifiers are allowed only');
+    expect(cast).toContain('`Technical` and `Quality` are the only evidence-free');
+    expect(cast).toContain('exact token');
+    expect(cast).toContain('trusted workflow-context commit');
+    expect(cast).toContain('never invent or mention\na fictional universe');
   });
 });
 
@@ -2852,6 +2851,9 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
       expect(cast).toContain(artifact);
     }
     expect(cast).toContain('only the concrete `.squad/agents/{selected-id}/charter.md`');
+    expect(cast).toContain('schema-v2 payload');
+    expect(cast).toMatch(/exactly `schema_version`, `paths`, and\s+`roles`/);
+    expect(cast).toContain('Never include a\nsource or trusted SHA in the payload');
   });
 
   it('explicitly excludes activation-bootstrap templates, automation, and default agents', () => {

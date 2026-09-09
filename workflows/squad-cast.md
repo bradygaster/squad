@@ -12,6 +12,10 @@ permissions:
   issues: read
   pull-requests: read
   copilot-requests: write
+env:
+  # pull_request_target/closed runs on the base repository. For a merged
+  # bootstrap PR, merge_commit_sha is the immutable post-merge activation tree.
+  SQUAD_CAST_TRUSTED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
 checkout:
   fetch-depth: 0
 concurrency:
@@ -89,7 +93,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="d6687c02bb988a15be47a66fd3fe2c6848a81f13c9618e15c84e2c47123c6ec6"
+      validator_expected_sha256="6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -116,6 +120,7 @@ pre-agent-steps:
       node "$validator_script" \
         --root "$PWD" \
         --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json" \
+        --trusted-sha "${SQUAD_CAST_TRUSTED_SHA:?}" \
         > "$validator_output" 2> "$stderr_file"
       status=$?
       if [ "$status" -ne 0 ]; then
@@ -320,18 +325,25 @@ When the guard passes, analyze the repository before generating files:
 - relevant current technical information using `web-fetch` only when the
   repository network policy permits it.
 
-Choose a compact team of descriptive functional names only. For every selected
-specialist, the registry `persistent_name`, visible Members-table name, and
-declared role must exactly match; the charter heading must repeat that exact
-name and role, and `.squad/agents/{id}/` must use the exact lowercase kebab-case slug
-of the name. Roles must contain two to four words and end in a functional
-role head such as `Engineer`, `Specialist`, `Lead`, or `Integration`; repository
-domain qualifiers before that head are open-ended. For example,
-`Payments Integration Engineer` / `payments-integration-engineer` is valid;
-`Nia` with role `Nia Technical Lead`, or any other identity-contaminated
-human/fictional-style name is invalid even when all surfaces are synchronized.
-Every active role must be justified by concrete repository evidence in the PR
-body.
+Choose a compact team of canonical functional identities only. Each identity is
+a two-to-four-word title phrase (maximum 48 characters) made from zero or more
+repository-domain qualifiers followed by one supported functional head such as
+`Engineer`, `Specialist`, `Lead`, `Integration`, or `Modernization`. `Technical`
+and `Quality` are the only evidence-free structural modifiers. Every other
+qualifier is open-ended but must occur as an exact token in an allowed file at
+the trusted activation commit; working-tree content does not count.
+
+For every selected specialist, derive every surface exactly from that canonical
+phrase: registry `persistent_name`, visible Members-table Name and Role, routing
+target, and charter heading identity/role all equal the phrase; the registry ID
+and `.squad/agents/{id}/` folder equal its lowercase kebab slug. Do not add an
+alias, persona, codename, display-name override, or other identity token.
+`Payments Integration Engineer`, `Falcon Firmware Engineer`, and `Ledger
+Reconciliation Specialist` are valid only when every non-structural qualifier
+has immutable repository evidence. `Technical Lead` and `Quality Engineer` need
+no qualifier evidence. A synchronized `Nia Engineer`, `Boone Specialist`, or
+`Priya Integration` is invalid without immutable evidence for that qualifier.
+Every active role and its evidence must also be explained in the PR body.
 Represent the current stack and any clearly evidenced modern-stack migration
 or integration need. Do not add generic filler or roles unsupported by the
 repository. Keep the deterministic four built-in support agents separate from
@@ -345,6 +357,37 @@ Generate the final Cast tree according to the existing Cast contract in
 materialized under `.squad/agents/{fact-checker,rai,ralph,scribe}/charter.md`
 without editing them, and build an explicit concrete payload file at
 `.github/workflows/squad-cast-payload.json`.
+
+The payload is schema v2 and contains exactly `schema_version`, `paths`, and
+`roles`. Set `schema_version` to `2`; set `paths` to the concrete Cast allowlist;
+and add one role object per non-built-in specialist:
+
+```json
+{
+  "canonical": "Payments Integration Engineer",
+  "head": "Engineer",
+  "qualifiers": [
+    {
+      "token": "Payments",
+      "kind": "repository",
+      "evidence": { "path": "src/payments/client.ts", "match": "payments" }
+    },
+    {
+      "token": "Integration",
+      "kind": "repository",
+      "evidence": { "path": "docs/integration.md", "match": "Integration" }
+    }
+  ]
+}
+```
+
+Use `{ "token": "Technical", "kind": "structural" }` or the corresponding
+`Quality` object only for those two closed structural modifiers. Evidence paths
+must be repository-relative POSIX paths and matches must be the exact spelling
+found at the trusted commit. Never put a source SHA in the payload: the runner
+supplies the trusted activation SHA from workflow context. Do not use `.squad/**`,
+generated workflow/agent/artifact files, dependency trees, or build output as
+evidence.
 
 The deterministic validator is mandatory. Run exactly:
 

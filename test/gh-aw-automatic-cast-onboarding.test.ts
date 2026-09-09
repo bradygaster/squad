@@ -47,9 +47,11 @@ describe('automatic Cast and onboarding workflows', () => {
     expect(CAST).toContain('max: 1');
     expect(CAST).toContain('run-squad-cast-validator');
     expect(CAST).toContain('Cast validation passed.');
-    expect(CAST).toContain('registry `persistent_name`, visible Members-table name');
-    expect(CAST).toContain('exact lowercase kebab-case slug');
-    expect(CAST).toContain('human/fictional-style name is invalid');
+    expect(CAST).toContain('registry `persistent_name`, visible Members-table Name and Role');
+    expect(CAST).toContain('lowercase kebab slug');
+    expect(CAST).toContain('working-tree content does not count');
+    expect(CAST).toContain('Never put a source SHA in the payload');
+    expect(CAST).toContain('SQUAD_CAST_TRUSTED_SHA');
     expect(ONBOARDING).toContain('deduplicate-by-title: true');
     expect(ONBOARDING).toContain('required-title-prefix: "[Squad] Your repository team is ready"');
     expect(ONBOARDING).toMatch(

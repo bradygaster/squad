@@ -725,18 +725,13 @@ describe('automated package publication', () => {
     expect(ghAwGuide).not.toContain('`create-issue` safe-output has a max of 75');
   });
 
-  it('keeps the Cast prompt aligned with the documented naming modes', () => {
-    expect(ghAwGuide).toContain('### Descriptive (default)');
-    expect(ghAwGuide).toContain('When you don\'t request a themed universe');
-    expect(ghAwGuide).toMatch(/themed\s+names without specifying a universe/);
-    expect(ghAwGuide).toContain('You can request **any universe**');
+  it('keeps the Cast prompt aligned with canonical functional identities', () => {
+    expect(ghAwGuide).toContain('## Canonical functional identities');
+    expect(ghAwGuide).toContain('immutable exact-token evidence');
+    expect(ghAwGuide).toContain('does not add aliases, personas, or themed character names');
 
-    expect(squadWorkflow).toMatch(/No themed naming request.*descriptive mode/s);
-    expect(squadWorkflow).toMatch(
-      /Explicit built-in or custom universe request.*requested universe/s,
-    );
-    expect(squadWorkflow).toMatch(
-      /Themed names requested without a universe.*auto-select.*built-in universe/s,
-    );
+    expect(squadWorkflow).toContain('Use canonical functional identities');
+    expect(squadWorkflow).toContain('trusted workflow-context commit');
+    expect(squadWorkflow).toContain('Do not add aliases, personas, codenames');
   });
 });

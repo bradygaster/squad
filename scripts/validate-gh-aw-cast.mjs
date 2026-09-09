@@ -6,6 +6,7 @@ import {
   readdirSync,
   statSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -50,7 +51,16 @@ const FORBIDDEN_REFERENCE_PATTERNS = [
 ];
 const BARE_INTERNAL_PATH_PATTERN =
   /(?:^|[\s`"'(])((?:packages\/[^/\s`"')]+\/src|src\/(?:agents|casting|cli|client|config|coordinator|hooks|runtime|tools))\/[^\s`"')]+)/gm;
-
+const PAYLOAD_SCHEMA_VERSION = 2;
+const STRUCTURAL_QUALIFIERS = new Set(['technical', 'quality']);
+const EVIDENCE_EXCLUDED_PATHS = [
+  /^\.squad(?:\/|$)/,
+  /^\.github\/(?:aw|agents|workflows)(?:\/|$)/,
+  /(?:^|\/)(?:node_modules|vendor|third_party|third-party|\.venv|venv|__pycache__)(?:\/|$)/,
+  /(?:^|\/)(?:dist|build|out|target|coverage|bin|obj|artifacts?)(?:\/|$)/,
+  /(?:^|\/).*\.lock\.ya?ml$/,
+  /^meet-the-squad\.md$/,
+];
 
 function parseArgs(argv) {
   const args = new Map();
@@ -58,16 +68,17 @@ function parseArgs(argv) {
     const key = argv[index];
     const value = argv[index + 1];
     if (!key?.startsWith('--') || value === undefined) {
-      throw new Error('Usage: validate-gh-aw-cast.mjs --root <path> --payload <json-file>');
+      throw new Error('Usage: validate-gh-aw-cast.mjs --root <path> --payload <json-file> --trusted-sha <commit>');
     }
     args.set(key.slice(2), value);
   }
-  if (!args.has('root') || !args.has('payload')) {
-    throw new Error('Usage: validate-gh-aw-cast.mjs --root <path> --payload <json-file>');
+  if (!args.has('root') || !args.has('payload') || !args.has('trusted-sha')) {
+    throw new Error('Usage: validate-gh-aw-cast.mjs --root <path> --payload <json-file> --trusted-sha <commit>');
   }
   return {
     root: resolve(args.get('root')),
     payloadPath: resolve(args.get('payload')),
+    trustedSha: args.get('trusted-sha'),
   };
 }
 
@@ -209,22 +220,181 @@ const FUNCTIONAL_ROLE_HEADS = new Set([
   'integration', 'migration', 'modernization', 'observability', 'operations',
   'quality', 'reliability', 'security', 'support', 'testing',
 ]);
-const SELF_CONTAINED_ROLE_HEADS = [
-  ['technical', 'lead'],
-];
-
 function hasFunctionalRoleStructure(tokens) {
-  if (
-    tokens.length < 2
-    || tokens.length > 4
-    || !FUNCTIONAL_ROLE_HEADS.has(tokens.at(-1))
-  ) {
+  return tokens.length >= 2
+    && tokens.length <= 4
+    && FUNCTIONAL_ROLE_HEADS.has(tokens.at(-1));
+}
+
+function exactObjectKeys(value, expected) {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort());
+}
+
+function isCanonicalTitleToken(token) {
+  return /^[A-Z][a-z0-9]*$/.test(token) || /^[A-Z0-9]{2,}$/.test(token);
+}
+
+function validateTrustedSha(root, trustedSha, errors) {
+  if (typeof trustedSha !== 'string' || !/^[a-f0-9]{40,64}$/i.test(trustedSha)) {
+    errors.push('evidence: trusted SHA must be a full immutable commit object ID supplied by the runner');
     return false;
   }
-  return !SELF_CONTAINED_ROLE_HEADS.some((head) => (
-    tokens.length > head.length
-    && head.every((token, index) => token === tokens[tokens.length - head.length + index])
-  ));
+  try {
+    execFileSync('git', ['-C', root, 'cat-file', '-e', `${trustedSha}^{commit}`], {
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    errors.push(`evidence: trusted SHA ${trustedSha} is not an available commit`);
+    return false;
+  }
+}
+
+function isExcludedEvidencePath(path) {
+  return EVIDENCE_EXCLUDED_PATHS.some((pattern) => pattern.test(path));
+}
+
+function readTrustedEvidence(root, trustedSha, path, cache, errors) {
+  const key = `${trustedSha}:${path}`;
+  if (cache.has(key)) return cache.get(key);
+  let content = null;
+  try {
+    content = execFileSync('git', ['-C', root, 'show', `${trustedSha}:${path}`], {
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).replace(/\r\n/g, '\n');
+  } catch {
+    errors.push(`evidence: ${path} is absent or unreadable at trusted commit ${trustedSha}`);
+  }
+  cache.set(key, content);
+  return content;
+}
+
+function validateRoleSpecifications(payloadRoles, active, root, trustedSha, errors) {
+  if (!Array.isArray(payloadRoles)) {
+    errors.push('payload: roles must be an array');
+    return;
+  }
+
+  const activeByName = new Map(active.map((member) => [member.name, member]));
+  const seen = new Set();
+  const evidenceCache = new Map();
+  const trustedShaValid = validateTrustedSha(root, trustedSha, errors);
+
+  for (const [index, role] of payloadRoles.entries()) {
+    const label = `payload: roles[${index}]`;
+    if (!exactObjectKeys(role, ['canonical', 'head', 'qualifiers'])) {
+      errors.push(`${label} must contain exactly canonical, head, and qualifiers`);
+      continue;
+    }
+    if (
+      typeof role.canonical !== 'string'
+      || typeof role.head !== 'string'
+      || !Array.isArray(role.qualifiers)
+    ) {
+      errors.push(`${label} has invalid field types`);
+      continue;
+    }
+
+    const canonicalWords = role.canonical.split(' ');
+    const tokens = functionalTokens(role.canonical);
+    if (
+      canonicalWords.length !== tokens.length
+      || canonicalWords.some((token) => !isCanonicalTitleToken(token))
+      || role.canonical.length > 48
+      || !hasFunctionalRoleStructure(tokens)
+    ) {
+      errors.push(
+        `${label} canonical identity "${role.canonical}" must be a two-to-four-word title phrase, `
+        + 'at most 48 characters, ending in a supported functional head',
+      );
+    }
+    if (role.head !== canonicalWords.at(-1) || !FUNCTIONAL_ROLE_HEADS.has(role.head.toLowerCase())) {
+      errors.push(`${label} head must exactly equal the supported final word of canonical`);
+    }
+    if (role.qualifiers.length !== Math.max(0, canonicalWords.length - 1)) {
+      errors.push(`${label} must specify every canonical qualifier exactly once and in order`);
+    }
+    if (!activeByName.has(role.canonical)) {
+      errors.push(`${label} canonical identity "${role.canonical}" is not an active specialist`);
+    }
+    if (seen.has(role.canonical)) {
+      errors.push(`${label} duplicates canonical identity "${role.canonical}"`);
+    }
+    seen.add(role.canonical);
+
+    for (const [qualifierIndex, qualifier] of role.qualifiers.entries()) {
+      const qualifierLabel = `${label}.qualifiers[${qualifierIndex}]`;
+      const expectedToken = canonicalWords[qualifierIndex];
+      if (!qualifier || typeof qualifier !== 'object' || Array.isArray(qualifier)) {
+        errors.push(`${qualifierLabel} must be an object`);
+        continue;
+      }
+      if (qualifier.token !== expectedToken) {
+        errors.push(`${qualifierLabel} token must exactly equal canonical qualifier "${expectedToken}"`);
+      }
+
+      if (qualifier.kind === 'structural') {
+        if (!exactObjectKeys(qualifier, ['token', 'kind'])) {
+          errors.push(`${qualifierLabel} structural qualifier must contain exactly token and kind`);
+        }
+        if (!STRUCTURAL_QUALIFIERS.has(String(qualifier.token).toLowerCase())) {
+          errors.push(`${qualifierLabel} "${qualifier.token}" is not an evidence-free structural modifier`);
+        }
+        continue;
+      }
+
+      if (qualifier.kind !== 'repository' || !exactObjectKeys(qualifier, ['token', 'kind', 'evidence'])) {
+        errors.push(
+          `${qualifierLabel} must be a repository qualifier with immutable evidence, `
+          + 'or a supported structural qualifier',
+        );
+        continue;
+      }
+      if (!exactObjectKeys(qualifier.evidence, ['path', 'match'])) {
+        errors.push(`${qualifierLabel}.evidence must contain exactly path and match`);
+        continue;
+      }
+      const evidencePath = normalizePayloadPath(qualifier.evidence.path);
+      const match = qualifier.evidence.match;
+      if (!evidencePath || typeof match !== 'string' || match.length === 0) {
+        errors.push(`${qualifierLabel}.evidence must use a concrete POSIX path and non-empty exact match`);
+        continue;
+      }
+      if (isExcludedEvidencePath(evidencePath)) {
+        errors.push(`${qualifierLabel}.evidence path ${evidencePath} is excluded from Cast evidence`);
+        continue;
+      }
+      if (match.toLowerCase() !== String(qualifier.token).toLowerCase()) {
+        errors.push(`${qualifierLabel}.evidence match must be the exact repository spelling of token "${qualifier.token}"`);
+        continue;
+      }
+      if (!trustedShaValid) continue;
+      const content = readTrustedEvidence(root, trustedSha, evidencePath, evidenceCache, errors);
+      if (content === null) continue;
+      const escaped = match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const tokenBoundary = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u');
+      if (!tokenBoundary.test(content)) {
+        errors.push(
+          `${qualifierLabel}.evidence exact token "${match}" was not found with token boundaries `
+          + `in ${evidencePath} at trusted commit ${trustedSha}`,
+        );
+      }
+    }
+  }
+
+  for (const member of active) {
+    if (!seen.has(member.name)) {
+      errors.push(`payload: roles is missing active specialist "${member.name}"`);
+    }
+  }
+  if (payloadRoles.length !== active.length) {
+    errors.push(`payload: roles must contain exactly one specification for each of ${active.length} active specialists`);
+  }
 }
 
 function parseSpecialistRoster(section, errors) {
@@ -376,9 +546,9 @@ function parseRegistry(root, errors) {
     errors.push('registry: top-level agents object is required');
     return [];
   }
-  const active = Object.entries(registry.agents)
+  const activeEntries = Object.entries(registry.agents)
     .filter(([, value]) => value?.status === 'active')
-    .map(([id, value]) => ({ id, name: value.persistent_name }));
+  const active = activeEntries.map(([id, value]) => ({ id, name: value.persistent_name }));
   if (active.length === 0) {
     errors.push('registry: at least one active member is required');
   }
@@ -388,6 +558,16 @@ function parseRegistry(root, errors) {
     }
     if (REQUIRED_BUILTIN_IDS.includes(member.id)) {
       errors.push(`registry: built-in id "${member.id}" must not be an active specialist registry entry`);
+    }
+  }
+  for (const [id, value] of activeEntries) {
+    if (value.universe !== 'descriptive') {
+      errors.push(`registry: active specialist "${id}" must use canonical descriptive universe`);
+    }
+    for (const forbidden of ['alias', 'persona', 'display_name', 'identity', 'character_name']) {
+      if (Object.hasOwn(value, forbidden)) {
+        errors.push(`registry: active specialist "${id}" must not define additional identity field "${forbidden}"`);
+      }
     }
   }
   return active;
@@ -444,7 +624,7 @@ function validateCapabilities(coordinator, active, routingRows, errors) {
   }
 }
 
-export function validateCastTree({ root, payloadPath }) {
+export function validateCastTree({ root, payloadPath, trustedSha }) {
   const errors = [];
   let payloadValue;
   try {
@@ -452,12 +632,18 @@ export function validateCastTree({ root, payloadPath }) {
   } catch (error) {
     return [`payload: invalid JSON (${error.message})`];
   }
-  if (!Array.isArray(payloadValue)) {
-    return ['payload: expected a JSON array of concrete repository-relative paths'];
+  if (!exactObjectKeys(payloadValue, ['schema_version', 'paths', 'roles'])) {
+    return ['payload: schema v2 object must contain exactly schema_version, paths, and roles'];
+  }
+  if (payloadValue.schema_version !== PAYLOAD_SCHEMA_VERSION) {
+    errors.push(`payload: schema_version must equal ${PAYLOAD_SCHEMA_VERSION}`);
+  }
+  if (!Array.isArray(payloadValue.paths)) {
+    return ['payload: paths must be an array of concrete repository-relative paths'];
   }
 
   const payload = [];
-  for (const value of payloadValue) {
+  for (const value of payloadValue.paths) {
     const normalized = normalizePayloadPath(value);
     if (!normalized) {
       errors.push(`payload: invalid, non-concrete, or non-POSIX path ${JSON.stringify(value)}`);
@@ -474,6 +660,7 @@ export function validateCastTree({ root, payloadPath }) {
   }
 
   const active = parseRegistry(root, errors);
+  validateRoleSpecifications(payloadValue.roles, active, root, trustedSha, errors);
   const activeNames = new Set(active.map(({ name }) => name));
   const activeCharters = active.map(({ id }) => `.squad/agents/${id}/charter.md`);
   const expectedPayload = new Set([...CORE_PAYLOAD, ...activeCharters, ...REQUIRED_BUILTIN_CHARTERS]);

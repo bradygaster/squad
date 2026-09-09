@@ -1,7 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { compileFunction, constants as vmConstants } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -11,6 +10,7 @@ const validator = join(process.cwd(), 'scripts', 'validate-gh-aw-cast.mjs');
 const resourcePath = join(process.cwd(), 'workflows', 'shared', 'squad-cast-validator.mjs');
 const installedResourceRelativePath = '.github/workflows/shared/squad-cast-validator.mjs';
 const workflowPath = join(process.cwd(), 'workflows', 'squad.md');
+const testWorkspacesDirectory = resolve(process.cwd(), '.squad-gh-aw-cast-validator');
 const workspaces: string[] = [];
 
 const active = [
@@ -37,6 +37,31 @@ function write(root: string, path: string, content: string | Buffer): void {
   const fullPath = join(root, ...path.split('/'));
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, content, 'utf8');
+}
+
+function git(root: string, args: string[]): string {
+  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+function roleSpecification(member: typeof active[number]) {
+  const words = member.name.split(' ');
+  return {
+    canonical: member.name,
+    head: words.at(-1),
+    qualifiers: words.slice(0, -1).map((token) =>
+      ['Technical', 'Quality'].includes(token)
+        ? { token, kind: 'structural' }
+        : {
+            token,
+            kind: 'repository',
+            evidence: { path: 'README.md', match: token },
+          }
+    ),
+  };
 }
 
 function teamMarkdown(members = active): string {
@@ -147,11 +172,29 @@ Architecture, Implementation, Quality
 `;
 }
 
-function createFixture(members = active): { root: string; payload: string; runnerTemp: string } {
-  const root = mkdtempSync(join(tmpdir(), 'gh-aw-cast-validator-'));
+function createFixture(members = active, immutableEvidenceTokens?: string[]): {
+  root: string;
+  payload: string;
+  runnerTemp: string;
+  trustedSha: string;
+} {
+  mkdirSync(testWorkspacesDirectory, { recursive: true });
+  const root = mkdtempSync(join(testWorkspacesDirectory, 'fixture-'));
   workspaces.push(root);
-  const runnerTemp = mkdtempSync(join(tmpdir(), 'gh-aw-cast-runner-temp-'));
+  const runnerTemp = mkdtempSync(join(testWorkspacesDirectory, 'runner-'));
   workspaces.push(runnerTemp);
+
+  git(root, ['init', '--quiet']);
+  git(root, ['config', 'user.name', 'Cast Fixture']);
+  git(root, ['config', 'user.email', 'cast-fixture@example.invalid']);
+  const evidenceTokens = immutableEvidenceTokens ?? members.flatMap(({ name }) =>
+    name.split(' ').slice(0, -1).filter((token) => !['Technical', 'Quality'].includes(token))
+  );
+  write(root, 'README.md', `Repository evidence: ${evidenceTokens.join(' ')}\n`);
+  git(root, ['add', '--', 'README.md']);
+  git(root, ['commit', '--quiet', '-m', 'Add immutable repository evidence']);
+  const trustedSha = git(root, ['rev-parse', 'HEAD']);
+
   write(root, '.squad/team.md', teamMarkdown(members));
   write(root, '.squad/routing.md', routingMarkdown(members));
   write(root, '.squad/casting/registry.json', JSON.stringify({
@@ -188,12 +231,39 @@ function createFixture(members = active): { root: string; payload: string; runne
     '.github/agents/squad.agent.md',
     'meet-the-squad.md',
   ];
-  writeFileSync(payload, JSON.stringify(corePayload), 'utf8');
-  return { root, payload, runnerTemp };
+  writeFileSync(payload, JSON.stringify({
+    schema_version: 2,
+    paths: corePayload,
+    roles: members.map(roleSpecification),
+  }), 'utf8');
+  return { root, payload, runnerTemp, trustedSha };
 }
 
-function validate(root: string, payload: string) {
-  return spawnSync(process.execPath, [validator, '--root', root, '--payload', payload], {
+interface CastPayload {
+  schema_version: number;
+  paths: string[];
+  roles: Array<{
+    canonical: string;
+    head: string;
+    qualifiers: Array<Record<string, unknown>>;
+  }>;
+}
+
+function readPayload(fixture: ReturnType<typeof createFixture>): CastPayload {
+  return JSON.parse(readFileSync(fixture.payload, 'utf8')) as CastPayload;
+}
+
+function writePayload(fixture: ReturnType<typeof createFixture>, payload: unknown): void {
+  writeFileSync(fixture.payload, JSON.stringify(payload), 'utf8');
+}
+
+function validate(root: string, payload: string, trustedSha: string) {
+  return spawnSync(process.execPath, [
+    validator,
+    '--root', root,
+    '--payload', payload,
+    '--trusted-sha', trustedSha,
+  ], {
     encoding: 'utf8',
   });
 }
@@ -280,6 +350,7 @@ function runValidatorCommand(
       ...process.env,
       GITHUB_WORKSPACE: fixture.root,
       RUNNER_TEMP: fixture.runnerTemp,
+      SQUAD_CAST_TRUSTED_SHA: fixture.trustedSha,
     },
   });
 }
@@ -300,7 +371,8 @@ function failureRecord(result: ReturnType<typeof runValidatorCommand>): {
 }
 
 async function runCastFailureJobOutput(outputContent: string): Promise<string[]> {
-  const root = mkdtempSync(join(tmpdir(), 'gh-aw-cast-failure-job-'));
+  mkdirSync(testWorkspacesDirectory, { recursive: true });
+  const root = mkdtempSync(join(testWorkspacesDirectory, 'failure-'));
   workspaces.push(root);
   const output = join(root, 'agent-output.json');
   writeFileSync(output, outputContent);
@@ -330,6 +402,7 @@ afterEach(() => {
   for (const workspace of workspaces.splice(0)) {
     rmSync(workspace, { recursive: true, force: true });
   }
+  rmSync(testWorkspacesDirectory, { recursive: true, force: true });
 });
 
 describe('GH-AW Cast final-tree validator', () => {
@@ -428,7 +501,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected d6687c02bb988a15be47a66fd3fe2c6848a81f13c9618e15c84e2c47123c6ec6, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -586,7 +659,7 @@ describe('GH-AW Cast final-tree validator', () => {
 
   it('accepts a self-contained descriptive Cast tree', () => {
     const fixture = createFixture();
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Cast validation passed');
   });
@@ -601,7 +674,7 @@ describe('GH-AW Cast final-tree validator', () => {
     ['outcome role', { id: 'api-contract-integration', name: 'API Contract Integration', role: 'API Contract Integration' }],
   ])('accepts Zava %s identifier', (_style, specialist) => {
     const fixture = createFixture([specialist, active[1], active[2]]);
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Cast validation passed');
   });
@@ -612,36 +685,158 @@ describe('GH-AW Cast final-tree validator', () => {
     { id: 'ledger-reconciliation-specialist', name: 'Ledger Reconciliation Specialist', role: 'Ledger Reconciliation Specialist' },
   ])('accepts unknown repository-domain identifier $name', (specialist) => {
     const fixture = createFixture([specialist, active[1], active[2]]);
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Cast validation passed');
   });
 
   it.each([
-    'Nia Technical Lead',
-    'Nia Engineer',
-    'Technical Lead Nia',
-  ])('rejects synchronized Nia identity with declared role "%s"', (role) => {
-    const synchronized = { id: 'nia', name: 'Nia', role };
-    const fixture = createFixture([synchronized, active[1], active[2]]);
-    const result = validate(fixture.root, fixture.payload);
+    { id: 'nia-engineer', name: 'Nia Engineer', role: 'Nia Engineer' },
+    { id: 'boone-specialist', name: 'Boone Specialist', role: 'Boone Specialist' },
+    { id: 'priya-integration', name: 'Priya Integration', role: 'Priya Integration' },
+  ])('rejects synchronized personal-looking identity $name without immutable evidence', (synchronized) => {
+    const fixture = createFixture([synchronized, active[1], active[2]], ['Application']);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('active specialist "Nia"');
-    expect(result.stderr).toMatch(/must exactly equal its short descriptive functional role/i);
+    expect(result.stderr).toContain(`exact token "${synchronized.name.split(' ')[0]}" was not found`);
     expect(result.stdout).not.toContain('Cast validation passed.');
   });
 
-  it('rejects a personal qualifier prefixed to the self-contained Technical Lead role', () => {
+  it('rejects Nia Technical Lead when Nia has no immutable evidence', () => {
     const synchronized = {
       id: 'nia-technical-lead',
       name: 'Nia Technical Lead',
       role: 'Nia Technical Lead',
     };
-    const fixture = createFixture([synchronized, active[1], active[2]]);
-    const result = validate(fixture.root, fixture.payload);
+    const fixture = createFixture([synchronized, active[1], active[2]], ['Application']);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('"Nia Technical Lead" must contain two to four words and end in a functional role head');
+    expect(result.stderr).toContain('exact token "Nia" was not found');
     expect(result.stdout).not.toContain('Cast validation passed.');
+  });
+
+  it('rejects fabricated qualifier evidence', () => {
+    const specialist = {
+      id: 'falcon-firmware-engineer',
+      name: 'Falcon Firmware Engineer',
+      role: 'Falcon Firmware Engineer',
+    };
+    const fixture = createFixture([specialist, active[1], active[2]], ['Firmware', 'Application']);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('exact token "Falcon" was not found');
+  });
+
+  it('rejects evidence from the wrong path or wrong case', () => {
+    const fixture = createFixture();
+    const payload = readPayload(fixture);
+    const evidence = payload.roles[1].qualifiers[0].evidence as { path: string; match: string };
+    evidence.path = 'readme.md';
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('readme.md is absent or unreadable at trusted commit');
+  });
+
+  it('rejects working-tree-only evidence', () => {
+    const specialist = { id: 'nia-engineer', name: 'Nia Engineer', role: 'Nia Engineer' };
+    const fixture = createFixture([specialist, active[1], active[2]], ['Application']);
+    write(fixture.root, 'working-only.md', 'Nia\n');
+    const payload = readPayload(fixture);
+    const evidence = payload.roles[0].qualifiers[0].evidence as { path: string; match: string };
+    evidence.path = 'working-only.md';
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('working-only.md is absent or unreadable at trusted commit');
+  });
+
+  it.each([
+    '.squad/evidence.md',
+    '.github/workflows/generated.yml',
+    'node_modules/vendor/index.js',
+    'dist/output.js',
+  ])('rejects excluded evidence path %s', (path) => {
+    const fixture = createFixture();
+    const payload = readPayload(fixture);
+    const evidence = payload.roles[1].qualifiers[0].evidence as { path: string; match: string };
+    evidence.path = path;
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`evidence path ${path} is excluded`);
+  });
+
+  it('rejects substring-only evidence matches', () => {
+    const specialist = {
+      id: 'falcon-firmware-engineer',
+      name: 'Falcon Firmware Engineer',
+      role: 'Falcon Firmware Engineer',
+    };
+    const fixture = createFixture(
+      [specialist, active[1], active[2]],
+      ['Falconry', 'Firmware', 'Application'],
+    );
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('exact token "Falcon" was not found with token boundaries');
+  });
+
+  it('rejects an unsupported functional head', () => {
+    const specialist = { id: 'payments-wizard', name: 'Payments Wizard', role: 'Payments Wizard' };
+    const fixture = createFixture([specialist, active[1], active[2]]);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('ending in a supported functional head');
+  });
+
+  it('rejects payload-authored source SHA spoofing', () => {
+    const fixture = createFixture();
+    const payload = {
+      ...readPayload(fixture),
+      trusted_sha: '0000000000000000000000000000000000000000',
+    };
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('schema v2 object must contain exactly');
+  });
+
+  it('rejects a runner-supplied SHA that is not an available commit', () => {
+    const fixture = createFixture();
+    const result = validate(
+      fixture.root,
+      fixture.payload,
+      '0000000000000000000000000000000000000000',
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('is not an available commit');
+  });
+
+  it('rejects additional alias identity fields in the active registry', () => {
+    const fixture = createFixture();
+    const registryPath = join(fixture.root, '.squad', 'casting', 'registry.json');
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as {
+      agents: Record<string, Record<string, unknown>>;
+    };
+    registry.agents['technical-lead'].alias = 'Nia';
+    writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('must not define additional identity field "alias"');
+  });
+
+  it('rejects a themed universe as an additional specialist identity channel', () => {
+    const fixture = createFixture();
+    const registryPath = join(fixture.root, '.squad', 'casting', 'registry.json');
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as {
+      agents: Record<string, Record<string, unknown>>;
+    };
+    registry.agents['technical-lead'].universe = 'Star Wars';
+    writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('must use canonical descriptive universe');
   });
 
   it.each(['Nia', 'Boone', 'Priya'])(
@@ -655,7 +850,7 @@ describe('GH-AW Cast final-tree validator', () => {
       registry.agents['technical-lead'].persistent_name = personalName;
       writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
 
-      const result = validate(fixture.root, fixture.payload);
+      const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`active specialist "${personalName}"`);
       expect(result.stderr).toMatch(/must exactly equal its short descriptive functional role/i);
@@ -673,7 +868,7 @@ describe('GH-AW Cast final-tree validator', () => {
     delete registry.agents['technical-lead'];
     writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
 
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(
       /specialist folder id "lead" must be the exact kebab-case slug "technical-lead"/i,
@@ -690,7 +885,7 @@ describe('GH-AW Cast final-tree validator', () => {
         '| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | Silent |\n\n## Built-in Support Agents',
       ),
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/must not list built-in agents as specialists/i);
     expect(result.stderr).toContain('Scribe');
@@ -699,18 +894,16 @@ describe('GH-AW Cast final-tree validator', () => {
   it('rejects a Cast tree missing a required built-in charter (materialized directory + payload)', () => {
     const fixture = createFixture();
     rmSync(join(fixture.root, '.squad', 'agents', 'rai'), { recursive: true, force: true });
-    const payloadWithoutRai = JSON.parse(readFileSync(fixture.payload, 'utf8')) as string[];
-    writeFileSync(
-      fixture.payload,
-      JSON.stringify(payloadWithoutRai.filter((path) => path !== '.squad/agents/rai/charter.md')),
-      'utf8',
-    );
+    const payloadWithoutRai = readPayload(fixture);
+    payloadWithoutRai.paths = payloadWithoutRai.paths
+      .filter((path) => path !== '.squad/agents/rai/charter.md');
+    writePayload(fixture, payloadWithoutRai);
     write(
       fixture.root,
       '.squad/team.md',
       teamMarkdown().replace('| Rai | Built-in | `.squad/agents/rai/charter.md` |\n', ''),
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/materialized agent directories must exactly match/i);
     expect(result.stderr).toMatch(/must reference exactly the four required built-in charters/i);
@@ -719,7 +912,7 @@ describe('GH-AW Cast final-tree validator', () => {
   it('rejects a Cast tree with an extra support agent beyond the four required built-ins', () => {
     const fixture = createFixture();
     write(fixture.root, '.squad/agents/watcher/charter.md', '# Watcher\n');
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/materialized agent directories must exactly match/i);
     expect(result.stderr).toContain('watcher');
@@ -732,7 +925,7 @@ describe('GH-AW Cast final-tree validator', () => {
       '.squad/agents/ralph/charter.md',
       `${builtinCanonicalContent('ralph').toString('utf8')}\n<!-- reinterpreted by the Cast agent -->\n`,
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(
       /builtin: \.squad\/agents\/ralph\/charter\.md is not byte-identical to the canonical resource \.github\/workflows\/shared\/builtins\/ralph-charter\.md/i,
@@ -742,7 +935,7 @@ describe('GH-AW Cast final-tree validator', () => {
   it('rejects a built-in charter with a trivial byte-level divergence (trailing newline) from the canonical resource', () => {
     const fixture = createFixture();
     write(fixture.root, '.squad/agents/scribe/charter.md', `${builtinCanonicalContent('scribe').toString('utf8')}\n`);
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/builtin: \.squad\/agents\/scribe\/charter\.md is not byte-identical/i);
   });
@@ -750,7 +943,7 @@ describe('GH-AW Cast final-tree validator', () => {
   it('rejects a Cast tree whose canonical built-in resource is missing from .github/workflows/shared/builtins', () => {
     const fixture = createFixture();
     rmSync(join(fixture.root, builtinCanonicalRelativePath, 'fact-checker-charter.md'), { force: true });
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(
       /builtin: canonical resource \.github\/workflows\/shared\/builtins\/fact-checker-charter\.md for "fact-checker" is missing or unreadable/i,
@@ -759,7 +952,7 @@ describe('GH-AW Cast final-tree validator', () => {
 
   it('accepts a built-in charter that is byte-identical to the canonical resource for all four built-ins', () => {
     const fixture = createFixture();
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status, result.stderr).toBe(0);
     for (const builtin of builtins) {
       expect(
@@ -779,7 +972,7 @@ describe('GH-AW Cast final-tree validator', () => {
         rai: { persistent_name: 'Rai', status: 'active', universe: 'descriptive' },
       },
     }));
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/built-in id "rai" must not be an active specialist registry entry/i);
   });
@@ -791,7 +984,7 @@ describe('GH-AW Cast final-tree validator', () => {
       '.squad/routing.md',
       `${routingMarkdown()}| Memory | Scribe | Session logging |\n`,
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/target "Scribe" is not an active registry persistent_name/i);
   });
@@ -806,20 +999,18 @@ describe('GH-AW Cast final-tree validator', () => {
         '### Available specialists\n\n| Agent | Role | Authority | Focus |\n| --- | --- | --- | --- |\n| Scribe | Session Logger | Assigned domain | Session Logger |\n',
       ),
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/capability block must not list built-in "scribe" as a specialist/i);
   });
 
   it('rejects a payload missing one of the four required built-in charter paths', () => {
     const fixture = createFixture();
-    const payloadWithoutFactChecker = JSON.parse(readFileSync(fixture.payload, 'utf8')) as string[];
-    writeFileSync(
-      fixture.payload,
-      JSON.stringify(payloadWithoutFactChecker.filter((path) => path !== '.squad/agents/fact-checker/charter.md')),
-      'utf8',
-    );
-    const result = validate(fixture.root, fixture.payload);
+    const payloadWithoutFactChecker = readPayload(fixture);
+    payloadWithoutFactChecker.paths = payloadWithoutFactChecker.paths
+      .filter((path) => path !== '.squad/agents/fact-checker/charter.md');
+    writePayload(fixture, payloadWithoutFactChecker);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('payload: missing active Cast path .squad/agents/fact-checker/charter.md');
   });
@@ -831,19 +1022,19 @@ describe('GH-AW Cast final-tree validator', () => {
       '.github/agents/squad.agent.md',
       `${coordinatorMarkdown()}\nRead \`.squad/templates/after-agent-reference.md\` before returning.\n`,
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/standalone template|absent from the explicit final payload/i);
   });
 
   it('rejects a payload path whose casing differs from the final tree', () => {
     const fixture = createFixture();
-    const payload = JSON.parse(readFileSync(fixture.payload, 'utf8')) as string[];
-    const wrongCasePayload = payload.map((path) =>
+    const payload = readPayload(fixture);
+    payload.paths = payload.paths.map((path) =>
       path === '.squad/team.md' ? '.squad/Team.md' : path
     );
-    writeFileSync(fixture.payload, JSON.stringify(wrongCasePayload), 'utf8');
-    const result = validate(fixture.root, fixture.payload);
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/exact Linux casing|unexpected path \.squad\/Team\.md/i);
   });
@@ -855,7 +1046,7 @@ describe('GH-AW Cast final-tree validator', () => {
       '.github/agents/squad.agent.md',
       `${coordinatorMarkdown()}\nAlso load \`.claude/agents/lead.md\` and \`packages/squad-cli/src/cli/core/coordinator.ts\`.\n`,
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/non-GH-AW client|internal source/i);
   });
@@ -867,7 +1058,7 @@ describe('GH-AW Cast final-tree validator', () => {
       '.github/agents/squad.agent.md',
       `${coordinatorMarkdown()}\nExample: route an auth issue with the label squad:ripley.\n`,
     );
-    const result = validate(fixture.root, fixture.payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/fictional or inactive sample label squad:ripley/i);
   });

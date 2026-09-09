@@ -31,6 +31,9 @@ permissions:
   copilot-requests: write
   issues: read
   pull-requests: read
+env:
+  # The workflow-context commit is captured before the Cast agent changes files.
+  SQUAD_CAST_TRUSTED_SHA: ${{ github.sha }}
 concurrency:
   group: "squad-${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}"
   cancel-in-progress: false
@@ -124,7 +127,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="d6687c02bb988a15be47a66fd3fe2c6848a81f13c9618e15c84e2c47123c6ec6"
+      validator_expected_sha256="6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -151,6 +154,7 @@ pre-agent-steps:
       node "$validator_script" \
         --root "$PWD" \
         --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json" \
+        --trusted-sha "${SQUAD_CAST_TRUSTED_SHA:?}" \
         > "$validator_output" 2> "$stderr_file"
       status=$?
       if [ "$status" -ne 0 ]; then
@@ -941,37 +945,23 @@ Every team gets a **Lead**. Then allocate specialists based on signals:
 
 Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
 
-##### Step 3: Naming Mode & Name Allocation
+##### Step 3: Canonical Identity Allocation
 
 1. Count agents from Step 2.
-2. Resolve exactly one naming mode:
-   - **No themed naming request:** use **descriptive mode**. Assign short, unique functional names derived from roles (for example Lead, Frontend, Backend, Tester). Do not select a fictional universe.
-   - **Explicit built-in or custom universe request:** use that requested universe.
-   - **Themed names requested without a universe:** auto-select one built-in universe using the capacity/shape fit table below, preferring the smallest capacity that fits the team and the shape that best matches the project.
+2. Use canonical functional identities for this GH-AW Cast. Each is a
+   two-to-four-word title phrase, at most 48 characters, consisting of zero or
+   more repository-domain qualifiers followed by one supported functional head.
+   Unknown domain qualifiers are allowed only when an exact token is present in
+   immutable repository evidence at the trusted workflow-context commit.
+   `Technical` and `Quality` are the only evidence-free structural modifiers.
 
-| Universe | Cap | Shape |
-|----------|-----|-------|
-| The Usual Suspects | 6 | small, noir |
-| Reservoir Dogs | 8 | small, noir |
-| Alien | 8 | small, sci-fi |
-| The Goonies | 8 | small, adventure |
-| The Matrix | 10 | medium, sci-fi |
-| Firefly | 10 | medium, sci-fi |
-| Star Wars | 12 | medium, sci-fi |
-| Breaking Bad | 12 | medium, drama |
-| Futurama | 12 | medium, sci-fi |
-| Ocean's Eleven | 14 | medium, heist |
-| Arrested Development | 15 | medium, comedy |
-| Lost | 18 | large, mystery |
-| DC Universe | 18 | large, action |
-| The Simpsons | 20 | large, comedy |
-| Marvel Cinematic Universe | 25 | large, action |
-
-3. Name rules:
-   - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
-   - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
-4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
-5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
+3. Derive all identity surfaces exactly from the canonical phrase: registry
+   `persistent_name`, Members Name and Role, routing target, and charter heading
+   identity/role all equal it; `{id}` and the charter folder are its lowercase
+   kebab slug. Do not add aliases, personas, codenames, display-name overrides,
+   or other identity tokens. Built-ins remain fixed and exempt.
+4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Canonical Functional Identity", "universe": "descriptive", "legacy_named": false, "status": "active" } } }`.
+5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
 ##### Step 4: Generate Scaffolding
 
@@ -1012,16 +1002,26 @@ Create/replace:
 
    The coordinator must be self-contained for the final Cast tree. It must not mention standalone lifecycle behavior, templates, configuration, decisions, plugins, logs, non-GH-AW clients, internal Squad source paths, or sample labels/names that are not active registry members. The four built-in charter references and the `## Built-in Support Agents` section are the one permitted exception to "no inactive/support roles" content — they are mandatory, not inactive, and must never be phrased as selectable specialists or routing destinations.
 
-Keep naming consistent across generated team state and the Cast PR summary. In descriptive mode, describe the choice as descriptive naming and never invent or mention a fictional universe.
+Keep naming consistent across generated team state and the Cast PR summary.
+Describe the choice as canonical functional naming and never invent or mention
+a fictional universe.
 
 ##### Step 5: Generate meet-the-squad.md
 
-Create `meet-the-squad.md` at repo root with: title, naming mode (`Descriptive` in descriptive mode; otherwise the exact universe name), active team table (Name|Role|Specialty|How to talk), How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date. Do not advertise the four built-ins or any other inactive/support role as a selectable specialist.
+Create `meet-the-squad.md` at repo root with: title, naming mode (`Canonical
+Functional`), active team table (Name|Role|Specialty|How to talk), How to Work
+With Your Squad (label-based assignment with `9B8FCC` color, iteration commands,
+routing reference), "What Happened Here" block with analysis rationale
+(languages, structure, CI/CD, rationale), footer with cast date. Do not
+advertise the four built-ins or any other inactive/support role as a selectable
+specialist.
 
 ##### Step 6: Build the Safe-Output Payload
 
-Build an explicit payload allowlist containing only these fresh Cast-owned
-artifacts:
+Build an explicit schema-v2 payload containing the fresh Cast-owned path
+allowlist and one structured role specification for every non-built-in
+specialist. The payload object contains exactly `schema_version`, `paths`, and
+`roles`; `schema_version` is `2`.
 
 - `.squad/team.md`
 - `.squad/routing.md`
@@ -1047,10 +1047,19 @@ its charter from scratch.
 
 ##### Step 7: Deterministic final-tree validation
 
+For each role, record exactly `canonical`, `head`, and `qualifiers`. Each
+qualifier object contains its canonical `token` and either `kind: "structural"`
+for the closed `Technical`/`Quality` set, or `kind: "repository"` plus
+`evidence: { "path": "...", "match": "..." }`. The match is the exact token
+spelling in that file at the trusted commit. Exclude `.squad/**`, generated
+workflows/agents/artifacts, dependencies, and build output. Never include a
+source or trusted SHA in the payload; the runner supplies it from workflow
+context.
+
 Natural-language review is not the gate. Immediately before requesting safe
 output, create
-`$GITHUB_WORKSPACE/.github/workflows/squad-cast-payload.json` as a JSON array
-containing every concrete Step 6 payload path, then invoke the prepared runner
+`$GITHUB_WORKSPACE/.github/workflows/squad-cast-payload.json` with that schema-v2
+object, then invoke the prepared runner
 with the exact command below. Do not transcribe validator bytes, and do not invoke or
 load `squad-cast-validator` into model context. The runner was
 prepared before this turn under the sandbox-visible `$GITHUB_WORKSPACE` and
