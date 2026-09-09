@@ -24,7 +24,7 @@ When `create_session` is available, spawn commit-producing agents as **sub-sessi
 - **Task** (`task` tool): Pure analysis, coordination, read-only research, or quick one-shot work
 
 **Sub-session parameters:**
-- **`name`**: `"{Name} {verb}ing {noun}"` — 40-char max, sentence case (e.g., "EECOM refactoring auth", "Flight reviewing arch")
+- **`name`**: `"{Name} {verb}ing {noun}"` — 40-char max, sentence case (e.g., "Runtime Engineer refactoring auth", "Lead reviewing architecture")
 - **`coordinate_with_creator`**: `true` (always — enables cross-session messaging)
 - **`notify_on_idle`**: `"once"` (coordinator gets notified when agent finishes)
 - **`kickoff.prompt`**: The full agent prompt (same as task prompt below)

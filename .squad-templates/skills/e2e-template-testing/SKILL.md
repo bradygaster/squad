@@ -536,7 +536,7 @@ Fix: always include `--allow-all-tools` (or `--yolo` / `--allow-all`) in Step 4
 commands, or export `COPILOT_ALLOW_ALL=1` before running E2E sessions.
 
 This also applies when `copilot --agent squad` is launched as a subprocess from
-inside a Copilot CLI background agent (e.g. Sims running via the `task` tool) —
+inside a Copilot CLI background agent (e.g. a test engineer running via the `task` tool) —
 the flag is still needed.
 
 ### `--allow-all-paths` for repos outside the CWD

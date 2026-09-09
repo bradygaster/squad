@@ -44,7 +44,7 @@ Call `Test-RetroOverdue` **at the start of every round**, before building the wo
 ```powershell
 # At round start — before any work queue construction
 if (Test-RetroOverdue -LogDir ".squad/log" -WindowDays 7) {
-    Write-Host "[RETRO] Retrospective overdue. Running before other work."
+    Write-Host "[RETROSPECTIVE] Retrospective overdue. Running before other work."
 
     # Spawn retro facilitator
     Invoke-RetroSession -Mode "catch-up"
@@ -86,7 +86,7 @@ function Test-RetroActionItemsCreated {
     $openCheckboxes = [regex]::Matches($content, '- \[ \]')
 
     if ($openCheckboxes.Count -gt 0) {
-        Write-Warning "[RETRO] Found $($openCheckboxes.Count) markdown checkboxes — convert to Issues"
+        Write-Warning "[RETROSPECTIVE] Found $($openCheckboxes.Count) markdown checkboxes — convert to Issues"
         return $false
     }
 

@@ -104,6 +104,71 @@ jobs:
 
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
+            function tableCells(line) {
+              return line.split('|').slice(1, -1).map(cell => cell.trim());
+            }
+
+            function routingRules(markdown) {
+              const routingLines = markdown.split('\n');
+              const rules = [];
+
+              for (let index = 0; index < routingLines.length; index++) {
+                const line = routingLines[index];
+                if (!line.trim().startsWith('|')) continue;
+
+                const headers = tableCells(line).map(cell => cell.toLowerCase());
+                const workTypeIndex = headers.indexOf('work type');
+                const routeIndex = headers.findIndex(header => header === 'route to' || header === 'agent');
+                const examplesIndex = headers.indexOf('examples');
+                if (workTypeIndex < 0 || routeIndex < 0) continue;
+
+                for (let rowIndex = index + 2; rowIndex < routingLines.length; rowIndex++) {
+                  const row = routingLines[rowIndex];
+                  if (!row.trim().startsWith('|')) break;
+                  const cells = tableCells(row);
+                  const workType = cells[workTypeIndex] || '';
+                  const routeCell = cells[routeIndex] || '';
+                  const examples = examplesIndex >= 0 ? (cells[examplesIndex] || '') : '';
+                  if (!workType || !routeCell) continue;
+
+                  const destinations = members.filter(member =>
+                    routeCell.toLowerCase().includes(member.name.toLowerCase())
+                  );
+                  for (const member of destinations) {
+                    rules.push({ member, workType, examples });
+                  }
+                }
+                break;
+              }
+
+              return rules;
+            }
+
+            function routeScore(issueText, rule) {
+              const stopWords = new Set([
+                'and', 'the', 'for', 'with', 'from', 'into', 'module', 'system',
+                'work', 'owner', 'agent', 'support', 'management',
+              ]);
+              const phrases = rule.workType
+                .toLowerCase()
+                .split(/[,/&]+/)
+                .map(value => value.trim())
+                .filter(value => value.length >= 4);
+              const keywords = `${rule.workType} ${rule.examples}`
+                .toLowerCase()
+                .match(/[a-z0-9@.+#-]+/g) || [];
+
+              let score = phrases.reduce(
+                (total, phrase) => total + (issueText.includes(phrase) ? 8 : 0),
+                0
+              );
+              for (const keyword of new Set(keywords)) {
+                if (keyword.length < 3 || stopWords.has(keyword)) continue;
+                if (issueText.includes(keyword)) score++;
+              }
+              return score;
+            }
+
             // Build triage context
             const memberList = members.map(m =>
               `- **${m.name}** (${m.role}) → label: \`squad:${slugify(m.name)}\``
@@ -136,43 +201,17 @@ jobs:
               }
             }
 
-            // If not routed to @copilot, use keyword-based routing
+            // If not routed to @copilot, score the repository's current routing table.
             if (!assignedMember) {
-              for (const member of members) {
-                const role = member.role.toLowerCase();
-                if ((role.includes('frontend') || role.includes('ui')) &&
-                    (issueText.includes('ui') || issueText.includes('frontend') ||
-                     issueText.includes('css') || issueText.includes('component') ||
-                     issueText.includes('button') || issueText.includes('page') ||
-                     issueText.includes('layout') || issueText.includes('design'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to frontend/UI work';
-                  break;
-                }
-                if ((role.includes('backend') || role.includes('api') || role.includes('server')) &&
-                    (issueText.includes('api') || issueText.includes('backend') ||
-                     issueText.includes('database') || issueText.includes('endpoint') ||
-                     issueText.includes('server') || issueText.includes('auth'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to backend/API work';
-                  break;
-                }
-                if ((role.includes('test') || role.includes('qa') || role.includes('quality')) &&
-                    (issueText.includes('test') || issueText.includes('bug') ||
-                     issueText.includes('fix') || issueText.includes('regression') ||
-                     issueText.includes('coverage'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to testing/quality work';
-                  break;
-                }
-                if ((role.includes('devops') || role.includes('infra') || role.includes('ops')) &&
-                    (issueText.includes('deploy') || issueText.includes('ci') ||
-                     issueText.includes('pipeline') || issueText.includes('docker') ||
-                     issueText.includes('infrastructure'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to DevOps/infrastructure work';
-                  break;
-                }
+              const scoredRoutes = routingRules(routingContent)
+                .map(rule => ({ rule, score: routeScore(issueText, rule) }))
+                .filter(candidate => candidate.score > 0)
+                .sort((left, right) => right.score - left.score);
+
+              if (scoredRoutes.length > 0) {
+                const best = scoredRoutes[0];
+                assignedMember = best.rule.member;
+                triageReason = `Matched routing rule "${best.rule.workType}"`;
               }
             }
 
