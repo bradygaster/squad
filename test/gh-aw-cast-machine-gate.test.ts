@@ -1,11 +1,29 @@
-import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterAll, describe, expect, it } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 
 const ROOT = resolve(import.meta.dirname, '..');
+const WORKFLOWS_DIR = resolve(ROOT, 'workflows');
+const TEST_WORKSPACES_DIR = resolve(ROOT, '.squad-gh-aw-machine-gate');
+const GH_AW_INSTALL_HINT =
+  '`gh aw` is required to compile the workflow locks this gate inspects. Install it with ' +
+  '`gh extension install --pin v0.87.10 github/gh-aw` (matches .github/workflows/squad-ci.yml).';
+
+afterAll(() => {
+  rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
+});
 
 interface PostStep {
   name?: string;
@@ -111,6 +129,13 @@ function castSandbox(items: unknown[], validatorBody: string | null): CastSandbo
 function itemTypes(path: string): string[] {
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as { items?: { type?: string }[] };
   return (parsed.items ?? []).map((item) => item.type ?? '');
+}
+
+function jsonlItemTypes(path: string): string[] {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim())
+    .map((line) => (JSON.parse(line) as { type?: string }).type ?? '');
 }
 
 const CREATE_PR_ITEM = {
@@ -254,6 +279,11 @@ const UPDATE_ISSUE_ITEM = { type: 'update_issue', issue_number: 7, body: ONBOARD
 describe('onboarding dedup covers every issue state', () => {
   const gate = postStep('workflows/squad-onboarding.md', 'Machine-enforced onboarding dedup gate');
 
+  function expectNoCreationOutputs(sandbox: OnboardingSandbox, remaining: string[] = []): void {
+    expect(itemTypes(sandbox.agentOutput)).toEqual(remaining);
+    expect(jsonlItemTypes(sandbox.safeOutputs)).toEqual(remaining);
+  }
+
   it('is a post-step that always runs', () => {
     expect(gate.if).toBe('always()');
     expect(gate.shell).toBe('bash');
@@ -272,8 +302,7 @@ describe('onboarding dedup covers every issue state', () => {
     );
     const result = runGate(gate, sandbox.overrides);
     expect(result.status).toBe(0);
-    expect(itemTypes(sandbox.agentOutput)).toEqual(['update_issue']);
-    expect(readFileSync(sandbox.safeOutputs, 'utf8')).not.toContain('create_issue');
+    expectNoCreationOutputs(sandbox, ['update_issue']);
   });
 
   it('recognizes the canonical issue by body marker even when the title drifted', () => {
@@ -319,11 +348,24 @@ describe('onboarding dedup covers every issue state', () => {
   });
 
   it('fails closed and drops creation when the issue lookup itself fails', () => {
-    const sandbox = onboardingSandbox([CREATE_ISSUE_ITEM], null);
+    const sandbox = onboardingSandbox([CREATE_ISSUE_ITEM, UPDATE_ISSUE_ITEM], null);
     const result = runGate(gate, sandbox.overrides);
     expect(result.status).toBe(1);
-    expect(itemTypes(sandbox.agentOutput)).toEqual([]);
+    expectNoCreationOutputs(sandbox, ['update_issue']);
   });
+
+  it.each([
+    ['malformed', 'not-json'],
+    ['empty', ''],
+  ])(
+    'fails closed and drops creation from both artifacts when the issue-list response is %s',
+    (_label, response) => {
+      const sandbox = onboardingSandbox([CREATE_ISSUE_ITEM, UPDATE_ISSUE_ITEM], response);
+      const result = runGate(gate, sandbox.overrides);
+      expect(result.status).toBe(1);
+      expectNoCreationOutputs(sandbox, ['update_issue']);
+    },
+  );
 
   it('does not use the unsupported update-issue state field', () => {
     const source = readFileSync(resolve(ROOT, 'workflows/squad-onboarding.md'), 'utf8');
@@ -334,6 +376,105 @@ describe('onboarding dedup covers every issue state', () => {
     expect(Object.keys(safeOutputs['update-issue']!)).not.toContain('state');
     expect(source).toContain('does not support');
     expect(source).toContain('safe-outputs.update-issue.state');
+  });
+});
+
+interface CompiledStep {
+  name?: string;
+  if?: string;
+}
+
+interface CompiledJob {
+  if?: string;
+  steps?: CompiledStep[];
+}
+
+interface CompiledLock {
+  jobs?: Record<string, CompiledJob>;
+}
+
+let compiledLocks: Record<string, CompiledLock> | null = null;
+
+function compileMachineGateLocks(): Record<string, CompiledLock> {
+  if (compiledLocks !== null) return compiledLocks;
+
+  const versionProbe = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' });
+  expect(versionProbe.error, GH_AW_INSTALL_HINT).toBeUndefined();
+  expect(versionProbe.status, `gh aw --version failed. ${GH_AW_INSTALL_HINT}`).toBe(0);
+
+  mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
+  const workspace = mkdtempSync(join(TEST_WORKSPACES_DIR, 'locks-'));
+  const workflowDir = join(workspace, '.github', 'workflows');
+  mkdirSync(join(workspace, '.github'), { recursive: true });
+  cpSync(WORKFLOWS_DIR, workflowDir, { recursive: true });
+  execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+  execFileSync(
+    'gh',
+    [
+      'aw',
+      'compile',
+      '.github/workflows/squad-cast.md',
+      '.github/workflows/squad-onboarding.md',
+      '--strict',
+      '--approve',
+      '--no-check-update',
+    ],
+    { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 120000 },
+  );
+
+  compiledLocks = Object.fromEntries(
+    ['squad-cast', 'squad-onboarding'].map((workflowId) => {
+      const lockPath = join(workflowDir, `${workflowId}.lock.yml`);
+      expect(
+        existsSync(lockPath),
+        `gh aw compile produced no ${workflowId}.lock.yml. ${GH_AW_INSTALL_HINT}`,
+      ).toBe(true);
+      return [workflowId, parse(readFileSync(lockPath, 'utf8')) as CompiledLock];
+    }),
+  );
+  return compiledLocks;
+}
+
+function stepIndex(steps: CompiledStep[], name: string): number {
+  const index = steps.findIndex((step) => step.name === name);
+  expect(index, `compiled agent job must contain "${name}"`).toBeGreaterThanOrEqual(0);
+  return index;
+}
+
+describe('compiled machine-gate scheduling', () => {
+  it.each([
+    ['squad-cast', 'Machine-enforced Cast validation gate'],
+    ['squad-onboarding', 'Machine-enforced onboarding dedup gate'],
+  ])('%s gates finalized output before every artifact upload', (workflowId, gateName) => {
+    const lock = compileMachineGateLocks()[workflowId];
+    const agentJob = lock?.jobs?.agent;
+    expect(agentJob, `${workflowId} lock must contain the agent job`).toBeTruthy();
+    const steps = agentJob?.steps ?? [];
+
+    const executionIndex = stepIndex(steps, 'Execute GitHub Copilot CLI');
+    const finalizationNames = [
+      'Copy Safe Outputs',
+      'Ingest agent output',
+      'Write agent output placeholder if missing',
+    ];
+    const finalizationIndexes = finalizationNames.map((name) => stepIndex(steps, name));
+    const gateIndex = stepIndex(steps, gateName);
+    const fallbackUploadIndex = stepIndex(steps, 'Upload agent output fallback artifact');
+    const artifactUploadIndex = stepIndex(steps, 'Upload agent artifacts');
+
+    expect(executionIndex).toBeLessThan(Math.min(...finalizationIndexes));
+    expect(gateIndex).toBeGreaterThan(Math.max(...finalizationIndexes));
+    expect(gateIndex).toBeLessThan(fallbackUploadIndex);
+    expect(gateIndex).toBeLessThan(artifactUploadIndex);
+
+    for (const name of [...finalizationNames, gateName, 'Upload agent output fallback artifact', 'Upload agent artifacts']) {
+      expect(steps[stepIndex(steps, name)]?.if, `${workflowId}: ${name}`).toBe('always()');
+    }
+
+    expect(lock?.jobs?.detection?.if).toBe("always() && needs.agent.result != 'skipped'");
+    expect(lock?.jobs?.safe_outputs?.if).toBe(
+      "(!cancelled()) && needs.agent.result != 'skipped' && needs.detection.result == 'success'",
+    );
   });
 });
 

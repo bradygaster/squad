@@ -47,70 +47,119 @@ post-steps:
       export GATE_MATCH="${gate_dir}/match"
       : > "$GATE_MATCH"
 
+      sanitize_creation_outputs() {
+        node -e '
+          const fs = require("node:fs");
+          let failed = false;
+          let removed = 0;
+
+          const jsonPath = process.env.GH_AW_ONBOARDING_AGENT_OUTPUT;
+          try {
+            const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+            if (!Array.isArray(parsed.items)) throw new Error("items is not an array");
+            const before = parsed.items.length;
+            parsed.items = parsed.items.filter(i => !(i && i.type === "create_issue"));
+            removed = before - parsed.items.length;
+            fs.writeFileSync(jsonPath, JSON.stringify(parsed));
+          } catch (error) {
+            try {
+              fs.writeFileSync(jsonPath, JSON.stringify({ items: [] }));
+            } catch (writeError) {
+              console.error(`Could not sanitize ${jsonPath}: ${writeError.message}`);
+              failed = true;
+            }
+          }
+
+          const jsonlPath = process.env.GH_AW_ONBOARDING_SAFE_OUTPUTS;
+          try {
+            let source = "";
+            try {
+              source = fs.readFileSync(jsonlPath, "utf8");
+            } catch (error) {
+              if (error.code !== "ENOENT") throw error;
+            }
+            const kept = source.split("\n").filter(line => {
+              if (!line.trim()) return false;
+              try { return JSON.parse(line).type !== "create_issue"; } catch { return false; }
+            });
+            fs.writeFileSync(jsonlPath, kept.length ? kept.join("\n") + "\n" : "");
+          } catch (error) {
+            console.error(`Could not sanitize ${jsonlPath}: ${error.message}`);
+            failed = true;
+          }
+
+          process.stdout.write(String(removed));
+          if (failed) process.exitCode = 1;
+        '
+      }
+
+      fail_closed() {
+        echo "::error::$1"
+        if ! sanitize_creation_outputs \
+          > "${gate_dir}/removed" 2> "${gate_dir}/sanitize.stderr"; then
+          echo "::error::Onboarding dedup gate could not sanitize every output artifact."
+          sed -n '1,20p' "${gate_dir}/sanitize.stderr" >&2
+        fi
+        exit 1
+      }
+
       # Enumerate EVERY issue state (open and closed) from the authoritative
       # REST list endpoint rather than the lagging search index, so a closed
       # onboarding issue is still recognized as the one canonical issue.
       if ! gh api --paginate \
         "repos/${GITHUB_REPOSITORY}/issues?state=all&per_page=100" \
         > "$existing" 2> "${gate_dir}/list.stderr"; then
-        echo "::error::Onboarding dedup gate could not enumerate issues; failing closed."
         sed -n '1,20p' "${gate_dir}/list.stderr" >&2
-        node -e '
-          const fs = require("node:fs");
-          const p = process.env.GH_AW_ONBOARDING_AGENT_OUTPUT;
-          let parsed = { items: [] };
-          try { parsed = JSON.parse(fs.readFileSync(p, "utf8")); } catch { /* keep empty */ }
-          parsed.items = (parsed.items ?? []).filter(i => !(i && i.type === "create_issue"));
-          fs.writeFileSync(p, JSON.stringify(parsed));
-        '
-        exit 1
+        fail_closed "Onboarding dedup gate could not enumerate issues; failing closed."
       fi
 
-      node -e '
+      if ! node -e '
         const fs = require("node:fs");
         const title = process.env.GH_AW_ONBOARDING_TITLE;
         const marker = process.env.GH_AW_ONBOARDING_MARKER;
         const raw = fs.readFileSync(process.env.GATE_EXISTING, "utf8");
-        // `gh api --paginate` concatenates one JSON array per page.
-        const pages = raw.replace(/\]\s*\[/g, ",").trim();
-        let issues = [];
-        try { issues = JSON.parse(pages || "[]"); } catch { issues = []; }
+        // `gh api --paginate` concatenates one JSON array per page. Parse every
+        // page independently so malformed or non-array data cannot look empty.
+        const text = raw.trim();
+        if (!text) throw new Error("issue-list response is empty");
+        const pages = JSON.parse(`[${text.replace(/\]\s*\[/g, "],[")}]`);
+        if (!pages.every(Array.isArray)) throw new Error("issue page is not an array");
+        const issues = pages.flat();
+        for (const issue of issues) {
+          if (!issue || typeof issue !== "object" || Array.isArray(issue)) {
+            throw new Error("issue entry is not an object");
+          }
+          if (!Number.isSafeInteger(issue.number) || typeof issue.title !== "string") {
+            throw new Error("issue entry lacks trusted number/title fields");
+          }
+          if (issue.body !== null && typeof issue.body !== "string") {
+            throw new Error("issue entry has an invalid body field");
+          }
+        }
         const matches = issues
           .filter(i => i && !i.pull_request)
           .filter(i => (i.title ?? "").trim() === title || (i.body ?? "").includes(marker))
           .sort((a, b) => a.number - b.number);
         fs.writeFileSync(process.env.GATE_MATCH, matches.length ? String(matches[0].number) : "");
-      ' || printf '' > "${gate_dir}/match"
-      existing_number="$(cat "${gate_dir}/match" 2>/dev/null || printf '')"
+      ' 2> "${gate_dir}/parse.stderr"; then
+        sed -n '1,20p' "${gate_dir}/parse.stderr" >&2
+        fail_closed "Onboarding dedup gate could not trust the issue-list response; failing closed."
+      fi
+
+      if ! existing_number="$(cat "${gate_dir}/match")"; then
+        fail_closed "Onboarding dedup gate could not read its match result; failing closed."
+      fi
       if [ -z "$existing_number" ]; then
         echo "Onboarding dedup gate: no marked onboarding issue in any state; creation permitted." \
           >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
         exit 0
       fi
 
-      node -e '
-        const fs = require("node:fs");
-        const jsonPath = process.env.GH_AW_ONBOARDING_AGENT_OUTPUT;
-        let removed = 0;
-        try {
-          const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-          const before = (parsed.items ?? []).length;
-          parsed.items = (parsed.items ?? []).filter(i => !(i && i.type === "create_issue"));
-          removed = before - parsed.items.length;
-          fs.writeFileSync(jsonPath, JSON.stringify(parsed));
-        } catch {
-          fs.writeFileSync(jsonPath, JSON.stringify({ items: [] }));
-        }
-        const jsonlPath = process.env.GH_AW_ONBOARDING_SAFE_OUTPUTS;
-        try {
-          const kept = fs.readFileSync(jsonlPath, "utf8").split("\n").filter(line => {
-            if (!line.trim()) return false;
-            try { return JSON.parse(line).type !== "create_issue"; } catch { return false; }
-          });
-          fs.writeFileSync(jsonlPath, kept.length ? kept.join("\n") + "\n" : "");
-        } catch { /* absent jsonl already creates nothing */ }
-        process.stdout.write(String(removed));
-      ' > "${gate_dir}/removed" 2>/dev/null || printf '0' > "${gate_dir}/removed"
+      if ! sanitize_creation_outputs \
+        > "${gate_dir}/removed" 2> "${gate_dir}/sanitize.stderr"; then
+        sed -n '1,20p' "${gate_dir}/sanitize.stderr" >&2
+        fail_closed "Onboarding dedup gate could not sanitize every output artifact; failing closed."
+      fi
 
       {
         echo "### Onboarding dedup gate"
