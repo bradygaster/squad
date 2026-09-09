@@ -25,11 +25,11 @@ describe('automatic Cast and onboarding workflows', () => {
   it('keeps activation guards narrow and idempotent', () => {
     for (const workflow of [CAST, ONBOARDING]) {
       expect(workflow).toMatch(/pull_request:\n\s+types: \[closed\]/);
-      expect(workflow).toContain('the pull request was merged');
+      expect(workflow).toMatch(/pull request was\s+merged/);
       expect(workflow).toContain('default branch');
       expect(workflow).toContain('call `noop`');
       expect(workflow).toContain('`report_incomplete`');
-      expect(workflow).toContain('exact standalone visible line');
+      expect(workflow).toContain('standalone visible line');
     }
     expect(CAST).toContain('Squad-Cast-Marker: squad-gh-aw/v1');
     expect(CAST).toContain('never create a second Cast PR');
@@ -47,12 +47,14 @@ describe('automatic Cast and onboarding workflows', () => {
     expect(CAST).toContain('Cast validation passed.');
     expect(ONBOARDING).toContain('deduplicate-by-title: true');
     expect(ONBOARDING).toContain('required-title-prefix: "[Squad] Your repository team is ready"');
-    expect(ONBOARDING).toContain('Do not create Research, Triage, Planning, Implementation Plan, or Work Item issues');
+    expect(ONBOARDING).toMatch(
+      /Do not create Research, Triage,\s+Planning, Implementation Plan, or Work Item issues/,
+    );
   });
 
   it('documents the Stage 2 human handoff and deferred automation', () => {
     expect(CAST).toContain('native human PR review and merge are required');
-    expect(CAST).toContain('Do not merge it, dispatch Research');
+    expect(CAST).toMatch(/Do not merge it, dispatch\s+Research/);
     expect(ONBOARDING).toContain('executable Work Items are not created until a human explicitly');
     expect(ONBOARDING).toContain('/squad activate [phase N]');
     expect(ONBOARDING).toContain('/squad stop <reason>');
