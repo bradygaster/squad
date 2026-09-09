@@ -12,6 +12,8 @@ permissions:
   issues: read
   pull-requests: read
   copilot-requests: write
+checkout:
+  fetch-depth: 0
 concurrency:
   group: "squad-automatic-cast-${{ github.repository }}"
   cancel-in-progress: false
@@ -87,7 +89,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      validator_expected_sha256="348115f21d333a31288136f1583b1bd131a6c44b0431e7896cd72eca3633f8e7"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -318,12 +320,19 @@ When the guard passes, analyze the repository before generating files:
 - relevant current technical information using `web-fetch` only when the
   repository network policy permits it.
 
-Choose a compact team of descriptive role names only. Every active role must
-be justified by concrete repository evidence in the PR body. Represent the
-current stack and any clearly evidenced modern-stack migration or integration
-need. Do not add generic filler, fictional names, or roles unsupported by the
+Choose a compact team of descriptive functional names only. For every selected
+specialist, the registry `persistent_name`, visible Members-table name, charter
+heading name, and `.squad/agents/{id}/` folder must identify the function
+itself, not a person or character: use one to four words taken directly from
+the declared role, and make `{id}` the exact lowercase kebab-case slug of that
+name. For example, `Backend Engineer` / `backend-engineer` is valid; `Nia`,
+`Boone`, `Priya`, or any other human/fictional-style name is invalid. Every
+active role must be justified by concrete repository evidence in the PR body.
+Represent the current stack and any clearly evidenced modern-stack migration
+or integration need. Do not add generic filler or roles unsupported by the
 repository. Keep the deterministic four built-in support agents separate from
-the active specialist registry and routing table.
+the active specialist registry and routing table; their fixed names and folders
+are exempt from the specialist naming rule.
 
 ## Cast tree and validation
 

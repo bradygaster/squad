@@ -187,6 +187,93 @@ function charterReferences(markdown) {
     .sort();
 }
 
+function functionalTokens(value) {
+  return value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+}
+
+function functionalSlug(value) {
+  return functionalTokens(value).join('-');
+}
+
+function parseSpecialistRoster(section, errors) {
+  const rows = section
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^\|.+\|$/.test(line))
+    .filter((line) => !/^\|\s*Name\s*\|/i.test(line))
+    .filter((line) => !/^\|\s*:?-+/.test(line));
+
+  const specialists = [];
+  for (const row of rows) {
+    const cells = row.slice(1, -1).split('|').map((cell) => cell.trim());
+    if (cells.length !== 4) {
+      errors.push(`team: Members row must contain Name | Role | Charter | Status: ${row}`);
+      continue;
+    }
+    const [name, role, charter] = cells;
+    const charterMatch = charter.match(/^`?\.squad\/agents\/([a-z0-9][a-z0-9-]*)\/charter\.md`?$/);
+    if (!charterMatch) {
+      errors.push(`team: Members charter must be a concrete specialist path: ${charter}`);
+      continue;
+    }
+    specialists.push({ id: charterMatch[1], name, role });
+  }
+  return specialists;
+}
+
+function validateSpecialistIdentities(root, active, roster, errors) {
+  const rosterById = new Map(roster.map((member) => [member.id, member]));
+  for (const member of active) {
+    const expectedId = functionalSlug(member.name);
+    if (member.id !== expectedId) {
+      errors.push(
+        `identity: specialist folder id "${member.id}" must be the exact kebab-case slug `
+        + `"${expectedId}" of persistent/display name "${member.name}"`,
+      );
+    }
+
+    const row = rosterById.get(member.id);
+    if (!row) {
+      errors.push(`identity: active specialist "${member.id}" has no matching Members row`);
+      continue;
+    }
+    if (row.name !== member.name) {
+      errors.push(
+        `identity: registry persistent_name "${member.name}" must exactly match `
+        + `the Members display name "${row.name}" for "${member.id}"`,
+      );
+    }
+
+    const nameTokens = functionalTokens(member.name);
+    const roleTokens = new Set(functionalTokens(row.role));
+    if (
+      nameTokens.length === 0
+      || nameTokens.length > 4
+      || member.name.length > 48
+      || nameTokens.some((token) => !roleTokens.has(token))
+    ) {
+      errors.push(
+        `identity: active specialist "${member.name}" must be a short descriptive functional `
+        + `name derived only from its declared role "${row.role}", not a personal or fictional name`,
+      );
+    }
+
+    try {
+      const charter = readText(root, `.squad/agents/${member.id}/charter.md`);
+      const heading = charter.split('\n', 1)[0];
+      const expectedHeading = `# ${member.name} — ${row.role}`;
+      if (heading !== expectedHeading) {
+        errors.push(
+          `identity: specialist charter .squad/agents/${member.id}/charter.md must begin `
+          + `with exact heading "${expectedHeading}"`,
+        );
+      }
+    } catch (error) {
+      errors.push(`identity: could not read specialist charter for "${member.id}" (${error.message})`);
+    }
+  }
+}
+
 function parseRouting(routing, activeNames, errors) {
   const headingMatches = routing.match(/^## Routing Table\s*$/gm) ?? [];
   if (headingMatches.length !== 1) {
@@ -403,6 +490,8 @@ export function validateCastTree({ root, payloadPath }) {
 
   const membersSection = extractSingleSection(team, '## Members', 'team', errors);
   if (membersSection !== null) {
+    const roster = parseSpecialistRoster(membersSection, errors);
+    validateSpecialistIdentities(root, active, roster, errors);
     const leakedBuiltinCharters = charterReferences(membersSection)
       .filter((reference) => REQUIRED_BUILTIN_CHARTERS.includes(reference));
     if (leakedBuiltinCharters.length > 0) {

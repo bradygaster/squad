@@ -39,12 +39,17 @@ describe('automatic Cast and onboarding workflows', () => {
   });
 
   it('restricts mutations to the intended bounded outputs', () => {
+    expect(CAST).toMatch(/^checkout:\n\s+fetch-depth: 0$/m);
+    expect(ONBOARDING).not.toMatch(/^checkout:/m);
     expect(CAST).toContain('allowed-files:');
     expect(CAST).toContain('".squad/team.md"');
     expect(CAST).toContain('".github/agents/squad.agent.md"');
     expect(CAST).toContain('max: 1');
     expect(CAST).toContain('run-squad-cast-validator');
     expect(CAST).toContain('Cast validation passed.');
+    expect(CAST).toContain('registry `persistent_name`, visible Members-table name');
+    expect(CAST).toContain('exact lowercase kebab-case slug');
+    expect(CAST).toContain('human/fictional-style name is invalid');
     expect(ONBOARDING).toContain('deduplicate-by-title: true');
     expect(ONBOARDING).toContain('required-title-prefix: "[Squad] Your repository team is ready"');
     expect(ONBOARDING).toMatch(

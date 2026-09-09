@@ -14,9 +14,9 @@ const workflowPath = join(process.cwd(), 'workflows', 'squad.md');
 const workspaces: string[] = [];
 
 const active = [
-  { id: 'lead', name: 'Lead', role: 'Technical Lead' },
-  { id: 'builder', name: 'Builder', role: 'Application Engineer' },
-  { id: 'tester', name: 'Tester', role: 'Quality Engineer' },
+  { id: 'technical-lead', name: 'Technical Lead', role: 'Technical Lead' },
+  { id: 'application-engineer', name: 'Application Engineer', role: 'Application Engineer' },
+  { id: 'quality-engineer', name: 'Quality Engineer', role: 'Quality Engineer' },
 ];
 
 const builtins = [
@@ -91,9 +91,9 @@ function routingMarkdown(): string {
 
 | Work Type | Route To | Examples |
 | --- | --- | --- |
-| Architecture | Lead | Design and technical direction |
-| Implementation | Builder | Product code and integration |
-| Quality | Tester | Tests and release confidence |
+| Architecture | Technical Lead | Design and technical direction |
+| Implementation | Application Engineer | Product code and integration |
+| Quality | Quality Engineer | Tests and release confidence |
 `;
 }
 
@@ -152,9 +152,9 @@ Architecture, Implementation, Quality
 
 | Domain | Route to |
 | --- | --- |
-| Architecture | Lead |
-| Implementation | Builder |
-| Quality | Tester |
+| Architecture | Technical Lead |
+| Implementation | Application Engineer |
+| Quality | Quality Engineer |
 <!-- SQUAD:TEAM-CAPABILITIES:END -->
 `;
 }
@@ -429,7 +429,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 348115f21d333a31288136f1583b1bd131a6c44b0431e7896cd72eca3633f8e7, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -590,6 +590,42 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = validate(fixture.root, fixture.payload);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Cast validation passed');
+  });
+
+  it.each(['Nia', 'Boone', 'Priya'])(
+    'rejects personal-style persistent specialist name %s',
+    (personalName) => {
+      const fixture = createFixture();
+      const registryPath = join(fixture.root, '.squad', 'casting', 'registry.json');
+      const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as {
+        agents: Record<string, { persistent_name: string }>;
+      };
+      registry.agents['technical-lead'].persistent_name = personalName;
+      writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
+
+      const result = validate(fixture.root, fixture.payload);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`active specialist "${personalName}"`);
+      expect(result.stderr).toMatch(/short descriptive functional name derived only from its declared role/i);
+      expect(result.stdout).not.toContain('Cast validation passed.');
+    },
+  );
+
+  it('rejects a specialist folder id that is not the persistent/display name slug', () => {
+    const fixture = createFixture();
+    const registryPath = join(fixture.root, '.squad', 'casting', 'registry.json');
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as {
+      agents: Record<string, unknown>;
+    };
+    registry.agents.lead = registry.agents['technical-lead'];
+    delete registry.agents['technical-lead'];
+    writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
+
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(
+      /specialist folder id "lead" must be the exact kebab-case slug "technical-lead"/i,
+    );
   });
 
   it('rejects a built-in placed inside the specialist Members roster', () => {

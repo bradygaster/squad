@@ -382,6 +382,8 @@ describe('onboarding dedup covers every issue state', () => {
 interface CompiledStep {
   name?: string;
   if?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
 }
 
 interface CompiledJob {
@@ -442,6 +444,26 @@ function stepIndex(steps: CompiledStep[], name: string): number {
 }
 
 describe('compiled machine-gate scheduling', () => {
+  it('gives Cast agent and safe-output materialization checkouts full history', () => {
+    const lock = compileMachineGateLocks()['squad-cast'];
+    const repositoryCheckouts = Object.entries(lock.jobs ?? {}).flatMap(([jobName, job]) =>
+      (job.steps ?? [])
+        .filter(
+          (step) =>
+            step.name === 'Checkout repository'
+            && step.uses?.startsWith('actions/checkout@'),
+        )
+        .map((step) => ({ jobName, step })),
+    );
+
+    expect(repositoryCheckouts.map(({ jobName }) => jobName)).toEqual(
+      expect.arrayContaining(['agent', 'safe_outputs']),
+    );
+    for (const { jobName, step } of repositoryCheckouts) {
+      expect(step.with?.['fetch-depth'], `${jobName} checkout fetch-depth`).toBe(0);
+    }
+  });
+
   it.each([
     ['squad-cast', 'Machine-enforced Cast validation gate'],
     ['squad-onboarding', 'Machine-enforced onboarding dedup gate'],
