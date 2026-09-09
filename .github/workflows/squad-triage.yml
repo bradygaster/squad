@@ -123,25 +123,34 @@ jobs:
               routingContent = fs.readFileSync(routingFile, 'utf8');
             }
 
-            // Find the Lead
-            const lead = members.find(m =>
-              m.role.toLowerCase().includes('lead') ||
-              m.role.toLowerCase().includes('architect') ||
-              m.role.toLowerCase().includes('coordinator')
-            );
-
-            if (!lead) {
-              core.warning('No Lead role found in team roster — cannot triage');
-              return;
+            function findLead(teamMembers) {
+              return teamMembers.find(member => {
+                const roleWords = member.role.toLowerCase().match(/[a-z0-9]+/g) || [];
+                return roleWords.includes('lead');
+              });
             }
 
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
             function tableCells(line) {
-              return line.split('|').slice(1, -1).map(cell => cell.trim());
+              const cells = line.trim().split('|');
+              if (cells[0] === '') cells.shift();
+              if (cells[cells.length - 1] === '') cells.pop();
+              return cells.map(cell => cell.trim());
             }
 
-            function routingRules(markdown) {
+            function normalizeRouteDestination(value) {
+              return value
+                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                .replace(/[*_`]/g, '')
+                .replace(/\p{Extended_Pictographic}/gu, '')
+                .replace(/[\u200d\ufe0f]/g, '')
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+            }
+
+            function routingRules(markdown, teamMembers) {
               const routingLines = markdown.split('\n');
               const rules = [];
 
@@ -164,8 +173,12 @@ jobs:
                   const examples = examplesIndex >= 0 ? (cells[examplesIndex] || '') : '';
                   if (!workType || !routeCell) continue;
 
-                  const destinations = members.filter(member =>
-                    routeCell.toLowerCase().includes(member.name.toLowerCase())
+                  const destinationNames = routeCell
+                    .split(/\s*(?:,|\/|&|\+|\band\b)\s*/i)
+                    .map(normalizeRouteDestination)
+                    .filter(Boolean);
+                  const destinations = teamMembers.filter(member =>
+                    destinationNames.includes(normalizeRouteDestination(member.name))
                   );
                   for (const member of destinations) {
                     rules.push({ member, workType, examples });
@@ -202,6 +215,26 @@ jobs:
               return score;
             }
 
+            function selectRoutingAssignment(issueText, routingContent, teamMembers, lead) {
+              const scoredRoutes = routingRules(routingContent, teamMembers)
+                .map(rule => ({ rule, score: routeScore(issueText, rule) }))
+                .filter(candidate => candidate.score > 0)
+                .sort((left, right) => right.score - left.score);
+
+              if (scoredRoutes.length === 0) {
+                return { member: lead, workType: null };
+              }
+
+              const best = scoredRoutes[0];
+              return { member: best.rule.member, workType: best.rule.workType };
+            }
+
+            const lead = findLead(members);
+            if (!lead) {
+              core.warning('No Lead role found in team roster — cannot triage');
+              return;
+            }
+
             // Build triage context
             const memberList = members.map(m =>
               `- **${m.name}** (${m.role}) → label: \`squad:${slugify(m.name)}\``
@@ -236,22 +269,11 @@ jobs:
 
             // If not routed to @copilot, score the repository's current routing table.
             if (!assignedMember) {
-              const scoredRoutes = routingRules(routingContent)
-                .map(rule => ({ rule, score: routeScore(issueText, rule) }))
-                .filter(candidate => candidate.score > 0)
-                .sort((left, right) => right.score - left.score);
-
-              if (scoredRoutes.length > 0) {
-                const best = scoredRoutes[0];
-                assignedMember = best.rule.member;
-                triageReason = `Matched routing rule "${best.rule.workType}"`;
-              }
-            }
-
-            // Default to Lead if no routing match
-            if (!assignedMember) {
-              assignedMember = lead;
-              triageReason = 'No specific domain match — assigned to Lead for further analysis';
+              const assignment = selectRoutingAssignment(issueText, routingContent, members, lead);
+              assignedMember = assignment.member;
+              triageReason = assignment.workType
+                ? `Matched routing rule "${assignment.workType}"`
+                : 'No specific domain match — assigned to Lead for further analysis';
             }
 
             const isCopilot = assignedMember.name === '@copilot';

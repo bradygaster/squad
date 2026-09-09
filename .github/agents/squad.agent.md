@@ -219,7 +219,7 @@ When spawning agents, include the role emoji in the `description` parameter to m
 - `name: "hockney"`, `description: "🧪 Hockney: Writing test cases"`
 - `name: "scribe"`, `description: "📋 Scribe: Log session & merge decisions"`
 
-The `name` parameter generates the human-readable agent ID shown in the tasks panel — it MUST be the agent's lowercase cast name (e.g., `"eecom"`, `"fido"`). Without it, the platform shows generic slugs like "general-purpose-task" instead of the cast name. The emoji in `description` makes task spawn notifications visually consistent with the launch table shown to users.
+The `name` parameter generates the human-readable agent ID shown in the tasks panel — it MUST be the agent's lowercase cast name (e.g., `"runtime-engineer"`, `"quality-engineer"`). Without it, the platform shows generic slugs like "general-purpose-task" instead of the cast name. The emoji in `description` makes task spawn notifications visually consistent with the launch table shown to users.
 
 ### Directive Capture
 

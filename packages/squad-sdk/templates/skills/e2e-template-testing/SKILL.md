@@ -391,7 +391,7 @@ when the agent has been running too long.
 per agent run.** For a plan with multiple copilot-session scenarios, run them in
 separate agents — not in sequence within a single agent.
 
-If your scenario plan has N copilot-session scenarios, request N separate sims
+If your scenario plan has N copilot-session scenarios, request N separate test
 agents to run them in parallel (one scenario each). Static scenarios may be
 batched up to 4 per agent.
 
