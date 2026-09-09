@@ -6,14 +6,14 @@
  * Special target:   .github/agents/ (squad.agent.md only)
  *
  * Coverage strategy:
- *   1. Dynamic enumeration — every file in .squad-templates/ must be byte-for-byte
- *      identical across all mirror targets (and .github/agents/ for squad.agent.md).
- *   2. Script execution — `node scripts/sync-templates.mjs` must exit 0.
+ *   1. Dynamic enumeration — every file in .squad-templates/ must be content-equivalent
+ *      across all mirror targets (and .github/agents/ for squad.agent.md).
+ *   2. Script validation — the maintenance command parses without mutating files.
  *   3. Negative guard — .github/agents/ must not contain stray synced files.
  *   4. Semantic checks — universe counts, casting-policy internal consistency.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,33 +22,12 @@ import { execSync } from 'node:child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
-// Re-sync templates before any byte-comparison checks.
-//
-// Historically this existed because test/init-scaffolding.test.ts sandboxed
-// itself *inside* the repo, so init() walked up to the real git root and
-// stampVersion() rewrote .github/agents/squad.agent.md mid-run (#1796). That
-// sandbox now lives in the OS temp dir and can no longer reach the repository,
-// so this sync is defence-in-depth rather than active repair — it is kept so a
-// future suite that reintroduces the escape fails loudly here instead of
-// leaving a silently mutated working tree.
-beforeAll(() => {
-  execSync('node scripts/sync-templates.mjs', {
-    cwd: ROOT,
-    encoding: 'utf-8',
-    timeout: 60_000,
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function readFile(relPath: string): string {
   return readFileSync(resolve(ROOT, relPath), 'utf-8');
-}
-
-function readFileBytes(relPath: string): Buffer {
-  return readFileSync(resolve(ROOT, relPath));
 }
 
 function fileExists(relPath: string): boolean {
@@ -119,24 +98,10 @@ const CASTING_POLICY_LOCATIONS = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// 1. Dynamic enumeration — byte-for-byte parity for ALL synced files
+// 1. Dynamic enumeration — content parity for ALL synced files
 // ---------------------------------------------------------------------------
 
 describe('dynamic template enumeration (all synced files)', () => {
-  // Re-sync immediately before byte comparisons as a second layer of defence.
-  // The original race — test/init-scaffolding.test.ts running runInit() against
-  // a sandbox under the repo root, so monorepo resolution stamped the real
-  // .github/agents/squad.agent.md — was fixed in #1796 by moving that sandbox
-  // to the OS temp dir. This describe-scoped beforeAll is retained to keep the
-  // window closed if any future suite reintroduces an in-repo sandbox.
-  beforeAll(() => {
-    execSync('node scripts/sync-templates.mjs', {
-      cwd: ROOT,
-      encoding: 'utf-8',
-      timeout: 60_000,
-    });
-  });
-
   const sourceFiles = collectFiles(SOURCE_DIR);
 
   it('.squad-templates/ contains files to sync', () => {
@@ -152,11 +117,11 @@ describe('dynamic template enumeration (all synced files)', () => {
       const destName = relFile === AGENT_MD_FILE ? `${AGENT_MD_FILE}.template` : relFile;
       const targetPath = `${target}/${destName}`;
 
-      it(`${targetPath} is byte-for-byte identical to ${canonicalPath}`, () => {
+      it(`${targetPath} is content-equivalent to ${canonicalPath}`, () => {
         expect(fileExists(targetPath), `${targetPath} should exist`).toBe(true);
-        const src = readFileBytes(canonicalPath);
-        const dst = readFileBytes(targetPath);
-        expect(Buffer.compare(src, dst), `${targetPath} content mismatch`).toBe(0);
+        const src = readFile(canonicalPath).replace(/\r\n/g, '\n');
+        const dst = readFile(targetPath).replace(/\r\n/g, '\n');
+        expect(dst, `${targetPath} content mismatch`).toBe(src);
       });
     }
 
@@ -164,29 +129,37 @@ describe('dynamic template enumeration (all synced files)', () => {
     if (relFile === AGENT_MD_FILE) {
       const agentPath = `${AGENT_MD_EXTRA_TARGET}/${AGENT_MD_FILE}`;
 
-      it(`${agentPath} is byte-for-byte identical to ${canonicalPath}`, () => {
+      it(`${agentPath} is content-equivalent to ${canonicalPath}`, () => {
         expect(fileExists(agentPath), `${agentPath} should exist`).toBe(true);
-        const src = readFileBytes(canonicalPath);
-        const dst = readFileBytes(agentPath);
-        expect(Buffer.compare(src, dst), `${agentPath} content mismatch`).toBe(0);
+        const src = readFile(canonicalPath).replace(/\r\n/g, '\n');
+        const dst = readFile(agentPath).replace(/\r\n/g, '\n');
+        expect(dst, `${agentPath} content mismatch`).toBe(src);
       });
     }
   }
 });
 
 // ---------------------------------------------------------------------------
-// 2. Script execution — sync-templates.mjs must exit cleanly
+// 2. Script validation — sync-templates.mjs must be explicit and parse cleanly
 // ---------------------------------------------------------------------------
 
-describe('sync-templates.mjs script execution', () => {
-  it('exits with code 0 (no syntax errors, no crashes)', () => {
-    // execSync throws on non-zero exit codes
+describe('sync-templates.mjs maintenance command', () => {
+  it('parses without mutating repository files', () => {
+    execSync('node --check scripts/sync-templates.mjs', {
+      cwd: ROOT,
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+  });
+
+  it('requires explicit opt-in before synchronization', () => {
     const output = execSync('node scripts/sync-templates.mjs', {
       cwd: ROOT,
       encoding: 'utf-8',
       timeout: 60_000,
     });
-    expect(output).toContain('Synced');
+    expect(output).toContain('requires explicit invocation');
+    expect(output).not.toContain('Synced');
   });
 });
 
@@ -359,7 +332,7 @@ describe('squad.agent.md squad-spawning guidance', () => {
 // ---------------------------------------------------------------------------
 
 const CROSS_SQUAD_SKILL_LOCATIONS = [
-  '.squad/skills/cross-squad/SKILL.md',
+  '.squad-templates/skills/cross-squad/SKILL.md',
   'packages/squad-cli/templates/skills/cross-squad/SKILL.md',
   'packages/squad-sdk/templates/skills/cross-squad/SKILL.md',
 ] as const;

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, it, expect, expectTypeOf, afterEach } from 'vitest';
 import {
@@ -14,8 +12,39 @@ import {
 } from '../packages/squad-sdk/src/ralph/triage.js';
 import type { GhIssue, GhPullRequest } from '../packages/squad-cli/src/cli/core/gh-cli.js';
 
-const ROUTING_MD = readFileSync(join(process.cwd(), '.squad', 'routing.md'), 'utf-8');
-const TEAM_MD = readFileSync(join(process.cwd(), '.squad', 'team.md'), 'utf-8');
+const TEAM_MD = [
+  '# Team',
+  '',
+  '## Members',
+  '',
+  '| Name | Role |',
+  '|------|------|',
+  '| Team Lead | Lead |',
+  '| Runtime Engineer | Backend Runtime |',
+  '| Quality Engineer | Test Engineer |',
+  '| Experience Engineer | Frontend UX |',
+  '| Scribe | Session Memory |',
+  '| Ralph | Work Monitor |',
+].join('\n');
+
+const ROUTING_MD = [
+  '# Routing',
+  '',
+  '## Routing Table',
+  '',
+  '| Work Type | Route To | Examples |',
+  '|-----------|-------|----------|',
+  '| Core runtime | Runtime Engineer 🔧 | adapter, session pool, API |',
+  '| Tests & quality | Quality Engineer 🧪 | Test coverage, Vitest, edge cases, CI/CD |',
+  '| Experience | Experience Engineer 🎨 | UI, UX, CSS |',
+  '',
+  '## Module Ownership',
+  '',
+  '| Module | Primary | Secondary |',
+  '|--------|---------|-----------|',
+  '| `src/ralph/` | Runtime Engineer | Team Lead |',
+  '| `src/` | Team Lead | Runtime Engineer |',
+].join('\n');
 
 function issue(title: string, body = ''): TriageIssue {
   return {
@@ -31,7 +60,7 @@ describe('ralph triage parser helpers', () => {
     it('parses a standard team.md with ## Members table', () => {
       const roster = parseRoster(TEAM_MD);
       expect(roster.length).toBeGreaterThan(0);
-      // Verify structure, not specific names — names change during team rebirths
+      // Verify structure without reading the repository's live team state.
       expect(roster[0]).toHaveProperty('name');
       expect(roster[0]).toHaveProperty('role');
       expect(roster[0]).toHaveProperty('label');
@@ -132,10 +161,10 @@ describe('ralph triage parser helpers', () => {
   });
 
   describe('parseRoutingRules()', () => {
-    it('parses standard routing.md with Work Type → Agent table', () => {
+    it('parses the canonical Routing Table with Route To column', () => {
       const rules = parseRoutingRules(ROUTING_MD);
       expect(rules.length).toBeGreaterThan(0);
-      // Verify structure — agent names change during team rebirths
+      // Verify structure using the synthetic roster.
       expect(rules[0]).toHaveProperty('workType');
       expect(rules[0]).toHaveProperty('agentName');
       expect(rules[0]).toHaveProperty('keywords');
@@ -159,6 +188,20 @@ describe('ralph triage parser helpers', () => {
 
       expect(parseRoutingRules(markdown)).toEqual([
         { workType: 'Runtime', agentName: 'Fenster', keywords: [] },
+      ]);
+    });
+
+    it('accepts generated preset routing with a Primary column', () => {
+      const markdown = [
+        '## Routing Table',
+        '',
+        '| Work Type | Primary | Secondary |',
+        '|-----------|---------|-----------|',
+        '| Runtime | Runtime Engineer | Quality Engineer |',
+      ].join('\n');
+
+      expect(parseRoutingRules(markdown)).toEqual([
+        { workType: 'Runtime', agentName: 'Runtime Engineer', keywords: [] },
       ]);
     });
 
@@ -214,7 +257,7 @@ describe('triageIssue()', () => {
   const modules = parseModuleOwnership(ROUTING_MD);
 
   it('module path match returns module-ownership source with high confidence', () => {
-    // Find a module path from the live routing to test with
+    // Find a module path from the synthetic routing fixture.
     const firstModule = modules[0];
     expect(firstModule).toBeDefined();
     const decision = triageIssue(
@@ -226,8 +269,7 @@ describe('triageIssue()', () => {
 
     expect(decision?.source).toBe('module-ownership');
     expect(decision?.confidence).toBe('high');
-    // Agent name comes from live routing — don't hardcode it
-    expect(decision?.agent.name).toBeTruthy();
+    expect(decision?.agent.name).toBe('Runtime Engineer');
   });
 
   it('routing keyword match returns routing-rule source', () => {
@@ -239,8 +281,7 @@ describe('triageIssue()', () => {
     );
 
     expect(decision?.source).toBe('routing-rule');
-    // Agent name comes from live routing — don't hardcode it
-    expect(decision?.agent.name).toBeTruthy();
+    expect(decision?.agent.name).toBe('Quality Engineer');
   });
 
   it('multiple keyword matches get higher confidence', () => {
@@ -277,8 +318,7 @@ describe('triageIssue()', () => {
   it('lead fallback when no match', () => {
     const decision = triageIssue(issue('Unclear request', 'No obvious signal here'), rules, modules, roster);
     expect(decision?.source).toBe('lead-fallback');
-    // Should find *some* lead — don't hardcode the name
-    expect(decision?.agent.name).toBeTruthy();
+    expect(decision?.agent.name).toBe('Team Lead');
     expect(decision?.confidence).toBe('low');
   });
 
@@ -289,39 +329,43 @@ describe('triageIssue()', () => {
 
   it('combines title + body for matching', () => {
     const onlyBodyRule: RoutingRule[] = [
-      { workType: 'Testing', agentName: 'Hockney', keywords: ['vitest'] },
+      { workType: 'Testing', agentName: 'Quality Engineer', keywords: ['vitest'] },
     ];
-    const hockneyOnly: TeamMember[] = [{ name: 'Hockney', role: 'Tester', label: 'squad:hockney' }];
+    const qualityOnly: TeamMember[] = [
+      { name: 'Quality Engineer', role: 'Tester', label: 'squad:quality-engineer' },
+    ];
 
     const decision = triageIssue(
       issue('Please investigate', 'This appears only in body: vitest'),
       onlyBodyRule,
       [],
-      hockneyOnly,
+      qualityOnly,
     );
 
     expect(decision?.source).toBe('routing-rule');
-    expect(decision?.agent.name).toBe('Hockney');
+    expect(decision?.agent.name).toBe('Quality Engineer');
   });
 
   it('case insensitive matching', () => {
     const onlyBodyRule: RoutingRule[] = [
-      { workType: 'Testing', agentName: 'Hockney', keywords: ['vitest'] },
+      { workType: 'Testing', agentName: 'Quality Engineer', keywords: ['vitest'] },
     ];
-    const hockneyOnly: TeamMember[] = [{ name: 'Hockney', role: 'Tester', label: 'squad:hockney' }];
+    const qualityOnly: TeamMember[] = [
+      { name: 'Quality Engineer', role: 'Tester', label: 'squad:quality-engineer' },
+    ];
 
-    const decision = triageIssue(issue('Need VITEST coverage now'), onlyBodyRule, [], hockneyOnly);
+    const decision = triageIssue(issue('Need VITEST coverage now'), onlyBodyRule, [], qualityOnly);
     expect(decision?.source).toBe('routing-rule');
   });
 
   it('prefers longer module path match (src/ralph/ over src/)', () => {
     const customModules: ModuleOwnership[] = [
-      { modulePath: 'src/', primary: 'Keaton', secondary: null },
-      { modulePath: 'src/ralph/', primary: 'Fenster', secondary: null },
+      { modulePath: 'src/', primary: 'Team Lead', secondary: null },
+      { modulePath: 'src/ralph/', primary: 'Runtime Engineer', secondary: null },
     ];
     const customRoster: TeamMember[] = [
-      { name: 'Keaton', role: 'Lead', label: 'squad:keaton' },
-      { name: 'Fenster', role: 'Core Dev', label: 'squad:fenster' },
+      { name: 'Team Lead', role: 'Lead', label: 'squad:team-lead' },
+      { name: 'Runtime Engineer', role: 'Core Dev', label: 'squad:runtime-engineer' },
     ];
 
     const decision = triageIssue(
@@ -332,7 +376,7 @@ describe('triageIssue()', () => {
     );
 
     expect(decision?.source).toBe('module-ownership');
-    expect(decision?.agent.name).toBe('Fenster');
+    expect(decision?.agent.name).toBe('Runtime Engineer');
   });
 });
 

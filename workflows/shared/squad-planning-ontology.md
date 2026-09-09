@@ -4,7 +4,7 @@ description: Squad planning ontology — artifact schemas, lifecycle state machi
 ---
 # Planning Ontology & Artifact Schemas
 
-> **Version:** 2.0 · **Owner:** Procedures · **Status:** Active
+> **Version:** 2.0 · **Owner:** Agent systems role · **Status:** Active
 >
 > **Decision Ratifications:**
 > - `copilot-plan-workflow-ux.md` → **Ratified Option A + Option 3**: Explicit commands (`/squad plan accept`) under the `/squad` namespace; planning logic lives in `shared/` components imported by `squad.md`. This file IS the shared component.

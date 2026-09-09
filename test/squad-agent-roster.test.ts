@@ -30,7 +30,7 @@ const TEMPLATE_TARGETS = [
 // After #1308 phase 1, the Determine-team-size / always-on-roster text
 // lives in this satellite skill (canonical source + 2 template mirrors).
 const INIT_MODE_SKILL_TARGETS = [
-  '.squad/skills/coordinator-init-mode/SKILL.md',
+  '.squad-templates/skills/coordinator-init-mode/SKILL.md',
   'packages/squad-cli/templates/skills/coordinator-init-mode/SKILL.md',
   'packages/squad-sdk/templates/skills/coordinator-init-mode/SKILL.md',
 ];

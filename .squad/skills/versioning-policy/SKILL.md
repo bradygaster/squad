@@ -91,7 +91,7 @@ Stable `0.14.0` is a separate immutable package version and GitHub tag.
 
 ## 6. Ownership
 
-The current Release Manager owns release version changes. Other agents may update
+Surgeon (Release Manager) owns release version changes. Other agents may update
 versions only when explicitly assigned release work or when reverting an
 accidentally committed local `-build.N` version.
 
@@ -120,4 +120,4 @@ publishing.
 | Sync | Root, SDK, CLI, and lockfile workspace versions must match |
 | Dependency | Preview CLI range and lockfile entry must be `>=VERSION` |
 | Local build | `-build.N` is local-only and never committed |
-| Ownership | The current Release Manager owns planned release version changes |
+| Ownership | Surgeon owns planned release version changes |

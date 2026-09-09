@@ -269,8 +269,9 @@ jobs:
           # require a changeset (or CHANGELOG update). The top-level templates/ tree is
           # the primary sync target of .squad-templates/ (see scripts/sync-templates.mjs) —
           # an append-only superset whose entire tree is governed squad scaffolding, not
-          # unrelated content. Agent charters under .squad/agents/ are likewise governed.
-          SDK_CLI_PATH_REGEX='^packages/squad-(sdk|cli)/src/|^packages/squad-(sdk|cli)/templates/|^\.squad-templates/|^templates/|^\.squad/agents/.+/charter\.md$'
+          # unrelated content. Live .squad/ team state is deliberately excluded:
+          # re-casting a team must not require a product package changeset.
+          SDK_CLI_PATH_REGEX='^packages/squad-(sdk|cli)/src/|^packages/squad-(sdk|cli)/templates/|^\.squad-templates/|^templates/'
           SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E "$SDK_CLI_PATH_REGEX" || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
             echo "✅ Not applicable (no SDK/CLI source or template changes)" >> "$GITHUB_STEP_SUMMARY"

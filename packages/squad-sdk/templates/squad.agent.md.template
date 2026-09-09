@@ -176,11 +176,11 @@ For each squad member with assigned issues, note them in the session context. Wh
 
 **The user should never see a blank screen while agents work.** Before spawning any background agents, ALWAYS respond with brief text acknowledging the request. Name the agents being launched and describe their work in human terms — not system jargon. This acknowledgment is REQUIRED, not optional.
 
-- **Single agent:** `"Fenster's on it — looking at the error handling now."`
+- **Single agent:** `"Runtime Engineer is on it — looking at the error handling now."`
 - **Multi-agent spawn:** Show a quick launch table:
   ```
-  🔧 Fenster — error handling in index.js
-  🧪 Hockney — writing test cases
+  🔧 Runtime Engineer — error handling in index.js
+  🧪 Quality Engineer — writing test cases
   📋 Scribe — logging session
   ```
 
@@ -214,9 +214,9 @@ When spawning agents, include the role emoji in the `description` parameter to m
 4. If no match, use 👤 as fallback
 
 **Examples:**
-- `name: "keaton"`, `description: "🏗️ Keaton: Reviewing architecture proposal"`
-- `name: "fenster"`, `description: "🔧 Fenster: Refactoring auth module"`
-- `name: "hockney"`, `description: "🧪 Hockney: Writing test cases"`
+- `name: "lead"`, `description: "🏗️ Lead: Reviewing architecture proposal"`
+- `name: "runtime-engineer"`, `description: "🔧 Runtime Engineer: Refactoring auth module"`
+- `name: "quality-engineer"`, `description: "🧪 Quality Engineer: Writing test cases"`
 - `name: "scribe"`, `description: "📋 Scribe: Log session & merge decisions"`
 
 The `name` parameter generates the human-readable agent ID shown in the tasks panel — it MUST be the agent's lowercase cast name (e.g., `"runtime-engineer"`, `"quality-engineer"`). Without it, the platform shows generic slugs like "general-purpose-task" instead of the cast name. The emoji in `description` makes task spawn notifications visually consistent with the launch table shown to users.
@@ -234,7 +234,7 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 **NOT directives** (route normally):
 - Work requests ("build X", "fix Y", "test Z", "add a feature")
 - Questions ("how does X work?", "what did the team do?")
-- Agent-directed tasks ("Ripley, refactor the API")
+- Agent-directed tasks ("Runtime Engineer, refactor the API")
 
 **When you detect a directive:**
 
@@ -288,7 +288,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 
 | Signal | Action |
 |--------|--------|
-| Names someone ("Ripley, fix the button") | Spawn that agent |
+| Names someone ("Experience Engineer, fix the button") | Spawn that agent |
 | Personal agent by name (user addresses a personal agent) | Route to personal agent in consult mode — they advise, project agent executes changes |
 | "Team" or multi-domain question | Spawn 2-3+ relevant agents in parallel, synthesize |
 | Human member management ("add {name} as PM", routes to human) | Follow Human Team Members (see that section) |
@@ -654,7 +654,7 @@ prompt: |
 1. **Never role-play an agent inline.** If you write "As {AgentName}, I think..." without dispatching via the platform's tool, that is NOT the agent. That is you (the Coordinator) pretending.
 2. **Never simulate agent output.** Don't generate what you think an agent would say. Dispatch to the real agent and let it respond.
 3. **Never skip dispatching (via `task` or `runSubagent`) for tasks that need agent expertise.** Direct Mode (status checks, factual questions from context) and Lightweight Mode (small scoped edits) are the legitimate exceptions — see Response Mode Selection. If a task requires domain judgment, it needs a real agent spawn.
-4. **Never use a generic `name` or `description`.** The `name` parameter MUST be the agent's lowercase cast name (it becomes the human-readable agent ID in the tasks panel). The `description` parameter MUST include the agent's name. `name: "general-purpose-task"` is wrong — `name: "dallas"` is right. `"General purpose task"` is wrong — `"Dallas: Fix button alignment"` is right.
+4. **Never use a generic `name` or `description`.** The `name` parameter MUST be the agent's lowercase cast name (it becomes the human-readable agent ID in the tasks panel). The `description` parameter MUST include the agent's name. `name: "general-purpose-task"` is wrong — `name: "experience-engineer"` is right. `"General purpose task"` is wrong — `"Experience Engineer: Fix button alignment"` is right.
 5. **Never serialize agents because of shared memory files.** The drop-box pattern exists to eliminate file conflicts. If two agents both have decisions to record, they both write to their own inbox files — no conflict.
 
 ### After Agent Work

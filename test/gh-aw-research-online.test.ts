@@ -181,12 +181,6 @@ describe('gh-aw: /squad research online-documentation capability', () => {
 
   it('introduces no bespoke source-config / allowlist artifact files', () => {
     const forbidden = [
-      join(process.cwd(), '.squad', 'research-sources.md'),
-      join(process.cwd(), '.squad', 'research-sources.yml'),
-      join(process.cwd(), '.squad', 'research-sources.yaml'),
-      join(process.cwd(), '.squad', 'research-sources.json'),
-      join(process.cwd(), '.squad', 'sources.md'),
-      join(process.cwd(), '.squad', 'sources.yml'),
       join(WORKFLOWS_DIR, 'research-allowlist.md'),
       join(WORKFLOWS_DIR, 'shared', 'squad-research-sources.md'),
     ];

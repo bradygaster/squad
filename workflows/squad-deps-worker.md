@@ -76,7 +76,7 @@ safe-outputs:
       - "**/go.mod"
       - "go.sum"
       - "**/go.sum"
-    # Wave 1 protected-files exclusions (S2, issue #1748 Flight Decision comment,
+    # Wave 1 protected-files exclusions (S2, issue #1748 architecture decision,
     # APPROVED -- IMPLEMENTATION-READY, 2026-08-25). Excluding a basename from
     # `protected-files` allows the agent to produce a signed PR for that file;
     # the exclusion is compiled into `.lock.yml` at `gh aw compile` time and
@@ -87,7 +87,7 @@ safe-outputs:
     # docs (`CODEOWNERS`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`,
     # `CODE_OF_CONDUCT.md`, `DESIGN.md`, `AGENTS.md`) stay protected in every
     # wave -- see "bunfig.toml ruling" and "Always-protected" list in that
-    # Flight Decision comment.
+    # architecture decision.
     protected-files:
       policy: fallback-to-issue
       exclude:
@@ -108,7 +108,7 @@ safe-outputs:
       # manifest basename above is excluded from protection in a later slice.
       # `excluded-files` strips these paths from the patch structurally, before
       # protected-files evaluation -- the correct mechanism per issue #1748's
-      # Flight Decision comment (APPROVED -- IMPLEMENTATION-READY, 2026-08-25),
+      # architecture decision (APPROVED -- IMPLEMENTATION-READY, 2026-08-25),
       # "Vendored/generated dependency content" threat-model row.
       - "node_modules/**"
       - "**/node_modules/**"

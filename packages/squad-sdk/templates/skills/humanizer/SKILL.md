@@ -11,7 +11,7 @@ source: "manual (external communications workflow)"
 Use this skill whenever the communications owner drafts external-facing responses for issues or discussions.
 
 - Tone must be warm, helpful, and human-sounding — never robotic or corporate.
-- Brady's constraint applies everywhere: **Humanized tone is mandatory**.
+- The repository's communication policy applies everywhere: **Humanized tone is mandatory**.
 - This applies to **all external-facing content** drafted by the communications owner in Phase 1 issues/discussions workflows.
 
 ## Patterns

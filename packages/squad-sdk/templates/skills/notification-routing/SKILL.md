@@ -56,7 +56,7 @@ Agents prefix their output with `CHANNEL:<type>` to signal where the notificatio
 
 ```
 CHANNEL:security
-Worf found 3 new CVEs in dependency scan: lodash@4.17.15, minimist@1.2.5
+Security Reviewer found 3 new CVEs in dependency scan: lodash@4.17.15, minimist@1.2.5
 ```
 
 ### Routing Dispatcher (shell pseudocode)

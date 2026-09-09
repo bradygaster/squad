@@ -3,7 +3,7 @@ name: "reskill"
 description: "Team-wide charter and history optimization through skill extraction"
 domain: "team-optimization"
 confidence: "high"
-source: "manual — Brady directive to reduce per-agent context overhead"
+source: "manual — reduce per-agent context overhead"
 ---
 
 ## Context

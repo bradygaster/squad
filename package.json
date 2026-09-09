@@ -16,9 +16,9 @@
     }
   },
   "scripts": {
-    "prebuild": "node scripts/bump-build.mjs && node scripts/sync-skill-templates.mjs && node scripts/sync-templates.mjs",
+    "prebuild": "node scripts/bump-build.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
-    "sync-templates": "node scripts/sync-templates.mjs",
+    "sync-templates": "node scripts/sync-templates.mjs --sync",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "node scripts/run-benchmarks.mjs",

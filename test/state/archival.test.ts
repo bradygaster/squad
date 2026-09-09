@@ -474,13 +474,5 @@ describe('archival integrity', () => {
       expect(entries[1]?.text).toContain('tail that must stay with Second');
     });
 
-    it('round-trips the real .squad/decisions.md byte-for-byte', () => {
-      const real = path.join(process.cwd(), '.squad', 'decisions.md');
-      if (!existsSync(real)) return; // not present in a consumer checkout
-      const md = readFileSync(real, 'utf8');
-
-      expect(countEntries(md)).toBeGreaterThan(0);
-      expect(roundTrip(md)).toBe(md);
-    });
   });
 });

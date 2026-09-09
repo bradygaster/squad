@@ -47,14 +47,19 @@ interface ParsedTable {
 
 /** Parse routing rules from routing.md content */
 export function parseRoutingRules(routingMd: string): RoutingRule[] {
-  const table = parseTableSection(
-    routingMd,
-    /^##\s*work\s*type\s*(?:→|->)\s*agent\b/i,
-  );
+  const table =
+    parseTableSection(routingMd, /^##\s*work\s*type\s*(?:→|->)\s*agent\b/i) ??
+    parseTableSection(routingMd, /^##\s*routing\s*table\b/i);
   if (!table) return [];
 
   const workTypeIndex = findColumnIndex(table.headers, ['work type', 'type']);
-  const agentIndex = findColumnIndex(table.headers, ['agent', 'route to', 'route']);
+  const agentIndex = findColumnIndex(table.headers, [
+    'agent',
+    'route to',
+    'route',
+    'primary agent',
+    'primary',
+  ]);
   const examplesIndex = findColumnIndex(table.headers, ['examples', 'example']);
 
   if (workTypeIndex < 0 || agentIndex < 0) return [];

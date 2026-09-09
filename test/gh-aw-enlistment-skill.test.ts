@@ -24,7 +24,7 @@ const ROOT = resolve(__dirname, '..');
 
 const SKILL_ID = 'gh-aw-enlistment';
 
-const CANONICAL = `.squad/skills/${SKILL_ID}/SKILL.md`;
+const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
 const MIRRORS = [
   `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,

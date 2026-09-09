@@ -3,12 +3,12 @@ name: "ci-validation-gates"
 description: "Defensive CI/CD patterns: semver validation, token checks, retry logic, draft detection — earned from v0.8.22"
 domain: "ci-cd"
 confidence: "high"
-source: "extracted from Drucker and Trejo charters — earned knowledge from v0.8.22 release incident"
+source: "earned knowledge from the v0.8.22 release incident"
 ---
 
 ## Context
 
-CI workflows must be defensive. These patterns were learned from the v0.8.22 release disaster where invalid semver, wrong token types, missing retry logic, and draft releases caused a multi-hour outage. Both Drucker (CI/CD) and Trejo (Release Manager) carried this knowledge in their charters — now centralized here.
+CI workflows must be defensive. These patterns were learned from the v0.8.22 release incident where invalid semver, wrong token types, missing retry logic, and draft releases caused a multi-hour outage. The reusable lessons are centralized here rather than tied to individual agent charters.
 
 ## Patterns
 

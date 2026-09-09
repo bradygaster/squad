@@ -137,13 +137,13 @@ tool calls (including file writes) prompt for confirmation and block.
 
 ```powershell
 # PowerShell (Windows)
-copilot --agent squad --allow-all-tools -p "Picard, decide what testing framework to use. Write your decision." `
+copilot --agent squad --allow-all-tools -p "Lead, decide what testing framework to use. Write your decision." `
   2>&1 | Tee-Object evidence/session-task.log
 ```
 
 ```bash
 # Bash (macOS/Linux)
-copilot --agent squad --allow-all-tools -p "Picard, decide what testing framework to use. Write your decision." \
+copilot --agent squad --allow-all-tools -p "Lead, decide what testing framework to use. Write your decision." \
   2>&1 | tee evidence/session-task.log
 ```
 

@@ -124,10 +124,12 @@ jobs:
             }
 
             function findLead(teamMembers) {
-              return teamMembers.find(member => {
+              const hasRoleToken = (member, token) => {
                 const roleWords = member.role.toLowerCase().match(/[a-z0-9]+/g) || [];
-                return roleWords.includes('lead');
-              });
+                return roleWords.includes(token);
+              };
+              return teamMembers.find(member => hasRoleToken(member, 'lead')) ||
+                teamMembers.find(member => hasRoleToken(member, 'architect'));
             }
 
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
@@ -160,7 +162,12 @@ jobs:
 
                 const headers = tableCells(line).map(cell => cell.toLowerCase());
                 const workTypeIndex = headers.indexOf('work type');
-                const routeIndex = headers.findIndex(header => header === 'route to' || header === 'agent');
+                const routeIndex = headers.findIndex(header =>
+                  header === 'route to' ||
+                  header === 'agent' ||
+                  header === 'primary' ||
+                  header === 'primary agent'
+                );
                 const examplesIndex = headers.indexOf('examples');
                 if (workTypeIndex < 0 || routeIndex < 0) continue;
 
@@ -173,16 +180,11 @@ jobs:
                   const examples = examplesIndex >= 0 ? (cells[examplesIndex] || '') : '';
                   if (!workType || !routeCell) continue;
 
-                  const destinationNames = routeCell
-                    .split(/\s*(?:,|\/|&|\+|\band\b)\s*/i)
-                    .map(normalizeRouteDestination)
-                    .filter(Boolean);
-                  const destinations = teamMembers.filter(member =>
-                    destinationNames.includes(normalizeRouteDestination(member.name))
+                  const destinationName = normalizeRouteDestination(routeCell);
+                  const member = teamMembers.find(candidate =>
+                    normalizeRouteDestination(candidate.name) === destinationName
                   );
-                  for (const member of destinations) {
-                    rules.push({ member, workType, examples });
-                  }
+                  if (member) rules.push({ member, workType, examples });
                 }
                 break;
               }
@@ -191,28 +193,34 @@ jobs:
             }
 
             function routeScore(issueText, rule) {
-              const stopWords = new Set([
-                'and', 'the', 'for', 'with', 'from', 'into', 'module', 'system',
-                'work', 'owner', 'agent', 'support', 'management',
+              const genericWorkTypeTokens = new Set([
+                'agent', 'engineer', 'engineering', 'management', 'owner',
+                'specialist', 'system', 'work',
               ]);
-              const phrases = rule.workType
-                .toLowerCase()
-                .split(/[,/&]+/)
-                .map(value => value.trim())
-                .filter(value => value.length >= 4);
-              const keywords = `${rule.workType} ${rule.examples}`
-                .toLowerCase()
-                .match(/[a-z0-9@.+#-]+/g) || [];
 
-              let score = phrases.reduce(
-                (total, phrase) => total + (issueText.includes(phrase) ? 8 : 0),
-                0
-              );
-              for (const keyword of new Set(keywords)) {
-                if (keyword.length < 3 || stopWords.has(keyword)) continue;
-                if (issueText.includes(keyword)) score++;
+              function tokens(value) {
+                return value.toLowerCase().match(/[a-z0-9]+(?:[+#.][a-z0-9+#.]*)?/g) || [];
               }
-              return score;
+
+              function containsPhrase(haystack, needle) {
+                if (needle.length === 0 || needle.length > haystack.length) return false;
+                return haystack.some((_, index) =>
+                  needle.every((token, offset) => haystack[index + offset] === token)
+                );
+              }
+
+              const issueTokens = tokens(issueText);
+              const workTypeTokens = tokens(rule.workType)
+                .filter(token => !genericWorkTypeTokens.has(token));
+              const rawPhrases = [rule.workType, ...workTypeTokens, ...rule.examples.split(/[,;]+/)]
+                .flatMap(phrase => phrase.includes('/') ? [phrase, ...phrase.split('/')] : [phrase]);
+
+              return rawPhrases.reduce((best, phrase) => {
+                const phraseTokens = tokens(phrase);
+                if (!containsPhrase(issueTokens, phraseTokens)) return best;
+                const specificity = phraseTokens.length * 100;
+                return Math.max(best, specificity);
+              }, 0);
             }
 
             function selectRoutingAssignment(issueText, routingContent, teamMembers, lead) {
@@ -225,7 +233,16 @@ jobs:
                 return { member: lead, workType: null };
               }
 
-              const best = scoredRoutes[0];
+              const bestScore = scoredRoutes[0].score;
+              const bestRoutes = scoredRoutes.filter(candidate => candidate.score === bestScore);
+              const bestMembers = new Set(bestRoutes.map(candidate =>
+                normalizeRouteDestination(candidate.rule.member.name)
+              ));
+              if (bestMembers.size !== 1) {
+                return { member: lead, workType: null };
+              }
+
+              const best = bestRoutes[0];
               return { member: best.rule.member, workType: best.rule.workType };
             }
 

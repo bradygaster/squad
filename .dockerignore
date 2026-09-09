@@ -9,7 +9,7 @@ docs/dist
 coverage
 .git
 .github
-.squad/.scratch
+.squad
 *.log
 *.tsbuildinfo
 .env
