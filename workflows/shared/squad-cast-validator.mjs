@@ -195,31 +195,36 @@ function functionalSlug(value) {
   return functionalTokens(value).join('-');
 }
 
-const FUNCTIONAL_ROLE_TOKENS = new Set([
-  // Occupational categories.
+// This is intentionally a vocabulary of role heads, not repository domains.
+// Domain qualifiers before the head stay open-ended, so future repository terms
+// do not require validator updates.
+const FUNCTIONAL_ROLE_HEADS = new Set([
+  // Occupational heads.
   'administrator', 'advocate', 'analyst', 'architect', 'consultant',
   'coordinator', 'designer', 'developer', 'engineer', 'lead', 'maintainer',
   'manager', 'operator', 'owner', 'researcher', 'reviewer', 'scientist',
   'specialist', 'strategist', 'tester',
-  // Engineering domains and outcomes.
-  'accessibility', 'ai', 'api', 'application', 'architecture', 'automation',
-  'backend', 'build', 'business', 'cloud', 'compliance', 'contract', 'customer',
-  'data', 'database', 'delivery', 'dependency', 'deployment', 'documentation',
-  'frontend', 'fullstack', 'infrastructure', 'integration', 'legacy',
-  'machine', 'messaging', 'migration', 'modernization', 'observability',
-  'operations', 'performance', 'platform', 'privacy', 'product', 'program',
-  'project', 'qa', 'quality', 'reliability', 'release', 'rest', 'security',
-  'service', 'soap', 'software', 'solutions', 'storage', 'support', 'system',
-  'systems', 'technical', 'telemetry', 'test', 'testing', 'ui', 'ux', 'web',
-  // Common technology-family identifiers that are functional role modifiers.
-  'android', 'cobol', 'dotnet', 'graphql', 'ios', 'java', 'javascript', 'kafka',
-  'kotlin', 'node', 'php', 'python', 'react', 'ruby', 'rust', 'swift',
-  'typescript', 'vue',
+  // Functional outcome heads used as concise specialist roles.
+  'architecture', 'automation', 'delivery', 'deployment', 'documentation',
+  'integration', 'migration', 'modernization', 'observability', 'operations',
+  'quality', 'reliability', 'security', 'support', 'testing',
 ]);
+const SELF_CONTAINED_ROLE_HEADS = [
+  ['technical', 'lead'],
+];
 
-function isFunctionalRoleToken(token) {
-  return FUNCTIONAL_ROLE_TOKENS.has(token)
-    || /^(?:[a-z]+ops|[a-z]+ware)$/.test(token);
+function hasFunctionalRoleStructure(tokens) {
+  if (
+    tokens.length < 2
+    || tokens.length > 4
+    || !FUNCTIONAL_ROLE_HEADS.has(tokens.at(-1))
+  ) {
+    return false;
+  }
+  return !SELF_CONTAINED_ROLE_HEADS.some((head) => (
+    tokens.length > head.length
+    && head.every((token, index) => token === tokens[tokens.length - head.length + index])
+  ));
 }
 
 function parseSpecialistRoster(section, errors) {
@@ -271,28 +276,26 @@ function validateSpecialistIdentities(root, active, roster, errors) {
       );
     }
 
-    const nameTokens = functionalTokens(member.name);
     const declaredRoleTokens = functionalTokens(row.role);
-    const functionalRoleTokens = declaredRoleTokens.filter(isFunctionalRoleToken);
-    const roleTokens = new Set(functionalRoleTokens);
-    const roleIsFunctional = functionalRoleTokens.length >= 2;
-    if (!roleIsFunctional) {
+    if (!hasFunctionalRoleStructure(declaredRoleTokens)) {
       errors.push(
         `identity: active specialist "${member.name}" must declare a descriptive functional role; `
-        + `"${row.role}" does not contain at least two recognized functional role categories`,
+        + `"${row.role}" must contain two to four words and end in a functional role head`,
       );
     }
+
+    const nameTokens = functionalTokens(member.name);
     if (
-      nameTokens.length < 2
+      member.name !== row.role
+      || nameTokens.length < 2
       || nameTokens.length > 4
       || member.name.length > 48
-      || nameTokens.some((token) => !roleTokens.has(token))
-      || !nameTokens.some(isFunctionalRoleToken)
+      || functionalSlug(member.name) !== functionalSlug(row.role)
     ) {
       errors.push(
-        `identity: active specialist "${member.name}" must be a short descriptive functional `
-        + `name containing a functional role category from its declared role "${row.role}", `
-        + `not personal or fictional tokens repeated into that role`,
+        `identity: active specialist "${member.name}" must exactly equal its short descriptive `
+        + `functional role "${row.role}"; a personal or fictional name cannot validate itself `
+        + `by appearing as an extra role qualifier`,
       );
     }
 

@@ -428,7 +428,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected f15f647a208159a5fabcb717b42fac0c316344f0bd2bade8f543da3dea4c06db, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected d6687c02bb988a15be47a66fd3fe2c6848a81f13c9618e15c84e2c47123c6ec6, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -606,22 +606,41 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.stdout).toContain('Cast validation passed');
   });
 
-  it('rejects synchronized personal identity surfaces even when the name is inserted into the role', () => {
-    const synchronized = { id: 'nia', name: 'Nia', role: 'Nia Technical Lead' };
+  it.each([
+    { id: 'payments-integration-engineer', name: 'Payments Integration Engineer', role: 'Payments Integration Engineer' },
+    { id: 'falcon-firmware-engineer', name: 'Falcon Firmware Engineer', role: 'Falcon Firmware Engineer' },
+    { id: 'ledger-reconciliation-specialist', name: 'Ledger Reconciliation Specialist', role: 'Ledger Reconciliation Specialist' },
+  ])('accepts unknown repository-domain identifier $name', (specialist) => {
+    const fixture = createFixture([specialist, active[1], active[2]]);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Cast validation passed');
+  });
+
+  it.each([
+    'Nia Technical Lead',
+    'Nia Engineer',
+    'Technical Lead Nia',
+  ])('rejects synchronized Nia identity with declared role "%s"', (role) => {
+    const synchronized = { id: 'nia', name: 'Nia', role };
     const fixture = createFixture([synchronized, active[1], active[2]]);
     const result = validate(fixture.root, fixture.payload);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('active specialist "Nia"');
-    expect(result.stderr).toMatch(/personal or fictional tokens repeated into that role/i);
+    expect(result.stderr).toMatch(/must exactly equal its short descriptive functional role/i);
     expect(result.stdout).not.toContain('Cast validation passed.');
   });
 
-  it('validates the declared role without counting an identity token as functional', () => {
-    const synchronized = { id: 'nia', name: 'Nia', role: 'Nia Engineer' };
+  it('rejects a personal qualifier prefixed to the self-contained Technical Lead role', () => {
+    const synchronized = {
+      id: 'nia-technical-lead',
+      name: 'Nia Technical Lead',
+      role: 'Nia Technical Lead',
+    };
     const fixture = createFixture([synchronized, active[1], active[2]]);
     const result = validate(fixture.root, fixture.payload);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('"Nia Engineer" does not contain at least two recognized functional role categories');
+    expect(result.stderr).toContain('"Nia Technical Lead" must contain two to four words and end in a functional role head');
     expect(result.stdout).not.toContain('Cast validation passed.');
   });
 
@@ -639,7 +658,7 @@ describe('GH-AW Cast final-tree validator', () => {
       const result = validate(fixture.root, fixture.payload);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`active specialist "${personalName}"`);
-      expect(result.stderr).toMatch(/short descriptive functional name containing a functional role category/i);
+      expect(result.stderr).toMatch(/must exactly equal its short descriptive functional role/i);
       expect(result.stdout).not.toContain('Cast validation passed.');
     },
   );

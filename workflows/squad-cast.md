@@ -89,7 +89,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="f15f647a208159a5fabcb717b42fac0c316344f0bd2bade8f543da3dea4c06db"
+      validator_expected_sha256="d6687c02bb988a15be47a66fd3fe2c6848a81f13c9618e15c84e2c47123c6ec6"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -321,13 +321,17 @@ When the guard passes, analyze the repository before generating files:
   repository network policy permits it.
 
 Choose a compact team of descriptive functional names only. For every selected
-specialist, the registry `persistent_name`, visible Members-table name, charter
-heading name, and `.squad/agents/{id}/` folder must identify the function
-itself, not a person or character: use one to four words taken directly from
-the declared role, and make `{id}` the exact lowercase kebab-case slug of that
-name. For example, `Backend Engineer` / `backend-engineer` is valid; `Nia`,
-`Boone`, `Priya`, or any other human/fictional-style name is invalid. Every
-active role must be justified by concrete repository evidence in the PR body.
+specialist, the registry `persistent_name`, visible Members-table name, and
+declared role must exactly match; the charter heading must repeat that exact
+name and role, and `.squad/agents/{id}/` must use the exact lowercase kebab-case slug
+of the name. Roles must contain two to four words and end in a functional
+role head such as `Engineer`, `Specialist`, `Lead`, or `Integration`; repository
+domain qualifiers before that head are open-ended. For example,
+`Payments Integration Engineer` / `payments-integration-engineer` is valid;
+`Nia` with role `Nia Technical Lead`, or any other identity-contaminated
+human/fictional-style name is invalid even when all surfaces are synchronized.
+Every active role must be justified by concrete repository evidence in the PR
+body.
 Represent the current stack and any clearly evidenced modern-stack migration
 or integration need. Do not add generic filler or roles unsupported by the
 repository. Keep the deterministic four built-in support agents separate from
