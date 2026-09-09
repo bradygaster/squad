@@ -227,8 +227,17 @@ describe('ralph triage parser helpers', () => {
     });
 
     it('handles "—" as secondary (should be null)', () => {
-      const modules = parseModuleOwnership(ROUTING_MD);
-      expect(modules.find((module) => module.modulePath === 'src/ralph/')?.secondary).toBeNull();
+      const markdown = [
+        '## Module Ownership',
+        '',
+        '| Module | Primary | Secondary |',
+        '|--------|---------|-----------|',
+        '| `src/ralph/` | Runtime Engineer | — |',
+      ].join('\n');
+
+      expect(parseModuleOwnership(markdown)).toEqual([
+        { modulePath: 'src/ralph/', primary: 'Runtime Engineer', secondary: null },
+      ]);
     });
 
     it('returns empty array for missing section', () => {
