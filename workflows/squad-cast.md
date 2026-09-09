@@ -16,6 +16,7 @@ env:
   # pull_request_target/closed runs on the base repository. For a merged
   # bootstrap PR, merge_commit_sha is the immutable post-merge activation tree.
   SQUAD_CAST_TRUSTED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+  SQUAD_CAST_BASE_REF: ${{ github.event.repository.default_branch }}
 checkout:
   fetch-depth: 0
 concurrency:
@@ -41,6 +42,15 @@ tools:
 # restores that can reintroduce a stale committed .squad/ snapshot late in the
 # job, so this stays the last writer of the four built-in charters.
 pre-agent-steps:
+  - name: Pin local Cast base ref to trusted activation
+    shell: bash
+    run: |
+      set -euo pipefail
+      trusted_sha="${SQUAD_CAST_TRUSTED_SHA:?}"
+      base_ref="${SQUAD_CAST_BASE_REF:?}"
+      git check-ref-format --branch "$base_ref" >/dev/null
+      git cat-file -e "${trusted_sha}^{commit}"
+      git update-ref "refs/heads/${base_ref}" "$trusted_sha"
   - name: Materialize canonical built-in support agents
     shell: bash
     run: |
@@ -73,7 +83,7 @@ pre-agent-steps:
       cd "${GITHUB_WORKSPACE:?}"
 
       stderr_file="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stderr"
-      validator_script="${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs"
+      validator_script="${SQUAD_CAST_VALIDATOR_SCRIPT:-${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs}"
       validator_output="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stdout"
       expected_output="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.expected"
 
@@ -137,6 +147,13 @@ pre-agent-steps:
       cat "$validator_output"
       SQUAD_CAST_VALIDATOR_RUNNER
       chmod 500 "$validator_runner"
+      trusted_validator_dir="${RUNNER_TEMP:?}/squad-cast-validator"
+      mkdir -p "$trusted_validator_dir"
+      cp "${GITHUB_WORKSPACE:?}/.github/workflows/shared/squad-cast-validator.mjs" \
+        "${trusted_validator_dir}/squad-cast-validator.mjs"
+      cp "$validator_runner" "${trusted_validator_dir}/run-squad-cast-validator"
+      chmod 500 "${trusted_validator_dir}/run-squad-cast-validator"
+      chmod 400 "${trusted_validator_dir}/squad-cast-validator.mjs"
 # post-steps (not a prompt instruction): compiled into the agent job AFTER the
 # agent output is finalized and BEFORE `Upload agent output fallback artifact`
 # and `Upload agent artifacts`. The `safe_outputs` job consumes only those
@@ -157,6 +174,52 @@ post-steps:
       mkdir -p "$gate_dir"
       gate_stdout="${gate_dir}/validator.stdout"
       gate_stderr="${gate_dir}/validator.stderr"
+      payload="${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"
+
+      deny_cast() {
+        local reason="$1"
+        local validator_status="${2:-1}"
+        node -e '
+          const fs = require("node:fs");
+          const gatedTypes = new Set(["create_pull_request", "update_pull_request"]);
+          const jsonPath = process.env.GH_AW_CAST_AGENT_OUTPUT;
+          try {
+            const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+            parsed.items = (parsed.items ?? []).filter(i => !(i && gatedTypes.has(i.type)));
+            fs.writeFileSync(jsonPath, JSON.stringify(parsed));
+          } catch {
+            fs.writeFileSync(jsonPath, JSON.stringify({ items: [] }));
+          }
+          const jsonlPath = process.env.GH_AW_CAST_SAFE_OUTPUTS;
+          try {
+            const kept = fs.readFileSync(jsonlPath, "utf8").split("\n").filter(line => {
+              if (!line.trim()) return false;
+              try { return !gatedTypes.has(JSON.parse(line).type); } catch { return false; }
+            });
+            fs.writeFileSync(jsonlPath, kept.length ? kept.join("\n") + "\n" : "");
+          } catch { /* absent jsonl is already non-authorizing */ }
+        '
+        rm -f "${GH_AW_CAST_PATCH_DIR:?}"/aw-*.patch "${GH_AW_CAST_PATCH_DIR:?}"/aw-*.bundle
+        rm -f "$payload" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stdout" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stderr" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.expected"
+        {
+          echo "### Cast validation gate — DENIED"
+          echo ""
+          echo "$reason"
+          echo "Every pull-request safe output and transport artifact was removed before upload."
+          echo ""
+          echo '```text'
+          echo "validator exit status: ${validator_status}"
+          echo "validator stdout: $(cat "$gate_stdout" 2>/dev/null)"
+          sed -n '1,40p' "$gate_stderr" 2>/dev/null
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+        echo "::error::Cast validation gate denied pull-request materialization: ${reason}"
+        exit 1
+      }
 
       # 1. Decide mechanically whether this run is trying to materialize a Cast
       #    pull request. Only `create_pull_request` / `update_pull_request`
@@ -174,73 +237,162 @@ post-steps:
       decision="$(cat "${gate_dir}/decision")"
 
       if [ "$decision" = "ungated" ]; then
+        rm -f "$payload" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stdout" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stderr" \
+          "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.expected"
         echo "Cast gate: no pull-request safe output requested; nothing to authorize." \
           >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
         exit 0
       fi
 
       # 2. Run the deterministic validator here, in the runner. The agent's own
-      #    claim about validation is never consulted.
-      validator_runner="${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator"
+      #    claim about validation is never consulted. The authenticated copy in
+      #    RUNNER_TEMP cannot be deleted or rewritten by the agent workspace.
+      validator_runner="${RUNNER_TEMP:?}/squad-cast-validator/run-squad-cast-validator"
+      trusted_validator="${RUNNER_TEMP:?}/squad-cast-validator/squad-cast-validator.mjs"
       if [ ! -x "$validator_runner" ]; then
         printf 'Cast validator runner is missing or not executable: %s\n' "$validator_runner" > "$gate_stderr"
         : > "$gate_stdout"
         validator_status=1
       else
-        "$validator_runner" > "$gate_stdout" 2> "$gate_stderr"
+        SQUAD_CAST_VALIDATOR_SCRIPT="$trusted_validator" \
+          "$validator_runner" > "$gate_stdout" 2> "$gate_stderr"
         validator_status=$?
       fi
 
       printf 'Cast validation passed.\n' > "${gate_dir}/expected"
-      if [ "$validator_status" -eq 0 ] && cmp -s "${gate_dir}/expected" "$gate_stdout"; then
-        {
-          echo "### Cast validation gate"
-          echo ""
-          echo "Authorized: validator emitted exactly \`Cast validation passed.\`"
-        } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-        exit 0
+      if [ "$validator_status" -ne 0 ] || ! cmp -s "${gate_dir}/expected" "$gate_stdout"; then
+        deny_cast "The deterministic validator did not emit exactly \`Cast validation passed.\`." \
+          "$validator_status"
       fi
 
-      # 3. Fail closed. Strip every pull-request safe output and destroy the
-      #    patch/bundle before either artifact is uploaded, so the downstream
-      #    `safe_outputs` job has nothing left to materialize a Cast PR from.
-      node -e '
-        const fs = require("node:fs");
-        const gatedTypes = new Set(["create_pull_request", "update_pull_request"]);
-        const jsonPath = process.env.GH_AW_CAST_AGENT_OUTPUT;
-        try {
-          const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-          parsed.items = (parsed.items ?? []).filter(i => !(i && gatedTypes.has(i.type)));
-          fs.writeFileSync(jsonPath, JSON.stringify(parsed));
-        } catch {
-          fs.writeFileSync(jsonPath, JSON.stringify({ items: [] }));
+      # 3. Rebuild the transport from the validator's concrete manifest. This
+      #    drops inherited installation history, untracked evidence, workflow
+      #    resources, and the validator payload itself. The safe-output JSON is
+      #    intentionally left byte-for-byte untouched on success.
+      if ! node <<'NODE' > "${gate_dir}/sanitize.stdout" 2> "${gate_dir}/sanitize.stderr"
+      const { execFileSync } = require('node:child_process');
+      const { readFileSync, readdirSync, rmSync, statSync } = require('node:fs');
+      const { join } = require('node:path');
+
+      const workspace = process.env.GITHUB_WORKSPACE;
+      const patchDir = process.env.GH_AW_CAST_PATCH_DIR;
+      const outputPath = process.env.GH_AW_CAST_AGENT_OUTPUT;
+      const payloadPath = join(workspace, '.github/workflows/squad-cast-payload.json');
+      const trusted = process.env.SQUAD_CAST_TRUSTED_SHA;
+      const gateDir = join(process.env.RUNNER_TEMP, 'squad-cast-gate');
+      const maxBytes = 512 * 1024;
+      const git = (args, options = {}) =>
+        execFileSync('git', args, { cwd: workspace, encoding: 'utf8', stdio: 'pipe', ...options });
+      const fail = message => { throw new Error(message); };
+
+      const output = JSON.parse(readFileSync(outputPath, 'utf8'));
+      const requests = output.items.filter(item =>
+        item && (item.type === 'create_pull_request' || item.type === 'update_pull_request'));
+      if (requests.length !== 1) fail(`expected exactly one Cast pull-request output, found ${requests.length}`);
+      const request = requests[0];
+      const payload = JSON.parse(readFileSync(payloadPath, 'utf8'));
+      if (!Array.isArray(payload.paths) || payload.paths.length === 0) {
+        fail('validated payload has no concrete deliverable paths');
+      }
+      const manifest = [...new Set(payload.paths)];
+      const allowed = path =>
+        path === '.squad/team.md'
+        || path === '.squad/routing.md'
+        || /^\.squad\/casting\/[^/]+\.json$/.test(path)
+        || /^\.squad\/agents\/[^/]+\/(?:charter|history)\.md$/.test(path)
+        || path === '.github/agents/squad.agent.md'
+        || path === 'meet-the-squad.md';
+      const unexpectedManifest = manifest.filter(path => typeof path !== 'string' || !allowed(path));
+      if (unexpectedManifest.length) fail(`manifest contains unexpected paths: ${unexpectedManifest.join(', ')}`);
+
+      if (request.type === 'create_pull_request') {
+        const branch = request.branch;
+        if (typeof branch !== 'string' || !/^squad\/cast-[A-Za-z0-9._/-]+$/.test(branch) || branch.includes('..')) {
+          fail(`invalid Cast branch: ${String(branch)}`);
         }
-        const jsonlPath = process.env.GH_AW_CAST_SAFE_OUTPUTS;
-        try {
-          const kept = fs.readFileSync(jsonlPath, "utf8").split("\n").filter(line => {
-            if (!line.trim()) return false;
-            try { return !gatedTypes.has(JSON.parse(line).type); } catch { return false; }
-          });
-          fs.writeFileSync(jsonlPath, kept.length ? kept.join("\n") + "\n" : "");
-        } catch { /* absent jsonl is already non-authorizing */ }
-      '
-      rm -f "${GH_AW_CAST_PATCH_DIR:-/tmp/gh-aw}"/aw-*.patch "${GH_AW_CAST_PATCH_DIR:-/tmp/gh-aw}"/aw-*.bundle
+        git(['cat-file', '-e', `${trusted}^{commit}`]);
+        git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]);
+        const changed = git(['diff', '--name-only', '--diff-filter=ACDMRTUXB', trusted, branch])
+          .split(/\r?\n/).filter(Boolean);
+        const permitted = new Set([...manifest, '.github/workflows/squad-cast-payload.json']);
+        const unexpected = changed.filter(path => !permitted.has(path));
+        if (unexpected.length) fail(`branch contains non-Cast paths: ${unexpected.join(', ')}`);
 
+        const indexPath = join(gateDir, 'deliverables.index');
+        const gitEnv = {
+          ...process.env,
+          GIT_INDEX_FILE: indexPath,
+          GIT_AUTHOR_NAME: 'github-actions[bot]',
+          GIT_AUTHOR_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com',
+          GIT_COMMITTER_NAME: 'github-actions[bot]',
+          GIT_COMMITTER_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com',
+        };
+        git(['read-tree', trusted], { env: gitEnv });
+        git(['add', '--all', '--', ...manifest], { env: gitEnv });
+        const tree = git(['write-tree'], { env: gitEnv }).trim();
+        const baseTree = git(['rev-parse', `${trusted}^{tree}`]).trim();
+        if (tree === baseTree) fail('final Cast deliverable manifest contains no changes');
+        const commit = execFileSync(
+          'git',
+          ['commit-tree', tree, '-p', trusted],
+          {
+            cwd: workspace,
+            env: gitEnv,
+            input: 'Squad automatic Cast deliverables\n',
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+          },
+        ).trim();
+        git(['update-ref', `refs/heads/${branch}`, commit]);
+
+        const patches = readdirSync(patchDir).filter(name => /^aw-.*\.patch$/.test(name));
+        const bundles = readdirSync(patchDir).filter(name => /^aw-.*\.bundle$/.test(name));
+        if (patches.length !== 1 || bundles.length !== 1) {
+          fail(`expected one patch and one bundle, found ${patches.length} patch(es) and ${bundles.length} bundle(s)`);
+        }
+        const patchPath = join(patchDir, patches[0]);
+        const bundlePath = join(patchDir, bundles[0]);
+        const patch = git(['format-patch', `${trusted}..${commit}`, '--stdout', '--binary']);
+        require('node:fs').writeFileSync(patchPath, patch);
+        rmSync(bundlePath, { force: true });
+        git(['bundle', 'create', bundlePath, `${trusted}..refs/heads/${branch}`]);
+
+        const finalPaths = git(['diff', '--name-only', trusted, commit]).split(/\r?\n/).filter(Boolean);
+        const missing = manifest.filter(path => !finalPaths.includes(path));
+        const extra = finalPaths.filter(path => !manifest.includes(path));
+        if (missing.length || extra.length) {
+          fail(`sanitized deliverables differ from manifest (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`);
+        }
+        for (const artifact of [patchPath, bundlePath]) {
+          const size = statSync(artifact).size;
+          if (size <= 0 || size > maxBytes) {
+            fail(`${artifact.split('/').pop()} is ${size} bytes; Cast transport limit is ${maxBytes} bytes`);
+          }
+        }
+        process.stdout.write(`Sanitized ${finalPaths.length} Cast deliverables into a ${statSync(patchPath).size}-byte patch.\n`);
+      }
+      NODE
+      then
+        cat "${gate_dir}/sanitize.stderr" > "$gate_stderr"
+        deny_cast "Cast deliverable sanitization failed." 1
+      fi
+
+      # 4. Payload, runner, and validator output are scratch state. Remove them
+      #    only after validation and transport rebuilding, before artifact upload.
+      rm -f "$payload" \
+        "${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-cast-validator" \
+        "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stdout" \
+        "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.stderr" \
+        "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-validator.expected"
       {
-        echo "### Cast validation gate — DENIED"
+        echo "### Cast validation gate"
         echo ""
-        echo "The deterministic validator did not emit exactly \`Cast validation passed.\`."
-        echo "Every pull-request safe output was removed before artifact upload; no Cast PR can be created by this run."
-        echo ""
-        echo '```text'
-        echo "validator exit status: ${validator_status}"
-        echo "validator stdout: $(cat "$gate_stdout" 2>/dev/null)"
-        sed -n '1,40p' "$gate_stderr" 2>/dev/null
-        echo '```'
+        echo "Authorized: validator emitted exactly \`Cast validation passed.\`"
+        cat "${gate_dir}/sanitize.stdout"
       } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-
-      echo "::error::Cast validation gate denied pull-request materialization (validator exit ${validator_status})."
-      exit 1
 safe-outputs:
   messages:
     pull-request-created: "🤖 Squad opened [Cast PR #{item_number}]({item_url}) for native human review. Merge it to continue onboarding."
@@ -367,8 +519,10 @@ are exempt from the specialist naming rule.
 Generate the final Cast tree according to the existing Cast contract in
 `.github/workflows/shared/squad.md`. Preserve the canonical built-in resources
 materialized under `.squad/agents/{fact-checker,rai,ralph,scribe}/charter.md`
-without editing them, and build an explicit concrete payload file at
-`.github/workflows/squad-cast-payload.json`.
+without editing them, and build an explicit concrete validator payload at
+`.github/workflows/squad-cast-payload.json`. That payload is scratch state: it
+must be present for validation, but the machine gate removes it from the final
+transport and it must not be listed as a Cast PR deliverable.
 
 The payload is schema v2 and contains exactly `schema_version`, `paths`, and
 `roles`. Set `schema_version` to `2`; set `paths` to the concrete Cast allowlist;
@@ -420,11 +574,13 @@ claim success when validation did not authorize it.
 Running the validator yourself is a debugging aid, not the authorization
 mechanism. Authorization is mechanical and outside your control: the
 `Machine-enforced Cast validation gate` post-agent step re-runs the same
-deterministic runner in the runner after this agent finishes, and it deletes
-every `create_pull_request` and `update_pull_request` safe output plus the
-generated patch before the artifacts are uploaded unless that independent run
-emits exactly `Cast validation passed.`. Emitting a pull-request output from an
-unvalidated tree therefore cannot produce a Cast PR — it only produces a failed
+deterministic runner from a protected runner copy after this agent finishes.
+It rebuilds the patch and bundle from the validated concrete deliverable
+manifest, removes the validator payload and runner scratch, and deletes every
+pull-request output plus transport artifact unless that independent run emits
+exactly `Cast validation passed.` and the compact final transport stays within
+its machine bound. Emitting a pull-request output from an unvalidated or
+over-broad tree therefore cannot produce a Cast PR — it only produces a failed
 run. Validate first, then request the output.
 
 ## Cast pull request

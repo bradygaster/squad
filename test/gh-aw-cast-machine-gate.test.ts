@@ -87,11 +87,18 @@ interface CastSandbox {
   overrides: Record<string, string>;
   agentOutput: string;
   safeOutputs: string;
+  payload: string;
   patchDir: string;
   patchFile: string;
+  bundleFile: string;
+  workspace: string;
 }
 
-function castSandbox(items: unknown[], validatorBody: string | null): CastSandbox {
+function castSandbox(
+  items: unknown[],
+  validatorBody: string | null,
+  options: { unexpectedPath?: boolean; castContent?: string } = {},
+): CastSandbox {
   const base = temporaryWorkspace('cast-');
   const workspace = join(base, 'workspace');
   const patchDir = join(base, 'gh-aw');
@@ -100,18 +107,53 @@ function castSandbox(items: unknown[], validatorBody: string | null): CastSandbo
   mkdirSync(patchDir, { recursive: true });
   mkdirSync(runnerTemp, { recursive: true });
 
+  execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+  execFileSync('git', ['config', 'user.name', 'Cast Fixture'], { cwd: workspace });
+  execFileSync('git', ['config', 'user.email', 'cast-fixture@example.invalid'], { cwd: workspace });
+  writeFileSync(join(workspace, 'README.md'), 'trusted base\n');
+  execFileSync('git', ['add', '--', 'README.md'], { cwd: workspace });
+  execFileSync('git', ['commit', '--quiet', '-m', 'trusted base'], { cwd: workspace });
+  const trustedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workspace, encoding: 'utf8' }).trim();
+
+  mkdirSync(join(workspace, '.squad'), { recursive: true });
+  writeFileSync(join(workspace, '.squad/team.md'), options.castContent ?? '# Compact Cast\n');
+  const payload = join(workspace, '.github/workflows/squad-cast-payload.json');
+  writeFileSync(payload, JSON.stringify({ paths: ['.squad/team.md'] }));
+  if (options.unexpectedPath) {
+    writeFileSync(join(workspace, 'unexpected.bin'), 'not a Cast deliverable\n');
+  }
+  execFileSync(
+    'git',
+    ['checkout', '-b', 'squad/cast-roster'],
+    { cwd: workspace },
+  );
+  execFileSync(
+    'git',
+    ['add', '--', '.squad/team.md', '.github/workflows/squad-cast-payload.json',
+      ...(options.unexpectedPath ? ['unexpected.bin'] : [])],
+    { cwd: workspace },
+  );
+  execFileSync('git', ['commit', '--quiet', '-m', 'cast result'], { cwd: workspace });
+
   const agentOutput = join(patchDir, 'agent_output.json');
   const safeOutputs = join(patchDir, 'safeoutputs.jsonl');
   writeFileSync(agentOutput, JSON.stringify({ items }));
   writeFileSync(safeOutputs, items.map((item) => JSON.stringify(item)).join('\n') + '\n');
 
   const patchFile = join(patchDir, 'aw-cast.patch');
-  writeFileSync(patchFile, 'diff --git a/.squad/team.md b/.squad/team.md\n');
+  const bundleFile = join(patchDir, 'aw-cast.bundle');
+  writeFileSync(patchFile, 'oversized or unsafe generated transport\n');
+  writeFileSync(bundleFile, 'unsafe generated bundle\n');
 
   if (validatorBody !== null) {
-    const runner = join(workspace, '.github/workflows/run-squad-cast-validator');
+    const trustedRunnerDir = join(runnerTemp, 'squad-cast-validator');
+    mkdirSync(trustedRunnerDir, { recursive: true });
+    const runner = join(trustedRunnerDir, 'run-squad-cast-validator');
     writeFileSync(runner, validatorBody);
     chmodSync(runner, 0o755);
+    writeFileSync(join(trustedRunnerDir, 'squad-cast-validator.mjs'), '// fixture\n');
+    const workspaceRunner = join(workspace, '.github/workflows/run-squad-cast-validator');
+    writeFileSync(workspaceRunner, 'agent-visible scratch runner\n');
   }
 
   return {
@@ -122,11 +164,15 @@ function castSandbox(items: unknown[], validatorBody: string | null): CastSandbo
       GH_AW_CAST_AGENT_OUTPUT: agentOutput,
       GH_AW_CAST_SAFE_OUTPUTS: safeOutputs,
       GH_AW_CAST_PATCH_DIR: patchDir,
+      SQUAD_CAST_TRUSTED_SHA: trustedSha,
     },
     agentOutput,
     safeOutputs,
+    payload,
     patchDir,
     patchFile,
+    bundleFile,
+    workspace,
   };
 }
 
@@ -146,6 +192,7 @@ const CREATE_PR_ITEM = {
   type: 'create_pull_request',
   title: '[Squad] Cast: roster',
   body: 'Squad-Cast-Marker: squad-gh-aw/v1',
+  branch: 'squad/cast-roster',
 };
 
 const PASSING_VALIDATOR = "#!/usr/bin/env bash\nprintf 'Cast validation passed.\\n'\n";
@@ -160,10 +207,16 @@ describe('Cast validation is enforced by the runner, not by the prompt', () => {
 
   it('authorizes pull-request outputs only on the exact validator authorization string', () => {
     const sandbox = castSandbox([CREATE_PR_ITEM], PASSING_VALIDATOR);
+    const safeOutputsBefore = readFileSync(sandbox.safeOutputs);
     const result = runGate(gate, sandbox.overrides);
     expect(result.status).toBe(0);
     expect(itemTypes(sandbox.agentOutput)).toEqual(['create_pull_request']);
+    expect(readFileSync(sandbox.safeOutputs)).toEqual(safeOutputsBefore);
     expect(existsSync(sandbox.patchFile)).toBe(true);
+    expect(existsSync(sandbox.bundleFile)).toBe(true);
+    expect(existsSync(sandbox.payload)).toBe(false);
+    expect(readFileSync(sandbox.patchFile, 'utf8')).toContain('.squad/team.md');
+    expect(readFileSync(sandbox.patchFile, 'utf8')).not.toContain('squad-cast-payload.json');
   });
 
   it('strips pull-request outputs and the patch when the validator is missing', () => {
@@ -173,6 +226,8 @@ describe('Cast validation is enforced by the runner, not by the prompt', () => {
     expect(itemTypes(sandbox.agentOutput)).toEqual([]);
     expect(readFileSync(sandbox.safeOutputs, 'utf8')).toBe('');
     expect(existsSync(sandbox.patchFile)).toBe(false);
+    expect(existsSync(sandbox.bundleFile)).toBe(false);
+    expect(existsSync(sandbox.payload)).toBe(false);
   });
 
   it('rejects a near-miss authorization string that is not byte-exact', () => {
@@ -210,6 +265,7 @@ describe('Cast validation is enforced by the runner, not by the prompt', () => {
     const result = runGate(gate, sandbox.overrides);
     expect(result.status).toBe(0);
     expect(itemTypes(sandbox.agentOutput)).toEqual(['noop']);
+    expect(existsSync(sandbox.payload)).toBe(false);
   });
 
   it('fails closed when the agent output cannot be parsed at all', () => {
@@ -220,17 +276,60 @@ describe('Cast validation is enforced by the runner, not by the prompt', () => {
     expect(itemTypes(sandbox.agentOutput)).toEqual([]);
   });
 
+  it('uses the protected runner after the agent deletes its workspace copy', () => {
+    const sandbox = castSandbox(
+      [CREATE_PR_ITEM],
+      `#!/usr/bin/env bash
+test -f "\${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"
+printf 'Cast validation passed.\\n'
+`,
+    );
+    rmSync(join(sandbox.workspace, '.github/workflows/run-squad-cast-validator'));
+    const result = runGate(gate, sandbox.overrides);
+    expect(result.status).toBe(0);
+    expect(itemTypes(sandbox.agentOutput)).toEqual(['create_pull_request']);
+    expect(existsSync(sandbox.payload)).toBe(false);
+  });
+
+  it('fails closed when the requested branch contains a non-Cast path', () => {
+    const sandbox = castSandbox(
+      [CREATE_PR_ITEM],
+      PASSING_VALIDATOR,
+      { unexpectedPath: true },
+    );
+    const result = runGate(gate, sandbox.overrides);
+    expect(result.status).toBe(1);
+    expect(itemTypes(sandbox.agentOutput)).toEqual([]);
+    expect(readFileSync(sandbox.safeOutputs, 'utf8')).toBe('');
+    expect(existsSync(sandbox.patchFile)).toBe(false);
+  });
+
+  it('fails closed before upload when the sanitized Cast patch exceeds 512 KiB', () => {
+    const sandbox = castSandbox(
+      [CREATE_PR_ITEM],
+      PASSING_VALIDATOR,
+      { castContent: `# Oversized Cast\n${'x'.repeat(600 * 1024)}` },
+    );
+    const result = runGate(gate, sandbox.overrides);
+    expect(result.status).toBe(1);
+    expect(itemTypes(sandbox.agentOutput)).toEqual([]);
+    expect(existsSync(sandbox.patchFile)).toBe(false);
+    expect(existsSync(sandbox.bundleFile)).toBe(false);
+  });
+
   it('provisions the validator resource and runner the standalone workflow needs', () => {
     const front = frontmatter('workflows/squad-cast.md');
     expect(front.resources).toContain('shared/squad-cast-validator.mjs');
     expect(front.env).toEqual({
       SQUAD_CAST_TRUSTED_SHA: '${{ github.event.pull_request.merge_commit_sha }}',
+      SQUAD_CAST_BASE_REF: '${{ github.event.repository.default_branch }}',
     });
     for (const id of ['scribe', 'ralph', 'rai', 'fact-checker']) {
       expect(front.resources).toContain(`shared/builtins/${id}-charter.md`);
     }
     const preSteps = (front['pre-agent-steps'] ?? []) as { name?: string }[];
     const names = preSteps.map((step) => step.name ?? '');
+    expect(names).toContain('Pin local Cast base ref to trusted activation');
     expect(names).toContain('Materialize canonical built-in support agents');
     expect(names).toContain('Prepare deterministic Cast validator runner');
   });
@@ -383,6 +482,14 @@ describe('onboarding dedup covers every issue state', () => {
     expect(Object.keys(safeOutputs['update-issue']!)).not.toContain('state');
     expect(source).toContain('does not support');
     expect(source).toContain('safe-outputs.update-issue.state');
+  });
+
+  it('pins the local default branch before the Cast agent can create its delivery branch', () => {
+    const lock = compileMachineGateLocks()['squad-cast'];
+    const steps = lock.jobs?.agent?.steps ?? [];
+    const pinIndex = stepIndex(steps, 'Pin local Cast base ref to trusted activation');
+    const executionIndex = stepIndex(steps, 'Execute GitHub Copilot CLI');
+    expect(pinIndex).toBeLessThan(executionIndex);
   });
 });
 
