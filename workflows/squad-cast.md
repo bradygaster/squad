@@ -93,7 +93,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432"
+      validator_expected_sha256="e7faf8e5d7ad1926d1c40b7664438193bba54af0d5e1adf195cbc5f90341aa35"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -331,13 +331,25 @@ repository-domain qualifiers followed by one supported functional head such as
 `Engineer`, `Specialist`, `Lead`, `Integration`, or `Modernization`. `Technical`
 and `Quality` are the only evidence-free structural modifiers. Every other
 qualifier is open-ended but must occur as an exact token in an allowed file at
-the trusted activation commit; working-tree content does not count.
+the trusted activation commit; working-tree content does not count. Safe
+technology spellings include `.NET`, `C#`, `C++`, `Node.js`, `gRPC`, `OAuth`,
+`iOS`, and `PostgreSQL`. Qualifiers are bounded to ASCII letters/digits with,
+where applicable, one leading dot, internal single dots, one trailing `#`, or
+one/two trailing `+` characters. Do not use path separators, whitespace,
+controls, shell metacharacters, repeated dots, or other punctuation.
 
 For every selected specialist, derive every surface exactly from that canonical
 phrase: registry `persistent_name`, visible Members-table Name and Role, routing
 target, and charter heading identity/role all equal the phrase; the registry ID
-and `.squad/agents/{id}/` folder equal its lowercase kebab slug. Do not add an
-alias, persona, codename, display-name override, or other identity token.
+and `.squad/agents/{id}/` folder equal its deterministic lowercase kebab slug.
+Slug normalization maps `.NET` to `dotnet`, `C#` to `c-sharp`, `C++` to
+`c-plus-plus`, `Node.js` to `node-js`, and otherwise lowercases letters while
+turning allowed internal dots into hyphens. Each active specialist registry
+entry contains exactly `created_at`, `legacy_named`, `persistent_name`, `status`,
+and `universe`, with an ISO UTC timestamp, `legacy_named: false`, `status:
+"active"`, and `universe: "descriptive"`. Do not add an alias, persona, codename,
+nickname, display-name override, or any other key. Fixed built-ins remain
+outside the active specialist registry.
 `Payments Integration Engineer`, `Falcon Firmware Engineer`, and `Ledger
 Reconciliation Specialist` are valid only when every non-structural qualifier
 has immutable repository evidence. `Technical Lead` and `Quality Engineer` need
@@ -387,7 +399,11 @@ must be repository-relative POSIX paths and matches must be the exact spelling
 found at the trusted commit. Never put a source SHA in the payload: the runner
 supplies the trusted activation SHA from workflow context. Do not use `.squad/**`,
 generated workflow/agent/artifact files, dependency trees, or build output as
-evidence.
+evidence. Do not use ecosystem lockfiles, including `package-lock.json`,
+`yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, or generic `*.lock` /
+`*-lock.json|yaml|yml` names. Evidence must resolve at the trusted commit to a
+regular file blob (mode `100644` or `100755`), never a tree/directory, symbolic
+link, submodule, or other object mode.
 
 The deterministic validator is mandatory. Run exactly:
 

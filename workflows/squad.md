@@ -127,7 +127,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432"
+      validator_expected_sha256="e7faf8e5d7ad1926d1c40b7664438193bba54af0d5e1adf195cbc5f90341aa35"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -954,11 +954,18 @@ Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
    Unknown domain qualifiers are allowed only when an exact token is present in
    immutable repository evidence at the trusted workflow-context commit.
    `Technical` and `Quality` are the only evidence-free structural modifiers.
+   Safe bounded technology tokens include `.NET`, `C#`, `C++`, `Node.js`,
+   `gRPC`, `OAuth`, `iOS`, and `PostgreSQL`; reject controls, whitespace,
+   paths, shell metacharacters, repeated dots, and other punctuation.
 
 3. Derive all identity surfaces exactly from the canonical phrase: registry
    `persistent_name`, Members Name and Role, routing target, and charter heading
    identity/role all equal it; `{id}` and the charter folder are its lowercase
-   kebab slug. Do not add aliases, personas, codenames, display-name overrides,
+   deterministic kebab slug: `.NET` → `dotnet`, `C#` → `c-sharp`, `C++` →
+   `c-plus-plus`, `Node.js` → `node-js`; lowercase letters and hyphenate dots.
+   Active registry entries contain exactly `created_at`, `legacy_named: false`,
+   `persistent_name`, `status: "active"`, and `universe: "descriptive"`;
+   built-ins remain separate. Do not add aliases, personas, codenames, display-name overrides,
    or other identity tokens. Built-ins remain fixed and exempt.
 4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Canonical Functional Identity", "universe": "descriptive", "legacy_named": false, "status": "active" } } }`.
 5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
@@ -1052,9 +1059,10 @@ qualifier object contains its canonical `token` and either `kind: "structural"`
 for the closed `Technical`/`Quality` set, or `kind: "repository"` plus
 `evidence: { "path": "...", "match": "..." }`. The match is the exact token
 spelling in that file at the trusted commit. Exclude `.squad/**`, generated
-workflows/agents/artifacts, dependencies, and build output. Never include a
-source or trusted SHA in the payload; the runner supplies it from workflow
-context.
+workflows/agents/artifacts, dependencies, build output, ecosystem lockfiles,
+`*.lock`, and `*-lock.json|yaml|yml`. Require a regular blob (`100644` or
+`100755`), never a tree, symlink, submodule, or other mode. Never include a
+source or trusted SHA in the payload; the runner supplies it.
 
 Natural-language review is not the gate. Immediately before requesting safe
 output, create

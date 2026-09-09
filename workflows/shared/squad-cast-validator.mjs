@@ -58,9 +58,24 @@ const EVIDENCE_EXCLUDED_PATHS = [
   /^\.github\/(?:aw|agents|workflows)(?:\/|$)/,
   /(?:^|\/)(?:node_modules|vendor|third_party|third-party|\.venv|venv|__pycache__)(?:\/|$)/,
   /(?:^|\/)(?:dist|build|out|target|coverage|bin|obj|artifacts?)(?:\/|$)/,
-  /(?:^|\/).*\.lock\.ya?ml$/,
   /^meet-the-squad\.md$/,
 ];
+const EVIDENCE_EXCLUDED_BASENAMES = new Set([
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'pnpm-lock.yml',
+  'cargo.lock',
+  'poetry.lock',
+  'pipfile.lock',
+  'composer.lock',
+  'gemfile.lock',
+  'go.sum',
+  'packages.lock.json',
+  'paket.lock',
+]);
+const REGULAR_GIT_FILE_MODES = new Set(['100644', '100755']);
 
 function parseArgs(argv) {
   const args = new Map();
@@ -198,12 +213,27 @@ function charterReferences(markdown) {
     .sort();
 }
 
-function functionalTokens(value) {
-  return value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+function canonicalWords(value) {
+  if (typeof value !== 'string' || value.length === 0) return [];
+  const words = value.split(' ');
+  return words.join(' ') === value && words.every(Boolean) ? words : [];
+}
+
+function slugToken(token) {
+  let slug = token.toLowerCase();
+  if (slug.startsWith('.')) slug = `dot${slug.slice(1)}`;
+  slug = slug
+    .replaceAll('.', '-')
+    .replaceAll('#', '-sharp')
+    .replaceAll('+', '-plus')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return slug;
 }
 
 function functionalSlug(value) {
-  return functionalTokens(value).join('-');
+  return canonicalWords(value).map(slugToken).join('-');
 }
 
 // This is intentionally a vocabulary of role heads, not repository domains.
@@ -220,10 +250,10 @@ const FUNCTIONAL_ROLE_HEADS = new Set([
   'integration', 'migration', 'modernization', 'observability', 'operations',
   'quality', 'reliability', 'security', 'support', 'testing',
 ]);
-function hasFunctionalRoleStructure(tokens) {
-  return tokens.length >= 2
-    && tokens.length <= 4
-    && FUNCTIONAL_ROLE_HEADS.has(tokens.at(-1));
+function hasFunctionalRoleStructure(words) {
+  return words.length >= 2
+    && words.length <= 4
+    && FUNCTIONAL_ROLE_HEADS.has(words.at(-1)?.toLowerCase());
 }
 
 function exactObjectKeys(value, expected) {
@@ -233,8 +263,21 @@ function exactObjectKeys(value, expected) {
     && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort());
 }
 
-function isCanonicalTitleToken(token) {
+function isCanonicalHeadToken(token) {
   return /^[A-Z][a-z0-9]*$/.test(token) || /^[A-Z0-9]{2,}$/.test(token);
+}
+
+function isSafeQualifierToken(token) {
+  return typeof token === 'string'
+    && token.length >= 1
+    && token.length <= 24
+    && (
+      /^[A-Za-z][A-Za-z0-9]*$/.test(token)
+      || /^\.[A-Za-z][A-Za-z0-9]*$/.test(token)
+      || /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+$/.test(token)
+      || /^[A-Za-z][A-Za-z0-9]*#$/.test(token)
+      || /^[A-Za-z][A-Za-z0-9]*\+{1,2}$/.test(token)
+    );
 }
 
 function validateTrustedSha(root, trustedSha, errors) {
@@ -254,7 +297,11 @@ function validateTrustedSha(root, trustedSha, errors) {
 }
 
 function isExcludedEvidencePath(path) {
-  return EVIDENCE_EXCLUDED_PATHS.some((pattern) => pattern.test(path));
+  const basename = path.split('/').at(-1)?.toLowerCase() ?? '';
+  return EVIDENCE_EXCLUDED_PATHS.some((pattern) => pattern.test(path))
+    || EVIDENCE_EXCLUDED_BASENAMES.has(basename)
+    || /\.lock$/i.test(basename)
+    || /-lock\.(?:json|ya?ml)$/i.test(basename);
 }
 
 function readTrustedEvidence(root, trustedSha, path, cache, errors) {
@@ -262,7 +309,38 @@ function readTrustedEvidence(root, trustedSha, path, cache, errors) {
   if (cache.has(key)) return cache.get(key);
   let content = null;
   try {
-    content = execFileSync('git', ['-C', root, 'show', `${trustedSha}:${path}`], {
+    const entry = execFileSync(
+      'git',
+      ['-C', root, 'ls-tree', '-z', '--full-tree', trustedSha, '--', path],
+      {
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const match = entry.match(/^([0-9]{6}) ([a-z]+) ([a-f0-9]+)\t([^\0]+)\0$/);
+    if (!match || match[4] !== path) {
+      errors.push(`evidence: ${path} is absent or unreadable at trusted commit ${trustedSha}`);
+      cache.set(key, null);
+      return null;
+    }
+    const [, mode, type, objectId] = match;
+    if (type !== 'blob' || !REGULAR_GIT_FILE_MODES.has(mode)) {
+      const kind = type === 'tree'
+        ? 'tree/directory'
+        : mode === '120000'
+          ? 'symbolic link'
+          : mode === '160000'
+            ? 'submodule'
+            : `${type} object with mode ${mode}`;
+      errors.push(
+        `evidence: ${path} at trusted commit ${trustedSha} is a ${kind}; `
+        + 'Cast evidence must be a regular file blob with mode 100644 or 100755',
+      );
+      cache.set(key, null);
+      return null;
+    }
+    content = execFileSync('git', ['-C', root, 'cat-file', 'blob', objectId], {
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -300,23 +378,24 @@ function validateRoleSpecifications(payloadRoles, active, root, trustedSha, erro
       continue;
     }
 
-    const canonicalWords = role.canonical.split(' ');
-    const tokens = functionalTokens(role.canonical);
+    const words = canonicalWords(role.canonical);
+    const qualifierWords = words.slice(0, -1);
+    const head = words.at(-1);
     if (
-      canonicalWords.length !== tokens.length
-      || canonicalWords.some((token) => !isCanonicalTitleToken(token))
+      !hasFunctionalRoleStructure(words)
+      || !isCanonicalHeadToken(head ?? '')
+      || qualifierWords.some((token) => !isSafeQualifierToken(token))
       || role.canonical.length > 48
-      || !hasFunctionalRoleStructure(tokens)
     ) {
       errors.push(
         `${label} canonical identity "${role.canonical}" must be a two-to-four-word title phrase, `
-        + 'at most 48 characters, ending in a supported functional head',
+        + 'at most 48 characters, with safe bounded qualifier tokens and ending in a supported functional head',
       );
     }
-    if (role.head !== canonicalWords.at(-1) || !FUNCTIONAL_ROLE_HEADS.has(role.head.toLowerCase())) {
+    if (role.head !== head || !FUNCTIONAL_ROLE_HEADS.has(role.head.toLowerCase())) {
       errors.push(`${label} head must exactly equal the supported final word of canonical`);
     }
-    if (role.qualifiers.length !== Math.max(0, canonicalWords.length - 1)) {
+    if (role.qualifiers.length !== qualifierWords.length) {
       errors.push(`${label} must specify every canonical qualifier exactly once and in order`);
     }
     if (!activeByName.has(role.canonical)) {
@@ -329,7 +408,7 @@ function validateRoleSpecifications(payloadRoles, active, root, trustedSha, erro
 
     for (const [qualifierIndex, qualifier] of role.qualifiers.entries()) {
       const qualifierLabel = `${label}.qualifiers[${qualifierIndex}]`;
-      const expectedToken = canonicalWords[qualifierIndex];
+      const expectedToken = qualifierWords[qualifierIndex];
       if (!qualifier || typeof qualifier !== 'object' || Array.isArray(qualifier)) {
         errors.push(`${qualifierLabel} must be an object`);
         continue;
@@ -446,19 +525,19 @@ function validateSpecialistIdentities(root, active, roster, errors) {
       );
     }
 
-    const declaredRoleTokens = functionalTokens(row.role);
-    if (!hasFunctionalRoleStructure(declaredRoleTokens)) {
+    const declaredRoleWords = canonicalWords(row.role);
+    if (!hasFunctionalRoleStructure(declaredRoleWords)) {
       errors.push(
         `identity: active specialist "${member.name}" must declare a descriptive functional role; `
         + `"${row.role}" must contain two to four words and end in a functional role head`,
       );
     }
 
-    const nameTokens = functionalTokens(member.name);
+    const nameWords = canonicalWords(member.name);
     if (
       member.name !== row.role
-      || nameTokens.length < 2
-      || nameTokens.length > 4
+      || nameWords.length < 2
+      || nameWords.length > 4
       || member.name.length > 48
       || functionalSlug(member.name) !== functionalSlug(row.role)
     ) {
@@ -561,13 +640,27 @@ function parseRegistry(root, errors) {
     }
   }
   for (const [id, value] of activeEntries) {
-    if (value.universe !== 'descriptive') {
-      errors.push(`registry: active specialist "${id}" must use canonical descriptive universe`);
+    if (!exactObjectKeys(
+      value,
+      ['created_at', 'legacy_named', 'persistent_name', 'status', 'universe'],
+    )) {
+      errors.push(
+        `registry: active specialist "${id}" must contain exactly created_at, legacy_named, `
+        + 'persistent_name, status, and universe',
+      );
     }
-    for (const forbidden of ['alias', 'persona', 'display_name', 'identity', 'character_name']) {
-      if (Object.hasOwn(value, forbidden)) {
-        errors.push(`registry: active specialist "${id}" must not define additional identity field "${forbidden}"`);
-      }
+    if (
+      typeof value.created_at !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value.created_at)
+      || Number.isNaN(Date.parse(value.created_at))
+      || value.legacy_named !== false
+      || value.status !== 'active'
+      || value.universe !== 'descriptive'
+    ) {
+      errors.push(
+        `registry: active specialist "${id}" must use an ISO UTC created_at, legacy_named false, `
+        + 'status "active", and must use canonical descriptive universe',
+      );
     }
   }
   return active;

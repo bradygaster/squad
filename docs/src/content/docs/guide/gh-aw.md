@@ -647,16 +647,32 @@ merged, you can `@squad` in Copilot Chat to talk to your team.
 ## Canonical functional identities
 
 GH-AW Cast gives each non-built-in specialist one canonical functional identity,
-such as `Technical Lead`, `Payments Integration Engineer`, or `Dotnet
+such as `Technical Lead`, `Payments Integration Engineer`, or `.NET
 Modernization`. The phrase is two to four words, at most 48 characters, and its
-last word is a supported functional head.
+last word is a supported functional head. Bounded repository qualifiers may use
+safe technology spellings such as `.NET`, `C#`, `C++`, `Node.js`, `gRPC`,
+`OAuth`, `iOS`, and `PostgreSQL`; path separators, controls, whitespace, shell
+metacharacters, repeated dots, and unrecognized punctuation are rejected.
 
 Repository-domain qualifiers are open-ended, but every qualifier must have
 immutable exact-token evidence in an allowed repository file at the pre-Cast
 commit. `Technical` and `Quality` are the only evidence-free structural
 modifiers. The same canonical phrase is used for the registry persistent name,
 Members Name and Role, routing target, charter heading, and lowercase kebab
-folder/ID. GH-AW Cast does not add aliases, personas, or themed character names.
+folder/ID. Slugs are deterministic: `.NET` becomes `dotnet`, `C#` becomes
+`c-sharp`, `C++` becomes `c-plus-plus`, `Node.js` becomes `node-js`, allowed
+internal dots become hyphens, and letters become lowercase. Active specialist
+registry entries contain exactly `created_at`, `legacy_named`, `persistent_name`,
+`status`, and `universe`, with an ISO UTC timestamp, `legacy_named: false`,
+`status: "active"`, and `universe: "descriptive"`; fixed built-ins are validated
+separately. GH-AW Cast does not add aliases,
+personas, codenames, nicknames, themed character names, or unknown registry keys.
+In short, it does not add aliases, personas, or themed character names.
+
+Evidence is read only from regular file blobs (Git mode `100644` or `100755`) at
+the trusted commit. Trees/directories, symbolic links, submodules, generated or
+dependency lockfiles, dependencies, generated artifacts, and build output are
+not eligible evidence.
 
 ---
 

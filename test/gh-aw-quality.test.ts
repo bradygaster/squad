@@ -1509,7 +1509,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--trusted-sha "${SQUAD_CAST_TRUSTED_SHA:?}"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="e7faf8e5d7ad1926d1c40b7664438193bba54af0d5e1adf195cbc5f90341aa35"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):

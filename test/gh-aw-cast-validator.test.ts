@@ -1,4 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -45,6 +54,42 @@ function git(root: string, args: string[]): string {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
   }
   return result.stdout.trim();
+}
+
+function commitEvidenceFile(
+  fixture: ReturnType<typeof createFixture>,
+  path: string,
+  content: string,
+): void {
+  write(fixture.root, path, content);
+  git(fixture.root, ['add', '--', path]);
+  git(fixture.root, ['commit', '--quiet', '-m', `Add evidence ${path}`]);
+  fixture.trustedSha = git(fixture.root, ['rev-parse', 'HEAD']);
+}
+
+function useEvidencePath(
+  fixture: ReturnType<typeof createFixture>,
+  path: string,
+  roleIndex = 1,
+  qualifierIndex = 0,
+): void {
+  const payload = readPayload(fixture);
+  const evidence = payload.roles[roleIndex].qualifiers[qualifierIndex].evidence as {
+    path: string;
+    match: string;
+  };
+  evidence.path = path;
+  writePayload(fixture, payload);
+}
+
+function registryEntry(name: string): Record<string, unknown> {
+  return {
+    created_at: '2026-09-09T00:00:00.000Z',
+    legacy_named: false,
+    persistent_name: name,
+    status: 'active',
+    universe: 'descriptive',
+  };
 }
 
 function roleSpecification(member: typeof active[number]) {
@@ -200,7 +245,7 @@ function createFixture(members = active, immutableEvidenceTokens?: string[]): {
   write(root, '.squad/casting/registry.json', JSON.stringify({
     agents: Object.fromEntries(members.map(({ id, name }) => [
       id,
-      { persistent_name: name, status: 'active', universe: 'descriptive' },
+      registryEntry(name),
     ])),
   }));
   write(root, '.squad/casting/history.json', '{}\n');
@@ -501,7 +546,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 6264f08fb0b7efa1afcb26701cda57b1a138e27500a1b302638e9a2481eb5432, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected e7faf8e5d7ad1926d1c40b7664438193bba54af0d5e1adf195cbc5f90341aa35, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -691,6 +736,47 @@ describe('GH-AW Cast final-tree validator', () => {
   });
 
   it.each([
+    { token: '.NET', id: 'dotnet-modernization', head: 'Modernization' },
+    { token: 'C#', id: 'c-sharp-engineer', head: 'Engineer' },
+    { token: 'C++', id: 'c-plus-plus-engineer', head: 'Engineer' },
+    { token: 'Node.js', id: 'node-js-engineer', head: 'Engineer' },
+    { token: 'gRPC', id: 'grpc-integration', head: 'Integration' },
+    { token: 'OAuth', id: 'oauth-security', head: 'Security' },
+    { token: 'iOS', id: 'ios-engineer', head: 'Engineer' },
+    { token: 'PostgreSQL', id: 'postgresql-specialist', head: 'Specialist' },
+  ])('accepts punctuated or mixed-case technology qualifier $token', ({ token, id, head }) => {
+    const specialist = { id, name: `${token} ${head}`, role: `${token} ${head}` };
+    const fixture = createFixture([specialist, active[1], active[2]]);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Cast validation passed');
+  });
+
+  it.each([
+    'Node..js',
+    'C+++',
+    'OAuth;',
+    '../NET',
+    'gRPC\tAdmin',
+    'PostgreSQL\nAdmin',
+    'C$',
+    '`Node.js`',
+  ])('rejects malformed or unsafe qualifier spelling %j', (token) => {
+    const fixture = createFixture();
+    const payload = readPayload(fixture);
+    payload.roles[0].canonical = `${token} Lead`;
+    payload.roles[0].qualifiers[0] = {
+      token,
+      kind: 'repository',
+      evidence: { path: 'README.md', match: token },
+    };
+    writePayload(fixture, payload);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('safe bounded qualifier tokens');
+  });
+
+  it.each([
     { id: 'nia-engineer', name: 'Nia Engineer', role: 'Nia Engineer' },
     { id: 'boone-specialist', name: 'Boone Specialist', role: 'Boone Specialist' },
     { id: 'priya-integration', name: 'Priya Integration', role: 'Priya Integration' },
@@ -751,6 +837,30 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.stderr).toContain('working-only.md is absent or unreadable at trusted commit');
   });
 
+  it('rejects a directory/tree as immutable evidence before reading it', () => {
+    const fixture = createFixture();
+    commitEvidenceFile(fixture, 'docs/evidence.md', 'Application\n');
+    useEvidencePath(fixture, 'docs');
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/docs .* is a tree\/directory/i);
+    expect(result.stderr).toContain('must be a regular file blob');
+  });
+
+  it('rejects a symbolic link as immutable evidence before reading it', () => {
+    const fixture = createFixture();
+    const linkPath = join(fixture.root, 'application-link');
+    symlinkSync('README.md', linkPath);
+    git(fixture.root, ['add', '--', 'application-link']);
+    git(fixture.root, ['commit', '--quiet', '-m', 'Add evidence symlink']);
+    fixture.trustedSha = git(fixture.root, ['rev-parse', 'HEAD']);
+    useEvidencePath(fixture, 'application-link');
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/application-link .* is a symbolic link/i);
+    expect(result.stderr).toContain('must be a regular file blob');
+  });
+
   it.each([
     '.squad/evidence.md',
     '.github/workflows/generated.yml',
@@ -765,6 +875,46 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(`evidence path ${path} is excluded`);
+  });
+
+  it.each([
+    'package-lock.json',
+    'nested/npm-shrinkwrap.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+    'pnpm-lock.yml',
+    'Cargo.lock',
+    'poetry.lock',
+    'Pipfile.lock',
+    'composer.lock',
+    'Gemfile.lock',
+    'go.sum',
+    'packages.lock.json',
+    'paket.lock',
+    'custom.lock',
+    'service-lock.json',
+    'service-lock.yaml',
+    'service-lock.yml',
+  ])('rejects generated or dependency lockfile evidence %s', (path) => {
+    const fixture = createFixture();
+    commitEvidenceFile(fixture, path, 'Application\n');
+    useEvidencePath(fixture, path);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`evidence path ${path} is excluded`);
+  });
+
+  it.each([
+    'src/lock-manager.ts',
+    'docs/interlock.json',
+    'config/package-locker.json',
+    'locks/yarn.locked',
+  ])('does not over-exclude legitimate source evidence %s', (path) => {
+    const fixture = createFixture();
+    commitEvidenceFile(fixture, path, 'Application\n');
+    useEvidencePath(fixture, path);
+    const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it('rejects substring-only evidence matches', () => {
@@ -813,17 +963,21 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.stderr).toContain('is not an available commit');
   });
 
-  it('rejects additional alias identity fields in the active registry', () => {
+  it.each(['alias', 'codename', 'nickname', 'favorite_color'])(
+    'rejects unknown active registry field %s',
+    (field) => {
     const fixture = createFixture();
     const registryPath = join(fixture.root, '.squad', 'casting', 'registry.json');
     const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as {
       agents: Record<string, Record<string, unknown>>;
     };
-    registry.agents['technical-lead'].alias = 'Nia';
+    registry.agents['technical-lead'][field] = 'Nia';
     writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
     const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('must not define additional identity field "alias"');
+    expect(result.stderr).toContain(
+      'must contain exactly created_at, legacy_named, persistent_name, status, and universe',
+    );
   });
 
   it('rejects a themed universe as an additional specialist identity channel', () => {
@@ -967,9 +1121,9 @@ describe('GH-AW Cast final-tree validator', () => {
       agents: {
         ...Object.fromEntries(active.map(({ id, name }) => [
           id,
-          { persistent_name: name, status: 'active', universe: 'descriptive' },
+          registryEntry(name),
         ])),
-        rai: { persistent_name: 'Rai', status: 'active', universe: 'descriptive' },
+        rai: registryEntry('Rai'),
       },
     }));
     const result = validate(fixture.root, fixture.payload, fixture.trustedSha);
