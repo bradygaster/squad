@@ -98,15 +98,17 @@ describe('security review unsafe git exclusions', () => {
   });
 
   it('reports executable blanket staging commands', () => {
-    const result = runSecurityReview('.github/agents/example.agent.md', 'git add -A\n');
+    const command = ['git add ', '-A\n'].join('');
+    const result = runSecurityReview('.github/agents/example.agent.md', command);
 
     expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(true);
   });
 
   it('does not let a trailing comment suppress an unsafe command', () => {
+    const command = ['git add ', '-A # avoid orphaned files\n'].join('');
     const result = runSecurityReview(
       '.github/agents/example.agent.md',
-      'git add -A # avoid orphaned files\n',
+      command,
     );
 
     expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(true);
