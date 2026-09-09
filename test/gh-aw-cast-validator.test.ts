@@ -33,25 +33,13 @@ function builtinCanonicalContent(id: string): Buffer {
 
 const builtinCanonicalRelativePath = '.github/workflows/shared/builtins';
 
-const corePayload = [
-  '.squad/team.md',
-  '.squad/routing.md',
-  '.squad/casting/registry.json',
-  '.squad/casting/history.json',
-  '.squad/casting/policy.json',
-  ...active.map(({ id }) => `.squad/agents/${id}/charter.md`),
-  ...builtins.map(({ id }) => `.squad/agents/${id}/charter.md`),
-  '.github/agents/squad.agent.md',
-  'meet-the-squad.md',
-];
-
 function write(root: string, path: string, content: string | Buffer): void {
   const fullPath = join(root, ...path.split('/'));
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, content, 'utf8');
 }
 
-function teamMarkdown(): string {
+function teamMarkdown(members = active): string {
   return `# Project Squad
 
 ## Coordinator
@@ -64,7 +52,7 @@ function teamMarkdown(): string {
 
 | Name | Role | Charter | Status |
 | --- | --- | --- | --- |
-${active.map(({ id, name, role }) => `| ${name} | ${role} | \`.squad/agents/${id}/charter.md\` | Active |`).join('\n')}
+${members.map(({ id, name, role }) => `| ${name} | ${role} | \`.squad/agents/${id}/charter.md\` | Active |`).join('\n')}
 
 ## Built-in Support Agents
 
@@ -84,20 +72,20 @@ ${builtins.map(({ id, name }) => `| ${name} | Built-in | \`.squad/agents/${id}/c
 `;
 }
 
-function routingMarkdown(): string {
+function routingMarkdown(members = active): string {
   return `# Routing
 
 ## Routing Table
 
 | Work Type | Route To | Examples |
 | --- | --- | --- |
-| Architecture | Technical Lead | Design and technical direction |
-| Implementation | Application Engineer | Product code and integration |
-| Quality | Quality Engineer | Tests and release confidence |
+| Architecture | ${members[0].name} | Design and technical direction |
+| Implementation | ${members[1].name} | Product code and integration |
+| Quality | ${members[2].name} | Tests and release confidence |
 `;
 }
 
-function coordinatorMarkdown(): string {
+function coordinatorMarkdown(members = active): string {
   return `---
 name: Squad
 description: "Route repository work to the active GH-AW Cast."
@@ -118,7 +106,7 @@ Confirm identities in \`.squad/casting/registry.json\`; use \`.squad/casting/his
 - \`.squad/casting/history.json\`
 - \`.squad/casting/policy.json\`
 - \`meet-the-squad.md\`
-${active.map(({ id, name }) => `- ${name}: \`.squad/agents/${id}/charter.md\``).join('\n')}
+${members.map(({ id, name }) => `- ${name}: \`.squad/agents/${id}/charter.md\``).join('\n')}
 ${builtins.map(({ id, name }) => `- ${name}: \`.squad/agents/${id}/charter.md\``).join('\n')}
 
 ## Routing work
@@ -142,7 +130,7 @@ Generated from the final Cast roster, routing table, registry, and active charte
 
 | Agent | Role | Authority | Focus |
 | --- | --- | --- | --- |
-${active.map(({ name, role }) => `| ${name} | ${role} | Assigned domain | ${role} |`).join('\n')}
+${members.map(({ name, role }) => `| ${name} | ${role} | Assigned domain | ${role} |`).join('\n')}
 
 ### Supported task types
 
@@ -152,29 +140,29 @@ Architecture, Implementation, Quality
 
 | Domain | Route to |
 | --- | --- |
-| Architecture | Technical Lead |
-| Implementation | Application Engineer |
-| Quality | Quality Engineer |
+| Architecture | ${members[0].name} |
+| Implementation | ${members[1].name} |
+| Quality | ${members[2].name} |
 <!-- SQUAD:TEAM-CAPABILITIES:END -->
 `;
 }
 
-function createFixture(): { root: string; payload: string; runnerTemp: string } {
+function createFixture(members = active): { root: string; payload: string; runnerTemp: string } {
   const root = mkdtempSync(join(tmpdir(), 'gh-aw-cast-validator-'));
   workspaces.push(root);
   const runnerTemp = mkdtempSync(join(tmpdir(), 'gh-aw-cast-runner-temp-'));
   workspaces.push(runnerTemp);
-  write(root, '.squad/team.md', teamMarkdown());
-  write(root, '.squad/routing.md', routingMarkdown());
+  write(root, '.squad/team.md', teamMarkdown(members));
+  write(root, '.squad/routing.md', routingMarkdown(members));
   write(root, '.squad/casting/registry.json', JSON.stringify({
-    agents: Object.fromEntries(active.map(({ id, name }) => [
+    agents: Object.fromEntries(members.map(({ id, name }) => [
       id,
       { persistent_name: name, status: 'active', universe: 'descriptive' },
     ])),
   }));
   write(root, '.squad/casting/history.json', '{}\n');
   write(root, '.squad/casting/policy.json', '{}\n');
-  for (const member of active) {
+  for (const member of members) {
     write(root, `.squad/agents/${member.id}/charter.md`, `# ${member.name} — ${member.role}\n`);
   }
   for (const builtin of builtins) {
@@ -185,10 +173,21 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
     write(root, `${builtinCanonicalRelativePath}/${builtin.id}-charter.md`, canonical);
     write(root, `.squad/agents/${builtin.id}/charter.md`, canonical);
   }
-  write(root, '.github/agents/squad.agent.md', coordinatorMarkdown());
+  write(root, '.github/agents/squad.agent.md', coordinatorMarkdown(members));
   write(root, 'meet-the-squad.md', '# Meet the Squad\n');
   const payload = join(root, '.github', 'workflows', 'squad-cast-payload.json');
   mkdirSync(dirname(payload), { recursive: true });
+  const corePayload = [
+    '.squad/team.md',
+    '.squad/routing.md',
+    '.squad/casting/registry.json',
+    '.squad/casting/history.json',
+    '.squad/casting/policy.json',
+    ...members.map(({ id }) => `.squad/agents/${id}/charter.md`),
+    ...builtins.map(({ id }) => `.squad/agents/${id}/charter.md`),
+    '.github/agents/squad.agent.md',
+    'meet-the-squad.md',
+  ];
   writeFileSync(payload, JSON.stringify(corePayload), 'utf8');
   return { root, payload, runnerTemp };
 }
@@ -429,7 +428,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 348115f21d333a31288136f1583b1bd131a6c44b0431e7896cd72eca3633f8e7, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected f15f647a208159a5fabcb717b42fac0c316344f0bd2bade8f543da3dea4c06db, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -592,6 +591,40 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.stdout).toContain('Cast validation passed');
   });
 
+  it.each([
+    ['compact role', { id: 'technical-lead', name: 'Technical Lead', role: 'Technical Lead' }],
+    ['technology role', { id: 'java-frontend-engineer', name: 'Java Frontend Engineer', role: 'Java Frontend Engineer' }],
+    ['technology role', { id: 'soap-integration-specialist', name: 'SOAP Integration Specialist', role: 'SOAP Integration Specialist' }],
+    ['domain role', { id: 'messaging-deployment-engineer', name: 'Messaging Deployment Engineer', role: 'Messaging Deployment Engineer' }],
+    ['domain role', { id: 'qa-dependency-specialist', name: 'QA Dependency Specialist', role: 'QA Dependency Specialist' }],
+    ['outcome role', { id: 'dotnet-modernization', name: 'Dotnet Modernization', role: 'Dotnet Modernization' }],
+    ['outcome role', { id: 'api-contract-integration', name: 'API Contract Integration', role: 'API Contract Integration' }],
+  ])('accepts Zava %s identifier', (_style, specialist) => {
+    const fixture = createFixture([specialist, active[1], active[2]]);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Cast validation passed');
+  });
+
+  it('rejects synchronized personal identity surfaces even when the name is inserted into the role', () => {
+    const synchronized = { id: 'nia', name: 'Nia', role: 'Nia Technical Lead' };
+    const fixture = createFixture([synchronized, active[1], active[2]]);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('active specialist "Nia"');
+    expect(result.stderr).toMatch(/personal or fictional tokens repeated into that role/i);
+    expect(result.stdout).not.toContain('Cast validation passed.');
+  });
+
+  it('validates the declared role without counting an identity token as functional', () => {
+    const synchronized = { id: 'nia', name: 'Nia', role: 'Nia Engineer' };
+    const fixture = createFixture([synchronized, active[1], active[2]]);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('"Nia Engineer" does not contain at least two recognized functional role categories');
+    expect(result.stdout).not.toContain('Cast validation passed.');
+  });
+
   it.each(['Nia', 'Boone', 'Priya'])(
     'rejects personal-style persistent specialist name %s',
     (personalName) => {
@@ -606,7 +639,7 @@ describe('GH-AW Cast final-tree validator', () => {
       const result = validate(fixture.root, fixture.payload);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`active specialist "${personalName}"`);
-      expect(result.stderr).toMatch(/short descriptive functional name derived only from its declared role/i);
+      expect(result.stderr).toMatch(/short descriptive functional name containing a functional role category/i);
       expect(result.stdout).not.toContain('Cast validation passed.');
     },
   );
@@ -786,7 +819,8 @@ describe('GH-AW Cast final-tree validator', () => {
 
   it('rejects a payload path whose casing differs from the final tree', () => {
     const fixture = createFixture();
-    const wrongCasePayload = corePayload.map((path) =>
+    const payload = JSON.parse(readFileSync(fixture.payload, 'utf8')) as string[];
+    const wrongCasePayload = payload.map((path) =>
       path === '.squad/team.md' ? '.squad/Team.md' : path
     );
     writeFileSync(fixture.payload, JSON.stringify(wrongCasePayload), 'utf8');

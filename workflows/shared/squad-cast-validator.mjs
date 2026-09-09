@@ -195,6 +195,33 @@ function functionalSlug(value) {
   return functionalTokens(value).join('-');
 }
 
+const FUNCTIONAL_ROLE_TOKENS = new Set([
+  // Occupational categories.
+  'administrator', 'advocate', 'analyst', 'architect', 'consultant',
+  'coordinator', 'designer', 'developer', 'engineer', 'lead', 'maintainer',
+  'manager', 'operator', 'owner', 'researcher', 'reviewer', 'scientist',
+  'specialist', 'strategist', 'tester',
+  // Engineering domains and outcomes.
+  'accessibility', 'ai', 'api', 'application', 'architecture', 'automation',
+  'backend', 'build', 'business', 'cloud', 'compliance', 'contract', 'customer',
+  'data', 'database', 'delivery', 'dependency', 'deployment', 'documentation',
+  'frontend', 'fullstack', 'infrastructure', 'integration', 'legacy',
+  'machine', 'messaging', 'migration', 'modernization', 'observability',
+  'operations', 'performance', 'platform', 'privacy', 'product', 'program',
+  'project', 'qa', 'quality', 'reliability', 'release', 'rest', 'security',
+  'service', 'soap', 'software', 'solutions', 'storage', 'support', 'system',
+  'systems', 'technical', 'telemetry', 'test', 'testing', 'ui', 'ux', 'web',
+  // Common technology-family identifiers that are functional role modifiers.
+  'android', 'cobol', 'dotnet', 'graphql', 'ios', 'java', 'javascript', 'kafka',
+  'kotlin', 'node', 'php', 'python', 'react', 'ruby', 'rust', 'swift',
+  'typescript', 'vue',
+]);
+
+function isFunctionalRoleToken(token) {
+  return FUNCTIONAL_ROLE_TOKENS.has(token)
+    || /^(?:[a-z]+ops|[a-z]+ware)$/.test(token);
+}
+
 function parseSpecialistRoster(section, errors) {
   const rows = section
     .split('\n')
@@ -245,16 +272,27 @@ function validateSpecialistIdentities(root, active, roster, errors) {
     }
 
     const nameTokens = functionalTokens(member.name);
-    const roleTokens = new Set(functionalTokens(row.role));
+    const declaredRoleTokens = functionalTokens(row.role);
+    const functionalRoleTokens = declaredRoleTokens.filter(isFunctionalRoleToken);
+    const roleTokens = new Set(functionalRoleTokens);
+    const roleIsFunctional = functionalRoleTokens.length >= 2;
+    if (!roleIsFunctional) {
+      errors.push(
+        `identity: active specialist "${member.name}" must declare a descriptive functional role; `
+        + `"${row.role}" does not contain at least two recognized functional role categories`,
+      );
+    }
     if (
-      nameTokens.length === 0
+      nameTokens.length < 2
       || nameTokens.length > 4
       || member.name.length > 48
       || nameTokens.some((token) => !roleTokens.has(token))
+      || !nameTokens.some(isFunctionalRoleToken)
     ) {
       errors.push(
         `identity: active specialist "${member.name}" must be a short descriptive functional `
-        + `name derived only from its declared role "${row.role}", not a personal or fictional name`,
+        + `name containing a functional role category from its declared role "${row.role}", `
+        + `not personal or fictional tokens repeated into that role`,
       );
     }
 
