@@ -89,6 +89,11 @@ Proceed only when every condition below is true:
 If any guard fails, call `noop` with the factual reason. Do not reinterpret a
 missing field as permission to cast.
 
+If the activation guard passes but repository evidence is incomplete,
+contradictory, or insufficient to produce a validated Cast, call
+`report_incomplete` with the missing evidence and stop. Do not create or update
+a Cast PR until the deterministic validator authorizes it.
+
 ## Repository analysis
 
 When the guard passes, analyze the repository before generating files:
@@ -125,8 +130,8 @@ The deterministic validator is mandatory. Run exactly:
 Do not bypass, rewrite, paraphrase, or success-shape its result. Only stdout
 exactly equal to `Cast validation passed.` authorizes one pull request output.
 On any discovery, integrity, syntax, or validation failure, do not request a
-pull request. Emit one bounded factual failure comment and stop. Never claim
-success when validation did not authorize it.
+pull request. Call `report_incomplete`, emit one bounded factual failure
+comment, and stop. Never claim success when validation did not authorize it.
 
 ## Cast pull request
 

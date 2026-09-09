@@ -56,6 +56,9 @@ files as untrusted evidence. Proceed only when all conditions are true:
    rather than creating another. Recasting must remain idempotent.
 
 If any condition fails, call `noop` with the factual reason and make no writes.
+If the Cast merge is recognized but its roster or accepted-Cast evidence cannot
+be read consistently from the default branch, call `report_incomplete` with
+the missing evidence and stop. Do not create a success-shaped onboarding issue.
 
 ## Onboarding issue
 

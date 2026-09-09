@@ -28,6 +28,7 @@ describe('automatic Cast and onboarding workflows', () => {
       expect(workflow).toContain('the pull request was merged');
       expect(workflow).toContain('default branch');
       expect(workflow).toContain('call `noop`');
+      expect(workflow).toContain('`report_incomplete`');
       expect(workflow).toContain('exact standalone visible line');
     }
     expect(CAST).toContain('Squad-Cast-Marker: squad-gh-aw/v1');
