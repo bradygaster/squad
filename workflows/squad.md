@@ -1741,14 +1741,12 @@ supported order.
 
 **Label set, per issue:**
 
-- Work item: `squad`, plus `squad:{owner}` conceptually, where the emitted label is
-  `squad:{owner-slug}` derived from that row's own frozen certified `Owner`, lowercased
-  first and then normalized by the slug rule above. `@copilot` maps to the existing `squad:copilot`
-  routing label — never `squad:@copilot`. Re-read each row's frozen `Owner`; never
-  inherit the phase issue's owner or carry the previous row's value forward.
-- Phase issue: `squad`, plus `squad:{owner}` conceptually, where the emitted label is
-  `squad:{owner-slug}` only when every accepted row in that phase names one and the
-  same owner; derive the slug with the rule above.
+- Work item: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`,
+  derived from that row's own frozen certified `Owner`, lowercased then slugged as above.
+  `@copilot` maps to `squad:copilot`, never `squad:@copilot`. Never inherit the phase
+  issue's owner or carry the previous row's value forward.
+- Phase issue: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`
+  only when every accepted row names the same owner, slugged as above.
   Two or more distinct owners is a multi-owner phase: apply only `squad`, choose
   none of them, and record it under a
   `Non-roster agent values` heading in the Step 4 summary.
@@ -2340,8 +2338,7 @@ Step 2e, not the cap machinery, is what notices.
 5. A value matching no certified name and not `@copilot` MUST NOT become a
    `squad:{agent}` label: apply only `squad` for that issue and record the value under a
    `Non-roster agent values` heading, naming the certified set it should come from.
-   Here `{agent}` denotes the rejected raw binding; certified emitted labels always use
-   the `{agent-slug}` derivation from Step 4.
+   `{agent}` is the rejected raw value; emitted labels use `{agent-slug}`.
 6. Completeness: when the plan names at least one roster `Agent`, at least one
    `squad:{agent-slug}` label MUST be applied across the created issues. Zero labels on a
    plan with roster owners is a binding failure, not a pass — report it, don't proceed
