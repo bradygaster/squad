@@ -380,6 +380,23 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       }
     );
 
+    it('classifies revoke-improvement as open, because it can only remove authority', () => {
+      // `squad-improvement-worker`'s gate honors a `/squad revoke-improvement`
+      // comment from ANY author. Refusing it here would print a red refusal for
+      // a withdrawal that is honored anyway — a router that contradicts the gate
+      // it fronts. It emits nothing, so there is nothing to authorize.
+      expect(classifyMode('revoke-improvement')).toBe('READ_ONLY');
+    });
+
+    it('keeps approve-improvement behind authorization — it grants authority and dispatches', () => {
+      expect(classifyMode('approve-improvement')).toBe('AUTH_REQUIRED');
+      expect(decideAuthorization('AUTH_REQUIRED', 'read')).toBe('REFUSE');
+      expect(decideAuthorization('AUTH_REQUIRED', 'write')).toBe('AUTHORIZED');
+      expect(workflow).toMatch(
+        /\*\*Authorization-required modes guarded by this section:\*\*[^\n]*`approve-improvement`/
+      );
+    });
+
     it.each(['NO_COMMAND', 'unknown', 'plan accepted?', ''])(
       'does not silently classify malformed mode %j as read-only',
       mode => {
@@ -465,6 +482,51 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       const activateMode = pc2.indexOf('`activate` (1)');
       expect(twoTokenModes).toBeGreaterThan(-1);
       expect(activateMode).toBeGreaterThan(twoTokenModes);
+    });
+  });
+
+  describe('improvement approval control commands parse strictly', () => {
+    // `/squad approve-improvement` is now routed by THIS dispatcher rather than
+    // by a direct `issue_comment` trigger on squad-improvement-worker. Before,
+    // the same comment started both, and the dispatcher — which knew no such
+    // command — failed its own run red via PC-3 while the worker ran anyway.
+    it.each([
+      { name: 'approval with its scope lines', body: '/squad approve-improvement\nApproved-Path: .squad/skills/a/SKILL.md', expected: 'approve-improvement' },
+      { name: 'approval after prose', body: 'Looks right to me.\n\n/squad approve-improvement\nApproved-Path: .squad/decisions/inbox/x.md', expected: 'approve-improvement' },
+      { name: 'revocation', body: '/squad revoke-improvement', expected: 'revoke-improvement' },
+      { name: 'revocation with a reason', body: '/squad revoke-improvement\nScope changed, re-approve please.', expected: 'revoke-improvement' },
+      { name: 'CRLF approval', body: '/squad approve-improvement\r\nApproved-Path: .squad/skills/a/SKILL.md\r\n', expected: 'approve-improvement' },
+    ])('$name resolves to a recognized mode, never NO_COMMAND', ({ body, expected }) => {
+      expect(
+        parse(body),
+        `PC-1 must extract ${JSON.stringify(expected)} from ${JSON.stringify(body)}. Anything ` +
+          'else routes an authorized governance command into PC-3, which posts a comment ' +
+          'and fails the run red.'
+      ).toBe(expected);
+    });
+
+    it('never truncates either command into an unrelated shorter mode', () => {
+      // `retro`, `retire` and `review` share no prefix with these, but a sloppy
+      // longest-prefix list could still route `revoke-improvement` to `retro`.
+      for (const command of ['approve-improvement', 'revoke-improvement']) {
+        expect(parse(`/squad ${command}`)).toBe(command);
+        expect(parseDispatch(command)).toBe(command);
+      }
+    });
+
+    it('leaves the neighbouring one-token modes reachable', () => {
+      for (const command of ['retro', 'review', 'retire', 'research', 'status']) {
+        expect(parse(`/squad ${command}`)).toBe(command);
+      }
+    });
+
+    it('lists both commands in the Modes table and the Execute Mode dispatch table', () => {
+      expect(workflow).toContain('| `/squad approve-improvement` | Approve Improvement |');
+      expect(workflow).toContain('| `/squad revoke-improvement` | Revoke Improvement |');
+      expect(workflow).toContain('| `approve-improvement` | `squad-approve-improvement` |');
+      expect(workflow).toContain('| `revoke-improvement` | `squad-revoke-improvement` |');
+      expect(workflow).toContain('## skill: `squad-approve-improvement`');
+      expect(workflow).toContain('## skill: `squad-revoke-improvement`');
     });
   });
 });

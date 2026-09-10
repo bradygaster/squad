@@ -72,11 +72,11 @@ test.describe('API reference function page', () => {
 test.describe('API reference interface page', () => {
 
   test('interface page renders content', async ({ page }) => {
-    await page.goto(`${BASE}interface-squadconfig/`);
+    await page.goto(`${BASE}interface-agentcapability/`);
     const heading = page.locator('article h1').first();
     await expect(heading).toBeVisible();
     const headingText = await heading.textContent();
-    expect(headingText.toLowerCase()).toContain('squadconfig');
+    expect(headingText.toLowerCase()).toContain('agentcapability');
     // Interface pages contain definition details
     const article = page.locator('article').first();
     await expect(article).toContainText('Defined in');

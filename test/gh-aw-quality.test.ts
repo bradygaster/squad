@@ -326,7 +326,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data' || name === 'messages' || name === 'jobs') continue;
+      if (name === 'data' || name === 'messages' || name === 'jobs' || name === 'allowed-domains') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -2186,6 +2186,56 @@ Use dispatch_workflow to continue the relay:
       cwd: process.cwd(),
     });
     expect(result.status, `Gate should exit 0 for valid schema; stderr: ${result.stderr}`).toBe(0);
+    rmSync(fixture);
+  });
+
+  it('passes for the retrospective receiver without a synthetic issue number', () => {
+    const fixture = writeFixture('valid-retro-dispatch.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad-retro]
+    max: 1
+---
+
+# Test Worker
+
+Use dispatch_workflow to request a retrospective:
+
+\`\`\`json
+{
+  "workflow_name": "squad-retro",
+  "inputs": {
+    "retro_reason": "early-evidence",
+    "request_origin": "squad-review"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, `Gate should accept the retro receiver contract; stderr: ${result.stderr}`).toBe(0);
+    rmSync(fixture);
+  });
+
+  it('rejects a misspelled required input in the shipped retrospective relay', () => {
+    const router = readText(SQUAD_WORKFLOW);
+    expect(router).toContain('"request_origin":"manual"');
+    const fixture = writeFixture(
+      'invalid-shipped-retro-relay.md',
+      router.replace('"request_origin":"manual"', '"request_orign":"manual"'),
+    );
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must validate the shipped retro relay payload').toBe(1);
+    expect(result.stderr).toMatch(/request_origin/);
     rmSync(fixture);
   });
 });
