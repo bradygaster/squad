@@ -153,6 +153,17 @@ jobs:
             ];
 
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+            function assertUniqueMemberSlugs(teamMembers) {
+              const memberBySlug = new Map();
+              for (const member of teamMembers) {
+                const slug = slugify(member.name);
+                if (memberBySlug.has(slug)) {
+                  throw new Error(`Squad member label slug "${slug}" is ambiguous: "${memberBySlug.get(slug)}" and "${member.name}"`);
+                }
+                memberBySlug.set(slug, member.name);
+              }
+            }
+            assertUniqueMemberSlugs(members);
 
             // Ensure the base "squad" triage label exists
             const labels = [

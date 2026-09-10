@@ -218,6 +218,16 @@ export function parseRoster(teamMarkdown) {
     .map(line => normalize(cells(line)[nameIndex]))
     .filter(Boolean);
   if (names.length === 0) throw new Error('roster Members table has no members');
+
+  const namesBySlug = new Map();
+  for (const name of names) {
+    const slug = slugify(name);
+    const existing = namesBySlug.get(slug);
+    if (existing) {
+      throw new Error(`roster member label slug "${slug}" is ambiguous: "${existing}" and "${name}"`);
+    }
+    namesBySlug.set(slug, name);
+  }
   return new Set(names);
 }
 

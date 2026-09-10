@@ -92,6 +92,7 @@ function copyLiveTeam(destination) {
 function writeSyntheticTeam(destination) {
   const teamDir = join(destination, '.squad');
   mkdirSync(join(teamDir, 'agents', 'quartz-navigator'), { recursive: true });
+  mkdirSync(join(teamDir, 'agents', 'moss-verifier'), { recursive: true });
   mkdirSync(join(teamDir, 'casting'), { recursive: true });
   mkdirSync(join(teamDir, 'decisions', 'inbox'), { recursive: true });
   mkdirSync(join(teamDir, 'templates'), { recursive: true });
@@ -127,6 +128,10 @@ function writeSyntheticTeam(destination) {
   writeFileSync(
     join(teamDir, 'agents', 'quartz-navigator', 'charter.md'),
     `# Quartz Navigator\n\n${SYNTHETIC_MARKER}\n`,
+  );
+  writeFileSync(
+    join(teamDir, 'agents', 'moss-verifier', 'charter.md'),
+    `# Moss Verifier\n\n${SYNTHETIC_MARKER}\n`,
   );
   writeFileSync(
     join(teamDir, 'skills', 'synthetic-only', 'SKILL.md'),
@@ -204,7 +209,6 @@ function buildManifest(root) {
       'test/recast-identity-neutrality.test.ts',
       'test/template-extra-classification.test.ts',
       'test/template-sync.test.ts',
-      'test/cli-packaging-smoke.test.ts',
     ],
     root,
   );

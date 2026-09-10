@@ -18,6 +18,16 @@ const roster = parseRoster(`
 | Quartz Navigator | Runtime |
 `);
 
+it('rejects roster names that collide on the same member-label slug', () => {
+  expect(() => parseRoster(`
+## Members
+| Name | Role |
+| --- | --- |
+| Foo Bar | Runtime |
+| Foo-Bar | Quality |
+`)).toThrow('roster member label slug "foo-bar" is ambiguous');
+});
+
 function labels(entries: Record<number, string[]>) {
   return new Map(Object.entries(entries).map(([issue, issueLabels]) => [
     Number(issue),
