@@ -15,7 +15,18 @@ const roster = parseRoster(`
 |------|------|
 | Kint | Lead |
 | McManus | Dev |
+| Quartz Navigator | Runtime |
 `);
+
+it('rejects roster names that collide on the same member-label slug', () => {
+  expect(() => parseRoster(`
+## Members
+| Name | Role |
+| --- | --- |
+| Foo Bar | Runtime |
+| Foo-Bar | Quality |
+`)).toThrow('roster member label slug "foo-bar" is ambiguous');
+});
 
 function labels(entries: Record<number, string[]>) {
   return new Map(Object.entries(entries).map(([issue, issueLabels]) => [
@@ -240,6 +251,42 @@ Structured data:
     expect(validateBindings(input, roster, labels({
       6: ['squad', 'squad:copilot'],
       40: ['squad', 'squad:copilot'],
+    })).checked).toBe(1);
+  });
+
+  it('uses the same slug normalization as label synchronization for multi-word members', () => {
+    const input = artifact([
+      task({
+        issue: 41,
+        agent: 'Quartz Navigator',
+        label: 'squad:quartz-navigator',
+        epicLabel: 'squad:quartz-navigator',
+      }),
+    ]);
+    expect(validateBindings(input, roster, labels({
+      6: ['squad', 'squad:quartz-navigator'],
+      41: ['squad', 'squad:quartz-navigator'],
+    })).checked).toBe(1);
+  });
+
+  it('trims leading and trailing hyphen runs from member labels', () => {
+    const edgedRoster = parseRoster(`
+## Members
+| Name | Role |
+| --- | --- |
+| ---Quartz Navigator--- | Runtime |
+`);
+    const input = artifact([
+      task({
+        issue: 42,
+        agent: '---Quartz Navigator---',
+        label: 'squad:quartz-navigator',
+        epicLabel: 'squad:quartz-navigator',
+      }),
+    ]);
+    expect(validateBindings(input, edgedRoster, labels({
+      6: ['squad', 'squad:quartz-navigator'],
+      42: ['squad', 'squad:quartz-navigator'],
     })).checked).toBe(1);
   });
 

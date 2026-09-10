@@ -10,6 +10,20 @@ const workflowCopies = [
   'packages/squad-cli/templates/workflows/squad-triage.yml',
   'packages/squad-sdk/templates/workflows/squad-triage.yml',
 ];
+const assignmentWorkflowCopies = [
+  '.github/workflows/squad-issue-assign.yml',
+  '.squad-templates/workflows/squad-issue-assign.yml',
+  'templates/workflows/squad-issue-assign.yml',
+  'packages/squad-cli/templates/workflows/squad-issue-assign.yml',
+  'packages/squad-sdk/templates/workflows/squad-issue-assign.yml',
+];
+const labelSyncWorkflowCopies = [
+  '.github/workflows/sync-squad-labels.yml',
+  '.squad-templates/workflows/sync-squad-labels.yml',
+  'templates/workflows/sync-squad-labels.yml',
+  'packages/squad-cli/templates/workflows/sync-squad-labels.yml',
+  'packages/squad-sdk/templates/workflows/sync-squad-labels.yml',
+];
 
 type Member = { name: string; role: string };
 type RoutingAssignment = { member: Member; workType: string | null };
@@ -21,6 +35,17 @@ type TriageHelpers = {
     members: Member[],
     lead: Member
   ) => RoutingAssignment;
+};
+type AssignmentHelpers = {
+  slugify: (value: string) => string;
+  findMemberBySlug: (
+    lines: string[],
+    memberName: string
+  ) => { member: Member | null; ambiguous: boolean };
+};
+type LabelSyncHelpers = {
+  slugify: (value: string) => string;
+  assertUniqueMemberSlugs: (members: Member[]) => void;
 };
 
 function manifestSkillNames(): string[] {
@@ -55,6 +80,42 @@ function triageHelpers(workflow: string): TriageHelpers {
   return context.result;
 }
 
+function assignmentHelpers(workflow: string): AssignmentHelpers {
+  const start = workflow.indexOf('            const slugify =');
+  const end = workflow.indexOf('            // Extract member name from label');
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+
+  const context: { result?: AssignmentHelpers } = {};
+  runInNewContext(
+    `${workflow.slice(start, end)}
+     result = { slugify, findMemberBySlug };`,
+    context
+  );
+  if (!context.result) {
+    throw new Error('Unable to load assignment helpers from workflow');
+  }
+  return context.result;
+}
+
+function labelSyncHelpers(workflow: string): LabelSyncHelpers {
+  const start = workflow.indexOf('            function slugify');
+  const end = workflow.indexOf('            // Ensure the base "squad" triage label exists');
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+
+  const context: { members: Member[]; result?: LabelSyncHelpers } = { members: [] };
+  runInNewContext(
+    `${workflow.slice(start, end)}
+     result = { slugify, assertUniqueMemberSlugs };`,
+    context
+  );
+  if (!context.result) {
+    throw new Error('Unable to load label-sync helpers from workflow');
+  }
+  return context.result;
+}
+
 describe('product and team isolation', () => {
   it('keeps build and template synchronization independent of live .squad state', () => {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
@@ -70,6 +131,9 @@ describe('product and team isolation', () => {
 
     expect(packageJson.scripts.prebuild).not.toContain('sync-skill-templates');
     expect(packageJson.scripts.prebuild).not.toContain('sync-templates');
+    expect(packageJson.scripts['verify:team-isolation']).toBe(
+      'node scripts/verify-team-isolation.mjs'
+    );
     for (const input of buildInputs) {
       expect(input).not.toContain("join(rootDir, '.squad',");
       expect(input).not.toContain('.squad/skills');
@@ -77,6 +141,42 @@ describe('product and team isolation', () => {
 
     const ciWorkflow = readFileSync('.github/workflows/squad-ci.yml', 'utf8');
     expect(ciWorkflow).not.toMatch(/SDK_CLI_PATH_REGEX=.*\\\.squad\/agents/);
+    expect(ciWorkflow).toContain('run: npm run verify:team-isolation');
+
+    const isolationCheck = readFileSync('scripts/verify-team-isolation.mjs', 'utf8');
+    expect(isolationCheck).toContain("file !== '.squad' && !file.startsWith('.squad/')");
+    expect(isolationCheck).toContain('writeSyntheticTeam(syntheticTeamRoot)');
+    expect(isolationCheck).toContain("join(teamDir, 'agents', 'moss-verifier')");
+    expect(isolationCheck).toContain("join(teamDir, 'agents', 'moss-verifier', 'charter.md')");
+    expect(isolationCheck).toMatch(
+      /cpSync\(source, join\(destination, '\.squad'\), \{\s*recursive: true/
+    );
+    expect(isolationCheck).not.toContain("['ls-files', '-z', '--', '.squad']");
+    expect(isolationCheck).toContain('Product build or package output changed');
+    expect(isolationCheck).toContain("['pack', '--dry-run', '--json', '--ignore-scripts']");
+    expect(isolationCheck).not.toContain("'test/cli-packaging-smoke.test.ts'");
+
+    const activationWorkflow = readFileSync('workflows/squad.md', 'utf8');
+    expect(activationWorkflow).toMatch(
+      /replace each run of non-`a-z0-9`\s+characters with `-`/
+    );
+    expect(activationWorkflow).toContain('"label":"squad:{slugged Agent cell}"');
+    expect(activationWorkflow).not.toContain(
+      '"label":"squad:{lowercased Agent cell}"'
+    );
+    const phaseLabels = activationWorkflow.match(
+      /\*\*Label set, per issue:\*\*([\s\S]*?)- The triggering intent issue/
+    )?.[1] ?? '';
+    expect(phaseLabels).toContain('emit `squad:{owner-slug}`');
+    expect(phaseLabels).toMatch(/Phase issue:[\s\S]*slugged as above/);
+
+    const labelPreflight = activationWorkflow.match(
+      /##### Label Pre-flight([\s\S]*?)##### Transient Failure Handling/
+    )?.[1] ?? '';
+    expect(labelPreflight).toContain('mint `squad:{agent-slug}`');
+    expect(labelPreflight).toMatch(
+      /replacing each run of\s+non-`a-z0-9` characters with `-`/
+    );
 
     const testFiles = filesUnder('test').filter(file => file.endsWith('.ts'));
     for (const file of testFiles) {
@@ -119,7 +219,74 @@ describe('product and team isolation', () => {
         ).toEqual(readFileSync(join(canonicalRoot, file), 'utf8').replace(/\r\n/g, '\n'));
       }
     }
+
+    const modelSelectionLocations = [
+      '.squad-templates/skills/model-selection/SKILL.md',
+      'templates/skills/model-selection/SKILL.md',
+      'packages/squad-cli/templates/skills/model-selection/SKILL.md',
+      'packages/squad-sdk/templates/skills/model-selection/SKILL.md',
+    ];
+    for (const file of modelSelectionLocations) {
+      const content = readFileSync(file, 'utf8');
+      expect(content).toContain('"agent-alpha":');
+      expect(content).toContain('"agent-beta":');
+      for (const formerName of ['Fenster', 'Redfoot', 'Keaton', 'McManus']) {
+        expect(content).not.toMatch(new RegExp(`\\b${formerName}\\b`, 'i'));
+      }
+    }
+
+    const activePolicy = readFileSync('.copilot/skills/model-selection/SKILL.md', 'utf8');
+    expect(activePolicy).toContain('Agent Alpha');
+    for (const formerName of ['Fenster', 'Redfoot', 'Keaton', 'McManus']) {
+      expect(activePolicy).not.toMatch(new RegExp(`\\b${formerName}\\b`, 'i'));
+    }
   });
+
+  it.each(assignmentWorkflowCopies)(
+    '%s resolves multi-word labels and rejects colliding roster slugs',
+    file => {
+      const helpers = assignmentHelpers(readFileSync(file, 'utf8'));
+      const roster = [
+        '## Members',
+        '| Name | Role |',
+        '| --- | --- |',
+        '| Quartz Navigator | Runtime |',
+      ];
+
+      expect(helpers.slugify('Quartz Navigator')).toBe('quartz-navigator');
+      expect(helpers.slugify('---Quartz Navigator---')).toBe('quartz-navigator');
+      expect(helpers.findMemberBySlug(roster, 'quartz-navigator')).toEqual({
+        member: { name: 'Quartz Navigator', role: 'Runtime' },
+        ambiguous: false,
+      });
+
+      const collision = [
+        ...roster,
+        '| Foo Bar | Runtime |',
+        '| Foo-Bar | Quality |',
+      ];
+      expect(helpers.findMemberBySlug(collision, 'foo-bar')).toEqual({
+        member: null,
+        ambiguous: true,
+      });
+    }
+  );
+
+  it.each(labelSyncWorkflowCopies)(
+    '%s rejects colliding member-label slugs before synchronization',
+    file => {
+      const helpers = labelSyncHelpers(readFileSync(file, 'utf8'));
+      expect(helpers.slugify('---Quartz Navigator---')).toBe('quartz-navigator');
+      expect(() => helpers.assertUniqueMemberSlugs([
+        { name: 'Quartz Navigator', role: 'Runtime' },
+        { name: 'Moss Verifier', role: 'Quality' },
+      ])).not.toThrow();
+      expect(() => helpers.assertUniqueMemberSlugs([
+        { name: 'Foo Bar', role: 'Runtime' },
+        { name: 'Foo-Bar', role: 'Quality' },
+      ])).toThrow('Squad member label slug "foo-bar" is ambiguous');
+    }
+  );
 
   it.each(workflowCopies)('%s derives ownership from routing.md instead of role-name heuristics', file => {
     const workflow = readFileSync(file, 'utf8');

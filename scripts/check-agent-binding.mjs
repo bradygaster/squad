@@ -43,6 +43,10 @@ function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function slugify(value) {
+  return normalize(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 /**
  * Resolve a binding issue reference to a real issue number.
  *
@@ -214,12 +218,22 @@ export function parseRoster(teamMarkdown) {
     .map(line => normalize(cells(line)[nameIndex]))
     .filter(Boolean);
   if (names.length === 0) throw new Error('roster Members table has no members');
+
+  const namesBySlug = new Map();
+  for (const name of names) {
+    const slug = slugify(name);
+    const existing = namesBySlug.get(slug);
+    if (existing) {
+      throw new Error(`roster member label slug "${slug}" is ambiguous: "${existing}" and "${name}"`);
+    }
+    namesBySlug.set(slug, name);
+  }
   return new Set(names);
 }
 
 function expectedLabel(agent, roster) {
   if (agent === '@copilot') return { label: 'squad:copilot', omission: null };
-  if (roster.has(agent)) return { label: `squad:${agent}`, omission: null };
+  if (roster.has(agent)) return { label: `squad:${slugify(agent)}`, omission: null };
   return { label: null, omission: 'non-roster' };
 }
 

@@ -23,6 +23,31 @@ jobs:
             const fs = require('fs');
             const issue = context.payload.issue;
             const label = context.payload.label.name;
+            const slugify = value => value
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '');
+            const findMemberBySlug = (lines, memberName) => {
+              let inMembersTable = false;
+              const matches = [];
+              for (const line of lines) {
+                if (line.match(/^##\s+(Members|Team Roster)/i)) {
+                  inMembersTable = true;
+                  continue;
+                }
+                if (inMembersTable && line.startsWith('## ')) break;
+                if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
+                  const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+                  if (cells.length >= 2 && slugify(cells[0]) === memberName) {
+                    matches.push({ name: cells[0], role: cells[1] });
+                  }
+                }
+              }
+              return {
+                member: matches.length === 1 ? matches[0] : null,
+                ambiguous: matches.length > 1,
+              };
+            };
 
             // Extract member name from label (e.g., "squad:ripley" → "ripley")
             const memberName = label.replace('squad:', '').toLowerCase();
@@ -43,22 +68,17 @@ jobs:
             if (isCopilotAssignment) {
               assignedMember = { name: '@copilot', role: 'Coding Agent' };
             } else {
-              let inMembersTable = false;
-              for (const line of lines) {
-                if (line.match(/^##\s+(Members|Team Roster)/i)) {
-                  inMembersTable = true;
-                  continue;
-                }
-                if (inMembersTable && line.startsWith('## ')) {
-                  break;
-                }
-                if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
-                  const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                  if (cells.length >= 2 && cells[0].toLowerCase() === memberName) {
-                    assignedMember = { name: cells[0], role: cells[1] };
-                    break;
-                  }
-                }
+              const match = findMemberBySlug(lines, memberName);
+              assignedMember = match.member;
+              if (match.ambiguous) {
+                core.warning(`Multiple squad members map to label "${label}" — refusing ambiguous assignment`);
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `⚠️ Multiple squad members map to label \`${label}\`. Rename the colliding members in \`.squad/team.md\` before assigning work.`
+                });
+                return;
               }
             }
 

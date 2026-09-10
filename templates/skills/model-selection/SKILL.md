@@ -102,8 +102,8 @@ After resolving the model and including it in the spawn template, this skill is 
   "version": 1,
   "defaultModel": "claude-opus-4.6",
   "agentModelOverrides": {
-    "fenster": "claude-sonnet-4.6",
-    "mcmanus": "claude-haiku-4.5"
+    "agent-alpha": "claude-sonnet-4.6",
+    "agent-beta": "claude-haiku-4.5"
   }
 }
 ```

@@ -90,11 +90,11 @@ If you've exhausted the fallback chain and reached the platform default fallback
 When spawning, include the model in your acknowledgment:
 
 ```
-🔧 Fenster (claude-sonnet-5) — refactoring auth module
-🎨 Redfoot (gpt-5.6-sol · vision) — designing color system
+🔧 Agent Alpha (claude-sonnet-5) — refactoring auth module
+🎨 Agent Beta (gpt-5.6-sol · vision) — designing color system
 📋 Scribe (gpt-5.6-luna · fast) — logging session
-⚡ Keaton (gpt-5.6-sol · bumped for architecture) — reviewing proposal
-📝 McManus (gpt-5.6-luna · fast) — updating docs
+⚡ Agent Gamma (gpt-5.6-sol · bumped for architecture) — reviewing proposal
+📝 Agent Delta (gpt-5.6-luna · fast) — updating docs
 ```
 
 Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
@@ -111,7 +111,7 @@ Include tier annotation only when the model was bumped or a specialist was chose
 - Role: Backend Dev
 - Task: "implement REST endpoints for user management"
 - Layer 3 decision: writing code → `gpt-5.6-terra` (standard tier)
-- Spawn: `🔧 Fenster (gpt-5.6-terra) — implementing user API endpoints`
+- Spawn: `🔧 Agent Alpha (gpt-5.6-terra) — implementing user API endpoints`
 
 **Example 2: User override**
 - User says: "use haiku for everything this session"
@@ -123,7 +123,7 @@ Include tier annotation only when the model was bumped or a specialist was chose
 - Task: "refactor 15 auth-related files to use new token system"
 - Layer 3 base: `gpt-5.6-terra`
 - Task complexity: heavy multi-file refactor → switch to `gpt-5.3-codex`
-- Spawn: `🔧 Fenster (gpt-5.3-codex · code specialist) — refactoring auth to new token system`
+- Spawn: `🔧 Agent Alpha (gpt-5.3-codex · code specialist) — refactoring auth to new token system`
 
 **Example 4: Scribe logging**
 - Role: Scribe
