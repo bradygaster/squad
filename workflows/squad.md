@@ -1745,9 +1745,10 @@ supported order.
   certified `Owner` by the slug rule above. `@copilot` maps to the existing `squad:copilot`
   routing label — never `squad:@copilot`. Re-read each row's frozen `Owner`; never
   inherit the phase issue's owner or carry the previous row's value forward.
-- Phase issue: `squad`, plus `squad:{owner}` only when every accepted row in that
-  phase names one and the same owner. Two or more distinct owners is a multi-owner
-  phase: apply only `squad`, choose none of them, and record it under a
+- Phase issue: `squad`, plus `squad:{owner-slug}` only when every accepted row in
+  that phase names one and the same owner; derive the slug with the rule above.
+  Two or more distinct owners is a multi-owner phase: apply only `squad`, choose
+  none of them, and record it under a
   `Non-roster agent values` heading in the Step 4 summary.
 - The triggering intent issue is never an `add_labels` target. It is the flat-plan
   parent, not an activated item, and receives no owner label from this run.
@@ -1809,7 +1810,7 @@ and `phases-activated`.
 ###### Label operations accepted
 
 Identical semantics to `squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
-an accepted `add_labels` operation targeting that issue. Report `squad:{owner}` only when
+an accepted `add_labels` operation targeting that issue. Report `squad:{owner-slug}` only when
 this run made an `add_labels` call carrying that label and targeting that same issue — by
 its own `temporary_id`, or by its verified real number for a reused issue. A successful
 `create-issue` is **not** evidence: its `labels:` field cannot land a label on a fresh

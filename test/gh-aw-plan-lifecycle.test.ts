@@ -256,7 +256,7 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(finalCheck).toMatch(/Copy each row's `Depends On` value unchanged/i);
   });
 
-  it('freezes each accepted row and derives its lowercase member label without remapping', () => {
+  it('freezes each accepted row and derives its slugged member label without remapping', () => {
     const preflight = accept.match(/Before any `create-issue` call[\s\S]*?(?=\nFor each work item)/)?.[0] ?? '';
     expect(preflight, 'squad-plan-accept must validate bindings before mutation').not.toBe('');
     expect(preflight).toMatch(/original `Owner` and `Depends On` values/i);
@@ -264,7 +264,7 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(preflight).toMatch(/never\s+substitute, re-route, or fall back/i);
 
     const labelRule = accept.match(/^- Labels:.*$/m)?.[0] ?? '';
-    expect(labelRule).toMatch(/frozen row `Owner` lowercased/i);
+    expect(labelRule).toMatch(/frozen row `Owner` by the slug rule above/i);
     expect(labelRule).toMatch(/only from that task's certified binding/i);
   });
 
