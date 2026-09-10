@@ -2338,8 +2338,10 @@ Step 2e, not the cap machinery, is what notices.
    value `@copilot` maps to the existing `squad:copilot` routing label — never
    `squad:@copilot`.
 5. A value matching no certified name and not `@copilot` MUST NOT become a
-   `squad:{agent-slug}` label: apply only `squad` for that issue and record the value under a
+   `squad:{agent}` label: apply only `squad` for that issue and record the value under a
    `Non-roster agent values` heading, naming the certified set it should come from.
+   Here `{agent}` denotes the rejected raw binding; certified emitted labels always use
+   the `{agent-slug}` derivation from Step 4.
 6. Completeness: when the plan names at least one roster `Agent`, at least one
    `squad:{agent-slug}` label MUST be applied across the created issues. Zero labels on a
    plan with roster owners is a binding failure, not a pass — report it, don't proceed
