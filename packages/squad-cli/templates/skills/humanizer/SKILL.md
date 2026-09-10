@@ -3,16 +3,16 @@ name: "humanizer"
 description: "Tone enforcement patterns for external-facing community responses"
 domain: "communication, tone, community"
 confidence: "low"
-source: "manual (RFC #426 — PAO External Communications)"
+source: "manual (external communications workflow)"
 ---
 
 ## Context
 
-Use this skill whenever PAO drafts external-facing responses for issues or discussions.
+Use this skill whenever the communications owner drafts external-facing responses for issues or discussions.
 
 - Tone must be warm, helpful, and human-sounding — never robotic or corporate.
-- Brady's constraint applies everywhere: **Humanized tone is mandatory**.
-- This applies to **all external-facing content** drafted by PAO in Phase 1 issues/discussions workflows.
+- The repository's communication policy applies everywhere: **Humanized tone is mandatory**.
+- This applies to **all external-facing content** drafted by the communications owner in Phase 1 issues/discussions workflows.
 
 ## Patterns
 
@@ -98,7 +98,7 @@ We'll dig deeper and update this thread.
 - ❌ Dismissive: "This works as designed" without empathy
 - ❌ Over-promising: "We'll ship this next week" without commitment from the team
 - ❌ Empty acknowledgment: "Thanks for your feedback" with no substance
-- ❌ Robot signatures: "Best regards, PAO" or "Sincerely, The Squad Team"
+- ❌ Robot signatures: "Best regards, Communications Team" or "Sincerely, The Squad Team"
 - ❌ Excessive emoji: More than 1-2 emoji per response
 - ❌ Quoting profanity: Even when the original issue contains it, paraphrase instead
 - ❌ Link-dumping: Pasting URLs without context ("See: https://...")

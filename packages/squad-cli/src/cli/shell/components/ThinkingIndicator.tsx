@@ -5,7 +5,7 @@
  * Default label: "Routing to agent..." (covers SDK connection, initial routing).
  * Activity hints from SDK events or @Agent mentions override the default.
  *
- * Owned by Cheritto (TUI Engineer). Design approved by Marquez.
+ * Maintained by the TUI engineering owner with UX review.
  */
 
 import React, { useState, useEffect } from 'react';

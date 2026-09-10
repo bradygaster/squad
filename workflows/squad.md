@@ -403,7 +403,7 @@ failures, not commands to reinterpret as Cast.
 
 `workflow_dispatch` inputs `command` and `issue_number` are both
 `required: false`, so an empty activation probe can reach this workflow — the
-`squad-implement-worker` relay fires one before its real dispatch (EECOM's
+`squad-implement-worker` relay fires one before its real dispatch (the
 `dispatch-workflow` `max` fix, PR #1777). It is NOT a command. Guard against it
 as the FIRST action of the run, before resolving any command or entering any
 skill:

@@ -520,7 +520,7 @@ const __dirname_ccc = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT_CCC = resolve(__dirname_ccc, '..');
 
 const CROSS_SQUAD_COMM_LOCATIONS = [
-  '.squad/skills/cross-squad-communication/SKILL.md',
+  '.squad-templates/skills/cross-squad-communication/SKILL.md',
   'packages/squad-cli/templates/skills/cross-squad-communication/SKILL.md',
   'packages/squad-sdk/templates/skills/cross-squad-communication/SKILL.md',
 ] as const;

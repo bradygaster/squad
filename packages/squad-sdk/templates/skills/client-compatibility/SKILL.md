@@ -66,8 +66,8 @@ task({ agent_type: "general-purpose", mode: "background", model: "claude-haiku-4
 **Example 2: VS Code parallel spawn**
 ```typescript
 // Coordinator detects runSubagent available → VS Code mode
-runSubagent({ prompt: "...Fenster charter + task..." })
-runSubagent({ prompt: "...Hockney charter + task..." })
+runSubagent({ prompt: "...Runtime Engineer charter + task..." })
+runSubagent({ prompt: "...Quality Engineer charter + task..." })
 runSubagent({ prompt: "...Scribe charter + task..." }) // Last in group
 // Results return automatically, no read_agent
 ```

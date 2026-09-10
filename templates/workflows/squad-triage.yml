@@ -90,19 +90,134 @@ jobs:
               routingContent = fs.readFileSync(routingFile, 'utf8');
             }
 
-            // Find the Lead
-            const lead = members.find(m =>
-              m.role.toLowerCase().includes('lead') ||
-              m.role.toLowerCase().includes('architect') ||
-              m.role.toLowerCase().includes('coordinator')
-            );
+            function findLead(teamMembers) {
+              const hasRoleToken = (member, token) => {
+                const roleWords = member.role.toLowerCase().match(/[a-z0-9]+/g) || [];
+                return roleWords.includes(token);
+              };
+              return teamMembers.find(member => hasRoleToken(member, 'lead')) ||
+                teamMembers.find(member => hasRoleToken(member, 'architect'));
+            }
 
+            function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
+            function tableCells(line) {
+              const cells = line.trim().split('|');
+              if (cells[0] === '') cells.shift();
+              if (cells[cells.length - 1] === '') cells.pop();
+              return cells.map(cell => cell.trim());
+            }
+
+            function normalizeRouteDestination(value) {
+              return value
+                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                .replace(/[*_`]/g, '')
+                .replace(/\p{Extended_Pictographic}/gu, '')
+                .replace(/[\u200d\ufe0f]/g, '')
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+            }
+
+            function routingRules(markdown, teamMembers) {
+              const routingLines = markdown.split('\n');
+              const rules = [];
+
+              for (let index = 0; index < routingLines.length; index++) {
+                const line = routingLines[index];
+                if (!line.trim().startsWith('|')) continue;
+
+                const headers = tableCells(line).map(cell => cell.toLowerCase());
+                const workTypeIndex = headers.indexOf('work type');
+                const routeIndex = headers.findIndex(header =>
+                  header === 'route to' ||
+                  header === 'agent' ||
+                  header === 'primary' ||
+                  header === 'primary agent'
+                );
+                const examplesIndex = headers.indexOf('examples');
+                if (workTypeIndex < 0 || routeIndex < 0) continue;
+
+                for (let rowIndex = index + 2; rowIndex < routingLines.length; rowIndex++) {
+                  const row = routingLines[rowIndex];
+                  if (!row.trim().startsWith('|')) break;
+                  const cells = tableCells(row);
+                  const workType = cells[workTypeIndex] || '';
+                  const routeCell = cells[routeIndex] || '';
+                  const examples = examplesIndex >= 0 ? (cells[examplesIndex] || '') : '';
+                  if (!workType || !routeCell) continue;
+
+                  const destinationName = normalizeRouteDestination(routeCell);
+                  const member = teamMembers.find(candidate =>
+                    normalizeRouteDestination(candidate.name) === destinationName
+                  );
+                  if (member) rules.push({ member, workType, examples });
+                }
+                break;
+              }
+
+              return rules;
+            }
+
+            function routeScore(issueText, rule) {
+              const genericWorkTypeTokens = new Set([
+                'agent', 'engineer', 'engineering', 'management', 'owner',
+                'specialist', 'system', 'work',
+              ]);
+
+              function tokens(value) {
+                return value.toLowerCase().match(/[a-z0-9]+(?:[+#.][a-z0-9+#.]*)?(?<!\.)/g) || [];
+              }
+
+              function containsPhrase(haystack, needle) {
+                if (needle.length === 0 || needle.length > haystack.length) return false;
+                return haystack.some((_, index) =>
+                  needle.every((token, offset) => haystack[index + offset] === token)
+                );
+              }
+
+              const issueTokens = tokens(issueText);
+              const workTypeTokens = tokens(rule.workType)
+                .filter(token => !genericWorkTypeTokens.has(token));
+              const rawPhrases = [rule.workType, ...workTypeTokens, ...rule.examples.split(/[,;]+/)]
+                .flatMap(phrase => phrase.includes('/') ? [phrase, ...phrase.split('/')] : [phrase]);
+
+              return rawPhrases.reduce((best, phrase) => {
+                const phraseTokens = tokens(phrase);
+                if (!containsPhrase(issueTokens, phraseTokens)) return best;
+                const specificity = phraseTokens.length * 100;
+                return Math.max(best, specificity);
+              }, 0);
+            }
+
+            function selectRoutingAssignment(issueText, routingContent, teamMembers, lead) {
+              const scoredRoutes = routingRules(routingContent, teamMembers)
+                .map(rule => ({ rule, score: routeScore(issueText, rule) }))
+                .filter(candidate => candidate.score > 0)
+                .sort((left, right) => right.score - left.score);
+
+              if (scoredRoutes.length === 0) {
+                return { member: lead, workType: null };
+              }
+
+              const bestScore = scoredRoutes[0].score;
+              const bestRoutes = scoredRoutes.filter(candidate => candidate.score === bestScore);
+              const bestMembers = new Set(bestRoutes.map(candidate =>
+                normalizeRouteDestination(candidate.rule.member.name)
+              ));
+              if (bestMembers.size !== 1) {
+                return { member: lead, workType: null };
+              }
+
+              const best = bestRoutes[0];
+              return { member: best.rule.member, workType: best.rule.workType };
+            }
+
+            const lead = findLead(members);
             if (!lead) {
               core.warning('No Lead role found in team roster — cannot triage');
               return;
             }
-
-            function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
             // Build triage context
             const memberList = members.map(m =>
@@ -136,50 +251,13 @@ jobs:
               }
             }
 
-            // If not routed to @copilot, use keyword-based routing
+            // If not routed to @copilot, score the repository's current routing table.
             if (!assignedMember) {
-              for (const member of members) {
-                const role = member.role.toLowerCase();
-                if ((role.includes('frontend') || role.includes('ui')) &&
-                    (issueText.includes('ui') || issueText.includes('frontend') ||
-                     issueText.includes('css') || issueText.includes('component') ||
-                     issueText.includes('button') || issueText.includes('page') ||
-                     issueText.includes('layout') || issueText.includes('design'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to frontend/UI work';
-                  break;
-                }
-                if ((role.includes('backend') || role.includes('api') || role.includes('server')) &&
-                    (issueText.includes('api') || issueText.includes('backend') ||
-                     issueText.includes('database') || issueText.includes('endpoint') ||
-                     issueText.includes('server') || issueText.includes('auth'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to backend/API work';
-                  break;
-                }
-                if ((role.includes('test') || role.includes('qa') || role.includes('quality')) &&
-                    (issueText.includes('test') || issueText.includes('bug') ||
-                     issueText.includes('fix') || issueText.includes('regression') ||
-                     issueText.includes('coverage'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to testing/quality work';
-                  break;
-                }
-                if ((role.includes('devops') || role.includes('infra') || role.includes('ops')) &&
-                    (issueText.includes('deploy') || issueText.includes('ci') ||
-                     issueText.includes('pipeline') || issueText.includes('docker') ||
-                     issueText.includes('infrastructure'))) {
-                  assignedMember = member;
-                  triageReason = 'Issue relates to DevOps/infrastructure work';
-                  break;
-                }
-              }
-            }
-
-            // Default to Lead if no routing match
-            if (!assignedMember) {
-              assignedMember = lead;
-              triageReason = 'No specific domain match — assigned to Lead for further analysis';
+              const assignment = selectRoutingAssignment(issueText, routingContent, members, lead);
+              assignedMember = assignment.member;
+              triageReason = assignment.workType
+                ? `Matched routing rule "${assignment.workType}"`
+                : 'No specific domain match — assigned to Lead for further analysis';
             }
 
             const isCopilot = assignedMember.name === '@copilot';

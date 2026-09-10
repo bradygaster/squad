@@ -1335,7 +1335,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
           `missing from the SDK templates dir (${skillsSrc}): ${missing.join(', ')}. ` +
           `This is a packaging bug — try \`squad upgrade\` or reinstall the SDK; ` +
           `if it persists, please report it at https://github.com/bradygaster/squad/issues. ` +
-          `(Contributors: re-run \`node scripts/sync-skill-templates.mjs\` from the repo root before packaging.)`
+          `(Contributors: re-run \`node scripts/sync-templates.mjs --sync\` from the repo root before packaging.)`
         );
       }
       storage.mkdirSync(skillsDir, { recursive: true });

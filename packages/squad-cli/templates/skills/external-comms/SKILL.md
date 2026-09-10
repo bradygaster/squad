@@ -1,16 +1,16 @@
 ---
 name: "external-comms"
-description: "PAO workflow for scanning, drafting, and presenting community responses with human review gate"
+description: "Workflow for scanning, drafting, and presenting community responses with a human review gate"
 domain: "community, communication, workflow"
 confidence: "low"
-source: "manual (RFC #426 — PAO External Communications)"
+source: "manual (external communications workflow)"
 tools:
   - name: "github-mcp-server-list_issues"
     description: "List open issues for scan candidates and lightweight triage"
     when: "Use for recent open issue scans before thread-level review"
   - name: "github-mcp-server-issue_read"
     description: "Read the full issue, comments, and labels before drafting"
-    when: "Use after selecting a candidate so PAO has complete thread context"
+    when: "Use after selecting a candidate so the communications owner has complete thread context"
   - name: "github-mcp-server-search_issues"
     description: "Search for candidate issues or prior squad responses"
     when: "Use when filtering by keywords, labels, or duplicate response checks"
@@ -23,10 +23,10 @@ tools:
 
 Phase 1 is **draft-only mode**.
 
-- PAO scans issues and discussions, drafts responses with the humanizer skill, and presents a review table for human approval.
-- **Human review gate is mandatory** — PAO never posts autonomously.
+- The communications owner scans issues and discussions, drafts responses with the humanizer skill, and presents a review table for human approval.
+- **Human review gate is mandatory** — the communications owner never posts autonomously.
 - Every action is logged to `.squad/comms/audit/`.
-- This workflow is triggered manually only ("PAO, check community") — no automated or Ralph-triggered activation in Phase 1.
+- This workflow is triggered manually only ("check community") — no automated activation in Phase 1.
 
 ## Patterns
 
@@ -47,7 +47,7 @@ Discussions use the GitHub Discussions API, which differs from issues:
 
 - **Scan:** `gh api /repos/{owner}/{repo}/discussions --jq '.[] | select(.answer_chosen_at == null)'` to find unanswered discussions
 - **Categories:** Filter by Q&A and General categories only (skip Announcements, Show and Tell)
-- **Answers vs comments:** In Q&A discussions, PAO drafts an "answer" (not a comment). The human marks it as accepted answer after posting.
+- **Answers vs comments:** In Q&A discussions, the communications owner drafts an "answer" (not a comment). The human marks it as accepted answer after posting.
 - **Phase 1 scope:** Issues and Discussions ONLY. No PR comments.
 
 ### 2. Classify
@@ -107,7 +107,7 @@ Use the humanizer skill for every draft.
 
 ### Thread-Read Verification
 
-Before drafting, PAO MUST verify complete thread coverage:
+Before drafting, the communications owner MUST verify complete thread coverage:
 
 1. **Count verification:** Compare API comment count with actually-read comments. If mismatch, abort draft.
 2. **Deleted comment check:** Use `gh api` timeline to detect deleted comments. If found, flag as ⚠️ in review table.
@@ -120,7 +120,7 @@ Before drafting, PAO MUST verify complete thread coverage:
 Show drafts for review in this exact format:
 
 ```text
-📝 PAO — Community Response Drafts
+📝 Community Response Drafts
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 | # | Item | Author | Type | Confidence | Read | Preview |
@@ -139,9 +139,9 @@ Each full draft must begin with the thread summary line:
 
 Wait for explicit human direction before anything is posted.
 
-- `pao approve 1 3` — approve drafts 1 and 3
-- `pao edit 2` — edit draft 2
-- `pao skip` — skip all
+- `comms approve 1 3` — approve drafts 1 and 3
+- `comms edit 2` — edit draft 2
+- `comms skip` — skip all
 - `banana` — freeze all pending (safe word)
 
 ### Rollback — Bad Post Recovery
@@ -152,12 +152,12 @@ If a posted response turns out to be wrong, inappropriate, or needs correction:
    - Issues: `gh api -X DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}`
    - Discussions: `gh api graphql -f query='mutation { deleteDiscussionComment(input: {id: "{node_id}"}) { comment { id } } }'`
 2. **Log the deletion:** Write audit entry with action `delete`, include reason and original content
-3. **Draft replacement** (if needed): PAO drafts a corrected response, goes through normal review cycle
+3. **Draft replacement** (if needed): The communications owner drafts a corrected response and repeats the normal review cycle
 4. **Postmortem:** If the error reveals a pattern gap, update humanizer anti-patterns or add a new test case
 
 **Safe word — `banana`:**
 - Immediately freezes all pending drafts in the review queue
-- No new scans or drafts until `pao resume` is issued
+- No new scans or drafts until `comms resume` is issued
 - Audit entry logged with halter identity and reason
 
 ### 6. Post
@@ -165,7 +165,7 @@ If a posted response turns out to be wrong, inappropriate, or needs correction:
 After approval:
 
 - Human posts via `gh issue comment` for issues or `gh api` for discussion answers/comments.
-- PAO helps by preparing the CLI command.
+- The communications owner helps by preparing the CLI command.
 - Write the audit entry after the posting action.
 
 ### 7. Audit
@@ -190,7 +190,7 @@ gh issue list --state open --json number,title,author,labels,comments --limit 20
 ### Example review table
 
 ```text
-📝 PAO — Community Response Drafts
+📝 Community Response Drafts
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 | # | Item | Author | Type | Confidence | Read | Preview |
@@ -319,7 +319,7 @@ That context will help us narrow down what's happening. Appreciate it!
 
 - ❌ Posting without human review (NEVER — this is the cardinal rule)
 - ❌ Drafting without reading full thread (context is everything)
-- ❌ Ignoring confidence flags (🔴 items need Flight/human review)
+- ❌ Ignoring confidence flags (🔴 items need Lead or human review)
 - ❌ Scanning closed issues (only open items)
 - ❌ Responding to issues labeled `squad:internal` or `wontfix`
 - ❌ Skipping audit logging (every action must be recorded)

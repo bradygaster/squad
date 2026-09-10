@@ -108,7 +108,8 @@ echo "# Test Project" > README.md
 echo '{"name":"test-project","version":"1.0.0"}' > package.json
 mkdir src
 echo "export function hello() { return 'world' }" > src/index.ts
-git add -A && git commit -m "init: test project"
+git add -- README.md package.json src/index.ts
+git commit -m "init: test project"
 ```
 
 Keep the project small — you only need enough for the coordinator to recognize a
@@ -137,13 +138,13 @@ tool calls (including file writes) prompt for confirmation and block.
 
 ```powershell
 # PowerShell (Windows)
-copilot --agent squad --allow-all-tools -p "Picard, decide what testing framework to use. Write your decision." `
+copilot --agent squad --allow-all-tools -p "Lead, decide what testing framework to use. Write your decision." `
   2>&1 | Tee-Object evidence/session-task.log
 ```
 
 ```bash
 # Bash (macOS/Linux)
-copilot --agent squad --allow-all-tools -p "Picard, decide what testing framework to use. Write your decision." \
+copilot --agent squad --allow-all-tools -p "Lead, decide what testing framework to use. Write your decision." \
   2>&1 | tee evidence/session-task.log
 ```
 
@@ -391,7 +392,7 @@ when the agent has been running too long.
 per agent run.** For a plan with multiple copilot-session scenarios, run them in
 separate agents — not in sequence within a single agent.
 
-If your scenario plan has N copilot-session scenarios, request N separate sims
+If your scenario plan has N copilot-session scenarios, request N separate test
 agents to run them in parallel (one scenario each). Static scenarios may be
 batched up to 4 per agent.
 
@@ -536,7 +537,7 @@ Fix: always include `--allow-all-tools` (or `--yolo` / `--allow-all`) in Step 4
 commands, or export `COPILOT_ALLOW_ALL=1` before running E2E sessions.
 
 This also applies when `copilot --agent squad` is launched as a subprocess from
-inside a Copilot CLI background agent (e.g. Sims running via the `task` tool) —
+inside a Copilot CLI background agent (e.g. a test engineer running via the `task` tool) —
 the flag is still needed.
 
 ### `--allow-all-paths` for repos outside the CWD

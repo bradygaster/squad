@@ -18,11 +18,11 @@ if ($Init) {
         Write-Host "❌ $MeshJson not found"
         exit 1
     }
-    
+
     Write-Host "🚀 Initializing mesh state repository..."
     $config = Get-Content $MeshJson -Raw | ConvertFrom-Json
     $squads = $config.squads.PSObject.Properties.Name
-    
+
     # Create squad directories with placeholder SUMMARY.md
     foreach ($squad in $squads) {
         if (-not (Test-Path $squad)) {
@@ -31,7 +31,7 @@ if ($Init) {
         } else {
             Write-Host "  • $squad/ exists (skipped)"
         }
-        
+
         $summaryPath = "$squad/SUMMARY.md"
         if (-not (Test-Path $summaryPath)) {
             "# $squad`n`n_No state published yet._" | Set-Content $summaryPath
@@ -40,7 +40,7 @@ if ($Init) {
             Write-Host "  • $summaryPath exists (skipped)"
         }
     }
-    
+
     # Generate root README.md
     if (-not (Test-Path "README.md")) {
         $readme = @"
@@ -65,7 +65,7 @@ State is synchronized using ``sync-mesh.sh`` or ``sync-mesh.ps1``.
     } else {
         Write-Host "  • README.md exists (skipped)"
     }
-    
+
     Write-Host ""
     Write-Host "✅ Mesh state repository initialized"
     exit 0

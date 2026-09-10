@@ -90,7 +90,8 @@ Requirements are ordered by review flow. All marked **REQUIRED** must be satisfi
 - [ ] `docs/src/navigation.ts` updated if a new docs page is added
 - [ ] Docs build test updated if a new feature page is added (`test/docs-build.test.ts`, run via `npm test`)
 
-**Enforced by**: Manual PR review (FIDO, Flight) + future automated checks in #104
+**Enforced by**: Manual review by the current Quality and Lead role owners +
+future automated checks in #104
 
 ### e) Package / Exports (REQUIRED for new modules — manual review)
 
@@ -149,25 +150,27 @@ Add to PR description under a `## Waivers` section:
 
 - Item waived: (d) Documentation CHANGELOG entry
 - Reason: Security fix needs urgent release (CVE-2024-XXXXX)
-- Approval by: [Flight/FIDO to be stated in PR review comment]
+- Approval by: [current Lead/Quality role owner, stated in a PR review comment]
 ```
 
 ### Waiver Approval Authority
 
-- **Flight (architecture decisions)**: Internal refactors, infrastructure, module reorganization
-- **FIDO (quality decisions)**: Bug fixes, test improvements, samples, CI changes
+- **Lead role owner (architecture decisions)**: Internal refactors,
+  infrastructure, module reorganization
+- **Quality role owner (quality decisions)**: Bug fixes, test improvements,
+  samples, CI changes
 - **Both**: External API changes, breaking changes
 
 ### Waiver Approval Examples
 
 | Scenario | Waivable Items | Approver |
 |----------|----------------|----------|
-| Internal refactor (no API change) | Documentation, Samples | Flight |
-| Security fix | Documentation, Samples (with follow-up issue) | FIDO |
-| Test infrastructure change | Documentation, Exports, Samples | FIDO |
-| CI/GitHub Actions update | Documentation, Exports, Samples | FIDO |
-| Documentation-only change | Code Quality (tests), Exports, Samples | FIDO |
-| Non-breaking SDK bugfix | Samples | FIDO |
+| Internal refactor (no API change) | Documentation, Samples | Lead role owner |
+| Security fix | Documentation, Samples (with follow-up issue) | Quality role owner |
+| Test infrastructure change | Documentation, Exports, Samples | Quality role owner |
+| CI/GitHub Actions update | Documentation, Exports, Samples | Quality role owner |
+| Documentation-only change | Code Quality (tests), Exports, Samples | Quality role owner |
+| Non-breaking SDK bugfix | Samples | Quality role owner |
 
 ### Self-Waiving Is Not Allowed
 
@@ -214,7 +217,8 @@ For migration PRs (> 20 files): include test output summary in the PR descriptio
 
 **Automation dependency**: 9 of 18 requirements are manual-only. Issue #104 (PR completeness gates) is the critical path to automated enforcement. Until #104 ships, this spec depends on reviewer discipline.
 
-**Mitigation**: Phase 4 (Flight/FIDO checklist) codifies consistent judgment. Regular enforcement audits catch drift.
+**Mitigation**: The Lead/Quality review checklist codifies consistent judgment.
+Regular enforcement audits catch drift.
 
 ### 2. Theater Risk
 

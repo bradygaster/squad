@@ -173,7 +173,6 @@ describe('template asset catalog invariants (#1080/#1183)', () => {
   // the same bug across squad-cli/templates, squad-sdk/templates, .squad-templates.
   const TEMPLATE_GLOBS = [
     '.squad-templates/**/*.md',
-    '.squad/skills/**/*.md',
     '.copilot/skills/**/*.md',
   ];
 

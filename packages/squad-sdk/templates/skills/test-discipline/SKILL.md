@@ -3,7 +3,7 @@ name: "test-discipline"
 description: "Update tests when changing APIs — no exceptions"
 domain: "quality"
 confidence: "high"
-source: "earned (Fenster/Hockney incident, test assertion sync violations)"
+source: "earned (test assertion sync violations)"
 ---
 
 ## Context

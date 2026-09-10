@@ -8,10 +8,10 @@ source: "manual"
 
 # Skill: Cross-Machine Coordination Pattern
 
-**Skill ID:** `cross-machine-coordination`  
-**Owner:** Ralph (Work Monitor)  
-**Squad Integration:** All agents  
-**Status:** Specification (ready for implementation)  
+**Skill ID:** `cross-machine-coordination`
+**Owner:** Ralph (Work Monitor)
+**Squad Integration:** All agents
+**Status:** Specification (ready for implementation)
 
 ---
 
@@ -439,4 +439,4 @@ Potential expansions (Phase 2+):
 
 Refer to research report: `research/active/cross-machine-agents/README.md`
 
-Contact: Seven (Research & Docs) or Ralph (Work Monitor)
+Contact: the research and documentation owner or Ralph (Work Monitor)

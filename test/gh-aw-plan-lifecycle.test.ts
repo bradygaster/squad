@@ -18,7 +18,6 @@ import { join } from 'node:path';
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const ONTOLOGY = join(WORKFLOWS_DIR, 'shared', 'squad-planning-ontology.md');
-const TEAM = join(process.cwd(), '.squad', 'team.md');
 const GH_AW_GUIDE = join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md');
 
 function readText(filePath: string): string {
@@ -96,7 +95,19 @@ function agentBlock(markdown: string, name: string): string {
 
 const squad = readText(SQUAD_WORKFLOW);
 const ontology = readText(ONTOLOGY);
-const team = readText(TEAM);
+const team = [
+  '# Synthetic Team Fixture',
+  '',
+  '## Members',
+  '',
+  '| Name | Role |',
+  '|------|------|',
+  '| Architect | Lead |',
+  '| Builder | Runtime Engineer |',
+  '| Writer | Documentation |',
+  '',
+  '## End',
+].join('\n');
 const guide = readText(GH_AW_GUIDE);
 
 // ---------------------------------------------------------------------------
@@ -175,8 +186,8 @@ function leakedRoleTokens(text: string): string[] {
 
 describe('#1759: Owner/Agent bind to the cast Name column', () => {
   it('team.md exposes distinct Name and Role columns to bind against', () => {
-    expect(NAMES).toContain('Procedures');
-    expect(NAMES).toContain('Flight');
+    expect(NAMES).toContain('Architect');
+    expect(NAMES).toContain('Builder');
     expect(ROLES_LC.has('lead')).toBe(true); // "Lead" is a Role, not a Name
     expect(NAMES_LC.has('lead')).toBe(false); // and it is not a valid Owner
   });
@@ -186,8 +197,8 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     const goodPlan = [
       '| # | Title | Owner | Size | Depends On |',
       '|---|-------|-------|------|-----------|',
-      '| 1 | Wire adapter | EECOM | M | - |',
-      '| 2 | Prompt refactor | Procedures | S | 1 |',
+      '| 1 | Wire adapter | Builder | M | - |',
+      '| 2 | Prompt refactor | Architect | S | 1 |',
     ].join('\n');
 
     // A plan table that leaked Role strings into the Owner column.
@@ -203,9 +214,9 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
 
     expect(owners(goodPlan).some(isRoleStringLeak)).toBe(false);
     expect(owners(badPlan).every(isRoleStringLeak)).toBe(true);
-    // The specific failure mode: "lead" is a Role, "Procedures"/"EECOM" are Names.
+    // The specific failure mode: "lead" is a Role, while the fixture values are Names.
     expect(isRoleStringLeak('lead')).toBe(true);
-    expect(isRoleStringLeak('Procedures')).toBe(false);
+    expect(isRoleStringLeak('Architect')).toBe(false);
   });
 
   it('squad-plan binds the Owner column to a certified team.md Name cell', () => {
