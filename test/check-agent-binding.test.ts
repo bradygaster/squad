@@ -269,6 +269,27 @@ Structured data:
     })).checked).toBe(1);
   });
 
+  it('trims leading and trailing hyphen runs from member labels', () => {
+    const edgedRoster = parseRoster(`
+## Members
+| Name | Role |
+| --- | --- |
+| ---Quartz Navigator--- | Runtime |
+`);
+    const input = artifact([
+      task({
+        issue: 42,
+        agent: '---Quartz Navigator---',
+        label: 'squad:quartz-navigator',
+        epicLabel: 'squad:quartz-navigator',
+      }),
+    ]);
+    expect(validateBindings(input, edgedRoster, labels({
+      6: ['squad', 'squad:quartz-navigator'],
+      42: ['squad', 'squad:quartz-navigator'],
+    })).checked).toBe(1);
+  });
+
   it('uses the full epic agent set for phased activation', () => {
     const input = artifact([
       task({

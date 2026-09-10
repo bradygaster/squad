@@ -44,7 +44,7 @@ function normalize(value) {
 }
 
 function slugify(value) {
-  return normalize(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return normalize(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 /**

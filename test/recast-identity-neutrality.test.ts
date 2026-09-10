@@ -254,6 +254,7 @@ describe('product and team isolation', () => {
       ];
 
       expect(helpers.slugify('Quartz Navigator')).toBe('quartz-navigator');
+      expect(helpers.slugify('---Quartz Navigator---')).toBe('quartz-navigator');
       expect(helpers.findMemberBySlug(roster, 'quartz-navigator')).toEqual({
         member: { name: 'Quartz Navigator', role: 'Runtime' },
         ambiguous: false,
@@ -275,6 +276,7 @@ describe('product and team isolation', () => {
     '%s rejects colliding member-label slugs before synchronization',
     file => {
       const helpers = labelSyncHelpers(readFileSync(file, 'utf8'));
+      expect(helpers.slugify('---Quartz Navigator---')).toBe('quartz-navigator');
       expect(() => helpers.assertUniqueMemberSlugs([
         { name: 'Quartz Navigator', role: 'Runtime' },
         { name: 'Moss Verifier', role: 'Quality' },
