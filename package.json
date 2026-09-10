@@ -19,6 +19,7 @@
     "prebuild": "node scripts/bump-build.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
     "sync-templates": "node scripts/sync-templates.mjs --sync",
+    "verify:team-isolation": "node scripts/verify-team-isolation.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "node scripts/run-benchmarks.mjs",

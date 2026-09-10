@@ -15,6 +15,7 @@ const roster = parseRoster(`
 |------|------|
 | Kint | Lead |
 | McManus | Dev |
+| Quartz Navigator | Runtime |
 `);
 
 function labels(entries: Record<number, string[]>) {
@@ -240,6 +241,21 @@ Structured data:
     expect(validateBindings(input, roster, labels({
       6: ['squad', 'squad:copilot'],
       40: ['squad', 'squad:copilot'],
+    })).checked).toBe(1);
+  });
+
+  it('uses the same slug normalization as label synchronization for multi-word members', () => {
+    const input = artifact([
+      task({
+        issue: 41,
+        agent: 'Quartz Navigator',
+        label: 'squad:quartz-navigator',
+        epicLabel: 'squad:quartz-navigator',
+      }),
+    ]);
+    expect(validateBindings(input, roster, labels({
+      6: ['squad', 'squad:quartz-navigator'],
+      41: ['squad', 'squad:quartz-navigator'],
     })).checked).toBe(1);
   });
 

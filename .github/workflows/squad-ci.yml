@@ -178,6 +178,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Build
         run: npm run build
+      - name: Verify product/team isolation
+        run: npm run verify:team-isolation
       - name: Type-check
         run: npm run lint
       - name: Lint source and tests

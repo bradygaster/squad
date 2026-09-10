@@ -23,6 +23,10 @@ jobs:
             const fs = require('fs');
             const issue = context.payload.issue;
             const label = context.payload.label.name;
+            const slugify = value => value
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '');
 
             // Extract member name from label (e.g., "squad:ripley" → "ripley")
             const memberName = label.replace('squad:', '').toLowerCase();
@@ -54,7 +58,7 @@ jobs:
                 }
                 if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
                   const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                  if (cells.length >= 2 && cells[0].toLowerCase() === memberName) {
+                  if (cells.length >= 2 && slugify(cells[0]) === memberName) {
                     assignedMember = { name: cells[0], role: cells[1] };
                     break;
                   }

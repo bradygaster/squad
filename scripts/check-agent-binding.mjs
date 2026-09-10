@@ -43,6 +43,10 @@ function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function slugify(value) {
+  return normalize(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 /**
  * Resolve a binding issue reference to a real issue number.
  *
@@ -219,7 +223,7 @@ export function parseRoster(teamMarkdown) {
 
 function expectedLabel(agent, roster) {
   if (agent === '@copilot') return { label: 'squad:copilot', omission: null };
-  if (roster.has(agent)) return { label: `squad:${agent}`, omission: null };
+  if (roster.has(agent)) return { label: `squad:${slugify(agent)}`, omission: null };
   return { label: null, omission: 'non-roster' };
 }
 

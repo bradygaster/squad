@@ -70,6 +70,9 @@ describe('product and team isolation', () => {
 
     expect(packageJson.scripts.prebuild).not.toContain('sync-skill-templates');
     expect(packageJson.scripts.prebuild).not.toContain('sync-templates');
+    expect(packageJson.scripts['verify:team-isolation']).toBe(
+      'node scripts/verify-team-isolation.mjs'
+    );
     for (const input of buildInputs) {
       expect(input).not.toContain("join(rootDir, '.squad',");
       expect(input).not.toContain('.squad/skills');
@@ -77,6 +80,22 @@ describe('product and team isolation', () => {
 
     const ciWorkflow = readFileSync('.github/workflows/squad-ci.yml', 'utf8');
     expect(ciWorkflow).not.toMatch(/SDK_CLI_PATH_REGEX=.*\\\.squad\/agents/);
+    expect(ciWorkflow).toContain('run: npm run verify:team-isolation');
+
+    const isolationCheck = readFileSync('scripts/verify-team-isolation.mjs', 'utf8');
+    expect(isolationCheck).toContain("file !== '.squad' && !file.startsWith('.squad/')");
+    expect(isolationCheck).toContain('writeSyntheticTeam(syntheticTeamRoot)');
+    expect(isolationCheck).toContain('Product build or package output changed');
+    expect(isolationCheck).toContain("['pack', '--dry-run', '--json', '--ignore-scripts']");
+
+    const activationWorkflow = readFileSync('workflows/squad.md', 'utf8');
+    expect(activationWorkflow).toContain(
+      'replace each run of non-`a-z0-9` characters with `-`'
+    );
+    expect(activationWorkflow).toContain('"label":"squad:{slugged Agent cell}"');
+    expect(activationWorkflow).not.toContain(
+      '"label":"squad:{lowercased Agent cell}"'
+    );
 
     const testFiles = filesUnder('test').filter(file => file.endsWith('.ts'));
     for (const file of testFiles) {
@@ -118,6 +137,20 @@ describe('product and team isolation', () => {
           `${root}/${file} drifted from the product-owned canonical template`
         ).toEqual(readFileSync(join(canonicalRoot, file), 'utf8').replace(/\r\n/g, '\n'));
       }
+    }
+
+    const modelSelectionLocations = [
+      '.squad-templates/skills/model-selection/SKILL.md',
+      'templates/skills/model-selection/SKILL.md',
+      'packages/squad-cli/templates/skills/model-selection/SKILL.md',
+      'packages/squad-sdk/templates/skills/model-selection/SKILL.md',
+    ];
+    for (const file of modelSelectionLocations) {
+      const content = readFileSync(file, 'utf8');
+      expect(content).toContain('"agent-alpha":');
+      expect(content).toContain('"agent-beta":');
+      expect(content).not.toContain('"fenster":');
+      expect(content).not.toContain('"mcmanus":');
     }
   });
 
