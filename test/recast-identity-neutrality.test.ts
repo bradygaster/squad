@@ -89,8 +89,8 @@ describe('product and team isolation', () => {
     expect(isolationCheck).toContain("['pack', '--dry-run', '--json', '--ignore-scripts']");
 
     const activationWorkflow = readFileSync('workflows/squad.md', 'utf8');
-    expect(activationWorkflow).toContain(
-      'replace each run of non-`a-z0-9` characters with `-`'
+    expect(activationWorkflow).toMatch(
+      /replace each run of non-`a-z0-9`\s+characters with `-`/
     );
     expect(activationWorkflow).toContain('"label":"squad:{slugged Agent cell}"');
     expect(activationWorkflow).not.toContain(
