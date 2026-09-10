@@ -1699,7 +1699,7 @@ value maps to `squad:copilot` instead.
 For each work item, `create-issue`:
 - Title: work item title
 - Temporary ID: `temporary_id` is required on every `create-issue` call (`require-temporary-id: true`). Mint one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. Must match `^#?aw_[A-Za-z0-9_]{3,12}$` and be unique in this run — gh-aw silently lets a duplicate's last writer own the mapping.
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner-slug}` (color `9B8FCC`) where `{owner-slug}` is derived from the frozen row `Owner` by the slug rule above. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not slugged verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner-slug}` (color `9B8FCC`) where `{owner-slug}` is derived from the frozen row `Owner` lowercased first, then normalized by the slug rule above. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not slugged verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat). For a phase issue created in this run, pass its `#aw_ph{N}` temporary ID — `create-issue` resolves it. The flat-plan root is the triggering issue's own real number. Never guess a number for an issue this run created.
 - Size: set Project field if available, else body `**Size:**` line
@@ -1741,12 +1741,14 @@ supported order.
 
 **Label set, per issue:**
 
-- Work item: `squad`, plus `squad:{owner-slug}` derived from that row's own frozen
-  certified `Owner` by the slug rule above. `@copilot` maps to the existing `squad:copilot`
+- Work item: `squad`, plus `squad:{owner}` conceptually, where the emitted label is
+  `squad:{owner-slug}` derived from that row's own frozen certified `Owner`, lowercased
+  first and then normalized by the slug rule above. `@copilot` maps to the existing `squad:copilot`
   routing label — never `squad:@copilot`. Re-read each row's frozen `Owner`; never
   inherit the phase issue's owner or carry the previous row's value forward.
-- Phase issue: `squad`, plus `squad:{owner-slug}` only when every accepted row in
-  that phase names one and the same owner; derive the slug with the rule above.
+- Phase issue: `squad`, plus `squad:{owner}` conceptually, where the emitted label is
+  `squad:{owner-slug}` only when every accepted row in that phase names one and the
+  same owner; derive the slug with the rule above.
   Two or more distinct owners is a multi-owner phase: apply only `squad`, choose
   none of them, and record it under a
   `Non-roster agent values` heading in the Step 4 summary.
@@ -2322,22 +2324,24 @@ Step 2e, not the cap machinery, is what notices.
 **Roster binding gate — run this before any `create-issue` call.**
 
 1. Run Team Guard Step TG-2; its `ROSTER_MEMBER:` lines are the **certified roster
-   set** — the only valid source for a `squad:{agent}` label this run. Do not re-read
+   set** — the only valid source for a `squad:{agent-slug}` label this run. Do not re-read
    team.md or recall a name.
 2. If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP: report that named reason in the
-   activation summary and mint no `squad:{agent}` label. Never print a roster-provenance
+   activation summary and mint no `squad:{agent-slug}` label. Never print a roster-provenance
    sentence for a read that did not happen, and never fall back to a preset or
    remembered roster.
 3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
    provenance of the labels applied — the summary may name only values TG-2 emitted.
-4. For every `Agent` value, mint `squad:{agent}` only when its lowercased form matches
-   a certified `ROSTER_MEMBER:` name. The special value `@copilot` maps to the
-   existing `squad:copilot` routing label — never `squad:@copilot`.
+4. For every `Agent` value, certify its lowercased raw value against a
+   `ROSTER_MEMBER:` name, then mint `squad:{agent-slug}` by replacing each run of
+   non-`a-z0-9` characters with `-` and trimming leading and trailing `-`. The special
+   value `@copilot` maps to the existing `squad:copilot` routing label — never
+   `squad:@copilot`.
 5. A value matching no certified name and not `@copilot` MUST NOT become a
-   `squad:{agent}` label: apply only `squad` for that issue and record the value under a
+   `squad:{agent-slug}` label: apply only `squad` for that issue and record the value under a
    `Non-roster agent values` heading, naming the certified set it should come from.
 6. Completeness: when the plan names at least one roster `Agent`, at least one
-   `squad:{agent}` label MUST be applied across the created issues. Zero labels on a
+   `squad:{agent-slug}` label MUST be applied across the created issues. Zero labels on a
    plan with roster owners is a binding failure, not a pass — report it, don't proceed
    silently.
 7. **Correspondence — the label must match *this* issue's own row.** Steps 4-6 certify the
@@ -2347,7 +2351,7 @@ Step 2e, not the cap machinery, is what notices.
    `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
    epic, or the previous call. Verify per issue; membership across the run is not evidence.
 8. **Report what was accepted, not what was intended.** The activation summary may name a
-   `squad:{agent}` label for an issue only after an `add_labels` call carrying that label
+   `squad:{agent-slug}` label for an issue only after an `add_labels` call carrying that label
    was accepted for that same issue — targeted by its own `temporary_id`, or by its verified
    real number for a reused issue. A successful `create-issue` is **not** evidence: its
    `labels:` field cannot land a label on a fresh repository, so a label is never "carried
@@ -2359,7 +2363,7 @@ Step 2e, not the cap machinery, is what notices.
    not happen. See Step 4's Label operations accepted section for the full contract.
 
 **Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
-`create-if-missing: true`) auto-creates `squad` and any `squad:{agent}` label the first
+`create-if-missing: true`) auto-creates `squad` and any `squad:{agent-slug}` label the first
 time this run needs it — a fresh repository with zero Squad labels requires no manual
 provisioning and is never a prerequisite gap. `create-issue`'s own `labels:` field cannot
 do this: GitHub silently drops label names that do not already exist in the target
@@ -2369,7 +2373,7 @@ to land a label on a fresh repository.
 
 In the same turn as each `create-issue` call in Steps 2b/2c, call `add_labels` with
 `item_number` set to that call's `temporary_id` and exactly the label set Steps 4-8 computed
-for that issue — `squad` alone, or `squad` plus the one `squad:{agent}` label the
+for that issue — `squad` alone, or `squad` plus the one `squad:{agent-slug}` label the
 correspondence rule (Step 7) certified. Do not wait for a returned issue number; none
 arrives. gh-aw resolves `add_labels` after the `create-issue` that minted the ID, so that
 order is the supported one. `create-if-missing` creates any label that does not yet exist

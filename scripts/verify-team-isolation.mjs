@@ -36,15 +36,6 @@ function trackedFiles() {
     .filter(file => file !== '.squad' && !file.startsWith('.squad/'));
 }
 
-function trackedTeamFiles() {
-  return execFileSync('git', ['ls-files', '-z', '--', '.squad'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  })
-    .split('\0')
-    .filter(Boolean);
-}
-
 function copyTrackedTree(destination) {
   for (const file of trackedFiles()) {
     const source = join(ROOT, file);
@@ -88,17 +79,14 @@ function linkDependencies(destination) {
 }
 
 function copyLiveTeam(destination) {
-  const files = trackedTeamFiles();
-  for (const file of files) {
-    const source = join(ROOT, file);
-    const target = join(destination, file);
-    mkdirSync(dirname(target), { recursive: true });
-    cpSync(source, target, {
-      dereference: false,
-      preserveTimestamps: true,
-    });
-  }
-  return files.length > 0;
+  const source = join(ROOT, '.squad');
+  if (!existsSync(source)) return false;
+  cpSync(source, join(destination, '.squad'), {
+    recursive: true,
+    dereference: false,
+    preserveTimestamps: true,
+  });
+  return true;
 }
 
 function writeSyntheticTeam(destination) {

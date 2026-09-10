@@ -181,20 +181,20 @@ describe('#1959: fast-path add_labels targets an explicit, verified item', () =>
 
 describe('#1959: fast-path label sets stay at parity with squad-plan-activate', () => {
   it('applies the base squad label to every activated item', () => {
-    expect(acceptProse).toMatch(/Work item: `squad`, plus `squad:\{owner-slug\}`/);
-    expect(acceptProse).toMatch(/Phase issue: `squad`, plus `squad:\{owner-slug\}`/);
+    expect(acceptProse).toMatch(/Work item: `squad`, plus `squad:\{owner\}`/);
+    expect(acceptProse).toMatch(/Phase issue: `squad`, plus `squad:\{owner\}`/);
   });
 
-  it('slugifies the member label from that row\'s own frozen certified Owner', () => {
+  it('derives the member label from that row\'s own frozen certified Owner', () => {
     expect(acceptProse).toMatch(
-      /derived from that row's own frozen certified `Owner` by the slug rule above/i,
+      /derived from that row's own frozen certified `Owner`, lowercased/i,
     );
     expect(acceptProse).toMatch(
       /never inherit the phase issue's owner or carry the previous row's value forward/i,
     );
     // The Step 2 computation bullet must still name its certified binding source.
     const labelRule = acceptSkill.match(/^- Labels:.*$/m)?.[0] ?? '';
-    expect(labelRule).toMatch(/frozen row `Owner` by the slug rule above/i);
+    expect(labelRule).toMatch(/frozen row `Owner` lowercased/i);
     expect(labelRule).toMatch(/only from that task's certified binding/i);
   });
 
