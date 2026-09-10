@@ -1743,10 +1743,10 @@ supported order.
 
 - Work item: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`,
   derived from that row's own frozen certified `Owner`, lowercased then slugged as above.
-  `@copilot` maps to `squad:copilot`, never `squad:@copilot`. Never inherit the phase
-  issue's owner or carry the previous row's value forward.
+  `@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`.
+  Never inherit the phase issue's owner or carry the previous row's value forward.
 - Phase issue: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`
-  only when every accepted row names the same owner, slugged as above.
+  only when every accepted row in that phase names one and the same owner, slugged as above.
   Two or more distinct owners is a multi-owner phase: apply only `squad`, choose
   none of them, and record it under a
   `Non-roster agent values` heading in the Step 4 summary.
