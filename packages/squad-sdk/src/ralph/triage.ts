@@ -48,7 +48,7 @@ interface ParsedTable {
 /** Parse routing rules from routing.md content */
 export function parseRoutingRules(routingMd: string): RoutingRule[] {
   const table =
-    parseTableSection(routingMd, /^##\s*work\s*type\s*(?:�|->)\s*agent\b/i) ??
+    parseTableSection(routingMd, /^##\s*work\s*type\s*(?:→|->)\s*agent\b/i) ??
     parseTableSection(routingMd, /^##\s*routing\s*table\b/i);
   if (!table) return [];
 
@@ -134,8 +134,8 @@ export function parseRoster(teamMd: string): TeamMember[] {
 }
 
 /**
- * Normalize an agent/role reference for comparison  strips markdown, emoji,
- * and casing so `EECOM ='` and `eecom` compare equal.
+ * Normalize an agent/role reference for comparison — strips markdown, emoji,
+ * and casing so `EECOM 🔧` and `eecom` compare equal.
  *
  * Exported so other modules (e.g. capability advertisement) reuse the exact
  * matching semantics triage uses, instead of re-implementing them.
@@ -161,9 +161,9 @@ export function findRosterMember(target: string, roster: TeamMember[]): TeamMemb
 /**
  * Triage an issue using routing rules, module ownership, and roster.
  * Priority order:
- * 1. Module path match  issue mentions a file path matching module ownership
- * 2. Work type keyword  issue content matches routing rule keywords
- * 3. Lead fallback  assign to Lead/Architect if no match
+ * 1. Module path match — issue mentions a file path matching module ownership
+ * 2. Work type keyword — issue content matches routing rule keywords
+ * 3. Lead fallback — assign to Lead/Architect if no match
  */
 export function triageIssue(
   issue: TriageIssue,
@@ -214,7 +214,7 @@ export function triageIssue(
 
   return {
     agent: lead,
-    reason: 'No module, routing, or role keyword match  routed to Lead/Architect',
+    reason: 'No module, routing, or role keyword match — routed to Lead/Architect',
     source: 'lead-fallback',
     confidence: 'low',
   };
@@ -298,7 +298,7 @@ function splitKeywords(examplesCell: string | undefined): string[] {
 
 function normalizeOptionalOwner(owner: string): string | null {
   if (!owner) return null;
-  if (/^[-]+$/.test(owner)) return null;
+  if (/^[-—–]+$/.test(owner)) return null;
   return owner;
 }
 
@@ -410,8 +410,10 @@ function routeMatch(
 }
 
 function findLeadFallback(roster: TeamMember[]): TeamMember | null {
-  const hasRoleToken = (member: TeamMember, token: string): boolean =>
-    (member.role.toLowerCase().match(/[a-z0-9]+/g) ?? []).includes(token);
+  const hasRoleToken = (member: TeamMember, token: string): boolean => {
+    const roleTokens: string[] = member.role.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+    return roleTokens.includes(token);
+  };
   return roster.find((member) => hasRoleToken(member, 'lead')) ??
     roster.find((member) => hasRoleToken(member, 'architect')) ??
     null;

@@ -185,6 +185,7 @@ for (const file of jstsFiles) {
 // .squad/log/ and .squad/orchestration-log/ are gitignored (never in PR diffs) but
 // listed here for documentation completeness.
 const UNSAFE_GIT_EXCLUDED_PATHS = [
+  /^scripts\/security-review\.mjs$/,
   /^\.squad\/decisions\.md$/,
   /^\.squad\/agents\/.+\/history\.md$/,
   /^\.squad\/agents\/[^/]+\/history-archive-.+\.md$/,

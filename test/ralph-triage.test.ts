@@ -34,9 +34,9 @@ const ROUTING_MD = [
   '',
   '| Work Type | Route To | Examples |',
   '|-----------|-------|----------|',
-  '| Core runtime | Runtime Engineer =' | adapter, session pool, API |',
-  '| Tests & quality | Quality Engineer >� | Test coverage, Vitest, edge cases, CI/CD |',
-  '| Experience | Experience Engineer <� | UI, UX, CSS |',
+  '| Core runtime | Runtime Engineer 🔧 | adapter, session pool, API |',
+  '| Tests & quality | Quality Engineer 🧪 | Test coverage, Vitest, edge cases, CI/CD |',
+  '| Experience | Experience Engineer 🎨 | UI, UX, CSS |',
   '',
   '## Module Ownership',
   '',
@@ -152,11 +152,11 @@ describe('ralph triage parser helpers', () => {
         '',
         '| Name | Role |',
         '|------|------|',
-        '| Quinn | QA >� |',
+        '| Quinn | QA 🧪 |',
       ].join('\n');
 
       const roster = parseRoster(withRoleEmoji);
-      expect(roster).toEqual([{ name: 'Quinn', role: 'QA >�', label: 'squad:quinn' }]);
+      expect(roster).toEqual([{ name: 'Quinn', role: 'QA 🧪', label: 'squad:quinn' }]);
     });
   });
 
@@ -179,7 +179,7 @@ describe('ralph triage parser helpers', () => {
 
     it('handles missing Examples column gracefully', () => {
       const markdown = [
-        '## Work Type � Agent',
+        '## Work Type → Agent',
         '',
         '| Work Type | Agent |',
         '|-----------|-------|',
@@ -207,7 +207,7 @@ describe('ralph triage parser helpers', () => {
 
     it('returns empty array for empty/missing section', () => {
       expect(parseRoutingRules('# No routing section')).toEqual([]);
-      expect(parseRoutingRules('## Work Type � Agent')).toEqual([]);
+      expect(parseRoutingRules('## Work Type → Agent')).toEqual([]);
     });
 
     it('handles emoji in agent name column', () => {
@@ -221,18 +221,18 @@ describe('ralph triage parser helpers', () => {
     it('parses Module Ownership table', () => {
       const modules = parseModuleOwnership(ROUTING_MD);
       expect(modules.length).toBeGreaterThan(0);
-      // Verify structure  agent names change during team rebirths
+      // Verify structure — agent names change during team rebirths
       expect(modules[0]).toHaveProperty('modulePath');
       expect(modules[0]).toHaveProperty('primary');
     });
 
-    it('handles "" as secondary (should be null)', () => {
+    it('handles "—" as secondary (should be null)', () => {
       const markdown = [
         '## Module Ownership',
         '',
         '| Module | Primary | Secondary |',
         '|--------|---------|-----------|',
-        '| `src/ralph/` | Runtime Engineer |  |',
+        '| `src/ralph/` | Runtime Engineer | — |',
       ].join('\n');
 
       expect(parseModuleOwnership(markdown)).toEqual([
@@ -250,7 +250,7 @@ describe('ralph triage parser helpers', () => {
         '',
         '| Module | Primary | Secondary |',
         '|--------|---------|-----------|',
-        '| `SRC\\CLI\\` | Fenster |  |',
+        '| `SRC\\CLI\\` | Fenster | — |',
       ].join('\n');
 
       expect(parseModuleOwnership(markdown)).toEqual([
@@ -423,15 +423,15 @@ describe('triage parity', () => {
   it('SDK and script use same routing priority order', () => {
     // Verify the SDK triage priority is: module-ownership > routing-rule > role-keyword > lead-fallback
     // This is the documented contract both implementations must follow
-    const routingMd = `## Work Type � Agent
+    const routingMd = `## Work Type → Agent
 | Work Type | Agent | Examples |
 |---|---|---|
-| Runtime | Fenster =' | streaming, event loop |
+| Runtime | Fenster 🔧 | streaming, event loop |
 
 ## Module Ownership
 | Module | Primary | Secondary |
 |---|---|---|
-| src/runtime/ | Fenster =' |  |`;
+| src/runtime/ | Fenster 🔧 | — |`;
     const teamMd = `## Members
 | Name | Role |
 |---|---|
@@ -476,7 +476,7 @@ describe('triage parity', () => {
       '| Quality | Quality Engineer | failure |',
       '| Docs | Ann | readme |',
       '| Punctuation | AB | punctuation |',
-      '| Decorated | **Anna** =� | handbook |',
+      '| Decorated | **Anna** 📚 | handbook |',
     ].join('\n');
     const parsedRoster = parseTeam(teamMd);
     const parsedRules = parseRules(routingMd);
@@ -509,7 +509,7 @@ describe('triage parity', () => {
   });
 });
 
-describe('resolveGithubApiBase()  GitHub Enterprise support', () => {
+describe('resolveGithubApiBase() — GitHub Enterprise support', () => {
   const require = createRequire(import.meta.url);
   const { resolveGithubApiBase } = require('../templates/ralph-triage.js');
 
