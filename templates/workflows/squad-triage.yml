@@ -166,7 +166,7 @@ jobs:
               ]);
 
               function tokens(value) {
-                return value.toLowerCase().match(/[a-z0-9]+(?:[+#.][a-z0-9+#.]*)?/g) || [];
+                return value.toLowerCase().match(/[a-z0-9]+(?:[+#.][a-z0-9+#.]*)?(?<!\.)/g) || [];
               }
 
               function containsPhrase(haystack, needle) {

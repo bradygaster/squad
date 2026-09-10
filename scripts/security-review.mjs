@@ -193,22 +193,31 @@ const UNSAFE_GIT_EXCLUDED_PATHS = [
 ];
 
 const GIT_UNSAFE_PATTERNS = [
-  { pattern: /git\s+add\s+\.(?=\s|$|[;&|])/, label: 'git add .' },
-  { pattern: /git\s+add\s+-A(?=\s|$|[;&|])/, label: 'git add -A' },
-  { pattern: /git\s+commit\s+-a(?=\s|$|[;&|])/, label: 'git commit -a' },
-  { pattern: /git\s+push\s+--force(?!-with-lease)(?=\s|$|[;&|])/, label: 'git push --force' },
-  { pattern: /--force-with-lease/, label: 'git push --force-with-lease' },
+  { pattern: /git\s+add\s+\.(?:\/)?(?=\s|$|[`;&|])/g, label: 'git add .' },
+  { pattern: /git\s+add\s+-A(?=\s|$|[`;&|])/g, label: 'git add -A' },
+  { pattern: /git\s+commit\s+-[A-Za-z]*a[A-Za-z]*(?=\s|$|[`;&|])/g, label: 'git commit -a' },
+  { pattern: /git\s+push\s+--force(?!-with-lease)(?=\s|$|[`;&|])/g, label: 'git push --force' },
+  { pattern: /--force-with-lease/g, label: 'git push --force-with-lease' },
 ];
-const UNSAFE_GIT_PROHIBITION = /\b(?:never|do not|don't|avoid)\b|❌/i;
+function isUnsafeGitProhibition(textBeforeCommand) {
+  const clause = textBeforeCommand
+    .split(/[;!?—]|\.(?=\s+[A-Z])|\b(?:but|instead)\b/i)
+    .at(-1) ?? '';
+  if (/❌/.test(clause)) return true;
+  if (/\b(?:never|do not|don't)\s+forget\b/i.test(clause)) return false;
+  if (/\b(?:never|do not|don't)\b/i.test(clause)) return true;
+  if (/\bavoid\s+(?:losing|missing|forgetting)\b/i.test(clause)) return false;
+  return /\bavoid\b(?:(?!\b(?:by|to)\s+(?:run|use|execute)\b).)*$/i.test(clause);
+}
 
 for (const file of changedFiles) {
   if (UNSAFE_GIT_EXCLUDED_PATHS.some((p) => p.test(file))) continue;
   const added = addedByFile.get(file) || [];
   for (const { line, text } of added) {
     for (const { pattern, label } of GIT_UNSAFE_PATTERNS) {
-      const match = pattern.exec(text);
-      const textBeforeCommand = match ? text.slice(0, match.index) : '';
-      if (match && !UNSAFE_GIT_PROHIBITION.test(textBeforeCommand)) {
+      for (const match of text.matchAll(pattern)) {
+        const textBeforeCommand = text.slice(0, match.index);
+        if (isUnsafeGitProhibition(textBeforeCommand)) continue;
         findings.push({
           category: 'unsafe-git',
           severity: 'error',

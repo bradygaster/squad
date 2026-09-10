@@ -170,26 +170,13 @@ function triageIssue(issue, rules, modules, roster) {
     }
   }
 
-  const bestRule = findBestRuleMatch(issueText, rules);
+  const bestRule = findBestRuleMatch(issueText, rules, roster);
   if (bestRule) {
-    const agent = findMember(bestRule.rule.agentName, roster);
-    if (agent) {
-      return {
-        agent,
-        reason: `Matched routing keyword(s): ${bestRule.matchedKeywords.join(', ')}`,
-        source: 'routing-rule',
-        confidence: bestRule.matchedKeywords.length >= 2 ? 'high' : 'medium',
-      };
-    }
-  }
-
-  const roleMatch = findRoleKeywordMatch(issueText, roster);
-  if (roleMatch) {
     return {
-      agent: roleMatch.agent,
-      reason: roleMatch.reason,
-      source: 'role-keyword',
-      confidence: 'medium',
+      agent: bestRule.agent,
+      reason: `Matched routing keyword(s): ${bestRule.matchedKeywords.join(', ')}`,
+      source: 'routing-rule',
+      confidence: bestRule.matchedKeywords.length >= 2 ? 'high' : 'medium',
     };
   }
 
@@ -268,7 +255,7 @@ function cleanCell(value) {
 function splitKeywords(examplesCell) {
   if (!examplesCell) return [];
   return examplesCell
-    .split(',')
+    .split(/[,;]+/)
     .map((keyword) => cleanCell(keyword))
     .filter((keyword) => keyword.length > 0);
 }
@@ -295,33 +282,24 @@ function normalizeName(value) {
     .trim();
 }
 
+function normalizeRouteDestination(value) {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`]/g, '')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\u200d\ufe0f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
 function findMember(target, roster) {
-  const normalizedTarget = normalizeName(target);
+  const normalizedTarget = normalizeRouteDestination(target);
   if (!normalizedTarget) return null;
 
-  for (const member of roster) {
-    if (normalizeName(member.name) === normalizedTarget) return member;
-  }
-
-  for (const member of roster) {
-    if (normalizeName(member.role) === normalizedTarget) return member;
-  }
-
-  for (const member of roster) {
-    const memberName = normalizeName(member.name);
-    if (normalizedTarget.includes(memberName) || memberName.includes(normalizedTarget)) {
-      return member;
-    }
-  }
-
-  for (const member of roster) {
-    const memberRole = normalizeName(member.role);
-    if (normalizedTarget.includes(memberRole) || memberRole.includes(normalizedTarget)) {
-      return member;
-    }
-  }
-
-  return null;
+  return roster.find((member) =>
+    normalizeRouteDestination(member.name) === normalizedTarget
+  ) || null;
 }
 
 function findBestModuleMatch(issueText, modules) {
@@ -342,64 +320,58 @@ function findBestModuleMatch(issueText, modules) {
   return best;
 }
 
-function findBestRuleMatch(issueText, rules) {
-  let best = null;
-  let bestScore = 0;
+function findBestRuleMatch(issueText, rules, roster) {
+  const scoredRoutes = rules.flatMap((rule) => {
+    const agent = findMember(rule.agentName, roster);
+    if (!agent) return [];
+    const match = routeMatch(issueText, rule);
+    return match.score > 0 ? [{ rule, agent, ...match }] : [];
+  }).sort((left, right) => right.score - left.score);
 
-  for (const rule of rules) {
-    const matchedKeywords = rule.keywords
-      .map((keyword) => keyword.toLowerCase())
-      .filter((keyword) => keyword.length > 0 && issueText.includes(keyword));
+  if (scoredRoutes.length === 0) return null;
 
-    if (matchedKeywords.length === 0) continue;
-
-    const score =
-      matchedKeywords.length * 100 + matchedKeywords.reduce((sum, keyword) => sum + keyword.length, 0);
-    if (score > bestScore) {
-      best = { rule, matchedKeywords };
-      bestScore = score;
-    }
-  }
-
-  return best;
+  const bestScore = scoredRoutes[0].score;
+  const bestRoutes = scoredRoutes.filter((candidate) => candidate.score === bestScore);
+  const bestAgents = new Set(bestRoutes.map((candidate) =>
+    normalizeRouteDestination(candidate.agent.name)
+  ));
+  return bestAgents.size === 1 ? bestRoutes[0] : null;
 }
 
-function findRoleKeywordMatch(issueText, roster) {
-  for (const member of roster) {
-    const role = member.role.toLowerCase();
+function routeMatch(issueText, rule) {
+  const genericWorkTypeTokens = new Set([
+    'agent', 'engineer', 'engineering', 'management', 'owner',
+    'specialist', 'system', 'work',
+  ]);
+  const tokens = (value) =>
+    value.toLowerCase().match(/[a-z0-9]+(?:[+#.][a-z0-9+#.]*)?(?<!\.)/g) || [];
+  const containsPhrase = (haystack, needle) =>
+    needle.length > 0 &&
+    needle.length <= haystack.length &&
+    haystack.some((_, index) =>
+      needle.every((token, offset) => haystack[index + offset] === token)
+    );
 
-    if (
-      (role.includes('frontend') || role.includes('ui')) &&
-      (issueText.includes('ui') || issueText.includes('frontend') || issueText.includes('css'))
-    ) {
-      return { agent: member, reason: 'Matched frontend/UI role keywords' };
-    }
+  const issueTokens = tokens(issueText);
+  const workTypeTokens = tokens(rule.workType)
+    .filter((token) => !genericWorkTypeTokens.has(token));
+  const rawPhrases = [rule.workType, ...workTypeTokens, ...rule.keywords]
+    .flatMap((phrase) => phrase.includes('/') ? [phrase, ...phrase.split('/')] : [phrase]);
+  const matchedKeywords = rawPhrases.filter((phrase) =>
+    containsPhrase(issueTokens, tokens(phrase))
+  );
+  const score = matchedKeywords.reduce((best, phrase) =>
+    Math.max(best, tokens(phrase).length * 100), 0);
 
-    if (
-      (role.includes('backend') || role.includes('api') || role.includes('server')) &&
-      (issueText.includes('api') || issueText.includes('backend') || issueText.includes('database'))
-    ) {
-      return { agent: member, reason: 'Matched backend/API role keywords' };
-    }
-
-    if (
-      (role.includes('test') || role.includes('qa')) &&
-      (issueText.includes('test') || issueText.includes('bug') || issueText.includes('fix'))
-    ) {
-      return { agent: member, reason: 'Matched testing/QA role keywords' };
-    }
-  }
-
-  return null;
+  return { score, matchedKeywords };
 }
 
 function findLeadFallback(roster) {
-  return (
-    roster.find((member) => {
-      const role = member.role.toLowerCase();
-      return role.includes('lead') || role.includes('architect');
-    }) || null
-  );
+  const hasRoleToken = (member, token) =>
+    (member.role.toLowerCase().match(/[a-z0-9]+/g) || []).includes(token);
+  return roster.find((member) => hasRoleToken(member, 'lead')) ||
+    roster.find((member) => hasRoleToken(member, 'architect')) ||
+    null;
 }
 
 function parseOwnerRepoFromRemote(remoteUrl) {

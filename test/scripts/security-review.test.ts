@@ -89,19 +89,51 @@ describe('security review unsafe git exclusions', () => {
   });
 
   it('does not report explicit prohibitions as unsafe instructions', () => {
-    const result = runSecurityReview(
-      '.github/agents/example.agent.md',
-      'Never use `git add -A`; stage explicit paths instead.\n',
-    );
+    const command = ['git add ', '-A'].join('');
+    const result = runSecurityReview('.github/agents/example.agent.md', [
+      `Never use \`${command}\`; stage explicit paths instead.`,
+      `Do not run ${command}; stage explicit paths instead.`,
+      `Avoid ${command}; stage explicit paths instead.`,
+      `Never \`git add .\`, ${command}, or \`git commit -a\`.`,
+      `- ❌ Blanket staging (${command}) is forbidden.`,
+    ].join('\n'));
 
     expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(false);
   });
 
-  it('reports executable blanket staging commands', () => {
-    const command = ['git add ', '-A\n'].join('');
+  it.each([
+    ['blanket staging', ['git add ', '-A\n'].join('')],
+    ['inline Markdown', ['Run `git add ', '.` before committing.\n'].join('')],
+    ['dot slash staging', ['git add ', './\n'].join('')],
+    ['combined commit flags', ['git commit ', '-am update\n'].join('')],
+    ['do not forget instruction', ['Do not forget to run git add ', '-A\n'].join('')],
+    ['avoid-loss instruction', ['Avoid losing changes; run git add ', '-A\n'].join('')],
+    ['mixed prohibition and instruction', [
+      'Never use git add ',
+      '-A; instead run git add ',
+      '-A\n',
+    ].join('')],
+    ['sentence-separated prohibition and instruction', [
+      'Never use git add ',
+      '-A. Instead run git add ',
+      '.\n',
+    ].join('')],
+    ['comma-separated prohibition and instruction', [
+      'Do not run git add ',
+      '-A, instead run git add ',
+      '.\n',
+    ].join('')],
+  ])('reports executable unsafe git commands in %s', (_name, command) => {
     const result = runSecurityReview('.github/agents/example.agent.md', command);
 
     expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(true);
+  });
+
+  it('recognizes descriptive avoid prohibitions', () => {
+    const command = ['Avoid blanket staging with git add ', '-A\n'].join('');
+    const result = runSecurityReview('.github/agents/example.agent.md', command);
+
+    expect(result.findings.some((finding) => finding.category === 'unsafe-git')).toBe(false);
   });
 
   it('does not let a trailing comment suppress an unsafe command', () => {

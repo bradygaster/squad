@@ -34,9 +34,9 @@ const ROUTING_MD = [
   '',
   '| Work Type | Route To | Examples |',
   '|-----------|-------|----------|',
-  '| Core runtime | Runtime Engineer 🔧 | adapter, session pool, API |',
-  '| Tests & quality | Quality Engineer 🧪 | Test coverage, Vitest, edge cases, CI/CD |',
-  '| Experience | Experience Engineer 🎨 | UI, UX, CSS |',
+  '| Core runtime | Runtime Engineer =' | adapter, session pool, API |',
+  '| Tests & quality | Quality Engineer >� | Test coverage, Vitest, edge cases, CI/CD |',
+  '| Experience | Experience Engineer <� | UI, UX, CSS |',
   '',
   '## Module Ownership',
   '',
@@ -152,11 +152,11 @@ describe('ralph triage parser helpers', () => {
         '',
         '| Name | Role |',
         '|------|------|',
-        '| Quinn | QA 🧪 |',
+        '| Quinn | QA >� |',
       ].join('\n');
 
       const roster = parseRoster(withRoleEmoji);
-      expect(roster).toEqual([{ name: 'Quinn', role: 'QA 🧪', label: 'squad:quinn' }]);
+      expect(roster).toEqual([{ name: 'Quinn', role: 'QA >�', label: 'squad:quinn' }]);
     });
   });
 
@@ -179,7 +179,7 @@ describe('ralph triage parser helpers', () => {
 
     it('handles missing Examples column gracefully', () => {
       const markdown = [
-        '## Work Type → Agent',
+        '## Work Type � Agent',
         '',
         '| Work Type | Agent |',
         '|-----------|-------|',
@@ -207,7 +207,7 @@ describe('ralph triage parser helpers', () => {
 
     it('returns empty array for empty/missing section', () => {
       expect(parseRoutingRules('# No routing section')).toEqual([]);
-      expect(parseRoutingRules('## Work Type → Agent')).toEqual([]);
+      expect(parseRoutingRules('## Work Type � Agent')).toEqual([]);
     });
 
     it('handles emoji in agent name column', () => {
@@ -221,18 +221,18 @@ describe('ralph triage parser helpers', () => {
     it('parses Module Ownership table', () => {
       const modules = parseModuleOwnership(ROUTING_MD);
       expect(modules.length).toBeGreaterThan(0);
-      // Verify structure — agent names change during team rebirths
+      // Verify structure  agent names change during team rebirths
       expect(modules[0]).toHaveProperty('modulePath');
       expect(modules[0]).toHaveProperty('primary');
     });
 
-    it('handles "—" as secondary (should be null)', () => {
+    it('handles "" as secondary (should be null)', () => {
       const markdown = [
         '## Module Ownership',
         '',
         '| Module | Primary | Secondary |',
         '|--------|---------|-----------|',
-        '| `src/ralph/` | Runtime Engineer | — |',
+        '| `src/ralph/` | Runtime Engineer |  |',
       ].join('\n');
 
       expect(parseModuleOwnership(markdown)).toEqual([
@@ -250,7 +250,7 @@ describe('ralph triage parser helpers', () => {
         '',
         '| Module | Primary | Secondary |',
         '|--------|---------|-----------|',
-        '| `SRC\\CLI\\` | Fenster | — |',
+        '| `SRC\\CLI\\` | Fenster |  |',
       ].join('\n');
 
       expect(parseModuleOwnership(markdown)).toEqual([
@@ -305,8 +305,9 @@ describe('triageIssue()', () => {
     expect(decision?.confidence).toBe('high');
   });
 
-  it('role keyword fallback works for frontend/backend/test', () => {
+  it('does not infer ownership from role-name keywords', () => {
     const roleRoster: TeamMember[] = [
+      { name: 'Lead', role: 'Technical Lead', label: 'squad:lead' },
       { name: 'Front', role: 'Frontend UI Engineer', label: 'squad:front' },
       { name: 'Back', role: 'Backend API Engineer', label: 'squad:back' },
       { name: 'QA', role: 'Test Engineer', label: 'squad:qa' },
@@ -316,12 +317,12 @@ describe('triageIssue()', () => {
     const backend = triageIssue(issue('Database timeout on API endpoint'), [], [], roleRoster);
     const testing = triageIssue(issue('Flaky test bug fix needed'), [], [], roleRoster);
 
-    expect(frontend?.agent.name).toBe('Front');
-    expect(backend?.agent.name).toBe('Back');
-    expect(testing?.agent.name).toBe('QA');
-    expect(frontend?.source).toBe('role-keyword');
-    expect(backend?.source).toBe('role-keyword');
-    expect(testing?.source).toBe('role-keyword');
+    expect(frontend?.agent.name).toBe('Lead');
+    expect(backend?.agent.name).toBe('Lead');
+    expect(testing?.agent.name).toBe('Lead');
+    expect(frontend?.source).toBe('lead-fallback');
+    expect(backend?.source).toBe('lead-fallback');
+    expect(testing?.source).toBe('lead-fallback');
   });
 
   it('lead fallback when no match', () => {
@@ -390,6 +391,27 @@ describe('triageIssue()', () => {
 });
 
 describe('triage parity', () => {
+  const require = createRequire(import.meta.url);
+  const standalone = require('../templates/ralph-triage.js') as {
+    parseRoster: typeof parseRoster;
+    parseRoutingRules: typeof parseRoutingRules;
+    triageIssue: typeof triageIssue;
+  };
+  const implementations: Array<{
+    name: string;
+    parseTeam: typeof parseRoster;
+    parseRules: typeof parseRoutingRules;
+    triage: typeof triageIssue;
+  }> = [
+    { name: 'SDK', parseTeam: parseRoster, parseRules: parseRoutingRules, triage: triageIssue },
+    {
+      name: 'standalone script',
+      parseTeam: standalone.parseRoster,
+      parseRules: standalone.parseRoutingRules,
+      triage: standalone.triageIssue,
+    },
+  ];
+
   it('ralph-triage.js is valid JavaScript', async () => {
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
@@ -401,15 +423,15 @@ describe('triage parity', () => {
   it('SDK and script use same routing priority order', () => {
     // Verify the SDK triage priority is: module-ownership > routing-rule > role-keyword > lead-fallback
     // This is the documented contract both implementations must follow
-    const routingMd = `## Work Type → Agent
+    const routingMd = `## Work Type � Agent
 | Work Type | Agent | Examples |
 |---|---|---|
-| Runtime | Fenster 🔧 | streaming, event loop |
+| Runtime | Fenster =' | streaming, event loop |
 
 ## Module Ownership
 | Module | Primary | Secondary |
 |---|---|---|
-| src/runtime/ | Fenster 🔧 | — |`;
+| src/runtime/ | Fenster =' |  |`;
     const teamMd = `## Members
 | Name | Role |
 |---|---|
@@ -430,9 +452,64 @@ describe('triage parity', () => {
     const result2 = triageIssue(ruleIssue, rules, modules, roster);
     expect(result2?.source).toBe('routing-rule');
   });
+
+  it.each(implementations)('$name uses workflow-compatible route boundaries and destinations', ({
+    parseTeam,
+    parseRules,
+    triage,
+  }) => {
+    const teamMd = [
+      '## Members',
+      '| Name | Role |',
+      '|---|---|',
+      '| Team Lead | Technical Lead |',
+      '| Runtime Engineer | Runtime |',
+      '| Quality Engineer | Quality |',
+      '| Anna | Documentation |',
+      '| A.B | Specialist |',
+    ].join('\n');
+    const routingMd = [
+      '## Routing Table',
+      '| Work Type | Agent | Examples |',
+      '|---|---|---|',
+      '| Runtime | Runtime Engineer | API |',
+      '| Quality | Quality Engineer | failure |',
+      '| Docs | Ann | readme |',
+      '| Punctuation | AB | punctuation |',
+      '| Decorated | **Anna** =� | handbook |',
+    ].join('\n');
+    const parsedRoster = parseTeam(teamMd);
+    const parsedRules = parseRules(routingMd);
+    const decide = (title: string) =>
+      triage({ number: 1, title, body: '', labels: [] }, parsedRules, [], parsedRoster);
+
+    expect(decide('API regression')?.agent.name).toBe('Runtime Engineer');
+    expect(decide('API.')?.agent.name).toBe('Runtime Engineer');
+    expect(decide('rapid response required')?.agent.name).toBe('Team Lead');
+    expect(decide('API failure')?.agent.name).toBe('Team Lead');
+    expect(decide('readme update')?.agent.name).toBe('Team Lead');
+    expect(decide('punctuation update')?.agent.name).toBe('Team Lead');
+    expect(decide('handbook update')?.agent.name).toBe('Anna');
+
+    const semicolonRules = parseRules([
+      '## Routing Table',
+      '| Work Type | Agent | Examples |',
+      '|---|---|---|',
+      '| Runtime | Runtime Engineer | API; server |',
+      '| Quality | Quality Engineer | failure |',
+    ].join('\n'));
+    const semicolonDecision = triage(
+      { number: 2, title: 'API failure', body: '', labels: [] },
+      semicolonRules,
+      [],
+      parsedRoster,
+    );
+    expect(semicolonDecision?.agent.name).toBe('Team Lead');
+    expect(decide('failure.')?.agent.name).toBe('Quality Engineer');
+  });
 });
 
-describe('resolveGithubApiBase() — GitHub Enterprise support', () => {
+describe('resolveGithubApiBase()  GitHub Enterprise support', () => {
   const require = createRequire(import.meta.url);
   const { resolveGithubApiBase } = require('../templates/ralph-triage.js');
 
