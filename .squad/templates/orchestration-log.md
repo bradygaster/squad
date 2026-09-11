@@ -49,7 +49,10 @@ The coordinator appends one JSON object per turn to `.squad/orchestration-log/le
 }
 ```
 
-**Verdicts file:** Scribe appends one JSON object per audited turn to `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. See `.squad/hooks/README.md` for the output schema.
+**Verdicts file:** If the invoking flow wants a persistent verdict stream, it must capture the
+audit hook's stdout and append one JSON object per invocation to
+`.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. The hook itself only emits that JSON
+object to stdout; see `.squad/hooks/README.md` for the output schema.
 
 **Gitignore:** Both files are runtime-only and excluded from version control (see `.gitignore` entry for `.squad/orchestration-log/`). Do NOT commit them.
 

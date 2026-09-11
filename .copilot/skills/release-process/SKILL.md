@@ -20,7 +20,7 @@ recovery commands. The operational model is:
 There is no staging `preview` branch. Do not create tags or GitHub Releases
 manually.
 
-Human release-trigger boundary: use the canonical runbook for exact commands, and do not let an agent dispatch live `squad-release.yml`, `squad-insider-publish.yml`, or `squad-promote.yml` runs. Agents prepare and validate; a human executes the real publish/promotion trigger.
+Human release-trigger boundary: use the canonical runbook for exact commands, and do not let an agent dispatch any live publish workflow: `squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with `dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`. Agents prepare and validate; only a human may execute the real publish/promotion trigger. The `squad-promote.yml --ref dev -f dry_run=true` check remains agent-safe because it does not publish.
 
 ## Preconditions
 
@@ -52,6 +52,8 @@ Required Actions secrets:
 
 After a PR sets an immutable prerelease version on `dev` and CI passes:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 VERSION=0.14.0-preview.1
 gh workflow run squad-release.yml --ref dev -f confirm_tag="v$VERSION"
@@ -65,6 +67,8 @@ It also updates the `squad-preview` Homebrew cask and
 promotion remain stable-only.
 
 ## Insider
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
@@ -83,7 +87,11 @@ After a PR replaces the preview version with `X.Y.Z` on `dev` and CI passes:
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=true
 gh run watch
+```
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
+```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=false
 gh run watch
 ```

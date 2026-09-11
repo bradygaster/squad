@@ -48,10 +48,12 @@ Configure these GitHub Actions secrets:
 
 Agents may prepare versions, run validation, and recommend exact commands, but
 real release-trigger dispatches remain human-gated. Do not have an agent fire
-`squad-release.yml`, `squad-insider-publish.yml`, or `squad-promote.yml` when
-the run will publish, tag, or promote a real release (`dry_run=false` or
-equivalent). Stop with the verified command and evidence; a human must execute
-or explicitly approve the live trigger.
+any live publish workflow: `squad-release.yml`, `squad-insider-publish.yml`,
+`squad-promote.yml` with `dry_run=false`, `squad-npm-publish.yml`, or
+`squad-standalone-release.yml`. Only non-publishing validation dispatches such
+as `squad-promote.yml --ref dev -f dry_run=true` stay agent-safe. Stop with the
+verified command and evidence; a human must execute or explicitly approve the
+live trigger.
 
 ## Prepare a release
 
@@ -94,6 +96,8 @@ Preview versions must contain a prerelease suffix, for example
 
 After the release-preparation PR is merged and `dev` CI is green:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 VERSION=0.14.0-preview.1
 gh workflow run squad-release.yml \
@@ -125,6 +129,8 @@ The same preview is available through `brew install --cask squad-preview` and
 
 Start an on-demand snapshot from `dev`:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
 gh run watch
@@ -147,6 +153,8 @@ gh run watch
 ```
 
 Start the real promotion:
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=false
@@ -207,6 +215,8 @@ immutable tag.
 
 Stable recovery:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 VERSION=0.14.0
 gh workflow run squad-npm-publish.yml --ref main \
@@ -216,6 +226,8 @@ gh workflow run squad-standalone-release.yml --ref main \
 ```
 
 Preview recovery:
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 VERSION=0.14.0-preview.1

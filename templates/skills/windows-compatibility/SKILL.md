@@ -33,16 +33,18 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 ### Path Comparison (Case Sensitivity)
 - **Never use case-sensitive `startsWith`, `===`, or naive prefix checks to confine paths on Windows or macOS:** those filesystems are commonly case-insensitive in normal repo setups
 - **Use platform-aware comparison:** when `process.platform === 'win32' || process.platform === 'darwin'`, normalize both sides to the same case before comparing; keep Linux case-sensitive
+- **Root confinement must be exact-match-or-separator:** a path is within `rootDir` only when it equals the normalized root exactly or starts with `rootDir + path.sep`; a bare substring/prefix match lets `/root-escape` slip past `/root`
 - **Where it matters:** security checks such as path-traversal prevention, `rootDir` confinement, and any validation that a resolved path stays under an allowed directory
 - **Pattern:**
   ```typescript
+  import path from 'node:path';
+
   const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
 
-  function pathStartsWith(fullPath: string, prefix: string): boolean {
-    if (CASE_INSENSITIVE) {
-      return fullPath.toLowerCase().startsWith(prefix.toLowerCase());
-    }
-    return fullPath.startsWith(prefix);
+  function isPathWithin(fullPath: string, rootDir: string): boolean {
+    const a = CASE_INSENSITIVE ? fullPath.toLowerCase() : fullPath;
+    const b = CASE_INSENSITIVE ? rootDir.toLowerCase() : rootDir;
+    return a === b || a.startsWith(b + path.sep);
   }
   ```
 - **Resolve first, compare second:** compare normalized absolute paths; a case mismatch alone is not proof that a path escaped the allowed root
