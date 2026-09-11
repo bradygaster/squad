@@ -11,10 +11,11 @@
 
     The script reads the session's ledger at `.squad/orchestration-log/ledger-{session-id}.jsonl`
     (JSONL — one JSON object per coordinator turn, per Chakotay's finalized schema),
-    evaluates the current turn (the last parseable line) plus recent history against
-    three violation criteria, and emits a single structured JSON verdict on stdout for
-    Ralph to consume or act on. Session identity lives in the ledger filename, not in
-    the entry payload.
+    evaluates the current turn (the last parseable coordinator_turn) plus recent history
+    against three violation criteria, and emits a single structured JSON verdict on stdout
+    for Ralph to consume or act on. The hook is stateless: it has no cursor and does not
+    provide exactly-once auditing across repeated invocations. Session identity lives in
+    the ledger filename, not in the entry payload.
 
     Verdict values: "ok" | "warn" | "block" | "indeterminate" | "error".
     "indeterminate" means the ledger was expected but is missing, empty, or otherwise

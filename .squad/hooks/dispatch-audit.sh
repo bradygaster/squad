@@ -14,9 +14,10 @@
 #
 #   The script reads the session's ledger at the given path (JSONL -- one JSON
 #   object per coordinator turn per Chakotay's finalized schema), evaluates the
-#   current turn (last parseable line) plus recent history against three violation
-#   criteria, and emits a single structured JSON verdict on stdout for Ralph to
-#   consume or act on.
+#   current turn (last parseable coordinator_turn) plus recent history against
+#   three violation criteria, and emits a single structured JSON verdict on stdout
+#   for Ralph to consume or act on. The hook is stateless: it has no cursor and
+#   does not provide exactly-once auditing across repeated invocations.
 #
 #   Verdict values: "ok" | "warn" | "block" | "indeterminate" | "error"
 #

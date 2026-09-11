@@ -1,30 +1,36 @@
 ---
 name: history-hygiene
-description: Record final outcomes to history.md, not intermediate requests or reversed decisions
+description: Record reconciled final outcomes to history.md, not intermediate requests or obsolete claims
 domain: documentation, team-collaboration
 confidence: high
-source: earned (Kobayashi v0.6.0 incident, team intervention)
+source: earned (stale history reversal incident, team intervention)
 ---
 
 ## Context
 
-History files (.md files tracking decisions, spawns, outcomes) are read cold by future agents. Stale or incorrect entries poison decision-making downstream. The Kobayashi incident proved this: history said "Brady decided v0.6.0" when Brady had reversed that to v0.8.17. Future spawns read the wrong truth and repeated the mistake.
+History files are cold-start context, not the source of truth for live behavior. Stale or incorrect
+entries poison decision-making downstream. A stale-history incident proved that an old history claim
+can cause future spawns to repeat a reversed decision. Reconcile an operational claim with current
+implementation, workflows, tests, documentation, skills, and applicable decisions before acting on it.
 
 ## Patterns
 
 - **Record the final outcome**, not the initial request.
 - **Wait for confirmation** before writing to history — don't log intermediate states.
 - **If a decision reverses**, update the entry immediately — don't leave stale data.
-- **One read = one truth.** A future agent should never need to cross-reference other files to understand what actually happened.
+- **Link authority for operational facts.** Name the current source or workflow when a lesson
+  depends on live behavior.
+- **Promote reusable rules.** Move procedures and incident lessons that future roles need into a
+  focused skill; history should retain only the evidence and outcome.
 
 ## Examples
 
 ✓ **Correct:**
-- "Migration target: v0.8.17 (initially discussed as v0.6.0, corrected by Brady)"
-- "Reverted to Node 18 per Brady's explicit request on 2024-01-15"
+- "Migration target: v0.8.17 (initial target was later corrected before execution)"
+- "Node runtime: follow the current `package.json` `engines.node` requirement"
 
 ✗ **Incorrect:**
-- "Brady directed v0.6.0" (when later reversed)
+- "Migration target: v0.6.0" (when that request was later reversed)
 - Recording what was *requested* instead of what *actually happened*
 - Logging entries before outcome is confirmed
 
@@ -32,5 +38,5 @@ History files (.md files tracking decisions, spawns, outcomes) are read cold by 
 
 - Writing intermediate or "for now" states to disk
 - Attributing decisions without confirming final direction
-- Treating history like a draft — history is the source of truth
-- Assuming readers will cross-reference or verify; they won't
+- Treating history as authoritative over live source or workflow behavior
+- Copying dated assignments, status reports, or retired workarounds into a reusable skill

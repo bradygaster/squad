@@ -30,24 +30,61 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Never assume CWD is repo root:** Always use `TEAM ROOT` from spawn prompt or run `git rev-parse --show-toplevel`
 - **Use path.join() or path.resolve():** Don't manually concatenate with `/` or `\`
 
+### Path Comparison (Case Sensitivity)
+- **Never use naive prefix checks to confine paths:** a bare substring/prefix match can let sibling paths escape the intended root
+- **Never infer case-insensitive behavior from `process.platform` alone:** Windows is case-insensitive, but Darwin volumes are not all case-insensitive. APFS and HFS+ can be case-sensitive; a blanket lowercase conversion on macOS can conflate distinct sibling directories.
+- **Use filesystem-aware case handling:** Only fold case when the relevant volume has been explicitly identified as case-insensitive. Otherwise, compare the resolved path case-sensitively.
+- **Current implementation caveat:** This is the safe target pattern, not a claim about every existing repository implementation. `FSStorageProvider` currently folds case for all Darwin paths, so its root confinement is not volume-aware on case-sensitive macOS filesystems.
+- **Resolve first, compare second:** resolve both paths before comparing; do not compare user input or unresolved relative segments.
+- **Root confinement must be exact-match-or-separator:** a path is within `rootDir` only when it equals the normalized root exactly or starts with `rootDir + path.sep`; a bare substring/prefix match lets `/root-escape` slip past `/root`. Filesystem roots are valid roots and must remain exact-match-or-separator checks.
+- **Where it matters:** security checks such as path-traversal prevention, `rootDir` confinement, and any validation that a resolved path stays under an allowed directory
+- **Pattern:**
+  ```typescript
+  import path from 'node:path';
+
+  function normalizeForRootComparison(value: string, volumeIsCaseInsensitive = false): string {
+    return volumeIsCaseInsensitive ? value.toLowerCase() : value;
+  }
+
+  function isPathWithin(candidate: string, rootDir: string, volumeIsCaseInsensitive = false): boolean {
+    const a = normalizeForRootComparison(path.resolve(candidate), volumeIsCaseInsensitive);
+    const b = normalizeForRootComparison(path.resolve(rootDir), volumeIsCaseInsensitive);
+    const boundary = b.replace(/[\\/]+$/, '') + path.sep;
+    return a === b || a.startsWith(boundary);
+  }
+  ```
+- **Resolve first, compare second:** compare normalized absolute paths; only treat a case mismatch as equivalent when the relevant filesystem volume has already been confirmed to be case-insensitive
+
+### Repairing Stale LF-Pinned Working Trees
+
+An `eol=lf` attribute affects checkout behavior; it does not repair files that were already
+materialized with CRLF. For the known shebang failure mode, use the repository's
+`scripts/fix-crlf-worktree.mjs` rather than a broad renormalization:
+
+1. Identify LF-pinned files that are CRLF on disk.
+2. Exclude files with a real content difference from the index.
+3. Rewrite only content-clean paths from the index with `git checkout-index -f`.
+4. Re-measure the complete repair set and report repaired, skipped, and remaining paths.
+
+This is a local repair, not a source rewrite. Do not use `git add --renormalize .`; it rewrites
+the index and creates unrelated line-ending churn. Do not force-checkout a locally modified file.
+
 ## Examples
 
 ✓ **Correct:**
 ```powershell
-// Timestamp utility
-const safeTimestamp = () => new Date().toISOString().replace(/:/g, '-').split('.')[0] + 'Z';
+# Timestamp utility
+$safeTimestamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH-mm-ssZ')
 
-// Git workflow (PowerShell)
+# Git workflow (PowerShell)
 cd $teamRoot
-# ⚠️ NEVER use `git add .squad/` or broad globs — only stage files you intentionally changed
+# NEVER use `git add .squad/` or broad globs — only stage files you intentionally changed
 # Stage only files you actually modified — use git status to build explicit list
 $filesToStage = git status --porcelain | Where-Object { $_.Length -gt 3 } | ForEach-Object { $_.Substring(3) -replace '^.* -> ','' } | Where-Object {
   $_ -eq '.squad/decisions.md' -or
   $_ -eq '.squad/decisions-archive.md' -or
   $_ -like '.squad/agents/*/history.md' -or
-  $_ -like '.squad/agents/*/history-archive.md' -or
-  $_ -like '.squad/log/*' -or
-  $_ -like '.squad/orchestration-log/*'
+  $_ -like '.squad/agents/*/history-archive.md'
 }
 if ($filesToStage) { $filesToStage | Where-Object { $_ } | ForEach-Object { git add -- $_ } }
 git diff --cached --quiet
@@ -83,3 +120,4 @@ exec('git commit -m "First line\nSecond line"'); // FAILS silently in PowerShell
 - Assuming Unix-style paths work everywhere
 - Using `git -C` because it "looks cleaner" (it doesn't work)
 - Skipping `git diff --cached --quiet` check (creates empty commits)
+- Assuming all Darwin filesystems are case-insensitive for root-confinement checks

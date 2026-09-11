@@ -14,6 +14,8 @@ When a team member has a **Reviewer** role (e.g., Tester, Code Reviewer, Lead), 
 
 ### Reviewer Rejection Protocol
 
+Quality and test reviewers may block a PR or merge on quality, coverage, or regression grounds. Treat that block as a rejection that enters the protocol below.
+
 When a team member has a **Reviewer** role:
 
 - Reviewers may **approve** or **reject** work from other agents.

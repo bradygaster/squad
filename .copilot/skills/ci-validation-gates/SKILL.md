@@ -1,14 +1,16 @@
 ---
 name: "ci-validation-gates"
-description: "Defensive CI/CD patterns: semver validation, token checks, retry logic, draft detection — earned from v0.8.22"
+description: "Defensive CI/CD patterns: semver validation, token checks, retry logic, and draft detection"
 domain: "ci-cd"
 confidence: "high"
-source: "extracted from Drucker and Trejo charters — earned knowledge from v0.8.22 release incident"
+source: "extracted from release and CI incident lessons"
 ---
 
 ## Context
 
-CI workflows must be defensive. These patterns were learned from the v0.8.22 release disaster where invalid semver, wrong token types, missing retry logic, and draft releases caused a multi-hour outage. Both Drucker (CI/CD) and Trejo (Release Manager) carried this knowledge in their charters — now centralized here.
+CI workflows must be defensive. These patterns capture lessons from prior release incidents;
+they are maintained as version-agnostic gates rather than claims about a particular repository
+release.
 
 ## Patterns
 
@@ -63,10 +65,27 @@ Draft releases don't emit `release: published` event. Workflows MUST:
 - Trigger on `release: published` (NOT `created`)
 - If using workflow_dispatch: verify release is published via GitHub API before proceeding
 
-### Build Script Protection
-Set `SKIP_BUILD_BUMP=1` (or `$env:SKIP_BUILD_BUMP = "1"` on Windows) before ANY release build. bump-build.mjs is for dev builds ONLY — it silently mutates versions.
+### Installer and Generated-Artifact Gates
 
-## Known Failure Modes (v0.8.22 Incident)
+- Pin downloaded scripts and binaries to an immutable release or commit; never execute a moving
+  branch reference.
+- Use `curl -f` (normally `curl -fsSL`) so HTTP failures cannot be interpreted as scripts.
+- Download to a named file before execution when practical, then remove it after a successful
+  install. This leaves a diagnosable artifact if the installer fails.
+- Use `set -euo pipefail` in Bash steps. When a download must feed an extractor, `pipefail`
+  prevents the extractor from masking a failed download.
+- Lint and validate canonical workflow sources and every committed generated/template mirror.
+  A successful source-only check does not prove the artifact that executes is valid.
+- Keep suppressions narrow: exact tool diagnostic plus exact affected path, and revalidate them
+  when the pinned tool changes.
+
+The root build invokes `scripts/bump-build.mjs`, which can mutate package versions. Local
+validation MUST set `SKIP_BUILD_BUMP=1` (or use an existing CI environment that guarantees no
+mutation) and MUST verify the package manifests and lockfile are unchanged afterward. Prefer an
+affected workspace build when it covers the check. Never let a validation build rewrite package
+versions or create a version-only diff.
+
+## Known Failure Modes
 
 | # | What Happened | Root Cause | Prevention |
 |---|---------------|-----------|------------|
@@ -74,7 +93,6 @@ Set `SKIP_BUILD_BUMP=1` (or `$env:SKIP_BUILD_BUMP = "1"` on Windows) before ANY 
 | 2 | CI failed 5+ times with EOTP | User token with 2FA | Automation token only |
 | 3 | Verify returned false 404 | No retry logic for propagation | 5 attempts, 15s intervals |
 | 4 | Workflow never triggered | Draft release doesn't emit event | Never create draft releases |
-| 5 | Version mutated during release | bump-build.mjs ran in release | SKIP_BUILD_BUMP=1 |
 
 ## Anti-Patterns
 - ❌ Publishing without semver validation gate

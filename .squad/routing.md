@@ -51,10 +51,15 @@
 ## Routing Principles
 
 1. **Eager by default** — spawn agents who could usefully start work, including anticipatory downstream work.
-2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. Also spawned in **DispatchGuard mode** at every session start (see `squad.agent.md` §Session Init) to mechanically audit coordinator turns for dispatch compliance.
+2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. DispatchGuard auditing is an explicit hook/monitor path (see `.squad/skills/dispatchguard/SKILL.md`), not an automatic session-start spawn.
 3. **Quick facts → coordinator answers directly.** Don't spawn for trivial questions.
 4. **Two agents could handle it** → pick the one whose domain is the primary concern.
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
 7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
-8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, it reads `.squad/orchestration-log/dispatchguard/verdicts-{SESSION_ID}.jsonl` and alerts the coordinator on `warn`/`block` verdicts.
+8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, the
+   invoking flow must provide the session ledger, invoke the stateless hook with a per-turn
+   snapshot (or deduplicate by `turn_snapshot.turn_id`), and capture hook stdout into
+   `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. Ralph reads that caller-managed file
+   and alerts the coordinator on `warn`/`block` verdicts. A missing ledger produces
+   `indeterminate` and stops the audit flow; it is not compliance.

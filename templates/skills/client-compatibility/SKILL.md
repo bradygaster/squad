@@ -24,6 +24,11 @@ Before spawning agents, determine the platform by checking available tools:
 
 If both `task` and `runSubagent` are available, prefer `task` (richer parameter surface).
 
+### CopilotSession Lifecycle Invariant
+
+- CopilotSession lifecycle management must stay deterministic across surfaces: no ambiguous ownership or state transitions.
+- Session resources must be released on completion, cancellation, and error paths; compatibility work must not trade platform coverage for leaks.
+
 ### VS Code Spawn Adaptations
 
 When in VS Code mode, the coordinator changes behavior in these ways:

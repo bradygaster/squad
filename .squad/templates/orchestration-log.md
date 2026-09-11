@@ -31,7 +31,17 @@
 
 ## DispatchGuard Ledger Schema
 
-The coordinator appends one JSON object per turn to `.squad/orchestration-log/dispatchguard/ledger-{SESSION_ID}.jsonl`. Scribe reads this file to audit compliance. Fields:
+The coordinator/runtime caller appends one JSON object per turn to
+`.squad/orchestration-log/ledger-{SESSION_ID}.jsonl`. The invoking audit flow supplies this file
+to the platform audit hook, which reads it to evaluate compliance. Fields:
+
+The coordinator/runtime caller must provide this ledger; the current runtime does not create it
+automatically. The audit hooks are stateless and select the last parseable `coordinator_turn`
+from the supplied file. Callers that need one audit per turn must pass a per-turn snapshot (or
+otherwise select the intended turn) and deduplicate persisted verdicts by
+`turn_snapshot.turn_id`; deduplication alone cannot recover earlier turns skipped in an
+accumulating ledger. The hooks do not provide an exactly-once guarantee or maintain an audit
+cursor. A missing or unusable ledger stops the audit flow with an `indeterminate` result.
 
 ```jsonc
 {
@@ -49,7 +59,9 @@ The coordinator appends one JSON object per turn to `.squad/orchestration-log/di
 }
 ```
 
-**Verdicts file:** Scribe appends one JSON object per audited turn to `.squad/orchestration-log/dispatchguard/verdicts-{SESSION_ID}.jsonl`. See `.squad/hooks/README.md` for the output schema.
+**Verdicts file:** If the invoking flow wants a persistent verdict stream, it must capture the
+audit hook's stdout and append one JSON object per invocation to
+`.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. The hook itself only emits that JSON
+object to stdout; see `.squad/hooks/README.md` for the output schema.
 
-**Gitignore:** Both files are runtime-only and excluded from version control (see `.gitignore` entry for `.squad/orchestration-log/dispatchguard/`). Do NOT commit them.
-
+**Gitignore:** Both files are runtime-only and excluded from version control (see `.gitignore` entry for `.squad/orchestration-log/`). Do NOT commit them.

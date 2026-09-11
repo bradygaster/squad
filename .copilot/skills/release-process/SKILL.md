@@ -20,6 +20,8 @@ recovery commands. The operational model is:
 There is no staging `preview` branch. Do not create tags or GitHub Releases
 manually.
 
+Human release-trigger boundary: use the canonical runbook for exact commands. Agents may prepare, validate, and present commands, but agents must never execute or dispatch any live publication, promotion, or recovery workflow: `squad-release.yml`, `squad-agents-ai-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with `dry_run=false`, `squad-version-promote.yml`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`. Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: it has `actions: write` and `contents: write`, checks out `dev` with the workflow token, installs dependencies, and runs build and test steps. Do not describe any GitHub Actions release workflow as agent-safe once it has write-capable credentials or a dispatch path. Only a human executes those triggers; human approval alone does not authorize an agent to fire them.
+
 ## Preconditions
 
 Before either channel:
@@ -30,9 +32,13 @@ git merge-base origin/dev origin/main
 grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
 node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']"
 grep -F "## [$VERSION]" CHANGELOG.md
-npm run build
+SKIP_BUILD_BUMP=1 npm run build
 npx vitest run
 ```
+
+The validation build must not mutate package versions or the lockfile; check
+`git diff -- package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+package-lock.json` afterward and stop if any version-only change appears.
 
 The ancestry command must return a commit, all three versions must match, the
 CLI SDK dependency floor must be `>=VERSION`, and the changelog must contain
@@ -50,6 +56,8 @@ Required Actions secrets:
 
 After a PR sets an immutable prerelease version on `dev` and CI passes:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 VERSION=0.14.0-preview.1
 gh workflow run squad-release.yml --ref dev -f confirm_tag="v$VERSION"
@@ -63,6 +71,8 @@ It also updates the `squad-preview` Homebrew cask and
 promotion remain stable-only.
 
 ## Insider
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
@@ -78,10 +88,16 @@ The workflow computes the next `X.Y.Z-insider.N` version, publishes npm
 
 After a PR replaces the preview version with `X.Y.Z` on `dev` and CI passes:
 
+Human-only validation dispatch: this workflow still checks out `dev` with repo/workflow credentials and runs build and test logic. Agents must stop and hand off; only a human should fire it.
+
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=true
 gh run watch
+```
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
+```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=false
 gh run watch
 ```
