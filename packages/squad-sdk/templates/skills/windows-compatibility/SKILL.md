@@ -31,23 +31,26 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Use path.join() or path.resolve():** Don't manually concatenate with `/` or `\`
 
 ### Path Comparison (Case Sensitivity)
-- **Never use case-sensitive `startsWith`, `===`, or naive prefix checks to confine paths on Windows or macOS:** those filesystems are commonly case-insensitive in normal repo setups
-- **Use platform-aware comparison:** when `process.platform === 'win32' || process.platform === 'darwin'`, normalize both sides to the same case before comparing; keep Linux case-sensitive
+- **Never use naive prefix checks to confine paths:** a bare substring/prefix match can let sibling paths escape the intended root
+- **Use filesystem-aware case handling:** Windows path comparisons are case-insensitive. On macOS, compare case-sensitively by default; only fold case for a specific volume when a filesystem-aware mechanism has explicitly established that the relevant volume is case-insensitive. Do not assume every Darwin filesystem is case-insensitive.
 - **Root confinement must be exact-match-or-separator:** a path is within `rootDir` only when it equals the normalized root exactly or starts with `rootDir + path.sep`; a bare substring/prefix match lets `/root-escape` slip past `/root`
 - **Where it matters:** security checks such as path-traversal prevention, `rootDir` confinement, and any validation that a resolved path stays under an allowed directory
 - **Pattern:**
   ```typescript
   import path from 'node:path';
 
-  const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+  function normalizeForRootComparison(value: string, volumeIsCaseInsensitive = false): string {
+    const shouldFoldCase = process.platform === 'win32' || volumeIsCaseInsensitive;
+    return shouldFoldCase ? value.toLowerCase() : value;
+  }
 
-  function isPathWithin(fullPath: string, rootDir: string): boolean {
-    const a = CASE_INSENSITIVE ? fullPath.toLowerCase() : fullPath;
-    const b = CASE_INSENSITIVE ? rootDir.toLowerCase() : rootDir;
+  function isPathWithin(fullPath: string, rootDir: string, volumeIsCaseInsensitive = false): boolean {
+    const a = normalizeForRootComparison(fullPath, volumeIsCaseInsensitive);
+    const b = normalizeForRootComparison(rootDir, volumeIsCaseInsensitive);
     return a === b || a.startsWith(b + path.sep);
   }
   ```
-- **Resolve first, compare second:** compare normalized absolute paths; a case mismatch alone is not proof that a path escaped the allowed root
+- **Resolve first, compare second:** compare normalized absolute paths; on macOS, a case mismatch is not a safe escape signal unless the relevant volume's case behavior is known
 
 ### Repairing Stale LF-Pinned Working Trees
 
@@ -116,4 +119,4 @@ exec('git commit -m "First line\nSecond line"'); // FAILS silently in PowerShell
 - Assuming Unix-style paths work everywhere
 - Using `git -C` because it "looks cleaner" (it doesn't work)
 - Skipping `git diff --cached --quiet` check (creates empty commits)
-- Using a case-sensitive `rootDir` guard on a case-insensitive filesystem
+- Assuming all Darwin filesystems are case-insensitive for root-confinement checks

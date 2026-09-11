@@ -33,6 +33,8 @@ compliance and does not replace normal routing.
 - A work monitor consumes captured verdicts or live hook output; it does not rerun the audit.
   Surface `warn` without blocking, pause and alert on `block`, and treat `indeterminate`
   according to the active enforcement mode.
+- A consumer must surface or log a verdict of `error` as an audit failure, must not treat it as
+  compliance or a passing result, and must follow the active enforcement policy.
 - Use the hook’s JSON fields and exit-code contract from `.squad/hooks/README.md`; do not infer
   compliance from a human-readable summary or describe stdout capture as already wired up when it
   is still the caller's responsibility.

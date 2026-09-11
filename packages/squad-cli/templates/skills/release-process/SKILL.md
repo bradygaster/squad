@@ -47,13 +47,14 @@ Configure these GitHub Actions secrets:
 ## Human release-trigger boundary
 
 Agents may prepare versions, run validation, and recommend exact commands, but
-real release-trigger dispatches remain human-gated. Do not have an agent fire
-any live publish workflow: `squad-release.yml`, `squad-insider-publish.yml`,
-`squad-promote.yml` with `dry_run=false`, `squad-npm-publish.yml`, or
-`squad-standalone-release.yml`. Only non-publishing validation dispatches such
-as `squad-promote.yml --ref dev -f dry_run=true` stay agent-safe. Stop with the
-verified command and evidence; a human must execute or explicitly approve the
-live trigger.
+agents must never execute or dispatch live publication, promotion, or recovery
+workflows. Only a human executes the real trigger for these live workflows:
+`squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with
+`dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`.
+Only non-publishing validation dispatches such as
+`squad-promote.yml --ref dev -f dry_run=true` stay agent-safe. Stop with the
+verified command and evidence for the human to run; human approval alone does
+not authorize an agent to fire the live trigger.
 
 ## Prepare a release
 
