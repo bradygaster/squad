@@ -44,7 +44,8 @@ releases from `main`. Channel names identify release streams, not branches.
 ## Stable release
 
 - [ ] Version is exactly `X.Y.Z`.
-- [ ] Optional dry run passes:
+- [ ] Human-only promotion validation passes (the workflow has write-capable
+      credentials, checks out `dev`, installs dependencies, and runs build/tests):
 
   ```bash
   gh workflow run squad-promote.yml --ref dev -f dry_run=true

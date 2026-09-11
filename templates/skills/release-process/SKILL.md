@@ -52,11 +52,12 @@ workflows. Only a human executes the real trigger for these live workflows:
 `squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with
 `dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`.
 Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: the
-workflow still checks out `dev` with repo/workflow credentials and runs build
-and validation steps. Do not describe any GitHub Actions release workflow as
-agent-safe once it has write-capable credentials or a dispatch path. Stop with
-verified commands and evidence for a human to run; human approval alone does
-not authorize an agent to fire the trigger.
+workflow still has `actions: write` and `contents: write`, checks out `dev`
+with the workflow token, installs dependencies, and runs the release build and
+tests. Do not describe any GitHub Actions release workflow as agent-safe once
+it has write-capable credentials or a dispatch path. Stop with verified
+commands and evidence for a human to run; human approval alone does not
+authorize an agent to fire the trigger.
 
 ## Prepare a release
 

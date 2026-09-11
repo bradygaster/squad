@@ -62,6 +62,28 @@ apk add jq              # Alpine
 
 ---
 
+## Caller contract
+
+The hooks are stateless readers. The invoking coordinator/runtime flow must create and append
+the session ledger at `.squad/orchestration-log/ledger-{SESSION_ID}.jsonl` before invoking a
+hook; the current runtime does not produce this file automatically. The hook never discovers,
+creates, or updates the ledger.
+
+Each invocation evaluates the last parseable `coordinator_turn` in the supplied JSONL and emits
+one verdict. The hook has no cursor, so invoking it repeatedly with the same append-only ledger
+re-audits the same last turn. If the caller requires one audit per turn, it must provide a
+per-turn snapshot/input (such as an isolated ledger containing only that turn), or deduplicate
+captured verdicts by `turn_snapshot.turn_id`. The hook alone does not provide an exactly-once
+guarantee.
+
+If the supplied ledger is missing, empty, or has no usable coordinator turn, the hook returns
+`verdict: "indeterminate"` with a `no_ledger`, `empty_ledger`, or `no_coordinator_turns` flag.
+The caller must stop the audit flow and treat this as unknown, not as compliance. In `warn` mode
+the process may exit 0 while still returning `indeterminate` and `would_block: true`; consumers
+must use the JSON verdict rather than exit 0 alone.
+
+---
+
 ## Output format
 
 Both scripts emit **one JSON object** to stdout per invocation:

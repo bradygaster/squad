@@ -31,7 +31,16 @@
 
 ## DispatchGuard Ledger Schema
 
-The coordinator appends one JSON object per turn to `.squad/orchestration-log/ledger-{SESSION_ID}.jsonl`. Scribe reads this file to audit compliance. Fields:
+The coordinator/runtime caller appends one JSON object per turn to
+`.squad/orchestration-log/ledger-{SESSION_ID}.jsonl`. Scribe reads this file to audit compliance.
+Fields:
+
+The coordinator/runtime caller must provide this ledger; the current runtime does not create it
+automatically. The audit hooks are stateless and select the last parseable `coordinator_turn`
+from the supplied file. Callers that need one audit per turn must pass a per-turn snapshot (or
+equivalent isolated input) or deduplicate verdicts by `turn_snapshot.turn_id`; the hooks do not
+provide an exactly-once guarantee or maintain an audit cursor. A missing or unusable ledger stops
+the audit flow with an `indeterminate` result.
 
 ```jsonc
 {
@@ -55,4 +64,3 @@ audit hook's stdout and append one JSON object per invocation to
 object to stdout; see `.squad/hooks/README.md` for the output schema.
 
 **Gitignore:** Both files are runtime-only and excluded from version control (see `.gitignore` entry for `.squad/orchestration-log/`). Do NOT commit them.
-

@@ -27,7 +27,7 @@ implementation, workflows, tests, documentation, skills, and applicable decision
 
 ✓ **Correct:**
 - "Migration target: v0.8.17 (initial target was later corrected before execution)"
-- "Node runtime: follow the current `package.json` engine requirement (currently `>=22.5.0`)"
+- "Node runtime: follow the current `package.json` `engines.node` requirement"
 
 ✗ **Incorrect:**
 - "Migration target: v0.6.0" (when that request was later reversed)

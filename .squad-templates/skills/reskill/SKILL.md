@@ -31,10 +31,10 @@ Identify:
 For each reconciled pattern:
 1. Create or update the skill in the location that matches its activation surface:
    `.squad-templates/skills/{skill-name}/SKILL.md` for reusable skills shipped in generated
-   Squad templates, `.copilot/skills/{skill-name}/SKILL.md` for repository-local guidance,
-   `.squad/skills/{skill-name}/SKILL.md` for Squad-specific coordinator procedures, or
-   `.github/skills/{skill-name}/SKILL.md` for GitHub Agentic Workflow procedures. Do not treat
-   `.copilot/skills/` as a generated mirror of `.squad-templates/skills/`.
+   Squad templates, `.github/skills/{skill-name}/SKILL.md` for repository-local or GitHub
+   Agentic Workflow procedures, or `.squad/skills/{skill-name}/SKILL.md` for Squad-specific
+   coordinator procedures. Do not treat
+   `.copilot/skills/` as a destination for new skills; it is the legacy install path.
 2. Follow the skill template format (frontmatter + Context + Patterns + Examples + Anti-Patterns)
 3. Keep the location consistent with the procedure's real entry point instead of copying the same
    contract into multiple trees without intent

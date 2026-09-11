@@ -57,6 +57,9 @@
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
 7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
-8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active and the
-   invoking flow captures hook stdout into `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`,
-   it reads that file and alerts the coordinator on `warn`/`block` verdicts.
+8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, the
+   invoking flow must provide the session ledger, invoke the stateless hook with a per-turn
+   snapshot (or deduplicate by `turn_snapshot.turn_id`), and capture hook stdout into
+   `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. Ralph reads that caller-managed file
+   and alerts the coordinator on `warn`/`block` verdicts. A missing ledger produces
+   `indeterminate` and stops the audit flow; it is not compliance.

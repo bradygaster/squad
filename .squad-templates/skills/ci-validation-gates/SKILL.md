@@ -79,10 +79,11 @@ Draft releases don't emit `release: published` event. Workflows MUST:
 - Keep suppressions narrow: exact tool diagnostic plus exact affected path, and revalidate them
   when the pinned tool changes.
 
-The root build invokes `scripts/bump-build.mjs`, which can mutate package versions. Local
-validation MUST set `SKIP_BUILD_BUMP=1` (or use an existing CI environment that guarantees no
-mutation) and MUST verify the package manifests and lockfile are unchanged afterward. Prefer an
-affected workspace build when it covers the check. Never let a validation build rewrite package
+The root build invokes `scripts/bump-build.mjs`, which can mutate package versions. For local
+root validation, run `SKIP_BUILD_BUMP=1 npm run build`; do not run a bare `npm run build`.
+Alternatively, use an existing CI environment that guarantees no mutation. In either case,
+MUST verify the package manifests and lockfile are unchanged afterward. Prefer an affected
+workspace build when it covers the check. Never let a validation build rewrite package
 versions or create a version-only diff.
 
 ## Known Failure Modes

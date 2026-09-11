@@ -48,7 +48,7 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
   function isPathWithin(candidate: string, rootDir: string, volumeIsCaseInsensitive = false): boolean {
     const a = normalizeForRootComparison(path.resolve(candidate), volumeIsCaseInsensitive);
     const b = normalizeForRootComparison(path.resolve(rootDir), volumeIsCaseInsensitive);
-    const boundary = b.endsWith(path.sep) ? b : b + path.sep;
+    const boundary = b.replace(/[\\/]+$/, '') + path.sep;
     return a === b || a.startsWith(boundary);
   }
   ```
