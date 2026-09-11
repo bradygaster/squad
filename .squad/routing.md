@@ -51,7 +51,7 @@
 ## Routing Principles
 
 1. **Eager by default** — spawn agents who could usefully start work, including anticipatory downstream work.
-2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. Also spawned in **DispatchGuard mode** at every session start (see `squad.agent.md` §Session Init) to mechanically audit coordinator turns for dispatch compliance.
+2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. DispatchGuard auditing is an explicit hook/monitor path (see `.squad/skills/dispatchguard/SKILL.md`), not an automatic session-start spawn.
 3. **Quick facts → coordinator answers directly.** Don't spawn for trivial questions.
 4. **Two agents could handle it** → pick the one whose domain is the primary concern.
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.

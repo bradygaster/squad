@@ -14,6 +14,8 @@ When a team member has a **Reviewer** role (e.g., Tester, Code Reviewer, Lead), 
 
 ### Reviewer Rejection Protocol
 
+Quality and test reviewers may block a PR or merge on quality, coverage, or regression grounds. Treat that block as a rejection that enters the protocol below.
+
 When a team member has a **Reviewer** role:
 
 - Reviewers may **approve** or **reject** work from other agents.
@@ -38,41 +40,35 @@ When an artifact is **rejected** by a Reviewer:
 ## Examples
 
 **Example 1: Reassign after rejection**
-1. Fenster writes authentication module
-2. Hockney (Tester) reviews → rejects: "Error handling is missing. Verbal should fix this."
-3. Coordinator: Fenster is now locked out of this artifact
-4. Coordinator spawns Verbal to revise the authentication module
-5. Verbal produces v2
-6. Hockney reviews v2 → approves
+1. Runtime Engineer writes authentication module
+2. Quality Engineer reviews → rejects: "Error handling is missing. Another engineer should fix this."
+3. Coordinator: Runtime Engineer is now locked out of this artifact
+4. Coordinator spawns a different engineer to revise the authentication module
+5. The revision engineer produces v2
+6. Quality Engineer reviews v2 → approves
 7. Lockout clears for next artifact
 
 **Example 2: Escalate for expertise**
-1. Edie writes TypeScript config
-2. Keaton (Lead) reviews → rejects: "Need someone with deeper TS knowledge. Escalate."
-3. Coordinator: Edie is now locked out
+1. Original Author writes TypeScript config
+2. Lead reviews → rejects: "Need someone with deeper TS knowledge. Escalate."
+3. Coordinator: Original Author is now locked out
 4. Coordinator spawns new agent (or existing TS expert) to revise
 5. New agent produces v2
-6. Keaton reviews v2
+6. Lead reviews v2
 
 **Example 3: Deadlock handling**
-1. Fenster writes module → rejected
-2. Verbal revises → rejected
-3. Hockney revises → rejected
+1. Original Author writes module → rejected
+2. Revision Engineer revises → rejected
+3. Quality Engineer revises → rejected
 4. All 3 eligible agents are now locked out
 5. Coordinator: "All eligible agents have been locked out. Escalating to user: [artifact details]"
 
 **Example 4: Reviewer accidentally names original author**
-1. Fenster writes module → rejected
-2. Hockney says: "Fenster should fix the error handling"
-3. Coordinator: "Fenster is locked out as the original author. Please name a different agent."
-4. Hockney: "Verbal, then"
-5. Coordinator spawns Verbal
-
-## Related Review Skills
-
-For domain-specific review checklists, see:
-- **Architectural Review:** `.copilot/skills/architectural-review/SKILL.md` — module boundaries, dependency direction, export surface, sweeping refactor safety
-- **Security Review:** `.copilot/skills/security-review/SKILL.md` — credentials, injection, workflow permissions, supply chain
+1. Original Author writes module → rejected
+2. Quality Engineer says: "The original author should fix the error handling"
+3. Coordinator: "The original author is locked out. Please name a different agent."
+4. Quality Engineer names a revision engineer
+5. Coordinator spawns the revision engineer
 
 ## Anti-Patterns
 

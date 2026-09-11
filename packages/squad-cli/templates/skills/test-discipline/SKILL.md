@@ -27,9 +27,9 @@ intended artifact or contract is correct.
 
 ## Examples
 
-`test/gh-aw-deps-worker-workflow.test.ts` compiles a mutated workflow source and inspects the
-compiled safe-output contract. `test/scripts/crlf-worktree-repair.test.ts` constructs the actual
-index/blob/worktree state that the repair script must handle.
+A workflow-compilation test mutates the source workflow, compiles it, and inspects the emitted
+safe-output contract. A repair-script test constructs the actual index/blob/worktree state that
+the repair routine must handle instead of a simplified fixture.
 
 ## Anti-Patterns
 

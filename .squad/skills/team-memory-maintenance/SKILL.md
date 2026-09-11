@@ -12,6 +12,12 @@ Use this skill when maintaining shared Squad memory after a substantive work ses
 session logs, the decision inbox, canonical decisions, and concise cross-agent updates. Use
 `archival-integrity` whenever an operation moves or trims stored entries.
 
+## Scope
+
+- Activate after substantive work that changes shared Squad memory or when processing decision inbox or history updates.
+- Allowed targets: `.squad/` session logs, decision inbox entries, canonical decision records, and concise cross-agent history updates through the active backend.
+- Exclusions: product source changes, arbitrary repository cleanup, and direct writes that bypass the active backend.
+
 ## Patterns
 
 1. Resolve every `.squad/` path from the provided team root; use `git rev-parse --show-toplevel`
@@ -29,6 +35,12 @@ session logs, the decision inbox, canonical decisions, and concise cross-agent u
 7. Re-read state through the active backend after consequential writes. If the required backend
    capability is unavailable, stop and report the unavailable operation rather than reporting
    successful persistence.
+
+## Stop conditions
+
+- Stop if the team root or active backend cannot be resolved.
+- Stop if the required backend write or read-back verification capability is unavailable.
+- Stop if merged content cannot be verified after the write.
 
 ## Examples
 

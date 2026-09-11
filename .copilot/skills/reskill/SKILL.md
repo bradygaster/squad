@@ -3,7 +3,7 @@ name: "reskill"
 description: "Extract durable operating knowledge before slimming or replacing team charters"
 domain: "team-optimization"
 confidence: "high"
-source: "manual — Brady directive to reduce per-agent context overhead"
+source: "manual — reduce per-agent context overhead"
 ---
 
 ## Context
@@ -29,10 +29,13 @@ Identify:
 
 ### Step 2: Extract
 For each reconciled pattern:
-1. Create or update a skill at `.copilot/skills/{skill-name}/SKILL.md`
+1. Create or update the skill in the location that matches its activation surface:
+   `.copilot/skills/{skill-name}/SKILL.md` for reusable local skills,
+   `.squad/skills/{skill-name}/SKILL.md` for Squad-specific coordinator procedures, or
+   `.github/skills/{skill-name}/SKILL.md` for GitHub Agentic Workflow procedures
 2. Follow the skill template format (frontmatter + Context + Patterns + Examples + Anti-Patterns)
-3. Put Squad-specific coordinator procedures in `.squad/skills/` and GitHub Agentic Workflow
-   procedures in `.github/skills/` when those locations make the activation point clearer
+3. Keep the location consistent with the procedure's real entry point instead of copying the same
+   contract into multiple trees without intent
 4. Set confidence from the evidence, not the number of charters that contained it
 
 ### Step 3: Trim

@@ -12,6 +12,12 @@ Use this skill for decision archival, history summarization, or any operation th
 between repository state files. A move has two halves: append to the destination, then trim the
 source. Treat it as data loss prevention, not text cleanup.
 
+## Scope
+
+- Activate when moving entries between tracked Squad state files such as decision logs, histories, or inbox merges.
+- Allowed targets: tracked repository state files and their designated tracked archives.
+- Exclusions: untracked destinations, byte-delta-only validation, and trimming source content before the destination is verified.
+
 ## Patterns
 
 1. Resolve a destination that is already tracked before writing. If the requested destination is
@@ -25,6 +31,12 @@ source. Treat it as data loss prevention, not text cleanup.
    while preserving relative levels and fenced-code content.
 6. Prefer `archiveEntries()`, `prepareInboxBodyForMerge()`, and `formatArchivalReport()` from
    `packages/squad-sdk/src/state/io/archival.ts` over hand-rolled archival logic.
+
+## Stop conditions
+
+- Stop if the destination is not already tracked.
+- Stop if the appended headings cannot be re-read from the destination.
+- Stop if the entry-count increase does not exactly match the selected move set.
 
 ## Examples
 

@@ -20,6 +20,8 @@ recovery commands. The operational model is:
 There is no staging `preview` branch. Do not create tags or GitHub Releases
 manually.
 
+Human release-trigger boundary: use the canonical runbook for exact commands, and do not let an agent dispatch live `squad-release.yml`, `squad-insider-publish.yml`, or `squad-promote.yml` runs. Agents prepare and validate; a human executes the real publish/promotion trigger.
+
 ## Preconditions
 
 Before either channel:

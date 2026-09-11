@@ -3,13 +3,13 @@ name: history-hygiene
 description: Record reconciled final outcomes to history.md, not intermediate requests or obsolete claims
 domain: documentation, team-collaboration
 confidence: high
-source: earned (Kobayashi v0.6.0 incident, team intervention)
+source: earned (stale history reversal incident, team intervention)
 ---
 
 ## Context
 
 History files are cold-start context, not the source of truth for live behavior. Stale or incorrect
-entries poison decision-making downstream. The Kobayashi incident proved that an old history claim
+entries poison decision-making downstream. A stale-history incident proved that an old history claim
 can cause future spawns to repeat a reversed decision. Reconcile an operational claim with current
 implementation, workflows, tests, documentation, skills, and applicable decisions before acting on it.
 
@@ -26,11 +26,11 @@ implementation, workflows, tests, documentation, skills, and applicable decision
 ## Examples
 
 ✓ **Correct:**
-- "Migration target: v0.8.17 (initially discussed as v0.6.0, corrected by Brady)"
+- "Migration target: v0.8.17 (initial target was later corrected before execution)"
 - "Node runtime: follow the current `package.json` engine requirement (currently `>=22.5.0`)"
 
 ✗ **Incorrect:**
-- "Brady directed v0.6.0" (when later reversed)
+- "Migration target: v0.6.0" (when that request was later reversed)
 - Recording what was *requested* instead of what *actually happened*
 - Logging entries before outcome is confirmed
 

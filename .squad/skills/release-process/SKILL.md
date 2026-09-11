@@ -44,6 +44,15 @@ Configure these GitHub Actions secrets:
 - `WINGET_CREATE_GITHUB_TOKEN`: a classic GitHub PAT with `public_repo`, owned
   by the account that maintains `tamirdresher/winget-pkgs`.
 
+## Human release-trigger boundary
+
+Agents may prepare versions, run validation, and recommend exact commands, but
+real release-trigger dispatches remain human-gated. Do not have an agent fire
+`squad-release.yml`, `squad-insider-publish.yml`, or `squad-promote.yml` when
+the run will publish, tag, or promote a real release (`dry_run=false` or
+equivalent). Stop with the verified command and evidence; a human must execute
+or explicitly approve the live trigger.
+
 ## Prepare a release
 
 Verify `dev` and `main` share ancestry before changing versions:

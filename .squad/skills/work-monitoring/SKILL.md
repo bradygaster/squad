@@ -11,6 +11,12 @@ source: watch implementation and retained board-triage lesson
 Use this skill when monitoring Squad issues, pull requests, CI, review feedback, or a labeled
 work queue.
 
+## Scope
+
+- Activate when monitoring a specific Squad workstream in a named repository with explicit labels and state filters.
+- Allowed targets: monitoring reports, triage summaries, and narrowly scoped coordination actions on hydrated candidate items.
+- Exclusions: product implementation, broad cleanup from generic labels alone, or mutations against unverified candidates.
+
 ## Patterns
 
 - Start with an explicit workstream, repository, label set, and state filter. A shared priority or
@@ -23,6 +29,12 @@ work queue.
   become product implementation.
 - Use the focused two-pass scan when broad list retrieval is needed, then inspect only candidates
   that require action.
+
+## Stop conditions
+
+- Stop before any mutation if the workstream, label set, or state filter is ambiguous.
+- Stop if candidate items cannot be hydrated and verified before action.
+- Stop if the requested action would exceed the explicitly scoped queue or become product work.
 
 ## Examples
 

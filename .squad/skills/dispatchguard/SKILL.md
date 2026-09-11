@@ -12,6 +12,12 @@ Use this skill for the DispatchGuard producer and consumer roles. The coordinato
 per-turn ledger; the audit hooks evaluate it; the work monitor consumes verdicts. The mechanism
 observes dispatch compliance and does not replace normal routing.
 
+## Scope
+
+- Activate when auditing coordinator dispatch compliance or consuming the resulting verdict stream.
+- Allowed targets: runtime-only ledger and verdict files under `.squad/orchestration-log/` plus the documented hook contract that produces them.
+- Exclusions: product implementation, committing runtime audit files, or replaying stale verdicts as if they were live.
+
 ## Patterns
 
 - Write runtime-only ledger and verdict JSONL files at
@@ -25,6 +31,12 @@ observes dispatch compliance and does not replace normal routing.
   pause and alert on `block`, and treat `indeterminate` according to the active enforcement mode.
 - Use the hook’s JSON fields and exit-code contract from `.squad/hooks/README.md`; do not infer
   compliance from a human-readable summary.
+
+## Stop conditions
+
+- Stop if the platform audit hook is unavailable or returns an audit error.
+- Stop if the hook contract cannot be validated from `.squad/hooks/README.md`.
+- Stop the monitored queue when a live verdict is `block` until a coordinator acknowledges it.
 
 ## Examples
 

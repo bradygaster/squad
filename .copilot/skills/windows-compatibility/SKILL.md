@@ -30,6 +30,23 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Never assume CWD is repo root:** Always use `TEAM ROOT` from spawn prompt or run `git rev-parse --show-toplevel`
 - **Use path.join() or path.resolve():** Don't manually concatenate with `/` or `\`
 
+### Path Comparison (Case Sensitivity)
+- **Never use case-sensitive `startsWith`, `===`, or naive prefix checks to confine paths on Windows or macOS:** those filesystems are commonly case-insensitive in normal repo setups
+- **Use platform-aware comparison:** when `process.platform === 'win32' || process.platform === 'darwin'`, normalize both sides to the same case before comparing; keep Linux case-sensitive
+- **Where it matters:** security checks such as path-traversal prevention, `rootDir` confinement, and any validation that a resolved path stays under an allowed directory
+- **Pattern:**
+  ```typescript
+  const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+
+  function pathStartsWith(fullPath: string, prefix: string): boolean {
+    if (CASE_INSENSITIVE) {
+      return fullPath.toLowerCase().startsWith(prefix.toLowerCase());
+    }
+    return fullPath.startsWith(prefix);
+  }
+  ```
+- **Resolve first, compare second:** compare normalized absolute paths; a case mismatch alone is not proof that a path escaped the allowed root
+
 ### Repairing Stale LF-Pinned Working Trees
 
 An `eol=lf` attribute affects checkout behavior; it does not repair files that were already
@@ -97,3 +114,4 @@ exec('git commit -m "First line\nSecond line"'); // FAILS silently in PowerShell
 - Assuming Unix-style paths work everywhere
 - Using `git -C` because it "looks cleaner" (it doesn't work)
 - Skipping `git diff --cached --quiet` check (creates empty commits)
+- Using a case-sensitive `rootDir` guard on a case-insensitive filesystem
