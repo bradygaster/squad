@@ -48,7 +48,8 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
   function isPathWithin(candidate: string, rootDir: string, volumeIsCaseInsensitive = false): boolean {
     const a = normalizeForRootComparison(path.resolve(candidate), volumeIsCaseInsensitive);
     const b = normalizeForRootComparison(path.resolve(rootDir), volumeIsCaseInsensitive);
-    return a === b || a.startsWith(b + path.sep);
+    const boundary = b.endsWith(path.sep) ? b : b + path.sep;
+    return a === b || a.startsWith(boundary);
   }
   ```
 - **Resolve first, compare second:** compare normalized absolute paths; only treat a case mismatch as equivalent when the relevant filesystem volume has already been confirmed to be case-insensitive

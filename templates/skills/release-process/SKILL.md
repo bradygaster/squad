@@ -85,9 +85,13 @@ This updates the root package, both workspaces, and the lockfile. Confirm:
 node -p "require('semver').valid('$VERSION')"
 grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
 grep -F "## [$VERSION]" CHANGELOG.md
-npm run build
+SKIP_BUILD_BUMP=1 npm run build
 npx vitest run
 ```
+
+The validation build must not mutate package versions or the lockfile; check
+`git diff -- package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+package-lock.json` afterward and stop if any version-only change appears.
 
 Release preparation lands through a normal PR to `dev`. Do not push directly to
 `main`.

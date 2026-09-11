@@ -8,7 +8,8 @@ Prior archive at `.squad/agents/pao/history-archive-2026-08-19T13-11-34.130-07-0
 
 - **PUBLISH-README.md rewrite (#564):** 58-line stub → 232-line living playbook (11 sections). Microsoft Style Guide enforced; version-agnostic (`<VERSION>` placeholder); all commands copy-pasteable. Living playbook absorbs #558, #559, #560.
 - **JSDoc API Reference PRD (2026-03-24):** TypeDoc + typedoc-plugin-markdown chosen (not Starlight, not api-extractor). Output → `docs/src/content/docs/reference/api/`. Astro hook auto-runs on build. JSDoc priority: config/schema.ts (8%→100%), state/io/ @param/@return tags. Effort: 13-18 hrs.
-- **Discussion triage patterns:** 6 discussions closed after v0.9.1 shipped features. Teams MCP critical: Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor.
+- **Discussion triage patterns:** 6 discussions closed after shipped features. Teams MCP critical:
+  Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor.
 - **Boundary review:** "Squad Ships It" litmus test — if Squad doesn't ship the code, it's IRL content. Delete external infra docs; reframe platform integration docs; keep Squad behavior/config docs.
 - **npx purge:** `npm install -g @bradygaster/squad-cli` is the only supported install path. Remove all user-facing `npx` references. Keep `npx` only for dev tools.
 - **PR #11 TypeDoc review (2026-03-24):** Generated docs require crosslinks from curated guides. Missing sdk.md crosslink banner and navigation URL inconsistency (`reference/api/index` → `reference/api`) are blocking issues.
@@ -36,7 +37,8 @@ Batch 2 complete. PR #1776: corrected 3 errors in `docs/src/content/docs/guide/g
 
 ### Release Playbook Rewrite (#564, 2026-07-22)
 
-**Task:** Rewrite PUBLISH-README.md from a v0.8.22 version-specific stub (58 lines) into a living, version-agnostic release playbook.
+**Task:** Rewrite PUBLISH-README.md from a version-specific stub (58 lines) into a living,
+version-agnostic release playbook.
 
 **Outcome:** 232-line playbook replacing entirely with 11 sections per Flight's spec:
 1. Overview — two publish channels, package order (SDK → CLI)
@@ -46,7 +48,7 @@ Batch 2 complete. PR #1776: corrected 3 errors in `docs/src/content/docs/guide/g
 5. Insider Channel — insider branch + `@insider` tag for testing
 6. Workspace Publish Policy — reference to CI lint rule #557 (enforces `-w` flag)
 7. Manual Local Publish — emergency fallback with step-by-step commands
-8. 422 Race Condition & npm Errors — v0.9.1 incident + troubleshooting
+8. 422 Race Condition & npm Errors — registry race-condition troubleshooting
 9. Post-Publish Verification — `npm view` + npx cold-install test
 10. Version Bump After Publish — preview version increment pattern
 11. Legacy Publish Scripts — deprecation notice for PowerShell scripts

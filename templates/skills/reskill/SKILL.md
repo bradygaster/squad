@@ -30,9 +30,11 @@ Identify:
 ### Step 2: Extract
 For each reconciled pattern:
 1. Create or update the skill in the location that matches its activation surface:
-   `.copilot/skills/{skill-name}/SKILL.md` for reusable local skills,
+   `.squad-templates/skills/{skill-name}/SKILL.md` for reusable skills shipped in generated
+   Squad templates, `.copilot/skills/{skill-name}/SKILL.md` for repository-local guidance,
    `.squad/skills/{skill-name}/SKILL.md` for Squad-specific coordinator procedures, or
-   `.github/skills/{skill-name}/SKILL.md` for GitHub Agentic Workflow procedures
+   `.github/skills/{skill-name}/SKILL.md` for GitHub Agentic Workflow procedures. Do not treat
+   `.copilot/skills/` as a generated mirror of `.squad-templates/skills/`.
 2. Follow the skill template format (frontmatter + Context + Patterns + Examples + Anti-Patterns)
 3. Keep the location consistent with the procedure's real entry point instead of copying the same
    contract into multiple trees without intent
@@ -114,7 +116,7 @@ facts, or obsolete workarounds. Record intentionally discarded conflicts in the 
 `.squad-templates/skills/` is the canonical source for shipped Squad skill templates. After
 changing a shipped template, run the repository's skill-template sync command and verify the
 root, CLI, and SDK mirrors are byte-identical. Local `.copilot/skills/` guidance is maintained
-separately and must not be treated as a generated mirror unless its sync contract says so.
+separately and must not be treated as a generated mirror.
 
 ## Anti-Patterns
 - Don't delete unique per-agent identity or domain-specific knowledge

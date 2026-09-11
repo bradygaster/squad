@@ -25,4 +25,4 @@ I keep shared memory concise, verifiable, and invisible to the user. I use
 
 ## Model
 
-Preferred: auto
+**Preferred:** auto

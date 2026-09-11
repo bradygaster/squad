@@ -12,7 +12,7 @@ Use this skill when maintaining shared Squad memory after a substantive work ses
 session logs, the decision inbox, canonical decisions, and concise cross-agent updates. Use
 `archival-integrity` whenever an operation moves or trims stored entries.
 
-## Scope
+## SCOPE
 
 - Activate after substantive work that changes shared Squad memory or when processing decision inbox or history updates.
 - Allowed targets: `.squad/` session logs, decision inbox entries, canonical decision records, and concise cross-agent history updates through the active backend.
@@ -41,7 +41,7 @@ session logs, the decision inbox, canonical decisions, and concise cross-agent u
    delete, refetch and verify the entry is absent. Stop on any mismatch; do not continue with
    subsequent memory mutations.
 
-## Stop conditions
+## STOP CONDITIONS
 
 - Stop if the team root or active backend cannot be resolved.
 - Stop if the required backend write or read-back verification capability is unavailable.

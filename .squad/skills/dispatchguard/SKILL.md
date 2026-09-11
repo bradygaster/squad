@@ -13,7 +13,7 @@ per-turn ledger; the audit hooks evaluate it and emit one JSON verdict to stdout
 an invoking flow may capture those verdicts for a work monitor. The mechanism observes dispatch
 compliance and does not replace normal routing.
 
-## Scope
+## SCOPE
 
 - Activate when auditing coordinator dispatch compliance or consuming captured DispatchGuard verdicts.
 - Allowed targets: the runtime-owned ledger input, any caller-managed verdict file under
@@ -26,9 +26,11 @@ compliance and does not replace normal routing.
   `.squad/orchestration-log/ledger-{SESSION_ID}.jsonl`. If an invoking flow wants a persistent
   verdict stream, it must capture the hook's stdout and append each emitted JSON verdict to
   `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`; never commit either file.
-- The coordinator/runtime owns creation and append-only updates to the input ledger. The audit
-  hook consumes that ledger and emits a verdict; the repository does not create a verdict ledger
-  on the hook's behalf. The invoking caller owns stdout capture and persistence of verdicts.
+- The coordinator/runtime owns creation and append-only updates to the input ledger. The caller
+  must supply the current per-turn ledger input and track which turn is being audited; the hook
+  does not discover or write that ledger. The audit hook consumes that caller-provided ledger
+  input and emits a verdict; the repository does not create a verdict ledger on the hook's behalf.
+  The invoking caller owns stdout capture and persistence of verdicts.
 - Run the PowerShell audit hook on Windows and the Bash hook on Linux/macOS. Preserve their
   semantic parity and test both implementations against shared fixtures.
 - The hook is invoked per turn and emits one JSON verdict object to stdout per invocation. Audit
@@ -42,11 +44,13 @@ compliance and does not replace normal routing.
 - If the hook reports `no_ledger`, distinguish "no input ledger was available" from compliance.
   Treat `indeterminate` as unknown under the active enforcement mode; never coerce either result
   to `pass`.
+- After the caller writes a captured verdict, refetch the exact verdict file and verify the
+  expected JSON line before handing it to a monitor. Stop on a mismatch.
 - Use the hook’s JSON fields and exit-code contract from `.squad/hooks/README.md`; do not infer
   compliance from a human-readable summary or describe stdout capture as already wired up when it
   is still the caller's responsibility.
 
-## Stop conditions
+## STOP CONDITIONS
 
 - Stop if the platform audit hook is unavailable or returns an audit error.
 - Stop if the hook contract cannot be validated from `.squad/hooks/README.md`.

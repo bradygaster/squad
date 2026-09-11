@@ -26,4 +26,4 @@ I keep work moving by turning verified queue signals into concise, correctly sco
 
 ## Model
 
-Preferred: claude-haiku-4.5
+**Preferred:** claude-haiku-4.5

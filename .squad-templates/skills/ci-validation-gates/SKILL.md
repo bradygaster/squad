@@ -8,7 +8,9 @@ source: "extracted from release and CI incident lessons"
 
 ## Context
 
-CI workflows must be defensive. These patterns were learned from the v0.8.22 release disaster where invalid semver, wrong token types, missing retry logic, and draft releases caused a multi-hour outage. Both the CI/CD and Release Manager roles carried this knowledge in their charters — now centralized here.
+CI workflows must be defensive. These patterns capture lessons from prior release incidents;
+they are maintained as version-agnostic gates rather than claims about a particular repository
+release.
 
 ## Patterns
 
@@ -77,10 +79,11 @@ Draft releases don't emit `release: published` event. Workflows MUST:
 - Keep suppressions narrow: exact tool diagnostic plus exact affected path, and revalidate them
   when the pinned tool changes.
 
-The root build invokes `scripts/bump-build.mjs`, which mutates release versions unless
-`SKIP_BUILD_BUMP=1` or `CI=true`. For local validation, do not run the root build without one
-of those guards; prefer the affected workspace build or set `SKIP_BUILD_BUMP=1`. Never let a
-validation build rewrite package versions or create a version-only diff.
+The root build invokes `scripts/bump-build.mjs`, which can mutate package versions. Local
+validation MUST set `SKIP_BUILD_BUMP=1` (or use an existing CI environment that guarantees no
+mutation) and MUST verify the package manifests and lockfile are unchanged afterward. Prefer an
+affected workspace build when it covers the check. Never let a validation build rewrite package
+versions or create a version-only diff.
 
 ## Known Failure Modes
 
