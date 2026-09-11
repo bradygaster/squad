@@ -26,6 +26,8 @@ session logs, the decision inbox, canonical decisions, and concise cross-agent u
    that backend with branch switching, note-ref pushes, resets, or hand-managed persistence.
 3. Record a concise factual session log after substantial work: participants, completed work,
    decisions, and final outcomes. Do not log requests or tentative plans as facts.
+    Use filesystem-safe UTC timestamps in filenames (replace `:` with `-`); if there is no
+    finalized outcome to record, skip the write and report that no durable update was required.
 4. Process decision-inbox entries only after reading them. Before merging, deduplicate exact
    entries and normalize nested headings with the archival-integrity helper.
 5. Confirm the merged content is present in the canonical decision record before deleting an inbox
@@ -35,12 +37,18 @@ session logs, the decision inbox, canonical decisions, and concise cross-agent u
 7. Re-read state through the active backend after consequential writes. If the required backend
    capability is unavailable, stop and report the unavailable operation rather than reporting
    successful persistence.
+8. After every write, refetch the exact target and verify the expected content. After every
+   delete, refetch and verify the entry is absent. Stop on any mismatch; do not continue with
+   subsequent memory mutations.
 
 ## Stop conditions
 
 - Stop if the team root or active backend cannot be resolved.
 - Stop if the required backend write or read-back verification capability is unavailable.
 - Stop if merged content cannot be verified after the write.
+- Stop if a delete cannot be verified by an exact post-delete read-back.
+- Stop if the requested work produces no finalized fact but a caller asks for a durable write;
+  report the no-op instead.
 
 ## Examples
 

@@ -17,6 +17,9 @@ source. Treat it as data loss prevention, not text cleanup.
 - Activate when moving entries between tracked Squad state files such as decision logs, histories, or inbox merges.
 - Allowed targets: tracked repository state files and their designated tracked archives.
 - Exclusions: untracked destinations, byte-delta-only validation, and trimming source content before the destination is verified.
+- This procedure is scoped to the local state backend unless the active backend exposes governed
+  append, read-back, and trim operations. Runtime-owned orphan or two-layer state is not a valid
+  archival destination; use the backend's state operation instead of editing a checkout copy.
 
 ## Patterns
 
@@ -37,6 +40,9 @@ source. Treat it as data loss prevention, not text cleanup.
 - Stop if the destination is not already tracked.
 - Stop if the appended headings cannot be re-read from the destination.
 - Stop if the entry-count increase does not exactly match the selected move set.
+- Stop if the active backend is non-local and does not provide governed archival operations.
+- Stop if state appears orphaned, split across runtime and checkout layers, or owned by another
+  process without an explicit handoff.
 
 ## Examples
 

@@ -109,6 +109,13 @@ Preferred: {model}
 Do not preserve historical assignments, status reports, personality, ownership, stale version
 facts, or obsolete workarounds. Record intentionally discarded conflicts in the reskill report.
 
+### Source and Mirror Discipline
+
+`.squad-templates/skills/` is the canonical source for shipped Squad skill templates. After
+changing a shipped template, run the repository's skill-template sync command and verify the
+root, CLI, and SDK mirrors are byte-identical. Local `.copilot/skills/` guidance is maintained
+separately and must not be treated as a generated mirror unless its sync contract says so.
+
 ## Anti-Patterns
 - Don't delete unique per-agent identity or domain-specific knowledge
 - Don't leave reusable knowledge in a retiring charter just because only one agent recorded it

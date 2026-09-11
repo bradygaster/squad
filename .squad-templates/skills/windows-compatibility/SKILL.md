@@ -32,25 +32,26 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 
 ### Path Comparison (Case Sensitivity)
 - **Never use naive prefix checks to confine paths:** a bare substring/prefix match can let sibling paths escape the intended root
-- **Use filesystem-aware case handling:** Windows path comparisons are case-insensitive. On macOS, compare case-sensitively by default; only fold case for a specific volume when a filesystem-aware mechanism has explicitly established that the relevant volume is case-insensitive. Do not assume every Darwin filesystem is case-insensitive.
-- **Root confinement must be exact-match-or-separator:** a path is within `rootDir` only when it equals the normalized root exactly or starts with `rootDir + path.sep`; a bare substring/prefix match lets `/root-escape` slip past `/root`
+- **Never infer case-insensitive behavior from `process.platform` alone:** Windows is case-insensitive, but Darwin volumes are not all case-insensitive. APFS and HFS+ can be case-sensitive; a blanket lowercase conversion on macOS can conflate distinct sibling directories.
+- **Use filesystem-aware case handling:** Only fold case when the relevant volume has been explicitly identified as case-insensitive. Otherwise, compare the resolved path case-sensitively.
+- **Resolve first, compare second:** resolve both paths before comparing; do not compare user input or unresolved relative segments.
+- **Root confinement must be exact-match-or-separator:** a path is within `rootDir` only when it equals the normalized root exactly or starts with `rootDir + path.sep`; a bare substring/prefix match lets `/root-escape` slip past `/root`. Filesystem roots are valid roots and must remain exact-match-or-separator checks.
 - **Where it matters:** security checks such as path-traversal prevention, `rootDir` confinement, and any validation that a resolved path stays under an allowed directory
 - **Pattern:**
   ```typescript
   import path from 'node:path';
 
   function normalizeForRootComparison(value: string, volumeIsCaseInsensitive = false): string {
-    const shouldFoldCase = process.platform === 'win32' || volumeIsCaseInsensitive;
-    return shouldFoldCase ? value.toLowerCase() : value;
+    return volumeIsCaseInsensitive ? value.toLowerCase() : value;
   }
 
-  function isPathWithin(fullPath: string, rootDir: string, volumeIsCaseInsensitive = false): boolean {
-    const a = normalizeForRootComparison(fullPath, volumeIsCaseInsensitive);
-    const b = normalizeForRootComparison(rootDir, volumeIsCaseInsensitive);
+  function isPathWithin(candidate: string, rootDir: string, volumeIsCaseInsensitive = false): boolean {
+    const a = normalizeForRootComparison(path.resolve(candidate), volumeIsCaseInsensitive);
+    const b = normalizeForRootComparison(path.resolve(rootDir), volumeIsCaseInsensitive);
     return a === b || a.startsWith(b + path.sep);
   }
   ```
-- **Resolve first, compare second:** compare normalized absolute paths; on macOS, a case mismatch is not a safe escape signal unless the relevant volume's case behavior is known
+- **Resolve first, compare second:** compare normalized absolute paths; only treat a case mismatch as equivalent when the relevant filesystem volume has already been confirmed to be case-insensitive
 
 ### Repairing Stale LF-Pinned Working Trees
 
@@ -70,20 +71,18 @@ the index and creates unrelated line-ending churn. Do not force-checkout a local
 
 ✓ **Correct:**
 ```powershell
-// Timestamp utility
-const safeTimestamp = () => new Date().toISOString().replace(/:/g, '-').split('.')[0] + 'Z';
+# Timestamp utility
+$safeTimestamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH-mm-ssZ')
 
-// Git workflow (PowerShell)
+# Git workflow (PowerShell)
 cd $teamRoot
-# ⚠️ NEVER use `git add .squad/` or broad globs — only stage files you intentionally changed
+# NEVER use `git add .squad/` or broad globs — only stage files you intentionally changed
 # Stage only files you actually modified — use git status to build explicit list
 $filesToStage = git status --porcelain | Where-Object { $_.Length -gt 3 } | ForEach-Object { $_.Substring(3) -replace '^.* -> ','' } | Where-Object {
   $_ -eq '.squad/decisions.md' -or
   $_ -eq '.squad/decisions-archive.md' -or
   $_ -like '.squad/agents/*/history.md' -or
-  $_ -like '.squad/agents/*/history-archive.md' -or
-  $_ -like '.squad/log/*' -or
-  $_ -like '.squad/orchestration-log/*'
+  $_ -like '.squad/agents/*/history-archive.md'
 }
 if ($filesToStage) { $filesToStage | Where-Object { $_ } | ForEach-Object { git add -- $_ } }
 git diff --cached --quiet

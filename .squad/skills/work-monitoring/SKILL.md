@@ -23,6 +23,8 @@ work queue.
   wave label is not sufficient scope for a bulk operation.
 - Hydrate and verify candidate items before changing labels, closing issues, deleting branches, or
   dispatching work.
+- After every mutation, refetch the exact item and verify the requested state transition and
+  affected fields. Stop immediately and report a mismatch; do not continue with later mutations.
 - Prioritize untriaged work, assigned work, CI failures, review feedback, and approved pull
   requests according to the active task’s stated priority.
 - Route domain work to the responsible role; monitoring reports and coordination must not silently
@@ -34,6 +36,8 @@ work queue.
 
 - Stop before any mutation if the workstream, label set, or state filter is ambiguous.
 - Stop if candidate items cannot be hydrated and verified before action.
+- Stop if post-mutation refetch or exact verification fails, is unavailable, or returns a
+  different item state than requested.
 - Stop if the requested action would exceed the explicitly scoped queue or become product work.
 
 ## Examples

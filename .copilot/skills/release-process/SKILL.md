@@ -20,7 +20,7 @@ recovery commands. The operational model is:
 There is no staging `preview` branch. Do not create tags or GitHub Releases
 manually.
 
-Human release-trigger boundary: use the canonical runbook for exact commands. Agents may prepare, validate, and present commands, but agents must never execute or dispatch any live publication, promotion, or recovery workflow: `squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with `dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`. Only a human executes those real triggers; human approval alone does not authorize an agent to fire them. The `squad-promote.yml --ref dev -f dry_run=true` check remains agent-safe because it does not publish.
+Human release-trigger boundary: use the canonical runbook for exact commands. Agents may prepare, validate, and present commands, but agents must never execute or dispatch any live publication, promotion, or recovery workflow: `squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with `dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`. Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: it still checks out `dev` with repo/workflow credentials and runs build and validation steps. Do not describe any GitHub Actions release workflow as agent-safe once it has write-capable credentials or a dispatch path. Only a human executes those triggers; human approval alone does not authorize an agent to fire them.
 
 ## Preconditions
 
@@ -83,6 +83,8 @@ The workflow computes the next `X.Y.Z-insider.N` version, publishes npm
 ## Stable
 
 After a PR replaces the preview version with `X.Y.Z` on `dev` and CI passes:
+
+Human-only validation dispatch: this workflow still checks out `dev` with repo/workflow credentials and runs build and test logic. Agents must stop and hand off; only a human should fire it.
 
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=true

@@ -13,6 +13,13 @@ entries poison decision-making downstream. A stale-history incident proved that 
 can cause future spawns to repeat a reversed decision. Reconcile an operational claim with current
 implementation, workflows, tests, documentation, skills, and applicable decisions before acting on it.
 
+## Scope
+
+- Activate when recording, correcting, or promoting finalized operational history.
+- Allowed targets: the explicitly selected history file and a focused reusable skill when the rule
+  applies beyond one role.
+- Exclusions: intermediate requests, stale assignments, roster metadata, and unrelated cleanup.
+
 ## Patterns
 
 - **Record the final outcome**, not the initial request.
@@ -22,6 +29,9 @@ implementation, workflows, tests, documentation, skills, and applicable decision
   depends on live behavior.
 - **Promote reusable rules.** Move procedures and incident lessons that future roles need into a
   focused skill; history should retain only the evidence and outcome.
+- **Record shipped guidance changes.** A change to a shipped skill or template requires a
+  changeset/changelog entry, unless the repository's documented skip label or equivalent release
+  exception is present.
 
 ## Examples
 
@@ -33,6 +43,12 @@ implementation, workflows, tests, documentation, skills, and applicable decision
 - "Migration target: v0.6.0" (when that request was later reversed)
 - Recording what was *requested* instead of what *actually happened*
 - Logging entries before outcome is confirmed
+
+## Stop conditions
+
+- Stop if the outcome is not confirmed or current authority disagrees with the proposed entry.
+- Stop if the target history file or promoted skill is outside the explicit scope.
+- Stop if a shipped skill/template change has no changeset or documented release exception.
 
 ## Anti-Patterns
 

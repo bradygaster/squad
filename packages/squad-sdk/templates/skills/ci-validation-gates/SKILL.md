@@ -1,9 +1,9 @@
 ---
 name: "ci-validation-gates"
-description: "Defensive CI/CD patterns: semver validation, token checks, retry logic, draft detection — earned from v0.8.22"
+description: "Defensive CI/CD patterns: semver validation, token checks, retry logic, and draft detection"
 domain: "ci-cd"
 confidence: "high"
-source: "extracted from the CI/CD and Release Manager roles — earned knowledge from v0.8.22 release incident"
+source: "extracted from release and CI incident lessons"
 ---
 
 ## Context
@@ -77,16 +77,16 @@ Draft releases don't emit `release: published` event. Workflows MUST:
 - Keep suppressions narrow: exact tool diagnostic plus exact affected path, and revalidate them
   when the pinned tool changes.
 
-The root build invokes `scripts/bump-build.mjs`, which skips its version mutation when
-`SKIP_BUILD_BUMP=1` or `CI=true`. Current release workflows may instead invoke workspace build
-scripts directly. Follow the selected workflow's build path instead of applying a historical flag
-to every release command.
+The root build invokes `scripts/bump-build.mjs`, which mutates release versions unless
+`SKIP_BUILD_BUMP=1` or `CI=true`. For local validation, do not run the root build without one
+of those guards; prefer the affected workspace build or set `SKIP_BUILD_BUMP=1`. Never let a
+validation build rewrite package versions or create a version-only diff.
 
-## Known Failure Modes (v0.8.22 Incident)
+## Known Failure Modes
 
 | # | What Happened | Root Cause | Prevention |
 |---|---------------|-----------|------------|
-| 1 | 4-part version published, npm mangled it | No semver validation gate | `npx semver` check before every publish |
+| 1 | Invalid version published, registry mangled it | No semver validation gate | `npx semver` check before every publish |
 | 2 | CI failed 5+ times with EOTP | User token with 2FA | Automation token only |
 | 3 | Verify returned false 404 | No retry logic for propagation | 5 attempts, 15s intervals |
 | 4 | Workflow never triggered | Draft release doesn't emit event | Never create draft releases |

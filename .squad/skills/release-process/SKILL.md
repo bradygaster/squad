@@ -51,10 +51,12 @@ agents must never execute or dispatch live publication, promotion, or recovery
 workflows. Only a human executes the real trigger for these live workflows:
 `squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with
 `dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`.
-Only non-publishing validation dispatches such as
-`squad-promote.yml --ref dev -f dry_run=true` stay agent-safe. Stop with the
-verified command and evidence for the human to run; human approval alone does
-not authorize an agent to fire the live trigger.
+Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: the
+workflow still checks out `dev` with repo/workflow credentials and runs build
+and validation steps. Do not describe any GitHub Actions release workflow as
+agent-safe once it has write-capable credentials or a dispatch path. Stop with
+verified commands and evidence for a human to run; human approval alone does
+not authorize an agent to fire the trigger.
 
 ## Prepare a release
 
@@ -145,7 +147,7 @@ the `squad-insider` Homebrew cask, and opens or reuses the
 ## Publish a stable release
 
 Stable versions must be exactly `X.Y.Z`. Prepare and merge the stable version
-to `dev`, then optionally validate the sanitized merge without changing
+to `dev`, then human-only validate the sanitized merge without changing
 `main`:
 
 ```bash
@@ -153,7 +155,9 @@ gh workflow run squad-promote.yml --ref dev -f dry_run=true
 gh run watch
 ```
 
-Start the real promotion:
+Do not treat this as an agent-safe command. It still checks out `dev` with
+workflow credentials and runs repository build/test logic. Only a human should
+fire it. Start the real promotion:
 
 Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
