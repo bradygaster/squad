@@ -30,34 +30,42 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Never assume CWD is repo root:** Always use `TEAM ROOT` from spawn prompt or run `git rev-parse --show-toplevel`
 - **Use path.join() or path.resolve():** Don't manually concatenate with `/` or `\`
 
-### Path Comparison (Case Sensitivity)
-- **Never use case-sensitive `startsWith` or `===` for path comparison on Windows or macOS:** These filesystems are case-insensitive — `C:\Users\` and `c:\users\` refer to the same location
-- **Use platform-aware comparison:** Check `process.platform === 'win32' || process.platform === 'darwin'` and lowercase both sides before comparing
-- **Pattern:**
-  ```typescript
-  const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+### Repairing Stale LF-Pinned Working Trees
 
-  function pathStartsWith(fullPath: string, prefix: string): boolean {
-    if (CASE_INSENSITIVE) {
-      return fullPath.toLowerCase().startsWith(prefix.toLowerCase());
-    }
-    return fullPath.startsWith(prefix);
-  }
-  ```
-- **Where it matters:** Security checks (path traversal prevention), rootDir confinement, any path-contains-path validation
-- **Linux is case-sensitive:** Do NOT lowercase on Linux — `/Home/` and `/home/` are different directories
+An `eol=lf` attribute affects checkout behavior; it does not repair files that were already
+materialized with CRLF. For the known shebang failure mode, use the repository's
+`scripts/fix-crlf-worktree.mjs` rather than a broad renormalization:
+
+1. Identify LF-pinned files that are CRLF on disk.
+2. Exclude files with a real content difference from the index.
+3. Rewrite only content-clean paths from the index with `git checkout-index -f`.
+4. Re-measure the complete repair set and report repaired, skipped, and remaining paths.
+
+This is a local repair, not a source rewrite. Do not use `git add --renormalize .`; it rewrites
+the index and creates unrelated line-ending churn. Do not force-checkout a locally modified file.
 
 ## Examples
 
 ✓ **Correct:**
-```javascript
+```powershell
 // Timestamp utility
 const safeTimestamp = () => new Date().toISOString().replace(/:/g, '-').split('.')[0] + 'Z';
 
 // Git workflow (PowerShell)
 cd $teamRoot
-git add .squad/
-if ($LASTEXITCODE -eq 0) {
+# ⚠️ NEVER use `git add .squad/` or broad globs — only stage files you intentionally changed
+# Stage only files you actually modified — use git status to build explicit list
+$filesToStage = git status --porcelain | Where-Object { $_.Length -gt 3 } | ForEach-Object { $_.Substring(3) -replace '^.* -> ','' } | Where-Object {
+  $_ -eq '.squad/decisions.md' -or
+  $_ -eq '.squad/decisions-archive.md' -or
+  $_ -like '.squad/agents/*/history.md' -or
+  $_ -like '.squad/agents/*/history-archive.md' -or
+  $_ -like '.squad/log/*' -or
+  $_ -like '.squad/orchestration-log/*'
+}
+if ($filesToStage) { $filesToStage | Where-Object { $_ } | ForEach-Object { git add -- $_ } }
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) {
   $msg = @"
 docs(ai-team): session log
 
@@ -89,10 +97,3 @@ exec('git commit -m "First line\nSecond line"'); // FAILS silently in PowerShell
 - Assuming Unix-style paths work everywhere
 - Using `git -C` because it "looks cleaner" (it doesn't work)
 - Skipping `git diff --cached --quiet` check (creates empty commits)
-- **Wrong — case-sensitive path check on Windows and macOS:**
-  ```typescript
-  if (!resolved.startsWith(rootDir + path.sep)) {
-    throw new Error('Path traversal blocked');
-  }
-  // Fails: 'c:\\Users\\temp\\file'.startsWith('C:\\Users\\temp\\') → false
-  ```

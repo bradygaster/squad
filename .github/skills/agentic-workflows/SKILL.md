@@ -84,6 +84,7 @@ After loading the matching workflow prompt or skill, follow it directly:
 - Create new workflows: `.github/aw/create-agentic-workflow.md`
 - Update existing workflows: `.github/aw/update-agentic-workflow.md`
 - Debug, audit, or investigate workflows: `.github/aw/debug-agentic-workflow.md`
+- Validate workflow contracts and safe outputs: `.github/skills/gh-aw-reliability/SKILL.md`
 - Upgrade workflows and fix deprecations: `.github/aw/upgrade-agentic-workflows.md`
 - Create shared components or MCP wrappers: `.github/aw/create-shared-agentic-workflow.md`
 - Create report-generating workflows: `.github/aw/report.md`

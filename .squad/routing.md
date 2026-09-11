@@ -57,4 +57,4 @@
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
 7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
-8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, it reads `.squad/orchestration-log/dispatchguard/verdicts-{SESSION_ID}.jsonl` and alerts the coordinator on `warn`/`block` verdicts.
+8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, it reads `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl` and alerts the coordinator on `warn`/`block` verdicts.

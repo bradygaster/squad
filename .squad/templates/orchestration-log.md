@@ -31,7 +31,7 @@
 
 ## DispatchGuard Ledger Schema
 
-The coordinator appends one JSON object per turn to `.squad/orchestration-log/dispatchguard/ledger-{SESSION_ID}.jsonl`. Scribe reads this file to audit compliance. Fields:
+The coordinator appends one JSON object per turn to `.squad/orchestration-log/ledger-{SESSION_ID}.jsonl`. Scribe reads this file to audit compliance. Fields:
 
 ```jsonc
 {
@@ -49,7 +49,7 @@ The coordinator appends one JSON object per turn to `.squad/orchestration-log/di
 }
 ```
 
-**Verdicts file:** Scribe appends one JSON object per audited turn to `.squad/orchestration-log/dispatchguard/verdicts-{SESSION_ID}.jsonl`. See `.squad/hooks/README.md` for the output schema.
+**Verdicts file:** Scribe appends one JSON object per audited turn to `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. See `.squad/hooks/README.md` for the output schema.
 
-**Gitignore:** Both files are runtime-only and excluded from version control (see `.gitignore` entry for `.squad/orchestration-log/dispatchguard/`). Do NOT commit them.
+**Gitignore:** Both files are runtime-only and excluded from version control (see `.gitignore` entry for `.squad/orchestration-log/`). Do NOT commit them.
 

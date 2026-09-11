@@ -30,6 +30,20 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Never assume CWD is repo root:** Always use `TEAM ROOT` from spawn prompt or run `git rev-parse --show-toplevel`
 - **Use path.join() or path.resolve():** Don't manually concatenate with `/` or `\`
 
+### Repairing Stale LF-Pinned Working Trees
+
+An `eol=lf` attribute affects checkout behavior; it does not repair files that were already
+materialized with CRLF. For the known shebang failure mode, use the repository's
+`scripts/fix-crlf-worktree.mjs` rather than a broad renormalization:
+
+1. Identify LF-pinned files that are CRLF on disk.
+2. Exclude files with a real content difference from the index.
+3. Rewrite only content-clean paths from the index with `git checkout-index -f`.
+4. Re-measure the complete repair set and report repaired, skipped, and remaining paths.
+
+This is a local repair, not a source rewrite. Do not use `git add --renormalize .`; it rewrites
+the index and creates unrelated line-ending churn. Do not force-checkout a locally modified file.
+
 ## Examples
 
 ✓ **Correct:**
