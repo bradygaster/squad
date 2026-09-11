@@ -49,8 +49,9 @@ Configure these GitHub Actions secrets:
 Agents may prepare versions, run validation, and recommend exact commands, but
 agents must never execute or dispatch live publication, promotion, or recovery
 workflows. Only a human executes the real trigger for these live workflows:
-`squad-release.yml`, `squad-insider-publish.yml`, `squad-promote.yml` with
-`dry_run=false`, `squad-npm-publish.yml`, or `squad-standalone-release.yml`.
+`squad-release.yml`, `squad-agents-ai-release.yml`, `squad-insider-publish.yml`,
+`squad-promote.yml` with `dry_run=false`, `squad-version-promote.yml`,
+`squad-npm-publish.yml`, or `squad-standalone-release.yml`.
 Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: the
 workflow still has `actions: write` and `contents: write`, checks out `dev`
 with the workflow token, installs dependencies, and runs the release build and

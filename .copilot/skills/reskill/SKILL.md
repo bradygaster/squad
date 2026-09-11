@@ -44,7 +44,7 @@ For each reconciled pattern:
 **Charters** — target ≤1.5KB per agent:
 - Remove Collaboration section entirely (spawn prompt + agent-collaboration skill covers it)
 - Remove Voice section (tagline blockquote at top of charter already captures it)
-- Trim Model section to single line: `Preferred: {model}`
+- Trim Model section to single line: `**Preferred:** {model}`
 - Remove "When I'm unsure" boilerplate from Boundaries
 - Remove durable operating knowledge now covered by a skill — add a skill reference only when it
   helps the role activate the procedure
@@ -93,7 +93,7 @@ Include totals and percentage reduction.
 **I don't handle:** {explicit exclusions}
 
 ## Model
-Preferred: {model}
+**Preferred:** {model}
 ```
 
 ### Skill Extraction Threshold

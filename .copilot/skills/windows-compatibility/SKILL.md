@@ -34,6 +34,7 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Never use naive prefix checks to confine paths:** a bare substring/prefix match can let sibling paths escape the intended root
 - **Never infer case-insensitive behavior from `process.platform` alone:** Windows is case-insensitive, but Darwin volumes are not all case-insensitive. APFS and HFS+ can be case-sensitive; a blanket lowercase conversion on macOS can conflate distinct sibling directories.
 - **Use filesystem-aware case handling:** Only fold case when the relevant volume has been explicitly identified as case-insensitive. Otherwise, compare the resolved path case-sensitively.
+- **Current implementation caveat:** This is the safe target pattern, not a claim about every existing repository implementation. `FSStorageProvider` currently folds case for all Darwin paths, so its root confinement is not volume-aware on case-sensitive macOS filesystems.
 - **Resolve first, compare second:** resolve both paths before comparing; do not compare user input or unresolved relative segments.
 - **Root confinement must be exact-match-or-separator:** a path is within `rootDir` only when it equals the normalized root exactly or starts with `rootDir + path.sep`; a bare substring/prefix match lets `/root-escape` slip past `/root`. Filesystem roots are valid roots and must remain exact-match-or-separator checks.
 - **Where it matters:** security checks such as path-traversal prevention, `rootDir` confinement, and any validation that a resolved path stays under an allowed directory

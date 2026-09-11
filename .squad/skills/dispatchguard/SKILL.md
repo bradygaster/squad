@@ -37,9 +37,11 @@ mechanism observes dispatch compliance and does not replace normal routing.
 - The hook is stateless: each invocation emits one JSON verdict object to stdout and evaluates the
   last parseable `coordinator_turn` in the supplied ledger. It has no cursor and does not know
   which turns a prior invocation audited. To audit each turn once, the caller must provide a
-  per-turn snapshot/input (for example, an isolated ledger containing only that turn) or
-  deduplicate captured verdicts by `turn_snapshot.turn_id` before handing them to a monitor.
-  Do not claim exactly-once auditing from repeated invocations of the hook alone.
+  per-turn snapshot/input (for example, an isolated ledger containing only that turn) or otherwise
+  select the intended turn before invoking the hook. When persisting verdicts, the caller must
+  additionally deduplicate by `turn_snapshot.turn_id` before handing them to a monitor.
+  Deduplication alone cannot recover earlier turns skipped when an accumulating ledger repeatedly
+  selects only its last turn. Do not claim exactly-once auditing from repeated hook invocations.
 - A work monitor consumes captured verdicts or live hook output; it does not rerun the audit.
   Surface `warn` without blocking, pause and alert on `block`, and treat `indeterminate`
   according to the active enforcement mode.
