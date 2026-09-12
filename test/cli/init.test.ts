@@ -4,13 +4,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, readdir, readFile } from 'fs/promises';
+import { mkdir, rm, readdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
+import { getPackageVersion, stampVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-init-${randomBytes(4).toString('hex')}`);
 const TEST_HOME = join(tmpdir(), `.test-cli-init-home-${randomBytes(4).toString('hex')}`);
@@ -65,6 +65,64 @@ describe('CLI: init command', () => {
     // {version} placeholder must be replaced
     expect(content).not.toContain('`Squad v{version}`');
     expect(content).toContain(`Squad v${currentVersion}`);
+  });
+
+  it('stampVersion should refresh an already-resolved greeting literal, not just the {version} placeholder (regression)', async () => {
+    // The greeting regex used to only match the unresolved `Squad v{version}`
+    // placeholder, so a file that already had a resolved (stale) literal from a
+    // prior stamp stayed stuck on the old version forever.
+    const agentPath = join(TEST_ROOT, 'squad.agent.md');
+    const staleVersion = '0.9.0';
+    const currentVersion = getPackageVersion();
+    const before = [
+      `<!-- version: ${staleVersion} -->`,
+      '',
+      `- **Version:** ${staleVersion}. Include it as \`Squad v${staleVersion}\` in your first response.`,
+    ].join('\n');
+    await writeFile(agentPath, before, 'utf-8');
+
+    stampVersion(agentPath, currentVersion);
+    const after = await readFile(agentPath, 'utf-8');
+
+    expect(after).toContain(`<!-- version: ${currentVersion} -->`);
+    expect(after).toContain(`- **Version:** ${currentVersion}`);
+    expect(after).toContain(`\`Squad v${currentVersion}\``);
+    expect(after).not.toContain(staleVersion);
+  });
+
+  it('re-running init against an existing project should refresh a stale resolved version everywhere, including the greeting literal (re-init regression)', async () => {
+    // First init creates squad.agent.md with the current version stamped
+    // everywhere. Simulate what a real "installed a while ago" repo looks
+    // like: all three version locations still show an older resolved
+    // version (not the unresolved {version} placeholder).
+    await runInit(TEST_ROOT);
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const currentVersion = getPackageVersion();
+    const staleVersion = '0.9.0';
+    const escapedCurrent = currentVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let content = await readFile(agentPath, 'utf-8');
+    content = content
+      .replace(/<!-- version: [^>]+ -->/, `<!-- version: ${staleVersion} -->`)
+      .replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/, `- **Version:** ${staleVersion}`)
+      .replace(new RegExp('`Squad v' + escapedCurrent + '`'), `\`Squad v${staleVersion}\``);
+    await writeFile(agentPath, content, 'utf-8');
+
+    // Sanity check: the stale literal is actually present before rerunning init.
+    const beforeRerun = await readFile(agentPath, 'utf-8');
+    expect(beforeRerun).toContain(`\`Squad v${staleVersion}\``);
+
+    // Re-init the existing project. squad.agent.md already exists, so init's
+    // template-copy step is skipped (skipExisting=true) — only the trailing
+    // "ensure version is fully stamped" step in runInit touches this file.
+    await runInit(TEST_ROOT);
+
+    const afterRerun = await readFile(agentPath, 'utf-8');
+    expect(afterRerun).toContain(`<!-- version: ${currentVersion} -->`);
+    expect(afterRerun).toContain(`- **Version:** ${currentVersion}`);
+    expect(afterRerun).toContain(`\`Squad v${currentVersion}\``);
+    expect(afterRerun).not.toContain(staleVersion);
   });
 
   it('should create .squad/ directory structure', async () => {

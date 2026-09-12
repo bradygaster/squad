@@ -631,9 +631,11 @@ function stampVersionInContent(content: string, version: string): string {
     /- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m,
     `- **Version:** ${version}`
   );
-  // Greeting placeholder: `Squad v{version}`
+  // Greeting placeholder: `Squad v{version}` — also matches an already-resolved
+  // semver (e.g. `Squad v0.11.0`) from a prior stamp so this is idempotent when
+  // re-run against a file that already went through stampVersionInContent.
   content = content.replace(
-    /`Squad v\{version\}`/g,
+    /`Squad v[^`]*`/g,
     `\`Squad v${version}\``
   );
   return content;
