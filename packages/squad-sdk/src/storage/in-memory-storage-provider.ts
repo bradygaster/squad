@@ -1,5 +1,6 @@
 import { posix } from 'path';
 import type { StorageProvider, StorageStats } from './storage-provider.js';
+import { StateKeyConflictError } from './storage-error.js';
 
 /**
  * InMemoryStorageProvider — test-friendly StorageProvider backed by a Map.
@@ -16,6 +17,17 @@ export class InMemoryStorageProvider implements StorageProvider {
     // Convert Windows backslashes to forward slashes before POSIX normalization
     // so that paths from path.join() on Windows match stored POSIX keys.
     return posix.normalize(p.replace(/\\/g, '/')).replace(/\/+$/, '');
+  }
+
+  async createIfAbsent(filePath: string, data: string): Promise<void> {
+    const key = this.norm(filePath);
+    // Single-process: Map.has check and set are effectively atomic within
+    // a single event-loop turn (no async I/O between check and write).
+    if (this.files.has(key)) {
+      throw new StateKeyConflictError(filePath);
+    }
+    this.files.set(key, data);
+    this.mtimes.set(key, Date.now());
   }
 
   async read(filePath: string): Promise<string | undefined> {

@@ -2,6 +2,7 @@ import { posix } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync as fsMkdirSync, renameSync } from 'fs';
 import { dirname } from 'path';
 import type { StorageProvider, StorageStats } from './storage-provider.js';
+import { StateKeyConflictError } from './storage-error.js';
 
 // sql.js types — loaded dynamically
 type SqlJsStatic = typeof import('sql.js');
@@ -136,6 +137,20 @@ export class SQLiteStorageProvider implements StorageProvider {
   }
 
   // ── Async interface ─────────────────────────────────────────────────────
+
+  async createIfAbsent(filePath: string, data: string): Promise<void> {
+    const db = await this.ready();
+    const key = this.norm(filePath);
+    // INSERT OR IGNORE: if row already exists, no rows are modified.
+    db.run(
+      `INSERT OR IGNORE INTO files (path, content, updated_at) VALUES (?, ?, ?)`,
+      [key, data, this.now()],
+    );
+    if (db.getRowsModified() === 0) {
+      throw new StateKeyConflictError(filePath);
+    }
+    this.persist();
+  }
 
   async read(filePath: string): Promise<string | undefined> {
     await this.ready();

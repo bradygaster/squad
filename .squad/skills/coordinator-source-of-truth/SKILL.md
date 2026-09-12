@@ -11,7 +11,7 @@ source: "Extracted from squad.agent.md as part of the slimming effort (bradygast
 
 ## State backend note
 
-Files below marked as **"Derived / append-only"** are **mutable state** — agents access them with runtime state tools (`squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_delete`, `squad_state_list`). The runtime decides whether the configured backend stores them on disk, git-native state, or an external provider. Files marked as **"Authoritative"** are **static config** and always live on disk regardless of backend.
+Files below marked as **"Derived / append-only"** are **mutable state** — agents access them with runtime state tools (`squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_create_if_absent`, `squad_state_delete`, `squad_state_list`). The runtime decides whether the configured backend stores them on disk, git-native state, or an external provider. Files marked as **"Authoritative"** are **static config** and always live on disk regardless of backend.
 
 ## File hierarchy
 

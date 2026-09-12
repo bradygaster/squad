@@ -1,5 +1,6 @@
 import { ContainerClient } from '@azure/storage-blob';
 import type { StorageProvider, StorageStats } from '@bradygaster/squad-sdk';
+import { StateKeyConflictError, StateBackendUncertaintyError } from '@bradygaster/squad-sdk';
 
 /**
  * Azure Blob Storage implementation of StorageProvider.
@@ -31,7 +32,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
     return norm.endsWith('/') ? norm : `${norm}/`;
   }
 
-  // ── Async methods (12) ────────────────────────────────────────────────
+  // ── Async methods (13) ────────────────────────────────────────────────
 
   async read(filePath: string): Promise<string | undefined> {
     const blobName = this.normalizePath(filePath);
@@ -65,6 +66,36 @@ export class AzureBlobStorageProvider implements StorageProvider {
   async append(filePath: string, data: string): Promise<void> {
     const existing = (await this.read(filePath)) ?? '';
     await this.write(filePath, existing + data);
+  }
+
+  /**
+   * Atomically create a blob only when absent.
+   *
+   * Uses the Azure `If-None-Match: *` conditional header, which makes the
+   * service reject the upload with HTTP 409 (BlobAlreadyExists) / 412 when
+   * the blob already exists. Exactly one concurrent creator wins; existing
+   * content is never overwritten. A read-then-write check would be racy.
+   */
+  async createIfAbsent(filePath: string, data: string): Promise<void> {
+    const blobName = this.normalizePath(filePath);
+    const blob = this.container.getBlockBlobClient(blobName);
+    const buffer = Buffer.from(data, 'utf-8');
+
+    try {
+      await blob.upload(buffer, buffer.length, {
+        blobHTTPHeaders: { blobContentType: 'text/plain; charset=utf-8' },
+        conditions: { ifNoneMatch: '*' },
+      });
+    } catch (err: any) {
+      if (err.statusCode === 409 || err.statusCode === 412) {
+        throw new StateKeyConflictError(filePath);
+      }
+      // Any other outcome is unknown — the upload may or may not have landed.
+      throw new StateBackendUncertaintyError(
+        'azure-blob:createIfAbsent',
+        `conditional upload failed for "${filePath}": ${err?.statusCode ?? 'UNKNOWN'}`,
+      );
+    }
   }
 
   async exists(filePath: string): Promise<boolean> {

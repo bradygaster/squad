@@ -59,8 +59,55 @@ describe('state-mcp bridge', () => {
     expect(names).toContain('squad_decide');
     expect(names).toContain('squad_state_write');
     expect(names).toContain('squad_state_append');
+    expect(names).toContain('squad_state_create_if_absent');
     expect(tools.find(tool => tool.name === 'squad_state_write')?.inputSchema.required).toEqual(['key', 'content']);
+    expect(tools.find(tool => tool.name === 'squad_state_create_if_absent')?.inputSchema.required)
+      .toEqual(['key', 'content']);
   });
+
+  it.each(['orphan', 'two-layer'] as const)(
+    'exposes squad_state_create_if_absent so exactly one caller creates a canonical key through the %s backend',
+    async (stateBackend) => {
+      initSquad(stateBackend);
+      const messages: JsonRpcMessage[] = [];
+      const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+      const key = 'log/2026-08-29T00-00-00Z-retrospective.md';
+
+      async function createIfAbsent(id: string, content: string): Promise<Record<string, unknown>> {
+        const index = messages.length;
+        await session.handleRequest({
+          jsonrpc: '2.0',
+          id,
+          method: 'tools/call',
+          params: { name: 'squad_state_create_if_absent', arguments: { key, content } },
+        });
+        return resultAsRecord(messages[index]!);
+      }
+
+      const first = await createIfAbsent('create-1', '# Canonical retro\n');
+      const second = await createIfAbsent('create-2', '# Duplicate retro\n');
+
+      // Exactly one creator wins; the loser is surfaced as an MCP error result.
+      expect(first['isError']).not.toBe(true);
+      expect(second['isError']).toBe(true);
+      const loserText = (second['content'] as Array<{ text: string }>)[0]!.text;
+      expect(loserText).toMatch(/already exists/i);
+
+      // The winner's content is preserved verbatim — never overwritten.
+      const readIndex = messages.length;
+      await session.handleRequest({
+        jsonrpc: '2.0',
+        id: 'read-canonical',
+        method: 'tools/call',
+        params: { name: 'squad_state_read', arguments: { key } },
+      });
+      expect(resultAsRecord(messages[readIndex]!)['content'])
+        .toEqual([{ type: 'text', text: '# Canonical retro\n' }]);
+
+      // Mutable state never leaks into the worktree for git-native backends.
+      expect(existsSync(join(TMP, '.squad', 'log', '2026-08-29T00-00-00Z-retrospective.md'))).toBe(false);
+    },
+  );
 
   it('writes and reads two-layer state without mutating the worktree .squad files', async () => {
     initSquad('two-layer');
