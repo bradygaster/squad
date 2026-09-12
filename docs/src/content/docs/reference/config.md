@@ -13,7 +13,9 @@ That's it. Squad works out of the box. Everything below is optional.
 
 ## squad.config.ts
 
-For type-safe SDK-First configuration, create this at your project root:
+> ⚠️ **Deprecated authoring mode.** `squad init --sdk` will be removed in v2. The reference below remains for existing projects using `squad build`.
+
+Legacy SDK-first projects may define this file at the project root:
 
 ```typescript
 import {
@@ -127,7 +129,7 @@ rm -rf .squad && squad init         # Full reset (back up agents/decisions first
 
 ## Routing Rules
 
-Control which agent gets which work. Edit `.squad/routing.md` or configure in `squad.config.ts`:
+Control which agent gets which work in `.squad/routing.md`. Existing SDK-first projects may instead configure routing in `squad.config.ts`:
 
 ```markdown
 # Routing Rules

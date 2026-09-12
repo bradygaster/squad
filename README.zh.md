@@ -262,26 +262,11 @@ Squad 不按人类的时间表工作。当你分配任务时，协调员会同�
 
 **提交此文件夹。** 你的团队会持久化。名字会持久化。任何克隆的人都会获得团队 —— 使用相同的演员表。
 
-### SDK 优先模式（Phase 1 新功能）
+### SDK 优先模式（已弃用）
 
-> ⚠️ **实验性功能。** SDK 优先模式正在积极开发中，存在已知 bug。生产环境团队请使用 markdown 优先模式（默认）。
+> ⚠️ **已弃用。** `squad init --sdk` 将在 v2 中移除。新团队请使用默认的 markdown 优先 `squad init` 流程。
 
-更喜欢 TypeScript？你可以用代码而不是 markdown 定义团队。创建一个带有构建器函数的 `squad.config.ts`，运行 `squad build`，`.squad/` 文件就会自动生成。
-
-```typescript
-// squad.config.ts
-import { defineSquad, defineTeam, defineAgent } from '@bradygaster/squad-sdk';
-
-export default defineSquad({
-  team: defineTeam({ name: 'Platform Squad', members: ['@edie', '@mcmanus'] }),
-  agents: [
-    defineAgent({ name: 'edie', role: 'TypeScript Engineer', model: 'claude-sonnet-5' }),
-    defineAgent({ name: 'mcmanus', role: 'DevRel', model: 'claude-haiku-4.5' }),
-  ],
-});
-```
-
-运行 `squad build` 生成所有 markdown 文件。完整文档请参阅 [SDK 优先模式指南](docs/src/content/docs/sdk-first-mode.md)。
+现有的 `squad.config.ts` 项目可以在过渡期间继续运行 `squad build`。兼容性信息请参阅 [旧版 SDK 优先模式指南](docs/src/content/docs/sdk-first-mode.md)。
 
 ---
 

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
-import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
+import { success, warn, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
@@ -173,6 +173,12 @@ export interface RunInitOptions {
  */
 export async function runInit(dest: string, options: RunInitOptions = {}): Promise<void> {
   const version = getPackageVersion();
+
+  if (options.sdk) {
+    warn('`squad init --sdk` is deprecated and will be removed in v2. Use `squad init` for new teams.');
+    console.log(`${DIM}Existing squad.config.ts users can continue using ${BOLD}squad build${RESET}${DIM} during the transition.${RESET}`);
+    console.log();
+  }
 
   console.log();
   await typewrite(`${DIM}Let's build your team.${RESET}`, 8);
