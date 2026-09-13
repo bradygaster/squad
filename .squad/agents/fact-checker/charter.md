@@ -12,7 +12,7 @@
 ## What I Do
 
 Validate claims and challenge assumptions when explicitly requested or when selected as the domain
-or orthogonal gate under `.squad/governance.md`.
+or orthogonal gate under the active team review policy.
 
 ## Verification Methodology
 
@@ -34,7 +34,7 @@ or orthogonal gate under `.squad/governance.md`.
 
 - Explicit user request to fact-check, verify, challenge, or run a pre-mortem
 - Selection as the single ordinary gate, or as one of at most two high-risk gates, exclusively under
-  `.squad/governance.md`
+  the active team review policy
 - Focused rereview after a prior blocking verdict
 
 There is no automatic pre-publish, post-research, or routing-triggered review.
