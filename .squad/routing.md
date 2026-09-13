@@ -1,65 +1,36 @@
-# Routing Rules — Mission Control
+# Work Routing
 
-## Work Type → Agent
+Dispatch ownership only. Team review gates and rejection mechanics live in
+`.squad/governance.md`; repository-wide merge requirements remain in
+`.github/PR_REQUIREMENTS.md`.
 
-| Work Type | Agent | Examples |
-|-----------|-------|---------|
-| Core runtime | EECOM 🔧 | CopilotClient, adapter, session pool, tools module, spawn orchestration |
-| Prompt architecture | Procedures 🧠 | Agent charters, spawn templates, coordinator logic, response tier selection |
-| Type system | CONTROL 👩‍💻 | Discriminated unions, generics, tsconfig, strict mode enforcement, declaration files |
-| SDK integration | CAPCOM 🕵️ | @github/copilot-sdk usage, CopilotSession lifecycle, event handling, platform patterns |
-| Runtime performance | GNC ⚡ | Streaming, event loop health, session management, async iterators, memory profiling |
-| Tests & quality | FIDO 🧪 | Test coverage, Vitest, edge cases, CI/CD, quality gates, adversarial testing, PR blocking |
-| Docs & messaging | PAO 📣 | README, API docs, getting-started, demos, tone review, contributor recognition |
-| Architecture & review | Flight 🏗️ | Product direction, architectural decisions, code review, scope/trade-offs |
-| Distribution | Network 📦 | npm packaging, esbuild config, global install, marketplace prep |
-| Release management | Surgeon 🚢 | Semantic versioning, GitHub Releases, changelogs, dev→main merges, release gating |
-| CI/CD & publish pipeline | Booster ⚙️ | GitHub Actions, publish.yml, automated validation gates, workflow monitoring |
-| Security & PII | RETRO 🔒 | Hook design (file-write guards, PII filters), security review, compliance, secret management |
-| CLI UX & visual design | INCO 🎨 | Interaction design, copy, spacing, affordances, UX gates, logo, brand, design system |
-| Aspire & observability | Telemetry 🔭 | Aspire dashboard, OTLP integration, Playwright E2E, Docker telemetry |
-| VS Code integration | GUIDO 🔌 | VS Code Extension API, runSubagent compatibility, editor integration |
-| REPL & shell | VOX 🖥️ | Interactive shell, session dispatch, streaming pipeline, event wiring |
-| TUI implementation | DSKY 🖥️ | Terminal components, layout, input handling, focus management, rendering perf |
-| Terminal E2E tests | Sims 🧪 | node-pty harness, Gherkin features, frame snapshots, UX gate test suite |
-| SDK usability | Handbook 📖 | JSDoc, LLM discoverability, API surface clarity, legacy cleanup, migration guides |
+## Routing Table
 
-## Module Ownership
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| Cross-package architecture and unmatched work | architect | Compatibility strategy, Squad v2, adjudication |
+| Agent orchestration | agent-orchestration-dev | Coordinator, casting, routing, prompts, spawns, handoffs |
+| Public TypeScript contracts | typescript-api-contract-designer | Exports, schemas, declarations, API compatibility |
+| SDK runtime | sdk-runtime-dev | Clients, sessions, events, streams, tools, cancellation, concurrency |
+| Plugin platform | plugin-platform-dev | Plugins, marketplaces, manifests, sharing, upstreams, adapters |
+| CLI behavior | cli-dev | Commands, parsing, init, upgrade, migrations, templates, bootstrap |
+| Terminal experience | terminal-ux-dev | Ink, REPL, input, focus, rendering, accessibility |
+| State and storage | state-storage-dev | Backends, memory, serialization, migrations, recovery, archival integrity |
+| Local Git operations | git-specialist | Refs, worktrees, staging, merges, ignores, repository recovery |
+| GitHub integration | github-integration-dev | APIs, CLI auth, issues, labels, PRs, remote coordination |
+| Agentic workflows | agentic-workflows-dev | gh-aw sources, compilation, permissions, safe outputs, workflow contracts |
+| Observability | observability-dev | OpenTelemetry, logs, metrics, traces, health, cost and usage |
+| .NET agent framework | dotnet-agent-framework-dev | Squad.Agents.AI, multi-targeting, NuGet contracts |
+| Unit and contract testing | unit-contract-tester | Vitest, deterministic integration, schemas, parsers, mutation quality |
+| Integration and E2E testing | integration-e2e-tester | CLI journeys, Gherkin, Playwright, hosted workflow evidence |
+| Security review | security-reviewer | Threat models, trust boundaries, secrets, injection, filesystem review |
+| Release engineering | release-engineer | Builds, manifests, changesets, CI, npm/NuGet/binary publication |
+| Documentation and DevRel | docs-devrel | README, guides, examples, migrations, API docs, website, release communication |
 
-| Module | Primary | Secondary |
-|--------|---------|-----------|
-| `src/adapter/` | EECOM 🔧 | CAPCOM 🕵️ |
-| `src/agents/` | Procedures 🧠 | EECOM 🔧 |
-| `src/build/` | CONTROL 👩‍💻 | Network 📦 |
-| `src/casting/` | EECOM 🔧 | Procedures 🧠 |
-| `src/cli/` | EECOM 🔧 | Network 📦 |
-| `src/client/` | CAPCOM 🕵️ | EECOM 🔧 |
-| `src/config/` | CONTROL 👩‍💻 | EECOM 🔧 |
-| `src/coordinator/` | Procedures 🧠 | Flight 🏗️ |
-| `src/hooks/` | RETRO 🔒 | EECOM 🔧 |
-| `src/marketplace/` | Network 📦 | EECOM 🔧 |
-| `src/ralph/` | EECOM 🔧 | — |
-| `src/runtime/` | GNC ⚡ | EECOM 🔧 |
-| `src/sharing/` | EECOM 🔧 | Network 📦 |
-| `src/skills/` | Procedures 🧠 | — |
-| `src/tools/` | EECOM 🔧 | CAPCOM 🕵️ |
-| `src/cli/shell/` | VOX 🖥️ | DSKY 🖥️ |
-| `src/cli/shell/components/` | DSKY 🖥️ | VOX 🖥️ |
-| `tests/acceptance/` | Sims 🧪 | FIDO 🧪 |
-| `src/index.ts` | CONTROL 👩‍💻 | Flight 🏗️ |
+## Dispatch Rules
 
-## Routing Principles
-
-1. **Eager by default** — spawn agents who could usefully start work, including anticipatory downstream work.
-2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. DispatchGuard auditing is an explicit hook/monitor path (see `.squad/skills/dispatchguard/SKILL.md`), not an automatic session-start spawn.
-3. **Quick facts → coordinator answers directly.** Don't spawn for trivial questions.
-4. **Two agents could handle it** → pick the one whose domain is the primary concern.
-5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
-6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
-7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
-8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, the
-   invoking flow must provide the session ledger, invoke the stateless hook with a per-turn
-   snapshot (or deduplicate by `turn_snapshot.turn_id`), and capture hook stdout into
-   `.squad/orchestration-log/verdicts-{SESSION_ID}.jsonl`. Ralph reads that caller-managed file
-   and alerts the coordinator on `warn`/`block` verdicts. A missing ledger produces
-   `indeterminate` and stops the audit flow; it is not compliance.
+1. Every work item has exactly one primary specialist from the table.
+2. Route mixed work by its main deliverable; split only when deliverables have different owners.
+3. Route unmatched work and ownership disputes to `architect`.
+4. `squad:{id}` labels must use an active specialist ID from the casting registry.
+5. Squad coordinates. Scribe, Ralph, Rai, Fact Checker, and `@copilot` are never routing destinations.

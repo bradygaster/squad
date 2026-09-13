@@ -29,6 +29,17 @@ shutdown.
 
 Use the `gh` CLI when GitHub MCP tooling is unavailable.
 
+## Retrospective Evidence
+
+When a scan finds the same normalized failure across two independent attempts
+within seven days, or the same review rejection across distinct revision SHAs,
+return the evidence URLs and ask the coordinator to emit one typed
+`squad-retro` workflow dispatch with `retro_reason: early-evidence` and
+`request_origin: ralph`. Never run the retrospective or decide eligibility
+yourself. One-off failures and retries of the same run are evidence only; the
+shared worker's deterministic gate owns threshold, deduplication, cooldown, and
+pending-request recovery.
+
 ## Board Status Format
 
 ```
