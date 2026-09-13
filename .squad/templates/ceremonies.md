@@ -26,13 +26,16 @@
 
 | Field | Value |
 |-------|-------|
-| **Trigger** | auto |
+| **Trigger** | manual |
 | **When** | after |
-| **Condition** | build failure, test failure, or reviewer rejection |
+| **Condition** | user requests reflection on completed work |
 | **Facilitator** | lead |
 | **Participants** | all-involved |
 | **Time budget** | focused |
 | **Enabled** | ✅ yes |
+
+Retrospectives are advisory and run only when requested. They do not create
+history, audit-trail, or session-log artifacts.
 
 **Agenda:**
 1. What happened? (facts only)

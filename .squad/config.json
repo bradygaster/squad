@@ -1,5 +1,4 @@
 {
   "version": 1,
-  "defaultModel": "claude-sonnet-4.6",
-  "dispatchEnforcement": "warn"
+  "stateBackend": "local"
 }
