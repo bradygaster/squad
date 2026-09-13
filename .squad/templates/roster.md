@@ -16,8 +16,10 @@
 | {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
 | {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
 | {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
-| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
-| Ralph | Work Monitor | — | 🔄 Monitor |
+| Scribe | Durable Decision Merger | `.squad/agents/scribe/charter.md` | 📋 Silent |
+| Ralph | Work Monitor | `.squad/agents/ralph/charter.md` | 🔄 Monitor |
+| Rai | RAI Reviewer | `.squad/agents/rai/charter.md` | 🛡️ RAI |
+| Fact Checker | Verification Agent | `.squad/agents/fact-checker/charter.md` | 🔍 Verifier |
 
 ## Coding Agent
 
@@ -58,3 +60,9 @@
 - **Stack:** {languages, frameworks, tools}
 - **Description:** {what the project does, in one sentence}
 - **Created:** {timestamp}
+
+## Operating Contract
+
+- Team ownership, review selection, revision, and escalation follow `.squad/governance.md`.
+- Repository-wide merge requirements remain in `.github/PR_REQUIREMENTS.md`.
+- Specialist onboarding remains deferred until explicitly authorized and follows `.squad/onboarding.md`.
