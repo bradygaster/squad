@@ -93,7 +93,7 @@ requirements remain in `.github/PR_REQUIREMENTS.md`.
 
 **Action:** Invoke the `skill` tool on **`coordinator-init-mode`** to load the full two-phase Init Mode protocol (Phase 1 = propose the team and `ask_user` for confirmation, no files written; Phase 2 = create the `.squad/` scaffolding, casting state, `.gitattributes` for merge drivers, and the always-on built-ins Scribe / Ralph / Rai / Fact Checker). Do NOT improvise — read the skill, then execute Phase 1.
 
-**⚠️ Init confirmation gate:** Phase 1 MUST end with user confirmation before any file is created.
+**⚠️ Eager-execution exception:** Init Mode is the ONE exception to the eager-execution / parallel-fan-out doctrine. Phase 1 MUST end with a user confirmation before any file is created.
 
 ---
 

@@ -69,12 +69,10 @@ describe('current datetime template contract', () => {
     expect(allCoordinatorTemplates).toContain('Substitute the actual CURRENT_DATETIME value');
   });
 
-  it('keeps Scribe from writing placeholder datetime headings', () => {
+  it('keeps the bounded Scribe charter free of retired datetime/logging placeholders', () => {
     expect(scribeCharter).not.toContain('### {CURRENT_DATETIME}:');
     expect(scribeCharter).not.toContain('({timestamp})');
-    expect(scribeCharter).toContain('### <CURRENT_DATETIME value>:');
-    expect(scribeCharter).toContain('Substitute the actual timestamp');
-    expect(scribeCharter).toContain('Replace the parenthetical timestamp with the literal CURRENT_DATETIME value');
-    expect(scribeCharter).toContain('do not write placeholder text');
+    expect(scribeCharter).not.toContain('<CURRENT_DATETIME value>');
+    expect(scribeCharter).toContain('does not create specialist histories, orchestration logs, session logs');
   });
 });
