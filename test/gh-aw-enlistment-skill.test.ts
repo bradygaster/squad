@@ -141,6 +141,18 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('all **twelve** files');
     });
 
+    it('requires every shared runtime guard in the emitted repository', () => {
+      for (const runtimeModule of [
+        'squad-cast-validator',
+        'squad-improvement-gate',
+        'squad-retro-evidence',
+        'squad-retro-provenance',
+      ]) {
+        expect(content).toContain(runtimeModule);
+      }
+      expect(content).toContain('if any required `shared/*.mjs` runtime module is missing');
+    });
+
     it('requires a final strict compile without --approve', () => {
       // The standalone command must appear as its own line (start-of-line in a
       // fenced bash block), not merely as a prose/backtick mention.  The
@@ -236,6 +248,21 @@ describe('gh-aw-enlistment skill', () => {
       expect(agentGuide).toContain(
         '`/squad` slash commands become active only after that merge reaches',
       );
+    });
+
+    it('makes public-guide runtime checks fail fast and upgrades every shared guard', () => {
+      expect(guide).toContain(
+        'test -f ".github/workflows/shared/${runtime_module}.mjs" || {',
+      );
+      for (const runtimeModule of [
+        'squad-cast-validator.mjs',
+        'squad-improvement-gate.mjs',
+        'squad-retro-evidence.mjs',
+        'squad-retro-provenance.mjs',
+      ]) {
+        expect(guide).toContain(runtimeModule);
+      }
+      expect(guide).toContain('builtins/fact-checker-charter.md');
     });
   });
 

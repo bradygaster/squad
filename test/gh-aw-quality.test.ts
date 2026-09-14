@@ -448,6 +448,17 @@ describe('gh-aw: safe-output configuration', () => {
 describe('#1916: lifecycle comment updates use a deterministic safe-output job', () => {
   const workflow = readText(SQUAD_WORKFLOW);
   const shared = readText(join(SHARED_DIR, 'squad.md'));
+  const repairJob = shared.match(
+    /^  repair_activated_lifecycle:\n([\s\S]*?)(?=^  activation:\n)/m,
+  )?.[0] ?? '';
+
+  function assertRepairAuthorization(job: string): void {
+    expect(job).toContain('context.payload.comment?.user?.login');
+    expect(job).toContain('github.rest.repos.getCollaboratorPermissionLevel');
+    expect(job).toContain('["admin", "maintain", "write"].includes(permission)');
+    expect(job).toContain('Unable to verify lifecycle repair permission');
+    expect(job).toContain('core.setFailed');
+  }
 
   it('defines a bounded, permission-scoped lifecycle upsert', () => {
     expect(shared).toContain('upsert-lifecycle-state:');
@@ -483,6 +494,29 @@ describe('#1916: lifecycle comment updates use a deterministic safe-output job',
     expect(shared).toContain("github.event.comment.body == '/squad activate'");
     expect(shared).toContain('envelope?.squad_artifact === "plan-accepted"');
     expect(shared).toContain('name: Repair terminal lifecycle after idempotent activation');
+  });
+
+  it('independently verifies the triggering comment author has mutating permission', () => {
+    assertRepairAuthorization(repairJob);
+  });
+
+  it('kills lifecycle repair authorization mutations', () => {
+    for (const mutation of [
+      repairJob.replace(
+        'github.rest.repos.getCollaboratorPermissionLevel',
+        'github.rest.repos.get',
+      ),
+      repairJob.replace(
+        '["admin", "maintain", "write"].includes(permission)',
+        '["admin", "maintain", "write", "read"].includes(permission)',
+      ),
+      repairJob.replace(
+        'Unable to verify lifecycle repair permission',
+        'Ignoring lifecycle repair permission lookup failure',
+      ),
+    ]) {
+      expect(() => assertRepairAuthorization(mutation)).toThrow();
+    }
   });
 });
 
@@ -595,17 +629,23 @@ describe('gh-aw: shared component imports', () => {
   });
 
   it('declares the plaintext Cast validator resource and canonical built-in charter resources, not imported skills', () => {
-    const resource = 'shared/squad-cast-validator.mjs';
-    const resourcePath = join(WORKFLOWS_DIR, resource);
+    const runtimeResources = [
+      'shared/squad-cast-validator.mjs',
+      'shared/squad-improvement-gate.mjs',
+      'shared/squad-retro-evidence.mjs',
+      'shared/squad-retro-provenance.mjs',
+    ];
     const builtinResources = [
       'shared/builtins/scribe-charter.md',
       'shared/builtins/ralph-charter.md',
       'shared/builtins/rai-charter.md',
       'shared/builtins/fact-checker-charter.md',
     ];
-    expect(extractResources(frontmatter)).toEqual([resource, ...builtinResources]);
+    expect(extractResources(frontmatter)).toEqual([...runtimeResources, ...builtinResources]);
     expect(imports).not.toContain('shared/squad-cast-validator.md');
-    expect(existsSync(resourcePath)).toBe(true);
+    for (const runtimeResource of runtimeResources) {
+      expect(existsSync(join(WORKFLOWS_DIR, runtimeResource))).toBe(true);
+    }
     for (const builtinResource of builtinResources) {
       expect(existsSync(join(WORKFLOWS_DIR, builtinResource))).toBe(true);
     }
@@ -662,6 +702,98 @@ describe('gh-aw: shared component imports', () => {
       }
     }
   });
+});
+
+describe('gh-aw: clean install runtime resource closure', () => {
+  const workflowNames = [
+    'squad',
+    'squad-implement-worker',
+    'squad-review',
+    'squad-deps-worker',
+    'squad-retro',
+    'squad-improvement-worker',
+  ];
+  const expectedRuntimeModules = [
+    'shared/squad-cast-validator.mjs',
+    'shared/squad-improvement-gate.mjs',
+    'shared/squad-retro-evidence.mjs',
+    'shared/squad-retro-provenance.mjs',
+  ];
+
+  function runtimeModuleReferences(text: string): string[] {
+    return [...text.matchAll(/(?:\.github\/workflows\/)?(shared\/[A-Za-z0-9._/-]+\.mjs)/g)]
+      .map(match => match[1]);
+  }
+
+  function assertRuntimeClosure(workflowDir: string, references: string[]): void {
+    const missing = references.filter(reference => !existsSync(join(workflowDir, reference)));
+    expect(missing, 'clean gh-aw install is missing referenced runtime modules').toEqual([]);
+  }
+
+  function createCleanInstalledTarget(): string {
+    const workspace = createTestWorkspace('gh-aw-clean-install-');
+    const workflowDir = join(workspace, '.github', 'workflows');
+    mkdirSync(workflowDir, { recursive: true });
+
+    const importedFiles = new Set<string>();
+    for (const workflowName of workflowNames) {
+      const source = join(WORKFLOWS_DIR, `${workflowName}.md`);
+      cpSync(source, join(workflowDir, `${workflowName}.md`));
+      for (const imported of extractImports(extractFrontmatter(source))) {
+        importedFiles.add(imported);
+      }
+    }
+    for (const imported of importedFiles) {
+      const destination = join(workflowDir, imported);
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(join(WORKFLOWS_DIR, imported), destination);
+    }
+
+    // gh-aw v0.89.2 installs squad.md first, recursively installs its worker
+    // dependencies, and then skips the explicit worker entries as duplicates.
+    // Model that observed behavior by copying only the root workflow resources.
+    for (const resource of extractResources(extractFrontmatter(SQUAD_WORKFLOW))) {
+      const destination = join(workflowDir, resource);
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(join(WORKFLOWS_DIR, resource), destination);
+    }
+
+    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    execFileSync(
+      'gh',
+      ['aw', 'compile', '--strict', '--approve', '--no-check-update'],
+      { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 120000 },
+    );
+    return workflowDir;
+  }
+
+  it('emits every shared runtime module referenced by all six sources and locks', () => {
+    const workflowDir = createCleanInstalledTarget();
+    const references = new Set<string>();
+    for (const workflowName of workflowNames) {
+      for (const extension of ['md', 'lock.yml']) {
+        const file = join(workflowDir, `${workflowName}.${extension}`);
+        expect(existsSync(file), `${file} must exist in the installed target`).toBe(true);
+        for (const reference of runtimeModuleReferences(readText(file))) {
+          references.add(reference);
+        }
+      }
+    }
+
+    const sortedReferences = [...references].sort();
+    expect(sortedReferences).toEqual(expectedRuntimeModules);
+    assertRuntimeClosure(workflowDir, sortedReferences);
+
+    for (const modulePath of sortedReferences) {
+      const installedModule = join(workflowDir, modulePath);
+      rmSync(installedModule);
+      expect(
+        () => assertRuntimeClosure(workflowDir, sortedReferences),
+        `deleting ${modulePath} must break clean-install closure`,
+      ).toThrow();
+      cpSync(join(WORKFLOWS_DIR, modulePath), installedModule);
+    }
+  }, 120000);
 });
 
 // ---------------------------------------------------------------------------
@@ -1022,7 +1154,11 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // added prose describing how to preserve/reference them grew the authored source.
   // Combined authored source now measures ~190.3 KB; 191 KB leaves a similar tight
   // margin to prior raises so the guard still bites on genuine growth.
-  const SOURCE_GROWTH_BUDGET_KB = 191;
+  // Raised 191 -> 193 KB for the lifecycle repair authorization gate. The added
+  // source independently verifies the triggering comment author's live repository
+  // permission before the deterministic repair job can write a terminal state.
+  // The ambient prompt remains below its separate 40 KB delivery guard.
+  const SOURCE_GROWTH_BUDGET_KB = 193;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1517,6 +1653,8 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).toContain(
       "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
     );
+    expect(compiled).toContain('github.rest.repos.getCollaboratorPermissionLevel');
+    expect(compiled).toContain('["admin", "maintain", "write"].includes(permission)');
   }, 20000);
 
   it('compiles Cast failure into a queryable post-agent job that fails the run', () => {
