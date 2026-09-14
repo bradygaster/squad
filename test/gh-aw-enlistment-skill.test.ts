@@ -25,6 +25,8 @@ const ROOT = resolve(__dirname, '..');
 const SKILL_ID = 'gh-aw-enlistment';
 
 const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
+const GUIDE = 'docs/src/content/docs/guide/gh-aw.md';
+const AGENT_GUIDE = '.github/AGENTS.md';
 const MIRRORS = [
   `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,
@@ -200,6 +202,40 @@ describe('gh-aw-enlistment skill', () => {
     it('resolves repo identity at runtime (no hardcoded owner/repo placeholder)', () => {
       expect(content).toContain('gh repo view --json nameWithOwner');
       expect(content).toContain('gh repo view --json defaultBranchRef');
+    });
+  });
+
+  describe('gh-aw bootstrap documentation', () => {
+    const guide = readLF(GUIDE);
+    const agentGuide = readLF(AGENT_GUIDE);
+
+    it('requires agents to execute the complete quick start through PR creation', () => {
+      expect(guide).toContain('**Agent action required:**');
+      expect(guide).toContain('the agent must execute this entire block');
+      expect(guide).toContain('gh pr create');
+      expect(agentGuide).toContain('execute the complete');
+      expect(agentGuide).toContain('Do not only quote or run the `gh aw add` command');
+    });
+
+    it('resolves the repository dynamically before changing Actions permissions', () => {
+      expect(guide).toContain(
+        'owner_repo="$(gh repo view --json nameWithOwner --jq \'.nameWithOwner\')"',
+      );
+      expect(guide).toContain(
+        'gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow"',
+      );
+      expect(guide).not.toContain('repos/{owner}/{repo}/actions/permissions/workflow');
+    });
+
+    it('activates slash commands only after the bootstrap PR reaches the default branch', () => {
+      expect(guide).toContain(
+        'Once the bootstrap PR is merged into the default branch, the `/squad` slash',
+      );
+      expect(guide).toContain('Pushing the bootstrap branch or merely opening the');
+      expect(guide).not.toContain('Once pushed, the `/squad` slash command is live');
+      expect(agentGuide).toContain(
+        '`/squad` slash commands become active only after that merge reaches',
+      );
     });
   });
 

@@ -17,17 +17,26 @@ This guide covers setup, every slash command, and daily usage patterns.
 
 Seven steps from zero to a validated, reviewable Squad bootstrap:
 
+> **Agent action required:** When a user asks an AI coding agent to install Squad
+> Agentic Workflows, the agent must execute this entire block in the target
+> repository — not merely paste the commands for the user. The block resolves
+> the repository at runtime, installs and validates the workflows, and opens the
+> human-reviewed bootstrap pull request. The agent stops at the pull request;
+> a human reviews and merges it.
+
 ```bash
-# 1. Install the gh-aw extension (one-time)
-gh extension install github/gh-aw
+# 1. Verify GitHub access, resolve this repo, and install gh-aw if needed
+gh auth status
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
+gh extension list | grep -q 'github/gh-aw' || gh extension install github/gh-aw
 
 # 2. Allow GitHub Actions to create pull requests
-gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
+gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=true
 
 # 3. Create a bootstrap branch
-default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 git switch -c chore/squad-gh-aw-bootstrap
 
 # 4. Add the Squad workflows to your repo
@@ -78,9 +87,15 @@ gh pr checks --watch
 > Downloaded workflow logs are local diagnostic output — see [ignoring downloaded
 > logs](#open-the-bootstrap-pull-request) before you commit.
 
-After the bootstrap PR is reviewed and merged, open an issue in your repo and
-write `/squad cast` in the body or a comment. Squad analyzes your codebase,
-composes a team of specialist agents, and opens a second PR with the result.
+The bootstrap PR installs the GitHub Agentic Workflow sources, their compiled
+GitHub Actions lockfiles, the Squad dispatcher and workers, shared assets, and
+the skills they use. **The slash commands are not active from the bootstrap
+branch alone.** After a human reviews and merges that PR into the default branch,
+the `/squad` command surface is live.
+
+Then open an issue in your repo and write `/squad cast` in the body or a comment.
+Squad analyzes your codebase, composes a team of specialist agents, and opens a
+second, human-reviewed Cast PR with the result.
 
 ---
 
@@ -106,16 +121,17 @@ You can also enable it from the command line while keeping the default workflow
 token read-only:
 
 ```bash
-gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=true
 ```
 
-Replace `{owner}` and `{repo}` with the repository owner and name. Without this
-setting, Squad pushes the generated branch but falls back to an issue containing
-a link for you to create the pull request manually. A manually created pull
-request is authored by your account, and GitHub does not allow authors to
-approve their own pull requests.
+Resolve the repository identity at runtime as shown; do not hardcode an example
+owner or repository. Without this setting, Squad pushes the generated branch but
+falls back to an issue containing a link for you to create the pull request
+manually. A manually created pull request is authored by your account, and
+GitHub does not allow authors to approve their own pull requests.
 
 ### Create a bootstrap branch
 
@@ -263,7 +279,9 @@ committed. If a `.gitignore` is missing from `.github/aw/logs/`, add one there:
 !.gitignore
 ```
 
-Once pushed, the `/squad` slash command is live on your repo.
+Once the bootstrap PR is merged into the default branch, the `/squad` slash
+command is live on your repo. Pushing the bootstrap branch or merely opening the
+PR does not activate the workflow.
 
 ### Optional: pin a CLI version
 
