@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -339,6 +340,16 @@ afterAll(() => {
 });
 
 describe('automatic Squad bootstrap workflow', () => {
+  it('pins the canonical bootstrap validator digest in the authenticated runner', () => {
+    const canonical = readFileSync(VALIDATOR);
+    const commandDigest = WORKFLOW.match(
+      /check_hash "\$bootstrap_validator" "([a-f0-9]{64})"/,
+    )?.[1];
+
+    expect(commandDigest, 'runtime command must pin the canonical validator digest').toBeDefined();
+    expect(commandDigest).toBe(createHash('sha256').update(canonical).digest('hex'));
+  });
+
   it('classifies the fresh and partial-recovery matrix without duplicates', () => {
     const pull = (state = 'open', merged = false) => ({
       number: 3,
