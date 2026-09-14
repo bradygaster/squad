@@ -38,7 +38,8 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-bootstrap.md@dev
 ```
 
 This command:
@@ -49,10 +50,12 @@ This command:
 
 ### Verify installation
 
-After running the command, confirm all six source/lock pairs exist and strict
+After running the command, confirm all seven source/lock pairs exist and strict
 compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
-Improvement Worker. The improvement worker is standard but dormant until an
-exact human approval is relayed through the dispatcher.
+Improvement Worker, plus the dedicated Bootstrap workflow. The improvement
+worker is standard but dormant until an exact human approval is relayed through
+the dispatcher. Bootstrap wakes after the installation lands on the default
+branch and creates the linked draft Cast PR and research-proposals issue.
 
 Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
 `"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted

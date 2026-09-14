@@ -28,6 +28,7 @@ const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
 const GUIDE = 'docs/src/content/docs/guide/gh-aw.md';
 const AGENT_GUIDE = '.github/agents.md';
 const MIRRORS = [
+  `templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,
 ] as const;
@@ -127,7 +128,7 @@ describe('gh-aw-enlistment skill', () => {
       expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
     });
 
-    it('installs all six @dev workflows and requires all twelve generated files', () => {
+    it('installs all seven @dev workflows and requires all fourteen generated files', () => {
       for (const wf of [
         'squad.md@dev',
         'squad-implement-worker.md@dev',
@@ -135,15 +136,17 @@ describe('gh-aw-enlistment skill', () => {
         'squad-deps-worker.md@dev',
         'squad-retro.md@dev',
         'squad-improvement-worker.md@dev',
+        'squad-bootstrap.md@dev',
       ]) {
         expect(content, `should install ${wf}`).toContain(wf);
       }
-      expect(content).toContain('all **twelve** files');
+      expect(content).toContain('all **fourteen** files');
     });
 
     it('requires every shared runtime guard in the emitted repository', () => {
       for (const runtimeModule of [
         'squad-cast-validator',
+        'squad-bootstrap-validator',
         'squad-improvement-gate',
         'squad-retro-evidence',
         'squad-retro-provenance',
@@ -192,10 +195,11 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/');
     });
 
-    it('never auto-merges and defers casting to after the bootstrap PR merges', () => {
+    it('never auto-merges and defers automatic casting until after the bootstrap PR merges', () => {
       expect(content).toMatch(/auto-?merge/i);
       expect(content).toMatch(/never merge|do not merge|human-reviewed|human approval/i);
-      expect(content).toMatch(/\/squad cast/);
+      expect(content).toContain('squad-bootstrap');
+      expect(content).toContain('[Research Proposals] Agent-discovered repo opportunities');
     });
 
     it("documents extension check in both bash (grep -q) and PowerShell (Select-String guarding gh-aw install) forms", () => {

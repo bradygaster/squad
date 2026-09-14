@@ -77,7 +77,7 @@ function provenanceRows(workflow: string): string[] {
 function installOrders(markdown: string): string[][] {
   const uncommented = markdown.replace(/^#\s?/gm, '');
   return [...uncommented.matchAll(/gh aw add \\\n((?:\s+bradygaster\/squad\/workflows\/[^\n]+\n?)+)/g)]
-    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@(?:dev|\$\{SQUAD_(?:SHA|WORKFLOW_SHA)\})/g)]
+    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@(?:dev|\$\{SQUAD_(?:SHA|WORKFLOW_(?:SHA|REF))\})/g)]
       .map(match => match[1]));
 }
 
@@ -199,6 +199,7 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad-deps-worker.md',
       'squad-retro.md',
       'squad-improvement-worker.md',
+      'squad-bootstrap.md',
     ]);
 
     const workspace = mkdtempSync(resolve(ROOT, '.squad-review-install-'));
@@ -236,6 +237,8 @@ describe('gh-aw advisory Squad reviewer', () => {
       .map(entry => entry.name)
       .sort();
     expect(installed).toEqual([
+      'squad-bootstrap.lock.yml',
+      'squad-bootstrap.md',
       'squad-deps-worker.lock.yml',
       'squad-deps-worker.md',
       'squad-implement-worker.lock.yml',
@@ -277,7 +280,7 @@ describe('gh-aw advisory Squad reviewer', () => {
     );
   }, 20000);
 
-  it('keeps all consumer install surfaces on the coherent six-workflow order', () => {
+  it('keeps all consumer install surfaces on the coherent seven-workflow order', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
       const orders = installOrders(surface);
       expect(orders.length).toBeGreaterThan(0);
@@ -289,6 +292,7 @@ describe('gh-aw advisory Squad reviewer', () => {
           'squad-deps-worker.md',
           'squad-retro.md',
           'squad-improvement-worker.md',
+          'squad-bootstrap.md',
         ]);
       }
     }

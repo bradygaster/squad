@@ -26,6 +26,11 @@ on:
         description: 'Originating agentic workflow context'
         required: false
         type: string
+if: >-
+  github.event_name != 'issues' ||
+  github.actor != 'github-actions[bot]' ||
+  github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' ||
+  !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
 permissions:
   contents: read
   copilot-requests: write
@@ -44,6 +49,7 @@ imports:
   - shared/squad-planning-policy.md
 resources:
   - shared/squad-cast-validator.mjs
+  - shared/squad-bootstrap-validator.mjs
   - shared/squad-improvement-gate.mjs
   - shared/squad-retro-evidence.mjs
   - shared/squad-retro-provenance.mjs

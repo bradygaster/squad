@@ -261,6 +261,7 @@ describe('gh-aw implement workflows', () => {
       'bradygaster/squad/workflows/squad-deps-worker.md@dev',
       'bradygaster/squad/workflows/squad-retro.md@dev',
       'bradygaster/squad/workflows/squad-improvement-worker.md@dev',
+      'bradygaster/squad/workflows/squad-bootstrap.md@dev',
     ];
     const orderedInstallCommand = [
       'gh aw add \\',
