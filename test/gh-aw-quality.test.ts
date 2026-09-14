@@ -1453,6 +1453,8 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
 
   it('keeps safe-output expressions valid after JSON serialization', () => {
     const compiled = lockText();
+    // The JSON string is itself YAML-escaped, so the emitted file contains
+    // two backslashes before the unicode escape that GitHub misparses.
     const escapedOperators = [
       ...compiled.matchAll(/\$\{\{[^}\n]*\\\\u(?:0026|003c|003e)[^}\n]*\}\}/gi),
     ].map(match => match[0]);
