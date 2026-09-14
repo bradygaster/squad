@@ -866,8 +866,15 @@ Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); finds the 
 #### TG-3: Dedup Open Cast PR
 
 ```bash
-gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName | (startswith("squad/cast-") and (startswith("squad/cast-member-") | not)))] | first'
+gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName == "squad/bootstrap-cast" or (.headRefName | (startswith("squad/cast-") and (startswith("squad/cast-member-") | not))))]'
 ```
+
+Treat only the exact deterministic branch `squad/bootstrap-cast` or a manual
+`squad/cast-*` branch other than `squad/cast-member-*` as a Cast candidate.
+Zero candidates means no open Cast PR. Exactly one candidate is the Cast PR.
+More than one candidate is ambiguous: fail closed, list each candidate's exact
+PR URL and branch, and tell the user to keep one Cast PR open before rerunning
+`{canonical_command}`. Never choose the first result heuristically.
 
 **If an open Cast PR is found (rerun before merge):**
 - `add-comment`:

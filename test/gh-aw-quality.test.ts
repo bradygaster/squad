@@ -2598,12 +2598,14 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     // Must use headRefName field and startsWith to match squad/cast-{repo} patterns
     expect(content).toMatch(/gh pr list/i);
     expect(content).toMatch(/headRefName/);
+    expect(content).toContain('.headRefName == "squad/bootstrap-cast"');
     expect(content).toMatch(/startswith\("squad\/cast-"\)/);
     expect(content).toMatch(/open Cast PR.*found|cast PR.*found|Cast PR is found/i);
     // Exact --head matching truncates the branch name and never finds squad/cast-{repo}; must be forbidden
     expect(content).not.toMatch(/--head "squad\/cast-"/);
     // squad/cast-member-* must be excluded so Cast Member PRs cannot satisfy Cast dedup
     expect(content).toMatch(/startswith\("squad\/cast-member-"\).*\| not|\| not.*startswith\("squad\/cast-member-"\)/);
+    expect(content).toMatch(/More than one candidate is ambiguous: fail closed/i);
   });
 
   it('Cast PR dedup stops without opening a duplicate PR', () => {
@@ -2875,13 +2877,23 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     expect(result).toContain('"number": 42');
   });
 
-  it('Cast Member branch (squad/cast-member-*) is excluded and returns null', () => {
+  it('deterministic bootstrap Cast branch satisfies the filter', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/bootstrap-cast', number: 2, url: 'https://github.com/org/repo/pull/2' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toContain('"headRefName": "squad/bootstrap-cast"');
+    expect(result).toContain('"number": 2');
+  });
+
+  it('Cast Member branch (squad/cast-member-*) is excluded and returns an empty array', () => {
     const filter = extractJqFilter();
     const prs = JSON.stringify([
       { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
     ]);
     const result = runJqFilter(prs, filter);
-    expect(result).toBe('null');
+    expect(result).toBe('[]');
   });
 
   it('a closed Cast PR is absent from the open-PR scan, allowing additive retry', () => {
@@ -2895,7 +2907,7 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
       },
     ];
     const openPrs = allPrs.filter(pr => pr.state === 'OPEN');
-    expect(runJqFilter(JSON.stringify(openPrs), filter)).toBe('null');
+    expect(runJqFilter(JSON.stringify(openPrs), filter)).toBe('[]');
     expect(squadContent).toMatch(/If no open Cast PR found.*Execute Cast Mode/s);
   });
 
@@ -2908,6 +2920,18 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     const result = runJqFilter(prs, filter);
     expect(result).toContain('"headRefName": "squad/cast-myrepo"');
     expect(result).not.toContain('squad/cast-member-dev');
+  });
+
+  it('returns every exact Cast candidate so ambiguity cannot be hidden by first', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/bootstrap-cast', number: 2, url: 'https://github.com/org/repo/pull/2' },
+      { headRefName: 'squad/cast-myrepo', number: 42, url: 'https://github.com/org/repo/pull/42' },
+      { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
+    ]);
+    const result = JSON.parse(runJqFilter(prs, filter));
+    expect(result.map((pullRequest: { number: number }) => pullRequest.number)).toEqual([2, 42]);
+    expect(squadContent).toContain('Never choose the first result heuristically.');
   });
 });
 

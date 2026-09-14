@@ -117,9 +117,12 @@ validated payload:
 - a draft Cast PR on `squad/bootstrap-cast`; and
 - `[Research Proposals] Agent-discovered repo opportunities`.
 
-Review and merge the Cast PR, then use the issue's focused research commands,
-triage the findings, plan the accepted work, and run `/squad activate`. The
-bootstrap journey ends when assignable implementation issues exist.
+Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
+classify its existing bootstrap proposals. If a proposal needs deeper or newer
+evidence, use one of the issue's focused `/squad research ...` commands first;
+that replaces the bootstrap research seed. Review the resulting plan and run
+`/squad activate`. The bootstrap journey ends when assignable implementation
+issues exist.
 
 ---
 
