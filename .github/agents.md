@@ -19,6 +19,18 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 
 ### Install the Squad workflows
 
+> **Agent action required:** If a user asks you to install or set up Squad
+> Agentic Workflows, execute the complete
+> [seven-step quick start](../docs/src/content/docs/guide/gh-aw.md#quick-start)
+> in their repository. Do not only quote or run the `gh aw add` command below.
+> The supported path configures workflow-created pull requests, installs and
+> validates the complete generated artifact set, commits it on an isolated
+> branch, and opens a human-reviewed bootstrap PR. Stop at that PR; the human
+> merges it. `/squad` slash commands become active only after that merge reaches
+> the repository's default branch.
+
+The quick start installs this workflow set:
+
 ```bash
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \

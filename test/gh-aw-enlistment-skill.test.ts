@@ -26,7 +26,7 @@ const SKILL_ID = 'gh-aw-enlistment';
 
 const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
 const GUIDE = 'docs/src/content/docs/guide/gh-aw.md';
-const AGENT_GUIDE = '.github/AGENTS.md';
+const AGENT_GUIDE = '.github/agents.md';
 const MIRRORS = [
   `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,
