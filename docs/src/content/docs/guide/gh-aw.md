@@ -25,6 +25,8 @@ Seven steps from zero to a validated, reviewable Squad bootstrap:
 > a human reviews and merges it.
 
 ```bash
+set -euo pipefail
+
 # 1. Verify GitHub access, resolve this repo, and install gh-aw if needed
 gh auth status
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
@@ -57,13 +59,16 @@ gh aw compile --strict
 
 # Verify every supported workflow has a source and generated lockfile
 for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
-  test -f ".github/workflows/${workflow}.md"
-  test -f ".github/workflows/${workflow}.lock.yml"
+  test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
+  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 
 # Verify every local runtime module referenced by those workflows was installed
 for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
-  test -f ".github/workflows/shared/${runtime_module}.mjs"
+  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
+    echo "MISSING shared/${runtime_module}.mjs"
+    exit 1
+  }
 done
 
 # Strict compilation validates gh-aw's source contract; also reject JSON-escaped
@@ -250,12 +255,15 @@ Verify the complete source/lock surface:
 
 ```bash
 for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
-  test -f ".github/workflows/${workflow}.md"
-  test -f ".github/workflows/${workflow}.lock.yml"
+  test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
+  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 
 for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
-  test -f ".github/workflows/shared/${runtime_module}.mjs"
+  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
+    echo "MISSING shared/${runtime_module}.mjs"
+    exit 1
+  }
 done
 ```
 
@@ -1528,18 +1536,23 @@ top-level files. Fetch every Squad shared import and resource at the same SHA:
 ```bash
 mkdir -p .github/workflows/shared
 
-curl --fail --silent --show-error --location \
-  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad.md" \
-  --output .github/workflows/shared/squad.md
-curl --fail --silent --show-error --location \
-  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-cast-validator.mjs" \
-  --output .github/workflows/shared/squad-cast-validator.mjs
-curl --fail --silent --show-error --location \
-  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-ontology.md" \
-  --output .github/workflows/shared/squad-planning-ontology.md
-curl --fail --silent --show-error --location \
-  "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/squad-planning-policy.md" \
-  --output .github/workflows/shared/squad-planning-policy.md
+for shared_file in \
+  squad.md \
+  squad-planning-ontology.md \
+  squad-planning-policy.md \
+  squad-cast-validator.mjs \
+  squad-improvement-gate.mjs \
+  squad-retro-evidence.mjs \
+  squad-retro-provenance.mjs \
+  builtins/scribe-charter.md \
+  builtins/ralph-charter.md \
+  builtins/rai-charter.md \
+  builtins/fact-checker-charter.md; do
+  mkdir -p ".github/workflows/shared/$(dirname "$shared_file")"
+  curl --fail --silent --show-error --location \
+    "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/${shared_file}" \
+    --output ".github/workflows/shared/${shared_file}"
+done
 
 gh aw compile --strict
 ```

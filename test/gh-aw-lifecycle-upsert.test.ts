@@ -138,6 +138,9 @@ async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
 async function runLifecycleRepair(
   comments: Comment[],
   command = '/squad activate',
+  actorPermission = 'write',
+  actor = 'maintainer',
+  permissionError?: Error,
 ) {
   const created: Array<Record<string, unknown>> = [];
   const updated: Array<Record<string, unknown>> = [];
@@ -146,6 +149,12 @@ async function runLifecycleRepair(
   const github = {
     paginate: async () => comments,
     rest: {
+      repos: {
+        getCollaboratorPermissionLevel: async () => {
+          if (permissionError) throw permissionError;
+          return { data: { permission: actorPermission } };
+        },
+      },
       issues: {
         listComments: () => undefined,
         createComment: async (params: Record<string, unknown>) => created.push(params),
@@ -153,7 +162,10 @@ async function runLifecycleRepair(
       },
     },
   };
-  const context = { repo: { owner: 'octodemo', repo: 'consumer' } };
+  const context = {
+    repo: { owner: 'octodemo', repo: 'consumer' },
+    payload: { comment: { user: { login: actor } } },
+  };
   const previousIssue = process.env.ISSUE_NUMBER;
   const previousCommand = process.env.SQUAD_COMMAND;
   process.env.ISSUE_NUMBER = '5';
@@ -620,5 +632,45 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     expect(result.info).toContain(
       'No trusted whole-plan acceptance artifact; lifecycle repair is not applicable.',
     );
+  });
+
+  it.each(['read', 'triage', 'none'])(
+    'does not write lifecycle state for %s permission',
+    async permission => {
+      const result = await runLifecycleRepair([accepted, stale], '/squad activate', permission);
+
+      expect(result.failures).toEqual([]);
+      expect(result.created).toEqual([]);
+      expect(result.updated).toEqual([]);
+      expect(result.info).toContain(
+        `Lifecycle repair is not authorized for maintainer with ${permission} permission.`,
+      );
+    },
+  );
+
+  it('fails closed without writes when live permission cannot be verified', async () => {
+    const result = await runLifecycleRepair(
+      [accepted, stale],
+      '/squad activate',
+      'write',
+      'maintainer',
+      new Error('permission endpoint unavailable'),
+    );
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.failures).toEqual([
+      'Unable to verify lifecycle repair permission for maintainer: permission endpoint unavailable',
+    ]);
+  });
+
+  it('fails closed without writes when the comment author is missing', async () => {
+    const result = await runLifecycleRepair([accepted, stale], '/squad activate', 'write', '');
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.failures).toEqual([
+      'Lifecycle repair requires an identifiable comment author.',
+    ]);
   });
 });

@@ -249,6 +249,21 @@ describe('gh-aw-enlistment skill', () => {
         '`/squad` slash commands become active only after that merge reaches',
       );
     });
+
+    it('makes public-guide runtime checks fail fast and upgrades every shared guard', () => {
+      expect(guide).toContain(
+        'test -f ".github/workflows/shared/${runtime_module}.mjs" || {',
+      );
+      for (const runtimeModule of [
+        'squad-cast-validator.mjs',
+        'squad-improvement-gate.mjs',
+        'squad-retro-evidence.mjs',
+        'squad-retro-provenance.mjs',
+      ]) {
+        expect(guide).toContain(runtimeModule);
+      }
+      expect(guide).toContain('builtins/fact-checker-charter.md');
+    });
   });
 
   describe('template mirror parity', () => {
