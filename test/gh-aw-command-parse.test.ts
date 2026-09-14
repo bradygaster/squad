@@ -102,6 +102,41 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
     ).not.toBeNull();
   });
 
+  it('skips only the bot-created marked bootstrap issue body while preserving human comments', () => {
+    const guard = workflow.match(/^if:\s*>-\n((?:  .+\n)+)permissions:/m)?.[1] ?? '';
+    expect(guard).toContain("github.event_name != 'issues'");
+    expect(guard).toContain("github.actor != 'github-actions[bot]'");
+    expect(guard).toContain(
+      "github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities'",
+    );
+    expect(guard).toContain(
+      "!contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')",
+    );
+
+    const shouldRun = (eventName: string, actor: string, title: string, body: string): boolean =>
+      eventName !== 'issues' ||
+      actor !== 'github-actions[bot]' ||
+      title !== '[Research Proposals] Agent-discovered repo opportunities' ||
+      !body.includes('<!-- squad:bootstrap-opportunities schema=1 -->');
+
+    expect(
+      shouldRun(
+        'issues',
+        'github-actions[bot]',
+        '[Research Proposals] Agent-discovered repo opportunities',
+        '<!-- squad:bootstrap-opportunities schema=1 -->\n/squad research Focus only on proposal P1: test',
+      ),
+    ).toBe(false);
+    expect(
+      shouldRun(
+        'issue_comment',
+        'octocat',
+        '[Research Proposals] Agent-discovered repo opportunities',
+        '/squad research Focus only on proposal P1: test',
+      ),
+    ).toBe(true);
+  });
+
   describe('Step PC-1 — the command is found anywhere in the body', () => {
     const cases: Array<{ name: string; body: string; expected: string }> = [
       // The regression that was never broken — kept only as a floor.

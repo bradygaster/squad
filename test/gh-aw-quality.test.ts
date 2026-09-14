@@ -631,6 +631,7 @@ describe('gh-aw: shared component imports', () => {
   it('declares the plaintext Cast validator resource and canonical built-in charter resources, not imported skills', () => {
     const runtimeResources = [
       'shared/squad-cast-validator.mjs',
+      'shared/squad-bootstrap-validator.mjs',
       'shared/squad-improvement-gate.mjs',
       'shared/squad-retro-evidence.mjs',
       'shared/squad-retro-provenance.mjs',
@@ -712,8 +713,10 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'squad-deps-worker',
     'squad-retro',
     'squad-improvement-worker',
+    'squad-bootstrap',
   ];
   const expectedRuntimeModules = [
+    'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-retro-evidence.mjs',
@@ -767,7 +770,7 @@ describe('gh-aw: clean install runtime resource closure', () => {
     return workflowDir;
   }
 
-  it('emits every shared runtime module referenced by all six sources and locks', () => {
+  it('emits every shared runtime module referenced by all seven sources and locks', () => {
     const workflowDir = createCleanInstalledTarget();
     const references = new Set<string>();
     for (const workflowName of workflowNames) {

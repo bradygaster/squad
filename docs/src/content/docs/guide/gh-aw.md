@@ -41,15 +41,16 @@ gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
 # 3. Create a bootstrap branch
 git switch -c chore/squad-gh-aw-bootstrap
 
-# 4. Add the Squad workflows from the verified dev snapshot
-SQUAD_WORKFLOW_SHA="9fa83c5f00109bda25e93acf16648d0c67817b26"
+# 4. Add the complete Squad workflow set from the supported dev channel
+SQUAD_WORKFLOW_REF="dev"
 gh aw add \
-  bradygaster/squad/workflows/squad.md@${SQUAD_WORKFLOW_SHA} \
-  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_WORKFLOW_SHA} \
-  bradygaster/squad/workflows/squad-review.md@${SQUAD_WORKFLOW_SHA} \
-  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_WORKFLOW_SHA} \
-  bradygaster/squad/workflows/squad-retro.md@${SQUAD_WORKFLOW_SHA} \
-  bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_WORKFLOW_SHA}
+  bradygaster/squad/workflows/squad.md@${SQUAD_WORKFLOW_REF} \
+  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_WORKFLOW_REF} \
+  bradygaster/squad/workflows/squad-review.md@${SQUAD_WORKFLOW_REF} \
+  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_WORKFLOW_REF} \
+  bradygaster/squad/workflows/squad-retro.md@${SQUAD_WORKFLOW_REF} \
+  bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_WORKFLOW_REF} \
+  bradygaster/squad/workflows/squad-bootstrap.md@${SQUAD_WORKFLOW_REF}
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
@@ -59,13 +60,13 @@ gh aw compile --strict --approve
 gh aw compile --strict
 
 # Verify every supported workflow has a source and generated lockfile
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
   test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 
 # Verify every local runtime module referenced by those workflows was installed
-for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
+for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
   test -f ".github/workflows/shared/${runtime_module}.mjs" || {
     echo "MISSING shared/${runtime_module}.mjs"
     exit 1
@@ -93,10 +94,10 @@ gh pr edit --add-reviewer @copilot
 gh pr checks --watch
 ```
 
-The quick start pins the merged `dev` snapshot containing the bootstrap fixes so
-a demo or one-time setup cannot change between runs. For the normal supported
-development-channel install, use the `@dev` command in
-[Install the workflows](#install-the-workflows).
+The quick start uses the supported `dev` channel so the workflow-installation PR
+contains the complete seven-workflow set. For a repeatable upgrade, pin all
+seven entries to one reviewed commit as described in
+[Upgrading the workflows](#upgrading-the-workflows).
 
 > Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skills
 > alongside the workflows, and it deliberately does not stage `.github/aw/logs/`.
@@ -109,9 +110,16 @@ the skills they use. **The slash commands are not active from the bootstrap
 branch alone.** After a human reviews and merges that PR into the default branch,
 the `/squad` command surface is live.
 
-Then open an issue in your repo and write `/squad cast` in the body or a comment.
-Squad analyzes your codebase, composes a team of specialist agents, and opens a
-second, human-reviewed Cast PR with the result.
+The merged installation automatically wakes `squad-bootstrap`. It analyzes the
+repository once and creates two linked, human-reviewable artifacts from one
+validated payload:
+
+- a draft Cast PR on `squad/bootstrap-cast`; and
+- `[Research Proposals] Agent-discovered repo opportunities`.
+
+Review and merge the Cast PR, then use the issue's focused research commands,
+triage the findings, plan the accepted work, and run `/squad activate`. The
+bootstrap journey ends when assignable implementation issues exist.
 
 ---
 
@@ -168,12 +176,15 @@ gh aw add \
   bradygaster/squad/workflows/squad-review.md@dev \
   bradygaster/squad/workflows/squad-deps-worker.md@dev \
   bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
+  bradygaster/squad/workflows/squad-bootstrap.md@dev
 ```
 
 Keep the dispatcher first. `gh aw add` discovers its general worker, dependency
 worker, reviewer, and retrospective dependencies while compiling it; the explicit
 entries then confirm the complete install surface without creating duplicates.
+Keep `squad-bootstrap` last because it is the dedicated post-install workflow,
+not a dispatcher dependency.
 The installed top-level workflow set is:
 
 - `squad.md` and `squad.lock.yml`
@@ -182,10 +193,12 @@ The installed top-level workflow set is:
 - `squad-deps-worker.md` and `squad-deps-worker.lock.yml`
 - `squad-retro.md` and `squad-retro.lock.yml`
 - `squad-improvement-worker.md` and `squad-improvement-worker.lock.yml`
+- `squad-bootstrap.md` and `squad-bootstrap.lock.yml`
 
 The install must also contain these executable runtime resources:
 
 - `shared/squad-cast-validator.mjs`
+- `shared/squad-bootstrap-validator.mjs`
 - `shared/squad-improvement-gate.mjs`
 - `shared/squad-retro-evidence.mjs`
 - `shared/squad-retro-provenance.mjs`
@@ -252,7 +265,7 @@ gh aw compile --strict
 ```
 
 Run this exact command after any required first-install approval and before
-committing. It must report all six workflows succeeded. `squad.md` currently
+committing. It must report all seven workflows succeeded. `squad.md` currently
 emits one known warning because both slash-command and `github-actions[bot]`
 triggers are configured; the bot trigger is required for controlled worker
 continuation dispatches. Any error or any additional warning is a stop condition.
@@ -260,12 +273,12 @@ continuation dispatches. Any error or any additional warning is a stop condition
 Verify the complete source/lock surface:
 
 ```bash
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
+for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
   test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 
-for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
+for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
   test -f ".github/workflows/shared/${runtime_module}.mjs" || {
     echo "MISSING shared/${runtime_module}.mjs"
     exit 1
@@ -300,7 +313,7 @@ editor setting untracked. Delete it if you do not want the local setting, or
 stage it explicitly if your team wants to share it.
 
 > **Troubleshooting:** If the lock files are missing, rerun `gh aw compile
-> --strict`. Do not open or merge the bootstrap PR until all six source/lock
+> --strict`. Do not open or merge the bootstrap PR until all seven source/lock
 > pairs exist and strict compilation succeeds.
 
 Downloaded workflow audit data is local diagnostic output and should not be
@@ -363,11 +376,12 @@ Use this checklist for the initial bootstrap and after any workflow update:
 
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
-| Install | Run the six-workflow `gh aw add` command on a bootstrap branch | All six `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
-| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All six workflows succeed, only documented warnings remain, and all twelve source/lock files exist |
+| Install | Run the seven-workflow `gh aw add` command on a bootstrap branch | All seven `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
+| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All seven workflows succeed, only documented warnings remain, and all fourteen source/lock files exist |
 | Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |
-| Activation | Run `/squad cast` after the bootstrap PR merges | The run resolves `v0.13.1` by default, installs the standalone bundle, initializes only when no committed team exists, runs health, and uploads `squad-state` |
+| Automatic bootstrap | Merge the workflow-installation PR | The dedicated workflow creates one draft Cast PR and one linked research-proposals issue from the same validated payload |
 | Cast persistence | Review the Cast PR before merging | The PR contains `.squad/casting/policy.json`, `registry.json`, and `history.json`, plus the team, routing, charters, Copilot agent, and `meet-the-squad.md` |
+| Research backlog | Follow the proposal issue through research, triage, plan, and activate | The journey ends with assignable implementation issues; `/squad implement` is used only on those generated tasks |
 | Cast checks | Open the linked Cast PR and inspect its checks; if application CI is `action_required`, approve that workflow run and wait for it to finish | Copilot review and the repository's normal build, test, lint, and security checks complete before merge |
 | Handoffs | Run `/squad implement` on a ready issue, then `/squad review` on its PR | The dispatcher starts the appropriate isolated worker; the reviewer posts one advisory verdict for the current head SHA |
 | Rerun | Repeat the same command after a cancellation or uncertain result | Existing Cast and implementation PRs are detected instead of duplicated; an unchanged reviewed head is not reviewed twice |
@@ -479,7 +493,7 @@ merge, change permissions or secrets, or upgrade Squad.
 
 ### Retrospective auto-implementation (opt-in)
 
-The standard install contains all six workflows, including the dormant
+The standard install contains all seven workflows, including the dormant
 improvement worker. **Report/proposal-only remains the default.** The lifecycle is
 diagnosis → durable action issue → worker → **draft PR** → human review/merge →
 later measurement of closure and recurrence. Retro never edits code, creates a
@@ -1529,6 +1543,7 @@ gh aw add \
   bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-retro.md@${SQUAD_SHA} \
   bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_SHA} \
+  bradygaster/squad/workflows/squad-bootstrap.md@${SQUAD_SHA} \
   --force
 ```
 
@@ -1563,7 +1578,7 @@ done
 gh aw compile --strict
 ```
 
-Confirm all six source files and generated locks reference `SQUAD_SHA`, review
+Confirm all seven source files and generated locks reference `SQUAD_SHA`, review
 the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
 `gh aw update` for this immutable-pin flow: its stored source branch and cooldown
 can leave the installed sources at a different revision than the SHA you intend.

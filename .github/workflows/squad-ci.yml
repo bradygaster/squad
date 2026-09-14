@@ -712,9 +712,9 @@ jobs:
           fi
 
   # ── gh-aw strict compile gate ────────────────────────────────────────────
-  # Compiles all six Squad-authored workflow sources with --strict against a
+  # Compiles all seven Squad-authored workflow sources with --strict against a
   # pinned compiler so the delivered stack is always proven compilable. All
-  # six workflows, including squad-improvement-worker, are distributed by the
+  # seven workflows, including squad-improvement-worker and squad-bootstrap, are distributed by the
   # gh-aw-enlistment bootstrap skill/docs as part of the standard install --
   # squad-improvement-worker stays dormant (approval-gated) until a maintainer
   # authorizes a governance-scoped retrospective proposal, but it is not a
@@ -761,7 +761,7 @@ jobs:
           cp -r workflows/. "$COMPILE_DIR/.github/workflows/"
           git -C "$COMPILE_DIR" init --quiet
 
-      - name: Compile all six workflows (--strict) and verify lock files
+      - name: Compile all seven workflows (--strict) and verify lock files
         # Failures accumulate rather than short-circuit so every result is
         # visible in one run.  A compiler that exits 0 without emitting a lock
         # file is treated as failure — silent-success is a gate gap.
@@ -780,6 +780,15 @@ jobs:
               FAILED=$((FAILED + 1))
             fi
           done
+          printf -- '--- Compiling squad-bootstrap ---\n'
+          if (cd "$COMPILE_DIR" && gh aw compile squad-bootstrap --strict --approve --no-check-update 2>&1); then
+            printf '  => OK\n'
+            echo "✅ \`squad-bootstrap\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::gh aw compile squad-bootstrap --strict failed"
+            echo "❌ \`squad-bootstrap\` compile failed" >> "$GITHUB_STEP_SUMMARY"
+            FAILED=$((FAILED + 1))
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Lock files" >> "$GITHUB_STEP_SUMMARY"
           for LOCK in squad.lock.yml squad-implement-worker.lock.yml squad-review.lock.yml squad-deps-worker.lock.yml squad-retro.lock.yml squad-improvement-worker.lock.yml; do
@@ -791,6 +800,13 @@ jobs:
               echo "✅ \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
+          if [ ! -f "$COMPILE_DIR/.github/workflows/squad-bootstrap.lock.yml" ]; then
+            echo "::error::squad-bootstrap.lock.yml not emitted — compiler exited 0 without writing output"
+            echo "❌ missing: \`squad-bootstrap.lock.yml\`" >> "$GITHUB_STEP_SUMMARY"
+            FAILED=$((FAILED + 1))
+          else
+            echo "✅ \`squad-bootstrap.lock.yml\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ "$FAILED" -gt 0 ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "**❌ $FAILED failure(s) — gate fails closed**" >> "$GITHUB_STEP_SUMMARY"
@@ -798,4 +814,4 @@ jobs:
             exit 1
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**✅ All six workflows compiled, all six lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
+          echo "**✅ All seven workflows compiled, all seven lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
