@@ -92,7 +92,7 @@ function assertReviewerContract(workflow: string): void {
 
   expect(tools).not.toMatch(/^\s+edit:/m);
   expect(outputs).not.toMatch(/^\s+(create-issue|create-pull-request|update-pull-request):/m);
-  expect(listInBlock(yamlBlock(outputs, 'dispatch-workflow'), 'workflows')).toEqual(['squad-retro']);
+  expect(outputs).not.toMatch(/^\s+dispatch-workflow:/m);
   expect(listInBlock(submitReview, 'allowed-events')).toEqual(['COMMENT', 'REQUEST_CHANGES']);
   expect(submitReview).not.toContain('APPROVE');
   expect(concurrency).toContain('cancel-in-progress: true');
@@ -329,7 +329,6 @@ describe('gh-aw advisory Squad reviewer', () => {
       'add-comment',
       'create-pull-request-review-comment',
       'submit-pull-request-review',
-      'dispatch-workflow',
     ]);
     expect(REVIEWER).toContain('Never use `APPROVE`');
     assertReviewerContract(REVIEWER);
@@ -378,10 +377,7 @@ describe('gh-aw advisory Squad reviewer', () => {
       max: 1,
       allowed_events: ['COMMENT', 'REQUEST_CHANGES'],
     });
-    expect(safeOutputs.dispatch_workflow).toMatchObject({
-      max: 1,
-      workflows: ['squad-retro'],
-    });
+    expect(safeOutputs).not.toHaveProperty('dispatch_workflow');
     expect(safeOutputs).not.toHaveProperty('create_issue');
     expect(safeOutputs).not.toHaveProperty('create_pull_request');
     expect(lock).toContain('GH_AW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}');
@@ -390,7 +386,10 @@ describe('gh-aw advisory Squad reviewer', () => {
   it('kills mutations of every important authority and provenance gate', () => {
     const mutations = [
       REVIEWER.replace('tools:\n  bash:', 'tools:\n  edit:\n  bash:'),
-      REVIEWER.replace('workflows: [squad-retro]', 'workflows: [squad-retro, arbitrary-worker]'),
+      REVIEWER.replace(
+        'safe-outputs:\n',
+        'safe-outputs:\n  dispatch-workflow:\n    workflows: [squad-retro]\n    max: 1\n',
+      ),
       REVIEWER.replace('allowed-events: [COMMENT, REQUEST_CHANGES]', 'allowed-events: [COMMENT, APPROVE]'),
       REVIEWER.replace('cancel-in-progress: true', 'cancel-in-progress: false'),
       REVIEWER.replace(

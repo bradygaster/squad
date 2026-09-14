@@ -44,6 +44,9 @@ imports:
   - shared/squad-planning-policy.md
 resources:
   - shared/squad-cast-validator.mjs
+  - shared/squad-improvement-gate.mjs
+  - shared/squad-retro-evidence.mjs
+  - shared/squad-retro-provenance.mjs
   - shared/builtins/scribe-charter.md
   - shared/builtins/ralph-charter.md
   - shared/builtins/rai-charter.md

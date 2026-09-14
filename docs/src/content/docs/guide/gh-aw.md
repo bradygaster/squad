@@ -61,6 +61,11 @@ for workflow in squad squad-implement-worker squad-review squad-deps-worker squa
   test -f ".github/workflows/${workflow}.lock.yml"
 done
 
+# Verify every local runtime module referenced by those workflows was installed
+for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
+  test -f ".github/workflows/shared/${runtime_module}.mjs"
+done
+
 # Strict compilation validates gh-aw's source contract; also reject JSON-escaped
 # operators inside emitted GitHub expressions, which GitHub rejects before jobs start.
 if grep -nE '\$\{\{[^}]*\\u00(26|3[cCeE])' .github/workflows/*.lock.yml; then
@@ -167,6 +172,18 @@ The installed top-level workflow set is:
 - `squad-retro.md` and `squad-retro.lock.yml`
 - `squad-improvement-worker.md` and `squad-improvement-worker.lock.yml`
 
+The install must also contain these executable runtime resources:
+
+- `shared/squad-cast-validator.mjs`
+- `shared/squad-improvement-gate.mjs`
+- `shared/squad-retro-evidence.mjs`
+- `shared/squad-retro-provenance.mjs`
+
+The dispatcher declares the complete transitive resource set because gh-aw
+installs it first, discovers the dependent workflows, and then skips the later
+explicit worker entries as duplicates. Without that root declaration, a strict
+compile can succeed while the installed workers fail before the agent starts.
+
 `squad-improvement-worker` is part of this standard install, not a separate
 add-on — it stays dormant until a maintainer approves a governance-scoped
 retrospective proposal (see [Retrospective
@@ -235,6 +252,10 @@ Verify the complete source/lock surface:
 for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
   test -f ".github/workflows/${workflow}.md"
   test -f ".github/workflows/${workflow}.lock.yml"
+done
+
+for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
+  test -f ".github/workflows/shared/${runtime_module}.mjs"
 done
 ```
 

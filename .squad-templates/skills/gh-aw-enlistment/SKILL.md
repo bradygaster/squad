@@ -194,6 +194,13 @@ for workflow in squad squad-implement-worker squad-review squad-deps-worker squa
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
 
+for runtime_module in squad-cast-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
+  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
+    echo "MISSING shared/${runtime_module}.mjs"
+    exit 1
+  }
+done
+
 # gh-aw strict compilation can still emit a JSON-escaped operator inside a
 # GitHub expression. GitHub rejects that workflow before any job starts.
 if grep -nE '\$\{\{[^}]*\\u00(26|3[cCeE])' .github/workflows/*.lock.yml; then
@@ -205,6 +212,9 @@ fi
 - **STOP** and rerun `gh aw compile --strict` if any `.lock.yml` is missing. Do not
   open or merge the bootstrap PR until all **twelve** files exist and strict
   compilation passes.
+- **STOP** if any required `shared/*.mjs` runtime module is missing. The
+  dispatcher must install the complete transitive resource set; compile success
+  alone does not prove the worker pre-agent and output guards can execute.
 - **STOP** if the escaped-operator scan prints any line. Compile success alone is
   insufficient: GitHub rejects these emitted expressions before creating jobs,
   so the resulting failed run has no job logs to inspect.

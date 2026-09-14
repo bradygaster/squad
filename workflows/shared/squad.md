@@ -339,6 +339,27 @@ jobs:
               return;
             }
 
+            const actor = String(context.payload.comment?.user?.login || "").trim();
+            if (!actor) {
+              core.setFailed("Lifecycle repair requires an identifiable comment author.");
+              return;
+            }
+            let permission;
+            try {
+              const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                ...context.repo,
+                username: actor,
+              });
+              permission = String(response.data?.permission || "").toLowerCase();
+            } catch (error) {
+              core.setFailed(`Unable to verify lifecycle repair permission for ${actor}: ${error.message}`);
+              return;
+            }
+            if (!["admin", "maintain", "write"].includes(permission)) {
+              core.info(`Lifecycle repair is not authorized for ${actor} with ${permission || "unresolved"} permission.`);
+              return;
+            }
+
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
               issue_number: issueNumber,

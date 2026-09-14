@@ -141,6 +141,18 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('all **twelve** files');
     });
 
+    it('requires every shared runtime guard in the emitted repository', () => {
+      for (const runtimeModule of [
+        'squad-cast-validator',
+        'squad-improvement-gate',
+        'squad-retro-evidence',
+        'squad-retro-provenance',
+      ]) {
+        expect(content).toContain(runtimeModule);
+      }
+      expect(content).toContain('if any required `shared/*.mjs` runtime module is missing');
+    });
+
     it('requires a final strict compile without --approve', () => {
       // The standalone command must appear as its own line (start-of-line in a
       // fenced bash block), not merely as a prose/backtick mention.  The
