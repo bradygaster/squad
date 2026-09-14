@@ -17,12 +17,16 @@ import {
   BOOTSTRAP_ISSUE_MARKER,
   BOOTSTRAP_ISSUE_TITLE,
   BOOTSTRAP_PR_TITLE,
+  BOOTSTRAP_RESEARCH_TITLE,
   PAYLOAD_CHUNK_BYTES,
   PAYLOAD_CHUNK_STRING_MAX_BYTES,
   PAYLOAD_MAX_BYTES,
   PAYLOAD_MAX_CHUNKS,
   classifyBootstrapState,
   createBootstrapPayloadEnvelope,
+  createBootstrapResearchComment,
+  findBootstrapResearchArtifacts,
+  isBootstrapResearchSeed,
   reconstructBootstrapPayload,
 } from '../workflows/shared/squad-bootstrap-validator.mjs';
 
@@ -198,6 +202,10 @@ Review the corresponding [draft Cast PR](${link}) before accepting the roster.
 
 ## How to launch work
 
+1. Review and merge the linked draft Cast PR.
+2. Rerun \`/squad triage\` to classify these existing proposals, or use focused \`/squad research ...\` first when deeper research is desired.
+3. Run \`/squad plan\`, review the plan, then run \`/squad activate\` to create assignable implementation issues.
+
 \`\`\`text
 /squad research Evaluate proposals P1 and P2 together, focusing on shared dependencies.
 /squad research Evaluate proposals P1 through P3 as one program.
@@ -212,7 +220,7 @@ Use \`/squad implement\` only on generated implementation tasks, never on a prop
 ## Actionable backlog
 
 - [ ] Review and merge the draft Cast PR.
-- [ ] Research and triage selected proposals.
+- [ ] Triage the existing proposals, or run focused research first when deeper evidence is desired.
 - [ ] Review the plan and activate assignable implementation issues.
 `;
 }
@@ -370,7 +378,24 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(classifyBootstrapState({ pullRequests: [], issues: [], defaultBranch: 'main' }).action).toBe('create_both');
     expect(classifyBootstrapState({ pullRequests: [pull()], issues: [], defaultBranch: 'main' }).action).toBe('create_issue');
     expect(classifyBootstrapState({ pullRequests: [], issues: [issue()], defaultBranch: 'main' }).action).toBe('create_pr');
-    expect(classifyBootstrapState({ pullRequests: [pull()], issues: [issue()], defaultBranch: 'main' }).action).toBe('noop');
+    expect(classifyBootstrapState({
+      pullRequests: [pull()],
+      issues: [issue()],
+      comments: [],
+      defaultBranch: 'main',
+    }).action).toBe('create_research');
+    const research = {
+      id: 9,
+      created_at: '2026-09-14T00:00:00Z',
+      user: { login: 'github-actions[bot]' },
+      body: createBootstrapResearchComment(issueBody(), 6),
+    };
+    expect(classifyBootstrapState({
+      pullRequests: [pull()],
+      issues: [issue()],
+      comments: [research],
+      defaultBranch: 'main',
+    }).action).toBe('noop');
     expect(classifyBootstrapState({ pullRequests: [pull('closed')], issues: [], defaultBranch: 'main' }).action).toBe('opt_out');
     expect(classifyBootstrapState({ pullRequests: [pull('closed', true)], issues: [], defaultBranch: 'main' }).action).toBe('create_issue');
   });
@@ -393,6 +418,89 @@ describe('automatic Squad bootstrap workflow', () => {
         defaultBranch: 'main',
       }),
     ).toThrow(/expected exact title and durable marker/);
+    expect(() =>
+      classifyBootstrapState({
+        pullRequests: [],
+        issues: [{
+          number: 6,
+          title: BOOTSTRAP_ISSUE_TITLE,
+          body: `${BOOTSTRAP_ISSUE_MARKER}\n${BOOTSTRAP_ISSUE_MARKER}`,
+        }],
+        defaultBranch: 'main',
+      }),
+    ).toThrow(/expected exact title and durable marker/);
+  });
+
+  it('materializes one canonical research seed that normal triage can consume', () => {
+    const comment = createBootstrapResearchComment(issueBody(), 6);
+    expect(comment).toContain(BOOTSTRAP_RESEARCH_TITLE);
+    expect(comment).toContain('| R1 | P1 is a validated bootstrap proposal');
+    expect(comment).toContain('focused `/squad research ...`');
+    expect(comment).not.toContain('### P1 — Strengthen runtime contracts');
+    expect(comment).toContain(
+      '{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}',
+    );
+
+    const artifacts = findBootstrapResearchArtifacts([
+      {
+        id: 9,
+        created_at: '2026-09-14T00:00:00Z',
+        user: { login: 'github-actions[bot]' },
+        body: comment,
+      },
+    ], 6);
+    expect(artifacts).toHaveLength(1);
+    expect(isBootstrapResearchSeed(artifacts[0])).toBe(true);
+    expect(isBootstrapResearchSeed({
+      body: comment.replace(BOOTSTRAP_RESEARCH_TITLE, '## 🔬 Squad Research — Focused follow-up'),
+    })).toBe(false);
+  });
+
+  it('fails closed on malformed research envelopes and repairs duplicate artifacts', () => {
+    const valid = createBootstrapResearchComment(issueBody(), 6);
+    expect(() => findBootstrapResearchArtifacts([
+      {
+        id: 10,
+        created_at: '2026-09-14T00:00:00Z',
+        user: { login: 'github-actions[bot]' },
+        body: valid.replace('"origin_issue":6', '"origin_issue":7'),
+      },
+    ], 6)).toThrow(/canonical research envelope/);
+
+    const duplicates = findBootstrapResearchArtifacts([
+      {
+        id: 10,
+        created_at: '2026-09-14T00:00:00Z',
+        user: { login: 'github-actions[bot]' },
+        body: valid,
+      },
+      {
+        id: 11,
+        created_at: '2026-09-14T01:00:00Z',
+        user: { login: 'github-actions[bot]' },
+        body: valid,
+      },
+    ], 6);
+    expect(duplicates.map(({ id }) => id)).toEqual([10, 11]);
+    expect(classifyBootstrapState({
+      pullRequests: [{
+        number: 3,
+        state: 'closed',
+        merged: true,
+        title: BOOTSTRAP_PR_TITLE,
+        head: { ref: BOOTSTRAP_BRANCH },
+        base: { ref: 'main' },
+        html_url: 'https://github.com/octo/example/pull/3',
+      }],
+      issues: [{
+        number: 6,
+        state: 'open',
+        title: BOOTSTRAP_ISSUE_TITLE,
+        body: issueBody('https://github.com/octo/example/pull/3'),
+      }],
+      comments: duplicates,
+      defaultBranch: 'main',
+    }).action).toBe('create_research');
   });
 
   it('validates the shared Cast and issue payload with exact success output', () => {
@@ -543,7 +651,7 @@ describe('automatic Squad bootstrap workflow', () => {
       branch: 'attacker/override',
       issue_body: issueBody()
         .replace('| **Runtime** | Runtime Engineer |', '| **Runtime** | Security Engineer |')
-        .replace('/squad activate', '/squad implement P1'),
+        .replaceAll('/squad activate', '/squad implement P1'),
     };
     writeFileSync(fixture.payloadPath, `${JSON.stringify(mutated)}\n`);
     const result = validateFixture(fixture);
@@ -601,6 +709,12 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(WORKFLOW).toContain("state: 'all'");
     expect(WORKFLOW).toContain('github.paginate(github.rest.pulls.list');
     expect(WORKFLOW).toContain('github.paginate(github.rest.issues.listForRepo');
+    expect(WORKFLOW).toContain('github.paginate(github.rest.issues.listComments');
+    expect(WORKFLOW).toContain('createBootstrapResearchComment(');
+    expect(WORKFLOW).toContain('findBootstrapResearchArtifacts(');
+    expect(WORKFLOW).toContain('isBootstrapResearchSeed(currentResearch)');
+    expect(WORKFLOW).toContain('Preserving focused research artifact comment');
+    expect(WORKFLOW).toContain('github.rest.issues.deleteComment');
     expect(WORKFLOW).toContain("draft: true");
     expect(WORKFLOW).toContain("ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`");
     expect(WORKFLOW).not.toContain('auto-merge:');
