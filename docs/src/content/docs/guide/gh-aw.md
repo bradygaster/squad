@@ -41,14 +41,15 @@ gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
 # 3. Create a bootstrap branch
 git switch -c chore/squad-gh-aw-bootstrap
 
-# 4. Add the Squad workflows to your repo
+# 4. Add the Squad workflows from the verified dev snapshot
+SQUAD_WORKFLOW_SHA="9fa83c5f00109bda25e93acf16648d0c67817b26"
 gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev
+  bradygaster/squad/workflows/squad.md@${SQUAD_WORKFLOW_SHA} \
+  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_WORKFLOW_SHA} \
+  bradygaster/squad/workflows/squad-review.md@${SQUAD_WORKFLOW_SHA} \
+  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_WORKFLOW_SHA} \
+  bradygaster/squad/workflows/squad-retro.md@${SQUAD_WORKFLOW_SHA} \
+  bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_WORKFLOW_SHA}
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
@@ -91,6 +92,11 @@ gh pr create \
 gh pr edit --add-reviewer @copilot
 gh pr checks --watch
 ```
+
+The quick start pins the merged `dev` snapshot containing the bootstrap fixes so
+a demo or one-time setup cannot change between runs. For the normal supported
+development-channel install, use the `@dev` command in
+[Install the workflows](#install-the-workflows).
 
 > Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skills
 > alongside the workflows, and it deliberately does not stage `.github/aw/logs/`.
