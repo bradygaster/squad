@@ -222,8 +222,8 @@ describe('gh-aw implement workflows', () => {
     expect(continuationSection(worker)).toContain(
       '^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$',
     );
-    expect(continuationSection(worker)).toContain(
-      'issue number to equal the marker\'s issue number',
+    expect(continuationSection(worker)).toMatch(
+      /issue\s+number to equal the marker's issue number/,
     );
   });
 
@@ -398,7 +398,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     }))).toContain('issue-number-not-numeric');
   });
 
-  it('leaves a manual dispatch and the merge continuation untouched', () => {
+  it('leaves a manual dispatch untouched and validates merge continuation provenance', () => {
     const manual = guard.evaluateImplementDispatchInputs({
       eventName: 'workflow_dispatch',
       issueNumber: '42',
@@ -407,9 +407,112 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     });
     expect(manual.ok).toBe(true);
     expect(manual.origin).toBe('manual');
-    const merged = guard.evaluateImplementDispatchInputs({ eventName: 'pull_request' });
+    const merged = guard.evaluateImplementDispatchInputs({
+      eventName: 'pull_request',
+      pullRequestBody: 'Closes #42\n\n<!-- squad:implement issue=42 run=7 -->',
+      pullRequestHeadRef: 'squad/implement-42-fix-the-widget',
+    });
     expect(merged.ok).toBe(true);
-    expect(merged.enforced).toBe(false);
+    expect(merged.enforced).toBe(true);
+    expect(merged.origin).toBe('merge-continuation');
+    expect(merged.issue_number).toBe(42);
+    expect(merged.run_id).toBe(7);
+  });
+
+  it('fails merge continuation closed on missing, duplicate, fenced, malformed, or mismatched evidence', () => {
+    const evaluate = (body: unknown, headRef: unknown) => guard.evaluateImplementDispatchInputs({
+      eventName: 'pull_request',
+      pullRequestBody: body,
+      pullRequestHeadRef: headRef,
+    });
+    expect(kinds(evaluate('', 'squad/implement-42-fix'))).toContain('merge-provenance-marker-invalid');
+    expect(kinds(evaluate([
+      '<!-- squad:implement issue=42 run=7 -->',
+      '<!-- squad:implement issue=42 run=8 -->',
+    ].join('\n'), 'squad/implement-42-fix'))).toContain('merge-provenance-marker-ambiguous');
+    expect(kinds(evaluate([
+      '```text',
+      '<!-- squad:implement issue=42 run=7 -->',
+      '```',
+    ].join('\n'), 'squad/implement-42-fix'))).toContain('merge-provenance-marker-invalid');
+    expect(kinds(evaluate(
+      'prose <!-- squad:implement issue=42 run=7 -->',
+      'squad/implement-42-fix',
+    ))).toContain('merge-provenance-marker-invalid');
+    expect(kinds(evaluate(
+      '<!-- squad:implement issue=42 run=7 -->',
+      'squad/implement-43-fix',
+    ))).toContain('merge-provenance-issue-mismatch');
+    expect(kinds(evaluate(
+      '<!-- squad:implement issue=42 run=7 -->',
+      'squad/implement-42-Fix',
+    ))).toContain('merge-provenance-branch-invalid');
+    expect(kinds(evaluate(undefined, undefined))).toEqual(expect.arrayContaining([
+      'merge-provenance-body-unreadable',
+      'merge-provenance-branch-unreadable',
+    ]));
+  });
+
+  it('refuses merge dispatch output when runtime provenance no longer validates', async () => {
+    const result = await guard.enforceImplementSafeOutputs({
+      SQUAD_IMPLEMENT_EVENT_NAME: 'pull_request',
+      SQUAD_IMPLEMENT_PULL_BODY: '<!-- squad:implement issue=42 run=7 -->',
+      SQUAD_IMPLEMENT_PULL_HEAD_REF: 'squad/implement-43-forged',
+    } as never, {
+      readItems: () => [{
+        type: 'dispatch_workflow',
+        workflow_name: 'squad',
+        inputs: { command: 'implement', issue_number: '100' },
+      }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.enforced).toBe(true);
+    expect(kinds(result)).toContain('merge-provenance-issue-mismatch');
+  });
+
+  it('binds merge continuation to a successful same-repository implement run', async () => {
+    const env = {
+      GITHUB_REPOSITORY: REPO,
+      SQUAD_IMPLEMENT_DEFAULT_BRANCH: BRANCH,
+      SQUAD_IMPLEMENT_EVENT_NAME: 'pull_request',
+      SQUAD_IMPLEMENT_PULL_BODY: '<!-- squad:implement issue=42 run=7 -->',
+      SQUAD_IMPLEMENT_PULL_HEAD_REF: 'squad/implement-42-fix',
+      SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY: REPO,
+      SQUAD_IMPLEMENT_PULL_CREATED_AT: '2026-09-14T18:00:30Z',
+    };
+    const trustedRun = {
+      id: 7,
+      path: guard.IMPLEMENT_WORKFLOW_PATH,
+      event: 'workflow_dispatch',
+      status: 'completed',
+      conclusion: 'success',
+      head_branch: BRANCH,
+      repository: { full_name: REPO },
+      head_repository: { full_name: REPO },
+      run_started_at: '2026-09-14T18:00:00Z',
+      updated_at: '2026-09-14T18:01:00Z',
+    };
+    const valid = await guard.validateImplementOrigin(env, async () => trustedRun);
+    expect(valid.ok).toBe(true);
+    expect(valid.origin).toBe('merge-continuation');
+
+    const fork = await guard.validateImplementOrigin({
+      ...env,
+      SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY: 'attacker/fork',
+    }, async () => trustedRun);
+    expect(kinds(fork)).toContain('merge-provenance-head-repository-mismatch');
+
+    const copiedAfterRun = await guard.validateImplementOrigin({
+      ...env,
+      SQUAD_IMPLEMENT_PULL_CREATED_AT: '2026-09-14T18:02:00Z',
+    }, async () => trustedRun);
+    expect(kinds(copiedAfterRun)).toContain('merge-provenance-run-window-mismatch');
+
+    const unrelatedRun = await guard.validateImplementOrigin(env, async () => ({
+      ...trustedRun,
+      path: '.github/workflows/other.lock.yml',
+    }));
+    expect(kinds(unrelatedRun)).toContain('merge-provenance-run-untrusted');
   });
 
   it('refuses an unknown or half-declared origin instead of falling back to manual', () => {
@@ -763,12 +866,83 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
   it('wires the guard into a pre-agent step and the safe-outputs boundary', () => {
     expect(worker).toContain('shared/squad-retro-provenance.mjs');
     expect(worker).toContain('--implement-inputs');
+    expect(worker).toContain('Checkout trusted base for the pre-agent provenance guard');
+    expect(worker).toContain('.squad-pre-agent-trusted-base/.github/workflows/shared/squad-retro-provenance.mjs');
+    expect(worker).toContain('SQUAD_IMPLEMENT_PULL_BODY');
+    expect(worker).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
+    expect(worker).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY');
+    expect(worker).toContain('SQUAD_IMPLEMENT_PULL_CREATED_AT');
     const steps = worker.match(/^ {2}steps:\r?\n([\s\S]*?)^ {2}create-pull-request:/m)?.[1] ?? '';
     expect(steps).toContain('enforceImplementSafeOutputs');
     expect(steps).toContain('core.setFailed');
     expect(steps).toContain('SQUAD_IMPLEMENT_AW_CONTEXT');
     expect(steps).toContain('SQUAD_IMPLEMENT_DEFAULT_BRANCH');
+    expect(steps).toContain('SQUAD_IMPLEMENT_PULL_BODY');
+    expect(steps).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
+    expect(steps).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY');
+    expect(steps).toContain('SQUAD_IMPLEMENT_PULL_CREATED_AT');
   });
+
+  it('compiles the merge gate before the agent and before safe-output processing', () => {
+    const lock = compiledWorkerLock();
+    const preCheckout = lock.indexOf('name: Checkout trusted base for the pre-agent provenance guard');
+    const preGuard = lock.indexOf('name: Validate dispatch inputs and declared origin');
+    const agent = lock.indexOf('name: Execute GitHub Copilot CLI');
+    expect(preCheckout).toBeGreaterThan(-1);
+    expect(preGuard).toBeGreaterThan(preCheckout);
+    expect(agent).toBeGreaterThan(preGuard);
+    const preAgentContract = lock.slice(preCheckout, agent);
+    const preGuardEnd = preAgentContract.indexOf('name: Download container images');
+    expect(preGuardEnd).toBeGreaterThan(-1);
+    const preGateSteps = preAgentContract.slice(0, preGuardEnd);
+    expect(preAgentContract).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
+    expect(preAgentContract).toContain('persist-credentials: false');
+    expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_BODY');
+    expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
+    expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY');
+    expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_CREATED_AT');
+    expect(preGateSteps).not.toMatch(/\n\s+(if|continue-on-error):/);
+
+    const safeJob = safeOutputsJob(lock);
+    const safeGuard = safeJob.indexOf('name: Enforce implement provenance before any output');
+    const process = safeJob.indexOf('name: Process Safe Outputs');
+    expect(safeGuard).toBeGreaterThan(-1);
+    expect(process).toBeGreaterThan(safeGuard);
+    expect(safeJob.slice(safeGuard, process)).toContain('SQUAD_IMPLEMENT_PULL_BODY');
+    expect(safeJob.slice(safeGuard, process)).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
+    expect(safeJob.slice(safeGuard, process)).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY');
+    expect(safeJob.slice(safeGuard, process)).toContain('SQUAD_IMPLEMENT_PULL_CREATED_AT');
+
+  }, 60000);
+
+  it('detects mutations that remove either merge-provenance boundary', () => {
+    const required = [
+      'Checkout trusted base for the pre-agent provenance guard',
+      'SQUAD_IMPLEMENT_PULL_BODY',
+      'SQUAD_IMPLEMENT_PULL_HEAD_REF',
+      'SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY',
+      'SQUAD_IMPLEMENT_PULL_CREATED_AT',
+      '.squad-pre-agent-trusted-base/.github/workflows/shared/squad-retro-provenance.mjs',
+      'Enforce implement provenance before any output',
+    ];
+    const missing = (text: string) => required.filter(value => !text.includes(value));
+    expect(missing(worker)).toEqual([]);
+    for (const value of required) {
+      expect(
+        missing(worker.replaceAll(value, 'REMOVED')),
+        `removing ${value} must break the source contract`,
+      ).toContain(value);
+    }
+
+    const compiled = compiledWorkerLock();
+    expect(missing(compiled)).toEqual([]);
+    for (const value of required) {
+      expect(
+        missing(compiled.replaceAll(value, 'REMOVED')),
+        `removing ${value} must break the compiled contract`,
+      ).toContain(value);
+    }
+  }, 60000);
 
   // -------------------------------------------------------------------------
   // FIDO blocker 2: the guard module was imported from GITHUB_WORKSPACE, whose
@@ -783,7 +957,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     const job = safeOutputsJob(compiledWorkerLock());
 
     const trustedIndex = job.indexOf('name: Checkout trusted base for the provenance guard');
-    const guardIndex = job.indexOf('name: Enforce retro-origin provenance before any output');
+    const guardIndex = job.indexOf('name: Enforce implement provenance before any output');
     const processIndex = job.indexOf('name: Process Safe Outputs');
     expect(trustedIndex).toBeGreaterThan(-1);
     expect(guardIndex).toBeGreaterThan(trustedIndex);

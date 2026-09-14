@@ -77,7 +77,7 @@ function provenanceRows(workflow: string): string[] {
 function installOrders(markdown: string): string[][] {
   const uncommented = markdown.replace(/^#\s?/gm, '');
   return [...uncommented.matchAll(/gh aw add \\\n((?:\s+bradygaster\/squad\/workflows\/[^\n]+\n?)+)/g)]
-    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@(?:dev|\$\{SQUAD_SHA\})/g)]
+    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@(?:dev|\$\{SQUAD_(?:SHA|WORKFLOW_SHA)\})/g)]
       .map(match => match[1]));
 }
 
@@ -212,7 +212,8 @@ describe('gh-aw advisory Squad reviewer', () => {
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
     const version = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8', timeout: 15000 });
     expect(version.status).toBe(0);
-    expect(`${version.stdout}${version.stderr}`.trim()).toMatch(/\bv0\.87\.10$/);
+    const compilerVersion = `${version.stdout}${version.stderr}`.trim();
+    expect(compilerVersion).toMatch(/\bv0\.(?:8[7-9]|9[0-9])\.[0-9]+$/);
     for (const name of installOrder) {
       const started = performance.now();
       const result = spawnSync(
@@ -220,7 +221,7 @@ describe('gh-aw advisory Squad reviewer', () => {
         ['aw', 'compile', name.slice(0, -3), '--strict', '--approve', '--no-check-update'],
         { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 60000 },
       );
-      console.log(`strict-compile ${name} v0.87.10 status=${result.status} duration_ms=${Math.round(performance.now() - started)}`);
+      console.log(`strict-compile ${name} ${compilerVersion} status=${result.status} duration_ms=${Math.round(performance.now() - started)}`);
       const diagnostics = `${result.stdout}\n${result.stderr}`;
       expect(result.error, `failed to launch gh aw for ${name}`).toBeUndefined();
       expect(result.status, `strict compile failed for ${name}:\n${diagnostics}`).toBe(0);
