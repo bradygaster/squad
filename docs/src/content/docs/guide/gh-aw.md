@@ -1584,39 +1584,13 @@ the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
 `gh aw update` for this immutable-pin flow: its stored source branch and cooldown
 can leave the installed sources at a different revision than the SHA you intend.
 
-To refresh only the first-run bootstrap workflow, install its source and every
-runtime resource it uses at the same immutable SHA, then recompile:
-
-```bash
-SQUAD_SHA="<40-character-commit-sha>"
-
-gh aw add \
-  bradygaster/squad/workflows/squad-bootstrap.md@${SQUAD_SHA} \
-  --force
-
-mkdir -p .github/workflows/shared
-
-for shared_file in \
-  squad-cast-validator.mjs \
-  squad-bootstrap-validator.mjs \
-  builtins/scribe-charter.md \
-  builtins/ralph-charter.md \
-  builtins/rai-charter.md \
-  builtins/fact-checker-charter.md; do
-  mkdir -p ".github/workflows/shared/$(dirname "$shared_file")"
-  curl --fail --silent --show-error --location \
-    "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/${shared_file}" \
-    --output ".github/workflows/shared/${shared_file}"
-done
-
-gh aw compile --strict
-```
-
-Review and commit `squad-bootstrap.md`, its generated lock, and the refreshed
-shared resources together. Do not rerun the bootstrap workflow until that commit
-is on the repository's default branch. The default-branch push triggers the
-bootstrap workflow automatically; its push and branch gates intentionally reject
-other refs.
+Use the complete upgrade block even when a failure appears limited to the
+first-run bootstrap workflow. Updating only `squad-bootstrap.md` can leave its
+validator or the rest of the workflow set at a different revision. The shared
+resource loop above explicitly refreshes `squad-bootstrap-validator.mjs` along
+with every other runtime dependency. Commit the refreshed sources, generated
+locks, and shared resources together. The default-branch push triggers bootstrap
+automatically; its push and branch gates intentionally reject other refs.
 
 ---
 
