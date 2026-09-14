@@ -1451,6 +1451,50 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
   }, 20000);
 
+  it('keeps safe-output expressions valid after JSON serialization', () => {
+    const compiled = lockText();
+    const escapedOperators = [
+      ...compiled.matchAll(/\$\{\{[^}\n]*\\\\u(?:0026|003c|003e)[^}\n]*\}\}/gi),
+    ].map(match => match[0]);
+
+    expect(
+      escapedOperators,
+      'gh-aw serialized a JSON-escaped operator inside a GitHub expression. ' +
+        'GitHub rejects the emitted lockfile before any job starts.',
+    ).toEqual([]);
+    expect(compiled).toContain(
+      "activationComments\\\":\\\"${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}",
+    );
+  }, 20000);
+
+  it('detects the previous activation-comments serialization mutation', () => {
+    const source = readText(SQUAD_WORKFLOW);
+    const safeExpression =
+      "${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || " +
+      "startsWith(github.event.comment.body, '/squad revoke-improvement')) }}";
+    const unsafeExpression =
+      "${{ !startsWith(github.event.comment.body, '/squad approve-improvement') && " +
+      "!startsWith(github.event.comment.body, '/squad revoke-improvement') }}";
+
+    expect(source).toContain(safeExpression);
+    const workspace = createTestWorkspace('gh-aw-expression-mutation-');
+    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
+    const mutantPath = join(workspace, '.github', 'workflows', 'squad.md');
+    writeFileSync(mutantPath, readText(mutantPath).replace(safeExpression, unsafeExpression));
+
+    execFileSync('gh', ['aw', 'compile', mutantPath, '--strict', '--approve'], {
+      cwd: workspace,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    const mutantLock = readText(join(workspace, '.github', 'workflows', 'squad.lock.yml'));
+    expect(mutantLock).toMatch(
+      /\$\{\{[^}\n]*\\\\u0026\\\\u0026[^}\n]*\}\}/,
+    );
+  }, 20000);
+
   it('compiles the lifecycle upsert as a post-safe-output job (#1916)', () => {
     const compiled = lockText();
     expect(compiled).toContain('  upsert_lifecycle_state:');

@@ -193,11 +193,21 @@ for workflow in squad squad-implement-worker squad-review squad-deps-worker squa
   test -f ".github/workflows/${workflow}.md"      || { echo "MISSING ${workflow}.md"; exit 1; }
   test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
 done
+
+# gh-aw strict compilation can still emit a JSON-escaped operator inside a
+# GitHub expression. GitHub rejects that workflow before any job starts.
+if grep -nE '\$\{\{[^}]*\\u00(26|3[cCeE])' .github/workflows/*.lock.yml; then
+  echo "Invalid JSON-escaped operator in compiled GitHub expression" >&2
+  exit 1
+fi
 ```
 
 - **STOP** and rerun `gh aw compile --strict` if any `.lock.yml` is missing. Do not
   open or merge the bootstrap PR until all **twelve** files exist and strict
   compilation passes.
+- **STOP** if the escaped-operator scan prints any line. Compile success alone is
+  insufficient: GitHub rejects these emitted expressions before creating jobs,
+  so the resulting failed run has no job logs to inspect.
 
 > On Windows PowerShell, the `for`/`test -f` loop above is POSIX. Use an
 > equivalent guard (e.g. `Test-Path`) or run it under Git Bash; the *logic* — all

@@ -52,6 +52,13 @@ for workflow in squad squad-implement-worker squad-review squad-deps-worker squa
   test -f ".github/workflows/${workflow}.lock.yml"
 done
 
+# Strict compilation validates gh-aw's source contract; also reject JSON-escaped
+# operators inside emitted GitHub expressions, which GitHub rejects before jobs start.
+if grep -nE '\$\{\{[^}]*\\u00(26|3[cCeE])' .github/workflows/*.lock.yml; then
+  echo "Invalid JSON-escaped operator in compiled GitHub expression" >&2
+  exit 1
+fi
+
 # 7. Commit the generated files and open the bootstrap PR
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
 git diff --cached --stat
@@ -159,6 +166,12 @@ configuration and compiles the workflow definitions into deterministic
 `.lock.yml` files. The supported bootstrap path still runs `gh aw compile
 --strict` explicitly before review so every installed source is validated
 together and the PR contains the exact generated lockfiles that passed.
+
+Strict compilation is necessary but does not prove GitHub will accept every
+emitted expression. The verification step also scans the lockfiles for
+JSON-escaped operators such as `\u0026` inside `${{ ... }}`. If that scan finds
+anything, stop: GitHub rejects that workflow before any job starts, producing a
+failed run with no jobs or logs.
 
 ### Review first-install safe updates
 

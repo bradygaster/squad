@@ -183,7 +183,7 @@ safe-outputs:
   allowed-domains:
     - learn.microsoft.com
     - aspire.dev
-  activation-comments: ${{ !startsWith(github.event.comment.body, '/squad approve-improvement') && !startsWith(github.event.comment.body, '/squad revoke-improvement') }}
+  activation-comments: ${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}
   messages:
     append-only-comments: true
     run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."
