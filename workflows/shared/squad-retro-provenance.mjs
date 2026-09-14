@@ -9,10 +9,13 @@ export const ACTION_LABEL = 'squad-retro-action';
 export const PROPOSAL_LABEL = 'squad-retro-proposal';
 export const RETRO_ORIGIN = 'squad-retro';
 export const IMPLEMENT_WORKFLOW = 'squad-implement-worker';
+export const IMPLEMENT_WORKFLOW_PATH = '.github/workflows/squad-implement-worker.lock.yml';
 export const RETRO_WORKFLOW_PATH = '.github/workflows/squad-retro.lock.yml';
 export const FINGERPRINT = /^(?:fail|review):[0-9a-f]{16}$/;
 export const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 export const NUMERIC_ID = /^[1-9][0-9]*$/;
+export const IMPLEMENT_PULL_MARKER = /^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$/;
+export const IMPLEMENT_PULL_BRANCH = /^squad\/implement-([1-9][0-9]*)-[a-z0-9][a-z0-9-]*$/;
 export const DISPATCH_INPUT_KEYS = Object.freeze(['issue_number', 'request_origin', 'retro_action_key']);
 export const IMPLEMENT_PULL_SCAN_MAX_PAGES = 5;
 export const ACTION_COMMENT_MAX_PAGES = 2;
@@ -174,6 +177,62 @@ export function deriveActionTemporaryIds(fingerprints) {
 
 export const normalizeTemporaryId = value => String(value ?? '').replace(/^#/, '').toLowerCase();
 export const isTemporaryId = value => TEMPORARY_ID.test(String(value ?? ''));
+
+export function parseImplementMergeProvenance(body, headRef) {
+  const violations = [];
+  if (typeof body !== 'string') violations.push({ kind: 'merge-provenance-body-unreadable' });
+  if (typeof headRef !== 'string') violations.push({ kind: 'merge-provenance-branch-unreadable' });
+  if (violations.length) return { ok: false, enforced: true, origin: 'merge-continuation', violations };
+
+  const text = normalizeText(body);
+  const markerOccurrences = text.match(/<!-- squad:implement\b/g) || [];
+  const matches = [];
+  let fence = null;
+  for (const line of text.split('\n')) {
+    if (fence) {
+      if (markdownFenceClose(line, fence)) fence = null;
+      continue;
+    }
+    const opening = markdownFenceOpen(line);
+    if (opening) {
+      fence = opening;
+      continue;
+    }
+    const match = IMPLEMENT_PULL_MARKER.exec(line);
+    if (match) matches.push(match);
+  }
+
+  if (markerOccurrences.length > 1 || matches.length > 1) {
+    violations.push({ kind: 'merge-provenance-marker-ambiguous' });
+  } else if (markerOccurrences.length !== 1 || matches.length !== 1) {
+    violations.push({ kind: 'merge-provenance-marker-invalid' });
+  }
+
+  const branch = IMPLEMENT_PULL_BRANCH.exec(headRef);
+  if (!branch) violations.push({ kind: 'merge-provenance-branch-invalid' });
+  if (violations.length) return { ok: false, enforced: true, origin: 'merge-continuation', violations };
+
+  const markerIssue = matches[0][1];
+  const markerRun = matches[0][2];
+  const branchIssue = branch[1];
+  if (!isNumericId(markerIssue) || !isNumericId(markerRun) || !isNumericId(branchIssue)) {
+    violations.push({ kind: 'merge-provenance-number-invalid' });
+  } else if (markerIssue !== branchIssue) {
+    violations.push({
+      kind: 'merge-provenance-issue-mismatch',
+      marker_issue: Number(markerIssue),
+      branch_issue: Number(branchIssue),
+    });
+  }
+  return {
+    ok: !violations.length,
+    enforced: true,
+    origin: 'merge-continuation',
+    issue_number: Number(markerIssue),
+    run_id: Number(markerRun),
+    violations,
+  };
+}
 
 // gh-aw removes HTML comments in prose, but preserves visible fenced text.
 // Accept only this complete, explicit envelope, not markers in arbitrary code.
@@ -448,8 +507,11 @@ export function evaluateRetroDispatchOutputs({ items = [], autoImplementEnabled 
 
 export function evaluateImplementDispatchInputs({
   eventName = '', issueNumber = '', requestOrigin = '', retroActionKey = '',
-  awContext = '', repository = '', defaultBranch = '',
+  awContext = '', repository = '', defaultBranch = '', pullRequestBody, pullRequestHeadRef,
 } = {}) {
+  if (eventName === 'pull_request') {
+    return parseImplementMergeProvenance(pullRequestBody, pullRequestHeadRef);
+  }
   if (eventName !== 'workflow_dispatch') return { ok: true, enforced: false, origin: 'event', violations: [] };
   const violations = [];
   if (!isNumericId(issueNumber)) violations.push({ kind: 'issue-number-not-numeric' });
@@ -548,8 +610,36 @@ export async function validateImplementOrigin(env, fetchJson = (route, fields) =
     issueNumber: env.SQUAD_IMPLEMENT_ISSUE_NUMBER, requestOrigin: env.SQUAD_IMPLEMENT_REQUEST_ORIGIN,
     retroActionKey: env.SQUAD_IMPLEMENT_RETRO_ACTION_KEY, awContext: env.SQUAD_IMPLEMENT_AW_CONTEXT,
     repository: env.GITHUB_REPOSITORY, defaultBranch: env.SQUAD_IMPLEMENT_DEFAULT_BRANCH,
+    pullRequestBody: env.SQUAD_IMPLEMENT_PULL_BODY,
+    pullRequestHeadRef: env.SQUAD_IMPLEMENT_PULL_HEAD_REF,
   });
-  if (!result.ok || result.origin !== RETRO_ORIGIN) return result;
+  if (!result.ok) return result;
+  if (result.origin === 'merge-continuation') {
+    const violations = [...result.violations];
+    if (!env.GITHUB_REPOSITORY || env.SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY !== env.GITHUB_REPOSITORY) {
+      violations.push({ kind: 'merge-provenance-head-repository-mismatch' });
+    }
+    const run = await fetchJson(`repos/${env.GITHUB_REPOSITORY}/actions/runs/${result.run_id}`, {});
+    if (Number(run?.id) !== result.run_id ||
+        run.path !== IMPLEMENT_WORKFLOW_PATH ||
+        run.event !== 'workflow_dispatch' ||
+        run.status !== 'completed' ||
+        run.conclusion !== 'success' ||
+        run.head_branch !== env.SQUAD_IMPLEMENT_DEFAULT_BRANCH ||
+        run.repository?.full_name !== env.GITHUB_REPOSITORY ||
+        run.head_repository?.full_name !== env.GITHUB_REPOSITORY) {
+      violations.push({ kind: 'merge-provenance-run-untrusted' });
+    }
+    const createdAt = Date.parse(env.SQUAD_IMPLEMENT_PULL_CREATED_AT || '');
+    const runStartedAt = Date.parse(run?.run_started_at || '');
+    const runCompletedAt = Date.parse(run?.updated_at || '');
+    if (!Number.isFinite(createdAt) || !Number.isFinite(runStartedAt) || !Number.isFinite(runCompletedAt) ||
+        createdAt < runStartedAt || createdAt > runCompletedAt) {
+      violations.push({ kind: 'merge-provenance-run-window-mismatch' });
+    }
+    return { ...result, ok: !violations.length, violations };
+  }
+  if (result.origin !== RETRO_ORIGIN) return result;
   const { violations, caller } = result;
   if (env.GITHUB_ACTOR !== BOT || env.GITHUB_REF !== `refs/heads/${env.SQUAD_IMPLEMENT_DEFAULT_BRANCH}`) {
     violations.push({ kind: 'retro-origin-platform-mismatch' });
@@ -603,6 +693,7 @@ export async function enforceImplementSafeOutputs(env = process.env, {
   if (items === null) return { ok: false, enforced: true, violations: [{ kind: 'unreadable-agent-output' }] };
   const origin = await validateImplementOrigin(env, fetchJson);
   if (!origin.ok) return origin;
+  if (origin.origin === 'merge-continuation') return origin;
   if (origin.origin !== RETRO_ORIGIN) return { ...origin, enforced: false, reason: 'not-retro-originated' };
   const pulls = evaluateRetroPullRequestItems({ items, issueNumber: origin.issue_number, actionKey: origin.action_key });
   const violations = [...pulls.violations];
