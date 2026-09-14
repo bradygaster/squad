@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,13 @@ import {
   BOOTSTRAP_ISSUE_MARKER,
   BOOTSTRAP_ISSUE_TITLE,
   BOOTSTRAP_PR_TITLE,
+  PAYLOAD_CHUNK_BYTES,
+  PAYLOAD_CHUNK_STRING_MAX_BYTES,
+  PAYLOAD_MAX_BYTES,
+  PAYLOAD_MAX_CHUNKS,
   classifyBootstrapState,
+  createBootstrapPayloadEnvelope,
+  reconstructBootstrapPayload,
 } from '../workflows/shared/squad-bootstrap-validator.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,6 +47,10 @@ function write(root: string, path: string, content: string | Buffer): void {
   const target = join(root, ...path.split('/'));
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, content);
+}
+
+function payloadChunkField(index: number): string {
+  return `payload_chunk_${String(index).padStart(2, '0')}`;
 }
 
 function teamMarkdown(): string {
@@ -329,6 +340,16 @@ afterAll(() => {
 });
 
 describe('automatic Squad bootstrap workflow', () => {
+  it('pins the canonical bootstrap validator digest in the authenticated runner', () => {
+    const canonical = readFileSync(VALIDATOR);
+    const commandDigest = WORKFLOW.match(
+      /check_hash "\$bootstrap_validator" "([a-f0-9]{64})"/,
+    )?.[1];
+
+    expect(commandDigest, 'runtime command must pin the canonical validator digest').toBeDefined();
+    expect(commandDigest).toBe(createHash('sha256').update(canonical).digest('hex'));
+  });
+
   it('classifies the fresh and partial-recovery matrix without duplicates', () => {
     const pull = (state = 'open', merged = false) => ({
       number: 3,
@@ -390,6 +411,131 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(resolvedResult.stdout).toBe('Squad bootstrap validation passed.\n');
   });
 
+  it('transports a shared payload larger than the old single-string limit byte-identically', () => {
+    const fixture = createFixture();
+    const targetBytes = 34_843;
+    const basePayloadText = JSON.stringify({
+      ...fixture.payload,
+      transport_regression: '',
+    });
+    const payloadText = JSON.stringify({
+      ...fixture.payload,
+      transport_regression: 'x'.repeat(targetBytes - Buffer.byteLength(basePayloadText, 'utf8')),
+    });
+    expect(Buffer.byteLength(payloadText, 'utf8')).toBe(targetBytes);
+    expect(Buffer.byteLength(payloadText, 'utf8')).toBeGreaterThan(10_240);
+
+    const transportPath = join(fixture.root, 'transport-payload.json');
+    writeFileSync(transportPath, payloadText);
+    const encoded = spawnSync(process.execPath, [VALIDATOR, '--encode-payload', transportPath], {
+      encoding: 'utf8',
+    });
+    expect(encoded.status, encoded.stderr).toBe(0);
+    const envelope = JSON.parse(encoded.stdout) as Record<string, string>;
+    expect(envelope.payload_chunk_count).toBe('6');
+    expect(reconstructBootstrapPayload(envelope)).toBe(payloadText);
+    expect(Buffer.byteLength(reconstructBootstrapPayload(envelope), 'utf8')).toBe(
+      Buffer.byteLength(payloadText, 'utf8'),
+    );
+    for (let index = 0; index < Number(envelope.payload_chunk_count); index++) {
+      const chunk = envelope[payloadChunkField(index)];
+      expect(Buffer.byteLength(chunk, 'utf8')).toBeLessThanOrEqual(PAYLOAD_CHUNK_STRING_MAX_BYTES);
+      expect(Buffer.byteLength(chunk, 'utf8')).toBeLessThan(10_240);
+    }
+  });
+
+  it('fails closed for every chunk transport corruption class', () => {
+    const payloadText = JSON.stringify({
+      shared: 'Cast and research stay in one validated payload.',
+      content: 'x'.repeat(PAYLOAD_CHUNK_BYTES * 2),
+    });
+    const valid = createBootstrapPayloadEnvelope(payloadText) as Record<string, string>;
+    expect(Number(valid.payload_chunk_count)).toBeGreaterThanOrEqual(3);
+
+    const mutations: Array<[string, (envelope: Record<string, string>) => void, RegExp]> = [
+      ['missing', (envelope) => delete envelope.payload_chunk_00, /payload_chunk_00 is missing/],
+      [
+        'duplicate',
+        (envelope) => { envelope.payload_chunk_01 = envelope.payload_chunk_00; },
+        /duplicate, missing, or reordered chunk ordinal/,
+      ],
+      [
+        'reordered',
+        (envelope) => {
+          [envelope.payload_chunk_00, envelope.payload_chunk_01] =
+            [envelope.payload_chunk_01, envelope.payload_chunk_00];
+        },
+        /duplicate, missing, or reordered chunk ordinal/,
+      ],
+      [
+        'oversized',
+        (envelope) => { envelope.payload_chunk_00 += 'AAAA'; },
+        new RegExp(`exceeds ${PAYLOAD_CHUNK_STRING_MAX_BYTES} bytes`),
+      ],
+      ['invalid encoding', (envelope) => { envelope.payload_encoding = 'utf8'; }, /must be base64/],
+      [
+        'invalid Base64',
+        (envelope) => { envelope.payload_chunk_00 = '00:not-base64!'; },
+        /canonical Base64/,
+      ],
+      [
+        'invalid UTF-8',
+        (envelope) => {
+          envelope.payload_byte_length = '1';
+          envelope.payload_chunk_count = '1';
+          envelope.payload_chunk_00 = '00:/w==';
+          envelope.payload_sha256 = 'a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89';
+          for (let index = 1; index < PAYLOAD_MAX_CHUNKS; index++) {
+            delete envelope[payloadChunkField(index)];
+          }
+        },
+        /not valid UTF-8/,
+      ],
+      [
+        'length mismatch',
+        (envelope) => { envelope.payload_byte_length = String(Number(envelope.payload_byte_length) - 1); },
+        /decoded length does not match|length mismatch/,
+      ],
+      ['hash mismatch', (envelope) => { envelope.payload_sha256 = '0'.repeat(64); }, /SHA-256 mismatch/],
+      [
+        'trailing data',
+        (envelope) => {
+          const index = Number(envelope.payload_chunk_count);
+          envelope[payloadChunkField(index)] = `${String(index).padStart(2, '0')}:QQ==`;
+        },
+        /trailing data/,
+      ],
+      [
+        'excessive total size',
+        (envelope) => { envelope.payload_byte_length = String(PAYLOAD_MAX_BYTES + 1); },
+        new RegExp(`between 1 and ${PAYLOAD_MAX_BYTES}`),
+      ],
+      [
+        'excessive chunk count',
+        (envelope) => { envelope.payload_chunk_count = String(PAYLOAD_MAX_CHUNKS + 1); },
+        new RegExp(`between 1 and ${PAYLOAD_MAX_CHUNKS}`),
+      ],
+    ];
+
+    for (const [name, mutate, error] of mutations) {
+      const envelope = structuredClone(valid);
+      mutate(envelope);
+      expect(
+        () => reconstructBootstrapPayload(envelope),
+        `${name} corruption must fail closed`,
+      ).toThrow(error);
+    }
+  });
+
+  it('enforces encoder total-size and fixed chunk-count bounds', () => {
+    expect(() => createBootstrapPayloadEnvelope('x'.repeat(PAYLOAD_MAX_BYTES + 1))).toThrow(
+      new RegExp(`between 1 and ${PAYLOAD_MAX_BYTES}`),
+    );
+    const maximum = createBootstrapPayloadEnvelope('x'.repeat(PAYLOAD_MAX_BYTES)) as Record<string, string>;
+    expect(maximum.payload_chunk_count).toBe(String(PAYLOAD_MAX_CHUNKS));
+    expect(reconstructBootstrapPayload(maximum)).toBe('x'.repeat(PAYLOAD_MAX_BYTES));
+  });
+
   it('rejects roster divergence, broken links, invalid commands, and output override attempts', () => {
     const fixture = createFixture();
     const mutated = {
@@ -430,6 +576,12 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('cancel-in-progress: false');
     expect(lock).toMatch(/agent:[\s\S]*?permissions:\n\s+contents: read\n\s+copilot-requests: write\n\s+issues: read\n\s+pull-requests: read/);
     expect(lock).toMatch(/materialize_bootstrap:[\s\S]*?permissions:\n\s+contents: write\n\s+issues: write\n\s+pull-requests: write/);
+    expect(lock).toContain('"payload_chunk_00"');
+    expect(lock).toContain('"payload_chunk_15"');
+    expect(lock).toContain('"payload_byte_length"');
+    expect(lock).toContain('"payload_sha256"');
+    expect(lock).not.toMatch(/"materialize-bootstrap":\{"inputs":\{"payload":/);
+    expect(lock).toContain('reconstructBootstrapPayload(items[0])');
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
 

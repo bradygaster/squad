@@ -1562,6 +1562,7 @@ for shared_file in \
   squad-planning-ontology.md \
   squad-planning-policy.md \
   squad-cast-validator.mjs \
+  squad-bootstrap-validator.mjs \
   squad-improvement-gate.mjs \
   squad-retro-evidence.mjs \
   squad-retro-provenance.mjs \
@@ -1582,6 +1583,14 @@ Confirm all seven source files and generated locks reference `SQUAD_SHA`, review
 the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
 `gh aw update` for this immutable-pin flow: its stored source branch and cooldown
 can leave the installed sources at a different revision than the SHA you intend.
+
+Use the complete upgrade block even when a failure appears limited to the
+first-run bootstrap workflow. Updating only `squad-bootstrap.md` can leave its
+validator or the rest of the workflow set at a different revision. The shared
+resource loop above explicitly refreshes `squad-bootstrap-validator.mjs` along
+with every other runtime dependency. Commit the refreshed sources, generated
+locks, and shared resources together. The default-branch push triggers bootstrap
+automatically; its push and branch gates intentionally reject other refs.
 
 ---
 
