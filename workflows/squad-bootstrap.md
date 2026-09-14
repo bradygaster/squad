@@ -131,13 +131,16 @@ pre-agent-steps:
         node --check "$path" >/dev/null
       }
       check_hash "$cast_validator" "f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
-      check_hash "$bootstrap_validator" "a37ba8185d5831a340661c89ece02631b0d99dde38d8deb75bd642fd61518750"
+      check_hash "$bootstrap_validator" "c88770b82a6fc6ffb888f1eb5f3f3ab3be0f67ac69fb72a39565378a8d313945"
       node "$bootstrap_validator" \
         --root "$PWD" \
         --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
         --repository "${GITHUB_REPOSITORY:?}" \
         --default-branch "${SQUAD_BOOTSTRAP_DEFAULT_BRANCH:?}" \
         --link-mode placeholder
+      node "$bootstrap_validator" \
+        --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
+        > "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json"
       SQUAD_BOOTSTRAP_VALIDATOR
       chmod 500 "$runner"
 safe-outputs:
@@ -158,10 +161,38 @@ safe-outputs:
         issues: write
         pull-requests: write
       inputs:
-        payload:
-          description: Complete validated Squad bootstrap payload JSON.
+        payload_encoding:
+          description: Fixed bootstrap payload encoding; must be base64.
           required: true
           type: string
+        payload_byte_length:
+          description: Canonical decimal UTF-8 byte length, at most 96000.
+          required: true
+          type: string
+        payload_sha256:
+          description: Lowercase SHA-256 of the complete UTF-8 payload bytes.
+          required: true
+          type: string
+        payload_chunk_count:
+          description: Canonical decimal count of populated chunks, from 1 through 16.
+          required: true
+          type: string
+        payload_chunk_00: { type: string }
+        payload_chunk_01: { type: string }
+        payload_chunk_02: { type: string }
+        payload_chunk_03: { type: string }
+        payload_chunk_04: { type: string }
+        payload_chunk_05: { type: string }
+        payload_chunk_06: { type: string }
+        payload_chunk_07: { type: string }
+        payload_chunk_08: { type: string }
+        payload_chunk_09: { type: string }
+        payload_chunk_10: { type: string }
+        payload_chunk_11: { type: string }
+        payload_chunk_12: { type: string }
+        payload_chunk_13: { type: string }
+        payload_chunk_14: { type: string }
+        payload_chunk_15: { type: string }
       steps:
         - name: Checkout trusted default branch
           uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,11 +227,13 @@ safe-outputs:
                 core.setFailed(`Expected exactly one materialize_bootstrap item, found ${items.length}.`);
                 return;
               }
+              let payloadText;
               let payload;
               try {
-                payload = JSON.parse(String(items[0].payload || ''));
+                payloadText = validatorModule.reconstructBootstrapPayload(items[0]);
+                payload = JSON.parse(payloadText);
               } catch (error) {
-                core.setFailed(`Bootstrap payload is invalid JSON: ${error.message}`);
+                core.setFailed(`Bootstrap payload transport is invalid: ${error.message}`);
                 return;
               }
               const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
@@ -209,7 +242,7 @@ safe-outputs:
                 mkdirSync(dirname(target), { recursive: true });
                 writeFileSync(target, String(file.content || ''));
               }
-              writeFileSync(payloadPath, `${JSON.stringify(payload)}\n`);
+              writeFileSync(payloadPath, payloadText);
 
               const validate = (candidate, linkMode) => {
                 writeFileSync(payloadPath, `${JSON.stringify(candidate)}\n`);
@@ -533,7 +566,26 @@ Run exactly:
 ```
 
 Only exit status zero with stdout exactly
-`Squad bootstrap validation passed.` authorizes one call to
-`materialize_bootstrap`, with the complete payload file serialized as its
-`payload` string. Any other result is terminal: emit no materialization output,
+`Squad bootstrap validation passed.` authorizes reading
+`.github/workflows/squad-bootstrap-envelope.json`. That file is the only
+transport source for one `materialize_bootstrap` call.
+
+The envelope contains:
+
+- `payload_encoding`: exactly `base64`
+- `payload_byte_length`: canonical decimal UTF-8 byte length, maximum 96,000
+- `payload_sha256`: lowercase SHA-256 of the complete payload bytes
+- `payload_chunk_count`: canonical decimal from 1 through 16
+- `payload_chunk_00` through `payload_chunk_15`: only the populated fixed slots
+
+Each populated chunk is `NN:` followed by canonical Base64 for at most 6,000
+payload bytes, so every string is at most 8,003 bytes and stays conservatively
+below gh-aw's 10,240-byte per-string input limit. Pass every property from the
+envelope byte-for-byte to the typed safe-output call. Do not reserialize the
+payload, recompute metadata, rename slots, add unused slots, or split semantic
+generation into separate Cast and research outputs. The writer reconstructs the
+one shared payload and verifies order, count, bounds, UTF-8, total byte length,
+and SHA-256 before parsing any JSON.
+
+Any validation or envelope error is terminal: emit no materialization output,
 report the exact validator stderr, and stop.
