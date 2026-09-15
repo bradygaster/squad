@@ -376,6 +376,55 @@ describe('#1916: deterministic lifecycle safe output', () => {
     '| Plan | ✅ Done |',
     '| Activate | ✅ Done |',
   ].join('\n');
+  const liveScopeAcceptanceBody = [
+    '## 🧭 Squad Planning Lifecycle',
+    '',
+    '**State:** Scope Accepted',
+    '',
+    '| Field | Value |',
+    '|---|---|',
+    '| Research | ✅ Done |',
+    '| Triage | ✅ Done |',
+    '| Program Plan | ✅ Done (revised) |',
+    '| Implementation Plan | ✅ Done |',
+    '| Validation | ✅ Done (PASS) |',
+    '| Scope | ✅ Done |',
+    '| Implementation Acceptance | ⬜ Pending |',
+    '',
+    '**Last command:** `/squad plan accept scope`',
+    '',
+    '**Next action:** `/squad plan accept implementation`',
+  ].join('\n');
+  const liveImplementationAcceptanceBody = [
+    '## Planning Lifecycle',
+    '',
+    '| Phase | Status | Artifact | Updated |',
+    '|-------|--------|----------|---------|',
+    '| Intent | ✅ Done | (issue body) | 2026-09-15 |',
+    '| Scope Accepted | ✅ Done | comment | 2026-09-15 |',
+    '| Impl Accepted | ✅ Done | (this run) | 2026-09-15 |',
+    '| Activated | ⬚ Pending | — | — |',
+    '',
+    '**Current state:** Implementation Accepted',
+    '**Last command:** `/squad plan accept implementation` by @bradygaster at 2026-09-15 15:16 UTC',
+    '**Next action:** `/squad plan activate`',
+    '**Guidance:** Create sub-issues and begin execution.',
+  ].join('\n');
+  const liveActivatedBody = [
+    '## 🧭 Squad Planning Lifecycle',
+    '',
+    '**State:** Activated',
+    '',
+    '| Field | Value |',
+    '|---|---|',
+    '| Scope Acceptance | ✅ Done |',
+    '| Implementation Acceptance | ✅ Done (full, 5 tasks) |',
+    '| Activation | ✅ Done — 4 epics, 5 tasks created as sub-issues of #4 |',
+    '',
+    '**Last command:** `/squad plan activate`',
+    '',
+    '**Next action:** No further planning command required — this plan is fully activated. Begin implementation execution starting with the Epic 1.1 spike task.',
+  ].join('\n');
 
   it('creates the first tracker with the fixed structured envelope', async () => {
     const result = await runLifecycleUpsert([
@@ -497,7 +546,10 @@ describe('#1916: deterministic lifecycle safe output', () => {
     ['progress-table activation with command attribution', terminalTableBody],
     ['plain progress-list activation', terminalProgressBody],
     ['activate-stage table row', terminalActivateTableBody],
-  ])('accepts live terminal presentation: %s', async (_name, liveBody) => {
+    ['scope acceptance from the E2E planning run', liveScopeAcceptanceBody],
+    ['implementation acceptance with separate guidance', liveImplementationAcceptanceBody],
+    ['terminal granular activation from run 34987615314', liveActivatedBody],
+  ])('accepts live lifecycle presentation: %s', async (_name, liveBody) => {
     const result = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: liveBody },
     ]);
@@ -561,6 +613,25 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.created).toEqual([]);
   });
 
+  it('rejects the live implementation-acceptance mutation from run 34986842391', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: liveImplementationAcceptanceBody
+          .replace(
+            '**Next action:** `/squad plan activate`',
+            '**Next action:** `/squad plan activate` — create sub-issues and begin execution.',
+          )
+          .replace('\n**Guidance:** Create sub-issues and begin execution.', ''),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
   it.each([
     ['state', body.replace('**Current state:** Planned\n', '')],
     ['last command', body.replace('**Last command:** `/squad plan`\n', '')],
@@ -607,6 +678,19 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     created_at: '2026-08-28T01:00:00Z',
     user: { login: 'github-actions[bot]' },
   };
+  const activated = {
+    id: 11,
+    body: [
+      '## Plan activated',
+      '',
+      'Structured data:',
+      '```json',
+      '{"squad_artifact":"activated","schema_version":"1","origin_issue":5,"phases":[]}',
+      '```',
+    ].join('\n'),
+    created_at: '2026-08-28T01:30:00Z',
+    user: { login: 'github-actions[bot]' },
+  };
   const lifecycleEnvelope =
     '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}';
   const stale = {
@@ -640,6 +724,19 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     expect(result.updated[0].body).toContain(lifecycleEnvelope);
   });
 
+  it('repairs granular /squad plan activate lifecycle state from a trusted activation', async () => {
+    const result = await runLifecycleRepair(
+      [activated, stale],
+      '/squad plan activate',
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].body).toContain('- **State:** Activated');
+    expect(result.updated[0].body).toContain('- **Last command:** `/squad plan activate`');
+  });
+
   it('does nothing when the newest tracker is already terminal', async () => {
     const terminal = {
       ...stale,
@@ -667,7 +764,7 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     expect(result.created).toEqual([]);
     expect(result.updated).toEqual([]);
     expect(result.info).toContain(
-      'No trusted whole-plan acceptance artifact; lifecycle repair is not applicable.',
+      'No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.',
     );
   });
 

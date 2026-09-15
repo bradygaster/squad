@@ -395,6 +395,8 @@ matching the exact structured fields, and choosing the newest match.
 
 For each lifecycle-state write, call `upsert_lifecycle_state` once with the
 complete body. It updates the newest trusted tracker or creates the first one.
+For nonterminal states, `Next action` MUST be only the backticked `/squad`
+command; put prose elsewhere. `Activated` may use terminal prose instead.
 
 # Squad — `/squad` Slash Command
 
@@ -2553,7 +2555,8 @@ accepted label — that manufactures a defect.
 ##### Step 5: Update Lifecycle
 
 Phase: `🔄 Phase {N} of {total} activated`. Next: accept/activate next phase.
-Full/last: `✅ Done`, state = Activated. Terminal — no next action needed.
+Full/last: `✅ Done`, state = Activated, last command = invoked
+`/squad plan activate`. Terminal — use terminal prose for Next action.
 
 ## end skill: `squad-plan-activate`
 
