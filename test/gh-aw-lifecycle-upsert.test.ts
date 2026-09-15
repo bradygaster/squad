@@ -685,7 +685,7 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
       '',
       'Structured data:',
       '```json',
-      '{"squad_artifact":"activated","schema_version":"1","origin_issue":5,"phases":[]}',
+      '{"squad_artifact":"activated","schema_version":"1","origin_issue":5,"phases":[1,2]}',
       '```',
     ].join('\n'),
     created_at: '2026-08-28T01:30:00Z',
@@ -724,7 +724,7 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     expect(result.updated[0].body).toContain(lifecycleEnvelope);
   });
 
-  it('repairs granular /squad plan activate lifecycle state from a trusted activation', async () => {
+  it('repairs granular /squad plan activate lifecycle state from a trusted phased activation', async () => {
     const result = await runLifecycleRepair(
       [activated, stale],
       '/squad plan activate',
@@ -745,6 +745,37 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
         .replace('**Last command:** `/squad plan`', '**Last command:** `/squad activate`'),
     };
     const result = await runLifecycleRepair([accepted, terminal]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.info).toContain(
+      'The newest lifecycle tracker already records terminal activation.',
+    );
+  });
+
+  it('preserves a live terminal tracker with detailed activation and command attribution', async () => {
+    const terminal = {
+      ...stale,
+      body: [
+        '## 🧭 Squad Lifecycle State — Issue #5',
+        '',
+        '**State:** Activated',
+        '',
+        '| Stage | Status |',
+        '| --- | --- |',
+        '| Activation | ✅ Done — created 3 task issues and milestone v1 |',
+        '',
+        '**Last command:** `/squad plan activate` by @maintainer',
+        '**Next action:** Track progress on the created task issues; no further planning action is required.',
+        '',
+        'Structured data:',
+        '```json',
+        lifecycleEnvelope,
+        '```',
+      ].join('\n'),
+    };
+    const result = await runLifecycleRepair([activated, terminal], '/squad plan activate');
 
     expect(result.failures).toEqual([]);
     expect(result.created).toEqual([]);

@@ -388,15 +388,15 @@ jobs:
               comment,
               envelope: envelopeFor(comment),
             }));
-            const activatedOrAccepted = artifacts.some(
-              ({ envelope }) =>
-                ["plan-accepted", "activated"].includes(envelope?.squad_artifact) &&
-                envelope?.schema_version === "1" &&
-                envelope?.origin_issue === issueNumber &&
-                Array.isArray(envelope?.phases) &&
-                envelope.phases.length === 0,
+            const ok = artifacts.some(
+              ({ envelope: e }) =>
+                ["plan-accepted", "activated"].includes(e?.squad_artifact) &&
+                e?.schema_version === "1" &&
+                e?.origin_issue === issueNumber &&
+                Array.isArray(e?.phases) &&
+                (e.squad_artifact === "activated" || e.phases.length === 0),
             );
-            if (!activatedOrAccepted) {
+            if (!ok) {
               core.info("No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.");
               return;
             }
@@ -415,8 +415,9 @@ jobs:
             const lifecycleBody = String(lifecycle?.body || "");
             const terminal =
               /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Activation:\*\*\s+✅\s+Done\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)`\s*$/im.test(lifecycleBody);
+              (/^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(lifecycleBody) ||
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(lifecycleBody)) &&
+              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(lifecycleBody);
             if (terminal) {
               core.info("The newest lifecycle tracker already records terminal activation.");
               return;
