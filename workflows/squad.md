@@ -2167,7 +2167,21 @@ acceptance, and validator-owned synthesis.
 
 ##### Step 4: Update Lifecycle
 
-Set Validation = `✅ Done` or `❌ Failed`. Next on pass: `/squad plan accept scope`. On fail: fix + re-run.
+Set Validation = `✅ Done` or `❌ Failed`. Next on pass:
+`/squad plan accept scope`. The lifecycle field MUST be exactly this on pass:
+
+```markdown
+**Next action:** `/squad plan accept scope`
+```
+
+Or exactly this on fail:
+
+```markdown
+**Next action:** `/squad plan validate`
+```
+
+The backticked command must be the entire field value; put remediation or retry
+context in a separate `**Guidance:**` field.
 
 ##### Step 5: Surface Next Action
 

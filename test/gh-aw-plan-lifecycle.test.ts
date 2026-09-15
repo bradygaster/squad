@@ -883,6 +883,13 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     expect(validation).toMatch(/Structural PASS alone cannot produce overall PASS/);
   });
 
+  it('emits lifecycle next actions in the deterministic writer format', () => {
+    expect(validation).toContain('**Next action:** `/squad plan accept scope`');
+    expect(validation).toContain('**Next action:** `/squad plan validate`');
+    expect(validation).toMatch(/backticked command must\s+be the entire field value/);
+    expect(validation).toMatch(/retry\s+context in a separate\s+`\*\*Guidance:\*\*` field/);
+  });
+
   it('distinguishes a neatly formatted bad plan from a genuinely validated plan', () => {
     const validationHeader = [
       '## ✅ Squad Plan Validation — PASSED',
