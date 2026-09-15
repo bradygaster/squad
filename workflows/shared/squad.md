@@ -247,11 +247,11 @@ safe-outputs:
               const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`[ \t]*$/im.test(body);
               const hasActivationDone =
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
-                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
                 /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
                 hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
+                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
                 /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
               const hasNextAction = hasNextCommand || hasTerminalState;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
@@ -315,7 +315,8 @@ jobs:
         !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
         github.event_name == 'issue_comment' &&
         (github.event.comment.body == '/squad activate' ||
-         github.event.comment.body == '/squad plan accept')
+         github.event.comment.body == '/squad plan accept' ||
+         github.event.comment.body == '/squad plan activate')
       }}
     runs-on: ubuntu-slim
     permissions:
@@ -334,7 +335,7 @@ jobs:
             if (
               !Number.isInteger(issueNumber) ||
               issueNumber <= 0 ||
-              !["/squad activate", "/squad plan accept"].includes(command)
+              !["/squad activate", "/squad plan accept", "/squad plan activate"].includes(command)
             ) {
               core.setFailed("A valid whole-plan activation command and issue number are required.");
               return;
@@ -387,16 +388,16 @@ jobs:
               comment,
               envelope: envelopeFor(comment),
             }));
-            const accepted = artifacts.some(
-              ({ envelope }) =>
-                envelope?.squad_artifact === "plan-accepted" &&
-                envelope?.schema_version === "1" &&
-                envelope?.origin_issue === issueNumber &&
-                Array.isArray(envelope?.phases) &&
-                envelope.phases.length === 0,
+            const ok = artifacts.some(
+              ({ envelope: e }) =>
+                ["plan-accepted", "activated"].includes(e?.squad_artifact) &&
+                e?.schema_version === "1" &&
+                e?.origin_issue === issueNumber &&
+                Array.isArray(e?.phases) &&
+                (e.squad_artifact === "activated" || e.phases.length === 0),
             );
-            if (!accepted) {
-              core.info("No trusted whole-plan acceptance artifact; lifecycle repair is not applicable.");
+            if (!ok) {
+              core.info("No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.");
               return;
             }
 
@@ -414,8 +415,9 @@ jobs:
             const lifecycleBody = String(lifecycle?.body || "");
             const terminal =
               /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Activation:\*\*\s+✅\s+Done\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)`\s*$/im.test(lifecycleBody);
+              (/^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(lifecycleBody) ||
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(lifecycleBody)) &&
+              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(lifecycleBody);
             if (terminal) {
               core.info("The newest lifecycle tracker already records terminal activation.");
               return;

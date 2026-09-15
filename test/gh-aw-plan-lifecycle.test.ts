@@ -1031,6 +1031,7 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
     expect(lifecycle).toContain('Activation = `✅ Done`');
     expect(lifecycle).toContain('state =\n  Activated');
     expect(lifecycle).toContain('This is terminal');
+    expect(lifecycle).toContain('explicit terminal prose');
   });
 
   it('repairs stale lifecycle state on an idempotent activate rerun', () => {

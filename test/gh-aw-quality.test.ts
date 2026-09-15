@@ -492,7 +492,7 @@ describe('#1916: lifecycle comment updates use a deterministic safe-output job',
       "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
     );
     expect(shared).toContain("github.event.comment.body == '/squad activate'");
-    expect(shared).toContain('envelope?.squad_artifact === "plan-accepted"');
+    expect(shared).toContain('["plan-accepted", "activated"].includes(e?.squad_artifact)');
     expect(shared).toContain('name: Repair terminal lifecycle after idempotent activation');
   });
 
@@ -1661,6 +1661,10 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     );
     expect(compiled).toContain('github.rest.repos.getCollaboratorPermissionLevel');
     expect(compiled).toContain('["admin", "maintain", "write"].includes(permission)');
+    expect(compiled).toContain("github.event.comment.body == '/squad plan activate'");
+    expect(compiled).toContain(
+      '["/squad activate", "/squad plan accept", "/squad plan activate"].includes(command)',
+    );
   }, 20000);
 
   it('compiles Cast failure into a queryable post-agent job that fails the run', () => {
