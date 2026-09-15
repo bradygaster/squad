@@ -13,7 +13,7 @@
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
-    "@astrojs/markdown-remark": "^7.3.0",
+    "@astrojs/markdown-remark": "^7.3.1",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.4",
     "@tailwindcss/vite": "^4.3.3",
