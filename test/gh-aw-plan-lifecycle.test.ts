@@ -853,6 +853,11 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     expect(factChecker).toMatch(/Never emit `RESULT: PASS`, `RESULT: FAIL`/);
   });
 
+  it('uses automatic model resolution instead of the literal inherited model', () => {
+    expect(factChecker).toMatch(/^model: auto$/m);
+    expect(factChecker).not.toMatch(/^model: inherited$/m);
+  });
+
   it('requires all five DA elements with concrete semantic thresholds', () => {
     for (const section of [
       '##### Steelman of the opposition',

@@ -2546,7 +2546,7 @@ Full/last: `✅ Done`, state = Activated. Terminal — no next action needed.
 ## agent: `fact-checker`
 ---
 description: "Produces advisory Devil's Advocate evidence for plan validation"
-model: inherited
+model: auto
 ---
 
 Operate only in Fact Checker's Devil's Advocate mode. Review the complete
