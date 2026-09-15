@@ -460,26 +460,11 @@ When agents finish, the coordinator records follow-up work and leaves a breadcru
 
 **Commit this folder.** Your team persists. Names persist. Anyone who clones gets the team — with the same cast.
 
-### SDK-First Mode (New in Phase 1)
+### SDK-First Mode (Deprecated)
 
-> ⚠️ **Experimental.** SDK-first mode is under active development and has known bugs. Use markdown-first (the default) for production teams.
+> ⚠️ **Deprecated.** `squad init --sdk` will be removed in v2. Use the default markdown-first `squad init` flow for new teams.
 
-Prefer TypeScript? You can define your team in code instead of markdown. Create a `squad.config.ts` with builder functions, run `squad build`, and the `.squad/` files are generated automatically.
-
-```typescript
-// squad.config.ts
-import { defineSquad, defineTeam, defineAgent } from '@bradygaster/squad-sdk';
-
-export default defineSquad({
-  team: defineTeam({ name: 'Platform Squad', members: ['@edie', '@mcmanus'] }),
-  agents: [
-    defineAgent({ name: 'edie', role: 'TypeScript Engineer', model: 'claude-sonnet-5' }),
-    defineAgent({ name: 'mcmanus', role: 'DevRel', model: 'claude-haiku-4.5' }),
-  ],
-});
-```
-
-Run `squad build` to generate all the markdown. See the [SDK-First Mode Guide](docs/src/content/docs/sdk-first-mode.md) for full documentation.
+Existing projects with a `squad.config.ts` can continue running `squad build` during the transition. See the [legacy SDK-First Mode Guide](docs/src/content/docs/sdk-first-mode.md) for compatibility information.
 
 ---
 
