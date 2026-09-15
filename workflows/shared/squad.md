@@ -196,7 +196,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields; structured data is normalized by the writer.
+          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
           required: true
           type: string
       steps:
@@ -244,7 +244,7 @@ safe-outputs:
                 (/\bsquad\b/i.test(firstLine) || /\bplanning\b/i.test(firstLine));
               const hasState = /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+\S+/im.test(body);
               const hasLastCommand = /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad\b[^`]*`/im.test(body);
-              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`[ \t]*$/im.test(body);
               const hasActivationDone =
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
                 /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
@@ -255,7 +255,7 @@ safe-outputs:
                 /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
               const hasNextAction = hasNextCommand || hasTerminalState;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
-                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.");
+                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
               }
               if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {

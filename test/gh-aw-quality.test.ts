@@ -1161,7 +1161,10 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // source independently verifies the triggering comment author's live repository
   // permission before the deterministic repair job can write a terminal state.
   // The ambient prompt remains below its separate 40 KB delivery guard.
-  const SOURCE_GROWTH_BUDGET_KB = 193;
+  // Raised 193 -> 194 KB for the command-only lifecycle next-action contract.
+  // Its validation and retry guidance are inside the on-demand plan-validation
+  // skill; the ambient prompt remains below the independently enforced 40 KB cap.
+  const SOURCE_GROWTH_BUDGET_KB = 194;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {

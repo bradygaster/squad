@@ -519,7 +519,44 @@ describe('#1916: deterministic lifecycle safe output', () => {
     ]);
 
     expect(result.failures).toEqual([
-      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.',
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
+  it('rejects the prose-prefixed retry action emitted by failed run 34944550565', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: body
+          .replace('**Current state:** Planned', '**Current state:** Validation failed')
+          .replace('**Last command:** `/squad plan`', '**Last command:** `/squad plan validate`')
+          .replace(
+            '**Next action:** `/squad activate`',
+            '**Next action:** Re-run `/squad plan validate`. If the sub-agent fails again, track the infrastructure defect.',
+          ),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
+  it('rejects explanatory prose after a valid nonterminal next command', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: body.replace(
+          '**Next action:** `/squad activate`',
+          '**Next action:** `/squad activate` after reviewing the validation results.',
+        ),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
     ]);
     expect(result.created).toEqual([]);
   });
@@ -534,7 +571,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
     ]);
 
     expect(result.failures).toEqual([
-      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.',
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
     ]);
     expect(result.created).toEqual([]);
     expect(result.updated).toEqual([]);
@@ -550,7 +587,7 @@ describe('#1916: deterministic lifecycle safe output', () => {
     ]);
 
     expect(malformed.failures).toEqual([
-      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.',
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
     ]);
     expect(duplicate.failures).toEqual(['Expected exactly one lifecycle update, found 2.']);
   });
