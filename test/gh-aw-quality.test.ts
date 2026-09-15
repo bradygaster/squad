@@ -492,7 +492,10 @@ describe('#1916: lifecycle comment updates use a deterministic safe-output job',
       "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
     );
     expect(shared).toContain("github.event.comment.body == '/squad activate'");
-    expect(shared).toContain('envelope?.squad_artifact === "plan-accepted"');
+    expect(shared).toContain("github.event.comment.body == '/squad plan activate'");
+    expect(shared).toContain(
+      '["plan-accepted", "impl-accepted"].includes(envelope?.squad_artifact)',
+    );
     expect(shared).toContain('name: Repair terminal lifecycle after idempotent activation');
   });
 

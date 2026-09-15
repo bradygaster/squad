@@ -339,6 +339,10 @@ describe('#1916: deterministic lifecycle safe output', () => {
     '- **Last command:** `/squad activate`',
     '- **Next action:** Track progress on the 5 created task issues; no further planning action required.',
   ].join('\n');
+  const granularTerminalBody = terminalBody.replace(
+    '/squad activate',
+    '/squad plan activate',
+  );
   const terminalTableBody = [
     '## Planning Lifecycle',
     '',
@@ -493,6 +497,16 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.created[0].body).toContain(terminalBody);
   });
 
+  it('accepts granular plan activation as a terminal last command', async () => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: granularTerminalBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(granularTerminalBody);
+  });
+
   it.each([
     ['progress-table activation with command attribution', terminalTableBody],
     ['plain progress-list activation', terminalProgressBody],
@@ -607,6 +621,14 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     created_at: '2026-08-28T01:00:00Z',
     user: { login: 'github-actions[bot]' },
   };
+  const granularAccepted = {
+    ...accepted,
+    id: 11,
+    body: accepted.body.replace(
+      '"squad_artifact":"plan-accepted"',
+      '"squad_artifact":"impl-accepted"',
+    ),
+  };
   const lifecycleEnvelope =
     '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}';
   const stale = {
@@ -638,6 +660,41 @@ describe('#1928: deterministic terminal lifecycle repair', () => {
     expect(result.updated[0].body).toContain('- **Activation:** ✅ Done');
     expect(result.updated[0].body).toContain('- **Last command:** `/squad activate`');
     expect(result.updated[0].body).toContain(lifecycleEnvelope);
+  });
+
+  it('repairs granular activation after implementation acceptance', async () => {
+    const result = await runLifecycleRepair(
+      [granularAccepted, stale],
+      '/squad plan activate',
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].comment_id).toBe(20);
+    expect(result.updated[0].body).toContain('- **State:** Activated');
+    expect(result.updated[0].body).toContain('- **Last command:** `/squad plan activate`');
+    expect(result.updated[0].body).toContain(lifecycleEnvelope);
+  });
+
+  it('recognizes an existing granular activation tracker as terminal', async () => {
+    const terminal = {
+      ...stale,
+      body: stale.body
+        .replace('**State:** Planned', '**State:** Activated\n**Activation:** ✅ Done')
+        .replace('**Last command:** `/squad plan`', '**Last command:** `/squad plan activate`'),
+    };
+    const result = await runLifecycleRepair(
+      [granularAccepted, terminal],
+      '/squad plan activate',
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.info).toContain(
+      'The newest lifecycle tracker already records terminal activation.',
+    );
   });
 
   it('does nothing when the newest tracker is already terminal', async () => {
