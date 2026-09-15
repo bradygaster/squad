@@ -25,6 +25,7 @@ export type { ConfigLoadResult, ConfigValidationError } from './runtime/config.j
 export { MODELS, TIMEOUTS, AGENT_ROLES } from './runtime/constants.js';
 export type { AgentRole } from './runtime/constants.js';
 export * from './runtime/streaming.js';
+export * from './runtime/usage-ledger.js';
 export * from './runtime/cost-tracker.js';
 export * from './runtime/telemetry.js';
 export * from './runtime/offline.js';

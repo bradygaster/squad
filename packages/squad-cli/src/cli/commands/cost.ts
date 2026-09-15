@@ -1,5 +1,10 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import {
+  resolveSquadState,
+  UsageLedger,
+  type StateBackend,
+  type UsageLedgerRecord,
+  type UsageLedgerTurnStart,
+} from '@bradygaster/squad-sdk';
 import { fatal } from '../core/errors.js';
 
 interface CostArgs {
@@ -9,6 +14,9 @@ interface CostArgs {
 
 interface CostEntry {
   agent: string;
+  sessionId: string;
+  turnId?: string;
+  model: string;
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
@@ -20,7 +28,12 @@ interface AgentTotals {
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
-  spawns: number;
+  turns: number;
+}
+
+interface UsageCoverage {
+  attemptedTurns: number;
+  recordedTurns: number;
 }
 
 const TOKEN_USAGE_RE =
@@ -71,11 +84,37 @@ function parseCostEntry(content: string, timestamp: string): CostEntry | null {
 
   return {
     agent,
+    sessionId: timestamp,
+    model: 'self-reported',
     inputTokens,
     outputTokens,
     estimatedCost,
     timestamp,
   };
+}
+
+function fromLedgerRecord(record: UsageLedgerRecord): CostEntry {
+  return {
+    agent: record.agentName ?? 'unknown',
+    sessionId: record.sessionId,
+    ...(record.turnId ? { turnId: record.turnId } : {}),
+    model: record.model,
+    inputTokens: record.inputTokens,
+    outputTokens: record.outputTokens,
+    estimatedCost: record.estimatedCost,
+    timestamp: record.timestamp,
+  };
+}
+
+function parseTimestamp(value: string): number | null {
+  const isoValue = value.match(SAFE_TIMESTAMP_RE)
+    ? value.replace(
+        /^(\d{4}-\d{2}-\d{2}T)(\d{2})-(\d{2})-(\d{2})Z/,
+        '$1$2:$3:$4Z',
+      )
+    : value;
+  const timestamp = Date.parse(isoValue);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function sortNewestFirst(entries: readonly string[]): string[] {
@@ -90,12 +129,33 @@ function formatCost(value: number): string {
   return `$${value.toFixed(4)}`;
 }
 
-function printNoData(): void {
-  console.log('💰 No token usage data found in orchestration logs.');
-  console.log('   Token tracking is recorded when agents report usage in their responses.');
+function printCoverage(coverage: UsageCoverage): void {
+  const percentage = coverage.attemptedTurns === 0
+    ? 0
+    : (coverage.recordedTurns / coverage.attemptedTurns) * 100;
+  console.log(
+    `  Coverage: ${coverage.recordedTurns} of ${coverage.attemptedTurns} turn attempt${coverage.attemptedTurns === 1 ? '' : 's'} with recorded usage (${percentage.toFixed(1)}%)`,
+  );
 }
 
-function printSummary(entries: CostEntry[], agentFilter?: string): void {
+function printNoData(coverage?: UsageCoverage, invalidRecordCount = 0): void {
+  console.log('💰 No token usage data found.');
+  console.log('   Structured usage is recorded after a runtime turn completes.');
+  if (coverage && coverage.attemptedTurns > 0) {
+    printCoverage(coverage);
+  }
+  if (invalidRecordCount > 0) {
+    console.log(`  ⚠ Skipped ${invalidRecordCount} invalid usage ledger record${invalidRecordCount === 1 ? '' : 's'}.`);
+  }
+}
+
+function printSummary(
+  entries: CostEntry[],
+  source: 'structured' | 'legacy',
+  agentFilter?: string,
+  invalidRecordCount = 0,
+  coverage?: UsageCoverage,
+): void {
   const totalsByAgent = new Map<string, AgentTotals>();
 
   for (const entry of entries) {
@@ -104,13 +164,13 @@ function printSummary(entries: CostEntry[], agentFilter?: string): void {
       inputTokens: 0,
       outputTokens: 0,
       estimatedCost: 0,
-      spawns: 0,
+      turns: 0,
     };
 
     current.inputTokens += entry.inputTokens;
     current.outputTokens += entry.outputTokens;
     current.estimatedCost += entry.estimatedCost;
-    current.spawns += 1;
+    current.turns += 1;
     totalsByAgent.set(entry.agent, current);
   }
 
@@ -120,10 +180,10 @@ function printSummary(entries: CostEntry[], agentFilter?: string): void {
       acc.inputTokens += row.inputTokens;
       acc.outputTokens += row.outputTokens;
       acc.estimatedCost += row.estimatedCost;
-      acc.spawns += row.spawns;
+      acc.turns += row.turns;
       return acc;
     },
-    { inputTokens: 0, outputTokens: 0, estimatedCost: 0, spawns: 0 },
+    { inputTokens: 0, outputTokens: 0, estimatedCost: 0, turns: 0 },
   );
 
   const agentWidth = Math.max(
@@ -153,26 +213,46 @@ function printSummary(entries: CostEntry[], agentFilter?: string): void {
   console.log(formatRow('Total', total.inputTokens, total.outputTokens, total.estimatedCost));
   console.log();
 
+  const sessionCount = new Set(entries.map(entry => entry.sessionId)).size;
+  const modelTotals = new Map<string, { turns: number; estimatedCost: number }>();
+  for (const entry of entries) {
+    const model = modelTotals.get(entry.model) ?? { turns: 0, estimatedCost: 0 };
+    model.turns += 1;
+    model.estimatedCost += entry.estimatedCost;
+    modelTotals.set(entry.model, model);
+  }
+
   const filterLabel = agentFilter ? ` for ${agentFilter}` : '';
-  console.log(`  📊 ${rows.length} agent${rows.length === 1 ? '' : 's'} across ${total.spawns} spawn${total.spawns === 1 ? '' : 's'}${filterLabel}`);
+  console.log(`  📊 ${rows.length} agent${rows.length === 1 ? '' : 's'} across ${total.turns} turn${total.turns === 1 ? '' : 's'} in ${sessionCount} session${sessionCount === 1 ? '' : 's'}${filterLabel}`);
+  console.log(`  Models: ${[...modelTotals.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([model, values]) => `${model} (${values.turns} turn${values.turns === 1 ? '' : 's'}, ${formatCost(values.estimatedCost)})`)
+    .join(', ')}`);
+
+  if (source === 'structured') {
+    console.log('  Source: structured runtime usage ledger');
+    if (coverage && coverage.attemptedTurns > 0) {
+      printCoverage(coverage);
+    }
+    if (invalidRecordCount > 0) {
+      console.log(`  ⚠ Skipped ${invalidRecordCount} invalid usage ledger record${invalidRecordCount === 1 ? '' : 's'}.`);
+    }
+  } else {
+    console.log('  ⚠ Source: legacy self-reported orchestration logs; totals are estimates.');
+  }
 }
 
-async function listMarkdownFiles(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries
-    .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
-    .map(entry => entry.name);
+function listMarkdownFiles(backend: StateBackend, dir: string): string[] {
+  return backend.list(dir).filter(entry => entry.endsWith('.md'));
 }
 
-async function getCurrentSessionCutoff(teamRoot: string): Promise<string | null> {
-  const sessionLogDir = join(teamRoot, '.squad', 'log');
-
+function getCurrentSessionCutoff(backend: StateBackend): number | null {
   try {
-    const logFiles = sortNewestFirst(await listMarkdownFiles(sessionLogDir));
+    const logFiles = sortNewestFirst(listMarkdownFiles(backend, 'log'));
     for (const file of logFiles) {
       const timestamp = extractTimestamp(file);
       if (timestamp) {
-        return timestamp;
+        return parseTimestamp(timestamp);
       }
     }
     return null;
@@ -181,56 +261,112 @@ async function getCurrentSessionCutoff(teamRoot: string): Promise<string | null>
   }
 }
 
-export async function runCost(args: string[], teamRoot: string): Promise<void> {
-  const { showAll, agentFilter } = parseArgs(args);
-  const orchestrationDir = join(teamRoot, '.squad', 'orchestration-log');
+function matchesScope(
+  record: Pick<UsageLedgerRecord | UsageLedgerTurnStart, 'agentName' | 'timestamp'>,
+  cutoffTimestamp: number | null,
+  agentFilter?: string,
+): boolean {
+  const timestamp = parseTimestamp(record.timestamp);
+  return timestamp !== null
+    && (cutoffTimestamp === null || timestamp > cutoffTimestamp)
+    && (!agentFilter || (record.agentName ?? 'unknown').toLowerCase() === agentFilter.toLowerCase());
+}
 
+function calculateCoverage(entries: CostEntry[], turnStarts: UsageLedgerTurnStart[]): UsageCoverage {
+  const attemptedTurnIds = new Set(turnStarts.map(turn => turn.turnId));
+  const recordedTurnIds = new Set(
+    entries
+      .map(entry => entry.turnId)
+      .filter((turnId): turnId is string =>
+        typeof turnId === 'string' && attemptedTurnIds.has(turnId)),
+  );
+  return {
+    attemptedTurns: attemptedTurnIds.size,
+    recordedTurns: recordedTurnIds.size,
+  };
+}
+
+async function readStructuredEntries(
+  backend: StateBackend,
+  cutoffTimestamp: number | null,
+  agentFilter?: string,
+): Promise<{ entries: CostEntry[]; coverage: UsageCoverage; invalidRecordCount: number }> {
+  const result = await new UsageLedger(backend).read();
+  const entries = result.records
+    .filter(record => matchesScope(record, cutoffTimestamp, agentFilter))
+    .map(fromLedgerRecord);
+  const turnStarts = result.turnStarts.filter(record => matchesScope(record, cutoffTimestamp, agentFilter));
+
+  return {
+    entries,
+    coverage: calculateCoverage(entries, turnStarts),
+    invalidRecordCount: result.invalidRecordCount,
+  };
+}
+
+function readLegacyEntries(
+  backend: StateBackend,
+  cutoffTimestamp: number | null,
+  agentFilter?: string,
+): CostEntry[] {
   let files: string[];
   try {
-    files = sortNewestFirst(await listMarkdownFiles(orchestrationDir));
+    files = sortNewestFirst(listMarkdownFiles(backend, 'orchestration-log'));
   } catch {
-    printNoData();
-    return;
+    return [];
   }
-
-  if (files.length === 0) {
-    printNoData();
-    return;
-  }
-
-  const cutoffTimestamp = showAll ? null : await getCurrentSessionCutoff(teamRoot);
-  const filteredFiles = files.filter(file => {
-    const timestamp = extractTimestamp(file);
-    if (!timestamp) {
-      return false;
-    }
-    return cutoffTimestamp ? timestamp > cutoffTimestamp : true;
-  });
 
   const entries: CostEntry[] = [];
-  for (const file of filteredFiles) {
+  for (const file of files) {
     const timestamp = extractTimestamp(file);
-    if (!timestamp) {
+    const parsedTimestamp = timestamp ? parseTimestamp(timestamp) : null;
+    if (!timestamp || parsedTimestamp === null || (cutoffTimestamp !== null && parsedTimestamp <= cutoffTimestamp)) {
       continue;
     }
 
-    const content = await readFile(join(orchestrationDir, file), 'utf8');
+    const content = backend.read(`orchestration-log/${file}`);
+    if (!content) continue;
     const parsed = parseCostEntry(content, timestamp);
-    if (!parsed) {
+    if (!parsed || (agentFilter && parsed.agent.toLowerCase() !== agentFilter.toLowerCase())) {
       continue;
     }
-
-    if (agentFilter && parsed.agent.toLowerCase() !== agentFilter.toLowerCase()) {
-      continue;
-    }
-
     entries.push(parsed);
   }
 
-  if (entries.length === 0) {
+  return entries;
+}
+
+export async function runCost(args: string[], teamRoot: string): Promise<void> {
+  const { showAll, agentFilter } = parseArgs(args);
+  const stateContext = resolveSquadState(teamRoot);
+  if (!stateContext) {
     printNoData();
     return;
   }
 
-  printSummary(entries, agentFilter);
+  const cutoffTimestamp = showAll ? null : getCurrentSessionCutoff(stateContext.backend);
+  const structured = await readStructuredEntries(stateContext.backend, cutoffTimestamp, agentFilter);
+  if (structured.entries.length > 0) {
+    printSummary(
+      structured.entries,
+      'structured',
+      agentFilter,
+      structured.invalidRecordCount,
+      structured.coverage,
+    );
+    return;
+  }
+
+  if (structured.coverage.attemptedTurns > 0) {
+    printNoData(structured.coverage, structured.invalidRecordCount);
+    return;
+  }
+
+  const legacyEntries = readLegacyEntries(stateContext.backend, cutoffTimestamp, agentFilter);
+  if (legacyEntries.length > 0) {
+    printSummary(legacyEntries, 'legacy', agentFilter);
+    return;
+  }
+
+  printNoData(undefined, structured.invalidRecordCount);
 }
