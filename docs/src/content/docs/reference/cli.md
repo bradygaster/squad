@@ -357,6 +357,7 @@ First match wins.
 |----------|---------|--------|
 | `SQUAD_CLIENT` | Detected client platform | `cli`, `vscode` |
 | `COPILOT_TOKEN` | Copilot auth token (SDK usage) | Token string |
+| `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context utilization warning threshold | Fraction greater than `0` and at most `1` (default: `0.8`) |
 
 ---
 

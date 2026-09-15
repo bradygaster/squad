@@ -319,7 +319,28 @@ await telemetry.shutdown();
 await shutdownOTel();
 ```
 
-The root package also exports streaming helpers, cost tracking, offline mode, runtime events, OpenTelemetry metrics, and internationalization helpers.
+`StreamingPipeline` can also track the latest context-window occupancy for each attached session. Runtime `context_usage` events are exact; regular usage events provide an estimate when a model context-window resolver is configured.
+
+```typescript
+import { RuntimeEventBus, StreamingPipeline } from '@bradygaster/squad-sdk';
+
+const eventBus = new RuntimeEventBus();
+const pipeline = new StreamingPipeline({
+  eventBus,
+  contextWarningThreshold: 0.8,
+  resolveContextWindow: model => model === 'gpt-5.4' ? 200_000 : undefined,
+});
+
+pipeline.onContextUtilization(snapshot => {
+  if (snapshot.thresholdCrossed) {
+    console.warn(`${snapshot.sessionId} context is ${(snapshot.utilization * 100).toFixed(1)}% full`);
+  }
+});
+```
+
+Every accepted sample is also emitted as a typed `context:utilization` event and recorded in the `squad.context.utilization` OpenTelemetry gauge. Exact runtime samples take precedence over later estimates for the same session.
+
+The root package also exports cost tracking, offline mode, runtime events, OpenTelemetry metrics, and internationalization helpers.
 
 ## Other Public Modules
 

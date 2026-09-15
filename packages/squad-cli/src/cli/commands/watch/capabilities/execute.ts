@@ -7,9 +7,15 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
+import { SquadClient } from '@bradygaster/squad-sdk/client';
 import { createVerboseLogger } from '../verbose.js';
 import { loadAgentCharter } from '../../../shell/spawn.js';
-import { buildCopilotCommand, spawnAgent } from '../agent-spawn.js';
+import {
+  buildCopilotCommand,
+  spawnAgent,
+  withCopilotUsageOutput,
+} from '../agent-spawn.js';
+import type { AgentSpawnResult, CopilotUsageOutput } from '../agent-spawn.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -138,7 +144,7 @@ async function executeAll(
   issues: ExecutableWorkItem[],
   context: WatchContext,
   timeoutMs: number,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<AgentSpawnResult> {
   const prompt = buildAgentPrompt(issues, context.teamRoot, context.stateRoot);
 
   // Load Ralph's charter to give the spawned session full specialist context.
@@ -151,7 +157,17 @@ async function executeAll(
   }
 
   const fullPrompt = charterPrefix + prompt;
-  const { cmd, args } = buildCopilotCommand(fullPrompt, context);
+  const { cmd, args: baseArgs } = buildCopilotCommand(fullPrompt, context);
+  let usageCapture: ReturnType<typeof withCopilotUsageOutput> | undefined;
+  let usageSetupError: string | undefined;
+  if (!context.agentCmd) {
+    try {
+      usageCapture = withCopilotUsageOutput(baseArgs, context.stateRoot);
+    } catch (error) {
+      usageSetupError = `Could not initialize Copilot usage capture: ${(error as Error).message}`;
+    }
+  }
+  const args = usageCapture?.args ?? baseArgs;
 
   // Track child PID for cleanup on exit/crash
   const issueNums = issues.map(i => `#${i.number}`).join(',');
@@ -159,7 +175,49 @@ async function executeAll(
     ? { tracker: context.pidTracker, label: `copilot-session-${issueNums}` }
     : undefined;
 
-  return spawnAgent(cmd, args, context.teamRoot, timeoutMs, pidTracking);
+  const result = await spawnAgent(
+    cmd,
+    args,
+    context.teamRoot,
+    timeoutMs,
+    pidTracking,
+    usageCapture?.filePath,
+  );
+  return usageSetupError ? { ...result, usageError: usageSetupError } : result;
+}
+
+interface EstimatedContextUtilization {
+  model: string;
+  occupiedTokens: number;
+  contextWindowTokens: number;
+  utilization: number;
+  source: 'estimated';
+}
+
+async function estimateContextUtilization(
+  usage: CopilotUsageOutput,
+  teamRoot: string,
+): Promise<EstimatedContextUtilization | undefined> {
+  const client = new SquadClient({ cwd: teamRoot });
+  try {
+    const models = await client.listModels();
+    const model = models.find(candidate =>
+      candidate.id === usage.currentModel || candidate.name === usage.currentModel);
+    const contextWindowTokens = model?.capabilities.limits.max_context_window_tokens;
+    if (!Number.isInteger(contextWindowTokens) || !contextWindowTokens || contextWindowTokens <= 0) {
+      return undefined;
+    }
+    const occupiedTokens = usage.lastCallInputTokens + usage.lastCallOutputTokens;
+    return {
+      model: usage.currentModel,
+      occupiedTokens,
+      contextWindowTokens,
+      utilization: occupiedTokens / contextWindowTokens,
+      source: 'estimated',
+    };
+  } finally {
+    await client.disconnect();
+  }
 }
 
 export class ExecuteCapability implements WatchCapability {
@@ -209,13 +267,44 @@ export class ExecuteCapability implements WatchCapability {
 
       // Single agent invocation with all issues — agent reads ralph-instructions.md
       const result = await executeAll(eligible, context, timeout);
+      let contextUtilization: EstimatedContextUtilization | undefined;
+      let contextTelemetryError = result.usageError;
+      if (result.usage) {
+        try {
+          contextUtilization = await estimateContextUtilization(result.usage, context.teamRoot);
+          if (!contextUtilization) {
+            contextTelemetryError = `No context-window limit found for model ${result.usage.currentModel}`;
+          }
+        } catch (error) {
+          contextTelemetryError = `Could not resolve model context window: ${(error as Error).message}`;
+        }
+      }
+
+      const contextSummary = contextUtilization
+        ? `; context ${(contextUtilization.utilization * 100).toFixed(1)}% (${contextUtilization.source})`
+        : contextTelemetryError
+          ? `; context telemetry unavailable (${contextTelemetryError})`
+          : '';
+      if (contextUtilization) {
+        vlog.log(
+          `Execute: context ${(contextUtilization.utilization * 100).toFixed(1)}% `
+          + `(${contextUtilization.occupiedTokens}/${contextUtilization.contextWindowTokens} tokens, estimated)`,
+        );
+      } else if (contextTelemetryError) {
+        vlog.log(`Execute: ${contextTelemetryError}`);
+      }
 
       return {
         success: result.success,
         summary: result.success
-          ? `agent dispatched with ${eligible.length} issues`
-          : `agent failed: ${result.error}`,
-        data: { dispatched: eligible.length, success: result.success },
+          ? `agent dispatched with ${eligible.length} issues${contextSummary}`
+          : `agent failed: ${result.error}${contextSummary}`,
+        data: {
+          dispatched: eligible.length,
+          success: result.success,
+          ...(contextUtilization ? { contextUtilization } : {}),
+          ...(contextTelemetryError ? { contextTelemetryError } : {}),
+        },
       };
     } catch (e) {
       return { success: false, summary: `execute error: ${(e as Error).message}` };

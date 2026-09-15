@@ -10,6 +10,7 @@
 
 import { getMeter } from './otel.js';
 import type { UsageEvent } from './streaming.js';
+import type { ContextUtilizationSnapshot } from './context-utilization.js';
 import type { PrReworkResult, ReworkSummary } from './rework.js';
 
 // ============================================================================
@@ -64,6 +65,40 @@ export function recordTokenUsage(event: UsageEvent): void {
   m.outputCounter.add(event.outputTokens, attrs);
   m.costCounter.add(event.estimatedCost, attrs);
   m.totalCounter.add(event.inputTokens + event.outputTokens, attrs);
+}
+
+// ============================================================================
+// Context Utilization
+// ============================================================================
+
+interface ContextUtilizationMetrics {
+  utilizationGauge: ReturnType<ReturnType<typeof getMeter>['createGauge']>;
+}
+
+let _contextUtilizationMetrics: ContextUtilizationMetrics | undefined;
+
+function ensureContextUtilizationMetrics(): ContextUtilizationMetrics {
+  if (!_contextUtilizationMetrics) {
+    const meter = getMeter('squad-sdk');
+    _contextUtilizationMetrics = {
+      utilizationGauge: meter.createGauge('squad.context.utilization', {
+        description: 'Current fraction of the model context window occupied by a session',
+        unit: '1',
+      }),
+    };
+  }
+  return _contextUtilizationMetrics;
+}
+
+/** Record the latest context-window utilization for a session. */
+export function recordContextUtilization(snapshot: ContextUtilizationSnapshot): void {
+  ensureContextUtilizationMetrics().utilizationGauge.record(snapshot.utilization, {
+    'session.id': snapshot.sessionId,
+    'agent.name': snapshot.agentName ?? 'unknown',
+    'model': snapshot.model ?? 'unknown',
+    'source': snapshot.source,
+    'warning': snapshot.warning,
+  });
 }
 
 // ============================================================================
@@ -327,6 +362,7 @@ export function recordReworkSummary(summary: ReworkSummary): void {
 /** Reset all cached metric instances. Used in tests only. */
 export function _resetMetrics(): void {
   _tokenMetrics = undefined;
+  _contextUtilizationMetrics = undefined;
   _agentMetrics = undefined;
   _sessionPoolMetrics = undefined;
   _latencyMetrics = undefined;

@@ -9,7 +9,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WatchContext } from '../../packages/squad-cli/src/cli/commands/watch/types.js';
 
-const { mockExecFile, mockFsExistsSync } = vi.hoisted(() => ({
+const {
+  mockExecFile,
+  mockFsExistsSync,
+  mockFsMkdirSync,
+  mockFsReadFileSync,
+  mockFsUnlinkSync,
+} = vi.hoisted(() => ({
   mockExecFile: vi.fn((...args: unknown[]) => {
     const cb = args.find(a => typeof a === 'function') as
       | ((...cbArgs: unknown[]) => void)
@@ -18,6 +24,9 @@ const { mockExecFile, mockFsExistsSync } = vi.hoisted(() => ({
     return { pid: 1234, on: vi.fn() };
   }),
   mockFsExistsSync: vi.fn((): boolean => false),
+  mockFsMkdirSync: vi.fn(),
+  mockFsReadFileSync: vi.fn((): string => ''),
+  mockFsUnlinkSync: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -27,12 +36,17 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('node:fs', () => ({
   existsSync: mockFsExistsSync,
+  mkdirSync: mockFsMkdirSync,
+  readFileSync: mockFsReadFileSync,
+  unlinkSync: mockFsUnlinkSync,
 }));
 
 import {
   buildAgentCommand,
   buildCopilotCommand,
+  parseCopilotUsageOutput,
   spawnAgent,
+  withCopilotUsageOutput,
 } from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
 function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
@@ -150,5 +164,96 @@ describe('agent-spawn: spawnAgent pid tracking', () => {
   it('does not touch a tracker when pidTracking is omitted', async () => {
     const result = await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000);
     expect(result.success).toBe(true);
+  });
+});
+
+describe('agent-spawn: Copilot usage capture', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFsExistsSync.mockReturnValue(false);
+  });
+
+  it('adds a unique usage output file under the effective state directory', () => {
+    const capture = withCopilotUsageOutput(['-p', 'hello'], '/external/.squad');
+
+    expect(mockFsMkdirSync).toHaveBeenCalledWith(
+      expect.stringMatching(/external[\\/]\.squad[\\/]log$/),
+      { recursive: true },
+    );
+    expect(capture.args.slice(0, 2)).toEqual(['-p', 'hello']);
+    expect(capture.args.at(-2)).toBe('--usage-output-file');
+    expect(capture.args.at(-1)).toBe(capture.filePath);
+    expect(capture.filePath).toMatch(/context-usage-.+\.json$/);
+  });
+
+  it('validates the required last-call usage fields', () => {
+    expect(parseCopilotUsageOutput({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    })).toEqual({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    });
+    expect(parseCopilotUsageOutput({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: -1,
+      lastCallOutputTokens: 200,
+    })).toBeUndefined();
+  });
+
+  it('returns parsed usage and removes the temporary file', async () => {
+    mockFsExistsSync.mockReturnValue(true);
+    mockFsReadFileSync.mockReturnValue(JSON.stringify({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    }));
+
+    const result = await spawnAgent(
+      'copilot',
+      ['-p', 'x'],
+      '/repo',
+      1000,
+      undefined,
+      '/repo/.squad/log/usage.json',
+    );
+
+    expect(result.usage).toEqual({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    });
+    expect(result.usageError).toBeUndefined();
+    expect(mockFsUnlinkSync).toHaveBeenCalledWith('/repo/.squad/log/usage.json');
+  });
+
+  it('reports malformed or missing usage without fabricating telemetry', async () => {
+    mockFsExistsSync.mockReturnValue(true);
+    mockFsReadFileSync.mockReturnValue('not-json');
+    const malformed = await spawnAgent(
+      'copilot',
+      ['-p', 'x'],
+      '/repo',
+      1000,
+      undefined,
+      '/repo/.squad/log/malformed.json',
+    );
+    expect(malformed.usage).toBeUndefined();
+    expect(malformed.usageError).toMatch(/Could not read Copilot usage output/);
+    expect(mockFsUnlinkSync).toHaveBeenCalledWith('/repo/.squad/log/malformed.json');
+
+    mockFsExistsSync.mockReturnValue(false);
+    const missing = await spawnAgent(
+      'copilot',
+      ['-p', 'x'],
+      '/repo',
+      1000,
+      undefined,
+      '/repo/.squad/log/missing.json',
+    );
+    expect(missing.usage).toBeUndefined();
+    expect(missing.usageError).toBe('Copilot usage output was not created');
   });
 });
