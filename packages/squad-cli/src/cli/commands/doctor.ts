@@ -13,7 +13,7 @@
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
-import { resolveStateDir } from '../core/effective-squad-dir.js';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
 
@@ -715,8 +715,11 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
 
   // 5–9 standard files (only if .squad/ exists)
   if (isDirectory(squadDir)) {
-    // Resolve effective state dir for externalized files
-    const stateDir = resolveStateDir(squadDir);
+    // Resolve effective state dir for externalized files and remote team
+    // roots — mirrors the dual-root resolver used by `squad cast`/`squad status`
+    // so linked (remote-mode) projects are validated against the team root's
+    // .squad/ instead of the local stub that only holds config.json (#2056).
+    const { stateDir } = effectiveSquadDir(resolvedCwd);
     checks.push(checkTeamMd(stateDir));
     checks.push(checkRoutingMd(stateDir));
     checks.push(checkAgentsDir(stateDir));

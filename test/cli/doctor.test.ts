@@ -89,6 +89,39 @@ describe('squad doctor', () => {
     expect(rootCheck?.status).toBe('fail');
   });
 
+  it('validates state files against the resolved team root in remote mode (#2056)', async () => {
+    // Central team root: TEST_ROOT/.squad holds the real team state.
+    await scaffold(TEST_ROOT);
+
+    // Linked project: only .squad/config.json + the agent discovery file,
+    // pointing back at the central root via a relative teamRoot.
+    const linkedProject = join(TEST_ROOT, 'linked-project');
+    await mkdir(join(linkedProject, '.squad'), { recursive: true });
+    await writeFile(
+      join(linkedProject, '.squad', 'config.json'),
+      JSON.stringify({ version: 1, teamRoot: '..', projectKey: null }),
+    );
+    await mkdir(join(linkedProject, '.github', 'agents'), { recursive: true });
+    await writeFile(join(linkedProject, '.github', 'agents', 'squad.agent.md'), '# Squad Agent\n');
+
+    const checks = await runDoctor(linkedProject);
+
+    const rootCheck = checks.find((c: DoctorCheck) => c.name === 'team root resolves');
+    expect(rootCheck?.status).toBe('pass');
+
+    for (const name of [
+      'team.md found with ## Members header',
+      'routing.md found',
+      'agents/ directory exists',
+      'casting/registry.json exists',
+      'decisions.md exists',
+    ]) {
+      const check = checks.find((c: DoctorCheck) => c.name === name);
+      expect(check, `expected a check named "${name}"`).toBeDefined();
+      expect(check?.status, `expected "${name}" to pass, got: ${check?.message}`).toBe('pass');
+    }
+  });
+
   it('detects hub mode from squad-hub.json', async () => {
     await writeFile(join(TEST_ROOT, 'squad-hub.json'), JSON.stringify({ squads: [] }));
     await mkdir(join(TEST_ROOT, '.squad'), { recursive: true });
