@@ -119,6 +119,18 @@ function recordItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function provenanceCommentItem(
+  body: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    type: 'add_comment',
+    temporary_id: 'aw_impl42',
+    body,
+    ...overrides,
+  };
+}
+
 describe('Squad implementation provenance v1', () => {
   const fixture = readJson('test-fixtures/implementation-provenance/valid-v1.json');
   const multiGoal = readJson(
@@ -222,6 +234,61 @@ describe('Squad implementation provenance v1', () => {
     }).violations).toContainEqual({
       kind: 'implementation-provenance-premature-durable-evidence',
     });
+  });
+
+  it('rejects every provenance-like add_comment targeting the temporary PR', () => {
+    const candidates = [
+      `${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n`,
+      `${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n\`\`\``,
+      '{"schema_version":"1"}',
+      bodyFor({ ...fixture, unknown: true }),
+      `${PROVENANCE_LABEL}\n\`\`\`json\n${JSON.stringify(fixture)}\n\`\`\``,
+    ];
+    for (const body of candidates) {
+      const result = evaluateImplementationProvenanceItems({
+        items: [pullItem(), recordItem(), provenanceCommentItem(body)],
+        repository: 'octo/example',
+        issueNumber: 42,
+        namespace: 'implement',
+        runId: 70001,
+        requireLegacyMarker: true,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.violations).toContainEqual({
+        kind: 'implementation-provenance-comment-candidate-invalid',
+      });
+    }
+
+    const duplicate = evaluateImplementationProvenanceItems({
+      items: [
+        pullItem(),
+        recordItem(),
+        provenanceCommentItem(bodyFor(fixture)),
+        provenanceCommentItem(`${PROVENANCE_LABEL}\nnot-json`),
+      ],
+      repository: 'octo/example',
+      issueNumber: 42,
+      namespace: 'implement',
+      runId: 70001,
+      requireLegacyMarker: true,
+    });
+    expect(duplicate.violations).toEqual(expect.arrayContaining([
+      { kind: 'implementation-provenance-comment-candidate-invalid' },
+      { kind: 'implementation-provenance-comment-candidate-ambiguous' },
+    ]));
+
+    expect(evaluateImplementationProvenanceItems({
+      items: [
+        pullItem(),
+        recordItem(),
+        provenanceCommentItem('ordinary implementation status'),
+      ],
+      repository: 'octo/example',
+      issueNumber: 42,
+      namespace: 'implement',
+      runId: 70001,
+      requireLegacyMarker: true,
+    }).ok).toBe(true);
   });
 
   it('binds identity to the bot dispatcher run and exact durable receipt', async () => {
@@ -361,6 +428,43 @@ describe('Squad implementation provenance v1', () => {
       kind: 'implementation-provenance-replacement-unrelated',
       number: 101,
     });
+    const malformed = `${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n`;
+    for (const botComments of [
+      [],
+      [
+        { user: { login: 'github-actions[bot]' }, body: malformed },
+      ],
+      [
+        {
+          user: { login: 'github-actions[bot]' },
+          body: `${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n\`\`\``,
+        },
+      ],
+      [
+        { user: { login: 'github-actions[bot]' }, body: bodyFor(replacement) },
+        { user: { login: 'github-actions[bot]' }, body: bodyFor(replacement) },
+      ],
+      [
+        { user: { login: 'github-actions[bot]' }, body: bodyFor(replacement) },
+        { user: { login: 'github-actions[bot]' }, body: malformed },
+      ],
+      [
+        { user: { login: 'github-actions[bot]' }, body: bodyFor({ ...replacement, unknown: true }) },
+      ],
+    ]) {
+      await expect(verifyReplacementEvidence({
+        replacements: [{ repository: 'octo/example', number: 101 }],
+        repository: 'octo/example',
+        originIssue: 42,
+        sessionId: 'squad-implementation-session/v1/12345/67890',
+        fetchJson: async route => route.endsWith('/comments')
+          ? botComments
+          : fetchJson(route),
+      })).resolves.toContainEqual({
+        kind: 'implementation-provenance-replacement-unrelated',
+        number: 101,
+      });
+    }
   });
 
   it('emits the actual PR number only from the post-create handler', async () => {
@@ -397,6 +501,36 @@ describe('Squad implementation provenance v1', () => {
     });
   });
 
+  it('post-create handler refuses provenance-like add_comment candidates in raw output', async () => {
+    const comments: string[] = [];
+    const outputItems = [
+      pullItem(),
+      recordItem(),
+      provenanceCommentItem(`${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n`),
+    ];
+    await expect(emitImplementationProvenanceComment({
+      item: outputItems[1],
+      items: outputItems,
+      resolvedTemporaryIds: {
+        aw_impl42: { repo: 'octo/example', number: 202 },
+      },
+      env: env(),
+      fetchJson: async (route: string) => {
+        if (route.endsWith('/pulls/202')) {
+          return {
+            number: 202,
+            body: pullItem().body,
+            base: { repo: { full_name: 'octo/example' } },
+            head: { ref: 'squad/implement-42-example' },
+          };
+        }
+        return identityFetch(route);
+      },
+      createComment: async (_repository, _number, body) => comments.push(body),
+    })).rejects.toThrow('implementation-provenance-comment-candidate-invalid');
+    expect(comments).toEqual([]);
+  });
+
   it('compiles the handler path and detects a realistic contract mutation', () => {
     for (const source of [implementWorker, dependencyWorker]) {
       expect(source).toContain('ref: ${{ github.workflow_sha }}');
@@ -410,18 +544,35 @@ describe('Squad implementation provenance v1', () => {
     mkdirSync(workflowDir, { recursive: true });
     cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-    execFileSync(
-      'gh',
-      ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
-      { cwd: workspace, stdio: 'pipe', timeout: 60_000 },
-    );
-    const lockPath = resolve(workflowDir, 'squad-implement-worker.lock.yml');
-    const lock = readFileSync(lockPath, 'utf8');
-    expect(lock).toContain('safe_output_script_record_implementation_provenance.cjs');
-    expect(lock).toContain('GH_AW_SAFE_OUTPUT_SCRIPTS');
-    expect(lock).toContain('require_temporary_id');
-    expect(lock).toContain("ref: ${{ github.workflow_sha }}");
+    for (const workflowId of ['squad-implement-worker', 'squad-deps-worker']) {
+      execFileSync(
+        'gh',
+        ['aw', 'compile', workflowId, '--strict', '--no-check-update'],
+        { cwd: workspace, stdio: 'pipe', timeout: 60_000 },
+      );
+      const lock = readFileSync(resolve(workflowDir, `${workflowId}.lock.yml`), 'utf8');
+      const guard = lock.indexOf(
+        workflowId === 'squad-implement-worker'
+          ? 'name: Enforce implement provenance before any output'
+          : 'name: Enforce dependency implementation provenance before any output',
+      );
+      const handler = lock.indexOf(
+        'safe_output_script_record_implementation_provenance.cjs',
+      );
+      const process = lock.indexOf('name: Process Safe Outputs');
+      expect(guard).toBeGreaterThan(-1);
+      expect(handler).toBeGreaterThan(guard);
+      expect(process).toBeGreaterThan(handler);
+      expect(lock.slice(handler, process)).toContain(
+        'return provenance.emitImplementationProvenanceComment({',
+      );
+      expect(lock.slice(guard, process)).toContain('GH_AW_AGENT_OUTPUT');
+      expect(lock).toContain('GH_AW_SAFE_OUTPUT_SCRIPTS');
+      expect(lock).toContain('require_temporary_id');
+      expect(lock).toContain("ref: ${{ github.workflow_sha }}");
+    }
 
+    const lockPath = resolve(workflowDir, 'squad-implement-worker.lock.yml');
     const sourcePath = resolve(workflowDir, 'squad-implement-worker.md');
     writeFileSync(
       sourcePath,

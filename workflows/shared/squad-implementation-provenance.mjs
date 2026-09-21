@@ -57,6 +57,27 @@ const numericText = value => NUMERIC_ID.test(String(value ?? '')) &&
 const normalizeTemporaryId = value => String(value ?? '').replace(/^#/, '').toLowerCase();
 const repositoryName = value =>
   typeof value === 'string' && /^[^/\s]+\/[^/\s]+$/.test(value);
+const provenanceLikeBody = body => {
+  const text = normalizeText(body);
+  return /Squad implementation provenance/i.test(text) ||
+    text.includes(PROVENANCE_SCHEMA) ||
+    /"(?:schema|schema_version|producer|origin_issue|implementation_session_id|session_origin|workflow_run|pull_request|goals|replaces)"\s*:/.test(text);
+};
+
+function provenanceCommentCandidates(comments) {
+  return comments.filter(comment =>
+    (comment?.user?.login ?? comment?.author) === BOT &&
+    provenanceLikeBody(comment?.body));
+}
+
+function authoritativeProvenanceFromComments(comments, expected) {
+  const candidates = provenanceCommentCandidates(comments);
+  if (candidates.length !== 1) return null;
+  const payload = extractImplementationProvenance(candidates[0].body);
+  return payload && validateImplementationProvenance(payload, expected).length === 0
+    ? payload
+    : null;
+}
 
 export function implementationSessionId(repositoryId, dispatcherRunId) {
   const value = `squad-implementation-session/v1/${repositoryId}/${dispatcherRunId}`;
@@ -276,6 +297,13 @@ function recordForPull(items, pull) {
     normalizeTemporaryId(item.pull_request) === id);
 }
 
+function provenanceCommentsForPull(items, pull) {
+  const id = normalizeTemporaryId(pull.temporary_id);
+  return items.filter(item => item.type === 'add_comment' &&
+    normalizeTemporaryId(item.temporary_id) === id &&
+    provenanceLikeBody(item.body));
+}
+
 function parseRecord(item) {
   if (!exactKeys(item, ['type', ...RECORD_KEYS])) return null;
   try {
@@ -318,6 +346,13 @@ export function evaluateImplementationProvenanceItems({
     if (normalizeText(pull.body).includes(PROVENANCE_LABEL) ||
         /"number"\s*:\s*"self"/.test(normalizeText(pull.body))) {
       violations.push({ kind: 'implementation-provenance-premature-durable-evidence' });
+    }
+    const commentCandidates = provenanceCommentsForPull(items, pull);
+    if (commentCandidates.length > 0) {
+      violations.push({ kind: 'implementation-provenance-comment-candidate-invalid' });
+    }
+    if (commentCandidates.length > 1) {
+      violations.push({ kind: 'implementation-provenance-comment-candidate-ambiguous' });
     }
     const matches = recordForPull(items, pull);
     const record = matches.length === 1 ? parseRecord(matches[0]) : null;
@@ -387,18 +422,14 @@ export async function validateWorkerIdentity(env = process.env, {
       env.GITHUB_REPOSITORY,
       Number(env.SQUAD_IMPLEMENT_PULL_NUMBER),
     );
-    const payloads = comments.values
-      .filter(comment => (comment?.user?.login ?? comment?.author) === BOT)
-      .map(comment => extractImplementationProvenance(comment.body))
-      .filter(value => value && validateImplementationProvenance(value, {
-        repository: env.GITHUB_REPOSITORY,
-        pullRequestNumber: Number(env.SQUAD_IMPLEMENT_PULL_NUMBER),
-        headRef: env.SQUAD_IMPLEMENT_PULL_HEAD_REF,
-      }).length === 0);
-    if (!comments.complete || payloads.length !== 1) {
+    const payload = authoritativeProvenanceFromComments(comments.values, {
+      repository: env.GITHUB_REPOSITORY,
+      pullRequestNumber: Number(env.SQUAD_IMPLEMENT_PULL_NUMBER),
+      headRef: env.SQUAD_IMPLEMENT_PULL_HEAD_REF,
+    });
+    if (!comments.complete || !payload) {
       return { ok: false, violations: [{ kind: 'implementation-provenance-continuation-evidence-invalid' }] };
     }
-    const payload = payloads[0];
     return {
       ok: true,
       origin: 'merge-continuation',
@@ -499,17 +530,14 @@ export async function verifyReplacementEvidence({
       continue;
     }
     const comments = await collectComments(fetchJson, repository, replacement.number);
-    const payloads = comments.values
-      .filter(comment => (comment?.user?.login ?? comment?.author) === BOT)
-      .map(comment => extractImplementationProvenance(comment.body))
-      .filter(value => value && validateImplementationProvenance(value, {
-        repository,
-        originIssue,
-        sessionId,
-        pullRequestNumber: replacement.number,
-        headRef: pull.head?.ref,
-      }).length === 0);
-    if (!comments.complete || payloads.length !== 1) {
+    const payload = authoritativeProvenanceFromComments(comments.values, {
+      repository,
+      originIssue,
+      sessionId,
+      pullRequestNumber: replacement.number,
+      headRef: pull.head?.ref,
+    });
+    if (!comments.complete || !payload) {
       violations.push({
         kind: 'implementation-provenance-replacement-unrelated',
         number: replacement.number,
@@ -572,6 +600,7 @@ export async function enforceImplementationProvenanceSafeOutputs(env = process.e
 export async function emitImplementationProvenanceComment({
   item,
   resolvedTemporaryIds,
+  items,
   env = process.env,
   fetchJson,
   createComment,
@@ -595,8 +624,19 @@ export async function emitImplementationProvenanceComment({
       typeof pull?.head?.ref !== 'string') {
     throw new Error('implementation-provenance-created-pull-untrusted');
   }
+  const outputItems = items ?? (env.GH_AW_AGENT_OUTPUT
+    ? readAgentOutputItems('', env.GH_AW_AGENT_OUTPUT)
+    : null);
+  if (env.GH_AW_AGENT_OUTPUT && outputItems === null) {
+    throw new Error('implementation-provenance-agent-output-unreadable');
+  }
+  const evaluatedItems = outputItems?.map(outputItem =>
+    outputItem.type === 'create_pull_request' &&
+    normalizeTemporaryId(outputItem.temporary_id) === normalizeTemporaryId(item.pull_request)
+      ? { ...outputItem, branch: pull.head.ref, body: pull.body }
+      : outputItem);
   const itemCheck = evaluateImplementationProvenanceItems({
-    items: [{
+    items: evaluatedItems ?? [{
       type: 'create_pull_request',
       temporary_id: item.pull_request,
       branch: pull.head.ref,
