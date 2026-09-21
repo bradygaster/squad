@@ -867,7 +867,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
   it('wires the guard into a pre-agent step and the safe-outputs boundary', () => {
     expect(worker).toContain('shared/squad-retro-provenance.mjs');
     expect(worker).toContain('--implement-inputs');
-    expect(worker).toContain('Checkout trusted base for the pre-agent provenance guard');
+    expect(worker).toContain('Checkout executing workflow commit for the pre-agent provenance guard');
     expect(worker).toContain('.squad-pre-agent-trusted-base/.github/workflows/shared/squad-retro-provenance.mjs');
     expect(worker).toContain('SQUAD_IMPLEMENT_PULL_BODY');
     expect(worker).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
@@ -886,7 +886,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
 
   it('compiles the merge gate before the agent and before safe-output processing', () => {
     const lock = compiledWorkerLock();
-    const preCheckout = lock.indexOf('name: Checkout trusted base for the pre-agent provenance guard');
+    const preCheckout = lock.indexOf('name: Checkout executing workflow commit for the pre-agent provenance guard');
     const preGuard = lock.indexOf('name: Validate dispatch inputs and declared origin');
     const agent = lock.indexOf('name: Execute GitHub Copilot CLI');
     expect(preCheckout).toBeGreaterThan(-1);
@@ -896,7 +896,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     const preGuardEnd = preAgentContract.indexOf('name: Download container images');
     expect(preGuardEnd).toBeGreaterThan(-1);
     const preGateSteps = preAgentContract.slice(0, preGuardEnd);
-    expect(preAgentContract).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
+    expect(preAgentContract).toContain('ref: ${{ github.workflow_sha }}');
     expect(preAgentContract).toContain('persist-credentials: false');
     expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_BODY');
     expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
@@ -918,7 +918,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
 
   it('detects mutations that remove either merge-provenance boundary', () => {
     const required = [
-      'Checkout trusted base for the pre-agent provenance guard',
+      'Checkout executing workflow commit for the pre-agent provenance guard',
       'SQUAD_IMPLEMENT_PULL_BODY',
       'SQUAD_IMPLEMENT_PULL_HEAD_REF',
       'SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY',
@@ -954,10 +954,10 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
   // never processed), and the `pull_request: closed` continuation would have
   // imported enforcement code from `refs/pull/N/merge`.
   // -------------------------------------------------------------------------
-  it('compiles an UNCONDITIONAL default-branch checkout ahead of the guard, whatever the output shape', () => {
+  it('compiles an UNCONDITIONAL immutable workflow checkout ahead of the guard, whatever the output shape', () => {
     const job = safeOutputsJob(compiledWorkerLock());
 
-    const trustedIndex = job.indexOf('name: Checkout trusted base for the provenance guard');
+    const trustedIndex = job.indexOf('name: Checkout executing workflow commit for the provenance guard');
     const guardIndex = job.indexOf('name: Enforce implement provenance before any output');
     const processIndex = job.indexOf('name: Process Safe Outputs');
     expect(trustedIndex).toBeGreaterThan(-1);
@@ -969,7 +969,7 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     expect(trustedStep).toContain(
       'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
     );
-    expect(trustedStep).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
+    expect(trustedStep).toContain('ref: ${{ github.workflow_sha }}');
     expect(trustedStep).toContain('persist-credentials: false');
     expect(trustedStep).toContain('path: .squad-trusted-base');
     // Nothing may make the trusted checkout, or the guard it feeds, skippable:

@@ -635,6 +635,8 @@ describe('gh-aw: shared component imports', () => {
       'shared/squad-improvement-gate.mjs',
       'shared/squad-retro-evidence.mjs',
       'shared/squad-retro-provenance.mjs',
+      'shared/squad-implementation-provenance.mjs',
+      'shared/implementation-provenance-v1.schema.json',
     ];
     const builtinResources = [
       'shared/builtins/scribe-charter.md',
@@ -715,16 +717,20 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'squad-improvement-worker',
     'squad-bootstrap',
   ];
-  const expectedRuntimeModules = [
+  const expectedRuntimeResources = [
+    'shared/implementation-provenance-v1.schema.json',
     'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
+    'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
   ];
 
-  function runtimeModuleReferences(text: string): string[] {
-    return [...text.matchAll(/(?:\.github\/workflows\/)?(shared\/[A-Za-z0-9._/-]+\.mjs)/g)]
+  function runtimeResourceReferences(text: string): string[] {
+    return [...text.matchAll(
+      /(?:\.github\/workflows\/)?(shared\/(?:[A-Za-z0-9._/-]+\.mjs|implementation-provenance-v1\.schema\.json))/g,
+    )]
       .map(match => match[1]);
   }
 
@@ -770,21 +776,21 @@ describe('gh-aw: clean install runtime resource closure', () => {
     return workflowDir;
   }
 
-  it('emits every shared runtime module referenced by all seven sources and locks', () => {
+  it('emits every shared runtime resource referenced by all seven sources and locks', () => {
     const workflowDir = createCleanInstalledTarget();
     const references = new Set<string>();
     for (const workflowName of workflowNames) {
       for (const extension of ['md', 'lock.yml']) {
         const file = join(workflowDir, `${workflowName}.${extension}`);
         expect(existsSync(file), `${file} must exist in the installed target`).toBe(true);
-        for (const reference of runtimeModuleReferences(readText(file))) {
+        for (const reference of runtimeResourceReferences(readText(file))) {
           references.add(reference);
         }
       }
     }
 
     const sortedReferences = [...references].sort();
-    expect(sortedReferences).toEqual(expectedRuntimeModules);
+    expect(sortedReferences).toEqual(expectedRuntimeResources);
     assertRuntimeClosure(workflowDir, sortedReferences);
 
     for (const modulePath of sortedReferences) {
