@@ -11,6 +11,7 @@
     "repository",
     "origin_issue",
     "implementation_session_id",
+    "session_origin",
     "workflow_run",
     "pull_request",
     "goals",
@@ -20,23 +21,35 @@
     "schema": {
       "const": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1"
     },
-    "schema_version": {
-      "const": "1"
-    },
-    "producer": {
-      "const": "squad"
-    },
+    "schema_version": { "const": "1" },
+    "producer": { "const": "squad" },
     "repository": {
       "type": "string",
       "pattern": "^[^/\\s]+/[^/\\s]+$"
     },
-    "origin_issue": {
-      "type": "integer",
-      "minimum": 1
-    },
+    "origin_issue": { "type": "integer", "minimum": 1 },
     "implementation_session_id": {
       "type": "string",
       "pattern": "^squad-implementation-session/v1/[1-9][0-9]*/[1-9][0-9]*$"
+    },
+    "session_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflow", "run_id", "run_attempt"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "workflow": {
+          "enum": [
+            ".github/workflows/squad.lock.yml",
+            ".github/workflows/squad-retro.lock.yml"
+          ]
+        },
+        "run_id": { "type": "integer", "minimum": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 }
+      }
     },
     "workflow_run": {
       "type": "object",
@@ -51,17 +64,9 @@
           "type": "string",
           "pattern": "^\\.github/workflows/[^/]+\\.lock\\.yml$"
         },
-        "run_id": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "run_attempt": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "event": {
-          "const": "workflow_dispatch"
-        }
+        "run_id": { "type": "integer", "minimum": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "event": { "enum": ["workflow_dispatch", "pull_request"] }
       }
     },
     "pull_request": {
@@ -73,13 +78,8 @@
           "type": "string",
           "pattern": "^[^/\\s]+/[^/\\s]+$"
         },
-        "number": {
-          "const": "self"
-        },
-        "head_ref": {
-          "type": "string",
-          "minLength": 1
-        }
+        "number": { "type": "integer", "minimum": 1 },
+        "head_ref": { "type": "string", "minLength": 1 }
       }
     },
     "goals": {
@@ -95,13 +95,8 @@
             "type": "string",
             "pattern": "^[^/\\s]+/[^/\\s]+$"
           },
-          "issue": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "relationship": {
-            "enum": ["closes", "relates"]
-          }
+          "issue": { "type": "integer", "minimum": 1 },
+          "relationship": { "enum": ["closes", "relates"] }
         }
       }
     },
@@ -117,10 +112,7 @@
             "type": "string",
             "pattern": "^[^/\\s]+/[^/\\s]+$"
           },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          }
+          "number": { "type": "integer", "minimum": 1 }
         }
       }
     }

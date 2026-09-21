@@ -19,6 +19,18 @@ on:
           shared by every implementation pull request in that scheduling wave.
         required: true
         type: string
+      implementation_session_origin_workflow:
+        description: Immutable dispatcher workflow path that minted the session
+        required: true
+        type: string
+      implementation_session_origin_run_id:
+        description: Authoritative dispatcher run that minted the session
+        required: true
+        type: string
+      implementation_session_origin_run_attempt:
+        description: Authoritative dispatcher run attempt that minted the session
+        required: true
+        type: string
       aw_context:
         description: Originating agentic workflow context
         required: false
@@ -28,6 +40,7 @@ permissions:
   copilot-requests: write
   issues: read
   pull-requests: read
+  actions: read
 concurrency:
   group: "squad-deps-${{ github.event.inputs.issue_number }}"
   cancel-in-progress: false
@@ -50,20 +63,47 @@ tools:
   github:
     mode: gh-proxy
     toolsets: [default]
+pre-agent-steps:
+  - name: Checkout executing workflow commit for the identity guard
+    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    with:
+      ref: ${{ github.workflow_sha }}
+      persist-credentials: false
+      path: .squad-pre-agent-trusted-base
+  - name: Validate authoritative dispatcher identity
+    shell: bash
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY_ID: ${{ github.event.repository.id }}
+      SQUAD_IMPLEMENT_WORKER: squad-deps-worker
+      SQUAD_IMPLEMENT_EVENT_NAME: ${{ github.event_name }}
+      SQUAD_IMPLEMENT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+      SQUAD_IMPLEMENT_SESSION_ID: ${{ github.event.inputs.implementation_session_id }}
+      SQUAD_IMPLEMENT_DISPATCHER_WORKFLOW: ${{ github.event.inputs.implementation_session_origin_workflow }}
+      SQUAD_IMPLEMENT_DISPATCHER_RUN_ID: ${{ github.event.inputs.implementation_session_origin_run_id }}
+      SQUAD_IMPLEMENT_DISPATCHER_RUN_ATTEMPT: ${{ github.event.inputs.implementation_session_origin_run_attempt }}
+    run: |
+      set -euo pipefail
+      node "${GITHUB_WORKSPACE:?}/.squad-pre-agent-trusted-base/.github/workflows/shared/squad-implementation-provenance.mjs" --worker-identity
 safe-outputs:
   steps:
-    - name: Checkout trusted base for the implementation provenance guard
+    - name: Checkout executing workflow commit for the implementation provenance guard
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: refs/heads/${{ github.event.repository.default_branch }}
+        ref: ${{ github.workflow_sha }}
         persist-credentials: false
         path: .squad-trusted-base
     - name: Enforce dependency implementation provenance before any output
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       env:
         GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
+        GITHUB_REPOSITORY_ID: ${{ github.event.repository.id }}
+        SQUAD_IMPLEMENT_WORKER: squad-deps-worker
         SQUAD_IMPLEMENT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
         SQUAD_IMPLEMENT_SESSION_ID: ${{ github.event.inputs.implementation_session_id }}
+        SQUAD_IMPLEMENT_DISPATCHER_WORKFLOW: ${{ github.event.inputs.implementation_session_origin_workflow }}
+        SQUAD_IMPLEMENT_DISPATCHER_RUN_ID: ${{ github.event.inputs.implementation_session_origin_run_id }}
+        SQUAD_IMPLEMENT_DISPATCHER_RUN_ATTEMPT: ${{ github.event.inputs.implementation_session_origin_run_attempt }}
         SQUAD_IMPLEMENT_WORKFLOW: .github/workflows/squad-deps-worker.lock.yml
         SQUAD_IMPLEMENT_NAMESPACE: deps
         SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER: "false"
@@ -76,16 +116,76 @@ safe-outputs:
             trustedRoot,
             '.github/workflows/shared/squad-implementation-provenance.mjs',
           )).href);
-          const result = provenance.enforceImplementationProvenanceSafeOutputs(process.env);
+          const fetchJson = async (route, fields) =>
+            (await github.request(`GET /${route}`, fields)).data;
+          const result = await provenance.enforceImplementationProvenanceSafeOutputs(
+            process.env,
+            { fetchJson },
+          );
           if (result.ok) return;
           for (const line of provenance.describeImplementationProvenanceViolations(
             result.violations,
           )) core.error(`refused: ${line}`);
           core.setFailed('Squad implementation provenance guard refused this run.');
+  env:
+    GITHUB_REPOSITORY_ID: ${{ github.event.repository.id }}
+    SQUAD_IMPLEMENT_WORKER: squad-deps-worker
+    SQUAD_IMPLEMENT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+    SQUAD_IMPLEMENT_SESSION_ID: ${{ github.event.inputs.implementation_session_id }}
+    SQUAD_IMPLEMENT_DISPATCHER_WORKFLOW: ${{ github.event.inputs.implementation_session_origin_workflow }}
+    SQUAD_IMPLEMENT_DISPATCHER_RUN_ID: ${{ github.event.inputs.implementation_session_origin_run_id }}
+    SQUAD_IMPLEMENT_DISPATCHER_RUN_ATTEMPT: ${{ github.event.inputs.implementation_session_origin_run_attempt }}
+    SQUAD_IMPLEMENT_WORKFLOW: .github/workflows/squad-deps-worker.lock.yml
+    SQUAD_IMPLEMENT_NAMESPACE: deps
+    SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER: "false"
+  scripts:
+    record-implementation-provenance:
+      description: >-
+        Emit authoritative implementation provenance as a comment after the
+        referenced pull request has been created.
+      inputs:
+        pull_request:
+          description: Temporary ID of the create_pull_request output
+          required: true
+          type: string
+        goals_json:
+          description: JSON array of explicit issue goals for the pull request
+          required: true
+          type: string
+        replaces_json:
+          description: JSON array of verified pull requests replaced by this pull request
+          required: true
+          type: string
+      script: |
+        const nodePath = require('node:path');
+        const { pathToFileURL } = require('node:url');
+        const trustedRoot = nodePath.join(process.env.GITHUB_WORKSPACE, '.squad-trusted-base');
+        const provenance = await import(pathToFileURL(nodePath.join(
+          trustedRoot,
+          '.github/workflows/shared/squad-implementation-provenance.mjs',
+        )).href);
+        const fetchJson = async (route, fields) =>
+          (await github.request(`GET /${route}`, fields)).data;
+        return provenance.emitImplementationProvenanceComment({
+          item,
+          resolvedTemporaryIds,
+          env: process.env,
+          fetchJson,
+          createComment: async (repository, issueNumber, body) => {
+            const [owner, repo] = repository.split('/');
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body,
+            });
+          },
+        });
   create-pull-request:
     title-prefix: "[squad-deps] "
     labels: [squad]
     max: 1
+    require-temporary-id: true
     allowed-base-branches:
       - "squad/*"
     allowed-branches:
@@ -238,46 +338,17 @@ Use the `create-pull-request` safe-output:
 - Title: `Update dependencies for #${{ github.event.inputs.issue_number }}: {issue-title}`
 - Body: summarize the dependency change and validation, including
   `Closes #${{ github.event.inputs.issue_number }}`.
-- Durable provenance: append exactly one top-level
-  `Squad implementation provenance:` label followed by one fenced `json` block
-  matching `shared/implementation-provenance-v1.schema.json`:
-
-  ```json
-  {
-    "schema": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1",
-    "schema_version": "1",
-    "producer": "squad",
-    "repository": "${{ github.repository }}",
-    "origin_issue": ${{ github.event.inputs.issue_number }},
-    "implementation_session_id": "${{ github.event.inputs.implementation_session_id }}",
-    "workflow_run": {
-      "repository": "${{ github.repository }}",
-      "workflow": ".github/workflows/squad-deps-worker.lock.yml",
-      "run_id": ${{ github.run_id }},
-      "run_attempt": {current-GITHUB_RUN_ATTEMPT-integer},
-      "event": "workflow_dispatch"
-    },
-    "pull_request": {
-      "repository": "${{ github.repository }}",
-      "number": "self",
-      "head_ref": "squad/deps-${{ github.event.inputs.issue_number }}-{short-slug}"
-    },
-    "goals": [
-      {
-        "repository": "${{ github.repository }}",
-        "issue": ${{ github.event.inputs.issue_number }},
-        "relationship": "closes"
-      }
-    ],
-    "replaces": []
-  }
-  ```
-
-  Read the numeric `GITHUB_RUN_ATTEMPT` environment variable and replace the
-  run-attempt placeholder with that integer. Use the actual selected branch as
-  `head_ref`. Copy `implementation_session_id` exactly; never derive it from
-  the branch, actor, timestamps, or text. Add only explicit goals and verified
-  replacement pull request references.
+- Durable provenance is not PR-body text. Give the `create_pull_request` call a
+  unique `temporary_id`, then immediately call
+  `record_implementation_provenance` with `pull_request` set to that temporary
+  ID, `goals_json` containing a JSON array with the primary closing goal plus
+  any other explicit goals, and `replaces_json` containing a JSON array of only
+  verified earlier Squad PRs from this
+  same repository, origin issue, and implementation session. The trusted
+  handler runs after PR creation, resolves the actual PR number, re-fetches all
+  replacement evidence, and writes the schema payload as a PR comment. Never
+  put `Squad implementation provenance:`, `"number": "self"`, or an unresolved
+  temporary ID in the PR body.
 - Files: include only files required for this issue.
 
 If the repository already satisfies the issue, comment with evidence and do

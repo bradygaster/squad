@@ -96,26 +96,24 @@ safe-outputs:
   # open, bot-authored, non-proposal `squad-retro-action` issue carrying the
   # exact key the dispatch claims.
   steps:
-    # UNCONDITIONAL and explicitly pinned to the default branch. squad-retro
+    # UNCONDITIONAL and explicitly pinned to the executing workflow commit.
+    # squad-retro
     # has no `create-pull-request`, so gh-aw adds no checkout to this job at
     # all; without this one the `import` below would fail on every run and take
     # the whole output batch — including refusal comments — down with it.
     #
-    # `ref:` is spelled out rather than left to actions/checkout's default,
-    # which would materialize the TRIGGERING ref: a run started from any other
-    # branch would then authorize itself with that branch's
-    # `.squad/config.json` and that branch's guard code. `refs/heads/` is
-    # explicit so an empty `default_branch` fails the checkout (fail closed)
-    # instead of silently falling back to the triggering ref, and so a tag
-    # sharing the branch name can never win the lookup.
+    # `github.workflow_sha` is the immutable commit containing the workflow file
+    # GitHub selected for this run. Leaving `ref:` implicit would materialize the
+    # triggering ref and let mutable or pull-request-authored code authorize the
+    # dispatch.
     #
     # `persist-credentials: false` keeps this a read-only materialization, and
     # `path:` keeps it out of the workspace root so it can never be mistaken
     # for the repository checkout a safe-output handler operates on.
-    - name: Checkout trusted base for the dispatch guard
+    - name: Checkout executing workflow commit for the dispatch guard
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: refs/heads/${{ github.event.repository.default_branch }}
+        ref: ${{ github.workflow_sha }}
         persist-credentials: false
         path: .squad-trusted-base
     - name: Read sealed retrospective plan
@@ -127,6 +125,7 @@ safe-outputs:
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       env:
         GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY_ID: ${{ github.event.repository.id }}
         GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
         SQUAD_RETRO_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         SQUAD_RETRO_PLAN_PATH: ${{ runner.temp }}/squad-retro-plan/squad-retro-context.json
@@ -135,8 +134,8 @@ safe-outputs:
           const nodePath = require('node:path');
           const { pathToFileURL } = require('node:url');
           // Everything the guard trusts — its own code and the config that
-          // enables the relay — is read from the default-branch checkout
-          // above, never from the run's own workspace.
+          // enables the relay — is read from the immutable workflow-commit
+          // checkout above, never from the run's own workspace.
           const trustedRoot = nodePath.join(process.env.GITHUB_WORKSPACE, '.squad-trusted-base');
           const guard = await import(pathToFileURL(nodePath.join(
             trustedRoot,
@@ -645,7 +644,7 @@ bounded retry. The action issue remains authoritative even if the report
 fingerprint has been resolved. Never describe queued or unresolved output as
 successful delivery. Use `context.now`, never an invented timestamp.
 
-Every `dispatch_workflow` call carries exactly these four typed inputs and
+Every `dispatch_workflow` call carries exactly these seven typed inputs and
 nothing else:
 
 ```json
@@ -655,7 +654,10 @@ nothing else:
     "issue_number": "{issue_number or #temporary_id}",
     "request_origin": "squad-retro",
     "retro_action_key": "{that action's exact Action-Key value}",
-    "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}"
+    "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}",
+    "implementation_session_origin_workflow": ".github/workflows/squad-retro.lock.yml",
+    "implementation_session_origin_run_id": "${{ github.run_id }}",
+    "implementation_session_origin_run_attempt": "{current-GITHUB_RUN_ATTEMPT-integer}"
   }
 }
 ```

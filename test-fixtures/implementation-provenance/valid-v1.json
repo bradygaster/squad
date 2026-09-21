@@ -5,6 +5,12 @@
   "repository": "octo/example",
   "origin_issue": 42,
   "implementation_session_id": "squad-implementation-session/v1/12345/67890",
+  "session_origin": {
+    "repository": "octo/example",
+    "workflow": ".github/workflows/squad.lock.yml",
+    "run_id": 67890,
+    "run_attempt": 1
+  },
   "workflow_run": {
     "repository": "octo/example",
     "workflow": ".github/workflows/squad-implement-worker.lock.yml",
@@ -14,7 +20,7 @@
   },
   "pull_request": {
     "repository": "octo/example",
-    "number": "self",
+    "number": 101,
     "head_ref": "squad/implement-42-example"
   },
   "goals": [

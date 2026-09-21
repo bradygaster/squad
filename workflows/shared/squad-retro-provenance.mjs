@@ -21,6 +21,9 @@ export const DISPATCH_INPUT_KEYS = Object.freeze([
   'request_origin',
   'retro_action_key',
   'implementation_session_id',
+  'implementation_session_origin_workflow',
+  'implementation_session_origin_run_id',
+  'implementation_session_origin_run_attempt',
 ]);
 export const IMPLEMENT_PULL_SCAN_MAX_PAGES = 5;
 export const ACTION_COMMENT_MAX_PAGES = 2;
@@ -444,7 +447,15 @@ export function parseDispatchMarker(comment, issueNumber) {
 }
 
 const targetOf = item => String(item?.item_number ?? item?.issue_number ?? item?.pr_number ?? '');
-export function evaluateRetroDispatchOutputs({ items = [], autoImplementEnabled = false, maxDispatch = 3, actionTemporaryIds } = {}) {
+export function evaluateRetroDispatchOutputs({
+  items = [],
+  autoImplementEnabled = false,
+  maxDispatch = 3,
+  actionTemporaryIds,
+  repositoryId,
+  runId,
+  runAttempt,
+} = {}) {
   const violations = [];
   const targets = [];
   if (!Array.isArray(items)) return { ok: false, enforced: true, violations: [{ kind: 'unreadable-agent-output' }], targets };
@@ -475,6 +486,15 @@ export function evaluateRetroDispatchOutputs({ items = [], autoImplementEnabled 
     if (Object.keys(inputs).some(key => !DISPATCH_INPUT_KEYS.includes(key))) violations.push({ kind: 'dispatch-input-not-allowed' });
     if (inputs.request_origin !== RETRO_ORIGIN) violations.push({ kind: 'dispatch-origin-not-declared' });
     if (!FINGERPRINT.test(inputs.retro_action_key)) violations.push({ kind: 'dispatch-action-key-malformed' });
+    const expectedSession = repositoryId && runId
+      ? `squad-implementation-session/v1/${repositoryId}/${runId}`
+      : null;
+    if (expectedSession && (inputs.implementation_session_id !== expectedSession ||
+        inputs.implementation_session_origin_workflow !== RETRO_WORKFLOW_PATH ||
+        String(inputs.implementation_session_origin_run_id) !== String(runId) ||
+        String(inputs.implementation_session_origin_run_attempt) !== String(runAttempt))) {
+      violations.push({ kind: 'dispatch-session-origin-invalid' });
+    }
     const target = inputs.issue_number;
     if (typeof target !== 'string' || (!isNumericId(target) && !/^#aw_[a-z0-9_]{3,12}$/.test(target))) {
       violations.push({ kind: 'dispatch-target-not-resolvable' });
@@ -784,7 +804,14 @@ export async function enforceRetroSafeOutputs(env = process.env, {
   if (!plan || plan.run_id !== env.GITHUB_RUN_ID || plan.repository !== env.GITHUB_REPOSITORY) {
     return { ok: false, enforced: true, violations: [{ kind: 'trusted-plan-unavailable' }] };
   }
-  const result = evaluateRetroDispatchOutputs({ items, autoImplementEnabled, actionTemporaryIds: plan.auto_implement_new_action_ids });
+  const result = evaluateRetroDispatchOutputs({
+    items,
+    autoImplementEnabled,
+    actionTemporaryIds: plan.auto_implement_new_action_ids,
+    repositoryId: env.GITHUB_REPOSITORY_ID,
+    runId: env.GITHUB_RUN_ID,
+    runAttempt: env.GITHUB_RUN_ATTEMPT,
+  });
   const violations = [...result.violations, ...evaluateRetroPlanOutputs(items, plan)];
   if (!result.ok || !result.targets.length) return { ...result, ok: !violations.length, violations };
   if (env.GITHUB_REF !== `refs/heads/${env.SQUAD_RETRO_DEFAULT_BRANCH}`) violations.push({ kind: 'dispatch-off-default-branch' });

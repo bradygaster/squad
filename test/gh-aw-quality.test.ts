@@ -635,6 +635,7 @@ describe('gh-aw: shared component imports', () => {
       'shared/squad-improvement-gate.mjs',
       'shared/squad-retro-evidence.mjs',
       'shared/squad-retro-provenance.mjs',
+      'shared/squad-implementation-provenance.mjs',
     ];
     const builtinResources = [
       'shared/builtins/scribe-charter.md',
@@ -718,6 +719,7 @@ describe('gh-aw: clean install runtime resource closure', () => {
   const expectedRuntimeModules = [
     'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
+    'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
@@ -1164,7 +1166,7 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // Raised 193 -> 194 KB for the command-only lifecycle next-action contract.
   // Its validation and retry guidance are inside the on-demand plan-validation
   // skill; the ambient prompt remains below the independently enforced 40 KB cap.
-  const SOURCE_GROWTH_BUDGET_KB = 194;
+  const SOURCE_GROWTH_BUDGET_KB = 197;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {

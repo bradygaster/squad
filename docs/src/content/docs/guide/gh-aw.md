@@ -448,17 +448,24 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 ### Implementation provenance
 
 Every pull request created by the general implementation worker or dependency
-worker carries a validated `Squad implementation provenance:` JSON block using
-schema
+worker receives a `Squad implementation provenance:` comment using schema
 `https://bradygaster.github.io/squad/schemas/implementation-provenance/v1`.
-The safe-output job validates the payload against the workflow inputs and
-current run before it creates the pull request. The general worker also keeps
-the existing standalone
+The pre-creation gate validates one strict provenance-record request and all
+replacement references. After the PR handler returns, a compiled safe-output
+script resolves the handler's temporary ID to the actual PR number, re-fetches
+the created PR and replacement evidence, constructs the authoritative payload
+from GitHub runtime context, and posts the comment as `github-actions[bot]`.
+Consumers and merge-continuation/replacement checks accept provenance only
+from that bot-authored boundary. No `"self"` or unresolved temporary identifier
+is durable evidence. The general worker also keeps the existing standalone
 `<!-- squad:implement issue={issue} run={run} -->` marker unchanged for
 backward compatibility.
 
-The `implementation_session_id` is minted by the dispatching `squad` or
-`squad-retro` run as
+The dispatcher posts a bot-authored receipt before each worker dispatch. The
+worker verifies that receipt, the dispatcher Actions run, repository, run
+attempt, origin issue, selected worker, and deterministic session identifier
+before the agent starts. The `implementation_session_id` is minted by the
+dispatching `squad` or `squad-retro` run as
 `squad-implementation-session/v1/{repository-id}/{dispatcher-run-id}`. Treat it
 as opaque:
 
@@ -471,17 +478,19 @@ as opaque:
 - **Multiple pull requests:** several PRs may share one session when a parent
   issue dispatches several ready leaf tasks. Session ID is not a PR ID.
 - **Replacement pull requests:** `replaces` explicitly lists verified earlier
-  PRs. A replacement keeps the session only when retried within the same
-  scheduling wave; a later recovery run has a new session.
+  PRs. Each referenced PR must exist in the same repository and carry one valid
+  provenance comment for the same origin issue and session. Duplicate,
+  malformed, nonexistent, or unrelated references fail closed.
 - **Multiple goals:** `origin_issue` is the primary scheduling goal. `goals`
   lists every explicitly referenced issue and whether the PR closes or merely
   relates to it. A PR may have multiple goals, but it has one origin issue.
-- **Pull request reference:** `"number": "self"` means the containing PR. This
-  avoids predicting a number before the safe-output handler creates it while
-  still making the reference explicit.
+- **Pull request reference:** `pull_request.number` is always the actual
+  positive integer returned by the PR handler.
 
 Do not derive a missing session identifier from branch names, actors,
-timestamps, workflow run IDs, closing text, or textual similarity. Missing
+timestamps, closing text, or textual similarity. A worker started directly by
+a human cannot mint an identity; it must have the exact bot-authored dispatcher
+receipt and matching Actions run. Missing
 provenance means the session is unknown. Consumers may continue to use the
 legacy implementation marker and closing references as their own explicit
 correlation sources, and may label branch correlation as inferred, but those
@@ -500,9 +509,9 @@ sources do not manufacture a session ID.
 Repositories upgrading from an older Squad workflow do not need to rewrite old
 pull requests. Recompile and commit the updated dispatcher, implementation
 worker, dependency worker, retrospective, shared validator, and schema
-together. Direct manual dispatches of either worker must now provide the
-required `implementation_session_id`; use a dispatcher run rather than
-inventing one from unrelated repository metadata.
+together. Direct manual dispatches of either worker fail closed; use
+`/squad implement` or the retrospective relay so the dispatcher can create the
+authoritative receipt and bound session inputs.
 
 ### Where you can use slash commands
 
