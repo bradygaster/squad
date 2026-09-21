@@ -300,7 +300,7 @@ function recordForPull(items, pull) {
 function provenanceCommentsForPull(items, pull) {
   const id = normalizeTemporaryId(pull.temporary_id);
   return items.filter(item => item.type === 'add_comment' &&
-    normalizeTemporaryId(item.temporary_id) === id &&
+    normalizeTemporaryId(item.item_number) === id &&
     provenanceLikeBody(item.body));
 }
 

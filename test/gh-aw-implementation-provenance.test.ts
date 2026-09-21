@@ -15,6 +15,7 @@ import {
   PROVENANCE_SCHEMA,
   RECORD_TYPE,
   emitImplementationProvenanceComment,
+  enforceImplementationProvenanceSafeOutputs,
   evaluateImplementationProvenanceItems,
   extractImplementationProvenance,
   implementationDispatchReceipt,
@@ -64,13 +65,13 @@ function env(overrides: Record<string, string> = {}): Record<string, string> {
   };
 }
 
-function receiptComment() {
+function receiptComment(worker = 'squad-implement-worker') {
   return {
     user: { login: 'github-actions[bot]', type: 'Bot' },
     body: implementationDispatchReceipt({
       repository: 'octo/example',
       issueNumber: 42,
-      worker: 'squad-implement-worker',
+      worker,
       sessionId: 'squad-implementation-session/v1/12345/67890',
       workflow: '.github/workflows/squad.lock.yml',
       runId: 67890,
@@ -79,7 +80,7 @@ function receiptComment() {
   };
 }
 
-function identityFetch(route: string) {
+function identityFetch(route: string, worker = 'squad-implement-worker') {
   if (route.endsWith('/actions/runs/67890')) {
     return {
       id: 67890,
@@ -88,7 +89,7 @@ function identityFetch(route: string) {
       repository: { full_name: 'octo/example' },
     };
   }
-  if (route.endsWith('/issues/42/comments')) return [receiptComment()];
+  if (route.endsWith('/issues/42/comments')) return [receiptComment(worker)];
   throw new Error(`Unexpected route ${route}`);
 }
 
@@ -125,7 +126,7 @@ function provenanceCommentItem(
 ) {
   return {
     type: 'add_comment',
-    temporary_id: 'aw_impl42',
+    item_number: '#aw_impl42',
     body,
     ...overrides,
   };
@@ -531,7 +532,7 @@ describe('Squad implementation provenance v1', () => {
     expect(comments).toEqual([]);
   });
 
-  it('compiles the handler path and detects a realistic contract mutation', () => {
+  it('compiles both handler paths and fails production-shaped comment candidates closed', async () => {
     for (const source of [implementWorker, dependencyWorker]) {
       expect(source).toContain('ref: ${{ github.workflow_sha }}');
       expect(source).toContain('record-implementation-provenance:');
@@ -567,9 +568,56 @@ describe('Squad implementation provenance v1', () => {
         'return provenance.emitImplementationProvenanceComment({',
       );
       expect(lock.slice(guard, process)).toContain('GH_AW_AGENT_OUTPUT');
+      expect(lock.slice(guard, process)).toContain(
+        'enforceImplementationProvenanceSafeOutputs(',
+      );
       expect(lock).toContain('GH_AW_SAFE_OUTPUT_SCRIPTS');
       expect(lock).toContain('require_temporary_id');
       expect(lock).toContain("ref: ${{ github.workflow_sha }}");
+
+      const dependency = workflowId === 'squad-deps-worker';
+      const malformed = provenanceCommentItem(
+        `${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n`,
+      );
+      const adversarialComments = [
+        [malformed],
+        [provenanceCommentItem(
+          `${PROVENANCE_LABEL}\n\`\`\`json\n{"schema_version":"1"}\n\`\`\``,
+        )],
+        [provenanceCommentItem(bodyFor({ ...fixture, unknown: true }))],
+        [
+          provenanceCommentItem(bodyFor(fixture)),
+          provenanceCommentItem(bodyFor(fixture)),
+        ],
+        [
+          provenanceCommentItem(bodyFor(fixture)),
+          malformed,
+        ],
+      ];
+      for (const comments of adversarialComments) {
+        const result = await enforceImplementationProvenanceSafeOutputs(env({
+          SQUAD_IMPLEMENT_WORKER: workflowId,
+          SQUAD_IMPLEMENT_WORKFLOW: `.github/workflows/${workflowId}.lock.yml`,
+          SQUAD_IMPLEMENT_NAMESPACE: dependency ? 'deps' : 'implement',
+          SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER: dependency ? 'false' : 'true',
+        }), {
+          readItems: () => [
+            {
+              ...pullItem(),
+              branch: dependency
+                ? 'squad/deps-42-example'
+                : 'squad/implement-42-example',
+            },
+            recordItem(),
+            ...comments,
+          ],
+          fetchJson: async route => identityFetch(route, workflowId),
+        });
+        expect(result.ok).toBe(false);
+        expect(result.violations).toContainEqual({
+          kind: 'implementation-provenance-comment-candidate-invalid',
+        });
+      }
     }
 
     const lockPath = resolve(workflowDir, 'squad-implement-worker.lock.yml');
