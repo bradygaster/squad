@@ -80,6 +80,36 @@ continue reading `registry.json` directly.
   pair. Each successful update observes the latest revision, increments it,
   and preserves all unclaimed IDs as tombstones.
 
+## Consistency, durability, and recovery boundaries
+
+On a local filesystem that provides atomic same-filesystem rename, the shared
+lock, transaction journal, commit manifest, and pair reader provide
+**process-crash consistency**. A crash before the journal is durable leaves the
+previous pair authoritative. After the journal is durable, recovery rolls the
+transaction forward. Pair readers retry an in-progress state for a bounded
+period and then reject it rather than returning a torn registry/history pair.
+
+**Power-loss durability is conditional.** The implementation calls fsync on
+each payload or replacement file and the relevant payload and parent
+directories, but persistence across power loss depends on every fsync
+succeeding and on the operating system, storage device, and filesystem
+honoring those operations and atomic rename semantics. If a required file or
+directory fsync reports an error, the writer fails closed; it does not report
+the update as durably committed. A filesystem that does not provide local
+atomic rename guarantees, including some network filesystems, is outside the
+full guarantee: even if its APIs return success, power-loss durability and
+cross-process consistency are only as strong as that filesystem's documented
+semantics. Use a supported local filesystem when the full guarantee is
+required.
+
+Stale-lock recovery deliberately favors safety over availability. Squad
+automatically removes an abandoned writer lock only when it is old, belongs to
+the current host, and the owner PID is definitively dead. An owner on another
+host, an indeterminate PID, or an abandoned recovery guard is not broken
+automatically; writers time out and require operator intervention after
+verifying that no writer or recovery operation is active. This can delay
+updates, but prevents an uncertain recovery from admitting concurrent writers.
+
 ## Fetch, permissions, and caching
 
 Reading the registry requires repository Contents read permission and one
