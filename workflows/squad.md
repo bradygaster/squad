@@ -54,6 +54,7 @@ resources:
   - shared/squad-retro-evidence.mjs
   - shared/squad-retro-provenance.mjs
   - shared/squad-implementation-provenance.mjs
+  - shared/implementation-provenance-v1.schema.json
   - shared/builtins/scribe-charter.md
   - shared/builtins/ralph-charter.md
   - shared/builtins/rai-charter.md
@@ -1339,11 +1340,8 @@ description: Dispatch implementation work to the dependency or general worker.
 Implement mode dispatches an isolated worker for a regular issue. Explicit,
 dependency-only Wave 1 work routes to `squad-deps-worker`; every other task
 routes to `squad-implement-worker`, whose manifest protection remains unchanged.
-When invoked on a parent (initiative or epic), this mode descends the sub-issue
-hierarchy to the **leaf tasks** and dispatches workers for up to three currently
-unblocked leaf tasks. The general worker relays merged implementation pull
-requests back to this mode so it can automatically refill the parent's available
-slots.
+For a parent, descend to **leaf tasks** and dispatch up to three unblocked
+leaves. Merged implementation PRs relay back here to refill available slots.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
@@ -1360,27 +1358,16 @@ slots.
    hierarchy (initiative → epic → task), not just immediate children. Also
    include open issues whose body contains a `Parent: #{ancestor-issue-number}`
    line for any ancestor, for compatibility with older plans.
-4. Identify the **leaf tasks**: open descendants that have **no sub-issues at
-   all** — neither open nor closed — and are not labeled `epic` or `initiative`.
-   Intermediate parents (initiatives and epics that only group other issues)
-   are never dispatched to a worker — only leaf tasks are implemented. Use "no
-   sub-issues at all" rather than "no *open* sub-issues": an epic whose children
-   have all been implemented and closed stays open until someone closes it, and
-   an open-children-only test would reclassify that drained epic as a leaf and
-   dispatch a worker against a grouping issue. That is the #1758 defect 2
-   failure shape reappearing at the end of an epic's life, and it is reachable
-   whenever a refill scan descends from the root across sibling epics.
+4. Identify the **leaf tasks**: open descendants with no sub-issues (open or closed)
+   and no `epic` or `initiative` label. Intermediate parents are never dispatched to a worker;
+   checking only open children would misclassify a drained parent
+   (#1758).
 5. If the target has one or more open leaf descendants, treat the target as a
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.
 6. Classify every leaf with the **Dependency Route Decision** below.
-7. If the target has no open descendants (it is itself a leaf), first post the
-   exact five-line dispatch receipt below on that issue, then call exactly the
-   workflow-specific tool selected by that decision with the same four session
-   fields shown in the Epic Dispatch JSON below. The comment must precede the
-   dispatch in safe-output order.
-8. The worker performs dependency, duplicate pull request, routing,
-   implementation, and validation checks.
+7. For a leaf target, post the exact five-line receipt below before calling the
+   selected worker with the four session fields in the Epic Dispatch JSON.
 
 ```text
 Squad-Implementation-Dispatch: ${{ github.repository }}#{issue-number} worker={squad-implement-worker-or-squad-deps-worker}
@@ -1453,15 +1440,12 @@ exactly one selected workflow-specific safe-output tool with this input:
 }
 ```
 
-Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
-non-empty numeric `issue_number`, the exact interpolated session identifier,
-and the three exact dispatcher-origin inputs shown above. Before each dispatch,
-post the five-line receipt shown in step 7 on that leaf issue with the selected
-worker name and the current numeric `GITHUB_RUN_ATTEMPT`. Emit exactly one workflow-specific dispatch
-per selected leaf task, and only report a leaf task as dispatched after the tool
-returns success. Never call both workers for one issue. If the dependency config
-guard denies a selected dependency task, leave that slot unused and report the
-denial; do not reroute it to the general worker.
+Never call the generic `dispatch_workflow` tool. Before each selected-worker
+call, post the five-line receipt with its worker and numeric
+`GITHUB_RUN_ATTEMPT`. Never emit a dispatch without a numeric `issue_number`,
+the exact session ID, and all three dispatcher-origin inputs above. Never call both workers for one issue.
+Report success only after the selected tool succeeds. A dependency-config denial
+leaves its slot unused; do not reroute it to the general worker.
 
 Post a comment on the target listing the dispatched leaf tasks, blocked leaf
 tasks, the worker selected for each dispatch, dependency tasks denied by config,
