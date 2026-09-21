@@ -1,0 +1,56 @@
+{
+  "valid": {
+    "schema": "squad-agent-provenance/v1",
+    "schema_version": 1,
+    "revision": 2,
+    "generated_at": "2026-09-21T20:00:00.000Z",
+    "agents": {
+      "runtime-engineer": {
+        "display_name": "Kepler",
+        "persistent_name": "Kepler",
+        "role": "Runtime Engineer",
+        "universe": "descriptive",
+        "status": "active",
+        "created_at": "2026-09-20T20:00:00.000Z",
+        "updated_at": "2026-09-21T20:00:00.000Z",
+        "avatar": {
+          "kind": "repository-path",
+          "path": ".squad/agents/runtime-engineer/avatar.png"
+        }
+      }
+    }
+  },
+  "partial": {
+    "schema": "squad-agent-provenance/v1",
+    "schema_version": 1,
+    "revision": 2,
+    "generated_at": "2026-09-21T20:00:00.000Z",
+    "agents": {
+      "runtime-engineer": {
+        "display_name": "Kepler",
+        "persistent_name": "Kepler",
+        "role": "Runtime Engineer",
+        "universe": "descriptive",
+        "status": "active",
+        "created_at": "2026-09-20T20:00:00.000Z",
+        "updated_at": "2026-09-21T20:00:00.000Z"
+      },
+      "broken-agent": {
+        "display_name": "Broken",
+        "persistent_name": "Different",
+        "role": "",
+        "universe": "descriptive",
+        "status": "active",
+        "created_at": "not-a-date",
+        "updated_at": "not-a-date"
+      }
+    }
+  },
+  "unsupported": {
+    "schema": "squad-agent-provenance/v2",
+    "schema_version": 2,
+    "revision": 1,
+    "generated_at": "2026-09-21T20:00:00.000Z",
+    "agents": {}
+  }
+}

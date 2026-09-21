@@ -145,7 +145,7 @@ pre-agent-steps:
         }
         node --check "$path" >/dev/null
       }
-      check_hash "$cast_validator" "f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      check_hash "$cast_validator" "82cefabe53b28a9b7c8659282a0682d943a9a9cb51a3394aa65f4e5e34366422"
       check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
       node "$bootstrap_validator" \
         --root "$PWD" \
@@ -558,7 +558,11 @@ Generate the same final tree and formats as `/squad cast`:
 - `.github/agents/squad.agent.md`
 - `meet-the-squad.md`
 
-The registry contains active specialists only. The routing table uses the exact
+The registry uses schema `squad-agent-provenance/v1` with version `1`, a
+positive monotonic `revision`, `generated_at`, and active specialist records.
+Registry keys are immutable lowercase kebab-case agent IDs; each record has
+equal `display_name` and compatibility `persistent_name` values, `role`,
+`universe`, lifecycle timestamps, and status. The routing table uses the exact
 header `Work Type | Route To | Examples` and exact active `persistent_name`
 values. The team has separate `## Members` and `## Built-in Support Agents`
 sections. The coordinator has concrete Cast-source paths and one synchronized,

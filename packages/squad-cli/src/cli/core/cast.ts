@@ -13,6 +13,7 @@ import {
 } from '@bradygaster/squad-sdk';
 import {
   CastingEngine,
+  reconcileAgentProvenanceRegistry,
   type CastMember as EngineCastMember,
   type AgentRole as EngineAgentRole,
 } from '@bradygaster/squad-sdk/casting';
@@ -521,10 +522,10 @@ function readBuiltinCharter(
 
 // ── Team file updaters ─────────────────────────────────────────────
 
-function buildMembersTable(members: CastMember[]): string {
+function buildMembersTable(members: CastMember[], memberIds?: ReadonlyMap<string, string>): string {
   let table = `## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n`;
   for (const m of members) {
-    const nameLower = memberId(m.name);
+    const nameLower = memberIds?.get(m.name) ?? memberId(m.name);
     table += `| ${m.name} | ${m.role} | \`.squad/agents/${nameLower}/charter.md\` | ✅ Active |\n`;
   }
   return table;
@@ -583,12 +584,41 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   // Built-ins are fixed support identities, not routable Cast specialists.
   const specialistMembers = proposal.members.filter(member => !builtinId(member.name));
   const supportMembers = [scribeMember(), ralphMember(), RaiMember(), factCheckerMember()];
-  const allMembers = [...specialistMembers, ...supportMembers];
+  const registryPath = join(castingDir, 'registry.json');
+  let existingRegistry: unknown = undefined;
+  const existingRegistryText = storage.readSync(registryPath);
+  if (existingRegistryText?.trim()) {
+    try {
+      existingRegistry = JSON.parse(existingRegistryText);
+    } catch {
+      throw new Error('Cannot update malformed .squad/casting/registry.json');
+    }
+  }
+  const registry = reconcileAgentProvenanceRegistry(
+    existingRegistry,
+    specialistMembers.map((member) => ({
+      id: memberId(member.name),
+      displayName: member.name,
+      role: member.role,
+      universe: proposal.universe,
+    })),
+    { generatedAt: now, retireMissing: true },
+  );
+  const specialistIds = new Map<string, string>();
+  for (const [id, record] of Object.entries(registry.agents)) {
+    if (record.status === 'active') specialistIds.set(record.display_name, id);
+  }
+  const allMembers = [
+    ...specialistMembers.map(member => ({
+      member,
+      id: specialistIds.get(member.name) ?? memberId(member.name),
+    })),
+    ...supportMembers.map(member => ({ member, id: memberId(member.name) })),
+  ];
 
   // Create agent directories and files
-  for (const member of allMembers) {
-    const nameLower = memberId(member.name);
-    const agentDir = join(agentsDir, nameLower);
+  for (const { member, id } of allMembers) {
+    const agentDir = join(agentsDir, id);
 
     const charterPath = join(agentDir, 'charter.md');
     const charter = builtinId(member.name)
@@ -599,6 +629,14 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
     membersCreated.push(member.name);
   }
+  for (const [id, record] of Object.entries(registry.agents)) {
+    if (record.status !== 'retired') continue;
+    const activeDir = join(agentsDir, id);
+    const alumniDir = join(agentsDir, '_alumni', id);
+    if (storage.existsSync(activeDir) && !storage.existsSync(alumniDir)) {
+      storage.renameSync(activeDir, alumniDir);
+    }
+  }
 
   // Create or update team.md
   const teamPath = join(squadDir, 'team.md');
@@ -607,7 +645,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     const content = await storage.read(teamPath) ?? '';
     const membersIdx = content.indexOf('## Members');
     if (membersIdx !== -1) {
-      let newContent = replaceSection(content, ['## Members'], buildMembersTable(specialistMembers));
+      let newContent = replaceSection(
+        content,
+        ['## Members'],
+        buildMembersTable(specialistMembers, specialistIds),
+      );
       if (
         newContent.includes('## Built-in Support Agents')
         || newContent.includes('## Support Identities')
@@ -648,7 +690,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       '|------|------|-------|',
       '| Squad | Coordinator | Routes work, enforces handoffs and reviewer gates. |',
       '',
-      buildMembersTable(specialistMembers),
+      buildMembersTable(specialistMembers, specialistIds),
       buildSupportTable(),
       '## Project Context',
       '',
@@ -690,22 +732,13 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   }
 
   // Create casting state files
-  const registryAgents: Record<string, object> = {};
   const snapshotAgents: string[] = [];
   for (const member of specialistMembers) {
-    const nameLower = memberId(member.name);
-    registryAgents[nameLower] = {
-      created_at: now,
-      persistent_name: member.name,
-      universe: proposal.universe,
-      status: 'active',
-    };
-    snapshotAgents.push(nameLower);
+    snapshotAgents.push(specialistIds.get(member.name) ?? memberId(member.name));
   }
 
-  const registry = { agents: registryAgents };
-  await storage.write(join(castingDir, 'registry.json'), JSON.stringify(registry, null, 2) + '\n');
-  filesCreated.push(join(castingDir, 'registry.json'));
+  await storage.write(registryPath, JSON.stringify(registry, null, 2) + '\n');
+  filesCreated.push(registryPath);
 
   const history = {
     assignment_cast_snapshots: {
@@ -741,7 +774,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
   // Sync new agents into squad.config.ts (if present)
   for (const member of specialistMembers) {
-    await addAgentToConfig(teamRoot, memberId(member.name), member.role);
+    await addAgentToConfig(
+      teamRoot,
+      specialistIds.get(member.name) ?? memberId(member.name),
+      member.role,
+    );
   }
 
   // Re-advertise the cast in .github/agents/squad.agent.md (#1608). Cast

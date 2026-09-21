@@ -248,18 +248,71 @@ function parseRegistry(root, errors) {
     errors.push('registry: top-level agents object is required');
     return [];
   }
+  if (registry.schema !== 'squad-agent-provenance/v1' || registry.schema_version !== 1) {
+    errors.push('registry: schema must be squad-agent-provenance/v1 with schema_version 1');
+  }
+  if (!Number.isInteger(registry.revision) || registry.revision < 1) {
+    errors.push('registry: revision must be a positive integer');
+  }
+  if (typeof registry.generated_at !== 'string' || Number.isNaN(Date.parse(registry.generated_at))) {
+    errors.push('registry: generated_at must be an ISO-8601 timestamp');
+  }
   const active = Object.entries(registry.agents)
     .filter(([, value]) => value?.status === 'active')
     .map(([id, value]) => ({ id, name: value.persistent_name }));
   if (active.length === 0) {
     errors.push('registry: at least one active member is required');
   }
-  for (const member of active) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(member.id) || typeof member.name !== 'string' || !member.name.trim()) {
-      errors.push(`registry: invalid active member ${JSON.stringify(member)}`);
+  const displayNames = new Map();
+  for (const [id, value] of Object.entries(registry.agents)) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id) || !value || typeof value !== 'object') {
+      errors.push(`registry: invalid agent ${JSON.stringify({ id, value })}`);
+      continue;
     }
-    if (REQUIRED_BUILTIN_IDS.includes(member.id)) {
-      errors.push(`registry: built-in id "${member.id}" must not be an active specialist registry entry`);
+    if (
+      typeof value.display_name !== 'string'
+      || !value.display_name.trim()
+      || value.persistent_name !== value.display_name
+      || typeof value.role !== 'string'
+      || !value.role.trim()
+      || typeof value.universe !== 'string'
+      || !value.universe.trim()
+      || !['active', 'inactive', 'retired'].includes(value.status)
+      || typeof value.created_at !== 'string'
+      || Number.isNaN(Date.parse(value.created_at))
+      || typeof value.updated_at !== 'string'
+      || Number.isNaN(Date.parse(value.updated_at))
+      || (value.status === 'retired'
+        && (typeof value.retired_at !== 'string' || Number.isNaN(Date.parse(value.retired_at))))
+    ) {
+      errors.push(`registry: invalid provenance record for "${id}"`);
+    }
+    const normalizedName = typeof value.display_name === 'string'
+      ? value.display_name.trim().toLowerCase()
+      : '';
+    if (normalizedName) {
+      const duplicate = displayNames.get(normalizedName);
+      if (duplicate) {
+        errors.push(`registry: display_name for "${id}" collides with "${duplicate}"`);
+      } else {
+        displayNames.set(normalizedName, id);
+      }
+    }
+    if (value.avatar !== undefined) {
+      if (
+        !value.avatar
+        || typeof value.avatar !== 'object'
+        || value.avatar.kind !== 'repository-path'
+        || typeof value.avatar.path !== 'string'
+        || !value.avatar.path.startsWith(`.squad/agents/${id}/`)
+        || value.avatar.path.includes('..')
+        || value.avatar.path.includes('\\')
+      ) {
+        errors.push(`registry: invalid avatar reference for "${id}"`);
+      }
+    }
+    if (REQUIRED_BUILTIN_IDS.includes(id) && value.status === 'active') {
+      errors.push(`registry: built-in id "${id}" must not be an active specialist registry entry`);
     }
   }
   return active;

@@ -249,9 +249,21 @@ function createFixture(): { root: string; payloadPath: string; payload: Record<s
     root,
     '.squad/casting/registry.json',
     `${JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T20:00:00.000Z',
       agents: Object.fromEntries(active.map(({ id, name }) => [
         id,
-        { persistent_name: name, status: 'active', universe: 'descriptive' },
+        {
+          display_name: name,
+          persistent_name: name,
+          role: active.find(member => member.id === id)?.role ?? id,
+          status: 'active',
+          universe: 'descriptive',
+          created_at: '2026-09-21T20:00:00.000Z',
+          updated_at: '2026-09-21T20:00:00.000Z',
+        },
       ])),
     })}\n`,
   );

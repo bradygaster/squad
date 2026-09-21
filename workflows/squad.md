@@ -133,7 +133,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      validator_expected_sha256="82cefabe53b28a9b7c8659282a0682d943a9a9cb51a3394aa65f4e5e34366422"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -988,7 +988,7 @@ Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
 3. Name rules:
    - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
    - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
-4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
+4. Write `.squad/casting/registry.json` as `squad-agent-provenance/v1`. Keys are immutable IDs/directories. Records hold equal names, role, universe, lifecycle/status, and optional avatar. Rename preserves IDs; deletion tombstones; never reuse or infer IDs. In descriptive mode every registry entry has `universe` set to `"descriptive"`.
 5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
 ##### Step 4: Generate Scaffolding
@@ -1299,7 +1299,7 @@ Subcommands: `/squad cast-member <description>` (add), `/squad cast-member renam
 2. **Validate squad:** Confirm `.squad/team.md` and registry exist. If not, suggest `/squad cast`, stop.
 3. **Check duplicates** (new only): If similar role exists, ask user to confirm.
 4. **Allocate identity** (new only): Same universe, unused name, same naming rules. If universe full, suggest retire or re-cast.
-5. **Generate/regenerate charter:** New: create from template. Modify: update expertise/ownership/boundaries, preserve name and `created_at`.
+5. **Generate/regenerate charter:** New: create from template. Modify or rename: update charter and display fields, but preserve the registry key and `created_at`.
 6. **Update files:** `.squad/team.md`, `.squad/routing.md`, `.squad/casting/registry.json`, `meet-the-squad.md`.
 7. **Open PR:** On Squad PR: follow-up PR targeting existing branch. On issue: `create-pull-request` branch `squad/cast-member-{id}`, title `[squad] Add/Modify {Name}`.
 8. **Post:** `👤 {Name} ({Role}) has been added to the team.\n\n**PR:** #{pr_number}`

@@ -29,6 +29,22 @@ export {
   type SerializedCastingHistory,
 } from './casting-history.js';
 
+export {
+  AGENT_PROVENANCE_SCHEMA,
+  AGENT_PROVENANCE_VERSION,
+  AgentProvenanceError,
+  parseAgentProvenanceRegistry,
+  reconcileAgentProvenanceRegistry,
+  type AgentAvatarReference,
+  type AgentProvenanceCandidate,
+  type AgentProvenanceDiagnostic,
+  type AgentProvenanceParseResult,
+  type AgentProvenanceRecord,
+  type AgentProvenanceRegistry,
+  type AgentProvenanceStatus,
+  type ReconcileAgentProvenanceOptions,
+} from './agent-provenance.js';
+
 // --- Legacy Types (kept for backward compat) ---
 
 export interface CastingUniverse {

@@ -17,6 +17,7 @@
  */
 
 import path from 'node:path';
+import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { PresetAgent } from './types.js';
 
@@ -314,30 +315,27 @@ function writeOrMergeCastingState(
 
   // ---- registry.json ----
   const registryPath = path.join(castingDir, 'registry.json');
-  let registry: { agents: Record<string, unknown> } = { agents: {} };
+  let existingRegistry: unknown = undefined;
   if (storage.existsSync(registryPath)) {
     try {
       const raw = storage.readSync(registryPath) ?? '{}';
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.agents && typeof parsed.agents === 'object') {
-        registry = parsed as { agents: Record<string, unknown> };
-      }
-    } catch {
-      // Corrupt or unparsable — start fresh (don't lose preset wiring)
-      registry = { agents: {} };
+      existingRegistry = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(
+        `Cannot update malformed casting/registry.json: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  for (const agent of agents) {
-    const key = agent.name.toLowerCase();
-    if (!(key in registry.agents)) {
-      registry.agents[key] = {
-        created_at: now,
-        persistent_name: agent.name,
-        universe: options.universe,
-        status: 'active',
-      };
-    }
-  }
+  const registry = reconcileAgentProvenanceRegistry(
+    existingRegistry,
+    agents.map((agent) => ({
+      id: agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      displayName: agent.name,
+      role: agent.role,
+      universe: options.universe,
+    })),
+    { generatedAt: now, retireMissing: false },
+  );
   storage.writeSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
 
   // ---- history.json ----

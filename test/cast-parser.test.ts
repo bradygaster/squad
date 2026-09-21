@@ -266,6 +266,39 @@ describe('createTeam', () => {
       expect(Object.keys(registry.agents)).toEqual(['ripley', 'dallas', 'kane']);
     });
 
+    it('emits versioned provenance and preserves ids across display-name changes', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const renamed: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.map((member) =>
+          member.role === 'Lead' ? { ...member, name: 'Commander' } : member,
+        ),
+      };
+
+      await createTeam(tempDir, renamed);
+
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as {
+        schema: string;
+        schema_version: number;
+        revision: number;
+        agents: Record<string, { display_name: string; persistent_name: string; role: string }>;
+      };
+      expect(registry).toMatchObject({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 2,
+      });
+      expect(registry.agents.ripley).toMatchObject({
+        display_name: 'Commander',
+        persistent_name: 'Commander',
+        role: 'Lead',
+      });
+      expect(registry.agents.commander).toBeUndefined();
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley', 'charter.md'))).toBe(true);
+    });
+
     it('restores the disabled Coding Agent contract', async () => {
       await createTeam(tempDir, minimalProposal);
 

@@ -167,9 +167,21 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   write(root, '.squad/team.md', teamMarkdown());
   write(root, '.squad/routing.md', routingMarkdown());
   write(root, '.squad/casting/registry.json', JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T20:00:00.000Z',
     agents: Object.fromEntries(active.map(({ id, name }) => [
       id,
-      { persistent_name: name, status: 'active', universe: 'descriptive' },
+      {
+        display_name: name,
+        persistent_name: name,
+        role: active.find(member => member.id === id)?.role ?? id,
+        status: 'active',
+        universe: 'descriptive',
+        created_at: '2026-09-21T20:00:00.000Z',
+        updated_at: '2026-09-21T20:00:00.000Z',
+      },
     ])),
   }));
   write(root, '.squad/casting/history.json', '{}\n');
@@ -429,7 +441,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 82cefabe53b28a9b7c8659282a0682d943a9a9cb51a3394aa65f4e5e34366422, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -683,12 +695,32 @@ describe('GH-AW Cast final-tree validator', () => {
   it('rejects a built-in registered as an active specialist in the casting registry', () => {
     const fixture = createFixture();
     write(fixture.root, '.squad/casting/registry.json', JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T20:00:00.000Z',
       agents: {
         ...Object.fromEntries(active.map(({ id, name }) => [
           id,
-          { persistent_name: name, status: 'active', universe: 'descriptive' },
+          {
+            display_name: name,
+            persistent_name: name,
+            role: active.find(member => member.id === id)?.role ?? id,
+            status: 'active',
+            universe: 'descriptive',
+            created_at: '2026-09-21T20:00:00.000Z',
+            updated_at: '2026-09-21T20:00:00.000Z',
+          },
         ])),
-        rai: { persistent_name: 'Rai', status: 'active', universe: 'descriptive' },
+        rai: {
+          display_name: 'Rai',
+          persistent_name: 'Rai',
+          role: 'RAI Reviewer',
+          status: 'active',
+          universe: 'descriptive',
+          created_at: '2026-09-21T20:00:00.000Z',
+          updated_at: '2026-09-21T20:00:00.000Z',
+        },
       },
     }));
     const result = validate(fixture.root, fixture.payload);
