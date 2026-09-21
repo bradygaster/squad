@@ -11,7 +11,14 @@
 
 import path from 'node:path';
 import os from 'node:os';
-import { readdirSync, statSync, lstatSync, rmSync } from 'node:fs';
+import {
+  lstatSync,
+  readlinkSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -20,6 +27,10 @@ import type { PresetManifest, PresetApplyResult, PresetAgent } from './types.js'
 import { scaffoldPresetIntoSquad } from './scaffold.js';
 
 export type { PresetManifest, PresetAgent, PresetApplyResult } from './types.js';
+export {
+  readConsistentCastingState,
+  type ConsistentCastingState,
+} from './scaffold.js';
 
 const storage = new FSStorageProvider();
 
@@ -114,6 +125,8 @@ export function applyPreset(
   const destRoutingPath = path.join(squadDir, 'routing.md');
   const originalRouting = storage.readSync(destRoutingPath);
   const agentSnapshots = new Map<string, DirectorySnapshot>();
+  const writtenAgentSnapshots = new Map<string, DirectorySnapshot>();
+  let writtenRouting: string | undefined;
   for (const agent of manifest.agents) {
     try {
       validateName(agent.name, 'agent');
@@ -138,18 +151,24 @@ export function applyPreset(
         const destDir = path.join(targetDir, agent.name);
         if (!storage.existsSync(sourceDir)) {
           results.push({ agent: agent.name, status: 'error', reason: 'Source agent directory missing in preset' });
+          const originalSnapshot = agentSnapshots.get(destDir);
+          if (originalSnapshot) writtenAgentSnapshots.set(destDir, originalSnapshot);
           continue;
         }
         if (storage.existsSync(destDir) && !options.force) {
           results.push({ agent: agent.name, status: 'skipped', reason: 'Already exists (use --force to overwrite)' });
+          const originalSnapshot = agentSnapshots.get(destDir);
+          if (originalSnapshot) writtenAgentSnapshots.set(destDir, originalSnapshot);
           continue;
         }
 
+        const writtenSnapshot = missingDirectorySnapshot();
+        writtenAgentSnapshots.set(destDir, writtenSnapshot);
         try {
           if (options.force && storage.existsSync(destDir)) {
             rmSync(destDir, { recursive: true, force: true });
           }
-          copyDirRecursive(sourceDir, destDir);
+          copyDirRecursive(sourceDir, destDir, writtenSnapshot);
           results.push({ agent: agent.name, status: 'installed' });
         } catch (err) {
           results.push({ agent: agent.name, status: 'error', reason: String(err) });
@@ -162,6 +181,7 @@ export function applyPreset(
           if (content !== undefined) {
             storage.mkdirSync(squadDir, { recursive: true });
             storage.writeSync(destRoutingPath, content);
+            writtenRouting = content;
           }
         }
       }
@@ -171,16 +191,31 @@ export function applyPreset(
       );
     });
   } catch (err) {
+    const rollbackConflicts: string[] = [];
     for (const [destDir, snapshot] of agentSnapshots) {
-      restoreDirectory(destDir, snapshot);
+      const conflict = rollbackDirectory(
+        destDir,
+        snapshot,
+        writtenAgentSnapshots.get(destDir) ?? snapshot,
+      );
+      if (conflict) rollbackConflicts.push(conflict);
     }
-    if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
-    else storage.writeSync(destRoutingPath, originalRouting);
+    if (writtenRouting !== undefined) {
+      const currentRouting = storage.readSync(destRoutingPath);
+      if (currentRouting === writtenRouting) {
+        if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
+        else storage.writeSync(destRoutingPath, originalRouting);
+      } else if (currentRouting !== originalRouting) {
+        rollbackConflicts.push(`${destRoutingPath} changed outside the preset transaction`);
+      }
+    }
     results.length = 0;
     results.push({
       agent: '<scaffold>',
       status: 'error',
-      reason: `Preset '${presetName}' was not changed because its coordinated scaffold failed: ${String(err)}`,
+      reason: rollbackConflicts.length === 0
+        ? `Preset '${presetName}' was not changed because its coordinated scaffold failed: ${String(err)}`
+        : `Preset '${presetName}' scaffold failed (${String(err)}) and rollback requires recovery: ${rollbackConflicts.join('; ')}`,
     });
   }
 
@@ -644,9 +679,20 @@ function loadPresetManifest(presetDir: string): PresetManifest | null {
   }
 }
 
-function copyDirRecursive(src: string, dest: string): void {
+function copyDirRecursive(
+  src: string,
+  dest: string,
+  writtenSnapshot?: DirectorySnapshot,
+  snapshotRoot = dest,
+): void {
   storage.mkdirSync(dest, { recursive: true });
-  const entries = readdirSync(src, { encoding: 'utf-8' });
+  if (writtenSnapshot) {
+    writtenSnapshot.kind = 'directory';
+    if (dest !== snapshotRoot) {
+      writtenSnapshot.directories.push(path.relative(snapshotRoot, dest));
+    }
+  }
+  const entries = readdirSync(src, { encoding: 'utf-8' }).sort();
 
   for (const entry of entries) {
     const srcPath = path.join(src, entry);
@@ -657,52 +703,103 @@ function copyDirRecursive(src: string, dest: string): void {
     if (stat.isSymbolicLink()) continue;
 
     if (stat.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
+      copyDirRecursive(srcPath, destPath, writtenSnapshot, snapshotRoot);
     } else {
       const content = storage.readSync(srcPath);
       if (content !== undefined) {
         storage.writeSync(destPath, content);
+        writtenSnapshot?.files.push({
+          relativePath: path.relative(snapshotRoot, destPath),
+          content,
+        });
       }
     }
   }
 }
 
 interface DirectorySnapshot {
-  existed: boolean;
+  kind: 'missing' | 'directory' | 'file' | 'symlink';
+  rootContent?: string;
+  rootTarget?: string;
   directories: string[];
   files: Array<{ relativePath: string; content: string }>;
+  symlinks: Array<{ relativePath: string; target: string }>;
+}
+
+function missingDirectorySnapshot(): DirectorySnapshot {
+  return { kind: 'missing', directories: [], files: [], symlinks: [] };
 }
 
 function snapshotDirectory(directory: string): DirectorySnapshot {
-  if (!storage.existsSync(directory) || !isDirSync(directory)) {
-    return { existed: false, directories: [], files: [] };
+  let rootStat;
+  try {
+    rootStat = lstatSync(directory);
+  } catch {
+    return missingDirectorySnapshot();
+  }
+  if (rootStat.isSymbolicLink()) {
+    return {
+      kind: 'symlink',
+      rootTarget: readlinkSync(directory),
+      directories: [],
+      files: [],
+      symlinks: [],
+    };
+  }
+  if (rootStat.isFile()) {
+    return {
+      kind: 'file',
+      rootContent: storage.readSync(directory) ?? '',
+      directories: [],
+      files: [],
+      symlinks: [],
+    };
+  }
+  if (!rootStat.isDirectory()) {
+    throw new Error(`Unsupported agent path snapshot: ${directory}`);
   }
   const directories: string[] = [];
   const files: Array<{ relativePath: string; content: string }> = [];
+  const symlinks: Array<{ relativePath: string; target: string }> = [];
   const visit = (current: string, relative: string): void => {
-    for (const entry of readdirSync(current, { encoding: 'utf-8' })) {
+    for (const entry of readdirSync(current, { encoding: 'utf-8' }).sort()) {
       const fullPath = path.join(current, entry);
       const relativePath = path.join(relative, entry);
       const stat = lstatSync(fullPath);
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) {
+      if (stat.isSymbolicLink()) {
+        symlinks.push({ relativePath, target: readlinkSync(fullPath) });
+      } else if (stat.isDirectory()) {
         directories.push(relativePath);
         visit(fullPath, relativePath);
-      } else {
+      } else if (stat.isFile()) {
         const content = storage.readSync(fullPath);
         if (content !== undefined) files.push({ relativePath, content });
+      } else {
+        throw new Error(`Unsupported entry in agent directory snapshot: ${fullPath}`);
       }
     }
   };
   visit(directory, '');
-  return { existed: true, directories, files };
+  return { kind: 'directory', directories, files, symlinks };
 }
 
 function restoreDirectory(directory: string, snapshot: DirectorySnapshot): void {
-  if (storage.existsSync(directory)) {
+  try {
+    lstatSync(directory);
     rmSync(directory, { recursive: true, force: true });
+  } catch {
+    // Already absent.
   }
-  if (!snapshot.existed) return;
+  if (snapshot.kind === 'missing') return;
+  storage.mkdirSync(path.dirname(directory), { recursive: true });
+  if (snapshot.kind === 'file') {
+    storage.writeSync(directory, snapshot.rootContent ?? '');
+    return;
+  }
+  if (snapshot.kind === 'symlink') {
+    symlinkSync(snapshot.rootTarget ?? '', directory);
+    return;
+  }
   storage.mkdirSync(directory, { recursive: true });
   for (const relativePath of snapshot.directories) {
     storage.mkdirSync(path.join(directory, relativePath), { recursive: true });
@@ -710,6 +807,27 @@ function restoreDirectory(directory: string, snapshot: DirectorySnapshot): void 
   for (const file of snapshot.files) {
     storage.writeSync(path.join(directory, file.relativePath), file.content);
   }
+  for (const link of snapshot.symlinks) {
+    symlinkSync(link.target, path.join(directory, link.relativePath));
+  }
+}
+
+function sameDirectorySnapshot(left: DirectorySnapshot, right: DirectorySnapshot): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function rollbackDirectory(
+  directory: string,
+  previous: DirectorySnapshot,
+  written: DirectorySnapshot,
+): string | null {
+  const current = snapshotDirectory(directory);
+  if (sameDirectorySnapshot(current, previous)) return null;
+  if (!sameDirectorySnapshot(current, written)) {
+    return `${directory} changed outside the preset transaction`;
+  }
+  restoreDirectory(directory, previous);
+  return null;
 }
 
 /**

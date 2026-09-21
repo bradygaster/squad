@@ -10,6 +10,7 @@ import {
   writeFileSync,
   readFileSync,
   readdirSync,
+  unlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -29,6 +30,7 @@ import {
 } from '@bradygaster/squad-sdk/casting';
 import {
   _setPresetRegistryHooksForTesting,
+  readConsistentCastingState,
   scaffoldPresetIntoSquad,
 } from '../packages/squad-sdk/src/presets/scaffold.js';
 import { applyPreset as applyPresetSource } from '../packages/squad-sdk/src/presets/index.js';
@@ -638,6 +640,47 @@ describe('applyPreset()', () => {
         .toHaveProperty('agents.dev');
   });
 
+  it('does not remove a live replacement lock during stale-lock ABA recovery', () => {
+      const squadDir = join(TMP, 'target-stale-lock-aba');
+      const castingDir = join(squadDir, 'casting');
+      mkdirSync(castingDir, { recursive: true });
+      const lockPath = join(castingDir, 'registry.lock');
+      let now = Date.parse('2026-09-21T22:00:00.000Z');
+      const staleLock = castingLockMetadata(
+        4242,
+        new Date(now - 60_000).toISOString(),
+        'stale-owner',
+      );
+      const replacementLock = castingLockMetadata(
+        5252,
+        new Date(now).toISOString(),
+        'replacement-owner',
+      );
+      writeFileSync(lockPath, staleLock);
+      let replaced = false;
+      _setPresetRegistryHooksForTesting({
+        now: () => now,
+        wait: milliseconds => { now += milliseconds; },
+        isProcessAlive: pid => pid === 5252,
+        lockTimeoutMs: 50,
+        staleLockAgeMs: 10,
+        afterStaleLockSnapshot: () => {
+          if (replaced) return;
+          replaced = true;
+          unlinkSync(lockPath);
+          writeFileSync(lockPath, replacementLock);
+        },
+      });
+
+      expect(() => scaffoldPresetIntoSquad(
+        squadDir,
+        [{ name: 'dev', role: 'developer' }],
+        'starter',
+      )).toThrow(/Timed out waiting/);
+      expect(readFileSync(lockPath, 'utf8')).toBe(replacementLock);
+      expect(readdirSync(castingDir).filter(name => name.includes('.stale-'))).toEqual([]);
+  });
+
   it('fails safely on malformed lock metadata', () => {
       const squadDir = join(TMP, 'target-malformed-lock');
       const castingDir = join(squadDir, 'casting');
@@ -662,11 +705,18 @@ describe('applyPreset()', () => {
 
   it.each([
       ['journal write', 'beforeWrite', 'journal'],
+      ['journal file fsync', 'beforeFileFsync', 'journal'],
+      ['journal directory fsync', 'beforeDirectoryFsync', 'journal'],
       ['journal rename', 'beforeRename', 'journal'],
       ['history write', 'beforeWrite', 'history'],
+      ['history file fsync', 'beforeFileFsync', 'history'],
+      ['history directory fsync', 'beforeDirectoryFsync', 'history'],
       ['history rename', 'beforeRename', 'history'],
       ['registry write', 'beforeWrite', 'registry'],
+      ['registry file fsync', 'beforeFileFsync', 'registry'],
+      ['registry directory fsync', 'beforeDirectoryFsync', 'registry'],
       ['registry rename', 'beforeRename', 'registry'],
+      ['journal delete directory fsync', 'beforeDirectoryFsync', 'journal-delete'],
     ] as const)('rolls back the registry/history pair after an injected %s failure', (
       _label,
       boundary,
@@ -694,12 +744,27 @@ describe('applyPreset()', () => {
       writeFileSync(policyPath, '{"universe_allowlist":["*"],"max_capacity":25}\n');
       let injected = false;
       _setPresetRegistryHooksForTesting({
-        [boundary]: (context: { stage?: string }) => {
+        beforeWrite: boundary === 'beforeWrite' ? (context) => {
           if (!injected && context.stage === stage) {
             injected = true;
             throw new Error(`injected ${stage} ${boundary} failure`);
           }
-        },
+        } : undefined,
+        beforeRename: boundary === 'beforeRename' ? (context) => {
+          if (!injected && context.stage === stage) {
+            injected = true;
+            throw new Error(`injected ${stage} ${boundary} failure`);
+          }
+        } : undefined,
+        beforeFsync: boundary === 'beforeFileFsync' || boundary === 'beforeDirectoryFsync'
+          ? (context) => {
+              const expectedTarget = boundary === 'beforeFileFsync' ? 'file' : 'directory';
+              if (!injected && context.stage === stage && context.target === expectedTarget) {
+                injected = true;
+                throw new Error(`injected ${stage} ${boundary} failure`);
+              }
+            }
+          : undefined,
       });
 
       expect(() => scaffoldPresetIntoSquad(
@@ -714,6 +779,103 @@ describe('applyPreset()', () => {
         || name.includes('.transaction.')
         || name === 'registry.lock'
       )).toEqual([]);
+  });
+
+  it.each([
+    ['journal file fsync', 'journal', 'file-fsync'],
+    ['journal rename', 'journal', 'rename'],
+    ['journal directory fsync', 'journal', 'directory-fsync'],
+    ['history file fsync', 'history', 'file-fsync'],
+    ['history rename', 'history', 'rename'],
+    ['history directory fsync', 'history', 'directory-fsync'],
+    ['registry file fsync', 'registry', 'file-fsync'],
+    ['registry rename', 'registry', 'rename'],
+    ['registry directory fsync', 'registry', 'directory-fsync'],
+    ['journal delete', 'journal-delete', 'unlink'],
+    ['journal delete directory fsync', 'journal-delete', 'directory-fsync'],
+  ] as const)('keeps readers on a complete generation and recovers after a crash at %s', (
+    _label,
+    stage,
+    boundary,
+  ) => {
+    const squadDir = join(TMP, `target-crash-${stage}-${boundary}`);
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    const registryPath = join(castingDir, 'registry.json');
+    const historyPath = join(castingDir, 'history.json');
+    const journalPath = join(castingDir, 'registry-history.transaction.json');
+    const initial = reconcileAgentProvenanceRegistry(undefined, [{
+      id: 'existing',
+      displayName: 'Existing',
+      role: 'Lead',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-20T20:00:00.000Z' });
+    const originalRegistry = JSON.stringify(initial, null, 2) + '\n';
+    const originalHistory = JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }, null, 2) + '\n';
+    writeFileSync(registryPath, originalRegistry);
+    writeFileSync(historyPath, originalHistory);
+    writeFileSync(
+      join(castingDir, 'policy.json'),
+      '{"universe_allowlist":["*"],"max_capacity":25}\n',
+    );
+
+    let observed: ReturnType<typeof readConsistentCastingState> | undefined;
+    let injected = false;
+    _setPresetRegistryHooksForTesting({
+      afterDurabilityBoundary: (context) => {
+        if (injected || context.stage !== stage || context.boundary !== boundary) return;
+        injected = true;
+        observed = readConsistentCastingState(castingDir);
+        throw new Error(`simulated crash after ${stage} ${boundary}`);
+      },
+    });
+
+    expect(() => scaffoldPresetIntoSquad(
+      squadDir,
+      [{ name: 'dev', role: 'developer' }],
+      'starter',
+    )).toThrow(new RegExp(`simulated crash after ${stage} ${boundary}`));
+    expect(injected).toBe(true);
+    expect(observed).toBeDefined();
+
+    const observedRegistry = JSON.parse(observed!.registryRaw!) as {
+      revision: number;
+      agents: Record<string, unknown>;
+    };
+    const observedHistory = JSON.parse(observed!.historyRaw!) as {
+      assignment_cast_snapshots: Record<string, unknown>;
+      universe_usage_history: unknown[];
+    };
+    const readerSawNext = Object.hasOwn(observedRegistry.agents, 'dev');
+    expect(Object.keys(observedHistory.assignment_cast_snapshots)).toHaveLength(
+      readerSawNext ? 1 : 0,
+    );
+    expect(observedHistory.universe_usage_history).toHaveLength(readerSawNext ? 1 : 0);
+
+    _setPresetRegistryHooksForTesting(null);
+    scaffoldPresetIntoSquad(
+      squadDir,
+      [{ name: 'dev', role: 'developer' }],
+      'starter',
+    );
+
+    const recovered = readConsistentCastingState(castingDir);
+    const recoveredRegistry = JSON.parse(recovered.registryRaw!) as {
+      agents: Record<string, unknown>;
+    };
+    const recoveredHistory = JSON.parse(recovered.historyRaw!) as {
+      assignment_cast_snapshots: Record<string, unknown>;
+      universe_usage_history: unknown[];
+    };
+    expect(recoveredRegistry.agents).toHaveProperty('dev');
+    expect(Object.keys(recoveredHistory.assignment_cast_snapshots).length)
+      .toBeGreaterThanOrEqual(1);
+    expect(recoveredHistory.universe_usage_history.length).toBeGreaterThanOrEqual(1);
+    expect(existsSync(journalPath)).toBe(false);
+    expect(readdirSync(castingDir).filter(name => name.includes('.tmp-'))).toEqual([]);
   });
 
   it('recovers a journaled half-commit and preserves monotonic revisions on retry', () => {
@@ -760,7 +922,8 @@ describe('applyPreset()', () => {
     writeFileSync(registryPath, originalRegistry);
     writeFileSync(historyPath, nextHistory);
     writeFileSync(journalPath, JSON.stringify({
-      version: 1,
+      version: 2,
+      generation: 'recovery-generation',
       registry: { previous: originalRegistry, next: nextRegistry },
       history: { previous: originalHistory, next: nextHistory },
     }, null, 2) + '\n');
@@ -851,6 +1014,136 @@ describe('applyPreset()', () => {
       || name.includes('.transaction.')
       || name === 'registry.lock'
     )).toEqual([]);
+  });
+
+  it('preserves concurrent preset file and directory changes during history-failure rollback', () => {
+    const homeDir = join(TMP, 'apply-history-concurrent');
+    process.env['SQUAD_HOME'] = homeDir;
+    for (const agent of ['dev', 'tester', 'blocked']) {
+      scaffold(`apply-history-concurrent/presets/starter/agents/${agent}`);
+      writeFile(
+        `apply-history-concurrent/presets/starter/agents/${agent}/charter.md`,
+        `# Replacement ${agent}\n`,
+      );
+    }
+    writeFile('apply-history-concurrent/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [
+        { name: 'dev', role: 'developer' },
+        { name: 'tester', role: 'tester' },
+        { name: 'blocked', role: 'reviewer' },
+      ],
+    }));
+    writeFile('apply-history-concurrent/presets/starter/routing.md', '# Preset routing\n');
+
+    const squadDir = join(TMP, 'target-history-concurrent');
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(join(agentsDir, 'dev'), { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'dev', 'charter.md'), '# Original charter\n');
+    writeFileSync(join(agentsDir, 'dev', 'original-only.md'), 'original\n');
+    writeFileSync(join(agentsDir, 'blocked'), 'original path bytes\n');
+    writeFileSync(join(squadDir, 'routing.md'), '# Original routing\n');
+    const originalRegistry = JSON.stringify(reconcileAgentProvenanceRegistry(undefined, [{
+      id: 'existing',
+      displayName: 'Existing',
+      role: 'Lead',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-20T20:00:00.000Z' }), null, 2) + '\n';
+    const originalHistory = JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }, null, 2) + '\n';
+    writeFileSync(join(castingDir, 'registry.json'), originalRegistry);
+    writeFileSync(join(castingDir, 'history.json'), originalHistory);
+
+    const externalCharter = '# Concurrent charter\n';
+    const externalTeam = '# Concurrent team\n';
+    const externalRouting = '# Concurrent routing\n';
+    let injected = false;
+    _setPresetRegistryHooksForTesting({
+      beforeRename: ({ stage }) => {
+        if (injected || stage !== 'history') return;
+        injected = true;
+        writeFileSync(join(agentsDir, 'dev', 'charter.md'), externalCharter);
+        writeFileSync(join(agentsDir, 'dev', 'external-only.md'), 'external tree bytes\n');
+        writeFileSync(join(squadDir, 'team.md'), externalTeam);
+        writeFileSync(join(squadDir, 'routing.md'), externalRouting);
+        throw new Error('forced history rename failure after external writes');
+      },
+    });
+
+    const result = applyPresetSource('starter', agentsDir, {
+      force: true,
+      overwriteRouting: true,
+    });
+
+    expect(result).toContainEqual(expect.objectContaining({
+      agent: '<scaffold>',
+      status: 'error',
+      reason: expect.stringMatching(/rollback requires recovery.*(team\.md|routing\.md|agents\/dev)/),
+    }));
+    expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf8')).toBe(externalCharter);
+    expect(readFileSync(join(agentsDir, 'dev', 'external-only.md'), 'utf8'))
+      .toBe('external tree bytes\n');
+    expect(existsSync(join(agentsDir, 'dev', 'original-only.md'))).toBe(false);
+    expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toBe(externalTeam);
+    expect(readFileSync(join(squadDir, 'routing.md'), 'utf8')).toBe(externalRouting);
+    expect(existsSync(join(agentsDir, 'tester'))).toBe(false);
+    expect(readFileSync(join(agentsDir, 'blocked'), 'utf8')).toBe('original path bytes\n');
+    expect(existsSync(join(castingDir, 'policy.json'))).toBe(false);
+    expect(readFileSync(join(castingDir, 'registry.json'), 'utf8')).toBe(originalRegistry);
+    expect(readFileSync(join(castingDir, 'history.json'), 'utf8')).toBe(originalHistory);
+    expect(readdirSync(castingDir).filter(name =>
+      name.includes('.tmp-')
+      || name === 'registry-history.transaction.json'
+      || name === 'registry.lock'
+    )).toEqual([]);
+  });
+
+  it('retains the casting journal when an external write prevents CAS rollback', () => {
+    const squadDir = join(TMP, 'target-casting-rollback-conflict');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    const registryPath = join(castingDir, 'registry.json');
+    const historyPath = join(castingDir, 'history.json');
+    const journalPath = join(castingDir, 'registry-history.transaction.json');
+    const originalRegistry = JSON.stringify(reconcileAgentProvenanceRegistry(undefined, [{
+      id: 'existing',
+      displayName: 'Existing',
+      role: 'Lead',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-20T20:00:00.000Z' }), null, 2) + '\n';
+    const originalHistory = JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }, null, 2) + '\n';
+    const externalHistory = '{"external":"history"}\n';
+    writeFileSync(registryPath, originalRegistry);
+    writeFileSync(historyPath, originalHistory);
+    let injected = false;
+    _setPresetRegistryHooksForTesting({
+      beforeRename: ({ stage }) => {
+        if (injected || stage !== 'registry') return;
+        injected = true;
+        writeFileSync(historyPath, externalHistory);
+        throw new Error('forced registry rename failure after external history write');
+      },
+    });
+
+    expect(() => scaffoldPresetIntoSquad(
+      squadDir,
+      [{ name: 'dev', role: 'developer' }],
+      'starter',
+    )).toThrow(/rollback requires recovery.*history\.json changed outside/);
+    expect(readFileSync(historyPath, 'utf8')).toBe(externalHistory);
+    expect(readFileSync(registryPath, 'utf8')).toBe(originalRegistry);
+    expect(existsSync(journalPath)).toBe(true);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
+    expect(readdirSync(castingDir).filter(name => name.includes('.tmp-'))).toEqual([]);
   });
 
   it('serializes a competing preset registry writer without losing revisions or history', async () => {

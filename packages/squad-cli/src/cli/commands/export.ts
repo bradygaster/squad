@@ -6,6 +6,7 @@
 import path from 'node:path';
 import { FSStorageProvider, exportToRepo, parseRepoString } from '@bradygaster/squad-sdk';
 import type { RepoSpec } from '@bradygaster/squad-sdk';
+import { readConsistentCastingState } from '@bradygaster/squad-sdk/presets';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -66,7 +67,18 @@ function buildManifest(dest: string, storage: FSStorageProvider, squadInfo: { pa
 
   // Read casting state
   const castingDir = path.join(squadInfo.path, 'casting');
-  for (const file of ['registry.json', 'policy.json', 'history.json']) {
+  try {
+    const castingState = readConsistentCastingState(castingDir);
+    if (castingState.registryRaw !== undefined) {
+      manifest.casting['registry'] = JSON.parse(castingState.registryRaw);
+    }
+    if (castingState.historyRaw !== undefined) {
+      manifest.casting['history'] = JSON.parse(castingState.historyRaw);
+    }
+  } catch (err) {
+    console.error(`Warning: could not read consistent casting state: ${(err as Error).message}`);
+  }
+  for (const file of ['policy.json']) {
     const filePath = path.join(castingDir, file);
     try {
       const raw = storage.readSync(filePath);

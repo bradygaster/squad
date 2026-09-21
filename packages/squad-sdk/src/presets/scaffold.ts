@@ -16,7 +16,19 @@
  * @module presets/scaffold
  */
 
-import { closeSync, openSync, renameSync, unlinkSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  fsyncSync,
+  fstatSync,
+  linkSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
@@ -32,7 +44,7 @@ const REGISTRY_LOCK_TIMEOUT_MS = 30_000;
 const REGISTRY_LOCK_RETRY_MS = 25;
 const REGISTRY_LOCK_STALE_MS = 5_000;
 const LOCK_METADATA_VERSION = 1;
-const CASTING_TRANSACTION_VERSION = 1;
+const CASTING_TRANSACTION_VERSION = 2;
 const syncWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 let atomicWriteSequence = 0;
 
@@ -45,6 +57,20 @@ interface PresetRegistryTestHooks {
     attempt: number;
     filePath?: string;
     stage?: string;
+  }) => void;
+  afterStaleLockSnapshot?: (context: {
+    lockPath: string;
+    ownerToken: string;
+  }) => void;
+  beforeFsync?: (context: {
+    filePath: string;
+    stage: string;
+    target: 'file' | 'directory';
+  }) => void;
+  afterDurabilityBoundary?: (context: {
+    filePath: string;
+    stage: string;
+    boundary: 'file-fsync' | 'rename' | 'directory-fsync' | 'unlink';
   }) => void;
   now?: () => number;
   wait?: (milliseconds: number) => void;
@@ -88,7 +114,72 @@ function nowMilliseconds(): number {
 }
 
 function createOwnerToken(): string {
-  return `${process.pid}-${nowMilliseconds()}-${Math.random().toString(16).slice(2)}`;
+  return `${process.pid}-${nowMilliseconds()}-${randomUUID()}`;
+}
+
+class SimulatedCastingCrash extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  }
+}
+
+function durabilityBoundary(
+  filePath: string,
+  stage: string,
+  boundary: 'file-fsync' | 'rename' | 'directory-fsync' | 'unlink',
+): void {
+  try {
+    presetRegistryTestHooks?.afterDurabilityBoundary?.({ filePath, stage, boundary });
+  } catch (error) {
+    throw new SimulatedCastingCrash(error);
+  }
+}
+
+function sameFileIdentity(
+  left: { dev: number | bigint; ino: number | bigint },
+  right: { dev: number | bigint; ino: number | bigint },
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function fsyncDirectory(directoryPath: string, stage: string, filePath: string): void {
+  presetRegistryTestHooks?.beforeFsync?.({
+    filePath,
+    stage,
+    target: 'directory',
+  });
+  if (process.platform === 'win32') {
+    durabilityBoundary(filePath, stage, 'directory-fsync');
+    return;
+  }
+  const descriptor = openSync(directoryPath, 'r');
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  durabilityBoundary(filePath, stage, 'directory-fsync');
+}
+
+function durableUnlink(filePath: string, stage: string): void {
+  try {
+    unlinkSync(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  durabilityBoundary(filePath, stage, 'unlink');
+  fsyncDirectory(path.dirname(filePath), stage, filePath);
+}
+
+function writeAllSync(descriptor: number, content: string): void {
+  const buffer = Buffer.from(content, 'utf8');
+  let offset = 0;
+  while (offset < buffer.length) {
+    const written = writeSync(descriptor, buffer, offset, buffer.length - offset);
+    if (written === 0) throw new Error('Unable to make progress writing durable file');
+    offset += written;
+  }
 }
 
 function parseCastingLockMetadata(raw: string | undefined): CastingLockMetadata | null {
@@ -138,24 +229,53 @@ function tryRecoverStaleCastingLock(lockPath: string): boolean {
   const staleAge = presetRegistryTestHooks?.staleLockAgeMs ?? REGISTRY_LOCK_STALE_MS;
   if (age < staleAge || isProcessAlive(metadata.pid) !== false) return false;
 
-  if (storage.readSync(lockPath) !== raw) return false;
+  let observedIdentity;
+  try {
+    observedIdentity = lstatSync(lockPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    throw error;
+  }
+  presetRegistryTestHooks?.afterStaleLockSnapshot?.({
+    lockPath,
+    ownerToken: metadata.owner_token,
+  });
+
   const stalePath = `${lockPath}.stale-${createOwnerToken()}`;
   try {
-    renameSync(lockPath, stalePath);
+    linkSync(lockPath, stalePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
     throw error;
   }
 
-  const recoveredRaw = storage.readSync(stalePath);
-  if (recoveredRaw !== raw) {
-    if (!storage.existsSync(lockPath)) {
-      renameSync(stalePath, lockPath);
+  try {
+    const claimedIdentity = lstatSync(stalePath);
+    const currentIdentity = lstatSync(lockPath);
+    const claimedMetadata = parseCastingLockMetadata(storage.readSync(stalePath));
+    if (
+      !sameFileIdentity(observedIdentity, claimedIdentity)
+      || !sameFileIdentity(claimedIdentity, currentIdentity)
+      || claimedMetadata?.owner_token !== metadata.owner_token
+      || storage.readSync(stalePath) !== raw
+    ) {
+      return false;
     }
-    return false;
+
+    unlinkSync(lockPath);
+    fsyncDirectory(path.dirname(lockPath), 'stale-lock-remove', lockPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  } finally {
+    try {
+      unlinkSync(stalePath);
+      fsyncDirectory(path.dirname(stalePath), 'stale-lock-claim-remove', stalePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
   }
-  storage.deleteSync(stalePath);
-  return true;
 }
 
 function acquireCastingLock(lockPath: string): () => void {
@@ -173,12 +293,23 @@ function acquireCastingLock(lockPath: string): () => void {
           created_at: new Date(nowMilliseconds()).toISOString(),
           owner_token: ownerToken,
         };
-        writeSync(descriptor, JSON.stringify(metadata) + '\n', undefined, 'utf8');
+        writeAllSync(descriptor, JSON.stringify(metadata) + '\n');
+        fsyncSync(descriptor);
+        fsyncDirectory(path.dirname(lockPath), 'lock-create', lockPath);
       } catch (error) {
+        const openedIdentity = fstatSync(descriptor);
         closeSync(descriptor);
-        unlinkSync(lockPath);
+        try {
+          const currentIdentity = lstatSync(lockPath);
+          if (sameFileIdentity(openedIdentity, currentIdentity)) {
+            durableUnlink(lockPath, 'lock-create-rollback');
+          }
+        } catch (cleanupError) {
+          if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') throw cleanupError;
+        }
         throw error;
       }
+      const openedIdentity = fstatSync(descriptor);
       return () => {
         try {
           closeSync(descriptor);
@@ -186,7 +317,9 @@ function acquireCastingLock(lockPath: string): () => void {
           const current = parseCastingLockMetadata(storage.readSync(lockPath));
           if (current?.owner_token !== ownerToken) return;
           try {
-            unlinkSync(lockPath);
+            const currentIdentity = lstatSync(lockPath);
+            if (!sameFileIdentity(openedIdentity, currentIdentity)) return;
+            durableUnlink(lockPath, 'lock-release');
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
           }
@@ -287,9 +420,18 @@ function atomicWriteFile(
   attempt: number,
 ): void {
   const tempPath = `${filePath}.tmp-${process.pid}-${nowMilliseconds()}-${attempt}-${atomicWriteSequence++}`;
+  let descriptor: number | undefined;
+  let renamed = false;
+  let crashed = false;
   try {
     presetRegistryTestHooks?.beforeWrite?.({ filePath, stage });
-    storage.writeSync(tempPath, content);
+    descriptor = openSync(tempPath, 'wx');
+    writeAllSync(descriptor, content);
+    presetRegistryTestHooks?.beforeFsync?.({ filePath, stage, target: 'file' });
+    fsyncSync(descriptor);
+    durabilityBoundary(filePath, stage, 'file-fsync');
+    closeSync(descriptor);
+    descriptor = undefined;
     presetRegistryTestHooks?.beforeRename?.({
       registryPath,
       tempPath,
@@ -297,9 +439,23 @@ function atomicWriteFile(
       filePath,
       stage,
     });
-    storage.renameSync(tempPath, filePath);
+    renameSync(tempPath, filePath);
+    renamed = true;
+    durabilityBoundary(filePath, stage, 'rename');
+    fsyncDirectory(path.dirname(filePath), stage, filePath);
+  } catch (error) {
+    crashed = error instanceof SimulatedCastingCrash;
+    throw error;
   } finally {
-    storage.deleteSync(tempPath);
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (!renamed && !crashed) {
+      try {
+        unlinkSync(tempPath);
+        fsyncDirectory(path.dirname(tempPath), `${stage}-temp-cleanup`, tempPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
   }
 }
 
@@ -314,9 +470,15 @@ function atomicWriteJson(filePath: string, value: unknown): void {
 }
 
 interface CastingTransactionJournal {
-  version: 1;
+  version: 2;
+  generation: string;
   registry: { previous: string | null; next: string };
   history: { previous: string | null; next: string };
+}
+
+interface FileRollbackState {
+  previous: string | undefined;
+  written: string;
 }
 
 function parseCastingTransactionJournal(
@@ -328,6 +490,8 @@ function parseCastingTransactionJournal(
     const parsed = JSON.parse(raw) as CastingTransactionJournal;
     if (
       parsed.version !== CASTING_TRANSACTION_VERSION
+      || typeof parsed.generation !== 'string'
+      || parsed.generation.length === 0
       || !parsed.registry
       || !parsed.history
       || (parsed.registry.previous !== null && typeof parsed.registry.previous !== 'string')
@@ -345,6 +509,58 @@ function parseCastingTransactionJournal(
   }
 }
 
+export interface ConsistentCastingState {
+  generation: string | null;
+  registryRaw: string | undefined;
+  historyRaw: string | undefined;
+}
+
+/**
+ * Read registry/history as one logical generation. While a durable journal is
+ * present, a half-renamed pair is projected back to the previous generation;
+ * the next generation becomes visible only after both files match it.
+ */
+export function readConsistentCastingState(castingDir: string): ConsistentCastingState {
+  const registryPath = path.join(castingDir, 'registry.json');
+  const historyPath = path.join(castingDir, 'history.json');
+  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
+
+  for (let attempt = 0; attempt < REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
+    const journalRaw = storage.readSync(journalPath);
+    const registryRaw = storage.readSync(registryPath);
+    const historyRaw = storage.readSync(historyPath);
+    if (storage.readSync(journalPath) !== journalRaw) continue;
+    if (journalRaw === undefined) {
+      return { generation: null, registryRaw, historyRaw };
+    }
+
+    const journal = parseCastingTransactionJournal(journalPath);
+    if (!journal || storage.readSync(journalPath) !== journalRaw) continue;
+    const registry = registryRaw ?? null;
+    const history = historyRaw ?? null;
+    const previousRegistry = journal.registry.previous;
+    const previousHistory = journal.history.previous;
+    const registryKnown = registry === previousRegistry || registry === journal.registry.next;
+    const historyKnown = history === previousHistory || history === journal.history.next;
+    if (!registryKnown || !historyKnown) {
+      throw new Error('Cannot read casting state because a file changed outside the journal');
+    }
+    if (registry === journal.registry.next && history === journal.history.next) {
+      return {
+        generation: journal.generation,
+        registryRaw: journal.registry.next,
+        historyRaw: journal.history.next,
+      };
+    }
+    return {
+      generation: null,
+      registryRaw: previousRegistry ?? undefined,
+      historyRaw: previousHistory ?? undefined,
+    };
+  }
+  throw new Error('Casting transaction changed repeatedly while reading registry/history');
+}
+
 function restoreTransactionFile(
   filePath: string,
   content: string | null,
@@ -352,10 +568,40 @@ function restoreTransactionFile(
   stage: string,
 ): void {
   if (content === null) {
-    storage.deleteSync(filePath);
+    durableUnlink(filePath, stage);
     return;
   }
   atomicWriteFile(filePath, content, stage, registryPath, 0);
+}
+
+function rollbackTransactionFile(
+  filePath: string,
+  state: { previous: string | null; next: string },
+  registryPath: string,
+  stage: string,
+): string | null {
+  const current = storage.readSync(filePath) ?? null;
+  if (current === state.previous) return null;
+  if (current !== state.next) {
+    return `${filePath} changed outside the casting transaction`;
+  }
+  restoreTransactionFile(filePath, state.previous, registryPath, stage);
+  return null;
+}
+
+function rollbackFile(
+  filePath: string,
+  state: FileRollbackState | undefined,
+): string | null {
+  if (!state) return null;
+  const current = storage.readSync(filePath);
+  if (current === state.previous) return null;
+  if (current !== state.written) {
+    return `${filePath} changed outside the preset transaction`;
+  }
+  if (state.previous === undefined) storage.deleteSync(filePath);
+  else storage.writeSync(filePath, state.previous);
+  return null;
 }
 
 function recoverCastingTransaction(castingDir: string): void {
@@ -373,7 +619,7 @@ function recoverCastingTransaction(castingDir: string): void {
     && historyRaw === journal.history.next;
 
   if (isPrevious || isNext) {
-    storage.deleteSync(journalPath);
+    durableUnlink(journalPath, 'journal-delete');
     return;
   }
 
@@ -397,7 +643,27 @@ function recoverCastingTransaction(castingDir: string): void {
     registryPath,
     'recovery-registry',
   );
-  storage.deleteSync(journalPath);
+  durableUnlink(journalPath, 'journal-delete');
+}
+
+function removeOrphanedCastingTemps(castingDir: string): void {
+  let removed = false;
+  const transactionPrefixes = [
+    'registry.json.tmp-',
+    'history.json.tmp-',
+    'registry-history.transaction.json.tmp-',
+    'policy.json.tmp-',
+  ];
+  for (const name of readdirSync(castingDir)) {
+    if (!transactionPrefixes.some(prefix => name.startsWith(prefix))) continue;
+    try {
+      unlinkSync(path.join(castingDir, name));
+      removed = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  if (removed) fsyncDirectory(castingDir, 'orphan-temp-cleanup', castingDir);
 }
 
 function commitRegistryAndHistory(
@@ -413,42 +679,43 @@ function commitRegistryAndHistory(
   const journalPath = path.join(castingDir, 'registry-history.transaction.json');
   const journal: CastingTransactionJournal = {
     version: CASTING_TRANSACTION_VERSION,
+    generation: createOwnerToken(),
     registry: { previous: registryRaw ?? null, next: nextRegistryRaw },
     history: { previous: historyRaw ?? null, next: nextHistoryRaw },
   };
 
-  atomicWriteFile(
-    journalPath,
-    JSON.stringify(journal, null, 2) + '\n',
-    'journal',
-    registryPath,
-    attempt,
-  );
   try {
+    atomicWriteFile(
+      journalPath,
+      JSON.stringify(journal, null, 2) + '\n',
+      'journal',
+      registryPath,
+      attempt,
+    );
     atomicWriteFile(historyPath, nextHistoryRaw, 'history', registryPath, attempt);
     atomicWriteFile(registryPath, nextRegistryRaw, 'registry', registryPath, attempt);
-    storage.deleteSync(journalPath);
+    durableUnlink(journalPath, 'journal-delete');
   } catch (error) {
-    try {
-      restoreTransactionFile(
-        historyPath,
-        journal.history.previous,
-        registryPath,
-        'rollback-history',
-      );
-      restoreTransactionFile(
-        registryPath,
-        journal.registry.previous,
-        registryPath,
-        'rollback-registry',
-      );
-      storage.deleteSync(journalPath);
-    } catch (rollbackError) {
-      throw new Error(
-        `Casting transaction failed (${String(error)}) and rollback requires recovery: ${String(rollbackError)}`,
-      );
+    if (error instanceof SimulatedCastingCrash) throw error;
+    const rollbackFailures: string[] = [];
+    for (const [filePath, state, stage] of [
+      [historyPath, journal.history, 'rollback-history'],
+      [registryPath, journal.registry, 'rollback-registry'],
+    ] as const) {
+      try {
+        const conflict = rollbackTransactionFile(filePath, state, registryPath, stage);
+        if (conflict) rollbackFailures.push(conflict);
+      } catch (rollbackError) {
+        rollbackFailures.push(`${filePath}: ${String(rollbackError)}`);
+      }
     }
-    throw error;
+    if (rollbackFailures.length === 0) {
+      durableUnlink(journalPath, 'journal-delete');
+      throw error;
+    }
+    throw new Error(
+      `Casting transaction failed (${String(error)}) and rollback requires recovery: ${rollbackFailures.join('; ')}`,
+    );
   }
 }
 
@@ -538,7 +805,11 @@ function existingRoutingAgents(routingContent: string): Set<string> {
  * preset's agents. Existing members are preserved; only new names are added.
  * If team.md does not exist, a minimal one is created.
  */
-function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], presetName: string): void {
+function writeOrMergeTeamMembers(
+  squadDir: string,
+  agents: PresetAgent[],
+  presetName: string,
+): string | undefined {
   const teamPath = path.join(squadDir, 'team.md');
   const existing = storage.existsSync(teamPath) ? (storage.readSync(teamPath) ?? '') : '';
 
@@ -569,7 +840,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
     ].join('\n');
     storage.mkdirSync(squadDir, { recursive: true });
     storage.writeSync(teamPath, fresh);
-    return;
+    return fresh;
   }
 
   // team.md exists — merge into existing ## Members table
@@ -577,7 +848,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
   const newRows = agents
     .filter(a => !already.has(a.name.toLowerCase()))
     .map(memberRow);
-  if (newRows.length === 0) return; // nothing to do, all already present
+  if (newRows.length === 0) return undefined; // nothing to do, all already present
 
   const membersIdx = existing.indexOf(MEMBERS_HEADER);
   if (membersIdx === -1) {
@@ -591,8 +862,9 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
       ...newRows,
       '',
     ].join('\n');
-    storage.writeSync(teamPath, existing.trimEnd() + '\n' + block);
-    return;
+    const updated = existing.trimEnd() + '\n' + block;
+    storage.writeSync(teamPath, updated);
+    return updated;
   }
 
   // Members section exists — find end of its table and insert rows there
@@ -622,7 +894,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
     const newSection = MEMBERS_HEADER + '\n' + headerLines.join('\n') + '\n';
     const updated = existing.slice(0, membersIdx) + newSection + existing.slice(sectionEnd);
     storage.writeSync(teamPath, updated);
-    return;
+    return updated;
   }
 
   // Append new rows after the last existing table row
@@ -631,6 +903,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
   const newSection = before + '\n' + newRows.join('\n') + (after ? '\n' + after : '\n');
   const updated = existing.slice(0, membersIdx) + newSection + existing.slice(sectionEnd);
   storage.writeSync(teamPath, updated);
+  return updated;
 }
 
 /**
@@ -639,7 +912,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
  * primary agents are added. If routing.md does not exist, a minimal one is
  * created.
  */
-function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
+function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): string | undefined {
   const routingPath = path.join(squadDir, 'routing.md');
   const existing = storage.existsSync(routingPath) ? (storage.readSync(routingPath) ?? '') : '';
 
@@ -661,14 +934,14 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
     ].join('\n');
     storage.mkdirSync(squadDir, { recursive: true });
     storage.writeSync(routingPath, fresh);
-    return;
+    return fresh;
   }
 
   const already = existingRoutingAgents(existing);
   const newRows = agents
     .filter(a => !already.has(a.name.toLowerCase()))
     .map(routingRow);
-  if (newRows.length === 0) return;
+  if (newRows.length === 0) return undefined;
 
   const headerIdx = existing.indexOf(ROUTING_HEADER);
   if (headerIdx === -1) {
@@ -682,8 +955,9 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
       ...newRows,
       '',
     ].join('\n');
-    storage.writeSync(routingPath, existing.trimEnd() + '\n' + block);
-    return;
+    const updated = existing.trimEnd() + '\n' + block;
+    storage.writeSync(routingPath, updated);
+    return updated;
   }
 
   // Existing routing section — append new rows after its last table row
@@ -709,13 +983,14 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
     const newSection = ROUTING_HEADER + '\n' + headerLines.join('\n') + '\n';
     const updated = existing.slice(0, headerIdx) + newSection + existing.slice(sectionEnd);
     storage.writeSync(routingPath, updated);
-    return;
+    return updated;
   }
   const before = sectionLines.slice(0, lastTableLineRel + 1).join('\n');
   const after = sectionLines.slice(lastTableLineRel + 1).join('\n');
   const newSection = before + '\n' + newRows.join('\n') + (after ? '\n' + after : '\n');
   const updated = existing.slice(0, headerIdx) + newSection + existing.slice(sectionEnd);
   storage.writeSync(routingPath, updated);
+  return updated;
 }
 
 /**
@@ -729,6 +1004,7 @@ function writeOrMergeCastingState(
   squadDir: string,
   agents: PresetAgent[],
   options: ScaffoldOptions,
+  recordPolicyWrite?: (content: string) => void,
 ): void {
   const castingDir = path.join(squadDir, 'casting');
   storage.mkdirSync(castingDir, { recursive: true });
@@ -747,7 +1023,9 @@ function writeOrMergeCastingState(
   const historyPath = path.join(castingDir, 'history.json');
   const policyPath = path.join(castingDir, 'policy.json');
   if (!storage.existsSync(policyPath)) {
+    const policy = JSON.stringify({ universe_allowlist: ['*'], max_capacity: 25 }, null, 2) + '\n';
     atomicWriteJson(policyPath, { universe_allowlist: ['*'], max_capacity: 25 });
+    recordPolicyWrite?.(policy);
   }
   for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
     const snapshot = readRegistrySnapshot(registryPath);
@@ -810,6 +1088,7 @@ export function scaffoldPresetIntoSquad(
   const routingPath = path.join(squadDir, 'routing.md');
   const policyPath = path.join(castingDir, 'policy.json');
   try {
+    removeOrphanedCastingTemps(castingDir);
     recoverCastingTransaction(castingDir);
     readRegistrySnapshot(path.join(castingDir, 'registry.json'));
     readCastingHistory(path.join(castingDir, 'history.json'));
@@ -821,17 +1100,34 @@ export function scaffoldPresetIntoSquad(
     const originalTeam = storage.readSync(teamPath);
     const originalRouting = storage.readSync(routingPath);
     const originalPolicy = storage.readSync(policyPath);
+    let teamRollback: FileRollbackState | undefined;
+    let routingRollback: FileRollbackState | undefined;
+    let policyRollback: FileRollbackState | undefined;
     try {
-      writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
-      writeOrMergeRouting(squadDir, wireableAgents);
-      writeOrMergeCastingState(squadDir, wireableAgents, { universe });
+      const writtenTeam = writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
+      if (writtenTeam !== undefined) {
+        teamRollback = { previous: originalTeam, written: writtenTeam };
+      }
+      const writtenRouting = writeOrMergeRouting(squadDir, wireableAgents);
+      if (writtenRouting !== undefined) {
+        routingRollback = { previous: originalRouting, written: writtenRouting };
+      }
+      writeOrMergeCastingState(squadDir, wireableAgents, { universe }, (writtenPolicy) => {
+        if (writtenPolicy !== originalPolicy) {
+          policyRollback = { previous: originalPolicy, written: writtenPolicy };
+        }
+      });
     } catch (error) {
-      if (originalTeam === undefined) storage.deleteSync(teamPath);
-      else storage.writeSync(teamPath, originalTeam);
-      if (originalRouting === undefined) storage.deleteSync(routingPath);
-      else storage.writeSync(routingPath, originalRouting);
-      if (originalPolicy === undefined) storage.deleteSync(policyPath);
-      else storage.writeSync(policyPath, originalPolicy);
+      const conflicts = [
+        rollbackFile(teamPath, teamRollback),
+        rollbackFile(routingPath, routingRollback),
+        rollbackFile(policyPath, policyRollback),
+      ].filter((conflict): conflict is string => conflict !== null);
+      if (conflicts.length > 0) {
+        throw new Error(
+          `Preset scaffold failed (${String(error)}) and rollback requires recovery: ${conflicts.join('; ')}`,
+        );
+      }
       throw error;
     }
   } finally {
