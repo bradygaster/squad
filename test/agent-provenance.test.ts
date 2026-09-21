@@ -4,10 +4,13 @@ import { describe, expect, it } from 'vitest';
 import {
   AgentProvenanceError,
   parseAgentProvenanceRegistry,
+  parseWorkAgentBindings,
   reconcileAgentProvenanceRegistry,
 } from '@bradygaster/squad-sdk/casting';
 
-function fixture(name: 'valid' | 'partial' | 'unsupported'): unknown {
+function fixture(
+  name: 'valid' | 'partial' | 'unsupported' | 'binding_valid' | 'binding_partial',
+): unknown {
   const cases = JSON.parse(
     readFileSync(join('test', 'fixtures', 'agent-provenance', 'cases.json'), 'utf8'),
   ) as Record<string, unknown>;
@@ -15,6 +18,17 @@ function fixture(name: 'valid' | 'partial' | 'unsupported'): unknown {
 }
 
 describe('agent identity provenance contract', () => {
+  it('keeps this repository on the complete producer contract', () => {
+    const committed = JSON.parse(
+      readFileSync(join('.squad', 'casting', 'registry.json'), 'utf8'),
+    ) as unknown;
+
+    expect(parseAgentProvenanceRegistry(committed)).toMatchObject({
+      completeness: 'complete',
+      registry: { schema: 'squad-agent-provenance/v1', revision: 1 },
+    });
+  });
+
   it('parses a complete v1 registry including an explicit avatar reference', () => {
     const result = parseAgentProvenanceRegistry(fixture('valid'));
 
@@ -60,7 +74,7 @@ describe('agent identity provenance contract', () => {
     const registry = reconcileAgentProvenanceRegistry(
       existing,
       [{
-        id: 'new-name-that-must-not-win',
+        id: 'runtime-engineer',
         displayName: 'Nova',
         role: 'Runtime Engineer',
         universe: 'descriptive',
@@ -100,10 +114,19 @@ describe('agent identity provenance contract', () => {
       displayName: 'Replacement',
       role: 'Quality Engineer',
       universe: 'descriptive',
-    }])).toThrow(/cannot be reassigned/);
+    }])).toThrow(/cannot change role/);
   });
 
-  it('rejects id, display-name, and ambiguous-role collisions', () => {
+  it('rejects active role reassignment for the same stable id', () => {
+    expect(() => reconcileAgentProvenanceRegistry(fixture('valid'), [{
+      id: 'runtime-engineer',
+      displayName: 'Kepler',
+      role: 'Quality Engineer',
+      universe: 'descriptive',
+    }])).toThrow(/cannot change role/);
+  });
+
+  it('rejects id, display-name, and inferred-rename collisions', () => {
     const candidate = {
       id: 'runtime-engineer',
       displayName: 'Kepler',
@@ -117,19 +140,191 @@ describe('agent identity provenance contract', () => {
       { ...candidate, id: 'quality-engineer', role: 'Quality Engineer', displayName: 'KEPLER' },
     ])).toThrow(/Duplicate candidate display name/);
 
-    const ambiguous = fixture('valid') as {
-      agents: Record<string, unknown>;
-    };
-    ambiguous.agents['runtime-engineer-two'] = {
-      ...(ambiguous.agents['runtime-engineer'] as object),
-      display_name: 'Orbit',
-      persistent_name: 'Orbit',
-    };
-    expect(() => reconcileAgentProvenanceRegistry(ambiguous, [{
+    expect(() => reconcileAgentProvenanceRegistry(fixture('valid'), [{
       id: 'renamed',
       displayName: 'Nova',
       role: 'Runtime Engineer',
       universe: 'descriptive',
-    }])).toThrow(/ambiguous/);
+    }])).toThrow(/supply the existing stable id/);
+  });
+
+  it.each(['agent-', 'agent--one', '-agent', 'Agent'])(
+    'rejects non-canonical id %s',
+    (id) => {
+      expect(() => reconcileAgentProvenanceRegistry(undefined, [{
+        id,
+        displayName: 'Agent',
+        role: 'Runtime Engineer',
+        universe: 'descriptive',
+      }])).toThrow(/Invalid agent id/);
+    },
+  );
+
+  it('preserves avatars unless explicitly cleared and enforces id-owned paths', () => {
+    const renamed = reconcileAgentProvenanceRegistry(fixture('valid'), [{
+      id: 'runtime-engineer',
+      displayName: 'Nova',
+      role: 'Runtime Engineer',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-22T20:00:00.000Z' });
+    expect(renamed.agents['runtime-engineer']!.avatar?.path)
+      .toBe('.squad/agents/runtime-engineer/avatar.png');
+
+    const cleared = reconcileAgentProvenanceRegistry(renamed, [{
+      id: 'runtime-engineer',
+      displayName: 'Nova',
+      role: 'Runtime Engineer',
+      universe: 'descriptive',
+      avatar: null,
+    }]);
+    expect(cleared.agents['runtime-engineer']!.avatar).toBeUndefined();
+
+    for (const path of [
+      '.squad/agents/other-agent/avatar.png',
+      '.squad/agents/runtime-engineer/../secret.png',
+      '.squad\\agents\\runtime-engineer\\avatar.png',
+      '/.squad/agents/runtime-engineer/avatar.png',
+      '.squad/agents/Runtime-Engineer/avatar.png',
+    ]) {
+      expect(() => reconcileAgentProvenanceRegistry(fixture('valid'), [{
+        id: 'runtime-engineer',
+        displayName: 'Kepler',
+        role: 'Runtime Engineer',
+        universe: 'descriptive',
+        avatar: { kind: 'repository-path', path },
+      }])).toThrow(/Invalid avatar/);
+    }
+  });
+
+  it('fails closed on malformed legacy roots and records', () => {
+    expect(() => reconcileAgentProvenanceRegistry({}, [])).toThrow(/Legacy.*agents object/);
+    expect(() => reconcileAgentProvenanceRegistry({
+      agents: {
+        'runtime-engineer': {
+          persistent_name: 'Kepler',
+          status: 'active',
+          universe: 'descriptive',
+        },
+      },
+    }, [])).toThrow(/Incomplete legacy/);
+  });
+
+  it('migrates complete legacy records without dropping unclaimed identities', () => {
+    const legacy = {
+      agents: {
+        'runtime-engineer': {
+          persistent_name: 'Kepler',
+          role: 'Runtime Engineer',
+          universe: 'descriptive',
+          status: 'active',
+          created_at: '2026-09-20T20:00:00.000Z',
+        },
+        reviewer: {
+          persistent_name: 'Orbit',
+          role: 'Reviewer',
+          universe: 'descriptive',
+          status: 'active',
+          created_at: '2026-09-20T20:00:00.000Z',
+        },
+      },
+    };
+    const migrated = reconcileAgentProvenanceRegistry(legacy, [{
+      id: 'runtime-engineer',
+      displayName: 'Kepler',
+      role: 'Runtime Engineer',
+      universe: 'descriptive',
+    }], {
+      generatedAt: '2026-09-22T20:00:00.000Z',
+      retireMissing: true,
+    });
+
+    expect(migrated.revision).toBe(1);
+    expect(migrated.agents.reviewer).toMatchObject({
+      display_name: 'Orbit',
+      status: 'retired',
+      retired_at: '2026-09-22T20:00:00.000Z',
+    });
+  });
+
+  it('parses authoritative work bindings without display-name or label inference', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const bindings = parseWorkAgentBindings(fixture('binding_valid'), registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    });
+
+    expect(bindings).toEqual([expect.objectContaining({
+      agent_id: 'runtime-engineer',
+      epic_agent_ids: ['runtime-engineer'],
+      registry_revision: 2,
+    })]);
+  });
+
+  it('keeps historical bindings valid after rename or retirement', () => {
+    const renamed = reconcileAgentProvenanceRegistry(fixture('valid'), [{
+      id: 'runtime-engineer',
+      displayName: 'Nova',
+      role: 'Runtime Engineer',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-22T20:00:00.000Z' });
+    const retired = reconcileAgentProvenanceRegistry(renamed, [], {
+      generatedAt: '2026-09-23T20:00:00.000Z',
+      retireMissing: true,
+    });
+
+    expect(() => parseWorkAgentBindings(fixture('binding_valid'), {
+      registry: retired,
+      completeness: 'complete',
+      diagnostics: [],
+    }, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })).not.toThrow();
+  });
+
+  it('represents external ownership as an explicit unavailable identity', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const external = fixture('binding_valid') as Array<Record<string, unknown>>;
+    external[0].agent_id = null;
+    external[0].epic_agent_ids = [];
+    external[0].identity_omission_reason = 'external-agent';
+    external[0].epic_identity_omission_reason = 'partial';
+
+    expect(parseWorkAgentBindings(external, registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })[0]).toMatchObject({
+      agent_id: null,
+      identity_omission_reason: 'external-agent',
+    });
+  });
+
+  it('fails closed on missing, partial, cross-repository, or future-revision bindings', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const context = {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated' as const,
+    };
+
+    expect(() => parseWorkAgentBindings(undefined, registry, context)).toThrow(/non-empty array/);
+    expect(() => parseWorkAgentBindings(fixture('binding_partial'), registry, context))
+      .toThrow(/malformed or partial/);
+    expect(() => parseWorkAgentBindings(
+      fixture('binding_valid'),
+      parseAgentProvenanceRegistry(fixture('partial')),
+      context,
+    )).toThrow(/partial registry/);
+    expect(() => parseWorkAgentBindings(fixture('binding_valid'), registry, {
+      ...context,
+      repository: 'bradygaster/squadcaster',
+    })).toThrow(/malformed or partial/);
+    const duplicated = fixture('binding_valid') as Array<Record<string, unknown>>;
+    duplicated.push({ ...duplicated[0]!, issue: '#2067' });
+    expect(() => parseWorkAgentBindings(duplicated, registry, context))
+      .toThrow(/malformed or partial/);
   });
 });

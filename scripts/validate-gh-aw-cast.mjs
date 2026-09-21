@@ -6,6 +6,7 @@ import {
   readdirSync,
   statSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -236,6 +237,95 @@ function parseRouting(routing, activeNames, errors) {
   return rows;
 }
 
+function canonicalAgentId(id) {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id);
+}
+
+function parseRegistryValue(registry, source, errors, { legacy = false } = {}) {
+  if (!registry?.agents || typeof registry.agents !== 'object' || Array.isArray(registry.agents)) {
+    errors.push(`${source}: top-level agents object is required`);
+    return null;
+  }
+  if (!legacy) {
+    if (registry.schema !== 'squad-agent-provenance/v1' || registry.schema_version !== 1) {
+      errors.push(`${source}: schema must be squad-agent-provenance/v1`);
+    }
+    if (!Number.isInteger(registry.revision) || registry.revision < 1) {
+      errors.push(`${source}: revision must be a positive integer`);
+    }
+    if (typeof registry.generated_at !== 'string' || Number.isNaN(Date.parse(registry.generated_at))) {
+      errors.push(`${source}: generated_at must be an ISO-8601 timestamp`);
+    }
+  }
+  const names = new Set();
+  for (const [id, value] of Object.entries(registry.agents)) {
+    if (!canonicalAgentId(id) || !value || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`${source}: invalid agent id or record "${id}"`);
+      continue;
+    }
+    const name = legacy ? value.persistent_name : value.display_name;
+    if (typeof name !== 'string' || !name.trim()) {
+      errors.push(`${source}: agent "${id}" has no display name`);
+    } else if (names.has(name.trim().toLowerCase())) {
+      errors.push(`${source}: duplicate display name "${name}"`);
+    } else {
+      names.add(name.trim().toLowerCase());
+    }
+    if (!['active', 'inactive', 'retired'].includes(value.status)) {
+      errors.push(`${source}: agent "${id}" has invalid status`);
+    }
+    if (legacy) {
+      if (typeof value.universe !== 'string' || !value.universe.trim()
+        || Number.isNaN(Date.parse(value.created_at))
+        || (value.status === 'retired' && Number.isNaN(Date.parse(value.retired_at)))) {
+        errors.push(`${source}: legacy agent "${id}" is incomplete`);
+      }
+    } else {
+      if (value.persistent_name !== value.display_name
+        || typeof value.role !== 'string' || !value.role.trim()
+        || typeof value.universe !== 'string' || !value.universe.trim()
+        || Number.isNaN(Date.parse(value.created_at))
+        || Number.isNaN(Date.parse(value.updated_at))
+        || (value.status === 'retired' && Number.isNaN(Date.parse(value.retired_at)))) {
+        errors.push(`${source}: agent "${id}" is incomplete`);
+      }
+      if (value.avatar !== undefined) {
+        const expectedPrefix = `.squad/agents/${id}/`;
+        const avatarPath = value.avatar?.path;
+        if (value.avatar?.kind !== 'repository-path'
+          || typeof avatarPath !== 'string'
+          || !avatarPath.startsWith(expectedPrefix)
+          || avatarPath.length === expectedPrefix.length
+          || avatarPath.includes('\\')
+          || avatarPath.split('/').some(segment => segment === '.' || segment === '..')) {
+          errors.push(`${source}: agent "${id}" has invalid avatar path`);
+        }
+      }
+    }
+  }
+  return registry;
+}
+
+function committedRegistry(root, errors) {
+  try {
+    const content = execFileSync(
+      'git',
+      ['show', 'HEAD:.squad/casting/registry.json'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const value = JSON.parse(content);
+    return parseRegistryValue(
+      value,
+      'registry base',
+      errors,
+      { legacy: value?.schema === undefined },
+    );
+  } catch (error) {
+    errors.push(`registry base: committed registry is unavailable or malformed (${error.message})`);
+    return null;
+  }
+}
+
 function parseRegistry(root, errors) {
   let registry;
   try {
@@ -244,18 +334,28 @@ function parseRegistry(root, errors) {
     errors.push(`registry: invalid JSON (${error.message})`);
     return [];
   }
-  if (!registry?.agents || typeof registry.agents !== 'object' || Array.isArray(registry.agents)) {
-    errors.push('registry: top-level agents object is required');
+  if (!parseRegistryValue(registry, 'registry', errors)) {
     return [];
   }
-  if (registry.schema !== 'squad-agent-provenance/v1' || registry.schema_version !== 1) {
-    errors.push('registry: schema must be squad-agent-provenance/v1 with schema_version 1');
-  }
-  if (!Number.isInteger(registry.revision) || registry.revision < 1) {
-    errors.push('registry: revision must be a positive integer');
-  }
-  if (typeof registry.generated_at !== 'string' || Number.isNaN(Date.parse(registry.generated_at))) {
-    errors.push('registry: generated_at must be an ISO-8601 timestamp');
+  const base = committedRegistry(root, errors);
+  if (base) {
+    const baseRevision = base.schema === 'squad-agent-provenance/v1' ? base.revision : 0;
+    if (registry.revision <= baseRevision) {
+      errors.push(`registry: revision ${registry.revision} must be greater than committed revision ${baseRevision}`);
+    }
+    for (const [id, prior] of Object.entries(base.agents)) {
+      const current = registry.agents[id];
+      if (!current) {
+        errors.push(`registry: committed agent id "${id}" was deleted instead of preserved`);
+        continue;
+      }
+      if (prior.created_at && current.created_at !== prior.created_at) {
+        errors.push(`registry: agent "${id}" changed immutable created_at`);
+      }
+      if (prior.role && current.role !== prior.role) {
+        errors.push(`registry: agent "${id}" changed immutable role`);
+      }
+    }
   }
   const active = Object.entries(registry.agents)
     .filter(([, value]) => value?.status === 'active')
@@ -263,56 +363,12 @@ function parseRegistry(root, errors) {
   if (active.length === 0) {
     errors.push('registry: at least one active member is required');
   }
-  const displayNames = new Map();
-  for (const [id, value] of Object.entries(registry.agents)) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(id) || !value || typeof value !== 'object') {
-      errors.push(`registry: invalid agent ${JSON.stringify({ id, value })}`);
-      continue;
+  for (const member of active) {
+    if (!canonicalAgentId(member.id) || typeof member.name !== 'string' || !member.name.trim()) {
+      errors.push(`registry: invalid active member ${JSON.stringify(member)}`);
     }
-    if (
-      typeof value.display_name !== 'string'
-      || !value.display_name.trim()
-      || value.persistent_name !== value.display_name
-      || typeof value.role !== 'string'
-      || !value.role.trim()
-      || typeof value.universe !== 'string'
-      || !value.universe.trim()
-      || !['active', 'inactive', 'retired'].includes(value.status)
-      || typeof value.created_at !== 'string'
-      || Number.isNaN(Date.parse(value.created_at))
-      || typeof value.updated_at !== 'string'
-      || Number.isNaN(Date.parse(value.updated_at))
-      || (value.status === 'retired'
-        && (typeof value.retired_at !== 'string' || Number.isNaN(Date.parse(value.retired_at))))
-    ) {
-      errors.push(`registry: invalid provenance record for "${id}"`);
-    }
-    const normalizedName = typeof value.display_name === 'string'
-      ? value.display_name.trim().toLowerCase()
-      : '';
-    if (normalizedName) {
-      const duplicate = displayNames.get(normalizedName);
-      if (duplicate) {
-        errors.push(`registry: display_name for "${id}" collides with "${duplicate}"`);
-      } else {
-        displayNames.set(normalizedName, id);
-      }
-    }
-    if (value.avatar !== undefined) {
-      if (
-        !value.avatar
-        || typeof value.avatar !== 'object'
-        || value.avatar.kind !== 'repository-path'
-        || typeof value.avatar.path !== 'string'
-        || !value.avatar.path.startsWith(`.squad/agents/${id}/`)
-        || value.avatar.path.includes('..')
-        || value.avatar.path.includes('\\')
-      ) {
-        errors.push(`registry: invalid avatar reference for "${id}"`);
-      }
-    }
-    if (REQUIRED_BUILTIN_IDS.includes(id) && value.status === 'active') {
-      errors.push(`registry: built-in id "${id}" must not be an active specialist registry entry`);
+    if (REQUIRED_BUILTIN_IDS.includes(member.id)) {
+      errors.push(`registry: built-in id "${member.id}" must not be an active specialist registry entry`);
     }
   }
   return active;

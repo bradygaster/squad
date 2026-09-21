@@ -271,7 +271,7 @@ describe('createTeam', () => {
       const renamed: CastProposal = {
         ...minimalProposal,
         members: minimalProposal.members.map((member) =>
-          member.role === 'Lead' ? { ...member, name: 'Commander' } : member,
+          member.role === 'Lead' ? { ...member, id: 'ripley', name: 'Commander' } : member,
         ),
       };
 
@@ -297,6 +297,62 @@ describe('createTeam', () => {
       });
       expect(registry.agents.commander).toBeUndefined();
       expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley', 'charter.md'))).toBe(true);
+    });
+
+    it('rejects a rename that does not carry the existing stable id', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const ambiguousRename: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.map((member) =>
+          member.role === 'Lead' ? { ...member, name: 'Commander' } : member,
+        ),
+      };
+
+      await expect(createTeam(tempDir, ambiguousRename)).rejects.toThrow(
+        /supply the existing stable id for a rename/,
+      );
+    });
+
+    it('serializes concurrent recasts and increments revisions without losing agents', async () => {
+      await Promise.all([
+        createTeam(tempDir, minimalProposal),
+        createTeam(tempDir, minimalProposal),
+      ]);
+
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as { revision: number; agents: Record<string, { status: string }> };
+      expect(registry.revision).toBe(2);
+      expect(Object.keys(registry.agents).sort()).toEqual(['dallas', 'kane', 'ripley']);
+      expect(Object.values(registry.agents).every(agent => agent.status === 'active')).toBe(true);
+      expect(existsSync(join(tempDir, '.squad', 'casting', 'registry.lock'))).toBe(false);
+      const history = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'history.json'), 'utf-8'),
+      ) as { assignment_cast_snapshots: Record<string, unknown> };
+      expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(2);
+    });
+
+    it('cycles retire, reactivate, and retire without duplicate active/alumni directories', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const withoutLead: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.filter(member => member.role !== 'Lead'),
+      };
+      await createTeam(tempDir, withoutLead);
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(false);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(true);
+
+      await createTeam(tempDir, {
+        ...minimalProposal,
+        members: minimalProposal.members.map(member =>
+          member.role === 'Lead' ? { ...member, id: 'ripley' } : member),
+      });
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(true);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(false);
+
+      await createTeam(tempDir, withoutLead);
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(false);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(true);
     });
 
     it('restores the disabled Coding Agent contract', async () => {

@@ -1164,7 +1164,9 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // Raised 193 -> 194 KB for the command-only lifecycle next-action contract.
   // Its validation and retry guidance are inside the on-demand plan-validation
   // skill; the ambient prompt remains below the independently enforced 40 KB cap.
-  const SOURCE_GROWTH_BUDGET_KB = 194;
+  // Raised 194 -> 198 KB for versioned work-to-agent provenance. The additional
+  // contract is confined to on-demand planning/activation skills.
+  const SOURCE_GROWTH_BUDGET_KB = 198;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1700,7 +1702,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="82cefabe53b28a9b7c8659282a0682d943a9a9cb51a3394aa65f4e5e34366422"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="31e568ae4a0cc372f5b79d4b024ba8b7af1f38feac54034221fb203da9918ab4"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):

@@ -32,8 +32,11 @@ export {
 export {
   AGENT_PROVENANCE_SCHEMA,
   AGENT_PROVENANCE_VERSION,
+  WORK_AGENT_BINDING_SCHEMA,
+  WORK_AGENT_BINDING_VERSION,
   AgentProvenanceError,
   parseAgentProvenanceRegistry,
+  parseWorkAgentBindings,
   reconcileAgentProvenanceRegistry,
   type AgentAvatarReference,
   type AgentProvenanceCandidate,
@@ -43,6 +46,8 @@ export {
   type AgentProvenanceRegistry,
   type AgentProvenanceStatus,
   type ReconcileAgentProvenanceOptions,
+  type WorkAgentBinding,
+  type WorkAgentBindingContext,
 } from './agent-provenance.js';
 
 // --- Legacy Types (kept for backward compat) ---

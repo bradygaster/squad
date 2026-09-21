@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // `activated` / `phases-activated` come from the granular `/squad plan activate` path
@@ -15,6 +16,8 @@ const ACTIVATION_ARTIFACT_PATTERN = new RegExp(
 const VALID_OMISSIONS = new Set(['multi-owner', 'non-roster']);
 const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 const RESOLVED_REFERENCE = /^#?(\d+)$/;
+const AGENT_PROVENANCE_SCHEMA = 'squad-agent-provenance/v1';
+const WORK_AGENT_BINDING_SCHEMA = 'squad-work-agent-binding/v1';
 
 // Standalone certainty claims a label-operation report may never make: safe outputs like
 // `add_labels` are applied in a post-agent job, so an activation/acceptance run only ever
@@ -45,6 +48,59 @@ function normalize(value) {
 
 function slugify(value) {
   return normalize(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+export function parseAgentRegistry(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('agent provenance registry root is malformed');
+  }
+  if (value.schema !== AGENT_PROVENANCE_SCHEMA || value.schema_version !== 1) {
+    throw new Error(`agent provenance registry must use ${AGENT_PROVENANCE_SCHEMA}`);
+  }
+  if (!Number.isInteger(value.revision) || value.revision < 1) {
+    throw new Error('agent provenance registry revision must be a positive integer');
+  }
+  if (!value.agents || typeof value.agents !== 'object' || Array.isArray(value.agents)) {
+    throw new Error('agent provenance registry agents map is malformed');
+  }
+  const agents = new Map();
+  const displayNames = new Set();
+  for (const [id, record] of Object.entries(value.agents)) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || !record || typeof record !== 'object') {
+      throw new Error(`agent provenance registry entry "${id}" is malformed`);
+    }
+    if (!['active', 'inactive', 'retired'].includes(record.status)) {
+      throw new Error(`agent provenance registry entry "${id}" has invalid status`);
+    }
+    const displayName = typeof record.display_name === 'string' ? record.display_name.trim() : '';
+    if (!displayName || record.persistent_name !== displayName ||
+        typeof record.role !== 'string' || !record.role.trim() ||
+        typeof record.universe !== 'string' || !record.universe.trim() ||
+        !Number.isFinite(Date.parse(record.created_at)) ||
+        !Number.isFinite(Date.parse(record.updated_at)) ||
+        (record.status === 'retired' && !Number.isFinite(Date.parse(record.retired_at)))) {
+      throw new Error(`agent provenance registry entry "${id}" is incomplete`);
+    }
+    const normalizedName = normalize(displayName);
+    if (displayNames.has(normalizedName)) {
+      throw new Error(`agent provenance registry display name "${displayName}" is duplicated`);
+    }
+    displayNames.add(normalizedName);
+    if (record.avatar !== undefined) {
+      const expectedPrefix = `.squad/agents/${id}/`;
+      const avatarPath = record.avatar?.path;
+      if (record.avatar?.kind !== 'repository-path'
+        || typeof avatarPath !== 'string'
+        || !avatarPath.startsWith(expectedPrefix)
+        || avatarPath.length === expectedPrefix.length
+        || avatarPath.includes('\\')
+        || avatarPath.split('/').some(segment => segment === '.' || segment === '..')) {
+        throw new Error(`agent provenance registry entry "${id}" has invalid avatar path`);
+      }
+    }
+    agents.set(id, record);
+  }
+  return { revision: value.revision, agents };
 }
 
 /**
@@ -255,7 +311,67 @@ function validateReportedOutcome(binding, prefix, expected) {
   }
 }
 
-function validateTaskBinding(binding, roster) {
+function validateBindingAuthority(binding, issue, artifact, authority) {
+  if (!authority) return { epicAgentIds: [] };
+  if (binding.binding_schema !== WORK_AGENT_BINDING_SCHEMA || binding.binding_version !== 1) {
+    throw new Error(`issue #${issue}: binding must use ${WORK_AGENT_BINDING_SCHEMA}`);
+  }
+  if (binding.producer !== 'squad') {
+    throw new Error(`issue #${issue}: binding producer must be squad`);
+  }
+  if (binding.repository !== authority.repository) {
+    throw new Error(`issue #${issue}: binding repository does not match ${authority.repository}`);
+  }
+  if (binding.origin_issue !== artifact.origin_issue || binding.artifact !== artifact.squad_artifact) {
+    throw new Error(`issue #${issue}: binding origin or artifact identity does not match its comment`);
+  }
+  if (binding.registry_schema !== AGENT_PROVENANCE_SCHEMA) {
+    throw new Error(`issue #${issue}: binding registry schema is unsupported`);
+  }
+  if (!Number.isInteger(binding.registry_revision) || binding.registry_revision < 1) {
+    throw new Error(`issue #${issue}: binding registry revision is invalid`);
+  }
+  if (binding.registry_revision > authority.registry.revision) {
+    throw new Error(`issue #${issue}: binding registry revision is newer than the available registry`);
+  }
+  if (binding.agent_id === null) {
+    if (!['external-agent', 'non-roster', 'legacy-plan-missing-id'].includes(binding.identity_omission_reason)) {
+      throw new Error(`issue #${issue}: null agent_id requires an explicit identity omission reason`);
+    }
+  } else {
+    if (binding.identity_omission_reason !== undefined) {
+      throw new Error(`issue #${issue}: identity omission reason conflicts with agent_id`);
+    }
+    if (typeof binding.agent_id !== 'string' || !authority.registry.agents.has(binding.agent_id)) {
+      throw new Error(`issue #${issue}: agent_id is absent from the producer registry`);
+    }
+  }
+  if (!Array.isArray(binding.epic_agent_ids)) {
+    throw new Error(`issue #${issue}: epic_agent_ids must be an array`);
+  }
+  const epicAgentIds = [...new Set(binding.epic_agent_ids)];
+  if (
+    epicAgentIds.length !== binding.epic_agent_ids.length ||
+    (binding.agent_id !== null && !epicAgentIds.includes(binding.agent_id))
+  ) {
+    throw new Error(`issue #${issue}: epic_agent_ids are duplicated or exclude agent_id`);
+  }
+  for (const agentId of epicAgentIds) {
+    if (typeof agentId !== 'string' || !authority.registry.agents.has(agentId)) {
+      throw new Error(`issue #${issue}: epic_agent_ids references an unknown producer id`);
+    }
+  }
+  if (binding.epic_identity_omission_reason !== undefined &&
+      binding.epic_identity_omission_reason !== 'partial') {
+    throw new Error(`issue #${issue}: invalid epic identity omission reason`);
+  }
+  if (epicAgentIds.length === 0 && binding.epic_identity_omission_reason !== 'partial') {
+    throw new Error(`issue #${issue}: empty epic_agent_ids requires partial omission`);
+  }
+  return { epicAgentIds: epicAgentIds.sort() };
+}
+
+function validateTaskBinding(binding, roster, artifact, authority) {
   if (!binding || typeof binding !== 'object') {
     throw new Error('binding has no valid issue number');
   }
@@ -276,9 +392,10 @@ function validateTaskBinding(binding, roster) {
   if (epicAgents.length !== binding.epic_agents.length || !epicAgents.includes(agent)) {
     throw new Error(`issue #${issue}: epic_agents are empty, duplicated, or exclude the task agent`);
   }
+  const { epicAgentIds } = validateBindingAuthority(binding, issue, artifact, authority);
   const expected = expectedLabel(agent, roster);
   validateReportedOutcome({ ...binding, issue }, '', expected);
-  return { issue, epicIssue, epicAgents, expected };
+  return { issue, epicIssue, epicAgents, epicAgentIds, expected };
 }
 
 function validateActualLabels(issue, labels, expected) {
@@ -297,7 +414,7 @@ export function validateBindings(artifact, roster, labelsByIssue) {
   return validateActivation(artifact, roster, labelsByIssue);
 }
 
-export function validateActivation(artifact, roster, labelsByIssue, expectedOrigin) {
+export function validateActivation(artifact, roster, labelsByIssue, expectedOrigin, authority) {
   if (!artifact || !ACTIVATION_ARTIFACTS.has(artifact.squad_artifact)) return { skipped: true };
   if (artifact.schema_version !== '1') throw new Error('activation artifact schema_version must be 1');
   if (!Number.isInteger(artifact.origin_issue) || artifact.origin_issue < 1) {
@@ -314,13 +431,19 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
   }
 
   const seen = new Set();
+  const seenTasks = new Set();
   const epics = new Map();
   const epicIssuesByIdentifier = new Map();
   for (const rawBinding of artifact.bindings) {
-    const { issue, epicIssue, epicAgents, expected } = validateTaskBinding(rawBinding, roster);
+    const { issue, epicIssue, epicAgents, epicAgentIds, expected } =
+      validateTaskBinding(rawBinding, roster, artifact, authority);
     const binding = { ...rawBinding, issue, epic_issue: epicIssue };
     if (seen.has(issue)) throw new Error(`issue #${issue}: duplicate binding`);
     seen.add(issue);
+    if (authority) {
+      if (seenTasks.has(binding.task)) throw new Error(`task ${binding.task}: duplicate binding`);
+      seenTasks.add(binding.task);
+    }
     validateActualLabels(issue, labelsByIssue.get(issue), expected);
 
     const epicIdentifier = normalize(binding.epic);
@@ -333,6 +456,7 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
     const epic = epics.get(epicIssue) ?? {
       epic: epicIdentifier,
       agents: epicAgents,
+      agentIds: epicAgentIds,
       bindings: [],
     };
     if (epic.epic !== epicIdentifier) {
@@ -340,6 +464,9 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
     }
     if (epic.agents.join('\0') !== epicAgents.join('\0')) {
       throw new Error(`epic issue #${epicIssue}: inconsistent epic_agents sets`);
+    }
+    if (authority && epic.agentIds.join('\0') !== epicAgentIds.join('\0')) {
+      throw new Error(`epic issue #${epicIssue}: inconsistent epic_agent_ids sets`);
     }
     epic.bindings.push(binding);
     epics.set(epicIssue, epic);
@@ -382,6 +509,8 @@ async function main() {
   }
 
   const roster = parseRoster(await readFile(args['team-file'], 'utf8'));
+  const registryFile = args['registry-file'] ?? join(dirname(args['team-file']), 'casting', 'registry.json');
+  const registry = parseAgentRegistry(JSON.parse(await readFile(registryFile, 'utf8')));
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN is required for activation binding checks');
 
@@ -399,13 +528,16 @@ async function main() {
       ? artifact.bindings.flatMap(binding => [extractIssueNumber(binding?.issue), extractIssueNumber(binding?.epic_issue)]).filter(Number.isInteger)
       : [];
     const labels = await fetchLabels(args.repo, [...new Set(issues)], token);
-    const result = validateActivation(artifact, roster, labels, comment.issue);
+    const result = validateActivation(artifact, roster, labels, comment.issue, {
+      repository: args.repo,
+      registry,
+    });
     checked += result.checked;
   }
   console.log(checked === 0 ? 'No activation artifact found; skipping.' : `Validated ${checked} activation bindings.`);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
     console.error(`Agent binding check failed: ${error.message}`);
     process.exitCode = 1;

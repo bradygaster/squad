@@ -52,5 +52,40 @@
     "revision": 1,
     "generated_at": "2026-09-21T20:00:00.000Z",
     "agents": {}
-  }
+  },
+  "binding_valid": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    }
+  ],
+  "binding_partial": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 3,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "unknown-agent",
+      "epic_agent_ids": []
+    }
+  ]
 }

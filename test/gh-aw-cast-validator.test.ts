@@ -26,6 +26,16 @@ const builtins = [
   { id: 'fact-checker', name: 'Fact Checker' },
 ];
 
+interface RegistryFixture {
+  revision: number;
+  agents: Record<string, {
+    status: string;
+    role: string;
+    created_at: string;
+    retired_at?: string;
+  }>;
+}
+
 /** Byte-for-byte canonical content of a built-in charter, as shipped with the workflow. */
 function builtinCanonicalContent(id: string): Buffer {
   return readFileSync(join(process.cwd(), 'workflows', 'shared', 'builtins', `${id}-charter.md`));
@@ -166,24 +176,19 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   workspaces.push(runnerTemp);
   write(root, '.squad/team.md', teamMarkdown());
   write(root, '.squad/routing.md', routingMarkdown());
-  write(root, '.squad/casting/registry.json', JSON.stringify({
-    schema: 'squad-agent-provenance/v1',
-    schema_version: 1,
-    revision: 1,
-    generated_at: '2026-09-21T20:00:00.000Z',
+  const legacyRegistry = {
     agents: Object.fromEntries(active.map(({ id, name }) => [
       id,
       {
-        display_name: name,
         persistent_name: name,
-        role: active.find(member => member.id === id)?.role ?? id,
+        role: active.find(member => member.id === id)?.role,
         status: 'active',
         universe: 'descriptive',
-        created_at: '2026-09-21T20:00:00.000Z',
-        updated_at: '2026-09-21T20:00:00.000Z',
+        created_at: '2026-09-20T00:00:00.000Z',
       },
     ])),
-  }));
+  };
+  write(root, '.squad/casting/registry.json', JSON.stringify(legacyRegistry));
   write(root, '.squad/casting/history.json', '{}\n');
   write(root, '.squad/casting/policy.json', '{}\n');
   for (const member of active) {
@@ -202,6 +207,29 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   const payload = join(root, '.github', 'workflows', 'squad-cast-payload.json');
   mkdirSync(dirname(payload), { recursive: true });
   writeFileSync(payload, JSON.stringify(corePayload), 'utf8');
+  expect(spawnSync('git', ['init', '-q'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['config', 'user.email', 'cast-validator@example.com'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['config', 'user.name', 'Cast Validator'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['add', '.'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['commit', '-qm', 'base cast'], { cwd: root }).status).toBe(0);
+  write(root, '.squad/casting/registry.json', JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T00:00:00.000Z',
+    agents: Object.fromEntries(active.map(({ id, name, role }) => [
+      id,
+      {
+        display_name: name,
+        persistent_name: name,
+        role,
+        status: 'active',
+        universe: 'descriptive',
+        created_at: '2026-09-20T00:00:00.000Z',
+        updated_at: '2026-09-21T00:00:00.000Z',
+      },
+    ])),
+  }));
   return { root, payload, runnerTemp };
 }
 
@@ -209,6 +237,21 @@ function validate(root: string, payload: string) {
   return spawnSync(process.execPath, [validator, '--root', root, '--payload', payload], {
     encoding: 'utf8',
   });
+}
+
+function readRegistry(root: string): RegistryFixture {
+  return JSON.parse(
+    readFileSync(join(root, '.squad', 'casting', 'registry.json'), 'utf8'),
+  ) as RegistryFixture;
+}
+
+function writeRegistry(root: string, registry: RegistryFixture): void {
+  write(root, '.squad/casting/registry.json', JSON.stringify(registry));
+}
+
+function commitRegistry(root: string): void {
+  expect(spawnSync('git', ['add', '.squad/casting/registry.json'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['commit', '-qm', 'versioned registry'], { cwd: root }).status).toBe(0);
 }
 
 function resourceSource(): string {
@@ -441,7 +484,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 82cefabe53b28a9b7c8659282a0682d943a9a9cb51a3394aa65f4e5e34366422, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 31e568ae4a0cc372f5b79d4b024ba8b7af1f38feac54034221fb203da9918ab4, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -604,6 +647,46 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.stdout).toContain('Cast validation passed');
   });
 
+  it('rejects a non-monotonic registry revision', () => {
+    const fixture = createFixture();
+    commitRegistry(fixture.root);
+    const registry = readRegistry(fixture.root);
+    writeRegistry(fixture.root, registry);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/revision 1 must be greater than committed revision 1/);
+  });
+
+  it('rejects deletion of a committed stable id or tombstone', () => {
+    const fixture = createFixture();
+    const registry = readRegistry(fixture.root);
+    registry.agents.tester!.status = 'retired';
+    registry.agents.tester!.retired_at = '2026-09-21T00:00:00.000Z';
+    writeRegistry(fixture.root, registry);
+    commitRegistry(fixture.root);
+    const next = readRegistry(fixture.root);
+    next.revision = 2;
+    delete next.agents.tester;
+    writeRegistry(fixture.root, next);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/committed agent id "tester" was deleted/);
+  });
+
+  it('rejects mutation of immutable role and creation time', () => {
+    const fixture = createFixture();
+    commitRegistry(fixture.root);
+    const registry = readRegistry(fixture.root);
+    registry.revision = 2;
+    registry.agents.lead!.role = 'Replacement';
+    registry.agents.lead!.created_at = '2026-09-22T00:00:00.000Z';
+    writeRegistry(fixture.root, registry);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/changed immutable role/);
+    expect(result.stderr).toMatch(/changed immutable created_at/);
+  });
+
   it('rejects a built-in placed inside the specialist Members roster', () => {
     const fixture = createFixture();
     write(
@@ -695,32 +778,12 @@ describe('GH-AW Cast final-tree validator', () => {
   it('rejects a built-in registered as an active specialist in the casting registry', () => {
     const fixture = createFixture();
     write(fixture.root, '.squad/casting/registry.json', JSON.stringify({
-      schema: 'squad-agent-provenance/v1',
-      schema_version: 1,
-      revision: 1,
-      generated_at: '2026-09-21T20:00:00.000Z',
       agents: {
         ...Object.fromEntries(active.map(({ id, name }) => [
           id,
-          {
-            display_name: name,
-            persistent_name: name,
-            role: active.find(member => member.id === id)?.role ?? id,
-            status: 'active',
-            universe: 'descriptive',
-            created_at: '2026-09-21T20:00:00.000Z',
-            updated_at: '2026-09-21T20:00:00.000Z',
-          },
+          { persistent_name: name, status: 'active', universe: 'descriptive' },
         ])),
-        rai: {
-          display_name: 'Rai',
-          persistent_name: 'Rai',
-          role: 'RAI Reviewer',
-          status: 'active',
-          universe: 'descriptive',
-          created_at: '2026-09-21T20:00:00.000Z',
-          updated_at: '2026-09-21T20:00:00.000Z',
-        },
+        rai: { persistent_name: 'Rai', status: 'active', universe: 'descriptive' },
       },
     }));
     const result = validate(fixture.root, fixture.payload);

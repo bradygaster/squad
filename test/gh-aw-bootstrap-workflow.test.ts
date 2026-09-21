@@ -249,20 +249,14 @@ function createFixture(): { root: string; payloadPath: string; payload: Record<s
     root,
     '.squad/casting/registry.json',
     `${JSON.stringify({
-      schema: 'squad-agent-provenance/v1',
-      schema_version: 1,
-      revision: 1,
-      generated_at: '2026-09-21T20:00:00.000Z',
       agents: Object.fromEntries(active.map(({ id, name }) => [
         id,
         {
-          display_name: name,
           persistent_name: name,
-          role: active.find(member => member.id === id)?.role ?? id,
+          role: active.find(member => member.id === id)?.role,
           status: 'active',
           universe: 'descriptive',
-          created_at: '2026-09-21T20:00:00.000Z',
-          updated_at: '2026-09-21T20:00:00.000Z',
+          created_at: '2026-09-20T00:00:00.000Z',
         },
       ])),
     })}\n`,
@@ -279,6 +273,33 @@ function createFixture(): { root: string; payloadPath: string; payload: Record<s
   }
   write(root, '.github/agents/squad.agent.md', coordinatorMarkdown());
   write(root, 'meet-the-squad.md', '# Meet the Squad\n');
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'bootstrap-validator@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Bootstrap Validator'], { cwd: root });
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-qm', 'base cast'], { cwd: root });
+  write(
+    root,
+    '.squad/casting/registry.json',
+    `${JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T00:00:00.000Z',
+      agents: Object.fromEntries(active.map(({ id, name, role }) => [
+        id,
+        {
+          display_name: name,
+          persistent_name: name,
+          role,
+          status: 'active',
+          universe: 'descriptive',
+          created_at: '2026-09-20T00:00:00.000Z',
+          updated_at: '2026-09-21T00:00:00.000Z',
+        },
+      ])),
+    })}\n`,
+  );
 
   const paths = [
     '.squad/team.md',
