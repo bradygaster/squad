@@ -15,6 +15,7 @@ import { readdirSync, statSync, lstatSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import { CastingCommitInDoubtError } from '../casting/durable-registry.js';
 import { resolvePresetsDir, ensureSquadHome } from '../resolution.js';
 import type { PresetManifest, PresetApplyResult, PresetAgent } from './types.js';
 import { scaffoldPresetIntoSquad } from './scaffold.js';
@@ -171,16 +172,20 @@ export function applyPreset(
       );
     });
   } catch (err) {
-    for (const [destDir, snapshot] of agentSnapshots) {
-      restoreDirectory(destDir, snapshot);
+    if (!(err instanceof CastingCommitInDoubtError)) {
+      for (const [destDir, snapshot] of agentSnapshots) {
+        restoreDirectory(destDir, snapshot);
+      }
+      if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
+      else storage.writeSync(destRoutingPath, originalRouting);
     }
-    if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
-    else storage.writeSync(destRoutingPath, originalRouting);
     results.length = 0;
     results.push({
       agent: '<scaffold>',
       status: 'error',
-      reason: `Preset '${presetName}' was not changed because its coordinated scaffold failed: ${String(err)}`,
+      reason: err instanceof CastingCommitInDoubtError
+        ? `Preset '${presetName}' may commit during recovery; surrounding outputs were preserved: ${String(err)}`
+        : `Preset '${presetName}' was not changed because its coordinated scaffold failed: ${String(err)}`,
     });
   }
 

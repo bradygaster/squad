@@ -16,10 +16,17 @@
  * @module presets/scaffold
  */
 
-import { closeSync, openSync, renameSync, unlinkSync, writeSync } from 'node:fs';
-import { hostname } from 'node:os';
 import path from 'node:path';
 import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
+import {
+  CastingCommitInDoubtError,
+  _setCastingDurabilityHooksForTesting,
+  acquireCastingRegistryLock,
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
+  type CastingDurabilityBoundary,
+} from '../casting/durable-registry.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { PresetAgent } from './types.js';
 
@@ -28,12 +35,6 @@ const storage = new FSStorageProvider();
 const MEMBERS_HEADER = '## Members';
 const ROUTING_HEADER = '## Work Type → Agent';
 const REGISTRY_UPDATE_MAX_ATTEMPTS = 8;
-const REGISTRY_LOCK_TIMEOUT_MS = 30_000;
-const REGISTRY_LOCK_RETRY_MS = 25;
-const REGISTRY_LOCK_STALE_MS = 5_000;
-const LOCK_METADATA_VERSION = 1;
-const CASTING_TRANSACTION_VERSION = 1;
-const syncWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 let atomicWriteSequence = 0;
 
 interface PresetRegistryTestHooks {
@@ -51,15 +52,43 @@ interface PresetRegistryTestHooks {
   isProcessAlive?: (pid: number) => boolean | undefined;
   lockTimeoutMs?: number;
   staleLockAgeMs?: number;
+  boundary?: (context: {
+    boundary: CastingDurabilityBoundary;
+    path: string;
+    transactionId?: string;
+  }) => void;
 }
 
 let presetRegistryTestHooks: PresetRegistryTestHooks | null = null;
 
 /** @internal Test-only deterministic conflict/failure injection. */
 export function _setPresetRegistryHooksForTesting(
-  hooks: PresetRegistryTestHooks | null,
+  nextHooks: PresetRegistryTestHooks | null,
 ): void {
-  presetRegistryTestHooks = hooks;
+  presetRegistryTestHooks = nextHooks;
+  _setCastingDurabilityHooksForTesting(nextHooks ? {
+    now: nextHooks.now,
+    wait: nextHooks.wait,
+    isProcessAlive: nextHooks.isProcessAlive,
+    lockTimeoutMs: nextHooks.lockTimeoutMs,
+    staleLockAgeMs: nextHooks.staleLockAgeMs,
+    boundary: (context) => {
+      nextHooks.boundary?.(context);
+      const [stage, operation] = context.boundary.split(':');
+      if (operation === 'write') {
+        nextHooks.beforeWrite?.({ filePath: context.path, stage: stage! });
+      }
+      if (operation === 'rename') {
+        nextHooks.beforeRename?.({
+          registryPath: context.path,
+          tempPath: context.path,
+          attempt: 0,
+          filePath: context.path,
+          stage,
+        });
+      }
+    },
+  } : null);
 }
 
 interface ScaffoldOptions {
@@ -67,140 +96,8 @@ interface ScaffoldOptions {
   universe: string;
 }
 
-function waitSync(milliseconds: number): void {
-  if (presetRegistryTestHooks?.wait) {
-    presetRegistryTestHooks.wait(milliseconds);
-    return;
-  }
-  Atomics.wait(syncWaitBuffer, 0, 0, milliseconds);
-}
-
-interface CastingLockMetadata {
-  version: 1;
-  pid: number;
-  hostname: string;
-  created_at: string;
-  owner_token: string;
-}
-
 function nowMilliseconds(): number {
   return presetRegistryTestHooks?.now?.() ?? Date.now();
-}
-
-function createOwnerToken(): string {
-  return `${process.pid}-${nowMilliseconds()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function parseCastingLockMetadata(raw: string | undefined): CastingLockMetadata | null {
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as Partial<CastingLockMetadata>;
-    if (
-      value.version !== LOCK_METADATA_VERSION
-      || !Number.isSafeInteger(value.pid)
-      || (value.pid ?? 0) <= 0
-      || typeof value.hostname !== 'string'
-      || value.hostname.length === 0
-      || typeof value.created_at !== 'string'
-      || !Number.isFinite(Date.parse(value.created_at))
-      || typeof value.owner_token !== 'string'
-      || value.owner_token.length === 0
-    ) {
-      return null;
-    }
-    return value as CastingLockMetadata;
-  } catch {
-    return null;
-  }
-}
-
-function isProcessAlive(pid: number): boolean | undefined {
-  if (presetRegistryTestHooks?.isProcessAlive) {
-    return presetRegistryTestHooks.isProcessAlive(pid);
-  }
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') return false;
-    if (code === 'EPERM') return true;
-    return undefined;
-  }
-}
-
-function tryRecoverStaleCastingLock(lockPath: string): boolean {
-  const raw = storage.readSync(lockPath);
-  const metadata = parseCastingLockMetadata(raw);
-  if (!metadata || metadata.hostname !== hostname()) return false;
-
-  const age = nowMilliseconds() - Date.parse(metadata.created_at);
-  const staleAge = presetRegistryTestHooks?.staleLockAgeMs ?? REGISTRY_LOCK_STALE_MS;
-  if (age < staleAge || isProcessAlive(metadata.pid) !== false) return false;
-
-  if (storage.readSync(lockPath) !== raw) return false;
-  const stalePath = `${lockPath}.stale-${createOwnerToken()}`;
-  try {
-    renameSync(lockPath, stalePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
-    throw error;
-  }
-
-  const recoveredRaw = storage.readSync(stalePath);
-  if (recoveredRaw !== raw) {
-    if (!storage.existsSync(lockPath)) {
-      renameSync(stalePath, lockPath);
-    }
-    return false;
-  }
-  storage.deleteSync(stalePath);
-  return true;
-}
-
-function acquireCastingLock(lockPath: string): () => void {
-  const ownerToken = createOwnerToken();
-  const deadline = nowMilliseconds()
-    + (presetRegistryTestHooks?.lockTimeoutMs ?? REGISTRY_LOCK_TIMEOUT_MS);
-  while (true) {
-    try {
-      const descriptor = openSync(lockPath, 'wx');
-      try {
-        const metadata: CastingLockMetadata = {
-          version: LOCK_METADATA_VERSION,
-          pid: process.pid,
-          hostname: hostname(),
-          created_at: new Date(nowMilliseconds()).toISOString(),
-          owner_token: ownerToken,
-        };
-        writeSync(descriptor, JSON.stringify(metadata) + '\n', undefined, 'utf8');
-      } catch (error) {
-        closeSync(descriptor);
-        unlinkSync(lockPath);
-        throw error;
-      }
-      return () => {
-        try {
-          closeSync(descriptor);
-        } finally {
-          const current = parseCastingLockMetadata(storage.readSync(lockPath));
-          if (current?.owner_token !== ownerToken) return;
-          try {
-            unlinkSync(lockPath);
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          }
-        }
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      if (tryRecoverStaleCastingLock(lockPath)) continue;
-      if (nowMilliseconds() >= deadline) {
-        throw new Error(`Timed out waiting for concurrent preset scaffold lock: ${lockPath}`);
-      }
-      waitSync(REGISTRY_LOCK_RETRY_MS);
-    }
-  }
 }
 
 interface CastingHistory {
@@ -212,8 +109,7 @@ interface CastingHistory {
   universe_usage_history: Array<{ universe: string; used_at: string }>;
 }
 
-function readCastingHistory(historyPath: string): { raw: string | undefined; value: CastingHistory } {
-  const raw = storage.readSync(historyPath);
+function readCastingHistoryRaw(raw: string | undefined): { raw: string | undefined; value: CastingHistory } {
   if (raw === undefined) {
     return {
       raw,
@@ -265,20 +161,6 @@ function validateCastingPolicy(policyPath: string): void {
   }
 }
 
-function readRegistrySnapshot(
-  registryPath: string,
-): { raw: string | undefined; value: unknown } {
-  const raw = storage.readSync(registryPath);
-  if (!raw?.trim()) return { raw, value: undefined };
-  try {
-    return { raw, value: JSON.parse(raw) };
-  } catch (error) {
-    throw new Error(
-      `Cannot update malformed casting/registry.json: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
-
 function atomicWriteFile(
   filePath: string,
   content: string,
@@ -313,144 +195,6 @@ function atomicWriteJson(filePath: string, value: unknown): void {
   );
 }
 
-interface CastingTransactionJournal {
-  version: 1;
-  registry: { previous: string | null; next: string };
-  history: { previous: string | null; next: string };
-}
-
-function parseCastingTransactionJournal(
-  journalPath: string,
-): CastingTransactionJournal | null {
-  const raw = storage.readSync(journalPath);
-  if (raw === undefined) return null;
-  try {
-    const parsed = JSON.parse(raw) as CastingTransactionJournal;
-    if (
-      parsed.version !== CASTING_TRANSACTION_VERSION
-      || !parsed.registry
-      || !parsed.history
-      || (parsed.registry.previous !== null && typeof parsed.registry.previous !== 'string')
-      || typeof parsed.registry.next !== 'string'
-      || (parsed.history.previous !== null && typeof parsed.history.previous !== 'string')
-      || typeof parsed.history.next !== 'string'
-    ) {
-      throw new Error('invalid transaction journal shape');
-    }
-    return parsed;
-  } catch (error) {
-    throw new Error(
-      `Cannot recover malformed casting transaction journal: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
-
-function restoreTransactionFile(
-  filePath: string,
-  content: string | null,
-  registryPath: string,
-  stage: string,
-): void {
-  if (content === null) {
-    storage.deleteSync(filePath);
-    return;
-  }
-  atomicWriteFile(filePath, content, stage, registryPath, 0);
-}
-
-function recoverCastingTransaction(castingDir: string): void {
-  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
-  const journal = parseCastingTransactionJournal(journalPath);
-  if (!journal) return;
-
-  const registryPath = path.join(castingDir, 'registry.json');
-  const historyPath = path.join(castingDir, 'history.json');
-  const registryRaw = storage.readSync(registryPath) ?? null;
-  const historyRaw = storage.readSync(historyPath) ?? null;
-  const isPrevious = registryRaw === journal.registry.previous
-    && historyRaw === journal.history.previous;
-  const isNext = registryRaw === journal.registry.next
-    && historyRaw === journal.history.next;
-
-  if (isPrevious || isNext) {
-    storage.deleteSync(journalPath);
-    return;
-  }
-
-  const registryKnown = registryRaw === journal.registry.previous
-    || registryRaw === journal.registry.next;
-  const historyKnown = historyRaw === journal.history.previous
-    || historyRaw === journal.history.next;
-  if (!registryKnown || !historyKnown) {
-    throw new Error('Cannot recover casting transaction because a file changed outside the journal');
-  }
-
-  restoreTransactionFile(
-    historyPath,
-    journal.history.next,
-    registryPath,
-    'recovery-history',
-  );
-  restoreTransactionFile(
-    registryPath,
-    journal.registry.next,
-    registryPath,
-    'recovery-registry',
-  );
-  storage.deleteSync(journalPath);
-}
-
-function commitRegistryAndHistory(
-  castingDir: string,
-  registryRaw: string | undefined,
-  nextRegistryRaw: string,
-  historyRaw: string | undefined,
-  nextHistoryRaw: string,
-  attempt: number,
-): void {
-  const registryPath = path.join(castingDir, 'registry.json');
-  const historyPath = path.join(castingDir, 'history.json');
-  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
-  const journal: CastingTransactionJournal = {
-    version: CASTING_TRANSACTION_VERSION,
-    registry: { previous: registryRaw ?? null, next: nextRegistryRaw },
-    history: { previous: historyRaw ?? null, next: nextHistoryRaw },
-  };
-
-  atomicWriteFile(
-    journalPath,
-    JSON.stringify(journal, null, 2) + '\n',
-    'journal',
-    registryPath,
-    attempt,
-  );
-  try {
-    atomicWriteFile(historyPath, nextHistoryRaw, 'history', registryPath, attempt);
-    atomicWriteFile(registryPath, nextRegistryRaw, 'registry', registryPath, attempt);
-    storage.deleteSync(journalPath);
-  } catch (error) {
-    try {
-      restoreTransactionFile(
-        historyPath,
-        journal.history.previous,
-        registryPath,
-        'rollback-history',
-      );
-      restoreTransactionFile(
-        registryPath,
-        journal.registry.previous,
-        registryPath,
-        'rollback-registry',
-      );
-      storage.deleteSync(journalPath);
-    } catch (rollbackError) {
-      throw new Error(
-        `Casting transaction failed (${String(error)}) and rollback requires recovery: ${String(rollbackError)}`,
-      );
-    }
-    throw error;
-  }
-}
 
 /**
  * Map an agent's role to the Members-table Status cell.
@@ -750,13 +494,16 @@ function writeOrMergeCastingState(
     atomicWriteJson(policyPath, { universe_allowlist: ['*'], max_capacity: 25 });
   }
   for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
-    const snapshot = readRegistrySnapshot(registryPath);
+    const pairSnapshot = readCastingRegistryPair(castingDir);
+    const snapshot = pairSnapshot.registryRaw?.trim()
+      ? { raw: pairSnapshot.registryRaw, value: pairSnapshot.registry }
+      : { raw: pairSnapshot.registryRaw, value: undefined };
     const registry = reconcileAgentProvenanceRegistry(
       snapshot.value,
       candidates,
       { generatedAt: now, retireMissing: false },
     );
-    const historySnapshot = readCastingHistory(historyPath);
+    const historySnapshot = readCastingHistoryRaw(pairSnapshot.historyRaw);
     const history = structuredClone(historySnapshot.value);
     const snapshotKey = `preset-${options.universe}-revision-${registry.revision}-${now}`;
     history.assignment_cast_snapshots[snapshotKey] = {
@@ -773,13 +520,13 @@ function writeOrMergeCastingState(
     if (storage.readSync(historyPath) !== historySnapshot.raw) {
       continue;
     }
-    commitRegistryAndHistory(
+    commitCastingRegistryPair(
       castingDir,
       snapshot.raw,
-      JSON.stringify(registry, null, 2) + '\n',
+      registry as unknown as Record<string, unknown>,
       historySnapshot.raw,
-      JSON.stringify(history, null, 2) + '\n',
-      attempt,
+      history as unknown as Record<string, unknown>,
+      registry.revision,
     );
 
     return;
@@ -805,14 +552,13 @@ export function scaffoldPresetIntoSquad(
   const universe = `preset:${presetName}`;
   const castingDir = path.join(squadDir, 'casting');
   storage.mkdirSync(castingDir, { recursive: true });
-  const releaseLock = acquireCastingLock(path.join(castingDir, 'registry.lock'));
+  const releaseLock = acquireCastingRegistryLock(castingDir, 'preset scaffold');
   const teamPath = path.join(squadDir, 'team.md');
   const routingPath = path.join(squadDir, 'routing.md');
   const policyPath = path.join(castingDir, 'policy.json');
   try {
-    recoverCastingTransaction(castingDir);
-    readRegistrySnapshot(path.join(castingDir, 'registry.json'));
-    readCastingHistory(path.join(castingDir, 'history.json'));
+    recoverCastingRegistryTransaction(castingDir);
+    readCastingRegistryPair(castingDir);
     validateCastingPolicy(path.join(castingDir, 'policy.json'));
 
     const wireableAgents = prepareOutputs?.() ?? agents;
@@ -826,6 +572,7 @@ export function scaffoldPresetIntoSquad(
       writeOrMergeRouting(squadDir, wireableAgents);
       writeOrMergeCastingState(squadDir, wireableAgents, { universe });
     } catch (error) {
+      if (error instanceof CastingCommitInDoubtError) throw error;
       if (originalTeam === undefined) storage.deleteSync(teamPath);
       else storage.writeSync(teamPath, originalTeam);
       if (originalRouting === undefined) storage.deleteSync(routingPath);

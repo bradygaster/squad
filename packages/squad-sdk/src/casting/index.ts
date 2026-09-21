@@ -50,6 +50,19 @@ export {
   type WorkAgentBindingContext,
 } from './agent-provenance.js';
 
+export {
+  CastingCommitInDoubtError,
+  acquireCastingRegistryLock,
+  acquireCastingRegistryLockAsync,
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
+  _setCastingDurabilityHooksForTesting,
+  type CastingDurabilityBoundary,
+  type CastingDurabilityHooks,
+  type CastingPairSnapshot,
+} from './durable-registry.js';
+
 // --- Legacy Types (kept for backward compat) ---
 
 export interface CastingUniverse {

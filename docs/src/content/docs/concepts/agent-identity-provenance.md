@@ -21,6 +21,7 @@ agent role and universe, lifecycle timestamps, status, and an optional avatar.
   "schema": "squad-agent-provenance/v1",
   "schema_version": 1,
   "revision": 4,
+  "transaction_id": "52ab75df-79de-44e7-b0b7-521a45b49204",
   "generated_at": "2026-09-21T20:00:00.000Z",
   "agents": {
     "runtime-engineer": {
@@ -44,6 +45,13 @@ agent role and universe, lifecycle timestamps, status, and an optional avatar.
 `display_name`. New consumers should use the object key as the stable ID and
 `display_name` for presentation.
 
+`transaction_id` is additive publication metadata. Managed
+`casting/history.json` files carry the same `transaction_id` plus a
+`registry_revision` equal to the registry `revision`. Consumers that require a
+consistent registry/history pair must use the SDK pair reader, which validates
+those fields and the durable commit manifest. Registry-only consumers may
+continue reading `registry.json` directly.
+
 ## Lifecycle and collision rules
 
 - **Uniqueness:** Canonical IDs use lowercase alphanumeric segments separated
@@ -66,9 +74,11 @@ agent role and universe, lifecycle timestamps, status, and an optional avatar.
 - **Legacy migration:** A legacy root is accepted only when every record has a
   canonical ID plus valid name, lifecycle, universe, and timestamps. Any
   malformed record rejects the whole producer update; migration never drops it.
-- **Concurrent producers:** Recasts serialize registry updates and atomically
-  replace the file. Each successful update observes the latest revision,
-  increments it, and preserves all unclaimed IDs as tombstones.
+- **Concurrent producers:** Presets and CLI Cast share one durable directory
+  lock. Registry/history updates publish through a roll-forward transaction;
+  pair readers accept only a complete legacy pair or a stable manifest-backed
+  pair. Each successful update observes the latest revision, increments it,
+  and preserves all unclaimed IDs as tombstones.
 
 ## Fetch, permissions, and caching
 

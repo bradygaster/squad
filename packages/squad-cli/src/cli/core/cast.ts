@@ -3,7 +3,6 @@
  * @module cli/core/cast
  */
 
-import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import {
@@ -14,6 +13,10 @@ import {
 } from '@bradygaster/squad-sdk';
 import {
   CastingEngine,
+  acquireCastingRegistryLockAsync,
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
   reconcileAgentProvenanceRegistry,
   type CastMember as EngineCastMember,
   type AgentRole as EngineAgentRole,
@@ -80,26 +83,6 @@ export interface CastResult {
   teamRoot: string;
   membersCreated: string[];
   filesCreated: string[];
-}
-
-async function acquireCastLock(lockPath: string): Promise<() => Promise<void>> {
-  const deadline = Date.now() + 30_000;
-  while (true) {
-    try {
-      const handle = await open(lockPath, 'wx');
-      await handle.writeFile(`${process.pid}\n`, 'utf8');
-      return async () => {
-        await handle.close();
-        await rm(lockPath, { force: true });
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for concurrent cast lock: ${lockPath}`);
-      }
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-  }
 }
 
 // ── Emoji mapping ──────────────────────────────────────────────────
@@ -603,23 +586,17 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const membersCreated: string[] = [];
   const templatesDir = getTemplatesDir();
   await storage.mkdir(castingDir, { recursive: true });
-  const releaseCastLock = await acquireCastLock(join(castingDir, 'registry.lock'));
+  const releaseCastLock = await acquireCastingRegistryLockAsync(castingDir, 'CLI cast');
 
   try {
+    recoverCastingRegistryTransaction(castingDir);
+    const existingPair = readCastingRegistryPair(castingDir);
     const now = new Date().toISOString();
     // Built-ins are fixed support identities, not routable Cast specialists.
     const specialistMembers = proposal.members.filter(member => !builtinId(member.name));
     const supportMembers = [scribeMember(), ralphMember(), RaiMember(), factCheckerMember()];
     const registryPath = join(castingDir, 'registry.json');
-    let existingRegistry: unknown = undefined;
-    const existingRegistryText = storage.readSync(registryPath);
-    if (existingRegistryText?.trim()) {
-      try {
-        existingRegistry = JSON.parse(existingRegistryText);
-      } catch {
-        throw new Error('Cannot update malformed .squad/casting/registry.json');
-      }
-    }
+    const existingRegistry = existingPair.registry;
     const registry = reconcileAgentProvenanceRegistry(
       existingRegistry,
       specialistMembers.map((member) => ({
@@ -773,28 +750,12 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     snapshotAgents.push(specialistIds.get(member.name) ?? memberId(member.name));
   }
 
-    const registryTempPath = `${registryPath}.tmp-${process.pid}-${Date.now()}`;
-    try {
-      await storage.write(registryTempPath, JSON.stringify(registry, null, 2) + '\n');
-      storage.renameSync(registryTempPath, registryPath);
-    } finally {
-      storage.deleteSync(registryTempPath);
-    }
-    filesCreated.push(registryPath);
-
     const historyPath = join(castingDir, 'history.json');
     let priorHistory: {
       assignment_cast_snapshots?: Record<string, unknown>;
       universe_usage_history?: unknown[];
     } = {};
-    const historyText = storage.readSync(historyPath);
-    if (historyText?.trim()) {
-      try {
-        priorHistory = JSON.parse(historyText) as typeof priorHistory;
-      } catch {
-        throw new Error('Cannot update malformed .squad/casting/history.json');
-      }
-    }
+    priorHistory = (existingPair.history ?? {}) as typeof priorHistory;
     const history = {
       assignment_cast_snapshots: {
         ...(priorHistory.assignment_cast_snapshots ?? {}),
@@ -809,7 +770,15 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
         { universe: proposal.universe, used_at: now },
       ],
     };
-    await storage.write(historyPath, JSON.stringify(history, null, 2) + '\n');
+    commitCastingRegistryPair(
+      castingDir,
+      existingPair.registryRaw,
+      registry as unknown as Record<string, unknown>,
+      existingPair.historyRaw,
+      history,
+      registry.revision,
+    );
+    filesCreated.push(registryPath);
     filesCreated.push(historyPath);
 
   const policy = { universe_allowlist: ['*'], max_capacity: 25 };
@@ -857,7 +826,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
     return { teamRoot, membersCreated, filesCreated };
   } finally {
-    await releaseCastLock();
+    releaseCastLock();
   }
 }
 
