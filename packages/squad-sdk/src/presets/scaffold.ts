@@ -16,7 +16,8 @@
  * @module presets/scaffold
  */
 
-import { closeSync, openSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, openSync, renameSync, unlinkSync, writeSync } from 'node:fs';
+import { hostname } from 'node:os';
 import path from 'node:path';
 import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -29,12 +30,27 @@ const ROUTING_HEADER = '## Work Type → Agent';
 const REGISTRY_UPDATE_MAX_ATTEMPTS = 8;
 const REGISTRY_LOCK_TIMEOUT_MS = 30_000;
 const REGISTRY_LOCK_RETRY_MS = 25;
+const REGISTRY_LOCK_STALE_MS = 5_000;
+const LOCK_METADATA_VERSION = 1;
+const CASTING_TRANSACTION_VERSION = 1;
 const syncWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 let atomicWriteSequence = 0;
 
 interface PresetRegistryTestHooks {
   afterSnapshot?: (context: { registryPath: string; attempt: number }) => void;
-  beforeRename?: (context: { registryPath: string; tempPath: string; attempt: number }) => void;
+  beforeWrite?: (context: { filePath: string; stage: string }) => void;
+  beforeRename?: (context: {
+    registryPath: string;
+    tempPath: string;
+    attempt: number;
+    filePath?: string;
+    stage?: string;
+  }) => void;
+  now?: () => number;
+  wait?: (milliseconds: number) => void;
+  isProcessAlive?: (pid: number) => boolean | undefined;
+  lockTimeoutMs?: number;
+  staleLockAgeMs?: number;
 }
 
 let presetRegistryTestHooks: PresetRegistryTestHooks | null = null;
@@ -52,16 +68,112 @@ interface ScaffoldOptions {
 }
 
 function waitSync(milliseconds: number): void {
+  if (presetRegistryTestHooks?.wait) {
+    presetRegistryTestHooks.wait(milliseconds);
+    return;
+  }
   Atomics.wait(syncWaitBuffer, 0, 0, milliseconds);
 }
 
+interface CastingLockMetadata {
+  version: 1;
+  pid: number;
+  hostname: string;
+  created_at: string;
+  owner_token: string;
+}
+
+function nowMilliseconds(): number {
+  return presetRegistryTestHooks?.now?.() ?? Date.now();
+}
+
+function createOwnerToken(): string {
+  return `${process.pid}-${nowMilliseconds()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function parseCastingLockMetadata(raw: string | undefined): CastingLockMetadata | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<CastingLockMetadata>;
+    if (
+      value.version !== LOCK_METADATA_VERSION
+      || !Number.isSafeInteger(value.pid)
+      || (value.pid ?? 0) <= 0
+      || typeof value.hostname !== 'string'
+      || value.hostname.length === 0
+      || typeof value.created_at !== 'string'
+      || !Number.isFinite(Date.parse(value.created_at))
+      || typeof value.owner_token !== 'string'
+      || value.owner_token.length === 0
+    ) {
+      return null;
+    }
+    return value as CastingLockMetadata;
+  } catch {
+    return null;
+  }
+}
+
+function isProcessAlive(pid: number): boolean | undefined {
+  if (presetRegistryTestHooks?.isProcessAlive) {
+    return presetRegistryTestHooks.isProcessAlive(pid);
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') return false;
+    if (code === 'EPERM') return true;
+    return undefined;
+  }
+}
+
+function tryRecoverStaleCastingLock(lockPath: string): boolean {
+  const raw = storage.readSync(lockPath);
+  const metadata = parseCastingLockMetadata(raw);
+  if (!metadata || metadata.hostname !== hostname()) return false;
+
+  const age = nowMilliseconds() - Date.parse(metadata.created_at);
+  const staleAge = presetRegistryTestHooks?.staleLockAgeMs ?? REGISTRY_LOCK_STALE_MS;
+  if (age < staleAge || isProcessAlive(metadata.pid) !== false) return false;
+
+  if (storage.readSync(lockPath) !== raw) return false;
+  const stalePath = `${lockPath}.stale-${createOwnerToken()}`;
+  try {
+    renameSync(lockPath, stalePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    throw error;
+  }
+
+  const recoveredRaw = storage.readSync(stalePath);
+  if (recoveredRaw !== raw) {
+    if (!storage.existsSync(lockPath)) {
+      renameSync(stalePath, lockPath);
+    }
+    return false;
+  }
+  storage.deleteSync(stalePath);
+  return true;
+}
+
 function acquireCastingLock(lockPath: string): () => void {
-  const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
+  const ownerToken = createOwnerToken();
+  const deadline = nowMilliseconds()
+    + (presetRegistryTestHooks?.lockTimeoutMs ?? REGISTRY_LOCK_TIMEOUT_MS);
   while (true) {
     try {
       const descriptor = openSync(lockPath, 'wx');
       try {
-        writeSync(descriptor, `${process.pid}\n`, undefined, 'utf8');
+        const metadata: CastingLockMetadata = {
+          version: LOCK_METADATA_VERSION,
+          pid: process.pid,
+          hostname: hostname(),
+          created_at: new Date(nowMilliseconds()).toISOString(),
+          owner_token: ownerToken,
+        };
+        writeSync(descriptor, JSON.stringify(metadata) + '\n', undefined, 'utf8');
       } catch (error) {
         closeSync(descriptor);
         unlinkSync(lockPath);
@@ -71,6 +183,8 @@ function acquireCastingLock(lockPath: string): () => void {
         try {
           closeSync(descriptor);
         } finally {
+          const current = parseCastingLockMetadata(storage.readSync(lockPath));
+          if (current?.owner_token !== ownerToken) return;
           try {
             unlinkSync(lockPath);
           } catch (error) {
@@ -80,11 +194,74 @@ function acquireCastingLock(lockPath: string): () => void {
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      if (Date.now() >= deadline) {
+      if (tryRecoverStaleCastingLock(lockPath)) continue;
+      if (nowMilliseconds() >= deadline) {
         throw new Error(`Timed out waiting for concurrent preset scaffold lock: ${lockPath}`);
       }
       waitSync(REGISTRY_LOCK_RETRY_MS);
     }
+  }
+}
+
+interface CastingHistory {
+  assignment_cast_snapshots: Record<string, {
+    created_at: string;
+    agents: string[];
+    universe: string;
+  }>;
+  universe_usage_history: Array<{ universe: string; used_at: string }>;
+}
+
+function readCastingHistory(historyPath: string): { raw: string | undefined; value: CastingHistory } {
+  const raw = storage.readSync(historyPath);
+  if (raw === undefined) {
+    return {
+      raw,
+      value: { assignment_cast_snapshots: {}, universe_usage_history: [] },
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('history root must be an object');
+    }
+    const snapshots = parsed['assignment_cast_snapshots'];
+    const usage = parsed['universe_usage_history'];
+    if (
+      snapshots !== undefined
+      && (typeof snapshots !== 'object' || snapshots === null || Array.isArray(snapshots))
+    ) {
+      throw new Error('assignment_cast_snapshots must be an object');
+    }
+    if (usage !== undefined && !Array.isArray(usage)) {
+      throw new Error('universe_usage_history must be an array');
+    }
+    return {
+      raw,
+      value: {
+        assignment_cast_snapshots: (snapshots ?? {}) as CastingHistory['assignment_cast_snapshots'],
+        universe_usage_history: (usage ?? []) as CastingHistory['universe_usage_history'],
+      },
+    };
+  } catch (error) {
+    throw new Error(
+      `Cannot update malformed casting/history.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function validateCastingPolicy(policyPath: string): void {
+  const raw = storage.readSync(policyPath);
+  if (raw === undefined) return;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('policy root must be an object');
+    }
+  } catch (error) {
+    throw new Error(
+      `Cannot update malformed casting/policy.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -102,28 +279,176 @@ function readRegistrySnapshot(
   }
 }
 
-function atomicWriteRegistry(
-  registryPath: string,
+function atomicWriteFile(
+  filePath: string,
   content: string,
+  stage: string,
+  registryPath: string,
   attempt: number,
 ): void {
-  const tempPath = `${registryPath}.tmp-${process.pid}-${Date.now()}-${attempt}`;
+  const tempPath = `${filePath}.tmp-${process.pid}-${nowMilliseconds()}-${attempt}-${atomicWriteSequence++}`;
   try {
+    presetRegistryTestHooks?.beforeWrite?.({ filePath, stage });
     storage.writeSync(tempPath, content);
-    presetRegistryTestHooks?.beforeRename?.({ registryPath, tempPath, attempt });
-    storage.renameSync(tempPath, registryPath);
+    presetRegistryTestHooks?.beforeRename?.({
+      registryPath,
+      tempPath,
+      attempt,
+      filePath,
+      stage,
+    });
+    storage.renameSync(tempPath, filePath);
   } finally {
     storage.deleteSync(tempPath);
   }
 }
 
 function atomicWriteJson(filePath: string, value: unknown): void {
-  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${atomicWriteSequence++}`;
+  atomicWriteFile(
+    filePath,
+    JSON.stringify(value, null, 2) + '\n',
+    'policy',
+    filePath,
+    0,
+  );
+}
+
+interface CastingTransactionJournal {
+  version: 1;
+  registry: { previous: string | null; next: string };
+  history: { previous: string | null; next: string };
+}
+
+function parseCastingTransactionJournal(
+  journalPath: string,
+): CastingTransactionJournal | null {
+  const raw = storage.readSync(journalPath);
+  if (raw === undefined) return null;
   try {
-    storage.writeSync(tempPath, JSON.stringify(value, null, 2) + '\n');
-    storage.renameSync(tempPath, filePath);
-  } finally {
-    storage.deleteSync(tempPath);
+    const parsed = JSON.parse(raw) as CastingTransactionJournal;
+    if (
+      parsed.version !== CASTING_TRANSACTION_VERSION
+      || !parsed.registry
+      || !parsed.history
+      || (parsed.registry.previous !== null && typeof parsed.registry.previous !== 'string')
+      || typeof parsed.registry.next !== 'string'
+      || (parsed.history.previous !== null && typeof parsed.history.previous !== 'string')
+      || typeof parsed.history.next !== 'string'
+    ) {
+      throw new Error('invalid transaction journal shape');
+    }
+    return parsed;
+  } catch (error) {
+    throw new Error(
+      `Cannot recover malformed casting transaction journal: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function restoreTransactionFile(
+  filePath: string,
+  content: string | null,
+  registryPath: string,
+  stage: string,
+): void {
+  if (content === null) {
+    storage.deleteSync(filePath);
+    return;
+  }
+  atomicWriteFile(filePath, content, stage, registryPath, 0);
+}
+
+function recoverCastingTransaction(castingDir: string): void {
+  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
+  const journal = parseCastingTransactionJournal(journalPath);
+  if (!journal) return;
+
+  const registryPath = path.join(castingDir, 'registry.json');
+  const historyPath = path.join(castingDir, 'history.json');
+  const registryRaw = storage.readSync(registryPath) ?? null;
+  const historyRaw = storage.readSync(historyPath) ?? null;
+  const isPrevious = registryRaw === journal.registry.previous
+    && historyRaw === journal.history.previous;
+  const isNext = registryRaw === journal.registry.next
+    && historyRaw === journal.history.next;
+
+  if (isPrevious || isNext) {
+    storage.deleteSync(journalPath);
+    return;
+  }
+
+  const registryKnown = registryRaw === journal.registry.previous
+    || registryRaw === journal.registry.next;
+  const historyKnown = historyRaw === journal.history.previous
+    || historyRaw === journal.history.next;
+  if (!registryKnown || !historyKnown) {
+    throw new Error('Cannot recover casting transaction because a file changed outside the journal');
+  }
+
+  restoreTransactionFile(
+    historyPath,
+    journal.history.next,
+    registryPath,
+    'recovery-history',
+  );
+  restoreTransactionFile(
+    registryPath,
+    journal.registry.next,
+    registryPath,
+    'recovery-registry',
+  );
+  storage.deleteSync(journalPath);
+}
+
+function commitRegistryAndHistory(
+  castingDir: string,
+  registryRaw: string | undefined,
+  nextRegistryRaw: string,
+  historyRaw: string | undefined,
+  nextHistoryRaw: string,
+  attempt: number,
+): void {
+  const registryPath = path.join(castingDir, 'registry.json');
+  const historyPath = path.join(castingDir, 'history.json');
+  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
+  const journal: CastingTransactionJournal = {
+    version: CASTING_TRANSACTION_VERSION,
+    registry: { previous: registryRaw ?? null, next: nextRegistryRaw },
+    history: { previous: historyRaw ?? null, next: nextHistoryRaw },
+  };
+
+  atomicWriteFile(
+    journalPath,
+    JSON.stringify(journal, null, 2) + '\n',
+    'journal',
+    registryPath,
+    attempt,
+  );
+  try {
+    atomicWriteFile(historyPath, nextHistoryRaw, 'history', registryPath, attempt);
+    atomicWriteFile(registryPath, nextRegistryRaw, 'registry', registryPath, attempt);
+    storage.deleteSync(journalPath);
+  } catch (error) {
+    try {
+      restoreTransactionFile(
+        historyPath,
+        journal.history.previous,
+        registryPath,
+        'rollback-history',
+      );
+      restoreTransactionFile(
+        registryPath,
+        journal.registry.previous,
+        registryPath,
+        'rollback-registry',
+      );
+      storage.deleteSync(journalPath);
+    } catch (rollbackError) {
+      throw new Error(
+        `Casting transaction failed (${String(error)}) and rollback requires recovery: ${String(rollbackError)}`,
+      );
+    }
+    throw error;
   }
 }
 
@@ -420,9 +745,9 @@ function writeOrMergeCastingState(
 
   // ---- history.json ----
   const historyPath = path.join(castingDir, 'history.json');
-  interface CastingHistory {
-    assignment_cast_snapshots: Record<string, { created_at: string; agents: string[]; universe: string }>;
-    universe_usage_history: Array<{ universe: string; used_at: string }>;
+  const policyPath = path.join(castingDir, 'policy.json');
+  if (!storage.existsSync(policyPath)) {
+    atomicWriteJson(policyPath, { universe_allowlist: ['*'], max_capacity: 25 });
   }
   for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
     const snapshot = readRegistrySnapshot(registryPath);
@@ -431,39 +756,8 @@ function writeOrMergeCastingState(
       candidates,
       { generatedAt: now, retireMissing: false },
     );
-    let history: CastingHistory = {
-      assignment_cast_snapshots: {},
-      universe_usage_history: [],
-    };
-    if (storage.existsSync(historyPath)) {
-      try {
-        const raw = storage.readSync(historyPath) ?? '{}';
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          const snapshots = parsed.assignment_cast_snapshots;
-          const usage = parsed.universe_usage_history;
-          if (
-            snapshots !== undefined
-            && (typeof snapshots !== 'object' || snapshots === null || Array.isArray(snapshots))
-          ) {
-            throw new Error('assignment_cast_snapshots must be an object');
-          }
-          if (usage !== undefined && !Array.isArray(usage)) {
-            throw new Error('universe_usage_history must be an array');
-          }
-          history = {
-            assignment_cast_snapshots: snapshots ?? {},
-            universe_usage_history: usage ?? [],
-          };
-        } else {
-          throw new Error('history root must be an object');
-        }
-      } catch (error) {
-        throw new Error(
-          `Cannot update malformed casting/history.json: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
+    const historySnapshot = readCastingHistory(historyPath);
+    const history = structuredClone(historySnapshot.value);
     const snapshotKey = `preset-${options.universe}-revision-${registry.revision}-${now}`;
     history.assignment_cast_snapshots[snapshotKey] = {
       created_at: now,
@@ -476,19 +770,18 @@ function writeOrMergeCastingState(
     if (storage.readSync(registryPath) !== snapshot.raw) {
       continue;
     }
-    atomicWriteRegistry(
-      registryPath,
+    if (storage.readSync(historyPath) !== historySnapshot.raw) {
+      continue;
+    }
+    commitRegistryAndHistory(
+      castingDir,
+      snapshot.raw,
       JSON.stringify(registry, null, 2) + '\n',
+      historySnapshot.raw,
+      JSON.stringify(history, null, 2) + '\n',
       attempt,
     );
-    atomicWriteJson(historyPath, history);
 
-    // ---- policy.json ----
-    const policyPath = path.join(castingDir, 'policy.json');
-    if (!storage.existsSync(policyPath)) {
-      const policy = { universe_allowlist: ['*'], max_capacity: 25 };
-      atomicWriteJson(policyPath, policy);
-    }
     return;
   }
   throw new Error(
@@ -507,16 +800,40 @@ export function scaffoldPresetIntoSquad(
   squadDir: string,
   agents: PresetAgent[],
   presetName: string,
+  prepareOutputs?: () => PresetAgent[],
 ): void {
-  if (agents.length === 0) return;
   const universe = `preset:${presetName}`;
   const castingDir = path.join(squadDir, 'casting');
   storage.mkdirSync(castingDir, { recursive: true });
   const releaseLock = acquireCastingLock(path.join(castingDir, 'registry.lock'));
+  const teamPath = path.join(squadDir, 'team.md');
+  const routingPath = path.join(squadDir, 'routing.md');
+  const policyPath = path.join(castingDir, 'policy.json');
   try {
-    writeOrMergeTeamMembers(squadDir, agents, presetName);
-    writeOrMergeRouting(squadDir, agents);
-    writeOrMergeCastingState(squadDir, agents, { universe });
+    recoverCastingTransaction(castingDir);
+    readRegistrySnapshot(path.join(castingDir, 'registry.json'));
+    readCastingHistory(path.join(castingDir, 'history.json'));
+    validateCastingPolicy(path.join(castingDir, 'policy.json'));
+
+    const wireableAgents = prepareOutputs?.() ?? agents;
+    if (wireableAgents.length === 0) return;
+
+    const originalTeam = storage.readSync(teamPath);
+    const originalRouting = storage.readSync(routingPath);
+    const originalPolicy = storage.readSync(policyPath);
+    try {
+      writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
+      writeOrMergeRouting(squadDir, wireableAgents);
+      writeOrMergeCastingState(squadDir, wireableAgents, { universe });
+    } catch (error) {
+      if (originalTeam === undefined) storage.deleteSync(teamPath);
+      else storage.writeSync(teamPath, originalTeam);
+      if (originalRouting === undefined) storage.deleteSync(routingPath);
+      else storage.writeSync(routingPath, originalRouting);
+      if (originalPolicy === undefined) storage.deleteSync(policyPath);
+      else storage.writeSync(policyPath, originalPolicy);
+      throw error;
+    }
   } finally {
     releaseLock();
   }

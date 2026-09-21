@@ -410,6 +410,19 @@ describe('agent identity provenance contract', () => {
       .toThrow(/malformed or partial/);
   });
 
+  it('reports the authoritative provenance error when every binding row is malformed', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    expect(() => parseWorkAgentBindings([
+      null,
+      { binding_schema: 'wrong' },
+      'not-an-object',
+    ], registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })).toThrow(/Work-agent bindings are malformed or partial/);
+  });
+
   it.each([
     ['inconsistent epic identity sets', 'binding_inconsistent_epic_sets'],
     ['mixed omissions without complete partial markers', 'binding_mixed_omission'],

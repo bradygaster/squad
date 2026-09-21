@@ -109,87 +109,79 @@ export function applyPreset(
 
   const presetAgentsDir = path.join(presetDir, 'agents');
   const results: PresetApplyResult[] = [];
-
-  for (const agent of manifest.agents) {
-    try { validateName(agent.name, 'agent'); } catch {
-      results.push({ agent: agent.name, status: 'error', reason: `Invalid agent name: '${agent.name}'` });
-      continue;
-    }
-
-    const sourceDir = path.join(presetAgentsDir, agent.name);
-    const destDir = path.join(targetDir, agent.name);
-
-    if (!storage.existsSync(sourceDir)) {
-      results.push({ agent: agent.name, status: 'error', reason: 'Source agent directory missing in preset' });
-      continue;
-    }
-
-    if (storage.existsSync(destDir) && !options.force) {
-      results.push({ agent: agent.name, status: 'skipped', reason: 'Already exists (use --force to overwrite)' });
-      continue;
-    }
-
-    try {
-      // When forcing, remove dest first so renamed/deleted files don't linger
-      if (options.force && storage.existsSync(destDir)) {
-        rmSync(destDir, { recursive: true, force: true });
-      }
-      copyDirRecursive(sourceDir, destDir);
-      results.push({ agent: agent.name, status: 'installed' });
-    } catch (err) {
-      results.push({ agent: agent.name, status: 'error', reason: String(err) });
-    }
-  }
-
-  // Restore saved routing.md from the preset if present (#1412). This must
-  // happen before scaffolding so that writeOrMergeRouting sees the full custom
-  // routing content and only appends any missing agent rows rather than
-  // regenerating a skeleton.
+  const squadDir = path.dirname(targetDir);
   const savedRoutingPath = path.join(presetDir, 'routing.md');
-  if (storage.existsSync(savedRoutingPath)) {
-    const squadDir = path.dirname(targetDir);
-    const destRoutingPath = path.join(squadDir, 'routing.md');
-    // Only overwrite if explicitly requested or routing.md doesn't exist yet
-    if (options.force || options.overwriteRouting || !storage.existsSync(destRoutingPath)) {
-      const content = storage.readSync(savedRoutingPath);
-      if (content !== undefined) {
-        storage.mkdirSync(squadDir, { recursive: true });
-        storage.writeSync(destRoutingPath, content);
-      }
+  const destRoutingPath = path.join(squadDir, 'routing.md');
+  const originalRouting = storage.readSync(destRoutingPath);
+  const agentSnapshots = new Map<string, DirectorySnapshot>();
+  for (const agent of manifest.agents) {
+    try {
+      validateName(agent.name, 'agent');
+      agentSnapshots.set(
+        path.join(targetDir, agent.name),
+        snapshotDirectory(path.join(targetDir, agent.name)),
+      );
+    } catch {
+      // Invalid names are reported by the mutation callback without resolving a path.
     }
   }
 
-  // After copying charters, wire the preset agents into team.md, routing.md,
-  // and the casting state files (registry/history/policy). Without this, the
-  // coordinator's mode-switch check sees an empty ## Members table and
-  // treats every session as Init Mode — see bradygaster/squad#1288. We only
-  // include agents that did not error out (installed + skipped-because-
-  // already-present) so the scaffolded team reflects the user's intent.
-  const wireableAgents: PresetAgent[] = manifest.agents.filter(a =>
-    results.some(r => r.agent === a.name && r.status !== 'error'),
-  );
-  if (wireableAgents.length > 0) {
-    const squadDir = path.dirname(targetDir);
-    try {
-      scaffoldPresetIntoSquad(squadDir, wireableAgents, presetName);
-    } catch (err) {
-      // Scaffolding failed but charters were copied — surface as a single
-      // synthetic error result so the CLI can warn but does not mask the
-      // per-agent install results.
-      //
-      // Use a clearly non-agent sentinel for the `agent` field (`<scaffold>`,
-      // wrapped in angle brackets which validateName rejects) instead of the
-      // preset name. The preset name is a legal agent name, and if a preset
-      // happens to ship an agent that shares the preset's name (`squad
-      // preset apply geektime` where the preset includes an agent literally
-      // called `geektime`), the consumer of the results could not tell the
-      // synthetic scaffold-failure row apart from a real per-agent error.
-      results.push({
-        agent: '<scaffold>',
-        status: 'error',
-        reason: `Charters copied (see per-agent rows above), but failed to wire team.md/routing.md/casting state for preset '${presetName}': ${String(err)}`,
-      });
+  try {
+    scaffoldPresetIntoSquad(squadDir, manifest.agents, presetName, () => {
+      for (const agent of manifest.agents) {
+        try { validateName(agent.name, 'agent'); } catch {
+          results.push({ agent: agent.name, status: 'error', reason: `Invalid agent name: '${agent.name}'` });
+          continue;
+        }
+
+        const sourceDir = path.join(presetAgentsDir, agent.name);
+        const destDir = path.join(targetDir, agent.name);
+        if (!storage.existsSync(sourceDir)) {
+          results.push({ agent: agent.name, status: 'error', reason: 'Source agent directory missing in preset' });
+          continue;
+        }
+        if (storage.existsSync(destDir) && !options.force) {
+          results.push({ agent: agent.name, status: 'skipped', reason: 'Already exists (use --force to overwrite)' });
+          continue;
+        }
+
+        try {
+          if (options.force && storage.existsSync(destDir)) {
+            rmSync(destDir, { recursive: true, force: true });
+          }
+          copyDirRecursive(sourceDir, destDir);
+          results.push({ agent: agent.name, status: 'installed' });
+        } catch (err) {
+          results.push({ agent: agent.name, status: 'error', reason: String(err) });
+        }
+      }
+
+      if (storage.existsSync(savedRoutingPath)) {
+        if (options.force || options.overwriteRouting || !storage.existsSync(destRoutingPath)) {
+          const content = storage.readSync(savedRoutingPath);
+          if (content !== undefined) {
+            storage.mkdirSync(squadDir, { recursive: true });
+            storage.writeSync(destRoutingPath, content);
+          }
+        }
+      }
+
+      return manifest.agents.filter(a =>
+        results.some(r => r.agent === a.name && r.status !== 'error'),
+      );
+    });
+  } catch (err) {
+    for (const [destDir, snapshot] of agentSnapshots) {
+      restoreDirectory(destDir, snapshot);
     }
+    if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
+    else storage.writeSync(destRoutingPath, originalRouting);
+    results.length = 0;
+    results.push({
+      agent: '<scaffold>',
+      status: 'error',
+      reason: `Preset '${presetName}' was not changed because its coordinated scaffold failed: ${String(err)}`,
+    });
   }
 
   return results;
@@ -672,6 +664,51 @@ function copyDirRecursive(src: string, dest: string): void {
         storage.writeSync(destPath, content);
       }
     }
+  }
+}
+
+interface DirectorySnapshot {
+  existed: boolean;
+  directories: string[];
+  files: Array<{ relativePath: string; content: string }>;
+}
+
+function snapshotDirectory(directory: string): DirectorySnapshot {
+  if (!storage.existsSync(directory) || !isDirSync(directory)) {
+    return { existed: false, directories: [], files: [] };
+  }
+  const directories: string[] = [];
+  const files: Array<{ relativePath: string; content: string }> = [];
+  const visit = (current: string, relative: string): void => {
+    for (const entry of readdirSync(current, { encoding: 'utf-8' })) {
+      const fullPath = path.join(current, entry);
+      const relativePath = path.join(relative, entry);
+      const stat = lstatSync(fullPath);
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) {
+        directories.push(relativePath);
+        visit(fullPath, relativePath);
+      } else {
+        const content = storage.readSync(fullPath);
+        if (content !== undefined) files.push({ relativePath, content });
+      }
+    }
+  };
+  visit(directory, '');
+  return { existed: true, directories, files };
+}
+
+function restoreDirectory(directory: string, snapshot: DirectorySnapshot): void {
+  if (storage.existsSync(directory)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  if (!snapshot.existed) return;
+  storage.mkdirSync(directory, { recursive: true });
+  for (const relativePath of snapshot.directories) {
+    storage.mkdirSync(path.join(directory, relativePath), { recursive: true });
+  }
+  for (const file of snapshot.files) {
+    storage.writeSync(path.join(directory, file.relativePath), file.content);
   }
 }
 
