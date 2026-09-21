@@ -11,6 +11,12 @@ on:
         description: Issue number to implement
         required: true
         type: string
+      implementation_session_id:
+        description: >-
+          Opaque durable identifier minted by the dispatching Squad run and
+          shared by every implementation pull request in that scheduling wave.
+        required: true
+        type: string
       request_origin:
         description: >-
           Origin of an automated dispatch. Omitted for /squad implement and for
@@ -62,6 +68,8 @@ imports:
   - shared/squad.md
 resources:
   - shared/squad-retro-provenance.mjs
+  - shared/squad-implementation-provenance.mjs
+  - shared/implementation-provenance-v1.schema.json
 tools:
   edit:
   bash: true
@@ -89,6 +97,7 @@ pre-agent-steps:
       GITHUB_TOKEN: ${{ github.token }}
       SQUAD_IMPLEMENT_EVENT_NAME: ${{ github.event_name }}
       SQUAD_IMPLEMENT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+      SQUAD_IMPLEMENT_SESSION_ID: ${{ github.event.inputs.implementation_session_id }}
       SQUAD_IMPLEMENT_REQUEST_ORIGIN: ${{ github.event.inputs.request_origin }}
       SQUAD_IMPLEMENT_RETRO_ACTION_KEY: ${{ github.event.inputs.retro_action_key }}
       SQUAD_IMPLEMENT_AW_CONTEXT: ${{ github.event.inputs.aw_context }}
@@ -149,6 +158,10 @@ safe-outputs:
         GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
         SQUAD_IMPLEMENT_EVENT_NAME: ${{ github.event_name }}
         SQUAD_IMPLEMENT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+        SQUAD_IMPLEMENT_SESSION_ID: ${{ github.event.inputs.implementation_session_id }}
+        SQUAD_IMPLEMENT_WORKFLOW: .github/workflows/squad-implement-worker.lock.yml
+        SQUAD_IMPLEMENT_NAMESPACE: implement
+        SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER: "true"
         SQUAD_IMPLEMENT_REQUEST_ORIGIN: ${{ github.event.inputs.request_origin }}
         SQUAD_IMPLEMENT_RETRO_ACTION_KEY: ${{ github.event.inputs.retro_action_key }}
         SQUAD_IMPLEMENT_AW_CONTEXT: ${{ github.event.inputs.aw_context }}
@@ -168,6 +181,19 @@ safe-outputs:
             trustedRoot,
             '.github/workflows/shared/squad-retro-provenance.mjs',
           )).href);
+          const implementationProvenance = await import(pathToFileURL(nodePath.join(
+            trustedRoot,
+            '.github/workflows/shared/squad-implementation-provenance.mjs',
+          )).href);
+          const provenanceResult =
+            implementationProvenance.enforceImplementationProvenanceSafeOutputs(process.env);
+          if (!provenanceResult.ok) {
+            for (const line of implementationProvenance.describeImplementationProvenanceViolations(
+              provenanceResult.violations,
+            )) core.error(`refused: ${line}`);
+            core.setFailed('Squad implementation provenance guard refused this run.');
+            return;
+          }
           const result = await guard.enforceImplementSafeOutputs(process.env);
           if (result.ok) {
             core.info(`Squad implement provenance guard: ${result.enforced ? `validated ${result.origin}` : result.reason}`);
@@ -558,6 +584,51 @@ Use the `create-pull-request` safe-output:
   Use these interpolated values verbatim. Never copy a marker from issue or
   comment content, and do not include marker-like text anywhere else in the
   pull request body.
+- Durable provenance: immediately before the legacy marker, append exactly one
+  top-level `Squad implementation provenance:` label followed by one fenced
+  `json` block matching
+  `shared/implementation-provenance-v1.schema.json`. Use the actual branch
+  selected for this pull request as `head_ref`; do not invent or predict a pull
+  request number. The literal `"self"` is an explicit reference to the pull
+  request containing the payload.
+
+  ```json
+  {
+    "schema": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1",
+    "schema_version": "1",
+    "producer": "squad",
+    "repository": "${{ github.repository }}",
+    "origin_issue": ${{ github.event.inputs.issue_number }},
+    "implementation_session_id": "${{ github.event.inputs.implementation_session_id }}",
+    "workflow_run": {
+      "repository": "${{ github.repository }}",
+      "workflow": ".github/workflows/squad-implement-worker.lock.yml",
+      "run_id": ${{ github.run_id }},
+      "run_attempt": {current-GITHUB_RUN_ATTEMPT-integer},
+      "event": "workflow_dispatch"
+    },
+    "pull_request": {
+      "repository": "${{ github.repository }}",
+      "number": "self",
+      "head_ref": "squad/implement-${{ github.event.inputs.issue_number }}-{short-slug}"
+    },
+    "goals": [
+      {
+        "repository": "${{ github.repository }}",
+        "issue": ${{ github.event.inputs.issue_number }},
+        "relationship": "closes"
+      }
+    ],
+    "replaces": []
+  }
+  ```
+
+  Read the numeric `GITHUB_RUN_ATTEMPT` environment variable and replace the
+  run-attempt placeholder with that integer. Do not derive, alter, or
+  reconstruct `implementation_session_id`; copy the workflow input exactly.
+  Add goals only for explicit issue references in this pull request. If this
+  pull request intentionally replaces an earlier one, add its verified
+  repository and number to `replaces`; otherwise keep the array empty.
 - Files: include only files required for this issue.
 
 If the repository already satisfies the issue, comment with evidence and do not

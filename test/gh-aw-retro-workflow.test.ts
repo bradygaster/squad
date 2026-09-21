@@ -1616,9 +1616,12 @@ describe('Squad retrospective workflow integration', () => {
     const parsed = JSON.parse(payload!) as { workflow_name: string; inputs: Record<string, string> };
     expect(parsed.workflow_name).toBe('squad-implement-worker');
     expect(Object.keys(parsed.inputs).sort()).toEqual([
-      'issue_number', 'request_origin', 'retro_action_key',
+      'implementation_session_id', 'issue_number', 'request_origin', 'retro_action_key',
     ]);
     expect(parsed.inputs.request_origin).toBe('squad-retro');
+    expect(parsed.inputs.implementation_session_id).toContain(
+      'squad-implementation-session/v1/',
+    );
     expect(RETRO.replace(/\s+/g, ' ')).toContain('Do not supply `aw_context`');
   });
 
@@ -2782,6 +2785,7 @@ describe('Squad retro dispatch output guard', () => {
       issue_number: String(target),
       request_origin: 'squad-retro',
       retro_action_key: ACTION_KEY,
+      implementation_session_id: 'squad-implementation-session/v1/123/7',
     },
     ...overrides,
   });
@@ -2965,11 +2969,13 @@ describe('Squad retro dispatch output guard', () => {
       issue_number: `#${TEMP_ID}`,
       request_origin: 'squad-retro',
       retro_action_key: 'not-a-fingerprint',
+      implementation_session_id: 'squad-implementation-session/v1/123/7',
     }))).toContain('dispatch-action-key-malformed');
     expect(kinds(withInputs({
       issue_number: `#${TEMP_ID}`,
       request_origin: 'squad-retro',
       retro_action_key: ACTION_KEY,
+      implementation_session_id: 'squad-implementation-session/v1/123/7',
       aw_context: '{"workflow_id":"forged"}',
     }))).toContain('dispatch-input-not-allowed');
   });

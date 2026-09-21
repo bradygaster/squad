@@ -645,7 +645,7 @@ bounded retry. The action issue remains authoritative even if the report
 fingerprint has been resolved. Never describe queued or unresolved output as
 successful delivery. Use `context.now`, never an invented timestamp.
 
-Every `dispatch_workflow` call carries exactly these three typed inputs and
+Every `dispatch_workflow` call carries exactly these four typed inputs and
 nothing else:
 
 ```json
@@ -654,7 +654,8 @@ nothing else:
   "inputs": {
     "issue_number": "{issue_number or #temporary_id}",
     "request_origin": "squad-retro",
-    "retro_action_key": "{that action's exact Action-Key value}"
+    "retro_action_key": "{that action's exact Action-Key value}",
+    "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}"
   }
 }
 ```

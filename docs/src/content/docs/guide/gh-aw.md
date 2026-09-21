@@ -66,12 +66,17 @@ for workflow in squad squad-implement-worker squad-review squad-deps-worker squa
 done
 
 # Verify every local runtime module referenced by those workflows was installed
-for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
+for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance squad-implementation-provenance; do
   test -f ".github/workflows/shared/${runtime_module}.mjs" || {
     echo "MISSING shared/${runtime_module}.mjs"
     exit 1
   }
 done
+
+test -f ".github/workflows/shared/implementation-provenance-v1.schema.json" || {
+  echo "MISSING shared/implementation-provenance-v1.schema.json"
+  exit 1
+}
 
 # Strict compilation validates gh-aw's source contract; also reject JSON-escaped
 # operators inside emitted GitHub expressions, which GitHub rejects before jobs start.
@@ -439,6 +444,65 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
 | Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
 | Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
+
+### Implementation provenance
+
+Every pull request created by the general implementation worker or dependency
+worker carries a validated `Squad implementation provenance:` JSON block using
+schema
+`https://bradygaster.github.io/squad/schemas/implementation-provenance/v1`.
+The safe-output job validates the payload against the workflow inputs and
+current run before it creates the pull request. The general worker also keeps
+the existing standalone
+`<!-- squad:implement issue={issue} run={run} -->` marker unchanged for
+backward compatibility.
+
+The `implementation_session_id` is minted by the dispatching `squad` or
+`squad-retro` run as
+`squad-implementation-session/v1/{repository-id}/{dispatcher-run-id}`. Treat it
+as opaque:
+
+- **Lifetime:** one scheduling wave. All implementation and dependency workers
+  dispatched by that run share the identifier.
+- **Retries and reruns:** rerunning the same dispatcher run or worker preserves
+  the identifier; `workflow_run.run_attempt` identifies the concrete rerun.
+  A new `/squad implement`, retrospective reconciliation, or merge-refill
+  dispatcher run starts a new session.
+- **Multiple pull requests:** several PRs may share one session when a parent
+  issue dispatches several ready leaf tasks. Session ID is not a PR ID.
+- **Replacement pull requests:** `replaces` explicitly lists verified earlier
+  PRs. A replacement keeps the session only when retried within the same
+  scheduling wave; a later recovery run has a new session.
+- **Multiple goals:** `origin_issue` is the primary scheduling goal. `goals`
+  lists every explicitly referenced issue and whether the PR closes or merely
+  relates to it. A PR may have multiple goals, but it has one origin issue.
+- **Pull request reference:** `"number": "self"` means the containing PR. This
+  avoids predicting a number before the safe-output handler creates it while
+  still making the reference explicit.
+
+Do not derive a missing session identifier from branch names, actors,
+timestamps, workflow run IDs, closing text, or textual similarity. Missing
+provenance means the session is unknown. Consumers may continue to use the
+legacy implementation marker and closing references as their own explicit
+correlation sources, and may label branch correlation as inferred, but those
+sources do not manufacture a session ID.
+
+#### Compatibility and cache behavior
+
+| Producer evidence | Consumer treatment |
+|---|---|
+| Valid v1 payload | Authoritative for repository, origin, session, run, PR, goals, and replacements |
+| No v1 payload | Compatible legacy record; session remains unknown |
+| Malformed, duplicated, partial, or runtime-mismatched v1 payload | Invalid producer evidence; do not silently downgrade it to a valid v1 record |
+| Cached valid payload whose source cannot be refreshed | Retain only with an explicit stale/source-unavailable status |
+| Fresh source says the payload was removed or changed | Replace the cached source result; do not merge old fields into the new payload |
+
+Repositories upgrading from an older Squad workflow do not need to rewrite old
+pull requests. Recompile and commit the updated dispatcher, implementation
+worker, dependency worker, retrospective, shared validator, and schema
+together. Direct manual dispatches of either worker must now provide the
+required `implementation_session_id`; use a dispatcher run rather than
+inventing one from unrelated repository metadata.
 
 ### Where you can use slash commands
 

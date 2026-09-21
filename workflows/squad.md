@@ -1375,7 +1375,8 @@ slots.
 6. Classify every leaf with the **Dependency Route Decision** below.
 7. If the target has no open descendants (it is itself a leaf), call exactly the
    workflow-specific tool selected by that decision with `issue_number` set to
-   the target issue number.
+   the target issue number and `implementation_session_id` set to
+   `squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}`.
 8. Post a comment linking the dispatched worker run and naming the selected
    worker. The worker performs dependency, duplicate pull request, routing,
    implementation, and validation checks.
@@ -1435,12 +1436,14 @@ exactly one selected workflow-specific safe-output tool with this input:
 
 ```json
 {
-  "issue_number": "{leaf-issue-number}"
+  "issue_number": "{leaf-issue-number}",
+  "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}"
 }
 ```
 
 Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
-non-empty numeric `issue_number`. Emit exactly one workflow-specific dispatch
+non-empty numeric `issue_number` and the exact interpolated session identifier
+shown above. Emit exactly one workflow-specific dispatch
 per selected leaf task, and only report a leaf task as dispatched after the tool
 returns success. Never call both workers for one issue. If the dependency config
 guard denies a selected dependency task, leave that slot unused and report the

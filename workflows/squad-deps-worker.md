@@ -13,6 +13,12 @@ on:
         description: Issue number requesting a dependency change
         required: true
         type: string
+      implementation_session_id:
+        description: >-
+          Opaque durable identifier minted by the dispatching Squad run and
+          shared by every implementation pull request in that scheduling wave.
+        required: true
+        type: string
       aw_context:
         description: Originating agentic workflow context
         required: false
@@ -35,6 +41,9 @@ network:
     - node
 imports:
   - shared/squad.md
+resources:
+  - shared/squad-implementation-provenance.mjs
+  - shared/implementation-provenance-v1.schema.json
 tools:
   edit:
   bash: true
@@ -42,6 +51,37 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 safe-outputs:
+  steps:
+    - name: Checkout trusted base for the implementation provenance guard
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: refs/heads/${{ github.event.repository.default_branch }}
+        persist-credentials: false
+        path: .squad-trusted-base
+    - name: Enforce dependency implementation provenance before any output
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
+        SQUAD_IMPLEMENT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+        SQUAD_IMPLEMENT_SESSION_ID: ${{ github.event.inputs.implementation_session_id }}
+        SQUAD_IMPLEMENT_WORKFLOW: .github/workflows/squad-deps-worker.lock.yml
+        SQUAD_IMPLEMENT_NAMESPACE: deps
+        SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER: "false"
+      with:
+        script: |
+          const nodePath = require('node:path');
+          const { pathToFileURL } = require('node:url');
+          const trustedRoot = nodePath.join(process.env.GITHUB_WORKSPACE, '.squad-trusted-base');
+          const provenance = await import(pathToFileURL(nodePath.join(
+            trustedRoot,
+            '.github/workflows/shared/squad-implementation-provenance.mjs',
+          )).href);
+          const result = provenance.enforceImplementationProvenanceSafeOutputs(process.env);
+          if (result.ok) return;
+          for (const line of provenance.describeImplementationProvenanceViolations(
+            result.violations,
+          )) core.error(`refused: ${line}`);
+          core.setFailed('Squad implementation provenance guard refused this run.');
   create-pull-request:
     title-prefix: "[squad-deps] "
     labels: [squad]
@@ -198,6 +238,46 @@ Use the `create-pull-request` safe-output:
 - Title: `Update dependencies for #${{ github.event.inputs.issue_number }}: {issue-title}`
 - Body: summarize the dependency change and validation, including
   `Closes #${{ github.event.inputs.issue_number }}`.
+- Durable provenance: append exactly one top-level
+  `Squad implementation provenance:` label followed by one fenced `json` block
+  matching `shared/implementation-provenance-v1.schema.json`:
+
+  ```json
+  {
+    "schema": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1",
+    "schema_version": "1",
+    "producer": "squad",
+    "repository": "${{ github.repository }}",
+    "origin_issue": ${{ github.event.inputs.issue_number }},
+    "implementation_session_id": "${{ github.event.inputs.implementation_session_id }}",
+    "workflow_run": {
+      "repository": "${{ github.repository }}",
+      "workflow": ".github/workflows/squad-deps-worker.lock.yml",
+      "run_id": ${{ github.run_id }},
+      "run_attempt": {current-GITHUB_RUN_ATTEMPT-integer},
+      "event": "workflow_dispatch"
+    },
+    "pull_request": {
+      "repository": "${{ github.repository }}",
+      "number": "self",
+      "head_ref": "squad/deps-${{ github.event.inputs.issue_number }}-{short-slug}"
+    },
+    "goals": [
+      {
+        "repository": "${{ github.repository }}",
+        "issue": ${{ github.event.inputs.issue_number }},
+        "relationship": "closes"
+      }
+    ],
+    "replaces": []
+  }
+  ```
+
+  Read the numeric `GITHUB_RUN_ATTEMPT` environment variable and replace the
+  run-attempt placeholder with that integer. Use the actual selected branch as
+  `head_ref`. Copy `implementation_session_id` exactly; never derive it from
+  the branch, actor, timestamps, or text. Add only explicit goals and verified
+  replacement pull request references.
 - Files: include only files required for this issue.
 
 If the repository already satisfies the issue, comment with evidence and do

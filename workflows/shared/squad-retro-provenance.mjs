@@ -16,7 +16,12 @@ export const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 export const NUMERIC_ID = /^[1-9][0-9]*$/;
 export const IMPLEMENT_PULL_MARKER = /^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$/;
 export const IMPLEMENT_PULL_BRANCH = /^squad\/implement-([1-9][0-9]*)-[a-z0-9][a-z0-9-]*$/;
-export const DISPATCH_INPUT_KEYS = Object.freeze(['issue_number', 'request_origin', 'retro_action_key']);
+export const DISPATCH_INPUT_KEYS = Object.freeze([
+  'issue_number',
+  'request_origin',
+  'retro_action_key',
+  'implementation_session_id',
+]);
 export const IMPLEMENT_PULL_SCAN_MAX_PAGES = 5;
 export const ACTION_COMMENT_MAX_PAGES = 2;
 export const IMPLEMENT_GUARD_API_REQUEST_CEILING = 2 + ACTION_COMMENT_MAX_PAGES + IMPLEMENT_PULL_SCAN_MAX_PAGES;
