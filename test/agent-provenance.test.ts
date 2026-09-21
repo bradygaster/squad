@@ -9,7 +9,15 @@ import {
 } from '@bradygaster/squad-sdk/casting';
 
 function fixture(
-  name: 'valid' | 'partial' | 'unsupported' | 'binding_valid' | 'binding_partial',
+  name:
+    | 'valid'
+    | 'partial'
+    | 'unsupported'
+    | 'binding_valid'
+    | 'binding_partial'
+    | 'binding_epic_conflict'
+    | 'binding_inconsistent_epic_sets'
+    | 'binding_mixed_omission',
 ): unknown {
   const cases = JSON.parse(
     readFileSync(join('test', 'fixtures', 'agent-provenance', 'cases.json'), 'utf8'),
@@ -302,6 +310,75 @@ describe('agent identity provenance contract', () => {
     });
   });
 
+  it('accepts an older binding revision and complete per-epic omission semantics', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const bindings = fixture('binding_inconsistent_epic_sets') as Array<Record<string, unknown>>;
+    bindings[0]!.registry_revision = 1;
+    bindings[1]!.registry_revision = 1;
+    bindings[1]!.epic_agent_ids = ['runtime-engineer'];
+
+    expect(parseWorkAgentBindings(bindings, registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })).toEqual([
+      expect.objectContaining({
+        registry_revision: 1,
+        agent_id: 'runtime-engineer',
+        epic_agent_ids: ['runtime-engineer'],
+        epic_identity_omission_reason: 'partial',
+      }),
+      expect.objectContaining({
+        registry_revision: 1,
+        agent_id: null,
+        epic_agent_ids: ['runtime-engineer'],
+        epic_identity_omission_reason: 'partial',
+      }),
+    ]);
+  });
+
+  it.each([
+    ['cross-row epic conflict', 'binding_epic_conflict'],
+    ['inconsistent epic agent sets', 'binding_inconsistent_epic_sets'],
+    ['mixed epic omission semantics', 'binding_mixed_omission'],
+  ] as const)('fails closed on %s', (_case, fixtureName) => {
+    expect(() => parseWorkAgentBindings(
+      fixture(fixtureName),
+      parseAgentProvenanceRegistry(fixture('valid')),
+      {
+        repository: 'bradygaster/squad',
+        originIssue: 45,
+        artifact: 'activated',
+      },
+    )).toThrow(/malformed or partial/);
+  });
+
+  it('rejects reverse epic conflicts, mixed revisions, and ambiguous complete omissions', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const context = {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated' as const,
+    };
+
+    const reverseConflict = fixture('binding_epic_conflict') as Array<Record<string, unknown>>;
+    reverseConflict[1]!.epic = '1.2';
+    reverseConflict[1]!.epic_issue = '#2065';
+    expect(() => parseWorkAgentBindings(reverseConflict, registry, context))
+      .toThrow(/malformed or partial/);
+
+    const mixedRevisions = fixture('binding_epic_conflict') as Array<Record<string, unknown>>;
+    mixedRevisions[1]!.epic = '1.2';
+    mixedRevisions[1]!.registry_revision = 1;
+    expect(() => parseWorkAgentBindings(mixedRevisions, registry, context))
+      .toThrow(/malformed or partial/);
+
+    const ambiguousComplete = fixture('binding_valid') as Array<Record<string, unknown>>;
+    ambiguousComplete[0]!.epic_identity_omission_reason = 'partial';
+    expect(() => parseWorkAgentBindings(ambiguousComplete, registry, context))
+      .toThrow(/malformed or partial/);
+  });
+
   it('fails closed on missing, partial, cross-repository, or future-revision bindings', () => {
     const registry = parseAgentProvenanceRegistry(fixture('valid'));
     const context = {
@@ -325,6 +402,10 @@ describe('agent identity provenance contract', () => {
     const duplicated = fixture('binding_valid') as Array<Record<string, unknown>>;
     duplicated.push({ ...duplicated[0]!, issue: '#2067' });
     expect(() => parseWorkAgentBindings(duplicated, registry, context))
+      .toThrow(/malformed or partial/);
+    const duplicatedIssue = fixture('binding_valid') as Array<Record<string, unknown>>;
+    duplicatedIssue.push({ ...duplicatedIssue[0]!, task: '2' });
+    expect(() => parseWorkAgentBindings(duplicatedIssue, registry, context))
       .toThrow(/malformed or partial/);
   });
 });

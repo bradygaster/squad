@@ -3,11 +3,25 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { resolveSquadHome, ensureSquadHome, resolvePresetsDir } from '@bradygaster/squad-sdk/resolution';
-import { listPresets, loadPreset, applyPreset, savePreset, seedBuiltinPresets } from '@bradygaster/squad-sdk/presets';
+import {
+  listPresets,
+  loadPreset,
+  applyPreset,
+  savePreset,
+  seedBuiltinPresets,
+} from '@bradygaster/squad-sdk/presets';
+import {
+  parseAgentProvenanceRegistry,
+  reconcileAgentProvenanceRegistry,
+} from '@bradygaster/squad-sdk/casting';
+import {
+  _setPresetRegistryHooksForTesting,
+  scaffoldPresetIntoSquad,
+} from '../packages/squad-sdk/src/presets/scaffold.js';
 
 const TMP = join(process.cwd(), `.test-presets-${randomBytes(4).toString('hex')}`);
 
@@ -36,6 +50,7 @@ describe('resolveSquadHome()', () => {
   });
 
   afterEach(() => {
+    _setPresetRegistryHooksForTesting(null);
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     if (originalEnv !== undefined) {
       process.env['SQUAD_HOME'] = originalEnv;
@@ -82,6 +97,7 @@ describe('ensureSquadHome()', () => {
   });
 
   afterEach(() => {
+    _setPresetRegistryHooksForTesting(null);
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     if (originalEnv !== undefined) {
       process.env['SQUAD_HOME'] = originalEnv;
@@ -245,6 +261,7 @@ describe('applyPreset()', () => {
   });
 
   afterEach(() => {
+    _setPresetRegistryHooksForTesting(null);
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     if (originalEnv !== undefined) {
       process.env['SQUAD_HOME'] = originalEnv;
@@ -440,6 +457,13 @@ describe('applyPreset()', () => {
     applyPreset('starter', agentsDir);
 
     const registry = JSON.parse(readFileSync(join(squadDir, 'casting', 'registry.json'), 'utf-8'));
+    expect(parseAgentProvenanceRegistry(registry)).toMatchObject({
+      completeness: 'complete',
+      registry: {
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+      },
+    });
     expect(registry.agents).toHaveProperty('dev');
     expect(registry.agents.dev.persistent_name).toBe('dev');
     expect(registry.agents.dev.universe).toBe('preset:starter');
@@ -457,6 +481,85 @@ describe('applyPreset()', () => {
     const policy = JSON.parse(readFileSync(join(squadDir, 'casting', 'policy.json'), 'utf-8'));
     expect(policy.universe_allowlist).toContain('*');
     expect(policy.max_capacity).toBeGreaterThan(0);
+  });
+
+  it('retries a concurrent registry change without losing either update', () => {
+    const squadDir = join(TMP, 'target-casting-concurrent');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    const registryPath = join(castingDir, 'registry.json');
+    const initial = reconcileAgentProvenanceRegistry(undefined, [{
+      id: 'existing',
+      displayName: 'Existing',
+      role: 'Lead',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-20T20:00:00.000Z' });
+    writeFileSync(registryPath, JSON.stringify(initial, null, 2) + '\n');
+
+    _setPresetRegistryHooksForTesting({
+      afterSnapshot: ({ attempt }) => {
+        if (attempt !== 1) return;
+        const current = JSON.parse(readFileSync(registryPath, 'utf8')) as unknown;
+        const concurrent = reconcileAgentProvenanceRegistry(current, [{
+          id: 'concurrent',
+          displayName: 'Concurrent',
+          role: 'Reviewer',
+          universe: 'descriptive',
+        }], {
+          generatedAt: '2026-09-21T20:00:00.000Z',
+          retireMissing: false,
+        });
+        writeFileSync(registryPath, JSON.stringify(concurrent, null, 2) + '\n');
+      },
+    });
+
+    scaffoldPresetIntoSquad(
+      squadDir,
+      [{ name: 'dev', role: 'developer' }],
+      'starter',
+    );
+
+    const finalRegistry = parseAgentProvenanceRegistry(
+      JSON.parse(readFileSync(registryPath, 'utf8')),
+    );
+    expect(finalRegistry.completeness).toBe('complete');
+    expect(Object.keys(finalRegistry.registry.agents).sort())
+      .toEqual(['concurrent', 'dev', 'existing']);
+    expect(finalRegistry.registry.revision).toBe(3);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
+  });
+
+  it('leaves the prior registry intact when the atomic commit fails', () => {
+    const squadDir = join(TMP, 'target-casting-failure');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    const registryPath = join(castingDir, 'registry.json');
+    const initial = reconcileAgentProvenanceRegistry(undefined, [{
+      id: 'existing',
+      displayName: 'Existing',
+      role: 'Lead',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-20T20:00:00.000Z' });
+    const originalRegistry = JSON.stringify(initial, null, 2) + '\n';
+    writeFileSync(registryPath, originalRegistry);
+
+    _setPresetRegistryHooksForTesting({
+      beforeRename: () => {
+        throw new Error('injected atomic rename failure');
+      },
+    });
+
+    expect(() => scaffoldPresetIntoSquad(
+      squadDir,
+      [{ name: 'dev', role: 'developer' }],
+      'starter',
+    )).toThrow(/injected atomic rename failure/);
+    expect(readFileSync(registryPath, 'utf8')).toBe(originalRegistry);
+    expect(readdirSync(castingDir).filter(name => name.startsWith('registry.json.tmp-')))
+      .toEqual([]);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
+    expect(parseAgentProvenanceRegistry(JSON.parse(originalRegistry)).completeness)
+      .toBe('complete');
   });
 
   it('preserves built-in role status labels in team.md (Scribe/Ralph/Rai/Fact Checker) — review on #1293', () => {

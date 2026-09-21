@@ -126,12 +126,17 @@ binding revision newer than the available registry is stale and unavailable.
 Missing IDs are allowed only for explicitly external, non-roster, or legacy
 plan assignments: `agent_id` is `null` and `identity_omission_reason` explains
 why. If any epic member lacks an ID, its records add
-`epic_identity_omission_reason: "partial"` and list only known IDs.
+`epic_identity_omission_reason: "partial"` and list only known IDs. Every row
+for an epic carries the same sorted `epic_agent_ids` set, equal to all known
+task-agent IDs for that epic. The partial marker appears on every row if any
+task omits `agent_id`, and on no row when the epic identity set is complete.
+One binding document uses one registry revision and maps each epic identifier
+to exactly one epic issue, and each epic issue back to exactly one identifier.
 
 Consumers fail closed for a missing, empty, malformed, partially valid,
 wrong-repository, wrong-origin, unsupported-version, unknown-ID, or
 future-revision binding array, and for duplicate task/issue bindings or
-conflicting epic identity sets. A partial registry may still support plain
+conflicting epic mappings, revisions, identity sets, or omission markers. A partial registry may still support plain
 metadata rendering, but it cannot authoritatively resolve work bindings. They
 must not salvage valid-looking rows or infer
 the missing identity. Fetching the activation artifact requires Issues read;

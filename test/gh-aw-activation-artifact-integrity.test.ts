@@ -259,6 +259,7 @@ function binding(overrides: Partial<Record<string, unknown>> = {}) {
 const presentLabels = new Map([
   [42, new Set(['squad', 'squad:kint'])],
   [43, new Set(['squad', 'squad:kint'])],
+  [44, new Set(['squad', 'squad:kint'])],
 ]);
 const registry = parseAgentRegistry({
   schema: 'squad-agent-provenance/v1',
@@ -361,6 +362,55 @@ describe.each([
         1,
         authority,
       )).toMatchObject({ checked: 1 });
+    });
+
+    it('rejects incomplete epic id sets, mixed omission semantics, and mixed revisions', () => {
+      const known = binding({
+        epic_identity_omission_reason: 'partial',
+      });
+      const omitted = binding({
+        task: '2',
+        issue: 44,
+        agent_id: null,
+        identity_omission_reason: 'external-agent',
+        epic_agent_ids: [],
+        epic_identity_omission_reason: 'partial',
+      });
+      expect(() => validateActivation(
+        { ...artifact(), bindings: [known, omitted] },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toThrow(/inconsistent epic_agent_ids|complete epic task-agent set/);
+
+      expect(() => validateActivation(
+        {
+          ...artifact(),
+          bindings: [
+            known,
+            { ...omitted, epic_agent_ids: ['runtime-engineer'], epic_identity_omission_reason: undefined },
+          ],
+        },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toThrow(/every binding requires partial omission/);
+
+      expect(() => validateActivation(
+        {
+          ...artifact(),
+          bindings: [
+            binding(),
+            binding({ task: '2', issue: 44, registry_revision: 1 }),
+          ],
+        },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toThrow(/registry_revision conflicts/);
     });
 
     it.each([

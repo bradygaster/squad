@@ -338,12 +338,6 @@ export function parseWorkAgentBindings(
           message: 'must be partial when present',
         });
       }
-      if (epicAgentIds.length === 0 && epicIdentityOmissionReason !== 'partial') {
-        diagnostics.push({
-          path: `${path}.epic_identity_omission_reason`,
-          message: 'is required when no epic agent id is available',
-        });
-      }
     }
     if (issue && issues.has(issue)) {
       diagnostics.push({ path: `${path}.issue`, message: 'duplicates another work binding' });
@@ -371,7 +365,7 @@ export function parseWorkAgentBindings(
         epic,
         epic_issue: epicIssue,
         agent_id: agentId,
-        epic_agent_ids: epicAgentIds,
+        epic_agent_ids: [...epicAgentIds].sort(),
         ...(identityOmissionReason
           ? { identity_omission_reason: identityOmissionReason as WorkAgentBinding['identity_omission_reason'] }
           : {}),
@@ -381,6 +375,80 @@ export function parseWorkAgentBindings(
       });
     }
   }
+  if (diagnostics.length > 0) {
+    throw new AgentProvenanceError('Work-agent bindings are malformed or partial', diagnostics);
+  }
+
+  const expectedRegistryRevision = bindings[0]!.registry_revision;
+  const epicIssueByIdentifier = new Map<string, string>();
+  const epicIdentifierByIssue = new Map<string, string>();
+  const bindingsByEpicIssue = new Map<string, Array<{ binding: WorkAgentBinding; index: number }>>();
+
+  for (const [index, binding] of bindings.entries()) {
+    const path = `bindings.${index}`;
+    if (binding.registry_revision !== expectedRegistryRevision) {
+      diagnostics.push({
+        path: `${path}.registry_revision`,
+        message: `must match the document registry revision ${expectedRegistryRevision}`,
+      });
+    }
+
+    const priorEpicIssue = epicIssueByIdentifier.get(binding.epic);
+    if (priorEpicIssue !== undefined && priorEpicIssue !== binding.epic_issue) {
+      diagnostics.push({
+        path: `${path}.epic_issue`,
+        message: `epic ${binding.epic} maps to multiple epic issues`,
+      });
+    } else {
+      epicIssueByIdentifier.set(binding.epic, binding.epic_issue);
+    }
+
+    const priorEpicIdentifier = epicIdentifierByIssue.get(binding.epic_issue);
+    if (priorEpicIdentifier !== undefined && priorEpicIdentifier !== binding.epic) {
+      diagnostics.push({
+        path: `${path}.epic`,
+        message: `epic issue ${binding.epic_issue} maps to multiple epic identifiers`,
+      });
+    } else {
+      epicIdentifierByIssue.set(binding.epic_issue, binding.epic);
+    }
+
+    const epicBindings = bindingsByEpicIssue.get(binding.epic_issue) ?? [];
+    epicBindings.push({ binding, index });
+    bindingsByEpicIssue.set(binding.epic_issue, epicBindings);
+  }
+
+  for (const epicBindings of bindingsByEpicIssue.values()) {
+    const expectedAgentIds = [...new Set(
+      epicBindings
+        .map(({ binding }) => binding.agent_id)
+        .filter((agentId): agentId is string => agentId !== null),
+    )].sort();
+    const hasIdentityOmission = epicBindings.some(({ binding }) => binding.agent_id === null);
+
+    for (const { binding, index } of epicBindings) {
+      const path = `bindings.${index}`;
+      if (binding.epic_agent_ids.join('\0') !== expectedAgentIds.join('\0')) {
+        diagnostics.push({
+          path: `${path}.epic_agent_ids`,
+          message: `must equal the complete agent id set for epic ${binding.epic}`,
+        });
+      }
+      if (hasIdentityOmission && binding.epic_identity_omission_reason !== 'partial') {
+        diagnostics.push({
+          path: `${path}.epic_identity_omission_reason`,
+          message: 'must be partial on every binding when any epic task omits agent_id',
+        });
+      }
+      if (!hasIdentityOmission && binding.epic_identity_omission_reason !== undefined) {
+        diagnostics.push({
+          path: `${path}.epic_identity_omission_reason`,
+          message: 'must be absent when every epic task has agent_id',
+        });
+      }
+    }
+  }
+
   if (diagnostics.length > 0) {
     throw new AgentProvenanceError('Work-agent bindings are malformed or partial', diagnostics);
   }

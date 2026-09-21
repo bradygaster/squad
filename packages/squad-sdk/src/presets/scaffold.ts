@@ -16,6 +16,7 @@
  * @module presets/scaffold
  */
 
+import { closeSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -25,10 +26,94 @@ const storage = new FSStorageProvider();
 
 const MEMBERS_HEADER = '## Members';
 const ROUTING_HEADER = '## Work Type → Agent';
+const REGISTRY_UPDATE_MAX_ATTEMPTS = 8;
+const REGISTRY_LOCK_TIMEOUT_MS = 30_000;
+const REGISTRY_LOCK_RETRY_MS = 25;
+const syncWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
+interface PresetRegistryTestHooks {
+  afterSnapshot?: (context: { registryPath: string; attempt: number }) => void;
+  beforeRename?: (context: { registryPath: string; tempPath: string; attempt: number }) => void;
+}
+
+let presetRegistryTestHooks: PresetRegistryTestHooks | null = null;
+
+/** @internal Test-only deterministic conflict/failure injection. */
+export function _setPresetRegistryHooksForTesting(
+  hooks: PresetRegistryTestHooks | null,
+): void {
+  presetRegistryTestHooks = hooks;
+}
 
 interface ScaffoldOptions {
   /** Universe tag for the casting registry. Defaults to `preset:<name>`. */
   universe: string;
+}
+
+function waitSync(milliseconds: number): void {
+  Atomics.wait(syncWaitBuffer, 0, 0, milliseconds);
+}
+
+function acquireCastingRegistryLock(lockPath: string): () => void {
+  const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
+  while (true) {
+    try {
+      const descriptor = openSync(lockPath, 'wx');
+      try {
+        writeSync(descriptor, `${process.pid}\n`, undefined, 'utf8');
+      } catch (error) {
+        closeSync(descriptor);
+        unlinkSync(lockPath);
+        throw error;
+      }
+      return () => {
+        try {
+          closeSync(descriptor);
+        } finally {
+          try {
+            unlinkSync(lockPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+        }
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for concurrent cast lock: ${lockPath}`);
+      }
+      waitSync(REGISTRY_LOCK_RETRY_MS);
+    }
+  }
+}
+
+function readRegistrySnapshot(
+  registryPath: string,
+): { raw: string | undefined; value: unknown } {
+  const raw = storage.readSync(registryPath);
+  if (!raw?.trim()) return { raw, value: undefined };
+  try {
+    return { raw, value: JSON.parse(raw) };
+  } catch (error) {
+    throw new Error(
+      `Cannot update malformed casting/registry.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function atomicWriteRegistry(
+  registryPath: string,
+  content: string,
+  attempt: number,
+): void {
+  const tempPath = `${registryPath}.tmp-${process.pid}-${Date.now()}-${attempt}`;
+  try {
+    storage.writeSync(tempPath, content);
+    presetRegistryTestHooks?.beforeRename?.({ registryPath, tempPath, attempt });
+    storage.renameSync(tempPath, registryPath);
+  } finally {
+    storage.deleteSync(tempPath);
+  }
 }
 
 /**
@@ -315,28 +400,44 @@ function writeOrMergeCastingState(
 
   // ---- registry.json ----
   const registryPath = path.join(castingDir, 'registry.json');
-  let existingRegistry: unknown = undefined;
-  if (storage.existsSync(registryPath)) {
+  const registryLockPath = path.join(castingDir, 'registry.lock');
+  const candidates = agents.map((agent) => ({
+    id: agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    displayName: agent.name,
+    role: agent.role,
+    universe: options.universe,
+  }));
+  let registry: ReturnType<typeof reconcileAgentProvenanceRegistry> | undefined;
+  for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
+    const snapshot = readRegistrySnapshot(registryPath);
+    const candidateRegistry = reconcileAgentProvenanceRegistry(
+      snapshot.value,
+      candidates,
+      { generatedAt: now, retireMissing: false },
+    );
+    presetRegistryTestHooks?.afterSnapshot?.({ registryPath, attempt });
+
+    const releaseLock = acquireCastingRegistryLock(registryLockPath);
     try {
-      const raw = storage.readSync(registryPath) ?? '{}';
-      existingRegistry = JSON.parse(raw);
-    } catch (error) {
-      throw new Error(
-        `Cannot update malformed casting/registry.json: ${error instanceof Error ? error.message : String(error)}`,
+      if (storage.readSync(registryPath) !== snapshot.raw) {
+        continue;
+      }
+      atomicWriteRegistry(
+        registryPath,
+        JSON.stringify(candidateRegistry, null, 2) + '\n',
+        attempt,
       );
+      registry = candidateRegistry;
+      break;
+    } finally {
+      releaseLock();
     }
   }
-  const registry = reconcileAgentProvenanceRegistry(
-    existingRegistry,
-    agents.map((agent) => ({
-      id: agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-      displayName: agent.name,
-      role: agent.role,
-      universe: options.universe,
-    })),
-    { generatedAt: now, retireMissing: false },
-  );
-  storage.writeSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+  if (!registry) {
+    throw new Error(
+      `Casting registry changed during ${REGISTRY_UPDATE_MAX_ATTEMPTS} update attempts`,
+    );
+  }
 
   // ---- history.json ----
   const historyPath = path.join(castingDir, 'history.json');

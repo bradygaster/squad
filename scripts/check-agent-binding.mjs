@@ -365,9 +365,6 @@ function validateBindingAuthority(binding, issue, artifact, authority) {
       binding.epic_identity_omission_reason !== 'partial') {
     throw new Error(`issue #${issue}: invalid epic identity omission reason`);
   }
-  if (epicAgentIds.length === 0 && binding.epic_identity_omission_reason !== 'partial') {
-    throw new Error(`issue #${issue}: empty epic_agent_ids requires partial omission`);
-  }
   return { epicAgentIds: epicAgentIds.sort() };
 }
 
@@ -434,6 +431,7 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
   const seenTasks = new Set();
   const epics = new Map();
   const epicIssuesByIdentifier = new Map();
+  let expectedRegistryRevision;
   for (const rawBinding of artifact.bindings) {
     const { issue, epicIssue, epicAgents, epicAgentIds, expected } =
       validateTaskBinding(rawBinding, roster, artifact, authority);
@@ -443,6 +441,10 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
     if (authority) {
       if (seenTasks.has(binding.task)) throw new Error(`task ${binding.task}: duplicate binding`);
       seenTasks.add(binding.task);
+      expectedRegistryRevision ??= binding.registry_revision;
+      if (binding.registry_revision !== expectedRegistryRevision) {
+        throw new Error(`issue #${issue}: registry_revision conflicts with other bindings`);
+      }
     }
     validateActualLabels(issue, labelsByIssue.get(issue), expected);
 
@@ -473,6 +475,24 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
   }
 
   for (const [epicIssue, epic] of epics) {
+    if (authority) {
+      const expectedAgentIds = [...new Set(
+        epic.bindings.map(binding => binding.agent_id).filter(agentId => agentId !== null),
+      )].sort();
+      const hasIdentityOmission = epic.bindings.some(binding => binding.agent_id === null);
+      for (const binding of epic.bindings) {
+        const actualAgentIds = [...binding.epic_agent_ids].sort();
+        if (actualAgentIds.join('\0') !== expectedAgentIds.join('\0')) {
+          throw new Error(`epic issue #${epicIssue}: epic_agent_ids do not match the complete epic task-agent set`);
+        }
+        if (hasIdentityOmission && binding.epic_identity_omission_reason !== 'partial') {
+          throw new Error(`epic issue #${epicIssue}: every binding requires partial omission when an epic task omits agent_id`);
+        }
+        if (!hasIdentityOmission && binding.epic_identity_omission_reason !== undefined) {
+          throw new Error(`epic issue #${epicIssue}: partial omission conflicts with a complete epic agent set`);
+        }
+      }
+    }
     const expected = epic.agents.length > 1
       ? { label: null, omission: 'multi-owner' }
       : expectedLabel(epic.agents[0], roster);
