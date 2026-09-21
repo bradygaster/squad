@@ -17,7 +17,8 @@ function fixture(
     | 'binding_partial'
     | 'binding_epic_conflict'
     | 'binding_inconsistent_epic_sets'
-    | 'binding_mixed_omission',
+    | 'binding_mixed_omission'
+    | 'binding_mixed_revision',
 ): unknown {
   const cases = JSON.parse(
     readFileSync(join('test', 'fixtures', 'agent-provenance', 'cases.json'), 'utf8'),
@@ -406,6 +407,79 @@ describe('agent identity provenance contract', () => {
     const duplicatedIssue = fixture('binding_valid') as Array<Record<string, unknown>>;
     duplicatedIssue.push({ ...duplicatedIssue[0]!, task: '2' });
     expect(() => parseWorkAgentBindings(duplicatedIssue, registry, context))
+      .toThrow(/malformed or partial/);
+  });
+
+  it.each([
+    ['inconsistent epic identity sets', 'binding_inconsistent_epic_sets'],
+    ['mixed omissions without complete partial markers', 'binding_mixed_omission'],
+    ['mixed registry revisions', 'binding_mixed_revision'],
+  ] as const)('fails closed on %s across rows', (_case, fixtureName) => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    expect(() => parseWorkAgentBindings(fixture(fixtureName), registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })).toThrow(/malformed or partial/);
+  });
+
+  it('accepts one reconciled partial epic set when every row marks the omission', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const bindings = fixture('binding_mixed_omission') as Array<Record<string, unknown>>;
+    bindings[0]!.epic_identity_omission_reason = 'partial';
+
+    expect(parseWorkAgentBindings(bindings, registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })).toHaveLength(2);
+  });
+
+  it.each([
+    ['producer', 'other-producer'],
+    ['repository', 'other/repository'],
+    ['origin_issue', 99],
+  ] as const)('rejects a cross-row %s identity conflict', (field, conflictingValue) => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const bindings = fixture('binding_valid') as Array<Record<string, unknown>>;
+    bindings.push({
+      ...bindings[0]!,
+      task: '2',
+      issue: '#2067',
+      [field]: conflictingValue,
+    });
+    expect(() => parseWorkAgentBindings(bindings, registry, {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated',
+    })).toThrow(/malformed or partial/);
+  });
+
+  it('fails closed on conflicting epic-to-issue relationships', () => {
+    const registry = parseAgentProvenanceRegistry(fixture('valid'));
+    const context = {
+      repository: 'bradygaster/squad',
+      originIssue: 45,
+      artifact: 'activated' as const,
+    };
+    const sameEpicDifferentIssue = fixture('binding_valid') as Array<Record<string, unknown>>;
+    sameEpicDifferentIssue.push({
+      ...sameEpicDifferentIssue[0]!,
+      task: '2',
+      issue: '#2067',
+      epic_issue: '#2099',
+    });
+    expect(() => parseWorkAgentBindings(sameEpicDifferentIssue, registry, context))
+      .toThrow(/malformed or partial/);
+
+    const sameIssueDifferentEpic = fixture('binding_valid') as Array<Record<string, unknown>>;
+    sameIssueDifferentEpic.push({
+      ...sameIssueDifferentEpic[0]!,
+      task: '2',
+      issue: '#2067',
+      epic: '1.2',
+    });
+    expect(() => parseWorkAgentBindings(sameIssueDifferentEpic, registry, context))
       .toThrow(/malformed or partial/);
   });
 });

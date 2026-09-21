@@ -3,9 +3,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdirSync, readdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  rmSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { resolveSquadHome, ensureSquadHome, resolvePresetsDir } from '@bradygaster/squad-sdk/resolution';
 import {
   listPresets,
@@ -560,6 +568,186 @@ describe('applyPreset()', () => {
     expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
     expect(parseAgentProvenanceRegistry(JSON.parse(originalRegistry)).completeness)
       .toBe('complete');
+  });
+
+  it('serializes a competing preset registry writer without losing revisions or history', async () => {
+    const homeDir = join(TMP, 'apply-concurrent');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-concurrent/presets/starter/agents/dev');
+    writeFile('apply-concurrent/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('apply-concurrent/presets/starter/agents/dev/charter.md', '# Dev');
+
+    const squadDir = join(TMP, 'target-concurrent');
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(agentsDir, { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+
+    const holder = spawn(process.execPath, [
+      '--input-type=module',
+      '-e',
+      `
+        import {
+          closeSync, mkdirSync, openSync, unlinkSync, writeFileSync,
+        } from 'node:fs';
+        import { join } from 'node:path';
+        const castingDir = process.argv[1];
+        mkdirSync(castingDir, { recursive: true });
+        const lockPath = join(castingDir, 'registry.lock');
+        const descriptor = openSync(lockPath, 'wx');
+        process.stdout.write('locked\\n');
+        setTimeout(() => {
+          const now = '2026-09-21T22:00:00.000Z';
+          writeFileSync(join(castingDir, 'registry.json'), JSON.stringify({
+            schema: 'squad-agent-provenance/v1',
+            schema_version: 1,
+            revision: 1,
+            generated_at: now,
+            agents: {
+              competitor: {
+                display_name: 'competitor',
+                persistent_name: 'competitor',
+                role: 'reviewer',
+                universe: 'preset:competitor',
+                status: 'active',
+                created_at: now,
+                updated_at: now,
+              },
+            },
+          }, null, 2) + '\\n');
+          writeFileSync(join(castingDir, 'history.json'), JSON.stringify({
+            assignment_cast_snapshots: {
+              'preset-competitor-revision-1': {
+                created_at: now,
+                agents: ['competitor'],
+                universe: 'preset:competitor',
+              },
+            },
+            universe_usage_history: [{
+              universe: 'preset:competitor',
+              used_at: now,
+            }],
+          }, null, 2) + '\\n');
+          closeSync(descriptor);
+          unlinkSync(lockPath);
+        }, 200);
+      `,
+      castingDir,
+    ], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const holderExit = new Promise<void>((resolve, reject) => {
+      holder.once('error', reject);
+      holder.once('exit', (code) => code === 0
+        ? resolve()
+        : reject(new Error(`competing writer exited with ${code}`)));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      holder.once('error', reject);
+      holder.stdout.once('data', (chunk) => {
+        if (String(chunk).includes('locked')) resolve();
+      });
+    });
+
+    applyPreset('starter', agentsDir);
+    await holderExit;
+
+    const registry = JSON.parse(
+      readFileSync(join(castingDir, 'registry.json'), 'utf-8'),
+    ) as { revision: number; agents: Record<string, unknown> };
+    expect(registry.revision).toBe(2);
+    expect(Object.keys(registry.agents).sort()).toEqual(['competitor', 'dev']);
+
+    const history = JSON.parse(
+      readFileSync(join(castingDir, 'history.json'), 'utf-8'),
+    ) as {
+      assignment_cast_snapshots: Record<string, unknown>;
+      universe_usage_history: unknown[];
+    };
+    expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(2);
+    expect(history.universe_usage_history).toHaveLength(2);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
+    expect(readdirSync(castingDir).filter((name) => name.includes('.tmp-'))).toEqual([]);
+  });
+
+  it('keeps repeated preset revisions and history snapshots monotonic', () => {
+    const homeDir = join(TMP, 'apply-repeated');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-repeated/presets/starter/agents/dev');
+    writeFile('apply-repeated/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('apply-repeated/presets/starter/agents/dev/charter.md', '# Dev');
+
+    const squadDir = join(TMP, 'target-repeated');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    applyPreset('starter', agentsDir);
+    applyPreset('starter', agentsDir);
+    applyPreset('starter', agentsDir);
+
+    const castingDir = join(squadDir, 'casting');
+    const registry = JSON.parse(
+      readFileSync(join(castingDir, 'registry.json'), 'utf-8'),
+    ) as { revision: number };
+    const history = JSON.parse(
+      readFileSync(join(castingDir, 'history.json'), 'utf-8'),
+    ) as { assignment_cast_snapshots: Record<string, unknown> };
+    expect(registry.revision).toBe(3);
+    expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(3);
+    expect(
+      readFileSync(join(castingDir, 'registry.json'), 'utf-8').endsWith('\n'),
+    ).toBe(true);
+    expect(
+      readFileSync(join(castingDir, 'history.json'), 'utf-8').endsWith('\n'),
+    ).toBe(true);
+  });
+
+  it('fails closed on malformed history before advancing the registry revision', () => {
+    const homeDir = join(TMP, 'apply-malformed-history');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-malformed-history/presets/starter/agents/dev');
+    writeFile('apply-malformed-history/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('apply-malformed-history/presets/starter/agents/dev/charter.md', '# Dev');
+
+    const squadDir = join(TMP, 'target-malformed-history');
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(agentsDir, { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+    const originalRegistry = JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T22:00:00.000Z',
+      agents: {},
+    }, null, 2) + '\n';
+    writeFileSync(join(castingDir, 'registry.json'), originalRegistry);
+    writeFileSync(join(castingDir, 'history.json'), '{"assignment_cast_snapshots": []}\n');
+
+    expect(applyPreset('starter', agentsDir)).toContainEqual(expect.objectContaining({
+      agent: '<scaffold>',
+      status: 'error',
+      reason: expect.stringContaining('assignment_cast_snapshots must be an object'),
+    }));
+    expect(readFileSync(join(castingDir, 'registry.json'), 'utf-8')).toBe(originalRegistry);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
   });
 
   it('preserves built-in role status labels in team.md (Scribe/Ralph/Rai/Fact Checker) — review on #1293', () => {

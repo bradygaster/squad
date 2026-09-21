@@ -30,6 +30,7 @@ const REGISTRY_UPDATE_MAX_ATTEMPTS = 8;
 const REGISTRY_LOCK_TIMEOUT_MS = 30_000;
 const REGISTRY_LOCK_RETRY_MS = 25;
 const syncWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+let atomicWriteSequence = 0;
 
 interface PresetRegistryTestHooks {
   afterSnapshot?: (context: { registryPath: string; attempt: number }) => void;
@@ -54,7 +55,7 @@ function waitSync(milliseconds: number): void {
   Atomics.wait(syncWaitBuffer, 0, 0, milliseconds);
 }
 
-function acquireCastingRegistryLock(lockPath: string): () => void {
+function acquireCastingLock(lockPath: string): () => void {
   const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
   while (true) {
     try {
@@ -80,7 +81,7 @@ function acquireCastingRegistryLock(lockPath: string): () => void {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for concurrent cast lock: ${lockPath}`);
+        throw new Error(`Timed out waiting for concurrent preset scaffold lock: ${lockPath}`);
       }
       waitSync(REGISTRY_LOCK_RETRY_MS);
     }
@@ -111,6 +112,16 @@ function atomicWriteRegistry(
     storage.writeSync(tempPath, content);
     presetRegistryTestHooks?.beforeRename?.({ registryPath, tempPath, attempt });
     storage.renameSync(tempPath, registryPath);
+  } finally {
+    storage.deleteSync(tempPath);
+  }
+}
+
+function atomicWriteJson(filePath: string, value: unknown): void {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${atomicWriteSequence++}`;
+  try {
+    storage.writeSync(tempPath, JSON.stringify(value, null, 2) + '\n');
+    storage.renameSync(tempPath, filePath);
   } finally {
     storage.deleteSync(tempPath);
   }
@@ -400,44 +411,12 @@ function writeOrMergeCastingState(
 
   // ---- registry.json ----
   const registryPath = path.join(castingDir, 'registry.json');
-  const registryLockPath = path.join(castingDir, 'registry.lock');
   const candidates = agents.map((agent) => ({
     id: agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
     displayName: agent.name,
     role: agent.role,
     universe: options.universe,
   }));
-  let registry: ReturnType<typeof reconcileAgentProvenanceRegistry> | undefined;
-  for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
-    const snapshot = readRegistrySnapshot(registryPath);
-    const candidateRegistry = reconcileAgentProvenanceRegistry(
-      snapshot.value,
-      candidates,
-      { generatedAt: now, retireMissing: false },
-    );
-    presetRegistryTestHooks?.afterSnapshot?.({ registryPath, attempt });
-
-    const releaseLock = acquireCastingRegistryLock(registryLockPath);
-    try {
-      if (storage.readSync(registryPath) !== snapshot.raw) {
-        continue;
-      }
-      atomicWriteRegistry(
-        registryPath,
-        JSON.stringify(candidateRegistry, null, 2) + '\n',
-        attempt,
-      );
-      registry = candidateRegistry;
-      break;
-    } finally {
-      releaseLock();
-    }
-  }
-  if (!registry) {
-    throw new Error(
-      `Casting registry changed during ${REGISTRY_UPDATE_MAX_ATTEMPTS} update attempts`,
-    );
-  }
 
   // ---- history.json ----
   const historyPath = path.join(castingDir, 'history.json');
@@ -445,39 +424,76 @@ function writeOrMergeCastingState(
     assignment_cast_snapshots: Record<string, { created_at: string; agents: string[]; universe: string }>;
     universe_usage_history: Array<{ universe: string; used_at: string }>;
   }
-  let history: CastingHistory = {
-    assignment_cast_snapshots: {},
-    universe_usage_history: [],
-  };
-  if (storage.existsSync(historyPath)) {
-    try {
-      const raw = storage.readSync(historyPath) ?? '{}';
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        history = {
-          assignment_cast_snapshots: parsed.assignment_cast_snapshots ?? {},
-          universe_usage_history: parsed.universe_usage_history ?? [],
-        };
+  for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
+    const snapshot = readRegistrySnapshot(registryPath);
+    const registry = reconcileAgentProvenanceRegistry(
+      snapshot.value,
+      candidates,
+      { generatedAt: now, retireMissing: false },
+    );
+    let history: CastingHistory = {
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    };
+    if (storage.existsSync(historyPath)) {
+      try {
+        const raw = storage.readSync(historyPath) ?? '{}';
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const snapshots = parsed.assignment_cast_snapshots;
+          const usage = parsed.universe_usage_history;
+          if (
+            snapshots !== undefined
+            && (typeof snapshots !== 'object' || snapshots === null || Array.isArray(snapshots))
+          ) {
+            throw new Error('assignment_cast_snapshots must be an object');
+          }
+          if (usage !== undefined && !Array.isArray(usage)) {
+            throw new Error('universe_usage_history must be an array');
+          }
+          history = {
+            assignment_cast_snapshots: snapshots ?? {},
+            universe_usage_history: usage ?? [],
+          };
+        } else {
+          throw new Error('history root must be an object');
+        }
+      } catch (error) {
+        throw new Error(
+          `Cannot update malformed casting/history.json: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-    } catch {
-      // Keep the fresh defaults above
     }
-  }
-  const snapshotKey = `preset-${options.universe}-${now}`;
-  history.assignment_cast_snapshots[snapshotKey] = {
-    created_at: now,
-    agents: agents.map(a => a.name.toLowerCase()),
-    universe: options.universe,
-  };
-  history.universe_usage_history.push({ universe: options.universe, used_at: now });
-  storage.writeSync(historyPath, JSON.stringify(history, null, 2) + '\n');
+    const snapshotKey = `preset-${options.universe}-revision-${registry.revision}-${now}`;
+    history.assignment_cast_snapshots[snapshotKey] = {
+      created_at: now,
+      agents: agents.map(a => a.name.toLowerCase()),
+      universe: options.universe,
+    };
+    history.universe_usage_history.push({ universe: options.universe, used_at: now });
 
-  // ---- policy.json ----
-  const policyPath = path.join(castingDir, 'policy.json');
-  if (!storage.existsSync(policyPath)) {
-    const policy = { universe_allowlist: ['*'], max_capacity: 25 };
-    storage.writeSync(policyPath, JSON.stringify(policy, null, 2) + '\n');
+    presetRegistryTestHooks?.afterSnapshot?.({ registryPath, attempt });
+    if (storage.readSync(registryPath) !== snapshot.raw) {
+      continue;
+    }
+    atomicWriteRegistry(
+      registryPath,
+      JSON.stringify(registry, null, 2) + '\n',
+      attempt,
+    );
+    atomicWriteJson(historyPath, history);
+
+    // ---- policy.json ----
+    const policyPath = path.join(castingDir, 'policy.json');
+    if (!storage.existsSync(policyPath)) {
+      const policy = { universe_allowlist: ['*'], max_capacity: 25 };
+      atomicWriteJson(policyPath, policy);
+    }
+    return;
   }
+  throw new Error(
+    `Casting registry changed during ${REGISTRY_UPDATE_MAX_ATTEMPTS} update attempts`,
+  );
 }
 
 /**
@@ -494,7 +510,14 @@ export function scaffoldPresetIntoSquad(
 ): void {
   if (agents.length === 0) return;
   const universe = `preset:${presetName}`;
-  writeOrMergeTeamMembers(squadDir, agents, presetName);
-  writeOrMergeRouting(squadDir, agents);
-  writeOrMergeCastingState(squadDir, agents, { universe });
+  const castingDir = path.join(squadDir, 'casting');
+  storage.mkdirSync(castingDir, { recursive: true });
+  const releaseLock = acquireCastingLock(path.join(castingDir, 'registry.lock'));
+  try {
+    writeOrMergeTeamMembers(squadDir, agents, presetName);
+    writeOrMergeRouting(squadDir, agents);
+    writeOrMergeCastingState(squadDir, agents, { universe });
+  } finally {
+    releaseLock();
+  }
 }

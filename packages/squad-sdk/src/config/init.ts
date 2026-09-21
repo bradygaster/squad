@@ -869,7 +869,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   const castingDir = join(squadDir, 'casting');
   const castingFiles: Array<{ name: string; templateName: string; fallback: string }> = [
     { name: 'policy.json', templateName: 'casting-policy.json', fallback: JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n' },
-    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ agents: {} }, null, 2) + '\n' },
+    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1, generated_at: '1970-01-01T00:00:00.000Z', agents: {} }, null, 2) + '\n' },
     { name: 'history.json', templateName: 'casting-history.json', fallback: JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n' },
   ];
 

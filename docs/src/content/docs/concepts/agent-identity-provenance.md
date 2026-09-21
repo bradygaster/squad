@@ -123,6 +123,10 @@ Rename does not change historical bindings. Retirement leaves the ID resolvable
 through its tombstone; it does not transfer work to another agent. A current
 registry newer than `registry_revision` may resolve the historical ID. A
 binding revision newer than the available registry is stale and unavailable.
+Every row in one binding artifact names the same registry revision; consumers
+reject mixed revisions rather than reconciling rows against different identity
+snapshots.
+
 Missing IDs are allowed only for explicitly external, non-roster, or legacy
 plan assignments: `agent_id` is `null` and `identity_omission_reason` explains
 why. If any epic member lacks an ID, its records add

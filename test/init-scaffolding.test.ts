@@ -15,6 +15,7 @@ import { randomBytes } from 'crypto';
 import { execFileSync } from 'child_process';
 import { initSquad } from '@bradygaster/squad-sdk';
 import type { InitOptions } from '@bradygaster/squad-sdk';
+import { parseAgentProvenanceRegistry } from '@bradygaster/squad-sdk/casting';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runDoctor } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
@@ -109,9 +110,10 @@ describe('casting directory scaffolding — initSquad()', () => {
 
     const content = await readFile(filePath, 'utf-8');
     const parsed = JSON.parse(content);
-    expect(parsed).toBeDefined();
-    // Registry is an object (with agents key) or an array — both are valid
-    expect(typeof parsed).toBe('object');
+    expect(parseAgentProvenanceRegistry(parsed)).toMatchObject({
+      completeness: 'complete',
+      registry: { schema_version: 1, revision: 1, agents: {} },
+    });
   });
 
   it('creates .squad/casting/policy.json as valid JSON', async () => {
@@ -547,4 +549,3 @@ describe('repository working tree is not mutated by this suite (#1796)', () => {
     expect(guardedStatus()).toBe(guardedStatusBefore);
   });
 });
-
