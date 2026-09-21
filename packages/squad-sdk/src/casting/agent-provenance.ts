@@ -375,6 +375,10 @@ export function parseWorkAgentBindings(
       });
     }
   }
+  if (diagnostics.length > 0) {
+    throw new AgentProvenanceError('Work-agent bindings are malformed or partial', diagnostics);
+  }
+
   const expectedRegistryRevision = bindings[0]!.registry_revision;
   const epicIssueByIdentifier = new Map<string, string>();
   const epicIdentifierByIssue = new Map<string, string>();
