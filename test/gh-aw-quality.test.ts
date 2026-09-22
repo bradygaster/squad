@@ -1702,7 +1702,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="31e568ae4a0cc372f5b79d4b024ba8b7af1f38feac54034221fb203da9918ab4"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="63e6ca08ebb96e266acb4d4f526df8ddd52cdc4333de4cfbbf56292863d816eb"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):

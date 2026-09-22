@@ -257,8 +257,6 @@ function normalizeStateToolDir(dir?: string): string {
 
 const MUTABLE_CASTING_STATE_KEYS = new Set([
   'casting/policy.json',
-  'casting/registry.json',
-  'casting/history.json',
 ]);
 
 function validateMutableStateToolKey(key: string): void {
@@ -275,7 +273,7 @@ function validateMutableStateToolKey(key: string): void {
 
   if (!isMutable) {
     throw new Error(
-      'State mutations are limited to mutable runtime state (decisions, inbox, casting policy/registry/history, logs, sessions, scratch files, agent history, and identity). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
+      'State mutations are limited to mutable runtime state (decisions, inbox, casting policy, logs, sessions, scratch files, agent history, and identity). The casting registry/history pair must only be changed through the atomic casting protocol. Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
     );
   }
 }

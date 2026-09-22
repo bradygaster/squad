@@ -694,6 +694,14 @@ export function syncTeamCapabilities(
   options: SyncTeamCapabilitiesOptions,
 ): SyncTeamCapabilitiesResult {
   const storage = options.storage ?? new FSStorageProvider();
+  const existing = readOptional(storage, options.agentFile);
+  if (existing === undefined) {
+    return {
+      updated: false,
+      profile: buildTeamCapabilityProfile({}),
+      skipped: 'missing-agent-file',
+    };
+  }
 
   const teamMarkdown = readOptional(storage, join(options.squadDir, 'team.md'));
   const routingMarkdown = readOptional(storage, join(options.squadDir, 'routing.md'));
@@ -713,19 +721,12 @@ export function syncTeamCapabilities(
       storage,
       join(castingDir, 'registry-history.commit.json'),
     );
-    if (
-      registryRaw !== undefined
-      || historyRaw !== undefined
-      || journalRaw !== undefined
-      || manifestRaw !== undefined
-    ) {
-      registry = validateCastingRegistryPairRaw(
-        registryRaw,
-        historyRaw,
-        journalRaw,
-        manifestRaw,
-      ).registry;
-    }
+    registry = validateCastingRegistryPairRaw(
+      registryRaw,
+      historyRaw,
+      journalRaw,
+      manifestRaw,
+    ).registry;
   }
 
   const charters: Record<string, string> = {};
@@ -748,11 +749,6 @@ export function syncTeamCapabilities(
     charters,
     registry,
   });
-
-  const existing = readOptional(storage, options.agentFile);
-  if (existing === undefined) {
-    return { updated: false, profile, skipped: 'missing-agent-file' };
-  }
 
   const next = applyTeamCapabilitiesBlock(existing, renderTeamCapabilitiesBlock(profile));
   if (next === normalizeEol(existing)) {

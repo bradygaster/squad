@@ -32,6 +32,12 @@ interface ImportManifest {
   team?: string;
 }
 
+interface ValidatedCastingPair {
+  registry: Record<string, unknown>;
+  history: Record<string, unknown>;
+  revision: number;
+}
+
 export interface ImportRepoOptions {
   repo: string;
   branch?: string;
@@ -55,7 +61,7 @@ function assertPathUnder(resolvedPath: string, parentDir: string): void {
   }
 }
 
-function validateManifestForApply(manifest: ImportManifest): void {
+function validateManifestForApply(manifest: ImportManifest): ValidatedCastingPair {
   if (manifest.decisions_md !== undefined && typeof manifest.decisions_md !== 'string') {
     fatal('Invalid export file: "decisions_md" field must be a string');
   }
@@ -79,10 +85,9 @@ function validateManifestForApply(manifest: ImportManifest): void {
 
   const importedRegistry = manifest.casting['registry'];
   const importedHistory = manifest.casting['history'];
-  if ((importedRegistry === undefined) !== (importedHistory === undefined)) {
-    fatal('Invalid export file: registry and history must be imported together');
+  if (importedRegistry === undefined || importedHistory === undefined) {
+    fatal('Invalid export file: a complete casting registry and history pair is required');
   }
-  if (importedRegistry === undefined) return;
   if (
     !importedRegistry
     || typeof importedRegistry !== 'object'
@@ -106,6 +111,14 @@ function validateManifestForApply(manifest: ImportManifest): void {
   } catch (error) {
     fatal(`Invalid export file: ${(error as Error).message}`);
   }
+
+  const registry = structuredClone(importedRegistry as Record<string, unknown>);
+  const history = structuredClone(importedHistory as Record<string, unknown>);
+  delete registry['transaction_id'];
+  delete history['transaction_id'];
+  delete history['registry_revision'];
+  validateCastingRegistryPairForCommit(registry, history, revision as number);
+  return { registry, history, revision: revision as number };
 }
 
 /**
@@ -118,7 +131,7 @@ function applyManifest(
   force: boolean,
   storage: FSStorageProvider,
 ): void {
-  validateManifestForApply(manifest);
+  const castingPair = validateManifestForApply(manifest);
   const squadInfo = detectSquadDir(dest);
   const squadDir = squadInfo.path;
 
@@ -152,27 +165,20 @@ function applyManifest(
   }
 
   // Write the authoritative casting pair through the shared durable protocol.
-  const importedRegistry = manifest.casting['registry'];
-  const importedHistory = manifest.casting['history'];
-  if (importedRegistry !== undefined && importedHistory !== undefined) {
-    const registry = { ...(importedRegistry as Record<string, unknown>) };
-    const history = { ...(importedHistory as Record<string, unknown>) };
-    const revision = registry['revision'];
-    const castingDir = path.join(squadDir, 'casting');
-    const release = acquireCastingRegistryLock(castingDir, 'CLI import');
-    try {
-      const previous = prepareCastingRegistryPairLocked(castingDir);
-      commitCastingRegistryPair(
-        castingDir,
-        previous.registryRaw,
-        registry,
-        previous.historyRaw,
-        history,
-        revision as number,
-      );
-    } finally {
-      release();
-    }
+  const castingDir = path.join(squadDir, 'casting');
+  const release = acquireCastingRegistryLock(castingDir, 'CLI import');
+  try {
+    const previous = prepareCastingRegistryPairLocked(castingDir);
+    commitCastingRegistryPair(
+      castingDir,
+      previous.registryRaw,
+      castingPair.registry,
+      previous.historyRaw,
+      castingPair.history,
+      castingPair.revision,
+    );
+  } finally {
+    release();
   }
 
   // Policy and future non-authoritative casting files remain independent.

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -18,6 +19,142 @@ const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 const RESOLVED_REFERENCE = /^#?(\d+)$/;
 const AGENT_PROVENANCE_SCHEMA = 'squad-agent-provenance/v1';
 const WORK_AGENT_BINDING_SCHEMA = 'squad-work-agent-binding/v1';
+
+function parseCastingObject(raw, label) {
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} is invalid JSON: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} root is malformed`);
+  }
+  return value;
+}
+
+function validateCastingHistory(history, registry) {
+  if (!history.assignment_cast_snapshots
+    || typeof history.assignment_cast_snapshots !== 'object'
+    || Array.isArray(history.assignment_cast_snapshots)
+    || !Array.isArray(history.universe_usage_history)) {
+    throw new Error('casting history shape is malformed');
+  }
+  for (const [key, snapshot] of Object.entries(history.assignment_cast_snapshots)) {
+    if (!key || !snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)
+      || typeof snapshot.created_at !== 'string'
+      || !Number.isFinite(Date.parse(snapshot.created_at))
+      || !Array.isArray(snapshot.agents)
+      || snapshot.agents.some(agent => typeof agent !== 'string' || !(agent in registry.agents))
+      || typeof snapshot.universe !== 'string' || !snapshot.universe) {
+      throw new Error('casting history snapshot is malformed or references unknown agents');
+    }
+  }
+  for (const usage of history.universe_usage_history) {
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage)
+      || typeof usage.universe !== 'string' || !usage.universe
+      || typeof usage.used_at !== 'string'
+      || !Number.isFinite(Date.parse(usage.used_at))) {
+      throw new Error('casting universe usage history is malformed');
+    }
+  }
+}
+
+function validateLegacyCastingGeneration(registry, history) {
+  if (registry.transaction_id !== undefined
+    || history.transaction_id !== undefined
+    || history.registry_revision !== undefined) {
+    throw new Error('casting generation metadata exists without a commit manifest');
+  }
+  const snapshots = Object.entries(history.assignment_cast_snapshots);
+  if (registry.revision === 1 && Object.keys(registry.agents).length === 0
+    && snapshots.length === 0 && history.universe_usage_history.length === 0) {
+    return;
+  }
+  const revisions = new Set();
+  let currentGeneration = false;
+  const generatedAt = Date.parse(registry.generated_at);
+  const snapshotEvidence = new Map();
+  for (const [key, snapshot] of snapshots) {
+    const match = key.match(/(?:^|[-_])(?:revision-|r)(\d+)(?:[-_]|$)/i);
+    if (!match) throw new Error('casting history snapshot lacks generation evidence');
+    const revision = Number(match[1]);
+    if (!Number.isSafeInteger(revision) || revision < 1 || revision > registry.revision
+      || revisions.has(revision) || Date.parse(snapshot.created_at) > generatedAt) {
+      throw new Error('casting registry/history pair is mixed-generation');
+    }
+    revisions.add(revision);
+    if (revision === registry.revision && Date.parse(snapshot.created_at) === generatedAt) {
+      currentGeneration = true;
+    }
+    const evidence = `${snapshot.universe}\u0000${snapshot.created_at}`;
+    snapshotEvidence.set(evidence, (snapshotEvidence.get(evidence) ?? 0) + 1);
+  }
+  const usageEvidence = new Map();
+  for (const usage of history.universe_usage_history) {
+    if (Date.parse(usage.used_at) > generatedAt) {
+      throw new Error('casting registry/history pair is mixed-generation');
+    }
+    const evidence = `${usage.universe}\u0000${usage.used_at}`;
+    usageEvidence.set(evidence, (usageEvidence.get(evidence) ?? 0) + 1);
+  }
+  const complete = Array.from({ length: registry.revision }, (_, index) => index + 1);
+  const implicitGenesis = registry.revision === 1 ? complete : complete.slice(1);
+  const revisionEvidence = [complete, implicitGenesis].some(expected =>
+    expected.length === revisions.size && expected.every(revision => revisions.has(revision)));
+  const matchingEvidence = snapshotEvidence.size === usageEvidence.size
+    && [...snapshotEvidence].every(([key, count]) => usageEvidence.get(key) === count);
+  if (!revisionEvidence || !currentGeneration || !matchingEvidence) {
+    throw new Error('casting registry/history pair is mixed-generation');
+  }
+}
+
+async function readOptionalFile(path) {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+export async function validateCastingPairFiles(registryFile) {
+  const castingDir = dirname(registryFile);
+  const [registryRaw, historyRaw, journalRaw, manifestRaw] = await Promise.all([
+    readOptionalFile(registryFile),
+    readOptionalFile(join(castingDir, 'history.json')),
+    readOptionalFile(join(castingDir, 'registry-history.transaction.json')),
+    readOptionalFile(join(castingDir, 'registry-history.commit.json')),
+  ]);
+  if (registryRaw === undefined || historyRaw === undefined) {
+    throw new Error('complete casting registry/history pair is required');
+  }
+  if (journalRaw !== undefined) {
+    throw new Error('casting transaction is awaiting roll-forward');
+  }
+  const registry = parseCastingObject(registryRaw, 'casting registry');
+  const history = parseCastingObject(historyRaw, 'casting history');
+  parseAgentRegistry(registry);
+  validateCastingHistory(history, registry);
+  if (manifestRaw === undefined) {
+    validateLegacyCastingGeneration(registry, history);
+    return registry;
+  }
+  const manifest = parseCastingObject(manifestRaw, 'casting commit manifest');
+  const digest = raw => createHash('sha256').update(raw).digest('hex');
+  if (typeof manifest.transaction_id !== 'string'
+    || !Number.isSafeInteger(manifest.registry_revision)
+    || manifest.registry_revision < 1
+    || registry.transaction_id !== manifest.transaction_id
+    || history.transaction_id !== manifest.transaction_id
+    || history.registry_revision !== manifest.registry_revision
+    || registry.revision !== manifest.registry_revision
+    || digest(registryRaw) !== manifest.registry_sha256
+    || digest(historyRaw) !== manifest.history_sha256) {
+    throw new Error('casting registry/history pair does not match the stable commit manifest');
+  }
+  return registry;
+}
 
 // Standalone certainty claims a label-operation report may never make: safe outputs like
 // `add_labels` are applied in a post-agent job, so an activation/acceptance run only ever
@@ -530,7 +667,7 @@ async function main() {
 
   const roster = parseRoster(await readFile(args['team-file'], 'utf8'));
   const registryFile = args['registry-file'] ?? join(dirname(args['team-file']), 'casting', 'registry.json');
-  const registry = parseAgentRegistry(JSON.parse(await readFile(registryFile, 'utf8')));
+  const registry = parseAgentRegistry(await validateCastingPairFiles(registryFile));
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN is required for activation binding checks');
 

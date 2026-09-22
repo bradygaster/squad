@@ -261,7 +261,10 @@ function createFixture(): { root: string; payloadPath: string; payload: Record<s
       ])),
     })}\n`,
   );
-  write(root, '.squad/casting/history.json', '{}\n');
+  write(root, '.squad/casting/history.json', JSON.stringify({
+    assignment_cast_snapshots: {},
+    universe_usage_history: [],
+  }));
   write(root, '.squad/casting/policy.json', '{}\n');
   for (const member of active) {
     write(root, `.squad/agents/${member.id}/charter.md`, `# ${member.name} — ${member.role}\n`);
@@ -300,6 +303,18 @@ function createFixture(): { root: string; payloadPath: string; payload: Record<s
       ])),
     })}\n`,
   );
+  write(root, '.squad/casting/history.json', JSON.stringify({
+    assignment_cast_snapshots: {
+      'bootstrap-r1-2026-09-21T00:00:00.000Z': {
+        created_at: '2026-09-21T00:00:00.000Z',
+        agents: [],
+        universe: 'descriptive',
+      },
+    },
+    universe_usage_history: [
+      { universe: 'descriptive', used_at: '2026-09-21T00:00:00.000Z' },
+    ],
+  }));
 
   const paths = [
     '.squad/team.md',

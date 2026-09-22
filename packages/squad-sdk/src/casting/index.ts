@@ -8,11 +8,7 @@
  * Legacy API:     CastingRegistry (filesystem-backed, stub)
  */
 
-import { FSStorageProvider } from '../storage/fs-storage-provider.js';
-import * as path from 'node:path';
 import { readCastingRegistryPair } from './durable-registry.js';
-
-const storage = new FSStorageProvider();
 
 export {
   CastingEngine,
@@ -112,9 +108,6 @@ export class CastingRegistry {
   }
 
   async load(): Promise<void> {
-    const registryPath = path.join(this.config.castingDir, 'registry.json');
-    if (!storage.existsSync(registryPath)) return;
-
     const registry = readCastingRegistryPair(this.config.castingDir).registry;
     const agents = registry?.['agents'] as Record<string, Record<string, unknown>>;
     for (const record of Object.values(agents)) {

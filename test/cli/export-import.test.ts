@@ -263,6 +263,53 @@ describe('CLI: export/import commands', () => {
     expect(await readdir(IMPORT_ROOT)).toEqual([]);
   });
 
+  it('rejects an absent casting pair with zero filesystem mutation', async () => {
+    const exportPath = join(TEST_ROOT, 'missing-pair-import.json');
+    await writeFile(exportPath, JSON.stringify({
+      version: '1.0',
+      casting: { policy: { universe: 'descriptive' } },
+      agents: {},
+      skills: [],
+    }));
+
+    await expect(runImport(IMPORT_ROOT, exportPath, false)).rejects.toThrow(
+      /complete casting registry and history pair is required/,
+    );
+    expect(await readdir(IMPORT_ROOT)).toEqual([]);
+  });
+
+  it('validates malformed history before archiving an existing squad', async () => {
+    await runInit(IMPORT_ROOT);
+    const existingTeamPath = join(IMPORT_ROOT, '.squad', 'team.md');
+    await writeFile(existingTeamPath, '# Existing Team\n');
+    const before = (await readdir(IMPORT_ROOT)).sort();
+    const exportPath = join(TEST_ROOT, 'malformed-force-import.json');
+    await writeFile(exportPath, JSON.stringify({
+      version: '1.0',
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: [],
+          universe_usage_history: [],
+        },
+      },
+      agents: {},
+      skills: [],
+    }));
+
+    await expect(runImport(IMPORT_ROOT, exportPath, true)).rejects.toThrow(
+      /history shape is invalid/,
+    );
+    expect((await readdir(IMPORT_ROOT)).sort()).toEqual(before);
+    expect(await readFile(existingTeamPath, 'utf8')).toBe('# Existing Team\n');
+  });
+
   it('should fail import without --force if squad exists', async () => {
     const teamPath = join(TEST_ROOT, '.squad', 'team.md');
     await writeFile(teamPath, '# Team\n');
@@ -416,7 +463,19 @@ describe('CLI: export/import commands', () => {
       version: '1.0',
       exported_at: new Date().toISOString(),
       squad_version: '0.6.0',
-      casting: {},
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        },
+      },
       agents: { '../../../etc/evil': { charter: 'malicious content' } },
       skills: [],
     };
@@ -437,7 +496,19 @@ describe('CLI: export/import commands', () => {
       version: '1.0',
       exported_at: new Date().toISOString(),
       squad_version: '0.6.0',
-      casting: {},
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        },
+      },
       agents: {},
       skills: [],
     };
@@ -459,7 +530,11 @@ describe('CLI: export/import commands', () => {
 describe('CLI: export with externalized state (#1396)', () => {
   const origAppData = process.env['APPDATA'];
   const origXdgConfig = process.env['XDG_CONFIG_HOME'];
-  const externalStateDir = join(EXT_GLOBAL, 'squad', 'projects', EXT_PROJECT_KEY);
+  const origHome = process.env['HOME'];
+  const externalBase = process.platform === 'darwin'
+    ? join(EXT_GLOBAL, 'Library', 'Application Support')
+    : EXT_GLOBAL;
+  const externalStateDir = join(externalBase, 'squad', 'projects', EXT_PROJECT_KEY);
 
   beforeEach(async () => {
     if (existsSync(EXT_ROOT)) {
@@ -472,6 +547,8 @@ describe('CLI: export with externalized state (#1396)', () => {
     // Point resolveGlobalSquadPath() inside EXT_GLOBAL (not the real user dir)
     if (process.platform === 'win32') {
       process.env['APPDATA'] = EXT_GLOBAL;
+    } else if (process.platform === 'darwin') {
+      process.env['HOME'] = EXT_GLOBAL;
     } else {
       process.env['XDG_CONFIG_HOME'] = EXT_GLOBAL;
     }
@@ -507,6 +584,8 @@ describe('CLI: export with externalized state (#1396)', () => {
     else process.env['APPDATA'] = origAppData;
     if (origXdgConfig === undefined) delete process.env['XDG_CONFIG_HOME'];
     else process.env['XDG_CONFIG_HOME'] = origXdgConfig;
+    if (origHome === undefined) delete process.env['HOME'];
+    else process.env['HOME'] = origHome;
 
     if (existsSync(EXT_ROOT)) {
       await rm(EXT_ROOT, { recursive: true, force: true });

@@ -1329,11 +1329,13 @@ export function validateCastingRegistryPairRaw(
       );
     }
     const revision = validatePairRoots(registry, history, false);
+    validateOutgoingHistory(registry!, history!, revision);
     validateLegacyPairConsistency(registry!, history!, revision);
     return { registryRaw, historyRaw, registry, history };
   }
   const manifest = parseManifest(manifestRaw)!;
   const revision = validatePairRoots(registry, history, true);
+  validateOutgoingHistory(registry!, history!, revision);
   if (
     registryTransaction !== manifest.transaction_id
     || historyTransaction !== manifest.transaction_id
