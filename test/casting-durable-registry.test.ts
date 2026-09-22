@@ -604,6 +604,8 @@ describe('casting registry/history roll-forward transaction', () => {
     writeFileSync(join(castingDir, 'registry.json'), registryRaw);
     writeFileSync(join(castingDir, 'history.json'), historyRaw);
 
+    expect(readCastingRegistryPair(castingDir, 1).registry?.revision).toBe(1);
+
     const result = ensureCastingRegistryPair(
       castingDir,
       registryRaw,

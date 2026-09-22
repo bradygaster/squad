@@ -70,6 +70,53 @@ function validateCastingHistory(history, registry) {
   }
 }
 
+function isCanonicalLegacyGenesis(registry, history) {
+  const agents = registry.agents;
+  const agentIds = Object.keys(agents);
+  const snapshots = Object.entries(history.assignment_cast_snapshots);
+  const usage = history.universe_usage_history;
+  if (agentIds.length === 0 || snapshots.length !== 1 || usage.length !== 1) {
+    return false;
+  }
+
+  const snapshotEntry = snapshots[0];
+  if (!snapshotEntry) return false;
+  const [snapshotKey, rawSnapshot] = snapshotEntry;
+  const rawUsage = usage[0];
+  if (/(?:^|[-_])(?:revision-|r)\d+(?:[-_]|$)/i.test(snapshotKey)
+    || !rawSnapshot
+    || typeof rawSnapshot !== 'object'
+    || Array.isArray(rawSnapshot)
+    || !rawUsage
+    || typeof rawUsage !== 'object'
+    || Array.isArray(rawUsage)) {
+    return false;
+  }
+  const snapshot = rawSnapshot;
+  const usageRecord = rawUsage;
+  const snapshotAgents = snapshot.agents;
+  const snapshotCreatedAt = Date.parse(snapshot.created_at);
+  const generatedAt = Date.parse(registry.generated_at);
+  if (!Array.isArray(snapshotAgents)
+    || snapshotAgents.some(agentId => typeof agentId !== 'string')
+    || new Set(snapshotAgents).size !== snapshotAgents.length
+    || snapshotAgents.length !== agentIds.length
+    || snapshotAgents.some(agentId => !Object.hasOwn(agents, agentId))
+    || typeof snapshot.universe !== 'string'
+    || snapshot.universe.length === 0
+    || !Number.isFinite(snapshotCreatedAt)
+    || snapshotCreatedAt > generatedAt
+    || usageRecord.universe !== snapshot.universe
+    || Date.parse(usageRecord.used_at) !== snapshotCreatedAt) {
+    return false;
+  }
+
+  return Object.values(agents).every(agent =>
+    agent.status === 'active'
+    && agent.universe === snapshot.universe
+    && Date.parse(agent.created_at) === snapshotCreatedAt);
+}
+
 function validateLegacyCastingGeneration(registry, history) {
   if (registry.transaction_id !== undefined
     || history.transaction_id !== undefined
@@ -79,6 +126,9 @@ function validateLegacyCastingGeneration(registry, history) {
   const snapshots = Object.entries(history.assignment_cast_snapshots);
   if (registry.revision === 1 && Object.keys(registry.agents).length === 0
     && snapshots.length === 0 && history.universe_usage_history.length === 0) {
+    return;
+  }
+  if (registry.revision === 1 && isCanonicalLegacyGenesis(registry, history)) {
     return;
   }
   const revisions = new Set();
