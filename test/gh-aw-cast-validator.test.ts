@@ -28,6 +28,16 @@ const builtins = [
   { id: 'fact-checker', name: 'Fact Checker' },
 ];
 
+const revisionSeparatorRuns = Array.from({ length: 6 }, (_, length) => (
+  length === 0 ? [''] : Array.from({ length: 2 ** length }, (_, value) => (
+    value
+      .toString(2)
+      .padStart(length, '0')
+      .replaceAll('0', '-')
+      .replaceAll('1', '_')
+  ))
+)).flat();
+
 interface RegistryFixture {
   revision: number;
   agents: Record<string, {
@@ -543,12 +553,13 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
-  it.each([
-    'active-team-revision-1-reset',
-    'active-team-revision_1-reset',
-    'active-team-revision1-reset',
-    'active-team-r1-reset',
-  ])('rejects canonical legacy genesis with revision token %s across all validators', async (snapshotKey) => {
+  it.each(revisionSeparatorRuns.map(separators => [
+    separators || '(zero separators)',
+    `active-team-revision${separators}42-reset`,
+  ]))('rejects every separator run through length five (%s) across all validators', async (
+    _separators,
+    snapshotKey,
+  ) => {
     const fixture = createFixture();
     writeCanonicalGenesisPair(fixture.root, snapshotKey);
     const castingDir = join(fixture.root, '.squad', 'casting');
@@ -561,10 +572,38 @@ describe('GH-AW Cast final-tree validator', () => {
   });
 
   it.each([
-    'active-team-supervision1-reset',
-    'active-team-revisionary1-reset',
-    'active-team-error1-reset',
-  ])('accepts canonical legacy genesis with unrelated token-like word %s', async (snapshotKey) => {
+    ['long mixed separator run', `active-team-revision${'-_'.repeat(64)}42-reset`],
+    ['case-insensitive marker', 'active-team-ReViSiOn__42-reset'],
+    ['prefix boundary at start', 'revision__1-reset'],
+    ['suffix boundary at end', 'active-team-revision__1'],
+    ['underscore token boundaries', 'active_team_revision__1_reset'],
+    ['short form at start', 'r1-reset'],
+    ['short form at end', 'active-team-r1'],
+    ['case-insensitive short form', 'active-team-R42-reset'],
+  ])('rejects canonical legacy genesis with $0 across all validators', async (_name, snapshotKey) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root, snapshotKey);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow();
+    await expect(validateCastingPairFiles(registryFile)).rejects.toThrow();
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status).not.toBe(0);
+  });
+
+  it.each([
+    ['revision inside another word', 'active-team-prerevision1-reset'],
+    ['revision marker extended as a word', 'active-team-revisionary1-reset'],
+    ['revision digits without a suffix boundary', 'active-team-revision1x-reset'],
+    ['revision marker without digits', 'active-team-revision__-reset'],
+    ['short form inside another word', 'active-team-arr1-reset'],
+    ['short form digits without a suffix boundary', 'active-team-r1x-reset'],
+    ['short form with separators before digits', 'active-team-r__1-reset'],
+    ['unrelated r-containing word', 'active-team-error1-reset'],
+    ['unrelated revision-containing word', 'active-team-supervision1-reset'],
+    ['digits without a marker', 'active-team-42-reset'],
+  ])('accepts canonical legacy genesis with $0', async (_name, snapshotKey) => {
     const fixture = createFixture();
     writeCanonicalGenesisPair(fixture.root, snapshotKey);
     const castingDir = join(fixture.root, '.squad', 'casting');
@@ -789,7 +828,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 2c0e89531d4eb253cc9d2bc9dbd0fb181adc326c84559e80a6b602dd29c92a5d, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);

@@ -911,8 +911,10 @@ function isCanonicalLegacyGenesis(
   });
 }
 
+const REVISION_TOKEN_PATTERN = /(?:^|[-_])(?:revision[-_]*\d+|r\d+)(?=[-_]|$)/i;
+
 function hasRevisionToken(snapshotKey: string): boolean {
-  return /(?:^|[-_])(?:revision[-_]?|r)\d+(?:[-_]|$)/i.test(snapshotKey);
+  return REVISION_TOKEN_PATTERN.test(snapshotKey);
 }
 
 function validateOutgoingHistory(
