@@ -151,12 +151,17 @@ describe('Init / Upgrade parity', () => {
       const castingDir = join(TEST_ROOT, '.squad', 'casting');
       const pair = readCastingRegistryPair(castingDir);
       const revision = Number(pair.registry?.revision) + 1;
+      const registry = { ...pair.registry, revision, sentinel: true };
+      delete registry.transaction_id;
       commitCastingRegistryPair(
         castingDir,
         pair.registryRaw,
-        { ...pair.registry, revision, sentinel: true },
+        registry,
         pair.historyRaw,
-        pair.history!,
+        {
+          assignment_cast_snapshots: pair.history?.assignment_cast_snapshots,
+          universe_usage_history: pair.history?.universe_usage_history,
+        },
         revision,
       );
     }

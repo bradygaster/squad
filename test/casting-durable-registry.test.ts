@@ -33,6 +33,12 @@ function temporaryCastingDir(name: string): string {
   return castingDir;
 }
 
+function missingCastingDir(name: string): string {
+  const root = join(tmpdir(), `squad-durable-${name}-${process.pid}-${Date.now()}-${roots.length}`);
+  roots.push(root);
+  return join(root, '.squad', 'casting');
+}
+
 function writeOwner(
   lockPath: string,
   overrides: Partial<{
@@ -76,6 +82,18 @@ function initialPair(): {
     history,
     registryRaw: JSON.stringify(registry, null, 2) + '\n',
     historyRaw: JSON.stringify(history, null, 2) + '\n',
+  };
+}
+
+function historySnapshot(universe = 'test'): {
+  created_at: string;
+  agents: string[];
+  universe: string;
+} {
+  return {
+    created_at: '2026-09-20T00:00:00.000Z',
+    agents: [],
+    universe,
   };
 }
 
@@ -338,7 +356,7 @@ describe('casting registry/history roll-forward transaction', () => {
       old.registryRaw,
       { ...old.registry, revision: 2 },
       old.historyRaw,
-      { ...old.history, assignment_cast_snapshots: { second: {} } },
+      { ...old.history, assignment_cast_snapshots: { second: historySnapshot() } },
       2,
     )).toThrow(`crash at ${failure}`);
     expect(readFileSync(join(castingDir, 'registry.json'), 'utf8')).toBe(old.registryRaw);
@@ -356,7 +374,7 @@ describe('casting registry/history roll-forward transaction', () => {
     const nextRegistry = { ...old.registry, revision: 2 };
     const nextHistory = {
       ...old.history,
-      assignment_cast_snapshots: { second: { agents: [], universe: 'test' } },
+      assignment_cast_snapshots: { second: historySnapshot() },
     };
     let injected = false;
     _setCastingDurabilityHooksForTesting({
@@ -406,7 +424,7 @@ describe('casting registry/history roll-forward transaction', () => {
         old.registryRaw,
         { ...old.registry, revision: 2 },
         old.historyRaw,
-        { ...old.history, assignment_cast_snapshots: { next: {} } },
+        { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
         2,
       )).toThrow(CastingCommitInDoubtError);
       expect(readdirSync(castingDir).some(name =>
@@ -470,7 +488,16 @@ describe('casting registry/history roll-forward transaction', () => {
           registryRaw,
           { ...registry, revision: 2 },
           historyRaw,
-          { ...history, assignment_cast_snapshots: { next: {} } },
+          {
+            ...history,
+            assignment_cast_snapshots: {
+              next: {
+                created_at: '2026-09-20T00:00:00.000Z',
+                agents: [],
+                universe: 'test',
+              },
+            },
+          },
           2,
         );
       `,
@@ -530,6 +557,91 @@ describe('casting registry/history roll-forward transaction', () => {
       .toBe(result.snapshot.history?.transaction_id);
     expect(result.snapshot.history?.registry_revision)
       .toBe(result.snapshot.registry?.revision);
+  });
+
+  it('accepts exhaustive shared legacy generation evidence', () => {
+    const castingDir = temporaryCastingDir('legacy-exhaustive');
+    const generatedAt = '2026-09-20T02:00:00.000Z';
+    const registry = {
+      ...initialPair().registry,
+      revision: 3,
+      generated_at: generatedAt,
+    };
+    const history = {
+      assignment_cast_snapshots: {
+        'preset-test-revision-2-2026-09-20T01:00:00.000Z': {
+          created_at: '2026-09-20T01:00:00.000Z',
+          agents: [],
+          universe: 'test',
+        },
+        'preset-test-revision-3-2026-09-20T02:00:00.000Z': {
+          created_at: generatedAt,
+          agents: [],
+          universe: 'test',
+        },
+      },
+      universe_usage_history: [
+        { universe: 'test', used_at: '2026-09-20T01:00:00.000Z' },
+        { universe: 'test', used_at: generatedAt },
+      ],
+    };
+    writeFileSync(join(castingDir, 'registry.json'), JSON.stringify(registry) + '\n');
+    writeFileSync(join(castingDir, 'history.json'), JSON.stringify(history) + '\n');
+
+    expect(readCastingRegistryPair(castingDir, 1).registry?.revision).toBe(3);
+  });
+
+  it.each([
+    {
+      name: 'missing snapshot-key evidence',
+      history: {
+        assignment_cast_snapshots: {
+          'preset-test-2026-09-20T00:00:00.000Z': historySnapshot(),
+        },
+        universe_usage_history: [
+          { universe: 'test', used_at: '2026-09-20T00:00:00.000Z' },
+        ],
+      },
+      expected: /snapshot key lacks generation evidence/,
+    },
+    {
+      name: 'one-sided usage evidence',
+      history: {
+        assignment_cast_snapshots: {
+          'preset-test-revision-2-2026-09-19T00:00:00.000Z': {
+            ...historySnapshot(),
+            created_at: '2026-09-19T00:00:00.000Z',
+          },
+          'preset-test-revision-3-2026-09-20T00:00:00.000Z': historySnapshot(),
+        },
+        universe_usage_history: [
+          { universe: 'test', used_at: '2026-09-20T00:00:00.000Z' },
+        ],
+      },
+      expected: /mixed-generation/,
+    },
+    {
+      name: 'mixed revision history',
+      history: {
+        assignment_cast_snapshots: {
+          'preset-test-revision-3-2026-09-20T00:00:00.000Z': historySnapshot(),
+        },
+        universe_usage_history: [
+          { universe: 'test', used_at: '2026-09-20T00:00:00.000Z' },
+        ],
+      },
+      expected: /mixed-generation/,
+    },
+  ])('rejects legacy pairs with $name', ({ history, expected }) => {
+    const castingDir = temporaryCastingDir('legacy-adversarial');
+    const registry = {
+      ...initialPair().registry,
+      revision: 3,
+    };
+    writeFileSync(join(castingDir, 'registry.json'), JSON.stringify(registry) + '\n');
+    writeFileSync(join(castingDir, 'history.json'), JSON.stringify(history) + '\n');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(expected);
   });
 
   it('fails closed on an ambiguous one-file legacy state', () => {
@@ -610,7 +722,7 @@ describe('casting registry/history roll-forward transaction', () => {
       old.registryRaw,
       { ...old.registry, revision: 2 },
       old.historyRaw,
-      { ...old.history, assignment_cast_snapshots: { next: {} } },
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
       2,
     );
     writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
@@ -643,6 +755,60 @@ describe('casting registry/history roll-forward transaction', () => {
     expect(existsSync(join(castingDir, 'registry-history.transaction.json'))).toBe(false);
   });
 
+  it.each([
+    {
+      name: 'partial history snapshot',
+      history: {
+        assignment_cast_snapshots: { partial: { agents: [], universe: 'test' } },
+        universe_usage_history: [],
+      },
+      targetRevision: 1,
+      expected: /history snapshot is malformed/,
+    },
+    {
+      name: 'extra history field',
+      history: {
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
+        extra: true,
+      },
+      targetRevision: 1,
+      expected: /unexpected fields/,
+    },
+    {
+      name: 'history revision mismatch',
+      history: {
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
+        registry_revision: 2,
+      },
+      targetRevision: 1,
+      expected: /history registry revision does not match/,
+    },
+    {
+      name: 'target revision mismatch',
+      history: {
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
+      },
+      targetRevision: 2,
+      expected: /target revision does not match/,
+    },
+  ])('rejects $name before any filesystem mutation', ({ history, targetRevision, expected }) => {
+    const castingDir = missingCastingDir('strict-writer');
+    const old = initialPair();
+
+    expect(() => commitCastingRegistryPair(
+      castingDir,
+      undefined,
+      old.registry,
+      undefined,
+      history,
+      targetRevision,
+    )).toThrow(expected);
+    expect(existsSync(castingDir)).toBe(false);
+  });
+
   it('never lets an observer accept a mixed pair at any commit boundary', () => {
     const castingDir = temporaryCastingDir('boundary-observer');
     const old = initialPair();
@@ -667,7 +833,7 @@ describe('casting registry/history roll-forward transaction', () => {
       old.registryRaw,
       { ...old.registry, revision: 2 },
       old.historyRaw,
-      { ...old.history, assignment_cast_snapshots: { next: {} } },
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
       2,
     );
     const finalPair = readCastingRegistryPair(castingDir);
@@ -695,7 +861,7 @@ describe('casting registry/history roll-forward transaction', () => {
       old.registryRaw,
       { ...old.registry, revision: 2 },
       old.historyRaw,
-      { ...old.history, assignment_cast_snapshots: { next: {} } },
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
       2,
     );
     _setCastingDurabilityHooksForTesting(null);

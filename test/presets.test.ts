@@ -24,6 +24,7 @@ import {
   seedBuiltinPresets,
 } from '@bradygaster/squad-sdk/presets';
 import {
+  CastingCommitInDoubtError,
   commitCastingRegistryPair,
   parseAgentProvenanceRegistry,
   readCastingRegistryPair,
@@ -72,13 +73,38 @@ function writeCastingLock(lockPath: string, metadata: string): void {
 function writeLegacyCastingPair(
   castingDir: string,
   registryRaw: string,
-  historyRaw = JSON.stringify({
-    assignment_cast_snapshots: {},
-    universe_usage_history: [],
-  }, null, 2) + '\n',
+  historyRaw?: string,
 ): void {
+  if (historyRaw === undefined) {
+    const registry = JSON.parse(registryRaw) as {
+      revision: number;
+      generated_at: string;
+      agents: Record<string, unknown>;
+    };
+    const agentIds = Object.keys(registry.agents);
+    const canonicalGenesis = registry.revision === 1 && agentIds.length === 0;
+    historyRaw = JSON.stringify({
+      assignment_cast_snapshots: canonicalGenesis ? {} : {
+        [`legacy-revision-${registry.revision}`]: {
+          created_at: registry.generated_at,
+          agents: agentIds,
+          universe: 'legacy-test',
+        },
+      },
+      universe_usage_history: canonicalGenesis ? [] : [
+        { universe: 'legacy-test', used_at: registry.generated_at },
+      ],
+    }, null, 2) + '\n';
+  }
   writeFileSync(join(castingDir, 'registry.json'), registryRaw);
   writeFileSync(join(castingDir, 'history.json'), historyRaw);
+}
+
+function unmanagedHistory(history: Record<string, unknown>): Record<string, unknown> {
+  return {
+    assignment_cast_snapshots: history['assignment_cast_snapshots'],
+    universe_usage_history: history['universe_usage_history'],
+  };
 }
 
 // ============================================================================
@@ -559,7 +585,7 @@ describe('applyPreset()', () => {
           pair.registryRaw,
           concurrent as unknown as Record<string, unknown>,
           pair.historyRaw,
-          pair.history!,
+          unmanagedHistory(pair.history!),
           concurrent.revision,
         );
       },
@@ -596,8 +622,10 @@ describe('applyPreset()', () => {
     writeLegacyCastingPair(castingDir, originalRegistry);
 
     _setPresetRegistryHooksForTesting({
-      beforeRename: () => {
-        throw new Error('injected atomic rename failure');
+      beforeRename: ({ stage }) => {
+        if (stage === 'journal') {
+          throw new Error('injected atomic rename failure');
+        }
       },
     });
 
@@ -710,12 +738,8 @@ describe('applyPreset()', () => {
         universe: 'descriptive',
       }], { generatedAt: '2026-09-20T20:00:00.000Z' });
       const originalRegistry = JSON.stringify(initial, null, 2) + '\n';
-      const originalHistory = JSON.stringify({
-        assignment_cast_snapshots: {},
-        universe_usage_history: [],
-      }, null, 2) + '\n';
-      writeFileSync(registryPath, originalRegistry);
-      writeFileSync(historyPath, originalHistory);
+      writeLegacyCastingPair(castingDir, originalRegistry);
+      const originalHistory = readFileSync(historyPath, 'utf8');
       writeFileSync(policyPath, '{"universe_allowlist":["*"],"max_capacity":25}\n');
       let injected = false;
       _setPresetRegistryHooksForTesting({
@@ -769,12 +793,7 @@ describe('applyPreset()', () => {
       universe: 'descriptive',
     }], { generatedAt: '2026-09-20T20:00:00.000Z' });
     const originalRegistry = JSON.stringify(initial, null, 2) + '\n';
-    const originalHistory = JSON.stringify({
-      assignment_cast_snapshots: {},
-      universe_usage_history: [],
-    }, null, 2) + '\n';
-    writeFileSync(registryPath, originalRegistry);
-    writeFileSync(historyPath, originalHistory);
+    writeLegacyCastingPair(castingDir, originalRegistry);
     let injected = false;
     _setPresetRegistryHooksForTesting({
       boundary: ({ boundary }) => {
@@ -802,7 +821,7 @@ describe('applyPreset()', () => {
     };
     expect(registry.revision).toBe(2);
     expect(Object.keys(registry.agents).sort()).toEqual(['dev', 'existing']);
-    expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(1);
+    expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(2);
     expect(history.registry_revision).toBe(registry.revision);
     expect(history.transaction_id).toBe(
       (registry as unknown as { transaction_id: string }).transaction_id,
@@ -889,8 +908,8 @@ describe('applyPreset()', () => {
     writeFileSync(join(agentsDir, 'dev', 'charter.md'), originals.charter);
     writeFileSync(join(squadDir, 'team.md'), originals.team);
     writeFileSync(join(squadDir, 'routing.md'), originals.routing);
-    writeFileSync(join(castingDir, 'registry.json'), originals.registry);
-    writeFileSync(join(castingDir, 'history.json'), originals.history);
+    writeLegacyCastingPair(castingDir, originals.registry);
+    originals.history = readFileSync(join(castingDir, 'history.json'), 'utf8');
     writeFileSync(join(castingDir, 'policy.json'), originals.policy);
     let injected = false;
     _setPresetRegistryHooksForTesting({
@@ -941,12 +960,8 @@ describe('applyPreset()', () => {
       },
     });
 
-    expect(applyPresetSource('starter', agentsDir, { force: true }))
-      .toContainEqual(expect.objectContaining({
-        agent: '<scaffold>',
-        status: 'error',
-        reason: expect.stringContaining('may commit during recovery'),
-      }));
+    expect(() => applyPresetSource('starter', agentsDir, { force: true }))
+      .toThrow(/is in doubt/);
     expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf8')).toBe('# Replacement');
     expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toContain('| dev | developer |');
     expect(existsSync(join(squadDir, 'casting', 'registry-history.transaction.json')))
@@ -1166,6 +1181,134 @@ describe('applyPreset()', () => {
   });
 
   it.each([
+    'file',
+    'directory',
+    'new',
+    'deleted',
+  ] as const)(
+    'captures written agent state before the %s-path mutation boundary',
+    (originalState) => {
+      const homeDir = join(TMP, `snapshot-boundary-${originalState}`);
+      process.env['SQUAD_HOME'] = homeDir;
+      scaffold(`snapshot-boundary-${originalState}/presets/starter/agents/dev`);
+      writeFile(`snapshot-boundary-${originalState}/presets/starter/preset.json`, JSON.stringify({
+        name: 'starter',
+        version: '1.0.0',
+        description: 'Starter preset',
+        agents: [{ name: 'dev', role: 'developer' }],
+      }));
+      writeFile(
+        `snapshot-boundary-${originalState}/presets/starter/agents/dev/charter.md`,
+        '# Replacement',
+      );
+
+      const squadDir = join(TMP, `snapshot-boundary-${originalState}-target`);
+      const agentsDir = join(squadDir, 'agents');
+      const destDir = join(agentsDir, 'dev');
+      const castingDir = join(squadDir, 'casting');
+      mkdirSync(agentsDir, { recursive: true });
+      mkdirSync(castingDir, { recursive: true });
+      if (originalState === 'file') {
+        writeFileSync(destDir, '# Original file\n');
+      } else if (originalState !== 'new') {
+        mkdirSync(destDir, { recursive: true });
+        writeFileSync(join(destDir, 'charter.md'), '# Original directory\n');
+      }
+      const initial = reconcileAgentProvenanceRegistry(undefined, [], {
+        generatedAt: '2026-09-21T22:00:00.000Z',
+      });
+      writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+
+      _setPresetRegistryHooksForTesting({
+        afterOutputMutation: ({ surface, path: outputPath }) => {
+          if (surface !== 'agent-tree' || outputPath !== destDir) return;
+          if (originalState === 'file') {
+            rmSync(destDir, { recursive: true, force: true });
+            writeFileSync(destDir, '# External file\n');
+          } else if (originalState === 'deleted') {
+            rmSync(destDir, { recursive: true, force: true });
+          } else {
+            writeFileSync(join(destDir, 'external.md'), '# External\n');
+          }
+        },
+        boundary: ({ boundary }) => {
+          if (boundary === 'journal:write') throw new Error('force boundary rollback');
+        },
+      });
+
+      let rollbackError: CastingCommitInDoubtError | undefined;
+      try {
+        applyPresetSource('starter', agentsDir, { force: true });
+      } catch (error) {
+        expect(error).toMatchObject({ name: 'CastingCommitInDoubtError' });
+        rollbackError = error as CastingCommitInDoubtError;
+      }
+      expect(rollbackError?.recovery?.affectedPaths).toContainEqual(
+        expect.objectContaining({
+          path: destDir,
+          originalState: expect.stringContaining(
+            originalState === 'new' ? 'missing' : originalState === 'file' ? 'file' : 'directory',
+          ),
+          transactionWrittenState: expect.stringContaining('directory'),
+          observedState: originalState === 'deleted'
+            ? expect.stringContaining('missing')
+            : expect.any(String),
+          status: 'diverged',
+        }),
+      );
+    },
+  );
+
+  it('captures routing bytes before the file mutation boundary', () => {
+    const homeDir = join(TMP, 'snapshot-boundary-routing');
+    process.env['SQUAD_HOME'] = homeDir;
+    scaffold('snapshot-boundary-routing/presets/starter/agents/dev');
+    writeFile('snapshot-boundary-routing/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('snapshot-boundary-routing/presets/starter/agents/dev/charter.md', '# Replacement');
+    writeFile('snapshot-boundary-routing/presets/starter/routing.md', '# Replacement routing\n');
+
+    const squadDir = join(TMP, 'snapshot-boundary-routing-target');
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    const routingPath = join(squadDir, 'routing.md');
+    mkdirSync(agentsDir, { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(routingPath, '# Original routing\n');
+    const initial = reconcileAgentProvenanceRegistry(undefined, [], {
+      generatedAt: '2026-09-21T22:00:00.000Z',
+    });
+    writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+    _setPresetRegistryHooksForTesting({
+      afterOutputMutation: ({ surface }) => {
+        if (surface === 'routing') writeFileSync(routingPath, '# External routing\n');
+      },
+      boundary: ({ boundary }) => {
+        if (boundary === 'journal:write') throw new Error('force routing rollback');
+      },
+    });
+
+    let rollbackError: CastingCommitInDoubtError | undefined;
+    try {
+      applyPresetSource('starter', agentsDir, { force: true, overwriteRouting: true });
+    } catch (error) {
+      expect(error).toMatchObject({ name: 'CastingCommitInDoubtError' });
+      rollbackError = error as CastingCommitInDoubtError;
+    }
+    expect(rollbackError?.recovery?.affectedPaths).toContainEqual(
+      expect.objectContaining({
+        path: routingPath,
+        status: 'diverged',
+      }),
+    );
+    expect(readFileSync(routingPath, 'utf8')).toBe('# External routing\n');
+  });
+
+  it.each([
     'charter',
     'agent-contents',
     'team',
@@ -1219,13 +1362,28 @@ describe('applyPreset()', () => {
       },
     });
 
-    expect(applyPresetSource('starter', agentsDir, {
-      force: true,
-      overwriteRouting: true,
-    })).toContainEqual(expect.objectContaining({
-      agent: '<scaffold>',
-      status: 'error',
-    }));
+    let rollbackError: CastingCommitInDoubtError | undefined;
+    try {
+      applyPresetSource('starter', agentsDir, {
+        force: true,
+        overwriteRouting: true,
+      });
+    } catch (error) {
+      expect(error).toMatchObject({ name: 'CastingCommitInDoubtError' });
+      rollbackError = error as CastingCommitInDoubtError;
+    }
+    expect(rollbackError?.recovery?.affectedPaths).toContainEqual(
+      expect.objectContaining({
+        path: surface === 'team'
+          ? join(squadDir, 'team.md')
+          : surface === 'routing'
+            ? join(squadDir, 'routing.md')
+            : surface === 'policy'
+              ? join(castingDir, 'policy.json')
+              : join(agentsDir, 'dev'),
+        status: 'diverged',
+      }),
+    );
 
     if (surface === 'charter') {
       expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf8'))
@@ -1280,8 +1438,21 @@ describe('applyPreset()', () => {
       },
     });
 
-    applyPresetSource('starter', agentsDir, { force: true });
+    let rollbackError: CastingCommitInDoubtError | undefined;
+    try {
+      applyPresetSource('starter', agentsDir, { force: true });
+    } catch (error) {
+      expect(error).toMatchObject({ name: 'CastingCommitInDoubtError' });
+      rollbackError = error as CastingCommitInDoubtError;
+    }
 
+    expect(rollbackError?.recovery?.affectedPaths).toContainEqual(
+      expect.objectContaining({
+        path: join(agentsDir, 'dev'),
+        originalState: expect.stringContaining('missing'),
+        status: 'diverged',
+      }),
+    );
     expect(readFileSync(join(agentsDir, 'dev', 'external.md'), 'utf8')).toBe('# External\n');
     expect(existsSync(join(squadDir, 'team.md'))).toBe(false);
     expect(existsSync(join(squadDir, 'routing.md'))).toBe(false);

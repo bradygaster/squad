@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, readFile, writeFile } from 'fs/promises';
+import { mkdir, readdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -88,12 +88,22 @@ describe('CLI: export/import commands', () => {
     const castingDir = join(TEST_ROOT, '.squad', 'casting');
     await mkdir(castingDir, { recursive: true });
     const pair = readCastingRegistryPair(castingDir);
+    const nextHistory = {
+      assignment_cast_snapshots: pair.history?.assignment_cast_snapshots,
+      universe_usage_history: pair.history?.universe_usage_history,
+    };
+    const nextRegistry = {
+      ...pair.registry,
+      revision: Number(pair.registry?.revision) + 1,
+      roles: ['lead', 'dev'],
+    };
+    delete nextRegistry.transaction_id;
     commitCastingRegistryPair(
       castingDir,
       pair.registryRaw,
-      { ...pair.registry, revision: Number(pair.registry?.revision) + 1, roles: ['lead', 'dev'] },
+      nextRegistry,
       pair.historyRaw,
-      pair.history!,
+      nextHistory,
       Number(pair.registry?.revision) + 1,
     );
     
@@ -180,6 +190,64 @@ describe('CLI: export/import commands', () => {
     // Verify directory was created
     expect(existsSync(join(IMPORT_ROOT, '.squad'))).toBe(true);
     expect(existsSync(join(IMPORT_ROOT, '.squad', 'agents', 'lead'))).toBe(true);
+  });
+
+  it.each([
+    {
+      name: 'malformed history root',
+      mutate: (history: Record<string, unknown>) => {
+        history['assignment_cast_snapshots'] = [];
+      },
+      expected: /history shape is invalid/,
+    },
+    {
+      name: 'partial history snapshot',
+      mutate: (history: Record<string, unknown>) => {
+        history['assignment_cast_snapshots'] = {
+          partial: { created_at: '2026-09-21T00:00:00.000Z' },
+        };
+      },
+      expected: /history snapshot is malformed/,
+    },
+    {
+      name: 'extra history field',
+      mutate: (history: Record<string, unknown>) => {
+        history['unexpected'] = true;
+      },
+      expected: /unexpected fields/,
+    },
+    {
+      name: 'history revision mismatch',
+      mutate: (history: Record<string, unknown>) => {
+        history['registry_revision'] = Number(history['registry_revision']) + 1;
+      },
+      expected: /history registry revision does not match/,
+    },
+  ])('rejects $name with zero filesystem mutation', async ({ mutate, expected }) => {
+    const exportPath = join(TEST_ROOT, 'strict-import.json');
+    const manifest = {
+      version: '1.0',
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        } as Record<string, unknown>,
+      },
+      agents: {},
+      skills: [],
+    };
+    mutate(manifest.casting.history);
+    await writeFile(exportPath, JSON.stringify(manifest));
+
+    await expect(runImport(IMPORT_ROOT, exportPath, false)).rejects.toThrow(expected);
+    expect(await readdir(IMPORT_ROOT)).toEqual([]);
   });
 
   it('should fail import without --force if squad exists', async () => {

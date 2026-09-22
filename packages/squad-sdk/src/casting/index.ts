@@ -61,12 +61,15 @@ export {
   prepareCastingRegistryPairLocked,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
+  validateCastingRegistryPairForCommit,
   validateCastingRegistryPairRaw,
   _setCastingDurabilityHooksForTesting,
   type CastingDurabilityBoundary,
   type CastingDurabilityHooks,
   type EnsureCastingPairResult,
   type CastingPairSnapshot,
+  type CastingRecoveryMetadata,
+  type CastingRecoveryPathState,
 } from './durable-registry.js';
 
 // --- Legacy Types (kept for backward compat) ---

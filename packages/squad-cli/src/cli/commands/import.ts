@@ -9,6 +9,7 @@ import {
   acquireCastingRegistryLock,
   commitCastingRegistryPair,
   prepareCastingRegistryPairLocked,
+  validateCastingRegistryPairForCommit,
 } from '@bradygaster/squad-sdk/casting';
 import type { RepoSpec } from '@bradygaster/squad-sdk';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
@@ -54,6 +55,59 @@ function assertPathUnder(resolvedPath: string, parentDir: string): void {
   }
 }
 
+function validateManifestForApply(manifest: ImportManifest): void {
+  if (manifest.decisions_md !== undefined && typeof manifest.decisions_md !== 'string') {
+    fatal('Invalid export file: "decisions_md" field must be a string');
+  }
+  if (manifest.team_md !== undefined && typeof manifest.team_md !== 'string') {
+    fatal('Invalid export file: "team_md" field must be a string');
+  }
+  if (manifest.routing_md !== undefined && typeof manifest.routing_md !== 'string') {
+    fatal('Invalid export file: "routing_md" field must be a string');
+  }
+  if (manifest.decisions !== undefined && typeof manifest.decisions !== 'string') {
+    fatal('Invalid export file: "decisions" field must be a string');
+  }
+  if (manifest.team !== undefined && typeof manifest.team !== 'string') {
+    fatal('Invalid export file: "team" field must be a string');
+  }
+  for (const name of Object.keys(manifest.agents)) {
+    if (!isSafeSlug(name)) {
+      fatal(`Invalid agent name "${name}": must be a safe slug (alphanumeric, hyphens, underscores)`);
+    }
+  }
+
+  const importedRegistry = manifest.casting['registry'];
+  const importedHistory = manifest.casting['history'];
+  if ((importedRegistry === undefined) !== (importedHistory === undefined)) {
+    fatal('Invalid export file: registry and history must be imported together');
+  }
+  if (importedRegistry === undefined) return;
+  if (
+    !importedRegistry
+    || typeof importedRegistry !== 'object'
+    || Array.isArray(importedRegistry)
+    || !importedHistory
+    || typeof importedHistory !== 'object'
+    || Array.isArray(importedHistory)
+  ) {
+    fatal('Invalid export file: registry and history must be objects');
+  }
+  const revision = (importedRegistry as Record<string, unknown>)['revision'];
+  if (!Number.isSafeInteger(revision) || (revision as number) < 1) {
+    fatal('Invalid export file: registry revision must be a positive integer');
+  }
+  try {
+    validateCastingRegistryPairForCommit(
+      importedRegistry as Record<string, unknown>,
+      importedHistory as Record<string, unknown>,
+      revision as number,
+    );
+  } catch (error) {
+    fatal(`Invalid export file: ${(error as Error).message}`);
+  }
+}
+
 /**
  * Apply an import manifest to a target directory.
  */
@@ -64,6 +118,7 @@ function applyManifest(
   force: boolean,
   storage: FSStorageProvider,
 ): void {
+  validateManifestForApply(manifest);
   const squadInfo = detectSquadDir(dest);
   const squadDir = squadInfo.path;
 
@@ -86,22 +141,6 @@ function applyManifest(
   storage.mkdirSync(path.join(squadDir, 'log'), { recursive: true });
   storage.mkdirSync(path.join(dest, '.copilot', 'skills'), { recursive: true });
 
-  if (manifest.decisions_md !== undefined && typeof manifest.decisions_md !== 'string') {
-    fatal('Invalid export file: "decisions_md" field must be a string');
-  }
-  if (manifest.team_md !== undefined && typeof manifest.team_md !== 'string') {
-    fatal('Invalid export file: "team_md" field must be a string');
-  }
-  if (manifest.routing_md !== undefined && typeof manifest.routing_md !== 'string') {
-    fatal('Invalid export file: "routing_md" field must be a string');
-  }
-  if (manifest.decisions !== undefined && typeof manifest.decisions !== 'string') {
-    fatal('Invalid export file: "decisions" field must be a string');
-  }
-  if (manifest.team !== undefined && typeof manifest.team !== 'string') {
-    fatal('Invalid export file: "team" field must be a string');
-  }
-
   const decisionsContent = manifest.decisions_md ?? manifest.decisions ?? '';
   const teamContent = manifest.team_md ?? manifest.team ?? '';
 
@@ -115,29 +154,10 @@ function applyManifest(
   // Write the authoritative casting pair through the shared durable protocol.
   const importedRegistry = manifest.casting['registry'];
   const importedHistory = manifest.casting['history'];
-  if ((importedRegistry === undefined) !== (importedHistory === undefined)) {
-    fatal('Invalid export file: registry and history must be imported together');
-  }
   if (importedRegistry !== undefined && importedHistory !== undefined) {
-    if (
-      !importedRegistry
-      || typeof importedRegistry !== 'object'
-      || Array.isArray(importedRegistry)
-      || !importedHistory
-      || typeof importedHistory !== 'object'
-      || Array.isArray(importedHistory)
-    ) {
-      fatal('Invalid export file: registry and history must be objects');
-    }
     const registry = { ...(importedRegistry as Record<string, unknown>) };
     const history = { ...(importedHistory as Record<string, unknown>) };
-    delete registry['transaction_id'];
-    delete history['transaction_id'];
-    delete history['registry_revision'];
     const revision = registry['revision'];
-    if (!Number.isSafeInteger(revision) || (revision as number) < 1) {
-      fatal('Invalid export file: registry revision must be a positive integer');
-    }
     const castingDir = path.join(squadDir, 'casting');
     const release = acquireCastingRegistryLock(castingDir, 'CLI import');
     try {
@@ -170,9 +190,6 @@ function applyManifest(
   // Write agents
   const agentNames = Object.keys(manifest.agents);
   for (const name of agentNames) {
-    if (!isSafeSlug(name)) {
-      fatal(`Invalid agent name "${name}": must be a safe slug (alphanumeric, hyphens, underscores)`);
-    }
     const agent = manifest.agents[name]!;
     const agentDir = path.join(squadDir, 'agents', name);
     assertPathUnder(agentDir, path.join(squadDir, 'agents'));

@@ -121,8 +121,16 @@ function createHealthyState(): void {
   writeSquad(
     path.join('casting', 'history.json'),
     JSON.stringify({
-      assignment_cast_snapshots: {},
-      universe_usage_history: [],
+      assignment_cast_snapshots: {
+        'repl-cast-r1-2026-01-01T00:00:00.000Z': {
+          created_at: '2026-01-01T00:00:00.000Z',
+          agents: ['alpha'],
+          universe: 'descriptive',
+        },
+      },
+      universe_usage_history: [
+        { universe: 'descriptive', used_at: '2026-01-01T00:00:00.000Z' },
+      ],
     }),
   );
   writeSquad(path.join('agents', 'alpha', 'charter.md'), CHARTER);

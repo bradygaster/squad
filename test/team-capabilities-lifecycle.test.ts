@@ -159,8 +159,16 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     storage.writeSync(
       `${SQUAD_DIR}/casting/history.json`,
       JSON.stringify({
-        assignment_cast_snapshots: {},
-        universe_usage_history: [],
+        assignment_cast_snapshots: {
+          'repl-cast-r1-2026-09-21T00:00:00.000Z': {
+            created_at: '2026-09-21T00:00:00.000Z',
+            agents: ['nori', 'saffron'],
+            universe: 'descriptive',
+          },
+        },
+        universe_usage_history: [
+          { universe: 'descriptive', used_at: '2026-09-21T00:00:00.000Z' },
+        ],
       }),
     );
     syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
@@ -194,6 +202,27 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
             retired_at: '2026-09-21T00:01:00.000Z',
           },
         },
+      }),
+    );
+    storage.writeSync(
+      `${SQUAD_DIR}/casting/history.json`,
+      JSON.stringify({
+        assignment_cast_snapshots: {
+          'repl-cast-r1-2026-09-21T00:00:00.000Z': {
+            created_at: '2026-09-21T00:00:00.000Z',
+            agents: ['nori', 'saffron'],
+            universe: 'descriptive',
+          },
+          'repl-cast-r2-2026-09-21T00:01:00.000Z': {
+            created_at: '2026-09-21T00:01:00.000Z',
+            agents: ['nori'],
+            universe: 'descriptive',
+          },
+        },
+        universe_usage_history: [
+          { universe: 'descriptive', used_at: '2026-09-21T00:00:00.000Z' },
+          { universe: 'descriptive', used_at: '2026-09-21T00:01:00.000Z' },
+        ],
       }),
     );
     syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });

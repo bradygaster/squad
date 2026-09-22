@@ -124,13 +124,27 @@ export interface EnsureCastingPairResult {
   migrated: boolean;
 }
 
+export interface CastingRecoveryPathState {
+  path: string;
+  originalState: string;
+  transactionWrittenState: string;
+  observedState: string;
+  status: 'diverged' | 'indeterminate';
+}
+
+export interface CastingRecoveryMetadata {
+  affectedPaths: CastingRecoveryPathState[];
+}
+
 export class CastingCommitInDoubtError extends Error {
   readonly cause: unknown;
+  readonly recovery?: CastingRecoveryMetadata;
 
-  constructor(message: string, cause: unknown) {
+  constructor(message: string, cause: unknown, recovery?: CastingRecoveryMetadata) {
     super(message);
     this.name = 'CastingCommitInDoubtError';
     this.cause = cause;
+    this.recovery = recovery;
   }
 }
 
@@ -704,8 +718,20 @@ function validateLegacyPairConsistency(
   }
   const generatedAt = Date.parse(String(registry['generated_at']));
   const agents = registry['agents'] as Record<string, unknown>;
-  const observedRevisions: number[] = [];
+  const usage = history['universe_usage_history'] as unknown[];
   const snapshots = history['assignment_cast_snapshots'] as Record<string, unknown>;
+  if (
+    revision === 1
+    && Object.keys(agents).length === 0
+    && Object.keys(snapshots).length === 0
+    && usage.length === 0
+  ) {
+    return;
+  }
+
+  const observedRevisions = new Set<number>();
+  const snapshotEvidence = new Map<string, number>();
+  let currentGenerationTimestampMatched = false;
   for (const [key, rawSnapshot] of Object.entries(snapshots)) {
     if (!rawSnapshot || typeof rawSnapshot !== 'object' || Array.isArray(rawSnapshot)) {
       throw new Error(
@@ -745,9 +771,33 @@ function validateLegacyPairConsistency(
       );
     }
     const revisionMatch = key.match(/(?:^|[-_])(?:revision-|r)(\d+)(?:[-_]|$)/i);
-    if (revisionMatch) observedRevisions.push(Number(revisionMatch[1]));
+    if (!revisionMatch) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: legacy snapshot key lacks generation evidence',
+      );
+    }
+    const snapshotRevision = Number(revisionMatch[1]);
+    if (
+      !Number.isSafeInteger(snapshotRevision)
+      || snapshotRevision < 1
+      || snapshotRevision > revision
+      || observedRevisions.has(snapshotRevision)
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: legacy pair is mixed-generation',
+      );
+    }
+    observedRevisions.add(snapshotRevision);
+    const evidenceKey = `${String(snapshot['universe'])}\u0000${String(snapshot['created_at'])}`;
+    snapshotEvidence.set(evidenceKey, (snapshotEvidence.get(evidenceKey) ?? 0) + 1);
+    if (
+      snapshotRevision === revision
+      && Date.parse(String(snapshot['created_at'])) === generatedAt
+    ) {
+      currentGenerationTimestampMatched = true;
+    }
   }
-  const usage = history['universe_usage_history'] as unknown[];
+  const usageEvidence = new Map<string, number>();
   for (const rawUsage of usage) {
     if (
       !rawUsage
@@ -764,16 +814,133 @@ function validateLegacyPairConsistency(
         'Cannot read a consistent casting registry/history pair: legacy usage history is malformed',
       );
     }
+    const usageRecord = rawUsage as Record<string, unknown>;
+    const evidenceKey = `${String(usageRecord['universe'])}\u0000${String(usageRecord['used_at'])}`;
+    usageEvidence.set(evidenceKey, (usageEvidence.get(evidenceKey) ?? 0) + 1);
   }
-  if (
-    observedRevisions.some(observedRevision => observedRevision > revision)
-    || (
-      observedRevisions.length > 0
-      && Math.max(...observedRevisions) !== revision
+  const completeRevisionEvidence = Array.from(
+    { length: revision },
+    (_, index) => index + 1,
+  );
+  const implicitGenesisEvidence = revision === 1
+    ? completeRevisionEvidence
+    : completeRevisionEvidence.slice(1);
+  const revisionsMatch = [completeRevisionEvidence, implicitGenesisEvidence].some(
+    expectedRevisions => (
+      observedRevisions.size === expectedRevisions.length
+      && expectedRevisions.every(expectedRevision => observedRevisions.has(expectedRevision))
+    ),
+  );
+  const evidenceMatches = (
+    snapshotEvidence.size === usageEvidence.size
+    && [...snapshotEvidence].every(
+      ([key, count]) => usageEvidence.get(key) === count,
     )
+  );
+  if (
+    !revisionsMatch
+    || !currentGenerationTimestampMatched
+    || !evidenceMatches
   ) {
     throw new Error(
       'Cannot read a consistent casting registry/history pair: legacy pair is mixed-generation',
+    );
+  }
+}
+
+function validateOutgoingHistory(
+  history: Record<string, unknown>,
+  revision: number,
+): void {
+  const allowedKeys = new Set([
+    'assignment_cast_snapshots',
+    'universe_usage_history',
+    'transaction_id',
+    'registry_revision',
+  ]);
+  if (Object.keys(history).some(key => !allowedKeys.has(key))) {
+    throw new Error('Cannot commit casting registry/history: history contains unexpected fields');
+  }
+  const snapshots = history['assignment_cast_snapshots'] as Record<string, unknown>;
+  for (const [key, rawSnapshot] of Object.entries(snapshots)) {
+    if (
+      !key
+      || !rawSnapshot
+      || typeof rawSnapshot !== 'object'
+      || Array.isArray(rawSnapshot)
+    ) {
+      throw new Error('Cannot commit casting registry/history: history snapshot is malformed');
+    }
+    const snapshot = rawSnapshot as Record<string, unknown>;
+    if (
+      Object.keys(snapshot).some(field => !['created_at', 'agents', 'universe'].includes(field))
+      || typeof snapshot['created_at'] !== 'string'
+      || !Number.isFinite(Date.parse(snapshot['created_at']))
+      || !Array.isArray(snapshot['agents'])
+      || snapshot['agents'].some(agent => typeof agent !== 'string' || agent.length === 0)
+      || typeof snapshot['universe'] !== 'string'
+      || snapshot['universe'].length === 0
+    ) {
+      throw new Error('Cannot commit casting registry/history: history snapshot is malformed');
+    }
+  }
+  for (const rawUsage of history['universe_usage_history'] as unknown[]) {
+    if (
+      !rawUsage
+      || typeof rawUsage !== 'object'
+      || Array.isArray(rawUsage)
+    ) {
+      throw new Error('Cannot commit casting registry/history: usage history is malformed');
+    }
+    const usage = rawUsage as Record<string, unknown>;
+    if (
+      Object.keys(usage).some(field => !['universe', 'used_at'].includes(field))
+      || typeof usage['universe'] !== 'string'
+      || usage['universe'].length === 0
+      || typeof usage['used_at'] !== 'string'
+      || !Number.isFinite(Date.parse(usage['used_at']))
+    ) {
+      throw new Error('Cannot commit casting registry/history: usage history is malformed');
+    }
+  }
+  const registryRevision = history['registry_revision'];
+  if (registryRevision !== undefined && registryRevision !== revision) {
+    throw new Error(
+      'Cannot commit casting registry/history: history registry revision does not match registry revision',
+    );
+  }
+  const registryTransaction = history['transaction_id'];
+  if (registryTransaction !== undefined && typeof registryTransaction !== 'string') {
+    throw new Error('Cannot commit casting registry/history: history transaction id is invalid');
+  }
+}
+
+export function validateCastingRegistryPairForCommit(
+  registry: Record<string, unknown>,
+  history: Record<string, unknown>,
+  targetRevision: number,
+): void {
+  const revision = validatePairRoots(registry, history, true);
+  if (revision !== targetRevision) {
+    throw new Error(
+      'Cannot commit casting registry/history: target revision does not match registry revision',
+    );
+  }
+  validateOutgoingHistory(history, revision);
+  const registryTransaction = registry['transaction_id'];
+  const historyTransaction = history['transaction_id'];
+  if (
+    (registryTransaction === undefined) !== (historyTransaction === undefined)
+    || (
+      registryTransaction !== undefined
+      && (
+        typeof registryTransaction !== 'string'
+        || registryTransaction !== historyTransaction
+      )
+    )
+  ) {
+    throw new Error(
+      'Cannot commit casting registry/history: outgoing transaction metadata is inconsistent',
     );
   }
 }
@@ -911,6 +1078,7 @@ export function commitCastingRegistryPair(
   history: Record<string, unknown>,
   targetRevision: number,
 ): { transactionId: string; registryRaw: string; historyRaw: string } {
+  validateCastingRegistryPairForCommit(registry, history, targetRevision);
   mkdirSync(castingDir, { recursive: true });
   const { registryPath, historyPath, journalPath, manifestPath } = transactionPaths(castingDir);
   if (existsSync(journalPath)) {

@@ -17,6 +17,7 @@
  */
 
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
 import {
   CastingCommitInDoubtError,
@@ -27,6 +28,7 @@ import {
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
   type CastingDurabilityBoundary,
+  type CastingRecoveryPathState,
 } from '../casting/durable-registry.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { PresetAgent } from './types.js';
@@ -59,6 +61,10 @@ interface PresetRegistryTestHooks {
   lockTimeoutMs?: number;
   staleLockAgeMs?: number;
   beforeRollback?: () => void;
+  afterOutputMutation?: (context: {
+    surface: 'agent-tree' | 'routing';
+    path: string;
+  }) => void;
   boundary?: (context: {
     boundary: CastingDurabilityBoundary;
     path: string;
@@ -96,6 +102,14 @@ export function _setPresetRegistryHooksForTesting(
       }
     },
   } : null);
+}
+
+/** @internal Test-only deterministic external-writer injection. */
+export function _afterPresetOutputMutationForTesting(
+  surface: 'agent-tree' | 'routing',
+  outputPath: string,
+): void {
+  presetRegistryTestHooks?.afterOutputMutation?.({ surface, path: outputPath });
 }
 
 interface ScaffoldOptions {
@@ -192,14 +206,50 @@ function validatePresetCastingInputs(castingDir: string): void {
   validateCastingPolicy(path.join(castingDir, 'policy.json'));
 }
 
+function fileState(raw: string | undefined): string {
+  if (raw === undefined) return 'missing';
+  return `file:sha256:${createHash('sha256').update(raw).digest('hex')}`;
+}
+
 function restoreFileIfUnchanged(
   filePath: string,
   original: string | undefined,
   written: string | undefined,
-): void {
-  if (storage.readSync(filePath) !== written) return;
-  if (original === undefined) storage.deleteSync(filePath);
-  else storage.writeSync(filePath, original);
+): CastingRecoveryPathState | undefined {
+  let observed: string | undefined;
+  try {
+    observed = storage.readSync(filePath);
+  } catch {
+    return {
+      path: filePath,
+      originalState: fileState(original),
+      transactionWrittenState: fileState(written),
+      observedState: 'indeterminate',
+      status: 'indeterminate',
+    };
+  }
+  if (observed !== written) {
+    return {
+      path: filePath,
+      originalState: fileState(original),
+      transactionWrittenState: fileState(written),
+      observedState: fileState(observed),
+      status: 'diverged',
+    };
+  }
+  try {
+    if (original === undefined) storage.deleteSync(filePath);
+    else storage.writeSync(filePath, original);
+    return undefined;
+  } catch {
+    return {
+      path: filePath,
+      originalState: fileState(original),
+      transactionWrittenState: fileState(written),
+      observedState: 'rollback-failed',
+      status: 'indeterminate',
+    };
+  }
 }
 
 function atomicWriteFile(
@@ -610,9 +660,18 @@ export function scaffoldPresetIntoSquad(
     } catch (error) {
       if (error instanceof CastingCommitInDoubtError) throw error;
       presetRegistryTestHooks?.beforeRollback?.();
-      restoreFileIfUnchanged(teamPath, originalTeam, writtenTeam);
-      restoreFileIfUnchanged(routingPath, originalRouting, writtenRouting);
-      restoreFileIfUnchanged(policyPath, originalPolicy, writtenPolicy);
+      const affectedPaths = [
+        restoreFileIfUnchanged(teamPath, originalTeam, writtenTeam),
+        restoreFileIfUnchanged(routingPath, originalRouting, writtenRouting),
+        restoreFileIfUnchanged(policyPath, originalPolicy, writtenPolicy),
+      ].filter((entry): entry is CastingRecoveryPathState => entry !== undefined);
+      if (affectedPaths.length > 0) {
+        throw new CastingCommitInDoubtError(
+          `Preset scaffold rollback is in doubt for ${affectedPaths.length} path(s)`,
+          error,
+          { affectedPaths },
+        );
+      }
       throw error;
     }
   } finally {

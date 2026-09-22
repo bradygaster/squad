@@ -11,6 +11,7 @@
 
 import path from 'node:path';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import {
   lstatSync,
   readFileSync,
@@ -23,10 +24,16 @@ import {
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
-import { CastingCommitInDoubtError } from '../casting/durable-registry.js';
+import {
+  CastingCommitInDoubtError,
+  type CastingRecoveryPathState,
+} from '../casting/durable-registry.js';
 import { resolvePresetsDir, ensureSquadHome } from '../resolution.js';
 import type { PresetManifest, PresetApplyResult, PresetAgent } from './types.js';
-import { scaffoldPresetIntoSquad } from './scaffold.js';
+import {
+  _afterPresetOutputMutationForTesting,
+  scaffoldPresetIntoSquad,
+} from './scaffold.js';
 
 export type { PresetManifest, PresetAgent, PresetApplyResult } from './types.js';
 
@@ -157,13 +164,17 @@ export function applyPreset(
         }
 
         try {
+          const writtenSnapshot = snapshotCopiedDirectory(sourceDir);
+          writtenAgentSnapshots.set(destDir, writtenSnapshot);
           if (options.force && storage.existsSync(destDir)) {
             rmSync(destDir, { recursive: true, force: true });
           }
           copyDirRecursive(sourceDir, destDir);
+          _afterPresetOutputMutationForTesting('agent-tree', destDir);
           results.push({ agent: agent.name, status: 'installed' });
         } catch (err) {
           results.push({ agent: agent.name, status: 'error', reason: String(err) });
+          throw err;
         }
       }
 
@@ -171,47 +182,81 @@ export function applyPreset(
         if (options.force || options.overwriteRouting || !storage.existsSync(destRoutingPath)) {
           const content = storage.readSync(savedRoutingPath);
           if (content !== undefined) {
+            writtenRouting = content;
             storage.mkdirSync(squadDir, { recursive: true });
             storage.writeSync(destRoutingPath, content);
+            _afterPresetOutputMutationForTesting('routing', destRoutingPath);
           }
         }
       }
-
-      for (const agent of manifest.agents) {
-        try {
-          validateName(agent.name, 'agent');
-          const destDir = path.join(targetDir, agent.name);
-          writtenAgentSnapshots.set(destDir, snapshotDirectory(destDir));
-        } catch {
-          // Invalid names never resolve to destination paths.
-        }
-      }
-      writtenRouting = storage.readSync(destRoutingPath);
 
       return manifest.agents.filter(a =>
         results.some(r => r.agent === a.name && r.status !== 'error'),
       );
     });
   } catch (err) {
-    if (!(err instanceof CastingCommitInDoubtError)) {
-      for (const [destDir, snapshot] of agentSnapshots) {
-        const written = writtenAgentSnapshots.get(destDir);
-        if (written && snapshotsEqual(snapshotDirectory(destDir), written)) {
+    if (err instanceof CastingCommitInDoubtError && !err.recovery) throw err;
+    const affectedPaths: CastingRecoveryPathState[] = err instanceof CastingCommitInDoubtError
+      ? [...(err.recovery?.affectedPaths ?? [])]
+      : [];
+    const alreadyAffected = new Set(affectedPaths.map(entry => entry.path));
+    for (const [destDir, snapshot] of agentSnapshots) {
+      if (alreadyAffected.has(destDir)) continue;
+      const written = writtenAgentSnapshots.get(destDir);
+      if (!written) continue;
+      let observed: DirectorySnapshot;
+      try {
+        observed = snapshotDirectory(destDir);
+      } catch {
+        affectedPaths.push(directoryRecoveryState(destDir, snapshot, written, 'indeterminate'));
+        continue;
+      }
+      if (snapshotsEqual(observed, written)) {
+        try {
           restoreDirectory(destDir, snapshot);
+        } catch {
+          affectedPaths.push(directoryRecoveryState(destDir, snapshot, written, 'rollback-failed'));
         }
+      } else {
+        affectedPaths.push(directoryRecoveryState(destDir, snapshot, written, observed));
       }
-      if (storage.readSync(destRoutingPath) === writtenRouting) {
-        if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
-        else storage.writeSync(destRoutingPath, originalRouting);
+    }
+    let observedRouting: string | undefined;
+    if (!alreadyAffected.has(destRoutingPath)) {
+      try {
+        observedRouting = storage.readSync(destRoutingPath);
+        if (observedRouting === writtenRouting) {
+          if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
+          else storage.writeSync(destRoutingPath, originalRouting);
+        } else {
+          affectedPaths.push(fileRecoveryState(
+            destRoutingPath,
+            originalRouting,
+            writtenRouting,
+            observedRouting,
+          ));
+        }
+      } catch {
+        affectedPaths.push(fileRecoveryState(
+          destRoutingPath,
+          originalRouting,
+          writtenRouting,
+          'indeterminate',
+        ));
       }
+    }
+    if (affectedPaths.length > 0) {
+      throw new CastingCommitInDoubtError(
+        `Preset '${presetName}' rollback is in doubt for ${affectedPaths.length} path(s)`,
+        err,
+        { affectedPaths },
+      );
     }
     results.length = 0;
     results.push({
       agent: '<scaffold>',
       status: 'error',
-      reason: err instanceof CastingCommitInDoubtError
-        ? `Preset '${presetName}' may commit during recovery; surrounding outputs were preserved: ${String(err)}`
-        : `Preset '${presetName}' was not changed because its coordinated scaffold failed: ${String(err)}`,
+      reason: `Preset '${presetName}' changes were rolled back after its coordinated scaffold failed: ${String(err)}`,
     });
   }
 
@@ -763,6 +808,57 @@ function snapshotDirectory(directory: string): DirectorySnapshot {
 
 function snapshotsEqual(left: DirectorySnapshot, right: DirectorySnapshot): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function snapshotCopiedDirectory(sourceDir: string): DirectorySnapshot {
+  const snapshot = snapshotDirectory(sourceDir);
+  return {
+    ...snapshot,
+    entries: snapshot.entries.filter(entry => entry.type !== 'symlink'),
+  };
+}
+
+function snapshotState(snapshot: DirectorySnapshot): string {
+  return `${snapshot.rootType}:sha256:${createSnapshotHash(snapshot)}`;
+}
+
+function createSnapshotHash(snapshot: DirectorySnapshot): string {
+  return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+}
+
+function directoryRecoveryState(
+  directory: string,
+  original: DirectorySnapshot,
+  written: DirectorySnapshot,
+  observed: DirectorySnapshot | 'indeterminate' | 'rollback-failed',
+): CastingRecoveryPathState {
+  return {
+    path: directory,
+    originalState: snapshotState(original),
+    transactionWrittenState: snapshotState(written),
+    observedState: typeof observed === 'string' ? observed : snapshotState(observed),
+    status: typeof observed === 'string' ? 'indeterminate' : 'diverged',
+  };
+}
+
+function rawFileState(raw: string | undefined): string {
+  if (raw === undefined) return 'missing';
+  return `file:sha256:${createHash('sha256').update(raw).digest('hex')}`;
+}
+
+function fileRecoveryState(
+  filePath: string,
+  original: string | undefined,
+  written: string | undefined,
+  observed: string | undefined | 'indeterminate',
+): CastingRecoveryPathState {
+  return {
+    path: filePath,
+    originalState: rawFileState(original),
+    transactionWrittenState: rawFileState(written),
+    observedState: observed === 'indeterminate' ? observed : rawFileState(observed),
+    status: observed === 'indeterminate' ? 'indeterminate' : 'diverged',
+  };
 }
 
 function restoreDirectory(directory: string, snapshot: DirectorySnapshot): void {
