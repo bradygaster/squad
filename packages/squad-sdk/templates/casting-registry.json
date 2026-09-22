@@ -1,3 +1,7 @@
 {
+  "schema": "squad-agent-provenance/v1",
+  "schema_version": 1,
+  "revision": 1,
+  "generated_at": "1970-01-01T00:00:00.000Z",
   "agents": {}
 }

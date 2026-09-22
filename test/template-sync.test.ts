@@ -18,6 +18,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import { parseAgentProvenanceRegistry } from '@bradygaster/squad-sdk/casting';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -95,6 +96,13 @@ const CASTING_POLICY_LOCATIONS = [
   'templates/casting-policy.json',
   'packages/squad-cli/templates/casting-policy.json',
   'packages/squad-sdk/templates/casting-policy.json',
+] as const;
+
+const CASTING_REGISTRY_LOCATIONS = [
+  `${SOURCE_DIR}/casting-registry.json`,
+  'templates/casting-registry.json',
+  'packages/squad-cli/templates/casting-registry.json',
+  'packages/squad-sdk/templates/casting-registry.json',
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -250,6 +258,24 @@ describe('casting-policy.json content parity', () => {
       expect(Number.isInteger(cap), `${name} capacity is integer`).toBe(true);
     }
   });
+});
+
+describe('casting-registry.json producer contract', () => {
+  for (const loc of CASTING_REGISTRY_LOCATIONS) {
+    it(`${loc} is a complete parseable squad-agent-provenance/v1 registry`, () => {
+      const parsed = parseAgentProvenanceRegistry(JSON.parse(readFile(loc)));
+      expect(parsed).toMatchObject({
+        completeness: 'complete',
+        diagnostics: [],
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          agents: {},
+        },
+      });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

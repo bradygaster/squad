@@ -34,6 +34,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   assertAcceptedOnlyLabelWording,
+  parseAgentRegistry,
   parseRoster,
   parseStructuredData,
   validateActivation,
@@ -127,11 +128,14 @@ describe('gh-aw: fast-path (`squad-plan-accept`) requires non-empty Activation b
     expect(() => assertBindingsContractPresent(activateSkill)).not.toThrow();
   });
 
-  it('states the identical binding shape/quoting/omission contract as the granular path', () => {
+  it('states the identical versioned provenance/quoting/omission contract as the granular path', () => {
     const prose = acceptSkill.replace(/\s+/g, ' ');
     expect(prose).toMatch(
-      /identical binding shape, quoting, and omission-reason semantics as `squad-plan-activate` Step 4/,
+      /identical versioned provenance, binding shape, quoting, and omission semantics as `squad-plan-activate` Step 4/,
     );
+    expect(activateSkill).toContain('squad-work-agent-binding/v1');
+    expect(activateSkill).toContain('squad-agent-provenance/v1');
+    expect(activateSkill).toContain('legacy-plan-missing-id');
     expect(prose).toMatch(/never bare numbers/);
     expect(prose).toMatch(/a surviving `#aw_…` reference means `create-issue` never\s*landed/);
   });
@@ -141,6 +145,12 @@ describe('gh-aw: fast-path (`squad-plan-accept`) requires non-empty Activation b
     expect(prose).toMatch(
       /missing, empty, malformed, or unresolved bindings block on a `plan-accepted` or\s*`phases-accepted` artifact as a failure exactly as it does for `activated`\s*and `phases-activated`/,
     );
+  });
+
+  it('both activation paths revalidate stable IDs before mutation', () => {
+    expect(acceptSkill).toMatch(/Agent ID` MUST exactly match its `AGENT_IDENTITY:` record/);
+    expect(activateSkill).toMatch(/plan `Agent ID` to exactly match the\s+same `AGENT_IDENTITY:` record/);
+    expect(activateSkill).toContain('never reconstruct one from its name or label');
   });
 
   it('both artifact-data lines for the fast path carry the Activation bindings JSON array', () => {
@@ -224,6 +234,14 @@ const roster = parseRoster(`
 
 function binding(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    binding_schema: 'squad-work-agent-binding/v1',
+    binding_version: 1,
+    producer: 'squad',
+    repository: 'bradygaster/squad',
+    origin_issue: 1,
+    artifact: 'activated',
+    registry_schema: 'squad-agent-provenance/v1',
+    registry_revision: 2,
     task: '1',
     issue: 42,
     epic: '2.1',
@@ -232,6 +250,8 @@ function binding(overrides: Partial<Record<string, unknown>> = {}) {
     epic_agents: ['kint'],
     label: 'squad:kint',
     epic_label: 'squad:kint',
+    agent_id: 'runtime-engineer',
+    epic_agent_ids: ['runtime-engineer'],
     ...overrides,
   };
 }
@@ -239,7 +259,34 @@ function binding(overrides: Partial<Record<string, unknown>> = {}) {
 const presentLabels = new Map([
   [42, new Set(['squad', 'squad:kint'])],
   [43, new Set(['squad', 'squad:kint'])],
+  [44, new Set(['squad', 'squad:kint'])],
 ]);
+const registry = parseAgentRegistry({
+  schema: 'squad-agent-provenance/v1',
+  schema_version: 1,
+  revision: 2,
+  agents: {
+    'runtime-engineer': {
+      status: 'active',
+      display_name: 'Kint',
+      persistent_name: 'Kint',
+      role: 'Lead',
+      universe: 'descriptive',
+      created_at: '2026-09-20T20:00:00.000Z',
+      updated_at: '2026-09-21T20:00:00.000Z',
+    },
+    'retired-reviewer': {
+      status: 'retired',
+      display_name: 'Former Reviewer',
+      persistent_name: 'Former Reviewer',
+      role: 'Reviewer',
+      universe: 'descriptive',
+      created_at: '2026-09-20T20:00:00.000Z',
+      updated_at: '2026-09-21T20:00:00.000Z',
+      retired_at: '2026-09-21T20:00:00.000Z',
+    },
+  },
+});
 
 describe.each([
   ['plan-accepted', false],
@@ -261,6 +308,123 @@ describe.each([
     expect(() => validateBindings(artifact(undefined), roster, presentLabels)).toThrow(
       'bindings are missing or empty',
     );
+  });
+
+  describe('checker/runtime: authoritative work-to-agent provenance', () => {
+    const artifact = (overrides: Partial<Record<string, unknown>> = {}) => ({
+      squad_artifact: 'activated',
+      schema_version: '1',
+      origin_issue: 1,
+      phases: [],
+      bindings: [binding(overrides)],
+    });
+    const authority = { repository: 'bradygaster/squad', registry };
+
+    it('accepts a producer-owned stable id without using display names as identity', () => {
+      expect(validateActivation(artifact(), roster, presentLabels, 1, authority))
+        .toMatchObject({ checked: 1 });
+    });
+
+    it('rejects a partial producer registry before checking bindings', () => {
+      expect(() => parseAgentRegistry({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 2,
+        agents: { 'runtime-engineer': { status: 'active', display_name: 'Kint' } },
+      })).toThrow(/incomplete/);
+    });
+
+    it('accepts historical bindings to retired tombstones', () => {
+      const retiredBinding = binding({
+        agent_id: 'retired-reviewer',
+        epic_agent_ids: ['retired-reviewer'],
+      });
+      expect(validateActivation(
+        { ...artifact(), bindings: [retiredBinding] },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toMatchObject({ checked: 1 });
+    });
+
+    it('accepts explicit external-agent omissions without inferring an id', () => {
+      const externalBinding = binding({
+        agent_id: null,
+        epic_agent_ids: [],
+        identity_omission_reason: 'external-agent',
+        epic_identity_omission_reason: 'partial',
+      });
+      expect(validateActivation(
+        { ...artifact(), bindings: [externalBinding] },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toMatchObject({ checked: 1 });
+    });
+
+    it('rejects incomplete epic id sets, mixed omission semantics, and mixed revisions', () => {
+      const known = binding({
+        epic_identity_omission_reason: 'partial',
+      });
+      const omitted = binding({
+        task: '2',
+        issue: 44,
+        agent_id: null,
+        identity_omission_reason: 'external-agent',
+        epic_agent_ids: [],
+        epic_identity_omission_reason: 'partial',
+      });
+      expect(() => validateActivation(
+        { ...artifact(), bindings: [known, omitted] },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toThrow(/inconsistent epic_agent_ids|complete epic task-agent set/);
+
+      expect(() => validateActivation(
+        {
+          ...artifact(),
+          bindings: [
+            known,
+            { ...omitted, epic_agent_ids: ['runtime-engineer'], epic_identity_omission_reason: undefined },
+          ],
+        },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toThrow(/every binding requires partial omission/);
+
+      expect(() => validateActivation(
+        {
+          ...artifact(),
+          bindings: [
+            binding(),
+            binding({ task: '2', issue: 44, registry_revision: 1 }),
+          ],
+        },
+        roster,
+        presentLabels,
+        1,
+        authority,
+      )).toThrow(/registry_revision conflicts/);
+    });
+
+    it.each([
+      ['missing schema', { binding_schema: undefined }],
+      ['wrong repository', { repository: 'bradygaster/squadcaster' }],
+      ['wrong origin', { origin_issue: 99 }],
+      ['wrong artifact', { artifact: 'plan-accepted' }],
+      ['future registry', { registry_revision: 3 }],
+      ['unknown stable id', { agent_id: 'unknown-agent' }],
+      ['partial epic ids', { epic_agent_ids: [] }],
+    ])('fails closed for %s', (_case, mutation) => {
+      expect(() => validateActivation(artifact(mutation), roster, presentLabels, 1, authority))
+        .toThrow();
+    });
   });
 
   it('fails closed when bindings are an empty array', () => {
