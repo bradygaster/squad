@@ -15,6 +15,7 @@ import {
   CastingEngine,
   acquireCastingRegistryLockAsync,
   commitCastingRegistryPair,
+  prepareCastingRegistryPairLocked,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
   reconcileAgentProvenanceRegistry,
@@ -571,6 +572,76 @@ function buildRoutingTable(members: CastMember[]): string {
   return table;
 }
 
+function validateCastProposal(proposal: CastProposal): void {
+  if (!proposal || typeof proposal !== 'object') throw new Error('Cast proposal is required');
+  if (typeof proposal.universe !== 'string' || proposal.universe.trim().length === 0) {
+    throw new Error('Cast proposal universe is required');
+  }
+  if (typeof proposal.projectDescription !== 'string') {
+    throw new Error('Cast proposal project description must be a string');
+  }
+  if (!Array.isArray(proposal.members)) throw new Error('Cast proposal members must be an array');
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const member of proposal.members) {
+    if (
+      !member
+      || typeof member.name !== 'string'
+      || member.name.trim().length === 0
+      || typeof member.role !== 'string'
+      || member.role.trim().length === 0
+      || typeof member.scope !== 'string'
+      || member.scope.trim().length === 0
+      || typeof member.emoji !== 'string'
+    ) {
+      throw new Error('Every cast member requires a name, role, scope, and emoji');
+    }
+    const id = member.id ?? memberId(member.name);
+    if (ids.has(id) || names.has(member.name)) {
+      throw new Error(`Duplicate cast member identity: ${member.name}`);
+    }
+    ids.add(id);
+    names.add(member.name);
+  }
+}
+
+function validateExistingCastingInputs(
+  storage: FSStorageProvider,
+  castingDir: string,
+): void {
+  if (!storage.existsSync(castingDir)) return;
+  const registryPath = join(castingDir, 'registry.json');
+  const historyPath = join(castingDir, 'history.json');
+  const registryExists = storage.existsSync(registryPath);
+  const historyExists = storage.existsSync(historyPath);
+  if (registryExists !== historyExists) {
+    throw new Error('Cannot cast with only one of casting/registry.json and casting/history.json');
+  }
+  if (
+    registryExists
+    || storage.existsSync(join(castingDir, 'registry-history.transaction.json'))
+    || storage.existsSync(join(castingDir, 'registry-history.commit.json'))
+  ) {
+    readCastingRegistryPair(castingDir);
+  }
+  const policyRaw = storage.readSync(join(castingDir, 'policy.json'));
+  if (policyRaw !== undefined) {
+    let policy: unknown;
+    try {
+      policy = JSON.parse(policyRaw) as unknown;
+    } catch (error) {
+      throw new Error(
+        `Cannot cast with malformed casting/policy.json: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+      throw new Error('Cannot cast with malformed casting/policy.json');
+    }
+  }
+}
+
 // ── Main cast function ─────────────────────────────────────────────
 
 /**
@@ -585,12 +656,14 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const filesCreated: string[] = [];
   const membersCreated: string[] = [];
   const templatesDir = getTemplatesDir();
+  validateCastProposal(proposal);
+  validateExistingCastingInputs(storage, castingDir);
   await storage.mkdir(castingDir, { recursive: true });
   const releaseCastLock = await acquireCastingRegistryLockAsync(castingDir, 'CLI cast');
 
   try {
     recoverCastingRegistryTransaction(castingDir);
-    const existingPair = readCastingRegistryPair(castingDir);
+    const existingPair = prepareCastingRegistryPairLocked(castingDir);
     const now = new Date().toISOString();
     // Built-ins are fixed support identities, not routable Cast specialists.
     const specialistMembers = proposal.members.filter(member => !builtinId(member.name));

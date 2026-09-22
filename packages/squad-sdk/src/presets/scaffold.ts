@@ -23,6 +23,7 @@ import {
   _setCastingDurabilityHooksForTesting,
   acquireCastingRegistryLock,
   commitCastingRegistryPair,
+  prepareCastingRegistryPairLocked,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
   type CastingDurabilityBoundary,
@@ -35,6 +36,11 @@ const storage = new FSStorageProvider();
 const MEMBERS_HEADER = '## Members';
 const ROUTING_HEADER = '## Work Type → Agent';
 const REGISTRY_UPDATE_MAX_ATTEMPTS = 8;
+const DEFAULT_POLICY_RAW = JSON.stringify(
+  { universe_allowlist: ['*'], max_capacity: 25 },
+  null,
+  2,
+) + '\n';
 let atomicWriteSequence = 0;
 
 interface PresetRegistryTestHooks {
@@ -52,6 +58,7 @@ interface PresetRegistryTestHooks {
   isProcessAlive?: (pid: number) => boolean | undefined;
   lockTimeoutMs?: number;
   staleLockAgeMs?: number;
+  beforeRollback?: () => void;
   boundary?: (context: {
     boundary: CastingDurabilityBoundary;
     path: string;
@@ -161,6 +168,40 @@ function validateCastingPolicy(policyPath: string): void {
   }
 }
 
+function validatePresetCastingInputs(castingDir: string): void {
+  if (!storage.existsSync(castingDir)) return;
+  const registryPath = path.join(castingDir, 'registry.json');
+  const historyPath = path.join(castingDir, 'history.json');
+  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
+  const manifestPath = path.join(castingDir, 'registry-history.commit.json');
+  const registryExists = storage.existsSync(registryPath);
+  const historyExists = storage.existsSync(historyPath);
+  if (registryExists !== historyExists) {
+    throw new Error(
+      'Cannot update casting registry/history: exactly one authoritative file exists',
+    );
+  }
+  if (
+    registryExists
+    || storage.existsSync(journalPath)
+    || storage.existsSync(manifestPath)
+  ) {
+    const pair = readCastingRegistryPair(castingDir);
+    readCastingHistoryRaw(pair.historyRaw);
+  }
+  validateCastingPolicy(path.join(castingDir, 'policy.json'));
+}
+
+function restoreFileIfUnchanged(
+  filePath: string,
+  original: string | undefined,
+  written: string | undefined,
+): void {
+  if (storage.readSync(filePath) !== written) return;
+  if (original === undefined) storage.deleteSync(filePath);
+  else storage.writeSync(filePath, original);
+}
+
 function atomicWriteFile(
   filePath: string,
   content: string,
@@ -184,17 +225,6 @@ function atomicWriteFile(
     storage.deleteSync(tempPath);
   }
 }
-
-function atomicWriteJson(filePath: string, value: unknown): void {
-  atomicWriteFile(
-    filePath,
-    JSON.stringify(value, null, 2) + '\n',
-    'policy',
-    filePath,
-    0,
-  );
-}
-
 
 /**
  * Map an agent's role to the Members-table Status cell.
@@ -491,10 +521,10 @@ function writeOrMergeCastingState(
   const historyPath = path.join(castingDir, 'history.json');
   const policyPath = path.join(castingDir, 'policy.json');
   if (!storage.existsSync(policyPath)) {
-    atomicWriteJson(policyPath, { universe_allowlist: ['*'], max_capacity: 25 });
+    atomicWriteFile(policyPath, DEFAULT_POLICY_RAW, 'policy', policyPath, 0);
   }
   for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
-    const pairSnapshot = readCastingRegistryPair(castingDir);
+    const pairSnapshot = prepareCastingRegistryPairLocked(castingDir);
     const snapshot = pairSnapshot.registryRaw?.trim()
       ? { raw: pairSnapshot.registryRaw, value: pairSnapshot.registry }
       : { raw: pairSnapshot.registryRaw, value: undefined };
@@ -551,6 +581,7 @@ export function scaffoldPresetIntoSquad(
 ): void {
   const universe = `preset:${presetName}`;
   const castingDir = path.join(squadDir, 'casting');
+  validatePresetCastingInputs(castingDir);
   storage.mkdirSync(castingDir, { recursive: true });
   const releaseLock = acquireCastingRegistryLock(castingDir, 'preset scaffold');
   const teamPath = path.join(squadDir, 'team.md');
@@ -558,7 +589,7 @@ export function scaffoldPresetIntoSquad(
   const policyPath = path.join(castingDir, 'policy.json');
   try {
     recoverCastingRegistryTransaction(castingDir);
-    readCastingRegistryPair(castingDir);
+    prepareCastingRegistryPairLocked(castingDir);
     validateCastingPolicy(path.join(castingDir, 'policy.json'));
 
     const wireableAgents = prepareOutputs?.() ?? agents;
@@ -567,18 +598,21 @@ export function scaffoldPresetIntoSquad(
     const originalTeam = storage.readSync(teamPath);
     const originalRouting = storage.readSync(routingPath);
     const originalPolicy = storage.readSync(policyPath);
+    let writtenTeam = originalTeam;
+    let writtenRouting = originalRouting;
+    const writtenPolicy = originalPolicy ?? DEFAULT_POLICY_RAW;
     try {
       writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
+      writtenTeam = storage.readSync(teamPath);
       writeOrMergeRouting(squadDir, wireableAgents);
+      writtenRouting = storage.readSync(routingPath);
       writeOrMergeCastingState(squadDir, wireableAgents, { universe });
     } catch (error) {
       if (error instanceof CastingCommitInDoubtError) throw error;
-      if (originalTeam === undefined) storage.deleteSync(teamPath);
-      else storage.writeSync(teamPath, originalTeam);
-      if (originalRouting === undefined) storage.deleteSync(routingPath);
-      else storage.writeSync(routingPath, originalRouting);
-      if (originalPolicy === undefined) storage.deleteSync(policyPath);
-      else storage.writeSync(policyPath, originalPolicy);
+      presetRegistryTestHooks?.beforeRollback?.();
+      restoreFileIfUnchanged(teamPath, originalTeam, writtenTeam);
+      restoreFileIfUnchanged(routingPath, originalRouting, writtenRouting);
+      restoreFileIfUnchanged(policyPath, originalPolicy, writtenPolicy);
       throw error;
     }
   } finally {

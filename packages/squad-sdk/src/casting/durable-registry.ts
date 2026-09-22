@@ -118,12 +118,28 @@ export interface CastingPairSnapshot {
   transactionId?: string;
 }
 
+export interface EnsureCastingPairResult {
+  snapshot: CastingPairSnapshot;
+  created: boolean;
+  migrated: boolean;
+}
+
 export class CastingCommitInDoubtError extends Error {
   readonly cause: unknown;
 
   constructor(message: string, cause: unknown) {
     super(message);
     this.name = 'CastingCommitInDoubtError';
+    this.cause = cause;
+  }
+}
+
+class CastingJournalCleanupError extends Error {
+  readonly cause: unknown;
+
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = 'CastingJournalCleanupError';
     this.cause = cause;
   }
 }
@@ -576,6 +592,192 @@ function managedPairRaw(
   };
 }
 
+function validateRegistryShape(registry: Record<string, unknown>): void {
+  if (
+    registry['schema'] !== 'squad-agent-provenance/v1'
+    || registry['schema_version'] !== 1
+    || typeof registry['generated_at'] !== 'string'
+    || !Number.isFinite(Date.parse(registry['generated_at']))
+    || !registry['agents']
+    || typeof registry['agents'] !== 'object'
+    || Array.isArray(registry['agents'])
+  ) {
+    throw new Error(
+      'Cannot read a consistent casting registry/history pair: registry shape is invalid',
+    );
+  }
+  const displayNames = new Set<string>();
+  for (const [id, rawRecord] of Object.entries(
+    registry['agents'] as Record<string, unknown>,
+  )) {
+    if (
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)
+      || !rawRecord
+      || typeof rawRecord !== 'object'
+      || Array.isArray(rawRecord)
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: registry contains invalid agent records',
+      );
+    }
+    const record = rawRecord as Record<string, unknown>;
+    const displayName = record['display_name'];
+    if (
+      typeof displayName !== 'string'
+      || displayName.length === 0
+      || record['persistent_name'] !== displayName
+      || typeof record['role'] !== 'string'
+      || record['role'].length === 0
+      || typeof record['universe'] !== 'string'
+      || record['universe'].length === 0
+      || !['active', 'inactive', 'retired'].includes(String(record['status']))
+      || typeof record['created_at'] !== 'string'
+      || !Number.isFinite(Date.parse(record['created_at']))
+      || typeof record['updated_at'] !== 'string'
+      || !Number.isFinite(Date.parse(record['updated_at']))
+      || (
+        record['status'] === 'retired'
+        && (
+          typeof record['retired_at'] !== 'string'
+          || !Number.isFinite(Date.parse(record['retired_at']))
+        )
+      )
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: registry contains invalid agent records',
+      );
+    }
+    const normalizedName = displayName.trim().toLocaleLowerCase('en-US');
+    if (displayNames.has(normalizedName)) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: registry contains duplicate display names',
+      );
+    }
+    displayNames.add(normalizedName);
+  }
+}
+
+function validatePairRoots(
+  registry: Record<string, unknown> | undefined,
+  history: Record<string, unknown> | undefined,
+  managed: boolean,
+): number {
+  if (!registry || !history) {
+    throw new Error('Cannot read a consistent casting registry/history pair: both files are required');
+  }
+  const revision = registry['revision'];
+  if (!Number.isSafeInteger(revision) || (revision as number) < 1) {
+    throw new Error('Cannot read a consistent casting registry/history pair: registry revision is invalid');
+  }
+  const snapshots = history['assignment_cast_snapshots'];
+  const usage = history['universe_usage_history'];
+  if (
+    !snapshots
+    || typeof snapshots !== 'object'
+    || Array.isArray(snapshots)
+    || !Array.isArray(usage)
+  ) {
+    throw new Error('Cannot read a consistent casting registry/history pair: history shape is invalid');
+  }
+  validateRegistryShape(registry);
+  if (!managed && history['registry_revision'] !== undefined) {
+    throw new Error(
+      'Cannot read a consistent casting registry/history pair: legacy history has ambiguous revision metadata',
+    );
+  }
+  return revision as number;
+}
+
+function validateLegacyPairConsistency(
+  registry: Record<string, unknown>,
+  history: Record<string, unknown>,
+  revision: number,
+): void {
+  if (
+    registry['transaction_id'] !== undefined
+    || history['transaction_id'] !== undefined
+    || history['registry_revision'] !== undefined
+  ) {
+    throw new Error(
+      'Cannot read a consistent casting registry/history pair: legacy pair contains generation metadata',
+    );
+  }
+  const generatedAt = Date.parse(String(registry['generated_at']));
+  const agents = registry['agents'] as Record<string, unknown>;
+  const observedRevisions: number[] = [];
+  const snapshots = history['assignment_cast_snapshots'] as Record<string, unknown>;
+  for (const [key, rawSnapshot] of Object.entries(snapshots)) {
+    if (!rawSnapshot || typeof rawSnapshot !== 'object' || Array.isArray(rawSnapshot)) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: legacy snapshot is malformed',
+      );
+    }
+    const snapshot = rawSnapshot as Record<string, unknown>;
+    if (
+      typeof snapshot['universe'] !== 'string'
+      || snapshot['universe'].length === 0
+      || typeof snapshot['created_at'] !== 'string'
+      || !Number.isFinite(Date.parse(snapshot['created_at']))
+      || Date.parse(snapshot['created_at']) > generatedAt
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: legacy snapshot metadata is inconsistent',
+      );
+    }
+    const snapshotAgents = snapshot['agents'];
+    const referencedAgentIds = Array.isArray(snapshotAgents)
+      ? snapshotAgents
+      : (
+          snapshotAgents
+          && typeof snapshotAgents === 'object'
+          && !Array.isArray(snapshotAgents)
+            ? Object.values(snapshotAgents as Record<string, unknown>)
+            : null
+        );
+    if (
+      referencedAgentIds === null
+      || referencedAgentIds.some(
+        agentId => typeof agentId !== 'string' || !(agentId in agents),
+      )
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: legacy snapshot references unknown agents',
+      );
+    }
+    const revisionMatch = key.match(/(?:^|[-_])(?:revision-|r)(\d+)(?:[-_]|$)/i);
+    if (revisionMatch) observedRevisions.push(Number(revisionMatch[1]));
+  }
+  const usage = history['universe_usage_history'] as unknown[];
+  for (const rawUsage of usage) {
+    if (
+      !rawUsage
+      || typeof rawUsage !== 'object'
+      || Array.isArray(rawUsage)
+      || typeof (rawUsage as Record<string, unknown>)['universe'] !== 'string'
+      || typeof (rawUsage as Record<string, unknown>)['used_at'] !== 'string'
+      || !Number.isFinite(Date.parse(
+        (rawUsage as Record<string, unknown>)['used_at'] as string,
+      ))
+      || Date.parse((rawUsage as Record<string, unknown>)['used_at'] as string) > generatedAt
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: legacy usage history is malformed',
+      );
+    }
+  }
+  if (
+    observedRevisions.some(observedRevision => observedRevision > revision)
+    || (
+      observedRevisions.length > 0
+      && Math.max(...observedRevisions) !== revision
+    )
+  ) {
+    throw new Error(
+      'Cannot read a consistent casting registry/history pair: legacy pair is mixed-generation',
+    );
+  }
+}
+
 function expectedState(
   raw: string | undefined,
   previousHash: string | null,
@@ -600,7 +802,12 @@ function removeJournalAndPayload(
     boundary('cleanup:journal-parent-fsync', castingDir, transactionId);
     flushDirectory(castingDir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new CastingJournalCleanupError(
+        `Cannot durably remove casting transaction journal ${transactionId}`,
+        error,
+      );
+    }
   }
   try {
     boundary('cleanup:payload-remove', payloadPath, transactionId);
@@ -679,7 +886,17 @@ export function recoverCastingRegistryTransaction(castingDir: string): void {
   if (registryState === 'previous') {
     durableReplace(registryPath, nextRegistryRaw, 'registry', journal.transaction_id);
   }
-  removeJournalAndPayload(castingDir, journalPath, payloadPath, journal.transaction_id);
+  try {
+    removeJournalAndPayload(castingDir, journalPath, payloadPath, journal.transaction_id);
+  } catch (error) {
+    if (error instanceof CastingJournalCleanupError) {
+      throw new CastingCommitInDoubtError(
+        `Casting registry/history recovery ${journal.transaction_id} is in doubt after journal cleanup failed`,
+        error,
+      );
+    }
+    throw error;
+  }
 }
 
 /**
@@ -787,6 +1004,12 @@ export function commitCastingRegistryPair(
       flushDirectory(castingDir);
       throw error;
     }
+    if (error instanceof CastingJournalCleanupError) {
+      throw new CastingCommitInDoubtError(
+        `Casting registry/history commit ${transactionId} is in doubt after journal cleanup failed`,
+        error,
+      );
+    }
     try {
       recoverCastingRegistryTransaction(castingDir);
       return { transactionId, ...pair };
@@ -797,6 +1020,164 @@ export function commitCastingRegistryPair(
       );
     }
   }
+}
+
+/**
+ * Create a missing pair or migrate a valid generationless legacy pair while
+ * the caller holds the shared casting writer lock.
+ */
+export function ensureCastingRegistryPairLocked(
+  castingDir: string,
+  defaultRegistryRaw: string,
+  defaultHistoryRaw: string,
+): EnsureCastingPairResult {
+  mkdirSync(castingDir, { recursive: true });
+  recoverCastingRegistryTransaction(castingDir);
+  const { registryPath, historyPath } = transactionPaths(castingDir);
+  const registryRaw = readText(registryPath);
+  const historyRaw = readText(historyPath);
+  if ((registryRaw === undefined) !== (historyRaw === undefined)) {
+    throw new Error(
+      'Cannot initialize casting registry/history: exactly one authoritative file exists',
+    );
+  }
+
+  if (registryRaw === undefined) {
+    const registry = parseObject(defaultRegistryRaw, 'default casting registry');
+    const history = parseObject(defaultHistoryRaw, 'default casting history');
+    const revision = validatePairRoots(registry, history, false);
+    commitCastingRegistryPair(
+      castingDir,
+      undefined,
+      registry!,
+      undefined,
+      history!,
+      revision,
+    );
+    return {
+      snapshot: readCastingRegistryPair(castingDir),
+      created: true,
+      migrated: false,
+    };
+  }
+
+  const snapshot = readCastingRegistryPair(castingDir);
+  if (snapshot.transactionId) {
+    return { snapshot, created: false, migrated: false };
+  }
+  const revision = validatePairRoots(snapshot.registry, snapshot.history, false);
+  commitCastingRegistryPair(
+    castingDir,
+    snapshot.registryRaw,
+    snapshot.registry!,
+    snapshot.historyRaw,
+    snapshot.history!,
+    revision,
+  );
+  return {
+    snapshot: readCastingRegistryPair(castingDir),
+    created: false,
+    migrated: true,
+  };
+}
+
+/**
+ * Recover and validate the current pair for a writer. A completely missing
+ * pair is represented as an empty snapshot so the writer's first commit can
+ * publish revision 1 without an intermediate empty generation.
+ */
+export function prepareCastingRegistryPairLocked(
+  castingDir: string,
+): CastingPairSnapshot {
+  mkdirSync(castingDir, { recursive: true });
+  recoverCastingRegistryTransaction(castingDir);
+  const { registryPath, historyPath } = transactionPaths(castingDir);
+  const registryRaw = readText(registryPath);
+  const historyRaw = readText(historyPath);
+  if (registryRaw === undefined && historyRaw === undefined) {
+    return {
+      registryRaw: undefined,
+      historyRaw: undefined,
+      registry: undefined,
+      history: undefined,
+    };
+  }
+  if ((registryRaw === undefined) !== (historyRaw === undefined)) {
+    throw new Error('Cannot update casting registry/history: exactly one authoritative file exists');
+  }
+  return readCastingRegistryPair(castingDir);
+}
+
+/** Create or migrate the pair under the shared recoverable writer lock. */
+export function ensureCastingRegistryPair(
+  castingDir: string,
+  defaultRegistryRaw: string,
+  defaultHistoryRaw: string,
+  purpose = 'casting initialization',
+): EnsureCastingPairResult {
+  const release = acquireCastingRegistryLock(castingDir, purpose);
+  try {
+    return ensureCastingRegistryPairLocked(
+      castingDir,
+      defaultRegistryRaw,
+      defaultHistoryRaw,
+    );
+  } finally {
+    release();
+  }
+}
+
+export function validateCastingRegistryPairRaw(
+  registryRaw: string | undefined,
+  historyRaw: string | undefined,
+  journalRaw: string | undefined,
+  manifestRaw: string | undefined,
+): CastingPairSnapshot {
+  if (journalRaw !== undefined) {
+    throw new Error(
+      'Cannot read a consistent casting registry/history pair: a durable casting transaction is awaiting roll-forward',
+    );
+  }
+  const registry = parseObject(registryRaw, 'casting/registry.json');
+  const history = parseObject(historyRaw, 'casting/history.json');
+  const registryTransaction = registry?.['transaction_id'];
+  const historyTransaction = history?.['transaction_id'];
+  const historyRevision = history?.['registry_revision'];
+  if (manifestRaw === undefined) {
+    if (
+      registryTransaction !== undefined
+      || historyTransaction !== undefined
+      || historyRevision !== undefined
+    ) {
+      throw new Error(
+        'Cannot read a consistent casting registry/history pair: transaction metadata exists without a commit manifest',
+      );
+    }
+    const revision = validatePairRoots(registry, history, false);
+    validateLegacyPairConsistency(registry!, history!, revision);
+    return { registryRaw, historyRaw, registry, history };
+  }
+  const manifest = parseManifest(manifestRaw)!;
+  const revision = validatePairRoots(registry, history, true);
+  if (
+    registryTransaction !== manifest.transaction_id
+    || historyTransaction !== manifest.transaction_id
+    || historyRevision !== manifest.registry_revision
+    || revision !== manifest.registry_revision
+    || sha256(registryRaw) !== manifest.registry_sha256
+    || sha256(historyRaw) !== manifest.history_sha256
+  ) {
+    throw new Error(
+      'Cannot read a consistent casting registry/history pair: registry/history bytes do not match the stable commit manifest',
+    );
+  }
+  return {
+    registryRaw,
+    historyRaw,
+    registry,
+    history,
+    transactionId: manifest.transaction_id,
+  };
 }
 
 /**
@@ -838,6 +1219,8 @@ export function readCastingRegistryPair(
         && historyTransaction === undefined
         && historyRevision === undefined
       ) {
+        const revision = validatePairRoots(registry, history, false);
+        validateLegacyPairConsistency(registry!, history!, revision);
         return { registryRaw, historyRaw, registry, history };
       }
       lastReason = 'transaction metadata exists without a commit manifest';
@@ -845,11 +1228,12 @@ export function readCastingRegistryPair(
       continue;
     }
     const manifest = parseManifest(manifestAfter)!;
+    const revision = validatePairRoots(registry, history, true);
     if (
       registryTransaction === manifest.transaction_id
       && historyTransaction === manifest.transaction_id
       && historyRevision === manifest.registry_revision
-      && registry?.['revision'] === manifest.registry_revision
+      && revision === manifest.registry_revision
       && sha256(registryRaw) === manifest.registry_sha256
       && sha256(historyRaw) === manifest.history_sha256
     ) {

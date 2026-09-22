@@ -130,10 +130,37 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     storage.writeSync(
       `${SQUAD_DIR}/casting/registry.json`,
       JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-09-21T00:00:00.000Z',
         agents: {
-          nori: { persistent_name: 'Nori', status: 'active' },
-          saffron: { persistent_name: 'Saffron', status: 'active' },
+          nori: {
+            display_name: 'Nori',
+            persistent_name: 'Nori',
+            role: 'Data Engineer',
+            universe: 'descriptive',
+            status: 'active',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:00:00.000Z',
+          },
+          saffron: {
+            display_name: 'Saffron',
+            persistent_name: 'Saffron',
+            role: 'Security',
+            universe: 'descriptive',
+            status: 'active',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:00:00.000Z',
+          },
         },
+      }),
+    );
+    storage.writeSync(
+      `${SQUAD_DIR}/casting/history.json`,
+      JSON.stringify({
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
       }),
     );
     syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
@@ -142,9 +169,30 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     storage.writeSync(
       `${SQUAD_DIR}/casting/registry.json`,
       JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 2,
+        generated_at: '2026-09-21T00:01:00.000Z',
         agents: {
-          nori: { persistent_name: 'Nori', status: 'active' },
-          saffron: { persistent_name: 'Saffron', status: 'retired' },
+          nori: {
+            display_name: 'Nori',
+            persistent_name: 'Nori',
+            role: 'Data Engineer',
+            universe: 'descriptive',
+            status: 'active',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:01:00.000Z',
+          },
+          saffron: {
+            display_name: 'Saffron',
+            persistent_name: 'Saffron',
+            role: 'Security',
+            universe: 'descriptive',
+            status: 'retired',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:01:00.000Z',
+            retired_at: '2026-09-21T00:01:00.000Z',
+          },
         },
       }),
     );

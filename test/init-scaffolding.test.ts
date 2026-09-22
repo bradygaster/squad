@@ -140,22 +140,23 @@ describe('casting directory scaffolding — initSquad()', () => {
     expect(typeof parsed).toBe('object');
   });
 
-  it('does not overwrite existing casting files on re-init', async () => {
+  it('fails closed instead of overwriting an externally corrupted casting generation', async () => {
     await initSquad(sdkOptions(TEST_ROOT));
 
     // Modify registry.json to detect overwrite
     const registryPath = join(TEST_ROOT, '.squad', 'casting', 'registry.json');
-    const original = await readFile(registryPath, 'utf-8');
     const modified = JSON.stringify({ agents: { sentinel: true } });
     await rm(registryPath);
     const { writeFile } = await import('fs/promises');
     await writeFile(registryPath, modified, 'utf-8');
 
     // Re-init
-    await initSquad(sdkOptions(TEST_ROOT));
+    await expect(initSquad(sdkOptions(TEST_ROOT))).rejects.toThrow(
+      /registry revision is invalid|stable commit manifest/,
+    );
 
     const after = await readFile(registryPath, 'utf-8');
-    expect(after).toContain('sentinel');
+    expect(after).toBe(modified);
   });
 });
 

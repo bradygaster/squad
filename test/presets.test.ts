@@ -24,7 +24,9 @@ import {
   seedBuiltinPresets,
 } from '@bradygaster/squad-sdk/presets';
 import {
+  commitCastingRegistryPair,
   parseAgentProvenanceRegistry,
+  readCastingRegistryPair,
   reconcileAgentProvenanceRegistry,
   recoverCastingRegistryTransaction,
 } from '@bradygaster/squad-sdk/casting';
@@ -65,6 +67,18 @@ function castingLockMetadata(
 function writeCastingLock(lockPath: string, metadata: string): void {
   mkdirSync(lockPath, { recursive: true });
   writeFileSync(join(lockPath, 'owner.json'), metadata);
+}
+
+function writeLegacyCastingPair(
+  castingDir: string,
+  registryRaw: string,
+  historyRaw = JSON.stringify({
+    assignment_cast_snapshots: {},
+    universe_usage_history: [],
+  }, null, 2) + '\n',
+): void {
+  writeFileSync(join(castingDir, 'registry.json'), registryRaw);
+  writeFileSync(join(castingDir, 'history.json'), historyRaw);
 }
 
 // ============================================================================
@@ -524,12 +538,13 @@ describe('applyPreset()', () => {
       role: 'Lead',
       universe: 'descriptive',
     }], { generatedAt: '2026-09-20T20:00:00.000Z' });
-    writeFileSync(registryPath, JSON.stringify(initial, null, 2) + '\n');
+    writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
 
     _setPresetRegistryHooksForTesting({
       afterSnapshot: ({ attempt }) => {
         if (attempt !== 1) return;
-        const current = JSON.parse(readFileSync(registryPath, 'utf8')) as unknown;
+        const pair = readCastingRegistryPair(castingDir);
+        const current = pair.registry;
         const concurrent = reconcileAgentProvenanceRegistry(current, [{
           id: 'concurrent',
           displayName: 'Concurrent',
@@ -539,7 +554,14 @@ describe('applyPreset()', () => {
           generatedAt: '2026-09-21T20:00:00.000Z',
           retireMissing: false,
         });
-        writeFileSync(registryPath, JSON.stringify(concurrent, null, 2) + '\n');
+        commitCastingRegistryPair(
+          castingDir,
+          pair.registryRaw,
+          concurrent as unknown as Record<string, unknown>,
+          pair.historyRaw,
+          pair.history!,
+          concurrent.revision,
+        );
       },
     });
 
@@ -571,7 +593,7 @@ describe('applyPreset()', () => {
       universe: 'descriptive',
     }], { generatedAt: '2026-09-20T20:00:00.000Z' });
     const originalRegistry = JSON.stringify(initial, null, 2) + '\n';
-    writeFileSync(registryPath, originalRegistry);
+    writeLegacyCastingPair(castingDir, originalRegistry);
 
     _setPresetRegistryHooksForTesting({
       beforeRename: () => {
@@ -732,7 +754,6 @@ describe('applyPreset()', () => {
     'registry:file-fsync',
     'registry:rename',
     'registry:parent-fsync',
-    'cleanup:journal-unlink',
     'cleanup:payload-remove',
   ] as const)('rolls forward after a post-journal %s failure', (failureBoundary) => {
     const squadDir = join(TMP, `target-roll-forward-${failureBoundary.replace(':', '-')}`);
@@ -790,6 +811,45 @@ describe('applyPreset()', () => {
     recoverCastingRegistryTransaction(castingDir);
     expect(existsSync(journalPath)).toBe(false);
     expect(readdirSync(castingDir).some(name => name.includes('.transaction.'))).toBe(false);
+  });
+
+  it.each([
+    'cleanup:journal-unlink',
+    'cleanup:journal-parent-fsync',
+  ] as const)('reports commit-in-doubt after %s uncertainty', (failureBoundary) => {
+    const squadDir = join(TMP, `target-cleanup-uncertain-${failureBoundary.replace(':', '-')}`);
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    const initial = reconcileAgentProvenanceRegistry(undefined, [{
+      id: 'existing',
+      displayName: 'Existing',
+      role: 'Lead',
+      universe: 'descriptive',
+    }], { generatedAt: '2026-09-20T20:00:00.000Z' });
+    writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+    let injected = false;
+    _setPresetRegistryHooksForTesting({
+      boundary: ({ boundary }) => {
+        if (!injected && boundary === failureBoundary) {
+          injected = true;
+          throw new Error(`forced ${failureBoundary} uncertainty`);
+        }
+      },
+    });
+
+    expect(() => scaffoldPresetIntoSquad(
+      squadDir,
+      [{ name: 'dev', role: 'developer' }],
+      'starter',
+    )).toThrow(/commit .* is in doubt/);
+    expect(readdirSync(castingDir).some(name =>
+      name.startsWith('registry-history.transaction.')
+      && name.endsWith('.payload')
+    )).toBe(true);
+
+    _setPresetRegistryHooksForTesting(null);
+    recoverCastingRegistryTransaction(castingDir);
+    expect(readCastingRegistryPair(castingDir).registry?.revision).toBe(2);
   });
 
   it('keeps surrounding outputs after a recoverable post-journal failure commits', () => {
@@ -1093,7 +1153,7 @@ describe('applyPreset()', () => {
       .toContainEqual(expect.objectContaining({
       agent: '<scaffold>',
       status: 'error',
-      reason: expect.stringContaining('assignment_cast_snapshots must be an object'),
+      reason: expect.stringContaining('history shape is invalid'),
     }));
     expect(readFileSync(join(castingDir, 'registry.json'), 'utf-8')).toBe(originalRegistry);
     expect(readFileSync(join(castingDir, 'history.json'), 'utf-8')).toBe(originalHistory);
@@ -1103,6 +1163,169 @@ describe('applyPreset()', () => {
     expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf-8')).toBe(originalCharter);
     expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
     expect(readdirSync(castingDir).filter(name => name.includes('.tmp-'))).toEqual([]);
+  });
+
+  it.each([
+    'charter',
+    'agent-contents',
+    'team',
+    'routing',
+    'policy',
+  ] as const)('preserves a divergent external %s write during rollback', (surface) => {
+    const homeDir = join(TMP, `rollback-external-${surface}`);
+    process.env['SQUAD_HOME'] = homeDir;
+    scaffold(`rollback-external-${surface}/presets/starter/agents/dev`);
+    writeFile(`rollback-external-${surface}/presets/starter/preset.json`, JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile(`rollback-external-${surface}/presets/starter/agents/dev/charter.md`, '# Replacement');
+    writeFile(`rollback-external-${surface}/presets/starter/agents/dev/new.md`, '# New');
+    writeFile(`rollback-external-${surface}/presets/starter/routing.md`, '# Preset routing\n');
+
+    const squadDir = join(TMP, `rollback-external-${surface}-target`);
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(join(agentsDir, 'dev'), { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'dev', 'charter.md'), '# Original charter\n');
+    writeFileSync(join(agentsDir, 'dev', 'keep.md'), '# Keep\n');
+    writeFileSync(join(squadDir, 'team.md'), '# Original team\n');
+    writeFileSync(join(squadDir, 'routing.md'), '# Original routing\n');
+    writeFileSync(join(castingDir, 'policy.json'), '{"original":true}\n');
+    const initial = reconcileAgentProvenanceRegistry(undefined, [], {
+      generatedAt: '2026-09-21T22:00:00.000Z',
+    });
+    writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+
+    _setPresetRegistryHooksForTesting({
+      boundary: ({ boundary }) => {
+        if (boundary === 'journal:write') throw new Error('force coordinated rollback');
+      },
+      beforeRollback: () => {
+        if (surface === 'charter') {
+          writeFileSync(join(agentsDir, 'dev', 'charter.md'), '# External charter\n');
+        } else if (surface === 'agent-contents') {
+          writeFileSync(join(agentsDir, 'dev', 'external.md'), '# External content\n');
+        } else if (surface === 'team') {
+          writeFileSync(join(squadDir, 'team.md'), '# External team\n');
+        } else if (surface === 'routing') {
+          writeFileSync(join(squadDir, 'routing.md'), '# External routing\n');
+        } else {
+          writeFileSync(join(castingDir, 'policy.json'), '{"external":true}\n');
+        }
+      },
+    });
+
+    expect(applyPresetSource('starter', agentsDir, {
+      force: true,
+      overwriteRouting: true,
+    })).toContainEqual(expect.objectContaining({
+      agent: '<scaffold>',
+      status: 'error',
+    }));
+
+    if (surface === 'charter') {
+      expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf8'))
+        .toBe('# External charter\n');
+    } else if (surface === 'agent-contents') {
+      expect(readFileSync(join(agentsDir, 'dev', 'external.md'), 'utf8'))
+        .toBe('# External content\n');
+    } else {
+      expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf8'))
+        .toBe('# Original charter\n');
+      expect(readFileSync(join(agentsDir, 'dev', 'keep.md'), 'utf8')).toBe('# Keep\n');
+      expect(existsSync(join(agentsDir, 'dev', 'new.md'))).toBe(false);
+    }
+    expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toBe(
+      surface === 'team' ? '# External team\n' : '# Original team\n',
+    );
+    expect(readFileSync(join(squadDir, 'routing.md'), 'utf8')).toBe(
+      surface === 'routing' ? '# External routing\n' : '# Original routing\n',
+    );
+    expect(readFileSync(join(castingDir, 'policy.json'), 'utf8')).toBe(
+      surface === 'policy' ? '{"external":true}\n' : '{"original":true}\n',
+    );
+  });
+
+  it('preserves an external writer in a newly created agent tree during rollback', () => {
+    const homeDir = join(TMP, 'rollback-new-tree');
+    process.env['SQUAD_HOME'] = homeDir;
+    scaffold('rollback-new-tree/presets/starter/agents/dev');
+    writeFile('rollback-new-tree/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('rollback-new-tree/presets/starter/agents/dev/charter.md', '# Replacement');
+
+    const squadDir = join(TMP, 'rollback-new-tree-target');
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(agentsDir, { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+    const initial = reconcileAgentProvenanceRegistry(undefined, [], {
+      generatedAt: '2026-09-21T22:00:00.000Z',
+    });
+    writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+    _setPresetRegistryHooksForTesting({
+      boundary: ({ boundary }) => {
+        if (boundary === 'journal:write') throw new Error('force coordinated rollback');
+      },
+      beforeRollback: () => {
+        writeFileSync(join(agentsDir, 'dev', 'external.md'), '# External\n');
+      },
+    });
+
+    applyPresetSource('starter', agentsDir, { force: true });
+
+    expect(readFileSync(join(agentsDir, 'dev', 'external.md'), 'utf8')).toBe('# External\n');
+    expect(existsSync(join(squadDir, 'team.md'))).toBe(false);
+    expect(existsSync(join(squadDir, 'routing.md'))).toBe(false);
+    expect(existsSync(join(castingDir, 'policy.json'))).toBe(false);
+  });
+
+  it('restores replaced trees and removes transaction-owned paths when rollback is uncontended', () => {
+    const homeDir = join(TMP, 'rollback-owned');
+    process.env['SQUAD_HOME'] = homeDir;
+    scaffold('rollback-owned/presets/starter/agents/dev');
+    writeFile('rollback-owned/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('rollback-owned/presets/starter/agents/dev/charter.md', '# Replacement');
+    writeFile('rollback-owned/presets/starter/agents/dev/new.md', '# New');
+
+    const squadDir = join(TMP, 'rollback-owned-target');
+    const agentsDir = join(squadDir, 'agents');
+    const castingDir = join(squadDir, 'casting');
+    mkdirSync(join(agentsDir, 'dev', 'nested'), { recursive: true });
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'dev', 'charter.md'), '# Original\n');
+    writeFileSync(join(agentsDir, 'dev', 'nested', 'keep.md'), '# Keep\n');
+    const initial = reconcileAgentProvenanceRegistry(undefined, [], {
+      generatedAt: '2026-09-21T22:00:00.000Z',
+    });
+    writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+    _setPresetRegistryHooksForTesting({
+      boundary: ({ boundary }) => {
+        if (boundary === 'journal:write') throw new Error('force coordinated rollback');
+      },
+    });
+
+    applyPresetSource('starter', agentsDir, { force: true });
+
+    expect(readFileSync(join(agentsDir, 'dev', 'charter.md'), 'utf8')).toBe('# Original\n');
+    expect(readFileSync(join(agentsDir, 'dev', 'nested', 'keep.md'), 'utf8')).toBe('# Keep\n');
+    expect(existsSync(join(agentsDir, 'dev', 'new.md'))).toBe(false);
+    expect(existsSync(join(squadDir, 'team.md'))).toBe(false);
+    expect(existsSync(join(squadDir, 'routing.md'))).toBe(false);
+    expect(existsSync(join(castingDir, 'policy.json'))).toBe(false);
   });
 
   it('preserves built-in role status labels in team.md (Scribe/Ralph/Rai/Fact Checker) — review on #1293', () => {

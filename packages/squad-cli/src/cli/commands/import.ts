@@ -5,6 +5,11 @@
 
 import path from 'node:path';
 import { FSStorageProvider, importFromRepo, parseRepoString } from '@bradygaster/squad-sdk';
+import {
+  acquireCastingRegistryLock,
+  commitCastingRegistryPair,
+  prepareCastingRegistryPairLocked,
+} from '@bradygaster/squad-sdk/casting';
 import type { RepoSpec } from '@bradygaster/squad-sdk';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
@@ -107,8 +112,52 @@ function applyManifest(
     storage.writeSync(path.join(squadDir, 'routing.md'), manifest.routing_md);
   }
 
-  // Write casting state
+  // Write the authoritative casting pair through the shared durable protocol.
+  const importedRegistry = manifest.casting['registry'];
+  const importedHistory = manifest.casting['history'];
+  if ((importedRegistry === undefined) !== (importedHistory === undefined)) {
+    fatal('Invalid export file: registry and history must be imported together');
+  }
+  if (importedRegistry !== undefined && importedHistory !== undefined) {
+    if (
+      !importedRegistry
+      || typeof importedRegistry !== 'object'
+      || Array.isArray(importedRegistry)
+      || !importedHistory
+      || typeof importedHistory !== 'object'
+      || Array.isArray(importedHistory)
+    ) {
+      fatal('Invalid export file: registry and history must be objects');
+    }
+    const registry = { ...(importedRegistry as Record<string, unknown>) };
+    const history = { ...(importedHistory as Record<string, unknown>) };
+    delete registry['transaction_id'];
+    delete history['transaction_id'];
+    delete history['registry_revision'];
+    const revision = registry['revision'];
+    if (!Number.isSafeInteger(revision) || (revision as number) < 1) {
+      fatal('Invalid export file: registry revision must be a positive integer');
+    }
+    const castingDir = path.join(squadDir, 'casting');
+    const release = acquireCastingRegistryLock(castingDir, 'CLI import');
+    try {
+      const previous = prepareCastingRegistryPairLocked(castingDir);
+      commitCastingRegistryPair(
+        castingDir,
+        previous.registryRaw,
+        registry,
+        previous.historyRaw,
+        history,
+        revision as number,
+      );
+    } finally {
+      release();
+    }
+  }
+
+  // Policy and future non-authoritative casting files remain independent.
   for (const [key, value] of Object.entries(manifest.casting)) {
+    if (key === 'registry' || key === 'history') continue;
     storage.writeSync(
       path.join(squadDir, 'casting', `${key}.json`),
       JSON.stringify(value, null, 2) + '\n'

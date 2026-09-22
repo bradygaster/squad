@@ -11,7 +11,15 @@
 
 import path from 'node:path';
 import os from 'node:os';
-import { readdirSync, statSync, lstatSync, rmSync } from 'node:fs';
+import {
+  lstatSync,
+  readFileSync,
+  readlinkSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -115,6 +123,8 @@ export function applyPreset(
   const destRoutingPath = path.join(squadDir, 'routing.md');
   const originalRouting = storage.readSync(destRoutingPath);
   const agentSnapshots = new Map<string, DirectorySnapshot>();
+  const writtenAgentSnapshots = new Map<string, DirectorySnapshot>();
+  let writtenRouting = originalRouting;
   for (const agent of manifest.agents) {
     try {
       validateName(agent.name, 'agent');
@@ -167,6 +177,17 @@ export function applyPreset(
         }
       }
 
+      for (const agent of manifest.agents) {
+        try {
+          validateName(agent.name, 'agent');
+          const destDir = path.join(targetDir, agent.name);
+          writtenAgentSnapshots.set(destDir, snapshotDirectory(destDir));
+        } catch {
+          // Invalid names never resolve to destination paths.
+        }
+      }
+      writtenRouting = storage.readSync(destRoutingPath);
+
       return manifest.agents.filter(a =>
         results.some(r => r.agent === a.name && r.status !== 'error'),
       );
@@ -174,10 +195,15 @@ export function applyPreset(
   } catch (err) {
     if (!(err instanceof CastingCommitInDoubtError)) {
       for (const [destDir, snapshot] of agentSnapshots) {
-        restoreDirectory(destDir, snapshot);
+        const written = writtenAgentSnapshots.get(destDir);
+        if (written && snapshotsEqual(snapshotDirectory(destDir), written)) {
+          restoreDirectory(destDir, snapshot);
+        }
       }
-      if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
-      else storage.writeSync(destRoutingPath, originalRouting);
+      if (storage.readSync(destRoutingPath) === writtenRouting) {
+        if (originalRouting === undefined) storage.deleteSync(destRoutingPath);
+        else storage.writeSync(destRoutingPath, originalRouting);
+      }
     }
     results.length = 0;
     results.push({
@@ -674,46 +700,101 @@ function copyDirRecursive(src: string, dest: string): void {
 
 interface DirectorySnapshot {
   existed: boolean;
-  directories: string[];
-  files: Array<{ relativePath: string; content: string }>;
+  rootType: 'missing' | 'directory' | 'file' | 'symlink' | 'other';
+  rootContentBase64?: string;
+  rootLinkTarget?: string;
+  entries: Array<{
+    relativePath: string;
+    type: 'directory' | 'file' | 'symlink';
+    contentBase64?: string;
+    linkTarget?: string;
+  }>;
 }
 
 function snapshotDirectory(directory: string): DirectorySnapshot {
-  if (!storage.existsSync(directory) || !isDirSync(directory)) {
-    return { existed: false, directories: [], files: [] };
+  let rootStat;
+  try {
+    rootStat = lstatSync(directory);
+  } catch {
+    return { existed: false, rootType: 'missing', entries: [] };
   }
-  const directories: string[] = [];
-  const files: Array<{ relativePath: string; content: string }> = [];
+  if (rootStat.isSymbolicLink()) {
+    return {
+      existed: true,
+      rootType: 'symlink',
+      rootLinkTarget: readlinkSync(directory),
+      entries: [],
+    };
+  }
+  if (rootStat.isFile()) {
+    return {
+      existed: true,
+      rootType: 'file',
+      rootContentBase64: readFileSync(directory).toString('base64'),
+      entries: [],
+    };
+  }
+  if (!rootStat.isDirectory()) {
+    return { existed: true, rootType: 'other', entries: [] };
+  }
+  const entries: DirectorySnapshot['entries'] = [];
   const visit = (current: string, relative: string): void => {
-    for (const entry of readdirSync(current, { encoding: 'utf-8' })) {
+    for (const entry of readdirSync(current, { encoding: 'utf-8' }).sort()) {
       const fullPath = path.join(current, entry);
       const relativePath = path.join(relative, entry);
       const stat = lstatSync(fullPath);
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) {
-        directories.push(relativePath);
+      if (stat.isSymbolicLink()) {
+        entries.push({ relativePath, type: 'symlink', linkTarget: readlinkSync(fullPath) });
+      } else if (stat.isDirectory()) {
+        entries.push({ relativePath, type: 'directory' });
         visit(fullPath, relativePath);
       } else {
-        const content = storage.readSync(fullPath);
-        if (content !== undefined) files.push({ relativePath, content });
+        entries.push({
+          relativePath,
+          type: 'file',
+          contentBase64: readFileSync(fullPath).toString('base64'),
+        });
       }
     }
   };
   visit(directory, '');
-  return { existed: true, directories, files };
+  return { existed: true, rootType: 'directory', entries };
+}
+
+function snapshotsEqual(left: DirectorySnapshot, right: DirectorySnapshot): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function restoreDirectory(directory: string, snapshot: DirectorySnapshot): void {
-  if (storage.existsSync(directory)) {
+  try {
+    lstatSync(directory);
     rmSync(directory, { recursive: true, force: true });
-  }
+  } catch {}
   if (!snapshot.existed) return;
-  storage.mkdirSync(directory, { recursive: true });
-  for (const relativePath of snapshot.directories) {
-    storage.mkdirSync(path.join(directory, relativePath), { recursive: true });
+  if (snapshot.rootType === 'file') {
+    writeFileSync(directory, Buffer.from(snapshot.rootContentBase64 ?? '', 'base64'));
+    return;
   }
-  for (const file of snapshot.files) {
-    storage.writeSync(path.join(directory, file.relativePath), file.content);
+  if (snapshot.rootType === 'symlink') {
+    symlinkSync(snapshot.rootLinkTarget ?? '', directory);
+    return;
+  }
+  if (snapshot.rootType !== 'directory') return;
+  storage.mkdirSync(directory, { recursive: true });
+  for (const entry of snapshot.entries) {
+    if (entry.type === 'directory') {
+      storage.mkdirSync(path.join(directory, entry.relativePath), { recursive: true });
+    }
+  }
+  for (const entry of snapshot.entries) {
+    const targetPath = path.join(directory, entry.relativePath);
+    if (entry.type === 'file') {
+      storage.mkdirSync(path.dirname(targetPath), { recursive: true });
+      writeFileSync(targetPath, Buffer.from(entry.contentBase64 ?? '', 'base64'));
+    } else if (entry.type === 'symlink') {
+      storage.mkdirSync(path.dirname(targetPath), { recursive: true });
+      symlinkSync(entry.linkTarget ?? '', targetPath);
+    }
   }
 }
 

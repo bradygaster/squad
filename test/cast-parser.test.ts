@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -178,6 +178,16 @@ const minimalProposal: CastProposal = {
   ],
 };
 
+async function snapshotTree(root: string, relative = ''): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {};
+  for (const entry of await readdir(join(root, relative), { withFileTypes: true })) {
+    const child = join(relative, entry.name);
+    if (entry.isDirectory()) Object.assign(snapshot, await snapshotTree(root, child));
+    else snapshot[child] = await readFile(join(root, child), 'utf8');
+  }
+  return snapshot;
+}
+
 describe('createTeam', () => {
   let tempDir: string;
 
@@ -311,6 +321,28 @@ describe('createTeam', () => {
       await expect(createTeam(tempDir, ambiguousRename)).rejects.toThrow(
         /supply the existing stable id for a rename/,
       );
+    });
+
+    it('performs zero filesystem mutations when casting history is malformed', async () => {
+      const castingDir = join(tempDir, '.squad', 'casting');
+      await mkdir(castingDir, { recursive: true });
+      await writeFile(join(castingDir, 'registry.json'), JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-09-21T00:00:00.000Z',
+        agents: {},
+      }) + '\n');
+      await writeFile(
+        join(castingDir, 'history.json'),
+        '{"assignment_cast_snapshots":[],"universe_usage_history":[]}\n',
+      );
+      await writeFile(join(castingDir, 'policy.json'), '{"universe_allowlist":["*"]}\n');
+      const before = await snapshotTree(tempDir);
+
+      await expect(createTeam(tempDir, minimalProposal)).rejects.toThrow(/history shape is invalid/);
+
+      expect(await snapshotTree(tempDir)).toEqual(before);
     });
 
     it('serializes concurrent recasts and increments revisions without losing agents', async () => {

@@ -67,13 +67,9 @@ function buildManifest(dest: string, storage: FSStorageProvider, squadInfo: { pa
 
   // Read casting state
   const castingDir = path.join(squadInfo.path, 'casting');
-  try {
-    const pair = readCastingRegistryPair(castingDir);
-    if (pair.registry !== undefined) manifest.casting['registry'] = pair.registry;
-    if (pair.history !== undefined) manifest.casting['history'] = pair.history;
-  } catch (err) {
-    console.error(`Warning: could not read consistent casting registry/history: ${(err as Error).message}`);
-  }
+  const pair = readCastingRegistryPair(castingDir);
+  manifest.casting['registry'] = pair.registry;
+  manifest.casting['history'] = pair.history;
   const policyRaw = storage.readSync(path.join(castingDir, 'policy.json'));
   if (policyRaw !== undefined) {
     try {

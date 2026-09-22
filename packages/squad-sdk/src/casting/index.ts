@@ -10,6 +10,7 @@
 
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import * as path from 'node:path';
+import { readCastingRegistryPair } from './durable-registry.js';
 
 const storage = new FSStorageProvider();
 
@@ -55,11 +56,16 @@ export {
   acquireCastingRegistryLock,
   acquireCastingRegistryLockAsync,
   commitCastingRegistryPair,
+  ensureCastingRegistryPair,
+  ensureCastingRegistryPairLocked,
+  prepareCastingRegistryPairLocked,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
+  validateCastingRegistryPairRaw,
   _setCastingDurabilityHooksForTesting,
   type CastingDurabilityBoundary,
   type CastingDurabilityHooks,
+  type EnsureCastingPairResult,
   type CastingPairSnapshot,
 } from './durable-registry.js';
 
@@ -106,10 +112,18 @@ export class CastingRegistry {
     const registryPath = path.join(this.config.castingDir, 'registry.json');
     if (!storage.existsSync(registryPath)) return;
 
-    const raw = storage.readSync(registryPath) ?? '';
-    const entries = JSON.parse(raw) as CastingEntry[];
-    for (const entry of entries) {
-      this.entries.set(entry.role, entry);
+    const registry = readCastingRegistryPair(this.config.castingDir).registry;
+    const agents = registry?.['agents'] as Record<string, Record<string, unknown>>;
+    for (const record of Object.values(agents)) {
+      if (record['status'] !== 'active') continue;
+      const role = record['role'] as string;
+      const characterName = record['display_name'] as string;
+      this.entries.set(role, {
+        role,
+        characterName,
+        universe: record['universe'] as string,
+        displayName: `${characterName} — ${role}`,
+      });
     }
   }
 

@@ -12,6 +12,10 @@ import { tmpdir } from 'os';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runExport } from '@bradygaster/squad-cli/commands/export';
 import { runImport } from '@bradygaster/squad-cli/commands/import';
+import {
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+} from '@bradygaster/squad-sdk/casting';
 
 const EXT_ROOT = join(tmpdir(), `.test-cli-export-ext-${randomBytes(4).toString('hex')}`);
 const EXT_GLOBAL = join(tmpdir(), `.test-cli-export-ext-global-${randomBytes(4).toString('hex')}`);
@@ -83,9 +87,14 @@ describe('CLI: export/import commands', () => {
     // Create casting state
     const castingDir = join(TEST_ROOT, '.squad', 'casting');
     await mkdir(castingDir, { recursive: true });
-    await writeFile(
-      join(castingDir, 'registry.json'),
-      JSON.stringify({ roles: ['lead', 'dev'] }, null, 2)
+    const pair = readCastingRegistryPair(castingDir);
+    commitCastingRegistryPair(
+      castingDir,
+      pair.registryRaw,
+      { ...pair.registry, revision: Number(pair.registry?.revision) + 1, roles: ['lead', 'dev'] },
+      pair.historyRaw,
+      pair.history!,
+      Number(pair.registry?.revision) + 1,
     );
     
     await runExport(TEST_ROOT);
@@ -94,7 +103,21 @@ describe('CLI: export/import commands', () => {
     const content = await readFile(exportPath, 'utf-8');
     const manifest = JSON.parse(content);
     
-    expect(manifest.casting.registry).toEqual({ roles: ['lead', 'dev'] });
+    expect(manifest.casting.registry).toMatchObject({ roles: ['lead', 'dev'] });
+  });
+
+  it('fails closed instead of exporting a split casting generation', async () => {
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    await writeFile(
+      join(castingDir, 'history.json'),
+      JSON.stringify({ assignment_cast_snapshots: {}, universe_usage_history: [] }) + '\n',
+    );
+    const exportPath = join(TEST_ROOT, 'split-export.json');
+
+    await expect(runExport(TEST_ROOT, exportPath)).rejects.toThrow(
+      /stable commit manifest|transaction metadata/,
+    );
+    expect(existsSync(exportPath)).toBe(false);
   });
 
   it('should export agent charters and histories', async () => {
@@ -384,6 +407,18 @@ describe('CLI: export with externalized state (#1396)', () => {
     await writeFile(join(externalStateDir, 'team.md'), '# External Team\n');
     await writeFile(join(externalStateDir, 'decisions.md'), '# External Decisions\n');
     await writeFile(join(externalStateDir, 'agents', 'alice', 'charter.md'), '# Alice Charter\n');
+    await mkdir(join(externalStateDir, 'casting'), { recursive: true });
+    await writeFile(join(externalStateDir, 'casting', 'registry.json'), JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T00:00:00.000Z',
+      agents: {},
+    }));
+    await writeFile(join(externalStateDir, 'casting', 'history.json'), JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }));
   });
 
   afterEach(async () => {

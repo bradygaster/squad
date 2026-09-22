@@ -15,7 +15,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   _setCastingDurabilityHooksForTesting,
   acquireCastingRegistryLock,
+  CastingCommitInDoubtError,
   commitCastingRegistryPair,
+  ensureCastingRegistryPair,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
   type CastingDurabilityBoundary,
@@ -83,7 +85,7 @@ afterEach(() => {
 });
 
 describe('casting registry directory lock', () => {
-  it('wires presets and CLI Cast to the same shared lock implementation', () => {
+  it('wires cast, init, preset, upgrade, export, and checkers to the shared pair protocol', () => {
     const presetSource = readFileSync(
       join(process.cwd(), 'packages/squad-sdk/src/presets/scaffold.ts'),
       'utf8',
@@ -92,8 +94,32 @@ describe('casting registry directory lock', () => {
       join(process.cwd(), 'packages/squad-cli/src/cli/core/cast.ts'),
       'utf8',
     );
+    const initSource = readFileSync(
+      join(process.cwd(), 'packages/squad-sdk/src/config/init.ts'),
+      'utf8',
+    );
+    const upgradeSource = readFileSync(
+      join(process.cwd(), 'packages/squad-cli/src/cli/core/upgrade.ts'),
+      'utf8',
+    );
+    const readerSources = [
+      'packages/squad-cli/src/cli/commands/export.ts',
+      'packages/squad-cli/src/cli/commands/doctor.ts',
+      'packages/squad-cli/src/cli/commands/health.ts',
+      'packages/squad-sdk/src/config/team-capabilities.ts',
+    ].map(file => readFileSync(join(process.cwd(), file), 'utf8'));
+    const importSource = readFileSync(
+      join(process.cwd(), 'packages/squad-cli/src/cli/commands/import.ts'),
+      'utf8',
+    );
     expect(presetSource).toContain('acquireCastingRegistryLock(castingDir');
     expect(castSource).toContain('acquireCastingRegistryLockAsync(castingDir');
+    expect(initSource).toContain('ensureCastingRegistryPair(');
+    expect(upgradeSource).toContain('ensureCastingRegistryPair(');
+    expect(importSource).toContain('commitCastingRegistryPair(');
+    for (const source of readerSources) {
+      expect(source).toContain('readCastingRegistryPair(');
+    }
     expect(presetSource).not.toContain("join(castingDir, 'registry.lock')");
     expect(castSource).not.toContain("open(lockPath, 'wx')");
   });
@@ -132,7 +158,7 @@ describe('casting registry directory lock', () => {
       .toBe('replacement-token');
   });
 
-  it('does not quarantine a replacement during stale-owner ABA', () => {
+  it('preserves a live replacement installed after final stale-owner validation', () => {
     const castingDir = temporaryCastingDir('stale-aba');
     const lockPath = join(castingDir, 'registry.lock');
     writeOwner(lockPath);
@@ -288,6 +314,10 @@ describe('casting registry/history roll-forward transaction', () => {
     'cleanup:payload-remove',
     'cleanup:payload-parent-fsync',
   ];
+  const uncertainJournalCleanupBoundaries: CastingDurabilityBoundary[] = [
+    'cleanup:journal-unlink',
+    'cleanup:journal-parent-fsync',
+  ];
 
   it.each(preJournalBoundaries)('keeps exactly the old pair when %s fails', (failure) => {
     const castingDir = temporaryCastingDir(`pre-boundary-${failure.replace(':', '-')}`);
@@ -316,7 +346,9 @@ describe('casting registry/history roll-forward transaction', () => {
     expect(existsSync(join(castingDir, 'registry-history.transaction.json'))).toBe(false);
   });
 
-  it.each(postJournalBoundaries)('publishes exactly the new pair after %s fails', (failure) => {
+  it.each(postJournalBoundaries.filter(
+    boundary => !uncertainJournalCleanupBoundaries.includes(boundary),
+  ))('publishes exactly the new pair after %s fails', (failure) => {
     const castingDir = temporaryCastingDir(`boundary-${failure.replace(':', '-')}`);
     const old = initialPair();
     writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
@@ -351,6 +383,53 @@ describe('casting registry/history roll-forward transaction', () => {
     expect(pair.registry?.transaction_id).toBe(pair.history?.transaction_id);
     expect(existsSync(join(castingDir, 'registry-history.transaction.json'))).toBe(false);
   });
+
+  it.each(uncertainJournalCleanupBoundaries)(
+    'surfaces commit-in-doubt and preserves recovery metadata after %s fails',
+    (failure) => {
+      const castingDir = temporaryCastingDir(`cleanup-uncertain-${failure.replace(':', '-')}`);
+      const old = initialPair();
+      writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+      writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+      let injected = false;
+      _setCastingDurabilityHooksForTesting({
+        boundary: ({ boundary }) => {
+          if (!injected && boundary === failure) {
+            injected = true;
+            throw new Error(`uncertain at ${failure}`);
+          }
+        },
+      });
+
+      expect(() => commitCastingRegistryPair(
+        castingDir,
+        old.registryRaw,
+        { ...old.registry, revision: 2 },
+        old.historyRaw,
+        { ...old.history, assignment_cast_snapshots: { next: {} } },
+        2,
+      )).toThrow(CastingCommitInDoubtError);
+      expect(readdirSync(castingDir).some(name =>
+        name.startsWith('registry-history.transaction.')
+        && name.endsWith('.payload')
+      )).toBe(true);
+      if (failure === 'cleanup:journal-unlink') {
+        expect(existsSync(join(castingDir, 'registry-history.transaction.json'))).toBe(true);
+        expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(/awaiting roll-forward/);
+      }
+
+      _setCastingDurabilityHooksForTesting(null);
+      recoverCastingRegistryTransaction(castingDir);
+      const pair = readCastingRegistryPair(castingDir);
+      expect(pair.registry?.revision).toBe(2);
+      expect(pair.history?.registry_revision).toBe(2);
+      expect(existsSync(join(castingDir, 'registry-history.transaction.json'))).toBe(false);
+      expect(readdirSync(castingDir).some(name =>
+        name.startsWith('registry-history.transaction.')
+        && name.endsWith('.payload')
+      )).toBe(false);
+    },
+  );
 
   it.each([
     ...preJournalBoundaries,
@@ -430,6 +509,95 @@ describe('casting registry/history roll-forward transaction', () => {
     expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(
       /transaction metadata exists without a commit manifest/,
     );
+  });
+
+  it('migrates a valid generationless legacy pair to matching persisted generations', () => {
+    const castingDir = temporaryCastingDir('legacy-migration');
+    const old = initialPair();
+    writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+
+    const result = ensureCastingRegistryPair(
+      castingDir,
+      old.registryRaw,
+      old.historyRaw,
+      'legacy migration test',
+    );
+
+    expect(result.migrated).toBe(true);
+    expect(result.snapshot.transactionId).toBeDefined();
+    expect(result.snapshot.registry?.transaction_id)
+      .toBe(result.snapshot.history?.transaction_id);
+    expect(result.snapshot.history?.registry_revision)
+      .toBe(result.snapshot.registry?.revision);
+  });
+
+  it('fails closed on an ambiguous one-file legacy state', () => {
+    const castingDir = temporaryCastingDir('legacy-ambiguous');
+    const old = initialPair();
+    writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+
+    expect(() => ensureCastingRegistryPair(
+      castingDir,
+      old.registryRaw,
+      old.historyRaw,
+      'ambiguous migration test',
+    )).toThrow(/exactly one authoritative file exists/);
+    expect(existsSync(join(castingDir, 'history.json'))).toBe(false);
+  });
+
+  it('fails closed when a manifest-free legacy pair is missing or malformed', () => {
+    const missingDir = temporaryCastingDir('legacy-missing');
+    expect(() => readCastingRegistryPair(missingDir, 1)).toThrow(/both files are required/);
+
+    const malformedDir = temporaryCastingDir('legacy-malformed');
+    const old = initialPair();
+    writeFileSync(join(malformedDir, 'registry.json'), old.registryRaw);
+    writeFileSync(join(malformedDir, 'history.json'), '{"assignment_cast_snapshots":[]}\n');
+    expect(() => readCastingRegistryPair(malformedDir, 1)).toThrow(/history shape is invalid/);
+  });
+
+  it('fails closed on a mixed-generation legacy pair', () => {
+    const castingDir = temporaryCastingDir('legacy-mixed-generation');
+    const generatedAt = '2026-09-20T00:00:00.000Z';
+    const registry = {
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: generatedAt,
+      agents: {
+        existing: {
+          display_name: 'Existing',
+          persistent_name: 'Existing',
+          role: 'Lead',
+          universe: 'descriptive',
+          status: 'active',
+          created_at: generatedAt,
+          updated_at: generatedAt,
+        },
+      },
+    };
+    const history = {
+      assignment_cast_snapshots: {
+        'repl-cast-r2-2026-09-20T00:00:00.000Z': {
+          created_at: generatedAt,
+          agents: ['existing'],
+          universe: 'descriptive',
+        },
+      },
+      universe_usage_history: [{ universe: 'descriptive', used_at: generatedAt }],
+    };
+    writeFileSync(join(castingDir, 'registry.json'), JSON.stringify(registry) + '\n');
+    writeFileSync(join(castingDir, 'history.json'), JSON.stringify(history) + '\n');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(/mixed-generation/);
+    expect(() => ensureCastingRegistryPair(
+      castingDir,
+      JSON.stringify(registry) + '\n',
+      JSON.stringify(history) + '\n',
+      'mixed legacy migration',
+    )).toThrow(/mixed-generation/);
+    expect(existsSync(join(castingDir, 'registry-history.commit.json'))).toBe(false);
   });
 
   it('rejects a stable manifest over mixed pair bytes', () => {

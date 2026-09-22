@@ -38,6 +38,10 @@ import {
 } from '../ralph/triage.js';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
+import {
+  readCastingRegistryPair,
+  validateCastingRegistryPairRaw,
+} from '../casting/durable-registry.js';
 
 // ---------------------------------------------------------------------------
 // Public markers & limits
@@ -695,12 +699,32 @@ export function syncTeamCapabilities(
   const routingMarkdown = readOptional(storage, join(options.squadDir, 'routing.md'));
 
   let registry: unknown;
-  const registryRaw = readOptional(storage, join(options.squadDir, 'casting', 'registry.json'));
-  if (registryRaw) {
-    try {
-      registry = JSON.parse(registryRaw);
-    } catch {
-      registry = undefined;
+  if (storage instanceof FSStorageProvider) {
+    registry = readCastingRegistryPair(join(options.squadDir, 'casting')).registry;
+  } else {
+    const castingDir = join(options.squadDir, 'casting');
+    const registryRaw = readOptional(storage, join(castingDir, 'registry.json'));
+    const historyRaw = readOptional(storage, join(castingDir, 'history.json'));
+    const journalRaw = readOptional(
+      storage,
+      join(castingDir, 'registry-history.transaction.json'),
+    );
+    const manifestRaw = readOptional(
+      storage,
+      join(castingDir, 'registry-history.commit.json'),
+    );
+    if (
+      registryRaw !== undefined
+      || historyRaw !== undefined
+      || journalRaw !== undefined
+      || manifestRaw !== undefined
+    ) {
+      registry = validateCastingRegistryPairRaw(
+        registryRaw,
+        historyRaw,
+        journalRaw,
+        manifestRaw,
+      ).registry;
     }
   }
 
