@@ -262,7 +262,10 @@ function validateWorkflowResource(root: string, payload: string) {
   });
 }
 
-function writeCanonicalGenesisPair(root: string): void {
+function writeCanonicalGenesisPair(
+  root: string,
+  snapshotKey = 'active-team-reset-2026-09-20',
+): void {
   const createdAt = '2026-09-20T00:00:00.000Z';
   const historyCreatedAt = '2026-09-19T17:00:00.000-07:00';
   write(root, '.squad/casting/registry.json', JSON.stringify({
@@ -285,7 +288,7 @@ function writeCanonicalGenesisPair(root: string): void {
   }));
   write(root, '.squad/casting/history.json', JSON.stringify({
     assignment_cast_snapshots: {
-      'active-team-reset-2026-09-20': {
+      [snapshotKey]: {
         created_at: historyCreatedAt,
         agents: active.map(({ id }) => id),
         universe: 'descriptive',
@@ -541,6 +544,39 @@ describe('GH-AW Cast final-tree validator', () => {
   });
 
   it.each([
+    'active-team-revision-1-reset',
+    'active-team-revision_1-reset',
+    'active-team-revision1-reset',
+    'active-team-r1-reset',
+  ])('rejects canonical legacy genesis with revision token %s across all validators', async (snapshotKey) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root, snapshotKey);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow();
+    await expect(validateCastingPairFiles(registryFile)).rejects.toThrow();
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status).not.toBe(0);
+  });
+
+  it.each([
+    'active-team-supervision1-reset',
+    'active-team-revisionary1-reset',
+    'active-team-error1-reset',
+  ])('accepts canonical legacy genesis with unrelated token-like word %s', async (snapshotKey) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root, snapshotKey);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(readCastingRegistryPair(castingDir, 1).registry?.revision).toBe(1);
+    await expect(validateCastingPairFiles(registryFile)).resolves.toMatchObject({ revision: 1 });
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
     {
       name: 'revision-2 registry with unrelated empty history',
       mutate: (root: string) => {
@@ -591,16 +627,6 @@ describe('GH-AW Cast final-tree validator', () => {
         const path = join(root, '.squad', 'casting', 'history.json');
         const history = JSON.parse(readFileSync(path, 'utf8'));
         history.universe_usage_history = [{}];
-        write(root, '.squad/casting/history.json', JSON.stringify(history));
-      },
-    },
-    {
-      name: 'revision-bearing snapshot key mismatch',
-      mutate: (root: string) => {
-        const path = join(root, '.squad', 'casting', 'history.json');
-        const history = JSON.parse(readFileSync(path, 'utf8'));
-        const snapshot = Object.values(history.assignment_cast_snapshots)[0];
-        history.assignment_cast_snapshots = { 'active-team-revision-2-reset': snapshot };
         write(root, '.squad/casting/history.json', JSON.stringify(history));
       },
     },
@@ -763,7 +789,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected ca7c6744b8ce8c479a9ae4d1a844787a1927d02f2b5ceff0efda35ced2b1adf4, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 2c0e89531d4eb253cc9d2bc9dbd0fb181adc326c84559e80a6b602dd29c92a5d, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);

@@ -83,7 +83,7 @@ function isCanonicalLegacyGenesis(registry, history) {
   if (!snapshotEntry) return false;
   const [snapshotKey, rawSnapshot] = snapshotEntry;
   const rawUsage = usage[0];
-  if (/(?:^|[-_])(?:revision-|r)\d+(?:[-_]|$)/i.test(snapshotKey)
+  if (hasRevisionToken(snapshotKey)
     || !rawSnapshot
     || typeof rawSnapshot !== 'object'
     || Array.isArray(rawSnapshot)
@@ -115,6 +115,10 @@ function isCanonicalLegacyGenesis(registry, history) {
     agent.status === 'active'
     && agent.universe === snapshot.universe
     && Date.parse(agent.created_at) === snapshotCreatedAt);
+}
+
+function hasRevisionToken(snapshotKey) {
+  return /(?:^|[-_])(?:revision[-_]?|r)\d+(?:[-_]|$)/i.test(snapshotKey);
 }
 
 function validateLegacyCastingGeneration(registry, history) {

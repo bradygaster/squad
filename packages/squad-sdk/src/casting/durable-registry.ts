@@ -870,7 +870,7 @@ function isCanonicalLegacyGenesis(
   const [snapshotKey, rawSnapshot] = snapshotEntry;
   const rawUsage = usage[0];
   if (
-    /(?:^|[-_])(?:revision-|r)\d+(?:[-_]|$)/i.test(snapshotKey)
+    hasRevisionToken(snapshotKey)
     || !rawSnapshot
     || typeof rawSnapshot !== 'object'
     || Array.isArray(rawSnapshot)
@@ -909,6 +909,10 @@ function isCanonicalLegacyGenesis(
       && Date.parse(String(agent['created_at'])) === snapshotCreatedAt
     );
   });
+}
+
+function hasRevisionToken(snapshotKey: string): boolean {
+  return /(?:^|[-_])(?:revision[-_]?|r)\d+(?:[-_]|$)/i.test(snapshotKey);
 }
 
 function validateOutgoingHistory(
