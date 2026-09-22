@@ -728,6 +728,9 @@ function validateLegacyPairConsistency(
   ) {
     return;
   }
+  if (revision === 1 && isCanonicalLegacyGenesis(registry, history)) {
+    return;
+  }
 
   const observedRevisions = new Set<number>();
   const snapshotEvidence = new Map<string, number>();
@@ -846,6 +849,66 @@ function validateLegacyPairConsistency(
       'Cannot read a consistent casting registry/history pair: legacy pair is mixed-generation',
     );
   }
+}
+
+function isCanonicalLegacyGenesis(
+  registry: Record<string, unknown>,
+  history: Record<string, unknown>,
+): boolean {
+  const agents = registry['agents'] as Record<string, unknown>;
+  const agentIds = Object.keys(agents);
+  const snapshotEntries = Object.entries(
+    history['assignment_cast_snapshots'] as Record<string, unknown>,
+  );
+  const usage = history['universe_usage_history'] as unknown[];
+  if (agentIds.length === 0 || snapshotEntries.length !== 1 || usage.length !== 1) {
+    return false;
+  }
+
+  const snapshotEntry = snapshotEntries[0];
+  if (!snapshotEntry) return false;
+  const [snapshotKey, rawSnapshot] = snapshotEntry;
+  const rawUsage = usage[0];
+  if (
+    /(?:^|[-_])(?:revision-|r)\d+(?:[-_]|$)/i.test(snapshotKey)
+    || !rawSnapshot
+    || typeof rawSnapshot !== 'object'
+    || Array.isArray(rawSnapshot)
+    || !rawUsage
+    || typeof rawUsage !== 'object'
+    || Array.isArray(rawUsage)
+  ) {
+    return false;
+  }
+  const snapshot = rawSnapshot as Record<string, unknown>;
+  const usageRecord = rawUsage as Record<string, unknown>;
+  const snapshotAgents = snapshot['agents'];
+  const snapshotCreatedAt = Date.parse(String(snapshot['created_at']));
+  const generatedAt = Date.parse(String(registry['generated_at']));
+  if (
+    !Array.isArray(snapshotAgents)
+    || snapshotAgents.some(agentId => typeof agentId !== 'string')
+    || new Set(snapshotAgents).size !== snapshotAgents.length
+    || snapshotAgents.length !== agentIds.length
+    || snapshotAgents.some(agentId => !Object.hasOwn(agents, agentId))
+    || typeof snapshot['universe'] !== 'string'
+    || snapshot['universe'].length === 0
+    || !Number.isFinite(snapshotCreatedAt)
+    || snapshotCreatedAt > generatedAt
+    || usageRecord['universe'] !== snapshot['universe']
+    || Date.parse(String(usageRecord['used_at'])) !== snapshotCreatedAt
+  ) {
+    return false;
+  }
+
+  return Object.values(agents).every((rawAgent) => {
+    const agent = rawAgent as Record<string, unknown>;
+    return (
+      agent['status'] === 'active'
+      && agent['universe'] === snapshot['universe']
+      && Date.parse(String(agent['created_at'])) === snapshotCreatedAt
+    );
+  });
 }
 
 function validateOutgoingHistory(

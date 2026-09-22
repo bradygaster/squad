@@ -559,6 +559,81 @@ describe('casting registry/history roll-forward transaction', () => {
       .toBe(result.snapshot.registry?.revision);
   });
 
+  it('migrates a canonical non-empty legacy genesis pair', () => {
+    const castingDir = temporaryCastingDir('legacy-canonical-genesis');
+    const createdAt = '2026-09-12T19:25:45.986Z';
+    const registry = {
+      ...initialPair().registry,
+      generated_at: '2026-09-22T00:00:00.000Z',
+      agents: {
+        architect: {
+          display_name: 'architect',
+          persistent_name: 'architect',
+          role: 'Lead Architect',
+          universe: 'descriptive',
+          status: 'active',
+          created_at: createdAt,
+          updated_at: '2026-09-22T00:00:00.000Z',
+        },
+        'state-storage-dev': {
+          display_name: 'state-storage-dev',
+          persistent_name: 'state-storage-dev',
+          role: 'State & Storage Engineer',
+          universe: 'descriptive',
+          status: 'active',
+          created_at: createdAt,
+          updated_at: '2026-09-22T00:00:00.000Z',
+        },
+      },
+    };
+    const history = {
+      assignment_cast_snapshots: {
+        'active-team-reset-2026-09-12': {
+          created_at: '2026-09-12T12:25:45.986-07:00',
+          agents: ['architect', 'state-storage-dev'],
+          universe: 'descriptive',
+        },
+      },
+      universe_usage_history: [{
+        universe: 'descriptive',
+        used_at: '2026-09-12T12:25:45.986-07:00',
+      }],
+    };
+    const registryRaw = JSON.stringify(registry) + '\n';
+    const historyRaw = JSON.stringify(history) + '\n';
+    writeFileSync(join(castingDir, 'registry.json'), registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), historyRaw);
+
+    const result = ensureCastingRegistryPair(
+      castingDir,
+      registryRaw,
+      historyRaw,
+      'canonical genesis migration test',
+    );
+
+    expect(result.migrated).toBe(true);
+    expect(result.snapshot.registry?.transaction_id)
+      .toBe(result.snapshot.history?.transaction_id);
+    expect(result.snapshot.history?.registry_revision).toBe(1);
+  });
+
+  it('rejects a revision-2 registry paired with unrelated empty legacy history', () => {
+    const castingDir = temporaryCastingDir('legacy-revision-two-empty-history');
+    const old = initialPair();
+    const registry = { ...old.registry, revision: 2 };
+    writeFileSync(join(castingDir, 'registry.json'), JSON.stringify(registry) + '\n');
+    writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(/mixed-generation/);
+    expect(() => ensureCastingRegistryPair(
+      castingDir,
+      JSON.stringify(registry) + '\n',
+      old.historyRaw,
+      'mixed empty legacy migration',
+    )).toThrow(/mixed-generation/);
+    expect(existsSync(join(castingDir, 'registry-history.commit.json'))).toBe(false);
+  });
+
   it('accepts exhaustive shared legacy generation evidence', () => {
     const castingDir = temporaryCastingDir('legacy-exhaustive');
     const generatedAt = '2026-09-20T02:00:00.000Z';
