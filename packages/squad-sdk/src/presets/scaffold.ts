@@ -604,7 +604,7 @@ function writeOrMergeCastingState(
     const snapshotKey = `preset-${options.universe}-revision-${registry.revision}-${now}`;
     history.assignment_cast_snapshots[snapshotKey] = {
       created_at: now,
-      agents: agents.map(a => a.name.toLowerCase()),
+      agents: candidates.map(candidate => candidate.id),
       universe: options.universe,
     };
     history.universe_usage_history.push({ universe: options.universe, used_at: now });

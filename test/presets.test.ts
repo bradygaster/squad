@@ -553,6 +553,45 @@ describe('applyPreset()', () => {
     expect(policy.max_capacity).toBeGreaterThan(0);
   });
 
+  it('uses registry candidate IDs in preset assignment snapshots (#2066)', () => {
+    const homeDir = join(TMP, 'apply-noncanonical-agent');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-noncanonical-agent/presets/starter/agents/Dev Agent');
+    writeFile('apply-noncanonical-agent/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'Dev Agent', role: 'developer' }],
+    }));
+    writeFile(
+      'apply-noncanonical-agent/presets/starter/agents/Dev Agent/charter.md',
+      '# Dev Agent',
+    );
+
+    const squadDir = join(TMP, 'target-noncanonical-agent');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    expect(applyPreset('starter', agentsDir)).toContainEqual({
+      agent: 'Dev Agent',
+      status: 'installed',
+    });
+
+    const registry = JSON.parse(
+      readFileSync(join(squadDir, 'casting', 'registry.json'), 'utf-8'),
+    ) as { agents: Record<string, unknown> };
+    const history = JSON.parse(
+      readFileSync(join(squadDir, 'casting', 'history.json'), 'utf-8'),
+    ) as {
+      assignment_cast_snapshots: Record<string, { agents: string[] }>;
+    };
+    const snapshot = Object.values(history.assignment_cast_snapshots)[0]!;
+
+    expect(Object.keys(registry.agents)).toEqual(['dev-agent']);
+    expect(snapshot.agents).toEqual(['dev-agent']);
+  });
+
   it('retries a concurrent registry change without losing either update', () => {
     const squadDir = join(TMP, 'target-casting-concurrent');
     const castingDir = join(squadDir, 'casting');
