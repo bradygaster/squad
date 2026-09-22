@@ -1309,6 +1309,67 @@ describe('applyPreset()', () => {
   });
 
   it.each([
+    {
+      surface: 'team' as const,
+      fileName: 'team.md',
+      external: '# External team at capture boundary\n',
+    },
+    {
+      surface: 'managed-routing' as const,
+      fileName: 'routing.md',
+      external: '# External routing at capture boundary\n',
+    },
+  ])(
+    'preserves an external $surface replacement at the scaffold post-mutation boundary',
+    ({ surface, fileName, external }) => {
+      const squadDir = join(TMP, `scaffold-capture-${surface}`);
+      const castingDir = join(squadDir, 'casting');
+      const outputPath = join(squadDir, fileName);
+      mkdirSync(castingDir, { recursive: true });
+      const initial = reconcileAgentProvenanceRegistry(undefined, [], {
+        generatedAt: '2026-09-21T22:00:00.000Z',
+      });
+      writeLegacyCastingPair(castingDir, JSON.stringify(initial, null, 2) + '\n');
+      writeFileSync(join(squadDir, 'team.md'), '# Original team\n');
+      writeFileSync(join(squadDir, 'routing.md'), '# Original routing\n');
+
+      _setPresetRegistryHooksForTesting({
+        afterOutputMutation: ({ surface: observedSurface, path: observedPath }) => {
+          if (observedSurface === surface && observedPath === outputPath) {
+            writeFileSync(outputPath, external);
+          }
+        },
+        boundary: ({ boundary }) => {
+          if (boundary === 'journal:write') throw new Error('force scaffold rollback');
+        },
+      });
+
+      let rollbackError: CastingCommitInDoubtError | undefined;
+      try {
+        scaffoldPresetIntoSquad(
+          squadDir,
+          [{ name: 'dev', role: 'developer' }],
+          'starter',
+        );
+      } catch (error) {
+        expect(error).toMatchObject({ name: 'CastingCommitInDoubtError' });
+        rollbackError = error as CastingCommitInDoubtError;
+      }
+
+      expect(readFileSync(outputPath, 'utf8')).toBe(external);
+      expect(rollbackError?.recovery?.affectedPaths).toContainEqual(
+        expect.objectContaining({
+          path: outputPath,
+          originalState: expect.stringMatching(/^file:sha256:/),
+          transactionWrittenState: expect.stringMatching(/^file:sha256:/),
+          observedState: expect.stringMatching(/^file:sha256:/),
+          status: 'diverged',
+        }),
+      );
+    },
+  );
+
+  it.each([
     'charter',
     'agent-contents',
     'team',

@@ -223,6 +223,19 @@ describe('CLI: export/import commands', () => {
       },
       expected: /history registry revision does not match/,
     },
+    {
+      name: 'history snapshot with an unknown agent',
+      mutate: (history: Record<string, unknown>) => {
+        history['assignment_cast_snapshots'] = {
+          invalid: {
+            created_at: '2026-09-21T00:00:00.000Z',
+            agents: ['missing-agent'],
+            universe: 'test',
+          },
+        };
+      },
+      expected: /history snapshot references unknown agents/,
+    },
   ])('rejects $name with zero filesystem mutation', async ({ mutate, expected }) => {
     const exportPath = join(TEST_ROOT, 'strict-import.json');
     const manifest = {

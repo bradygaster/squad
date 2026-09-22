@@ -849,6 +849,7 @@ function validateLegacyPairConsistency(
 }
 
 function validateOutgoingHistory(
+  registry: Record<string, unknown>,
   history: Record<string, unknown>,
   revision: number,
 ): void {
@@ -861,6 +862,7 @@ function validateOutgoingHistory(
   if (Object.keys(history).some(key => !allowedKeys.has(key))) {
     throw new Error('Cannot commit casting registry/history: history contains unexpected fields');
   }
+  const agents = registry['agents'] as Record<string, unknown>;
   const snapshots = history['assignment_cast_snapshots'] as Record<string, unknown>;
   for (const [key, rawSnapshot] of Object.entries(snapshots)) {
     if (
@@ -882,6 +884,11 @@ function validateOutgoingHistory(
       || snapshot['universe'].length === 0
     ) {
       throw new Error('Cannot commit casting registry/history: history snapshot is malformed');
+    }
+    if (snapshot['agents'].some(agent => !Object.hasOwn(agents, agent))) {
+      throw new Error(
+        'Cannot commit casting registry/history: history snapshot references unknown agents',
+      );
     }
   }
   for (const rawUsage of history['universe_usage_history'] as unknown[]) {
@@ -926,7 +933,7 @@ export function validateCastingRegistryPairForCommit(
       'Cannot commit casting registry/history: target revision does not match registry revision',
     );
   }
-  validateOutgoingHistory(history, revision);
+  validateOutgoingHistory(registry, history, revision);
   const registryTransaction = registry['transaction_id'];
   const historyTransaction = history['transaction_id'];
   if (

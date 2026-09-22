@@ -786,6 +786,21 @@ describe('casting registry/history roll-forward transaction', () => {
       expected: /history registry revision does not match/,
     },
     {
+      name: 'history snapshot with an unknown agent',
+      history: {
+        assignment_cast_snapshots: {
+          invalid: {
+            created_at: '2026-09-20T00:00:00.000Z',
+            agents: ['missing-agent'],
+            universe: 'test',
+          },
+        },
+        universe_usage_history: [],
+      },
+      targetRevision: 1,
+      expected: /history snapshot references unknown agents/,
+    },
+    {
       name: 'target revision mismatch',
       history: {
         assignment_cast_snapshots: {},

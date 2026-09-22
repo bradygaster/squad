@@ -62,7 +62,7 @@ interface PresetRegistryTestHooks {
   staleLockAgeMs?: number;
   beforeRollback?: () => void;
   afterOutputMutation?: (context: {
-    surface: 'agent-tree' | 'routing';
+    surface: 'agent-tree' | 'routing' | 'team' | 'managed-routing';
     path: string;
   }) => void;
   boundary?: (context: {
@@ -106,7 +106,7 @@ export function _setPresetRegistryHooksForTesting(
 
 /** @internal Test-only deterministic external-writer injection. */
 export function _afterPresetOutputMutationForTesting(
-  surface: 'agent-tree' | 'routing',
+  surface: 'agent-tree' | 'routing' | 'team' | 'managed-routing',
   outputPath: string,
 ): void {
   presetRegistryTestHooks?.afterOutputMutation?.({ surface, path: outputPath });
@@ -362,7 +362,21 @@ function existingRoutingAgents(routingContent: string): Set<string> {
  * preset's agents. Existing members are preserved; only new names are added.
  * If team.md does not exist, a minimal one is created.
  */
-function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], presetName: string): void {
+function writeManagedScaffoldFile(
+  filePath: string,
+  content: string,
+  surface: 'team' | 'managed-routing',
+): string {
+  storage.writeSync(filePath, content);
+  _afterPresetOutputMutationForTesting(surface, filePath);
+  return content;
+}
+
+function writeOrMergeTeamMembers(
+  squadDir: string,
+  agents: PresetAgent[],
+  presetName: string,
+): string {
   const teamPath = path.join(squadDir, 'team.md');
   const existing = storage.existsSync(teamPath) ? (storage.readSync(teamPath) ?? '') : '';
 
@@ -392,8 +406,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
       '',
     ].join('\n');
     storage.mkdirSync(squadDir, { recursive: true });
-    storage.writeSync(teamPath, fresh);
-    return;
+    return writeManagedScaffoldFile(teamPath, fresh, 'team');
   }
 
   // team.md exists — merge into existing ## Members table
@@ -401,7 +414,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
   const newRows = agents
     .filter(a => !already.has(a.name.toLowerCase()))
     .map(memberRow);
-  if (newRows.length === 0) return; // nothing to do, all already present
+  if (newRows.length === 0) return existing; // nothing to do, all already present
 
   const membersIdx = existing.indexOf(MEMBERS_HEADER);
   if (membersIdx === -1) {
@@ -415,8 +428,11 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
       ...newRows,
       '',
     ].join('\n');
-    storage.writeSync(teamPath, existing.trimEnd() + '\n' + block);
-    return;
+    return writeManagedScaffoldFile(
+      teamPath,
+      existing.trimEnd() + '\n' + block,
+      'team',
+    );
   }
 
   // Members section exists — find end of its table and insert rows there
@@ -445,8 +461,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
     ];
     const newSection = MEMBERS_HEADER + '\n' + headerLines.join('\n') + '\n';
     const updated = existing.slice(0, membersIdx) + newSection + existing.slice(sectionEnd);
-    storage.writeSync(teamPath, updated);
-    return;
+    return writeManagedScaffoldFile(teamPath, updated, 'team');
   }
 
   // Append new rows after the last existing table row
@@ -454,7 +469,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
   const after = sectionLines.slice(lastTableLineRel + 1).join('\n');
   const newSection = before + '\n' + newRows.join('\n') + (after ? '\n' + after : '\n');
   const updated = existing.slice(0, membersIdx) + newSection + existing.slice(sectionEnd);
-  storage.writeSync(teamPath, updated);
+  return writeManagedScaffoldFile(teamPath, updated, 'team');
 }
 
 /**
@@ -463,7 +478,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
  * primary agents are added. If routing.md does not exist, a minimal one is
  * created.
  */
-function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
+function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): string {
   const routingPath = path.join(squadDir, 'routing.md');
   const existing = storage.existsSync(routingPath) ? (storage.readSync(routingPath) ?? '') : '';
 
@@ -484,15 +499,14 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
       '',
     ].join('\n');
     storage.mkdirSync(squadDir, { recursive: true });
-    storage.writeSync(routingPath, fresh);
-    return;
+    return writeManagedScaffoldFile(routingPath, fresh, 'managed-routing');
   }
 
   const already = existingRoutingAgents(existing);
   const newRows = agents
     .filter(a => !already.has(a.name.toLowerCase()))
     .map(routingRow);
-  if (newRows.length === 0) return;
+  if (newRows.length === 0) return existing;
 
   const headerIdx = existing.indexOf(ROUTING_HEADER);
   if (headerIdx === -1) {
@@ -506,8 +520,11 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
       ...newRows,
       '',
     ].join('\n');
-    storage.writeSync(routingPath, existing.trimEnd() + '\n' + block);
-    return;
+    return writeManagedScaffoldFile(
+      routingPath,
+      existing.trimEnd() + '\n' + block,
+      'managed-routing',
+    );
   }
 
   // Existing routing section — append new rows after its last table row
@@ -532,14 +549,13 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
     ];
     const newSection = ROUTING_HEADER + '\n' + headerLines.join('\n') + '\n';
     const updated = existing.slice(0, headerIdx) + newSection + existing.slice(sectionEnd);
-    storage.writeSync(routingPath, updated);
-    return;
+    return writeManagedScaffoldFile(routingPath, updated, 'managed-routing');
   }
   const before = sectionLines.slice(0, lastTableLineRel + 1).join('\n');
   const after = sectionLines.slice(lastTableLineRel + 1).join('\n');
   const newSection = before + '\n' + newRows.join('\n') + (after ? '\n' + after : '\n');
   const updated = existing.slice(0, headerIdx) + newSection + existing.slice(sectionEnd);
-  storage.writeSync(routingPath, updated);
+  return writeManagedScaffoldFile(routingPath, updated, 'managed-routing');
 }
 
 /**
@@ -652,10 +668,8 @@ export function scaffoldPresetIntoSquad(
     let writtenRouting = originalRouting;
     const writtenPolicy = originalPolicy ?? DEFAULT_POLICY_RAW;
     try {
-      writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
-      writtenTeam = storage.readSync(teamPath);
-      writeOrMergeRouting(squadDir, wireableAgents);
-      writtenRouting = storage.readSync(routingPath);
+      writtenTeam = writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
+      writtenRouting = writeOrMergeRouting(squadDir, wireableAgents);
       writeOrMergeCastingState(squadDir, wireableAgents, { universe });
     } catch (error) {
       if (error instanceof CastingCommitInDoubtError) throw error;
