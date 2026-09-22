@@ -41,6 +41,12 @@ const REQUIRED_BUILTIN_CHARTERS = REQUIRED_BUILTIN_IDS
 const BUILTIN_CANONICAL_DIR = '.github/workflows/shared/builtins';
 const BUILTIN_SECTION_HEADING = '## Built-in Support Agents';
 const CAST_SOURCES_HEADING = '## Cast sources';
+const CASTING_HISTORY_FIELDS = new Set([
+  'assignment_cast_snapshots',
+  'universe_usage_history',
+  'transaction_id',
+  'registry_revision',
+]);
 const BUILTIN_NAME_ROW_PATTERN = /^\|\s*(Scribe|Ralph|Rai|Fact Checker)\s*\|/gmi;
 const PLACEHOLDER_PATTERN = /\b(?:pending|uncast)\b|(?:specialists|taskTypes|hints)=0\b/i;
 const FORBIDDEN_REFERENCE_PATTERNS = [
@@ -307,8 +313,16 @@ function parseRegistryValue(registry, source, errors, { legacy = false } = {}) {
 }
 
 function parseHistoryValue(history, registry, source, errors, { legacyRegistry = false } = {}) {
-  if (!history || typeof history !== 'object' || Array.isArray(history)
-    || !history.assignment_cast_snapshots
+  if (!history || typeof history !== 'object' || Array.isArray(history)) {
+    errors.push(`${source}: history shape is malformed`);
+    return false;
+  }
+  const unknownField = Object.keys(history).find(key => !CASTING_HISTORY_FIELDS.has(key));
+  if (unknownField !== undefined) {
+    errors.push(`${source}: history contains unknown top-level field "${unknownField}"`);
+    return false;
+  }
+  if (!history.assignment_cast_snapshots
     || typeof history.assignment_cast_snapshots !== 'object'
     || Array.isArray(history.assignment_cast_snapshots)
     || !Array.isArray(history.universe_usage_history)) {

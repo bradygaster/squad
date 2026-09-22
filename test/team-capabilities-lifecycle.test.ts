@@ -107,6 +107,7 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     },
   ])('fails closed for non-filesystem storage with a $name', ({ mutate, expected }) => {
     seed(teamMd('| Nori | Data Engineer |'), routingMd('| Pipelines | Nori |'));
+    storage.deleteSync(AGENT_FILE);
     mutate();
     expect(() => syncTeamCapabilities({
       squadDir: SQUAD_DIR,
@@ -345,7 +346,8 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
   });
 
   it('skips silently when there is no agent file to update', () => {
-    storage.writeSync(`${SQUAD_DIR}/team.md`, teamMd('| Nori | Dev |'));
+    seed(teamMd('| Nori | Dev |'), routingMd('| Runtime | Nori |'));
+    storage.deleteSync(AGENT_FILE);
 
     const result = syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
 

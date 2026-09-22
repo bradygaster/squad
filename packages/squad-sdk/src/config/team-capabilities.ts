@@ -694,18 +694,6 @@ export function syncTeamCapabilities(
   options: SyncTeamCapabilitiesOptions,
 ): SyncTeamCapabilitiesResult {
   const storage = options.storage ?? new FSStorageProvider();
-  const existing = readOptional(storage, options.agentFile);
-  if (existing === undefined) {
-    return {
-      updated: false,
-      profile: buildTeamCapabilityProfile({}),
-      skipped: 'missing-agent-file',
-    };
-  }
-
-  const teamMarkdown = readOptional(storage, join(options.squadDir, 'team.md'));
-  const routingMarkdown = readOptional(storage, join(options.squadDir, 'routing.md'));
-
   let registry: unknown;
   if (storage instanceof FSStorageProvider) {
     registry = readCastingRegistryPair(join(options.squadDir, 'casting')).registry;
@@ -728,6 +716,18 @@ export function syncTeamCapabilities(
       manifestRaw,
     ).registry;
   }
+
+  const existing = readOptional(storage, options.agentFile);
+  if (existing === undefined) {
+    return {
+      updated: false,
+      profile: buildTeamCapabilityProfile({}),
+      skipped: 'missing-agent-file',
+    };
+  }
+
+  const teamMarkdown = readOptional(storage, join(options.squadDir, 'team.md'));
+  const routingMarkdown = readOptional(storage, join(options.squadDir, 'routing.md'));
 
   const charters: Record<string, string> = {};
   const agentsDir = join(options.squadDir, 'agents');

@@ -98,6 +98,16 @@ describe('activation binding casting pair validation', () => {
       },
       expected: /history shape is malformed/,
     },
+    {
+      name: 'unknown history field',
+      write: (dir: string) => {
+        writeFileSync(join(dir, 'registry.json'), checkerRegistry());
+        writeFileSync(join(dir, 'history.json'), checkerHistory({
+          unexpected: true,
+        }));
+      },
+      expected: /unknown top-level field "unexpected"/,
+    },
   ])('fails closed for a $name', async ({ write, expected }) => {
     const dir = checkerCastingDir();
     write(dir);

@@ -19,6 +19,12 @@ const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 const RESOLVED_REFERENCE = /^#?(\d+)$/;
 const AGENT_PROVENANCE_SCHEMA = 'squad-agent-provenance/v1';
 const WORK_AGENT_BINDING_SCHEMA = 'squad-work-agent-binding/v1';
+const CASTING_HISTORY_FIELDS = new Set([
+  'assignment_cast_snapshots',
+  'universe_usage_history',
+  'transaction_id',
+  'registry_revision',
+]);
 
 function parseCastingObject(raw, label) {
   let value;
@@ -34,6 +40,10 @@ function parseCastingObject(raw, label) {
 }
 
 function validateCastingHistory(history, registry) {
+  const unknownField = Object.keys(history).find(key => !CASTING_HISTORY_FIELDS.has(key));
+  if (unknownField !== undefined) {
+    throw new Error(`casting history contains unknown top-level field "${unknownField}"`);
+  }
   if (!history.assignment_cast_snapshots
     || typeof history.assignment_cast_snapshots !== 'object'
     || Array.isArray(history.assignment_cast_snapshots)

@@ -467,6 +467,16 @@ describe('GH-AW Cast final-tree validator', () => {
       })),
       expected: /history shape is malformed/,
     },
+    {
+      name: 'casting history with an unknown field',
+      mutate: (root: string) => {
+        const historyPath = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(historyPath, 'utf8'));
+        history.unexpected = true;
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+      expected: /unknown top-level field "unexpected"/,
+    },
   ])('rejects a $name', ({ mutate, expected }) => {
     const fixture = createFixture();
     mutate(fixture.root);
@@ -558,7 +568,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 63e6ca08ebb96e266acb4d4f526df8ddd52cdc4333de4cfbbf56292863d816eb, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 3f9718c1e4d6852ee51c3dc6ce1e120ad9a10f81f99cb12affacc2280fd73933, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
