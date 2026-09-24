@@ -53,6 +53,8 @@ resources:
   - shared/squad-improvement-gate.mjs
   - shared/squad-retro-evidence.mjs
   - shared/squad-retro-provenance.mjs
+  - shared/squad-implementation-provenance.mjs
+  - shared/implementation-provenance-v1.schema.json
   - shared/builtins/scribe-charter.md
   - shared/builtins/ralph-charter.md
   - shared/builtins/rai-charter.md
@@ -133,7 +135,7 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      validator_expected_sha256="62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -847,13 +849,25 @@ else
     echo "ROSTER_UNREADABLE: ## Members has no data rows in .squad/team.md"
   else
     printf '%s\n' "$ROSTER" | awk '{print "ROSTER_MEMBER: " $0}'
+    git show HEAD:.squad/casting/registry.json 2>/dev/null | node -e '
+      let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{
+        const r=JSON.parse(s);if(r.schema!=="squad-agent-provenance/v1"||r.schema_version!==1||
+          !Number.isInteger(r.revision)||r.revision<1||!r.agents)throw Error("invalid v1 registry");
+        for(const [id,a] of Object.entries(r.agents)){if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)||
+          !a||a.persistent_name!==a.display_name||!a.role||!a.universe||
+          !["active","inactive","retired"].includes(a.status)||!Date.parse(a.created_at)||!Date.parse(a.updated_at))
+          throw Error("malformed agent "+id);if(a.status==="active")
+          console.log("AGENT_IDENTITY: "+JSON.stringify({agent_id:id,display_name:a.display_name,registry_revision:r.revision}));}
+      }catch(e){console.log("IDENTITY_UNREADABLE: "+e.message)}})'
   fi
 fi
 ```
 
-Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); finds the `Name` column by header and emits one lowercased `ROSTER_MEMBER: {name}` per `## Members` data row, else a `ROSTER_UNREADABLE: {reason}`.
+Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); emits lowercased `ROSTER_MEMBER:` rows plus active `AGENT_IDENTITY:` records from the committed versioned registry.
 
 - **`ROSTER_MEMBER:` lines** are the **certified roster set** — bind only to these, reproduce them verbatim as provenance; a name outside them (bar `@copilot`) must never become a `squad:{name}` label.
+- **`AGENT_IDENTITY:` lines** are the only authority for stable agent IDs and registry revision. Copy IDs directly; never slug or match labels/roles/paths to invent one. Every roster-assigned new plan row must carry the matching ID.
+- **`IDENTITY_UNREADABLE:`** halts new planning and identity binding. Existing legacy plans may activate only with explicit `legacy-plan-missing-id` omissions.
 - **`ROSTER_UNREADABLE:`** halts binding with its named reason — never a provenance sentence for a read that did not happen, never a preset fallback; treat as `TEAM_ABSENT`.
 
 ### Auto-Cast Pivot
@@ -988,7 +1002,7 @@ Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
 3. Name rules:
    - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
    - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
-4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
+4. Write `.squad/casting/registry.json` as `squad-agent-provenance/v1`. Compare the committed registry: preserve every ID/tombstone, immutable role/creation time, and avatar unless explicitly cleared; set `revision` greater than the committed revision (legacy is 0). Keys are immutable IDs/directories. Records hold equal names, role, universe, lifecycle/status, and optional ID-owned avatar under `.squad/agents/{id}/`. Rename uses the existing ID; deletion tombstones; never reuse or infer IDs. In descriptive mode every registry entry has `universe` set to `"descriptive"`.
 5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
 ##### Step 4: Generate Scaffolding
@@ -1299,7 +1313,7 @@ Subcommands: `/squad cast-member <description>` (add), `/squad cast-member renam
 2. **Validate squad:** Confirm `.squad/team.md` and registry exist. If not, suggest `/squad cast`, stop.
 3. **Check duplicates** (new only): If similar role exists, ask user to confirm.
 4. **Allocate identity** (new only): Same universe, unused name, same naming rules. If universe full, suggest retire or re-cast.
-5. **Generate/regenerate charter:** New: create from template. Modify: update expertise/ownership/boundaries, preserve name and `created_at`.
+5. **Generate/regenerate charter:** New: create from template. Modify or rename: update charter and display fields, but preserve the registry key and `created_at`.
 6. **Update files:** `.squad/team.md`, `.squad/routing.md`, `.squad/casting/registry.json`, `meet-the-squad.md`.
 7. **Open PR:** On Squad PR: follow-up PR targeting existing branch. On issue: `create-pull-request` branch `squad/cast-member-{id}`, title `[squad] Add/Modify {Name}`.
 8. **Post:** `👤 {Name} ({Role}) has been added to the team.\n\n**PR:** #{pr_number}`
@@ -1338,11 +1352,8 @@ description: Dispatch implementation work to the dependency or general worker.
 Implement mode dispatches an isolated worker for a regular issue. Explicit,
 dependency-only Wave 1 work routes to `squad-deps-worker`; every other task
 routes to `squad-implement-worker`, whose manifest protection remains unchanged.
-When invoked on a parent (initiative or epic), this mode descends the sub-issue
-hierarchy to the **leaf tasks** and dispatches workers for up to three currently
-unblocked leaf tasks. The general worker relays merged implementation pull
-requests back to this mode so it can automatically refill the parent's available
-slots.
+For a parent, descend to **leaf tasks** and dispatch up to three unblocked
+leaves. Merged implementation PRs relay back here to refill available slots.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
@@ -1359,26 +1370,24 @@ slots.
    hierarchy (initiative → epic → task), not just immediate children. Also
    include open issues whose body contains a `Parent: #{ancestor-issue-number}`
    line for any ancestor, for compatibility with older plans.
-4. Identify the **leaf tasks**: open descendants that have **no sub-issues at
-   all** — neither open nor closed — and are not labeled `epic` or `initiative`.
-   Intermediate parents (initiatives and epics that only group other issues)
-   are never dispatched to a worker — only leaf tasks are implemented. Use "no
-   sub-issues at all" rather than "no *open* sub-issues": an epic whose children
-   have all been implemented and closed stays open until someone closes it, and
-   an open-children-only test would reclassify that drained epic as a leaf and
-   dispatch a worker against a grouping issue. That is the #1758 defect 2
-   failure shape reappearing at the end of an epic's life, and it is reachable
-   whenever a refill scan descends from the root across sibling epics.
+4. Identify the **leaf tasks**: open descendants with no sub-issues (open or closed)
+   and no `epic` or `initiative` label. Intermediate parents are never dispatched to a worker;
+   checking only open children would misclassify a drained parent
+   (#1758).
 5. If the target has one or more open leaf descendants, treat the target as a
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.
 6. Classify every leaf with the **Dependency Route Decision** below.
-7. If the target has no open descendants (it is itself a leaf), call exactly the
-   workflow-specific tool selected by that decision with `issue_number` set to
-   the target issue number.
-8. Post a comment linking the dispatched worker run and naming the selected
-   worker. The worker performs dependency, duplicate pull request, routing,
-   implementation, and validation checks.
+7. For a leaf target, post the exact five-line receipt below before calling the
+   selected worker with the four session fields in the Epic Dispatch JSON.
+
+```text
+Squad-Implementation-Dispatch: ${{ github.repository }}#{issue-number} worker={squad-implement-worker-or-squad-deps-worker}
+Implementation-Session: squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}
+Dispatcher-Workflow: .github/workflows/squad.lock.yml
+Dispatcher-Run: ${{ github.run_id }}
+Dispatcher-Attempt: {current-GITHUB_RUN_ATTEMPT-integer}
+```
 
 ##### Dependency Route Decision [MANDATORY — fail closed]
 
@@ -1435,16 +1444,20 @@ exactly one selected workflow-specific safe-output tool with this input:
 
 ```json
 {
-  "issue_number": "{leaf-issue-number}"
+  "issue_number": "{leaf-issue-number}",
+  "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}",
+  "implementation_session_origin_workflow": ".github/workflows/squad.lock.yml",
+  "implementation_session_origin_run_id": "${{ github.run_id }}",
+  "implementation_session_origin_run_attempt": "{current-GITHUB_RUN_ATTEMPT-integer}"
 }
 ```
 
-Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
-non-empty numeric `issue_number`. Emit exactly one workflow-specific dispatch
-per selected leaf task, and only report a leaf task as dispatched after the tool
-returns success. Never call both workers for one issue. If the dependency config
-guard denies a selected dependency task, leave that slot unused and report the
-denial; do not reroute it to the general worker.
+Never call the generic `dispatch_workflow` tool. Before each selected-worker
+call, post the five-line receipt with its worker and numeric
+`GITHUB_RUN_ATTEMPT`. Never emit a dispatch without a numeric `issue_number`,
+the exact session ID, and all three dispatcher-origin inputs above. Never call both workers for one issue.
+Report success only after the selected tool succeeds. A dependency-config denial
+leaves its slot unused; do not reroute it to the general worker.
 
 Post a comment on the target listing the dispatched leaf tasks, blocked leaf
 tasks, the worker selected for each dispatch, dependency tasks denied by config,
@@ -1594,15 +1607,16 @@ update.
      stop. Only when the completed scan has no match may you use lightweight
      repository analysis.
    - When found, use the newest research artifact as the plan's primary context.
-3. Use the `ROSTER_MEMBER:` lines already emitted by mandatory Team Guard Step
-   TG-2 as the certified active roster set. **Owner binding gate:** when
+3. Use the `ROSTER_MEMBER:` and `AGENT_IDENTITY:` lines already emitted by mandatory Team Guard Step
+   TG-2 as the certified active roster and identity sets. **Owner binding gate:** when
    `TEAM_PRESENT`, every work item `Owner` MUST match one certified name. Resolve
    each item's domain through `.squad/routing.md`; if no exact rule exists, choose
    the closest active member whose documented remit fits, but never synthesize a
    role, alias, or placeholder and never use `@copilot` while a certified roster
    exists. Preserve each selected member's exact `Name` cell in the plan. On
    `ROSTER_UNREADABLE:`, stop instead of posting a plan. This gate governs every
-   `Owner` column and downstream `squad:{owner}` label.
+   `Owner` column and downstream `squad:{owner}` label. Copy that record's
+   immutable ID into the row's `Agent ID` column; never derive it from the name.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -1615,7 +1629,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 The `body` MUST NOT contain a `Structured data:` block or fenced metadata; pass
 the envelope only through `data` so gh-aw appends it exactly once.
 
-Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
+Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Agent ID | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
 
 Choose the hierarchy explicitly. A phased plan MUST place every work-item table
 under a heading matching `### Phase {N}` (optional title text may follow). Even a
@@ -1700,14 +1714,17 @@ work-item row and set every task's parent to the origin issue.
 Do not create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
-accepted plan row. Freeze a binding for each task number containing that row's
-original `Owner` and `Depends On` values. If TG-2 emitted a `ROSTER_UNREADABLE:`
+accepted plan row. Freeze a binding for each task number containing that row's original `Owner` and `Depends On` values,
+plus its authoritative `Agent ID`. If TG-2 emitted a `ROSTER_UNREADABLE:`
 line, stop before mutation and report that named reason. An individual `Owner`
 matching no certified active roster name and not `@copilot` does **not** stop the
 run — matching `squad-plan-activate`, create that issue with the base `squad` label
 only, omit the owner label, continue, and record the value under
 `Non-roster agent values` (Step 4). Never substitute, re-route, or fall back to
 another identity during acceptance.
+A roster Owner's `Agent ID` MUST exactly match its `AGENT_IDENTITY:` record;
+stop before mutation on mismatch. `@copilot`, non-roster, and legacy rows use
+only the explicit identity-omission cases defined in Step 4.
 
 For every roster member label, derive the slug exactly as label synchronization
 does: lowercase the certified display name, replace each run of non-`a-z0-9`
@@ -1811,9 +1828,10 @@ that was not created.
 
 **Every phase and full acceptance artifact body MUST include an `Activation
 bindings:` fenced JSON block containing a non-empty array** — the identical
-binding shape, quoting, and omission-reason semantics as `squad-plan-activate`
-Step 4's contract: one object per created/recognized work item with
-`task`/`issue`/`epic`/`epic_issue`/`agent`/`epic_agents`, plus `label` or
+versioned provenance, binding shape, quoting, and omission semantics as
+`squad-plan-activate` Step 4: one object per created/recognized work item with
+repository/origin/artifact/registry provenance,
+`task`/`issue`/`epic`/`epic_issue`/`agent_id`/`epic_agent_ids`/`agent`/`epic_agents`, plus `label` or
 `omission_reason`, and `epic_label` or `epic_omission_reason` (`multi-owner` or
 `non-roster`). `issue` and `epic_issue` are quoted JSON strings — that item's own
 `temporary_id` when created this run, its verified real number when reused —
@@ -2025,21 +2043,21 @@ Search in order: `scope-accepted` artifact (use as authoritative) → `program` 
 
 ##### Step 2: Decompose Into Tasks
 
-Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Rollout notes.
+Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Agent ID, Rollout notes.
 
-**Agent binding rule:** permitted `Agent` values are Team Guard Step TG-2's certified roster set (the `Name` column of `## Members` in **this repository's** `.squad/team.md`), plus `@copilot`. Resolve each task's domain via `.squad/routing.md` and emit that member's exact `Name` cell; no other column, the `Role` column included, supplies a valid `Agent`. If none fits, use `@copilot`.
+**Agent binding rule:** permitted `Agent` values are Team Guard Step TG-2's certified roster set plus `@copilot`. For a roster member, copy `Agent ID` from the same `AGENT_IDENTITY:` record; no matching or slugging. Resolve each task's domain via `.squad/routing.md` and emit the value that appears verbatim in the `Name` column for that member. If none fits, use `@copilot` and `Agent ID` `—`.
 
 Rules: no task > max_task_size. DAG only. Every task traces to program item. Every epic has ≥1 task. Vertical slices. Group into phases by dependency order (Phase 1 = no deps).
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value matches a Team Guard Step TG-2 `ROSTER_MEMBER:` line — appears verbatim in the `Name` column — or is `@copilot`). Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity, and exact `Agent`/`Agent ID` pairing from TG-2 (`@copilot` uses `—`). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
 `add-comment` with `data: {"squad_artifact":"implementation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Next: `/squad plan validate`.
+Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Agent ID|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Next: `/squad plan validate`.
 
 Re-check every `Agent` against the Step 2 binding rule before posting.
 
@@ -2105,7 +2123,8 @@ Run mechanically; never accept a value because it "looks like" a teammate.
    `ROSTER_UNREADABLE:`, report Check 10 ❌ Critical and stop — no roster, no binding.
 2. Quote the roster set in the validation output.
 3. Every `Owner`/`Agent` cell is valid **only** if it matches a roster-set entry
-   ignoring case, or is exactly `@copilot`; any other value — including one from a
+   ignoring case and its `Agent ID` exactly matches the corresponding `AGENT_IDENTITY:`
+   record, or it is exactly `@copilot` with ID `—`; any other value — including one from a
    different column, such as the `Role` column — is invalid.
 4. Every invalid value is a ❌ **Critical** finding (`RESULT: FAIL`), reported with
    artifact, row, offending value, and the roster set it must be drawn from.
@@ -2362,8 +2381,10 @@ Step 2e, not the cap machinery, is what notices.
    remembered roster.
 3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
    provenance of the labels applied — the summary may name only values TG-2 emitted.
-4. For every `Agent` value, certify its lowercased raw value against a
-   `ROSTER_MEMBER:` name, then mint `squad:{agent-slug}` by replacing each run of
+4. For every roster `Agent`, require the plan `Agent ID` to exactly match the
+   same `AGENT_IDENTITY:` record; stop before mutation on mismatch and never
+   substitute an ID. Then certify its lowercased raw value against a
+   `ROSTER_MEMBER:` name and mint `squad:{agent-slug}` by replacing each run of
    non-`a-z0-9` characters with `-` and trimming leading and trailing `-`. The special
    value `@copilot` maps to the existing `squad:copilot` routing label — never
    `squad:@copilot`.
@@ -2484,9 +2505,11 @@ activation over edge creation.
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Emit one object per created/recognized task:
+Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Each row is a `squad-work-agent-binding/v1` producer record. Copy `$GITHUB_REPOSITORY`, the current origin issue, artifact kind, and TG-2 registry revision exactly. Emit one object per created/recognized task:
 
-`{"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{slugged Agent cell}","epic_label":"squad:{slugged sole epic task agent}"}`. Slug both label fields with the lowercase/non-alphanumeric/hyphen rule used by label synchronization. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
+`{"binding_schema":"squad-work-agent-binding/v1","binding_version":1,"producer":"squad","repository":"{owner/repo}","origin_issue":{origin issue},"artifact":"{artifact kind}","registry_schema":"squad-agent-provenance/v1","registry_revision":{TG-2 revision},"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent_id":"{Agent ID cell}","epic_agent_ids":["{all distinct Agent ID cells for this epic}"],"agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic}"],"label":"squad:{slugged Agent cell}","epic_label":"squad:{slugged sole epic task agent}"}`. Slug label fields only. Every binding for one epic carries the same complete ID/name sets across all phases.
+
+For `@copilot` or non-roster work, set `agent_id:null` plus `identity_omission_reason:"external-agent"` or `"non-roster"`. For an older accepted plan with no ID column, use `"legacy-plan-missing-id"`; never reconstruct one from its name or label. Exclude unavailable IDs from `epic_agent_ids` and add `epic_identity_omission_reason:"partial"` when any epic task lacks an ID.
 
 ###### Issue references in bindings — quoted, never bare
 

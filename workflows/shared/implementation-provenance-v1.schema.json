@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1",
+  "title": "Squad implementation provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "producer",
+    "repository",
+    "origin_issue",
+    "implementation_session_id",
+    "session_origin",
+    "workflow_run",
+    "pull_request",
+    "goals",
+    "replaces"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1"
+    },
+    "schema_version": { "const": "1" },
+    "producer": { "const": "squad" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[^/\\s]+/[^/\\s]+$"
+    },
+    "origin_issue": { "type": "integer", "minimum": 1 },
+    "implementation_session_id": {
+      "type": "string",
+      "pattern": "^squad-implementation-session/v1/[1-9][0-9]*/[1-9][0-9]*$"
+    },
+    "session_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflow", "run_id", "run_attempt"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "workflow": {
+          "enum": [
+            ".github/workflows/squad.lock.yml",
+            ".github/workflows/squad-retro.lock.yml"
+          ]
+        },
+        "run_id": { "type": "integer", "minimum": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "workflow_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflow", "run_id", "run_attempt", "event"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "workflow": {
+          "type": "string",
+          "pattern": "^\\.github/workflows/[^/]+\\.lock\\.yml$"
+        },
+        "run_id": { "type": "integer", "minimum": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "event": { "enum": ["workflow_dispatch", "pull_request"] }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "number", "head_ref"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "number": { "type": "integer", "minimum": 1 },
+        "head_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "goals": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repository", "issue", "relationship"],
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[^/\\s]+/[^/\\s]+$"
+          },
+          "issue": { "type": "integer", "minimum": 1 },
+          "relationship": { "enum": ["closes", "relates"] }
+        }
+      }
+    },
+    "replaces": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repository", "number"],
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[^/\\s]+/[^/\\s]+$"
+          },
+          "number": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

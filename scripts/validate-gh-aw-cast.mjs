@@ -6,6 +6,7 @@ import {
   readdirSync,
   statSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -40,6 +41,12 @@ const REQUIRED_BUILTIN_CHARTERS = REQUIRED_BUILTIN_IDS
 const BUILTIN_CANONICAL_DIR = '.github/workflows/shared/builtins';
 const BUILTIN_SECTION_HEADING = '## Built-in Support Agents';
 const CAST_SOURCES_HEADING = '## Cast sources';
+const CASTING_HISTORY_FIELDS = new Set([
+  'assignment_cast_snapshots',
+  'universe_usage_history',
+  'transaction_id',
+  'registry_revision',
+]);
 const BUILTIN_NAME_ROW_PATTERN = /^\|\s*(Scribe|Ralph|Rai|Fact Checker)\s*\|/gmi;
 const PLACEHOLDER_PATTERN = /\b(?:pending|uncast)\b|(?:specialists|taskTypes|hints)=0\b/i;
 const FORBIDDEN_REFERENCE_PATTERNS = [
@@ -236,17 +243,292 @@ function parseRouting(routing, activeNames, errors) {
   return rows;
 }
 
-function parseRegistry(root, errors) {
+function canonicalAgentId(id) {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id);
+}
+
+function parseRegistryValue(registry, source, errors, { legacy = false } = {}) {
+  if (!registry?.agents || typeof registry.agents !== 'object' || Array.isArray(registry.agents)) {
+    errors.push(`${source}: top-level agents object is required`);
+    return null;
+  }
+  if (!legacy) {
+    if (registry.schema !== 'squad-agent-provenance/v1' || registry.schema_version !== 1) {
+      errors.push(`${source}: schema must be squad-agent-provenance/v1`);
+    }
+    if (!Number.isInteger(registry.revision) || registry.revision < 1) {
+      errors.push(`${source}: revision must be a positive integer`);
+    }
+    if (typeof registry.generated_at !== 'string' || Number.isNaN(Date.parse(registry.generated_at))) {
+      errors.push(`${source}: generated_at must be an ISO-8601 timestamp`);
+    }
+  }
+  const names = new Set();
+  for (const [id, value] of Object.entries(registry.agents)) {
+    if (!canonicalAgentId(id) || !value || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`${source}: invalid agent id or record "${id}"`);
+      continue;
+    }
+    const name = legacy ? value.persistent_name : value.display_name;
+    if (typeof name !== 'string' || !name.trim()) {
+      errors.push(`${source}: agent "${id}" has no display name`);
+    } else if (names.has(name.trim().toLowerCase())) {
+      errors.push(`${source}: duplicate display name "${name}"`);
+    } else {
+      names.add(name.trim().toLowerCase());
+    }
+    if (!['active', 'inactive', 'retired'].includes(value.status)) {
+      errors.push(`${source}: agent "${id}" has invalid status`);
+    }
+    if (legacy) {
+      if (typeof value.universe !== 'string' || !value.universe.trim()
+        || Number.isNaN(Date.parse(value.created_at))
+        || (value.status === 'retired' && Number.isNaN(Date.parse(value.retired_at)))) {
+        errors.push(`${source}: legacy agent "${id}" is incomplete`);
+      }
+    } else {
+      if (value.persistent_name !== value.display_name
+        || typeof value.role !== 'string' || !value.role.trim()
+        || typeof value.universe !== 'string' || !value.universe.trim()
+        || Number.isNaN(Date.parse(value.created_at))
+        || Number.isNaN(Date.parse(value.updated_at))
+        || (value.status === 'retired' && Number.isNaN(Date.parse(value.retired_at)))) {
+        errors.push(`${source}: agent "${id}" is incomplete`);
+      }
+      if (value.avatar !== undefined) {
+        const expectedPrefix = `.squad/agents/${id}/`;
+        const avatarPath = value.avatar?.path;
+        if (value.avatar?.kind !== 'repository-path'
+          || typeof avatarPath !== 'string'
+          || !avatarPath.startsWith(expectedPrefix)
+          || avatarPath.length === expectedPrefix.length
+          || avatarPath.includes('\\')
+          || avatarPath.split('/').some(segment => segment === '.' || segment === '..')) {
+          errors.push(`${source}: agent "${id}" has invalid avatar path`);
+        }
+      }
+    }
+  }
+  return registry;
+}
+
+function isCanonicalLegacyGenesis(registry, history) {
+  const agents = registry.agents;
+  const agentIds = Object.keys(agents);
+  const snapshots = Object.entries(history.assignment_cast_snapshots);
+  const usage = history.universe_usage_history;
+  if (agentIds.length === 0 || snapshots.length !== 1 || usage.length !== 1) {
+    return false;
+  }
+
+  const snapshotEntry = snapshots[0];
+  if (!snapshotEntry) return false;
+  const [snapshotKey, rawSnapshot] = snapshotEntry;
+  const rawUsage = usage[0];
+  if (hasRevisionToken(snapshotKey)
+    || !rawSnapshot
+    || typeof rawSnapshot !== 'object'
+    || Array.isArray(rawSnapshot)
+    || !rawUsage
+    || typeof rawUsage !== 'object'
+    || Array.isArray(rawUsage)) {
+    return false;
+  }
+  const snapshot = rawSnapshot;
+  const usageRecord = rawUsage;
+  const snapshotAgents = snapshot.agents;
+  const snapshotCreatedAt = Date.parse(snapshot.created_at);
+  const generatedAt = Date.parse(registry.generated_at);
+  if (!Array.isArray(snapshotAgents)
+    || snapshotAgents.some(agentId => typeof agentId !== 'string')
+    || new Set(snapshotAgents).size !== snapshotAgents.length
+    || snapshotAgents.length !== agentIds.length
+    || snapshotAgents.some(agentId => !Object.hasOwn(agents, agentId))
+    || typeof snapshot.universe !== 'string'
+    || snapshot.universe.length === 0
+    || !Number.isFinite(snapshotCreatedAt)
+    || snapshotCreatedAt > generatedAt
+    || usageRecord.universe !== snapshot.universe
+    || Date.parse(usageRecord.used_at) !== snapshotCreatedAt) {
+    return false;
+  }
+
+  return Object.values(agents).every(agent =>
+    agent.status === 'active'
+    && agent.universe === snapshot.universe
+    && Date.parse(agent.created_at) === snapshotCreatedAt);
+}
+
+const REVISION_TOKEN_PATTERN = /(?:^|[-_])(?:revision[-_]*\d+|r\d+)(?=[-_]|$)/i;
+
+function hasRevisionToken(snapshotKey) {
+  return REVISION_TOKEN_PATTERN.test(snapshotKey);
+}
+
+function parseHistoryValue(history, registry, source, errors, { legacyRegistry = false } = {}) {
+  if (!history || typeof history !== 'object' || Array.isArray(history)) {
+    errors.push(`${source}: history shape is malformed`);
+    return false;
+  }
+  const unknownField = Object.keys(history).find(key => !CASTING_HISTORY_FIELDS.has(key));
+  if (unknownField !== undefined) {
+    errors.push(`${source}: history contains unknown top-level field "${unknownField}"`);
+    return false;
+  }
+  if (!history.assignment_cast_snapshots
+    || typeof history.assignment_cast_snapshots !== 'object'
+    || Array.isArray(history.assignment_cast_snapshots)
+    || !Array.isArray(history.universe_usage_history)) {
+    errors.push(`${source}: history shape is malformed`);
+    return false;
+  }
+  if (!legacyRegistry) {
+    if (registry.transaction_id !== undefined
+      || history.transaction_id !== undefined
+      || history.registry_revision !== undefined) {
+      errors.push(`${source}: generation metadata exists without a stable commit manifest`);
+      return false;
+    }
+    if (registry.revision === 1 && isCanonicalLegacyGenesis(registry, history)) {
+      return true;
+    }
+  }
+  const evidence = new Map();
+  const revisions = new Set();
+  let currentGeneration = false;
+  for (const [key, snapshot] of Object.entries(history.assignment_cast_snapshots)) {
+    if (!key || !snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)
+      || typeof snapshot.created_at !== 'string'
+      || !Number.isFinite(Date.parse(snapshot.created_at))
+      || !Array.isArray(snapshot.agents)
+      || snapshot.agents.some(agent => typeof agent !== 'string' || !(agent in registry.agents))
+      || typeof snapshot.universe !== 'string' || !snapshot.universe) {
+      errors.push(`${source}: history snapshot is malformed or references unknown agents`);
+      return false;
+    }
+    if (!legacyRegistry) {
+      const match = key.match(/(?:^|[-_])(?:revision-|r)(\d+)(?:[-_]|$)/i);
+      const revision = match ? Number(match[1]) : NaN;
+      if (!Number.isSafeInteger(revision) || revision < 1 || revision > registry.revision
+        || revisions.has(revision) || Date.parse(snapshot.created_at) > Date.parse(registry.generated_at)) {
+        errors.push(`${source}: registry/history pair is mixed-generation`);
+        return false;
+      }
+      revisions.add(revision);
+      if (revision === registry.revision
+        && Date.parse(snapshot.created_at) === Date.parse(registry.generated_at)) {
+        currentGeneration = true;
+      }
+    }
+    const keyEvidence = `${snapshot.universe}\u0000${snapshot.created_at}`;
+    evidence.set(keyEvidence, (evidence.get(keyEvidence) ?? 0) + 1);
+  }
+  const usageEvidence = new Map();
+  for (const usage of history.universe_usage_history) {
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage)
+      || typeof usage.universe !== 'string' || !usage.universe
+      || typeof usage.used_at !== 'string'
+      || !Number.isFinite(Date.parse(usage.used_at))
+      || (!legacyRegistry && Date.parse(usage.used_at) > Date.parse(registry.generated_at))) {
+      errors.push(`${source}: universe usage history is malformed`);
+      return false;
+    }
+    const keyEvidence = `${usage.universe}\u0000${usage.used_at}`;
+    usageEvidence.set(keyEvidence, (usageEvidence.get(keyEvidence) ?? 0) + 1);
+  }
+  if (!legacyRegistry) {
+    const expected = Array.from({ length: registry.revision }, (_, index) => index + 1);
+    const implicitGenesis = registry.revision === 1 ? expected : expected.slice(1);
+    const revisionEvidence = [expected, implicitGenesis].some(candidate =>
+      candidate.length === revisions.size && candidate.every(revision => revisions.has(revision)));
+    const matchingEvidence = evidence.size === usageEvidence.size
+      && [...evidence].every(([key, count]) => usageEvidence.get(key) === count);
+    if (!revisionEvidence || !currentGeneration || !matchingEvidence) {
+      errors.push(`${source}: registry/history pair is mixed-generation`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function parseCastingPair(registryRaw, historyRaw, source, errors, options = {}) {
+  if (registryRaw === undefined || historyRaw === undefined) {
+    errors.push(`${source}: complete registry/history pair is required`);
+    return null;
+  }
   let registry;
+  let history;
   try {
-    registry = JSON.parse(readText(root, '.squad/casting/registry.json'));
+    registry = JSON.parse(registryRaw);
+    history = JSON.parse(historyRaw);
   } catch (error) {
-    errors.push(`registry: invalid JSON (${error.message})`);
+    errors.push(`${source}: registry/history JSON is malformed (${error.message})`);
+    return null;
+  }
+  const legacy = options.legacy ?? registry?.schema === undefined;
+  if (!parseRegistryValue(registry, source, errors, { legacy })
+    || !parseHistoryValue(history, registry, source, errors, { legacyRegistry: legacy })) {
+    return null;
+  }
+  return registry;
+}
+
+function committedRegistry(root, errors) {
+  try {
+    const registryRaw = execFileSync(
+      'git',
+      ['show', 'HEAD:.squad/casting/registry.json'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const historyRaw = execFileSync(
+      'git',
+      ['show', 'HEAD:.squad/casting/history.json'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    return parseCastingPair(
+      registryRaw,
+      historyRaw,
+      'registry base',
+      errors,
+      { legacy: JSON.parse(registryRaw)?.schema === undefined },
+    );
+  } catch (error) {
+    errors.push(`registry base: committed registry/history pair is unavailable or malformed (${error.message})`);
+    return null;
+  }
+}
+
+function parseRegistry(root, errors) {
+  let registryRaw;
+  let historyRaw;
+  try {
+    registryRaw = readText(root, '.squad/casting/registry.json');
+    historyRaw = readText(root, '.squad/casting/history.json');
+  } catch (error) {
+    errors.push(`registry: complete registry/history pair is required (${error.message})`);
     return [];
   }
-  if (!registry?.agents || typeof registry.agents !== 'object' || Array.isArray(registry.agents)) {
-    errors.push('registry: top-level agents object is required');
-    return [];
+  const registry = parseCastingPair(registryRaw, historyRaw, 'registry', errors);
+  if (!registry) return [];
+  const base = committedRegistry(root, errors);
+  if (base) {
+    const baseRevision = base.schema === 'squad-agent-provenance/v1' ? base.revision : 0;
+    if (registry.revision <= baseRevision) {
+      errors.push(`registry: revision ${registry.revision} must be greater than committed revision ${baseRevision}`);
+    }
+    for (const [id, prior] of Object.entries(base.agents)) {
+      const current = registry.agents[id];
+      if (!current) {
+        errors.push(`registry: committed agent id "${id}" was deleted instead of preserved`);
+        continue;
+      }
+      if (prior.created_at && current.created_at !== prior.created_at) {
+        errors.push(`registry: agent "${id}" changed immutable created_at`);
+      }
+      if (prior.role && current.role !== prior.role) {
+        errors.push(`registry: agent "${id}" changed immutable role`);
+      }
+    }
   }
   const active = Object.entries(registry.agents)
     .filter(([, value]) => value?.status === 'active')
@@ -255,7 +537,7 @@ function parseRegistry(root, errors) {
     errors.push('registry: at least one active member is required');
   }
   for (const member of active) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(member.id) || typeof member.name !== 'string' || !member.name.trim()) {
+    if (!canonicalAgentId(member.id) || typeof member.name !== 'string' || !member.name.trim()) {
       errors.push(`registry: invalid active member ${JSON.stringify(member)}`);
     }
     if (REQUIRED_BUILTIN_IDS.includes(member.id)) {

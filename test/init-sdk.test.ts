@@ -176,7 +176,7 @@ describe('squad init --sdk flag', () => {
     expect(history).toHaveProperty('assignment_cast_snapshots');
   });
 
-  it('init does not overwrite existing casting files', async () => {
+  it('init fails closed on an existing registry without its history pair', async () => {
     const castingDir = join(tempDir, '.squad', 'casting');
     const { mkdirSync, writeFileSync } = await import('fs');
     mkdirSync(castingDir, { recursive: true });
@@ -189,11 +189,11 @@ describe('squad init --sdk flag', () => {
       configFormat: 'markdown',
     };
 
-    const result = await initSquad(options);
+    await expect(initSquad(options)).rejects.toThrow(/exactly one authoritative file exists/);
 
-    // Should have skipped the existing file
     const registry = JSON.parse(await readFile(join(castingDir, 'registry.json'), 'utf-8'));
     expect(registry.agents).toEqual({ custom: 'data' });
+    expect(existsSync(join(castingDir, 'history.json'))).toBe(false);
   });
 
   it('backward compat: configFormat typescript still works', async () => {

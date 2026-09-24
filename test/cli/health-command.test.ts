@@ -101,13 +101,36 @@ function createHealthyState(): void {
   writeSquad(
     path.join('casting', 'registry.json'),
     JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-01-01T00:00:00.000Z',
       agents: {
         alpha: {
           created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+          display_name: 'Alpha',
           persistent_name: 'Alpha',
+          role: 'Developer',
+          universe: 'descriptive',
           status: 'active',
         },
       },
+    }),
+  );
+  writeSquad(
+    path.join('casting', 'history.json'),
+    JSON.stringify({
+      assignment_cast_snapshots: {
+        'repl-cast-r1-2026-01-01T00:00:00.000Z': {
+          created_at: '2026-01-01T00:00:00.000Z',
+          agents: ['alpha'],
+          universe: 'descriptive',
+        },
+      },
+      universe_usage_history: [
+        { universe: 'descriptive', used_at: '2026-01-01T00:00:00.000Z' },
+      ],
     }),
   );
   writeSquad(path.join('agents', 'alpha', 'charter.md'), CHARTER);
@@ -257,8 +280,21 @@ describe('registry and charter readiness', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
       JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-01-01T00:00:00.000Z',
         agents: {
-          alpha: { persistent_name: 'Alpha', status: 'retired' },
+          alpha: {
+            display_name: 'Alpha',
+            persistent_name: 'Alpha',
+            role: 'Developer',
+            universe: 'descriptive',
+            status: 'retired',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+            retired_at: '2026-01-01T00:00:00.000Z',
+          },
         },
       }),
     );
@@ -276,7 +312,13 @@ describe('registry and charter readiness', () => {
   it('fails for a malformed registry entry instead of throwing', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
-      '{"agents":{"alpha":null}}',
+      JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-01-01T00:00:00.000Z',
+        agents: { alpha: null },
+      }),
     );
 
     const result = check(
@@ -285,15 +327,29 @@ describe('registry and charter readiness', () => {
     );
 
     expect(result.status).toBe('fail');
-    expect(result.diagnostics).toEqual([
-      'alpha: registry entry must be an object',
-    ]);
+    expect(result.message).toContain('registry contains invalid agent records');
   });
 
   it('fails for an unsupported registry status', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
-      '{"agents":{"alpha":{"persistent_name":"Alpha","status":"unknown"}}}',
+      JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-01-01T00:00:00.000Z',
+        agents: {
+          alpha: {
+            display_name: 'Alpha',
+            persistent_name: 'Alpha',
+            role: 'Developer',
+            universe: 'descriptive',
+            status: 'unknown',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
     );
 
     const result = check(
@@ -302,15 +358,29 @@ describe('registry and charter readiness', () => {
     );
 
     expect(result.status).toBe('fail');
-    expect(result.diagnostics).toEqual([
-      'alpha: registry entry has invalid status',
-    ]);
+    expect(result.message).toContain('registry contains invalid agent records');
+  });
+
+  it('fails closed when registry and history generations do not match', () => {
+    writeSquad(
+      path.join('casting', 'history.json'),
+      JSON.stringify({
+        transaction_id: 'history-generation',
+        registry_revision: 1,
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
+      }),
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'registry-charters').status)
+      .toBe('fail');
   });
 
   it('requires a charter for every registry entry, including retired entries', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
       JSON.stringify({
+        revision: 1,
         agents: {
           alpha: { persistent_name: 'Alpha', status: 'retired' },
         },

@@ -1,13 +1,47 @@
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   extractIssueNumber,
   parseRoster,
   parseStructuredData,
+  validateCastingPairFiles,
   validateActivation,
   validateBindings,
 } from '../scripts/check-agent-binding.mjs';
+
+const castingRoots: string[] = [];
+
+function checkerCastingDir(): string {
+  const root = mkdtempSync(join(process.cwd(), '.binding-casting-test-'));
+  const castingDir = join(root, 'casting');
+  mkdirSync(castingDir);
+  castingRoots.push(root);
+  return castingDir;
+}
+
+function checkerRegistry(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T00:00:00.000Z',
+    agents: {},
+    ...overrides,
+  });
+}
+
+function checkerHistory(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    assignment_cast_snapshots: {},
+    universe_usage_history: [],
+    ...overrides,
+  });
+}
+
+afterEach(() => {
+  for (const root of castingRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 const roster = parseRoster(`
 ## Members
@@ -26,6 +60,59 @@ it('rejects roster names that collide on the same member-label slug', () => {
 | Foo Bar | Runtime |
 | Foo-Bar | Quality |
 `)).toThrow('roster member label slug "foo-bar" is ambiguous');
+});
+
+describe('activation binding casting pair validation', () => {
+  it.each([
+    {
+      name: 'missing pair',
+      write: (_dir: string) => {},
+      expected: /complete casting registry\/history pair is required/,
+    },
+    {
+      name: 'one-sided pair',
+      write: (dir: string) => writeFileSync(join(dir, 'registry.json'), checkerRegistry()),
+      expected: /complete casting registry\/history pair is required/,
+    },
+    {
+      name: 'mixed generation pair',
+      write: (dir: string) => {
+        writeFileSync(join(dir, 'registry.json'), checkerRegistry({
+          transaction_id: 'registry-generation',
+        }));
+        writeFileSync(join(dir, 'history.json'), checkerHistory({
+          transaction_id: 'history-generation',
+          registry_revision: 1,
+        }));
+      },
+      expected: /generation metadata exists without a commit manifest/,
+    },
+    {
+      name: 'malformed history',
+      write: (dir: string) => {
+        writeFileSync(join(dir, 'registry.json'), checkerRegistry());
+        writeFileSync(join(dir, 'history.json'), JSON.stringify({
+          assignment_cast_snapshots: [],
+          universe_usage_history: [],
+        }));
+      },
+      expected: /history shape is malformed/,
+    },
+    {
+      name: 'unknown history field',
+      write: (dir: string) => {
+        writeFileSync(join(dir, 'registry.json'), checkerRegistry());
+        writeFileSync(join(dir, 'history.json'), checkerHistory({
+          unexpected: true,
+        }));
+      },
+      expected: /unknown top-level field "unexpected"/,
+    },
+  ])('fails closed for a $name', async ({ write, expected }) => {
+    const dir = checkerCastingDir();
+    write(dir);
+    await expect(validateCastingPairFiles(join(dir, 'registry.json'))).rejects.toThrow(expected);
+  });
 });
 
 function labels(entries: Record<number, string[]>) {
