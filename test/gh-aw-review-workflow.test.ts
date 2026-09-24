@@ -74,13 +74,6 @@ function provenanceRows(workflow: string): string[] {
     .map(match => `${match[1]}:${match[2].trim()}:${match[3].trim()}`);
 }
 
-function installOrders(markdown: string): string[][] {
-  const uncommented = markdown.replace(/^#\s?/gm, '');
-  return [...uncommented.matchAll(/gh aw add \\\n((?:\s+bradygaster\/squad\/workflows\/[^\n]+\n?)+)/g)]
-    .map(block => [...block[1].matchAll(/bradygaster\/squad\/workflows\/([^@\s\\]+\.md)@(?:dev|\$\{SQUAD_(?:SHA|WORKFLOW_(?:SHA|REF))\})/g)]
-      .map(match => match[1]));
-}
-
 function assertReviewerContract(workflow: string): void {
   const yaml = frontmatter(workflow);
   const tools = yamlBlock(yaml, 'tools');
@@ -191,49 +184,32 @@ describe('gh-aw advisory Squad reviewer', () => {
   });
 
   it('materializes the documented install as complete source and lock pairs', () => {
-    const installOrder = installOrders(GUIDE)[0];
-    expect(installOrder).toEqual([
-      'squad.md',
-      'squad-implement-worker.md',
-      'squad-review.md',
-      'squad-deps-worker.md',
-      'squad-retro.md',
-      'squad-improvement-worker.md',
-      'squad-bootstrap.md',
-    ]);
-
     const workspace = mkdtempSync(resolve(ROOT, '.squad-review-install-'));
     compileWorkspaces.push(workspace);
     const workflowDir = resolve(workspace, '.github', 'workflows');
-    mkdirSync(workflowDir, { recursive: true });
-    cpSync(resolve(ROOT, 'workflows', 'shared'), resolve(workflowDir, 'shared'), { recursive: true });
-    for (const name of installOrder) {
-      cpSync(resolve(ROOT, 'workflows', name), resolve(workflowDir, name));
-    }
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: workspace });
     const version = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8', timeout: 15000 });
     expect(version.status).toBe(0);
     const compilerVersion = `${version.stdout}${version.stderr}`.trim();
-    expect(compilerVersion).toMatch(/\bv0\.(?:8[7-9]|9[0-9])\.[0-9]+$/);
-    for (const name of installOrder) {
-      const started = performance.now();
-      const result = spawnSync(
-        'gh',
-        ['aw', 'compile', name.slice(0, -3), '--strict', '--approve', '--no-check-update'],
-        { cwd: workspace, encoding: 'utf8', stdio: 'pipe', timeout: 60000 },
-      );
-      console.log(`strict-compile ${name} ${compilerVersion} status=${result.status} duration_ms=${Math.round(performance.now() - started)}`);
-      const diagnostics = `${result.stdout}\n${result.stderr}`;
-      expect(result.error, `failed to launch gh aw for ${name}`).toBeUndefined();
-      expect(result.status, `strict compile failed for ${name}:\n${diagnostics}`).toBe(0);
-      expect(
-        diagnostics,
-        `${name} must not emit the workflow_dispatch concurrency warning in a clean consumer install`,
-      ).not.toContain('concurrency.job-discriminator');
-    }
+    expect(compilerVersion).toMatch(/\bv0\.89\.21$/);
+    execFileSync('gh', ['aw', 'add', resolve(ROOT, 'workflows')], { cwd: workspace, timeout: 420000 });
+    execFileSync(
+      'node',
+      ['.github/workflows/shared/squad-install-verifier.mjs', '--materialize-runtime'],
+      { cwd: workspace },
+    );
+    execFileSync('gh', ['aw', 'compile', '--strict', '--approve', '--no-check-update'], {
+      cwd: workspace,
+      timeout: 420000,
+    });
+    execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
+      cwd: workspace,
+      timeout: 420000,
+    });
 
     const installed = readdirSync(workflowDir, { withFileTypes: true })
-      .filter(entry => entry.isFile())
+      .filter(entry => entry.isFile() && entry.name.startsWith('squad'))
       .map(entry => entry.name)
       .sort();
     expect(installed).toEqual([
@@ -252,6 +228,8 @@ describe('gh-aw advisory Squad reviewer', () => {
       'squad.lock.yml',
       'squad.md',
     ]);
+    expect(readFileSync(resolve(workspace, '.github/skills/gh-aw-enlistment/SKILL.md')))
+      .toEqual(readFileSync(resolve(ROOT, '.squad-templates/skills/gh-aw-enlistment/SKILL.md')));
   }, 420000);
 
   it('detects a missing workflow_dispatch job discriminator during strict compilation', () => {
@@ -280,21 +258,10 @@ describe('gh-aw advisory Squad reviewer', () => {
     );
   }, 20000);
 
-  it('keeps all consumer install surfaces on the coherent seven-workflow order', () => {
+  it('keeps all consumer install surfaces on the isolated native package', () => {
     for (const surface of [GUIDE, README, AGENT_GUIDE, SHARED_BOOTSTRAP]) {
-      const orders = installOrders(surface);
-      expect(orders.length).toBeGreaterThan(0);
-      for (const order of orders) {
-        expect(order).toEqual([
-          'squad.md',
-          'squad-implement-worker.md',
-          'squad-review.md',
-          'squad-deps-worker.md',
-          'squad-retro.md',
-          'squad-improvement-worker.md',
-          'squad-bootstrap.md',
-        ]);
-      }
+      expect(surface).toContain('bradygaster/squad/workflows@${SQUAD_SHA}');
+      expect(surface).not.toMatch(/gh aw add \\\n\s+bradygaster\/squad\/workflows\/squad\.md/);
     }
     expect(DEMO).toContain("gh-aw guide's install command");
     expect(DEMO).not.toContain('gh aw add bradygaster/squad/workflows/squad.md@latest');

@@ -1,7 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import {
-  appendFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,13 +7,49 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import {
-  CANONICAL_MANIFEST_PATH,
-  INSTALLED_MANIFEST_PATH,
+  assertInstalledManifestIdentity,
   loadBundleContract,
   loadInstalledBundleContract,
 } from './gh-aw-hosted-e2e-contract.mjs';
+import {
+  CONTRACT_DESTINATION,
+  OWNERSHIP_ENTRY_COUNT,
+  OWNERSHIP_DESTINATION,
+  PACKAGE_NAME,
+  TRIGGER_PROBE_DESTINATION,
+  checkSource,
+  verifyInstall,
+} from '../workflows/shared/squad-install-verifier.mjs';
+
+const TRUSTED_SOURCE = Object.freeze({
+  repository: 'bradygaster/squad',
+  repositoryId: 1151205052,
+  owner: 'bradygaster',
+  ownerId: 41929050,
+});
+const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const SAFE_CHILD_ENV = Object.freeze([
+  'CI',
+  'GH_CONFIG_DIR',
+  'GH_HOST',
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'NO_COLOR',
+  'PATH',
+  'SHELL',
+  'TERM',
+  'TMPDIR',
+]);
+const COMPILER_SUPPORT_PATHS = Object.freeze([
+  '.gitattributes',
+  '.github/aw/actions-lock.json',
+  '.github/skills/agentic-workflows/SKILL.md',
+  '.github/workflows/agentics-maintenance.yml',
+  '.vscode/settings.json',
+]);
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -25,9 +59,8 @@ function parseArgs(argv) {
     if (!token.startsWith('--')) throw new Error(`Unexpected argument: ${token}`);
     const key = token.slice(2).replaceAll('-', '_');
     const next = rest[index + 1];
-    if (!next || next.startsWith('--')) {
-      args[key] = true;
-    } else {
+    if (!next || next.startsWith('--')) args[key] = true;
+    else {
       args[key] = next;
       index += 1;
     }
@@ -35,11 +68,25 @@ function parseArgs(argv) {
   return args;
 }
 
-function run(command, args, options = {}) {
+function requireArg(args, name) {
+  const value = args[name];
+  if (!value || value === true) throw new Error(`--${name.replaceAll('_', '-')} is required`);
+  return value;
+}
+
+export function sanitizedEnvironment(extra = {}) {
+  const env = Object.fromEntries(
+    SAFE_CHILD_ENV.filter((key) => process.env[key] !== undefined)
+      .map((key) => [key, process.env[key]]),
+  );
+  return { ...env, ...extra };
+}
+
+export function runChild(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     encoding: 'utf8',
-    env: { ...process.env, ...options.env },
+    env: sanitizedEnvironment(options.env),
     stdio: options.capture === false ? 'inherit' : 'pipe',
     timeout: options.timeout ?? 120_000,
   });
@@ -52,8 +99,14 @@ function run(command, args, options = {}) {
   return (result.stdout ?? '').trim();
 }
 
+function privileged(command, args, options = {}) {
+  const token = process.env.GH_TOKEN;
+  if (!token) throw new Error('GH_TOKEN is required for the trusted hosted journey.');
+  return runChild(command, args, { ...options, env: { ...options.env, GH_TOKEN: token } });
+}
+
 function ghJson(args, options = {}) {
-  const output = run('gh', args, options);
+  const output = privileged('gh', args, options);
   return output ? JSON.parse(output) : null;
 }
 
@@ -62,401 +115,490 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function inspectInstallation(root, contract) {
-  const findings = [];
-  const inspect = (relativePath, expectedDigest) => {
-    const path = resolve(root, relativePath);
-    if (!existsSync(path)) {
-      findings.push({ code: 'missing', path: relativePath });
-      return;
-    }
-    if (expectedDigest) {
-      const actual = contract.digest(relativePath);
-      if (actual !== expectedDigest) {
-        findings.push({
-          code: 'stale',
-          path: relativePath,
-          expected_sha256: expectedDigest,
-          actual_sha256: actual,
-        });
-      }
-    }
-  };
-
-  for (const workflow of contract.workflows) {
-    inspect(workflow.destination, workflow.source_sha256);
-    inspect(workflow.lock);
-  }
-  for (const runtime of contract.runtime) inspect(runtime.destination, runtime.sha256);
-
-  return {
-    valid: findings.length === 0,
-    contract_source: contract.source,
-    workflow_count: contract.workflows.length,
-    findings,
-  };
-}
-
-function repairInstallation(root, sourceRoot, contract) {
-  const paths = [
-    ...contract.workflows.flatMap((workflow) => [
-      { source: workflow.source, destination: workflow.destination },
-      { source: workflow.lock, destination: workflow.lock },
-    ]),
-    ...contract.runtime.map((runtime) => ({
-      source: runtime.source,
-      destination: runtime.destination,
-    })),
-  ];
-  for (const entry of paths) {
-    const source = resolve(sourceRoot, entry.source);
-    if (!existsSync(source)) {
-      throw new Error(`Recovery source is missing ${entry.source}`);
-    }
-    const target = resolve(root, entry.destination);
-    mkdirSync(dirname(target), { recursive: true });
-    cpSync(source, target);
-  }
-  const manifestTarget = resolve(root, INSTALLED_MANIFEST_PATH);
-  mkdirSync(dirname(manifestTarget), { recursive: true });
-  cpSync(resolve(sourceRoot, CANONICAL_MANIFEST_PATH), manifestTarget);
-}
-
-function requireArg(args, name) {
-  const value = args[name];
-  if (!value || value === true) throw new Error(`--${name.replaceAll('_', '-')} is required`);
-  return value;
-}
-
 function sleep(milliseconds) {
-  execFileSync('sleep', [String(milliseconds / 1000)]);
+  runChild('sleep', [String(milliseconds / 1000)]);
+}
+
+function assertSha(value, label) {
+  if (!SHA_PATTERN.test(value)) throw new Error(`${label} must be a lowercase 40-character SHA.`);
+}
+
+function canonicalRemote(url) {
+  return url
+    .replace(/^git@github\.com:/, 'https://github.com/')
+    .replace(/\.git$/, '')
+    .toLowerCase();
+}
+
+export function sourcePreflight(args, repositoryRoot, adapters = {}) {
+  const api = adapters.ghJson ?? ghJson;
+  const command = adapters.runChild ?? runChild;
+  const sourceRepository = requireArg(args, 'source_repository');
+  const sourceRepositoryId = Number(requireArg(args, 'source_repository_id'));
+  const sourceRef = requireArg(args, 'source_ref');
+  const sourceSha = requireArg(args, 'source_sha');
+  assertSha(sourceSha, 'Source SHA');
+  if (sourceRepository !== TRUSTED_SOURCE.repository
+    || sourceRepositoryId !== TRUSTED_SOURCE.repositoryId) {
+    throw new Error('Hosted E2E controller must run from the trusted Squad repository.');
+  }
+  const info = api([
+    'api', `repos/${TRUSTED_SOURCE.repository}`,
+    '--jq', '{id,full_name,default_branch,owner:{login:.owner.login,id:.owner.id},private,archived,disabled,is_template}',
+  ]);
+  if (info.id !== TRUSTED_SOURCE.repositoryId
+    || info.full_name !== TRUSTED_SOURCE.repository
+    || info.owner.login !== TRUSTED_SOURCE.owner
+    || info.owner.id !== TRUSTED_SOURCE.ownerId
+    || info.private || info.archived || info.disabled || info.is_template) {
+    throw new Error('Trusted source repository identity or state is invalid.');
+  }
+  if (sourceRef !== `refs/heads/${info.default_branch}`) {
+    throw new Error('Hosted E2E controller must run from the repository default branch ref.');
+  }
+  const branch = api([
+    'api', `repos/${TRUSTED_SOURCE.repository}/branches/${info.default_branch}`,
+    '--jq', '{protected,sha:.commit.sha}',
+  ]);
+  if (branch.protected !== true || branch.sha !== sourceSha) {
+    throw new Error('Trusted source must be the protected default-branch head.');
+  }
+  const checkedOut = command('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
+  if (checkedOut !== sourceSha) throw new Error('Checked-out HEAD does not match the trusted source SHA.');
+  const status = command('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repositoryRoot });
+  if (status) throw new Error('Trusted source checkout must be clean.');
+  const remote = command('git', ['remote', 'get-url', 'origin'], { cwd: repositoryRoot });
+  if (canonicalRemote(remote) !== `https://github.com/${TRUSTED_SOURCE.repository}`) {
+    throw new Error('Checked-out origin is not the trusted Squad repository.');
+  }
+  const integrityFailures = checkSource(repositoryRoot);
+  if (integrityFailures.length > 0) {
+    throw new Error(`Trusted source integrity failed:\n${integrityFailures.join('\n')}`);
+  }
+  return { ...info, sha: sourceSha };
+}
+
+function expectedPackagePaths(contract) {
+  return new Set([
+    ...contract.workflows.flatMap((entry) => [entry.destination, entry.lock]),
+    ...contract.runtime.flatMap((entry) => [entry.packageDestination, entry.destination]),
+    ...contract.skills.map((entry) => entry.destination),
+    CONTRACT_DESTINATION,
+  ]);
+}
+
+function expectedInstallDiff(contract) {
+  return new Set([
+    ...expectedPackagePaths(contract),
+    ...COMPILER_SUPPORT_PATHS,
+    OWNERSHIP_DESTINATION,
+  ]);
+}
+
+function assertExactStagedDiff(cwd, expected) {
+  const staged = runChild('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], { cwd })
+    .split('\n').filter(Boolean).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(staged) !== JSON.stringify(wanted)) {
+    throw new Error(`Staged diff mismatch.\nExpected: ${wanted.join(', ')}\nActual: ${staged.join(', ')}`);
+  }
+  const deleted = runChild('git', ['diff', '--cached', '--name-only', '--diff-filter=D'], { cwd });
+  if (deleted) throw new Error(`Staged deletions are forbidden: ${deleted}`);
+}
+
+function listTree(target, sha, api = ghJson) {
+  const tree = api(['api', `repos/${target}/git/trees/${sha}?recursive=1`]);
+  if (tree.truncated) throw new Error('Target tree listing was truncated; pristine state is unprovable.');
+  return new Set(tree.tree.map((entry) => entry.path));
+}
+
+export function authorizeTarget(args, sourceInfo, contract, adapters = {}) {
+  const api = adapters.ghJson ?? ghJson;
+  const target = requireArg(args, 'target');
+  const expectedRepositoryId = Number(requireArg(args, 'target_repository_id'));
+  const expectedOwnerId = Number(requireArg(args, 'target_owner_id'));
+  const expectedDefaultSha = requireArg(args, 'target_default_sha');
+  const expectedActorLogin = requireArg(args, 'pat_actor_login');
+  const expectedActorId = Number(requireArg(args, 'pat_actor_id'));
+  assertSha(expectedDefaultSha, 'Configured target default SHA');
+  if (!Number.isSafeInteger(expectedRepositoryId) || !Number.isSafeInteger(expectedOwnerId)
+    || !Number.isSafeInteger(expectedActorId)) {
+    throw new Error('Configured target and actor IDs must be numeric.');
+  }
+  const actor = api(['api', 'user', '--jq', '{login,id}']);
+  if (actor.login !== expectedActorLogin || actor.id !== expectedActorId) {
+    throw new Error('PAT actor identity does not match the configured login and numeric ID.');
+  }
+  const info = api([
+    'api', `repos/${target}`,
+    '--jq',
+    '{id,full_name,default_branch,owner:{login:.owner.login,id:.owner.id},fork,is_template,archived,disabled,private,visibility,has_issues,allow_merge_commit,permissions}',
+  ]);
+  if (info.full_name !== target) throw new Error('Target repository redirected or transferred.');
+  if (info.id !== expectedRepositoryId || info.owner.id !== expectedOwnerId) {
+    throw new Error('Target repository or owner numeric identity does not match configuration.');
+  }
+  if (info.full_name === sourceInfo.full_name || info.id === sourceInfo.id) {
+    throw new Error('The hosted E2E target must not be the source repository.');
+  }
+  const [targetOwner] = target.split('/');
+  if (info.owner.login !== targetOwner) throw new Error('Target owner login is not canonical.');
+  if (info.fork || info.is_template || info.archived || info.disabled
+    || info.private || info.visibility !== 'public') {
+    throw new Error('Target must be an active, public, non-fork, non-template repository.');
+  }
+  if (!info.has_issues || !info.allow_merge_commit || info.permissions?.push !== true) {
+    throw new Error('Target lacks required Issues, merge-commit, or PAT write permissions.');
+  }
+  const workflowPermissions = api(['api', `repos/${target}/actions/permissions/workflow`]);
+  if (workflowPermissions.default_workflow_permissions !== 'read'
+    || workflowPermissions.can_approve_pull_request_reviews !== true) {
+    throw new Error('Target Actions permissions do not match the supported secure configuration.');
+  }
+  const branch = api([
+    'api', `repos/${target}/branches/${info.default_branch}`,
+    '--jq', '{sha:.commit.sha}',
+  ]);
+  assertSha(branch.sha, 'Target default branch SHA');
+  if (branch.sha !== expectedDefaultSha) {
+    throw new Error('Target default branch does not match the configured pristine SHA.');
+  }
+  const paths = listTree(target, branch.sha, api);
+  const forbidden = [...expectedPackagePaths(contract)].filter((path) => paths.has(path));
+  for (const path of paths) {
+    if (path.startsWith('.github/aw/packages/')
+      || path.startsWith('.github/workflows/shared/squad-bootstrap-trigger-')) forbidden.push(path);
+  }
+  if (forbidden.length > 0) {
+    throw new Error(`Target is not pristine; found: ${[...new Set(forbidden)].sort().join(', ')}`);
+  }
+  const existingPrs = api(['pr', 'list', '--repo', target, '--state', 'all', '--limit', '100', '--json', 'title,headRefName']);
+  const existingIssues = api(['issue', 'list', '--repo', target, '--state', 'all', '--limit', '100', '--json', 'title']);
+  const artifacts = api(['api', `repos/${target}/actions/artifacts`]).artifacts;
+  if (existingPrs.some((pr) => pr.headRefName.startsWith('squad-e2e/')
+      || pr.headRefName === 'squad/bootstrap-cast')
+    || existingIssues.some((issue) => issue.title === '[Research Proposals] Agent-discovered repo opportunities')
+    || artifacts.some((artifact) => artifact.name.startsWith('squad-gh-aw-hosted-e2e-'))) {
+    throw new Error('Target contains prior hosted E2E PR, issue, branch, or artifact state.');
+  }
+  return { target, info, workflowPermissions, defaultSha: branch.sha, actor };
+}
+
+function assertDefaultSha(target, branch, expected) {
+  const actual = privileged('gh', [
+    'api', `repos/${target}/commits/${branch}`, '--jq', '.sha',
+  ]);
+  if (actual !== expected) {
+    throw new Error(`Target default branch changed: expected ${expected}, got ${actual}.`);
+  }
 }
 
 function waitForBootstrapRun(target, headSha, startedAt, evidence) {
   const deadline = Date.now() + 20 * 60 * 1000;
   while (Date.now() < deadline) {
-    let runs = [];
-    try {
-      runs = ghJson([
-        'run', 'list',
-        '--repo', target,
-        '--workflow', 'squad-bootstrap.lock.yml',
-        '--event', 'push',
-        '--json', 'databaseId,headSha,status,conclusion,url,createdAt',
-        '--limit', '20',
-      ]) ?? [];
-    } catch {
-      sleep(10_000);
-      continue;
-    }
-    const matching = runs.filter((run) =>
-      run.headSha === headSha && Date.parse(run.createdAt) >= startedAt - 60_000);
-    if (matching.length > 1) {
-      throw new Error(`Expected one bootstrap run for ${headSha}, found ${matching.length}`);
-    }
+    const runs = ghJson([
+      'run', 'list', '--repo', target, '--workflow', 'squad-bootstrap.lock.yml',
+      '--event', 'push', '--json', 'databaseId,headSha,status,conclusion,url,createdAt',
+      '--limit', '30',
+    ]);
+    const matching = runs.filter(
+      (run) => run.headSha === headSha && Date.parse(run.createdAt) >= startedAt - 60_000,
+    );
+    if (matching.length > 1) throw new Error(`Expected exactly one bootstrap run for ${headSha}; found ${matching.length}.`);
     if (matching.length === 1 && matching[0].status === 'completed') {
       writeJson(resolve(evidence, `bootstrap-run-${headSha.slice(0, 12)}.json`), matching[0]);
-      if (matching[0].conclusion !== 'success') {
-        throw new Error(`Bootstrap run failed: ${matching[0].url}`);
-      }
+      if (matching[0].conclusion !== 'success') throw new Error(`Bootstrap run failed: ${matching[0].url}`);
       return matching[0];
     }
     sleep(10_000);
   }
-  throw new Error(`Timed out waiting for bootstrap run at ${headSha}`);
+  throw new Error(`Timed out waiting for bootstrap run at ${headSha}.`);
+}
+
+function bootstrapOutputs(target) {
+  const castPrs = ghJson([
+    'pr', 'list', '--repo', target, '--state', 'all', '--head', 'squad/bootstrap-cast',
+    '--json', 'number,url,isDraft,title,headRefName,baseRefName,state',
+  ]);
+  const issues = ghJson([
+    'issue', 'list', '--repo', target, '--state', 'all', '--limit', '100',
+    '--search', '"[Research Proposals] Agent-discovered repo opportunities" in:title',
+    '--json', 'number,url,title,body,state',
+  ]).filter((issue) => issue.title === '[Research Proposals] Agent-discovered repo opportunities'
+    && issue.body.includes('<!-- squad:bootstrap-opportunities schema=1 -->'));
+  return { castPrs, issues };
 }
 
 function waitForBootstrapOutputs(target) {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
-    const castPrs = ghJson([
-      'pr', 'list', '--repo', target, '--state', 'open',
-      '--head', 'squad/bootstrap-cast',
-      '--json', 'number,url,isDraft,title,headRefName,baseRefName',
-    ]);
-    const issues = ghJson([
-      'issue', 'list', '--repo', target, '--state', 'open',
-      '--search', '"[Research Proposals] Agent-discovered repo opportunities" in:title',
-      '--json', 'number,url,title,body',
-    ]);
-    const researchIssues = issues.filter((issue) =>
-      issue.title === '[Research Proposals] Agent-discovered repo opportunities'
-      && issue.body.includes('<!-- squad:bootstrap-opportunities schema=1 -->'));
-    if (castPrs.length === 1 && castPrs[0].isDraft && researchIssues.length === 1) {
-      return { castPr: castPrs[0], researchIssue: researchIssues[0] };
+    const outputs = bootstrapOutputs(target);
+    if (outputs.castPrs.length > 1 || outputs.issues.length > 1) {
+      throw new Error('Bootstrap created duplicate pull requests or issues.');
+    }
+    if (outputs.castPrs.length === 1 && outputs.castPrs[0].isDraft && outputs.issues.length === 1) {
+      return { castPr: outputs.castPrs[0], researchIssue: outputs.issues[0] };
     }
     sleep(10_000);
   }
-  throw new Error('Timed out waiting for the draft Cast PR and bootstrap research issue');
+  throw new Error('Timed out waiting for the draft Cast PR and bootstrap research issue.');
 }
 
-function createAndMergePr({ cwd, target, branch, title, body, evidence }) {
-  run('git', ['push', '--set-upstream', 'origin', branch], { cwd, capture: false });
-  const prUrl = run('gh', [
-    'pr', 'create',
-    '--repo', target,
-    '--base', run('gh', ['repo', 'view', target, '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name']),
-    '--head', branch,
-    '--title', title,
-    '--body', body,
+function createAndMergePr({ cwd, target, defaultBranch, expectedDefaultSha, branch, title, body, evidence }) {
+  assertDefaultSha(target, defaultBranch, expectedDefaultSha);
+  privileged('gh', ['auth', 'setup-git']);
+  privileged('git', ['push', '--set-upstream', 'origin', branch], { cwd, capture: false });
+  const prUrl = privileged('gh', [
+    'pr', 'create', '--repo', target, '--base', defaultBranch, '--head', branch,
+    '--title', title, '--body', body,
   ], { cwd });
   const pr = ghJson(['pr', 'view', prUrl, '--repo', target, '--json', 'number,url,state,headRefName,baseRefName']);
   writeJson(resolve(evidence, `pr-${pr.number}-created.json`), pr);
-  run('gh', ['pr', 'merge', String(pr.number), '--repo', target, '--merge', '--delete-branch'], {
+  privileged('gh', ['pr', 'merge', String(pr.number), '--repo', target, '--merge', '--delete-branch'], {
     cwd,
     capture: false,
     timeout: 300_000,
   });
-  const merged = ghJson(['pr', 'view', String(pr.number), '--repo', target, '--json', 'number,url,state,mergedAt,mergeCommit']);
-  writeJson(resolve(evidence, `pr-${pr.number}-merged.json`), merged);
-  if (merged.state !== 'MERGED' || !merged.mergeCommit?.oid) {
-    throw new Error(`Installation PR ${pr.url} did not merge`);
+  const merged = ghJson([
+    'pr', 'view', String(pr.number), '--repo', target,
+    '--json', 'number,url,state,mergedAt,mergeCommit',
+  ]);
+  if (merged.state !== 'MERGED' || !merged.mergeCommit?.oid) throw new Error(`PR ${pr.url} did not merge.`);
+  const defaultHead = privileged('gh', [
+    'api', `repos/${target}/commits/${defaultBranch}`, '--jq', '.sha',
+  ]);
+  if (defaultHead !== merged.mergeCommit.oid) {
+    throw new Error(`Post-merge default head ${defaultHead} does not equal merge SHA ${merged.mergeCommit.oid}.`);
   }
+  writeJson(resolve(evidence, `pr-${pr.number}-merged.json`), merged);
   return merged;
 }
 
-function assertPristineConsumer(target) {
-  const result = spawnSync('gh', [
-    'api', `repos/${target}/contents/.github/workflows/squad.md`,
-    '--silent',
-  ], { encoding: 'utf8', stdio: 'pipe' });
-  if (result.error) throw result.error;
-  if (result.status === 0) {
-    throw new Error(`${target} already contains Squad workflows; use a fresh one-shot consumer`);
-  }
-  if (!`${result.stdout}\n${result.stderr}`.includes('404')) {
-    throw new Error(`Could not prove ${target} is pristine: ${result.stderr || result.stdout}`);
+function verifyInstalledTrusted(repositoryRoot, checkout, sourceSha) {
+  assertInstalledManifestIdentity(repositoryRoot, checkout);
+  const result = verifyInstall(checkout, { expectedRevision: sourceSha });
+  if (result.failures.length > 0) throw new Error(result.failures.join('\n'));
+  const ownership = JSON.parse(readFileSync(
+    resolve(checkout, OWNERSHIP_DESTINATION),
+    'utf8',
+  ));
+  if (ownership.files.length !== OWNERSHIP_ENTRY_COUNT) {
+    throw new Error(`Expected ${OWNERSHIP_ENTRY_COUNT} owned package files; found ${ownership.files.length}.`);
   }
 }
 
 function hosted(args, repositoryRoot) {
-  const target = requireArg(args, 'target');
-  const confirm = requireArg(args, 'confirm');
-  const sourceRepository = requireArg(args, 'source_repository');
-  const sourceRef = requireArg(args, 'source_ref');
+  const sourceInfo = sourcePreflight(args, repositoryRoot);
+  const sourceSha = requireArg(args, 'source_sha');
   const evidence = resolve(requireArg(args, 'evidence'));
-  if (confirm !== target) throw new Error('--confirm must exactly match --target');
-  if (target === sourceRepository) throw new Error('The hosted E2E target must not be the Squad source repository');
-  if (!process.env.GH_TOKEN) throw new Error('GH_TOKEN is required');
-
+  const contract = loadBundleContract(repositoryRoot);
+  if (contract.workflows.length !== 7 || contract.runtime.length !== 15 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 7 workflows, 15 runtime resources, and 1 skill.');
+  }
+  const targetState = authorizeTarget(args, sourceInfo, contract);
   mkdirSync(evidence, { recursive: true });
-  const targetInfo = ghJson([
-    'repo', 'view', target,
-    '--json', 'nameWithOwner,defaultBranchRef,hasIssuesEnabled,isPrivate,mergeCommitAllowed,url',
-  ]);
-  if (targetInfo.isPrivate) throw new Error('Hosted E2E consumers must be public to exercise the supported public journey');
-  if (!targetInfo.hasIssuesEnabled) throw new Error(`${target} must have GitHub Issues enabled`);
-  if (!targetInfo.mergeCommitAllowed) throw new Error(`${target} must allow merge commits for deterministic E2E merges`);
-  assertPristineConsumer(target);
+  writeJson(resolve(evidence, 'preflight.json'), targetState);
 
-  const permissions = ghJson(['api', `repos/${target}/actions/permissions/workflow`]);
-  if (permissions.default_workflow_permissions !== 'read'
-    || permissions.can_approve_pull_request_reviews !== true) {
-    throw new Error(
-      `${target} must set default_workflow_permissions=read and can_approve_pull_request_reviews=true`,
-    );
-  }
-  writeJson(resolve(evidence, 'preflight.json'), { target: targetInfo, permissions });
-  const resolvedSourceSha = run('gh', [
-    'api',
-    `repos/${sourceRepository}/commits/${sourceRef}`,
-    '--jq', '.sha',
-  ]);
-  if (!/^[0-9a-f]{40}$/.test(resolvedSourceSha)) {
-    throw new Error(`Could not resolve ${sourceRepository}@${sourceRef} to an immutable commit SHA`);
-  }
-  const checkedOutSourceSha = run('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
-  if (checkedOutSourceSha !== resolvedSourceSha) {
-    throw new Error(
-      `Checked-out source ${checkedOutSourceSha} does not match resolved package revision ${resolvedSourceSha}`,
-    );
-  }
-  writeJson(resolve(evidence, 'source-revision.json'), {
-    repository: sourceRepository,
-    requested_ref: sourceRef,
-    resolved_sha: resolvedSourceSha,
-    checked_out_sha: checkedOutSourceSha,
-  });
-
-  const checkout = resolve(tmpdir(), `squad-gh-aw-e2e-${process.env.GITHUB_RUN_ID ?? Date.now()}`);
+  const checkout = resolve(dirname(evidence), `squad-gh-aw-e2e-consumer-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`);
   const remoteBranches = new Set();
-  const installationPrs = new Set();
+  const createdPrs = new Set();
   rmSync(checkout, { recursive: true, force: true });
   try {
-    run('gh', ['repo', 'clone', target, checkout], { capture: false, timeout: 300_000 });
-    run('git', ['config', 'user.name', 'Squad hosted E2E'], { cwd: checkout });
-    run('git', ['config', 'user.email', 'github-actions[bot]@users.noreply.github.com'], { cwd: checkout });
-
-    const contract = loadBundleContract(repositoryRoot);
-    if (contract.workflows.length !== 7) {
-      throw new Error(`The Squad bundle contract must declare exactly seven workflows, found ${contract.workflows.length}`);
-    }
-    const installBranch = `squad-e2e/install-${process.env.GITHUB_RUN_ID ?? Date.now()}`;
+    privileged('gh', ['repo', 'clone', targetState.target, checkout], {
+      capture: false,
+      timeout: 300_000,
+    });
+    runChild('git', ['config', 'user.name', 'Squad hosted E2E'], { cwd: checkout });
+    runChild('git', ['config', 'user.email', 'github-actions[bot]@users.noreply.github.com'], { cwd: checkout });
+    const installBranch = `squad-e2e/install-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`;
     remoteBranches.add(installBranch);
-    run('git', ['switch', '-c', installBranch], { cwd: checkout });
-    run('gh', ['aw', 'add', `${sourceRepository}@${resolvedSourceSha}`], {
+    runChild('git', ['switch', '-c', installBranch], { cwd: checkout });
+
+    const sourceReadToken = process.env.SOURCE_READ_TOKEN;
+    if (!sourceReadToken) throw new Error('SOURCE_READ_TOKEN is required for immutable package retrieval.');
+    runChild('gh', ['aw', 'add', `${PACKAGE_NAME}@${sourceSha}`], {
+      cwd: checkout,
+      capture: false,
+      timeout: 600_000,
+      env: { GH_TOKEN: sourceReadToken },
+    });
+    runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs', '--materialize-runtime'], {
+      cwd: checkout,
+      capture: false,
+    });
+    runChild('gh', ['aw', 'compile', '--strict', '--approve', '--no-check-update'], {
       cwd: checkout,
       capture: false,
       timeout: 600_000,
     });
-    run('gh', ['aw', 'compile', '--strict', '--approve'], {
+    runChild('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
       cwd: checkout,
       capture: false,
       timeout: 600_000,
     });
-    run('node', [
-      '.github/workflows/shared/squad-install-verifier.mjs',
-      '--materialize-runtime',
-    ], { cwd: checkout, capture: false });
-    run('gh', ['aw', 'compile', '--strict'], { cwd: checkout, capture: false, timeout: 600_000 });
-    run('node', [
-      '.github/workflows/shared/squad-install-verifier.mjs',
-      '--verify-install',
-      '--source-revision', resolvedSourceSha,
-      '--strict-compile',
-    ], { cwd: checkout, capture: false, timeout: 600_000 });
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
 
-    const canonicalManifest = readFileSync(resolve(repositoryRoot, CANONICAL_MANIFEST_PATH), 'utf8');
-    const installedManifest = readFileSync(resolve(checkout, INSTALLED_MANIFEST_PATH), 'utf8');
-    if (installedManifest !== canonicalManifest) {
-      throw new Error('Installed bundle manifest is not byte-for-byte identical to the canonical manifest');
+    const installPaths = runChild(
+      'git',
+      ['status', '--porcelain=v1', '--untracked-files=all'],
+      { cwd: checkout },
+    )
+      .split('\n').filter(Boolean).map((line) => line.slice(3));
+    const expectedPaths = expectedInstallDiff(contract);
+    if (JSON.stringify([...installPaths].sort()) !== JSON.stringify([...expectedPaths].sort())) {
+      throw new Error(
+        `Installed topology mismatch.\nExpected: ${[...expectedPaths].sort().join(', ')}`
+        + `\nActual: ${[...installPaths].sort().join(', ')}`,
+      );
     }
-    const installedContract = loadInstalledBundleContract(checkout);
-    if (installedContract.workflows.map(({ name }) => name).join('\n')
-      !== contract.workflows.map(({ name }) => name).join('\n')) {
-      throw new Error('Installed bundle manifest does not match the canonical workflow order');
-    }
-    const diagnosis = inspectInstallation(checkout, {
-      ...installedContract,
-      digest(relativePath) {
-        const path = resolve(checkout, relativePath);
-        return run('shasum', ['-a', '256', path]).split(/\s+/)[0];
-      },
-    });
-    writeJson(resolve(evidence, 'installed-diagnosis.json'), diagnosis);
-    if (!diagnosis.valid) throw new Error(`Installed bundle is incomplete: ${JSON.stringify(diagnosis.findings)}`);
-
-    const installPaths = ['.gitattributes', '.github/aw', '.github/workflows', '.github/skills']
-      .filter((path) => existsSync(resolve(checkout, path)));
-    run('git', ['add', '--', ...installPaths], { cwd: checkout });
-    run('git', ['commit', '-m', 'ci: install Squad agentic workflows'], { cwd: checkout });
+    runChild('git', ['add', '--', ...installPaths], { cwd: checkout });
+    assertExactStagedDiff(checkout, expectedPaths);
+    runChild('git', ['commit', '-m', 'ci: install Squad agentic workflows'], { cwd: checkout });
     const installStartedAt = Date.now();
     const installation = createAndMergePr({
       cwd: checkout,
-      target,
+      target: targetState.target,
+      defaultBranch: targetState.info.default_branch,
+      expectedDefaultSha: targetState.defaultSha,
       branch: installBranch,
       title: 'ci: install Squad agentic workflows',
       body: 'One-shot hosted E2E installation. Generated Squad work remains human-reviewed and is not merged.',
       evidence,
     });
-    installationPrs.add(installation.number);
-    const installRun = waitForBootstrapRun(target, installation.mergeCommit.oid, installStartedAt, evidence);
+    createdPrs.add(installation.number);
+    const installRun = waitForBootstrapRun(
+      targetState.target,
+      installation.mergeCommit.oid,
+      installStartedAt,
+      evidence,
+    );
+    const outputs = waitForBootstrapOutputs(targetState.target);
 
-    const { castPr, researchIssue } = waitForBootstrapOutputs(target);
-    writeJson(resolve(evidence, 'bootstrap-outputs.json'), {
-      installation_run: installRun,
-      cast_pull_request: castPr,
-      research_issue: researchIssue,
-    });
-
-    run('git', ['fetch', 'origin', targetInfo.defaultBranchRef.name], { cwd: checkout });
-    const runtimeBranch = `squad-e2e/runtime-${process.env.GITHUB_RUN_ID ?? Date.now()}`;
-    remoteBranches.add(runtimeBranch);
-    run('git', ['switch', '-C', runtimeBranch, `origin/${targetInfo.defaultBranchRef.name}`], { cwd: checkout });
-    const triggerRuntime = contract.runtime.find(({ path }) => path === contract.triggerProbe);
-    if (!triggerRuntime) throw new Error(`Trigger probe is absent from shared_runtime: ${contract.triggerProbe}`);
-    const probe = resolve(checkout, triggerRuntime.destination);
-    if (!existsSync(probe)) throw new Error(`Trigger probe is missing: ${contract.triggerProbe}`);
-    appendFileSync(probe, `\n<!-- hosted-e2e-trigger-probe:${process.env.GITHUB_RUN_ID ?? Date.now()} -->\n`);
-    run('git', ['add', '--', triggerRuntime.destination], { cwd: checkout });
-    run('git', ['commit', '-m', 'test: probe Squad bootstrap runtime trigger'], { cwd: checkout });
-    const updateStartedAt = Date.now();
-    const update = createAndMergePr({
+    runChild('git', ['fetch', 'origin', targetState.info.default_branch], { cwd: checkout });
+    const probeBranch = `squad-e2e/probe-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`;
+    remoteBranches.add(probeBranch);
+    runChild('git', ['switch', '-C', probeBranch, `origin/${targetState.info.default_branch}`], { cwd: checkout });
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
+    const probe = {
+      schema_version: 1,
+      kind: 'squad-bootstrap-trigger-probe',
+      trusted_source_sha: sourceSha,
+      hosted_run_id: String(process.env.GITHUB_RUN_ID ?? 'local'),
+      install_merge_sha: installation.mergeCommit.oid,
+      default_branch_sha: installation.mergeCommit.oid,
+    };
+    writeJson(resolve(checkout, TRIGGER_PROBE_DESTINATION), probe);
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
+    runChild('git', ['add', '--', TRIGGER_PROBE_DESTINATION], { cwd: checkout });
+    assertExactStagedDiff(checkout, new Set([TRIGGER_PROBE_DESTINATION]));
+    runChild('git', ['commit', '-m', 'test: add Squad bootstrap trigger probe'], { cwd: checkout });
+    const probeStartedAt = Date.now();
+    const probeMerge = createAndMergePr({
       cwd: checkout,
-      target,
-      branch: runtimeBranch,
-      title: 'test: probe Squad bootstrap runtime trigger',
-      body: 'One-shot hosted E2E probe for a shared runtime-only bootstrap trigger.',
+      target: targetState.target,
+      defaultBranch: targetState.info.default_branch,
+      expectedDefaultSha: installation.mergeCommit.oid,
+      branch: probeBranch,
+      title: 'test: add Squad bootstrap trigger probe',
+      body: 'One-shot non-executable sentinel proving the bootstrap path trigger.',
       evidence,
     });
-    installationPrs.add(update.number);
-    const updateRun = waitForBootstrapRun(target, update.mergeCommit.oid, updateStartedAt, evidence);
+    createdPrs.add(probeMerge.number);
+    const probeRun = waitForBootstrapRun(
+      targetState.target,
+      probeMerge.mergeCommit.oid,
+      probeStartedAt,
+      evidence,
+    );
+    const afterOutputs = bootstrapOutputs(targetState.target);
+    if (afterOutputs.castPrs.length !== 1 || afterOutputs.issues.length !== 1) {
+      throw new Error('Probe bootstrap created duplicate or missing bootstrap outputs.');
+    }
+    const sentinel = ghJson([
+      'api',
+      `repos/${targetState.target}/contents/${TRIGGER_PROBE_DESTINATION}?ref=${targetState.info.default_branch}`,
+      '--jq', '.content',
+    ]);
+    const decoded = Buffer.from(sentinel.replace(/\n/g, ''), 'base64').toString('utf8');
+    if (decoded !== `${JSON.stringify(probe, null, 2)}\n`) throw new Error('Merged trigger sentinel bytes changed.');
+    runChild('git', ['fetch', 'origin', targetState.info.default_branch], { cwd: checkout });
+    runChild('git', ['reset', '--hard', `origin/${targetState.info.default_branch}`], { cwd: checkout });
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
     writeJson(resolve(evidence, 'summary.json'), {
       status: 'passed',
-      target,
-      contract_source: contract.source,
+      target: targetState.target,
+      source_sha: sourceSha,
       installation_pr: installation.number,
       installation_run: installRun.url,
-      generated_cast_pr: castPr.url,
-      generated_research_issue: researchIssue.url,
-      runtime_update_pr: update.number,
-      runtime_update_run: updateRun.url,
+      probe_pr: probeMerge.number,
+      probe_run: probeRun.url,
+      generated_cast_pr: outputs.castPr.url,
+      generated_research_issue: outputs.researchIssue.url,
       generated_work_merged: false,
     });
   } finally {
-    for (const prNumber of installationPrs) {
+    for (const prNumber of createdPrs) {
       try {
-        const state = ghJson(['pr', 'view', String(prNumber), '--repo', target, '--json', 'state']);
-        if (state.state === 'OPEN') {
-          run('gh', ['pr', 'close', String(prNumber), '--repo', target], { capture: false });
-        }
+        const state = ghJson(['pr', 'view', String(prNumber), '--repo', targetState.target, '--json', 'state']);
+        if (state.state === 'OPEN') privileged('gh', ['pr', 'close', String(prNumber), '--repo', targetState.target]);
       } catch (error) {
-        console.error(`Failed to close E2E PR ${prNumber}: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`Failed to close E2E PR ${prNumber}: ${error.message}`);
       }
     }
     for (const branch of remoteBranches) {
       try {
-        run('gh', ['api', '--method', 'DELETE', `repos/${target}/git/refs/heads/${branch}`]);
+        privileged('gh', ['api', '--method', 'DELETE', `repos/${targetState.target}/git/refs/heads/${branch}`]);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes('422') && !message.includes('404')) {
-          console.error(`Failed to delete E2E branch ${branch}: ${message}`);
-        }
+        if (!/404|422/.test(error.message)) console.error(`Failed to delete E2E branch ${branch}: ${error.message}`);
       }
     }
     rmSync(checkout, { recursive: true, force: true });
   }
 }
 
-const args = parseArgs(process.argv.slice(2));
-const repositoryRoot = resolve(dirname(new URL(import.meta.url).pathname), '..');
-
-try {
-  if (args.command === 'diagnose') {
-    const root = resolve(requireArg(args, 'root'));
-    const contractRoot = resolve(args.contract_root || repositoryRoot);
-    const contract = loadBundleContract(contractRoot);
-    const result = inspectInstallation(root, {
-      ...contract,
-      digest(relativePath) {
-        const path = resolve(root, relativePath);
-        return run('shasum', ['-a', '256', path]).split(/\s+/)[0];
-      },
-    });
-    if (args.json) writeJson(resolve(args.json), result);
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    if (!result.valid) process.exitCode = 1;
-  } else if (args.command === 'repair') {
-    const root = resolve(requireArg(args, 'root'));
-    const sourceRoot = resolve(requireArg(args, 'source_root'));
-    const contractRoot = resolve(args.contract_root || sourceRoot);
-    const contract = loadBundleContract(contractRoot);
-    repairInstallation(root, sourceRoot, contract);
-    const result = inspectInstallation(root, {
-      ...contract,
-      digest(relativePath) {
-        const path = resolve(root, relativePath);
-        return run('shasum', ['-a', '256', path]).split(/\s+/)[0];
-      },
-    });
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    if (!result.valid) process.exitCode = 1;
-  } else if (args.command === 'hosted') {
-    hosted(args, repositoryRoot);
-  } else {
-    throw new Error('Usage: gh-aw-hosted-e2e.mjs <diagnose|repair|hosted> [options]');
+function diagnose(args) {
+  const root = resolve(requireArg(args, 'root'));
+  const contractRoot = resolve(requireArg(args, 'contract_root'));
+  assertInstalledManifestIdentity(contractRoot, root);
+  const contract = loadInstalledBundleContract(root);
+  const findings = [];
+  for (const entry of [
+    ...contract.workflows.flatMap((workflow) => [
+      [workflow.destination, workflow.source_sha256],
+      [workflow.lock, undefined],
+    ]),
+    ...contract.runtime.map((runtime) => [runtime.destination, runtime.sha256]),
+    ...contract.skills.map((skill) => [skill.destination, skill.sha256]),
+  ]) {
+    const [path, expected] = entry;
+    if (!existsSync(resolve(root, path))) findings.push({ code: 'missing', path });
+    else if (expected && contract.digest(path) !== expected) findings.push({ code: 'stale', path });
   }
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
+  const result = { valid: findings.length === 0, findings };
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  return result.valid ? 0 : 1;
+}
+
+export function main(argv = process.argv.slice(2), repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')) {
+  const args = parseArgs(argv);
+  if (args.command === 'source-preflight') {
+    sourcePreflight(args, repositoryRoot);
+    return 0;
+  }
+  if (args.command === 'hosted') {
+    hosted(args, repositoryRoot);
+    return 0;
+  }
+  if (args.command === 'diagnose') return diagnose(args);
+  throw new Error('Usage: gh-aw-hosted-e2e.mjs <source-preflight|hosted|diagnose> [options]');
+}
+
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

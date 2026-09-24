@@ -131,7 +131,7 @@ describe('gh-aw-enlistment skill', () => {
     it('installs one immutable native package containing all seven workflows', () => {
       expect(content).toContain('SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev');
       expect(content).toContain('^' + '[0-9a-f]{40}' + '$');
-      expect(content).toContain('gh aw add "bradygaster/squad@${SQUAD_SHA}"');
+      expect(content).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
       for (const workflow of [
         'squad.md',
         'squad-implement-worker.md',
@@ -196,7 +196,7 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('STOP before branch creation or `gh aw add`');
       expect(content.indexOf("issues_enabled=")).toBeLessThan(content.indexOf('git switch -c'));
       expect(content.indexOf("issues_enabled=")).toBeLessThan(
-        content.indexOf('gh aw add "bradygaster/squad@${SQUAD_SHA}"'),
+        content.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
       );
     });
 
@@ -264,7 +264,9 @@ describe('gh-aw-enlistment skill', () => {
       expect(guide).toContain('requires repository administration permission');
       expect(guide).toContain('do not continue to `gh aw add`');
       expect(issuesCheck).toBeLessThan(guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'));
-      expect(issuesCheck).toBeLessThan(guide.indexOf('gh aw add "bradygaster/squad@${SQUAD_SHA}"'));
+      expect(issuesCheck).toBeLessThan(
+        guide.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
       expect(agentGuide).toContain('verifies that GitHub Issues are enabled');
       expect(agentGuide).toContain('bootstrap creates a research/proposals issue');
     });
@@ -274,7 +276,7 @@ describe('gh-aw-enlistment skill', () => {
       const readmeInstall = readme.slice(readme.indexOf('### Install'));
       expect(readmeInstall.indexOf("issues_enabled=")).toBeGreaterThan(-1);
       expect(readmeInstall.indexOf("issues_enabled=")).toBeLessThan(
-        readmeInstall.indexOf('gh aw add \\'),
+        readmeInstall.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
       );
       expect(readmeInstall).toContain(
         'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
@@ -301,7 +303,7 @@ describe('gh-aw-enlistment skill', () => {
     });
 
     it('makes public-guide package verification fail fast and coherent', () => {
-      expect(guide).toContain('gh aw add "bradygaster/squad@${SQUAD_SHA}"');
+      expect(guide).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
       expect(guide).toContain('squad-install-verifier.mjs --materialize-runtime');
       expect(guide).toContain('--verify-install');
       expect(guide).toContain('--source-revision "${SQUAD_SHA}"');

@@ -37,14 +37,8 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 The quick start installs this workflow set:
 
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-  bradygaster/squad/workflows/squad-bootstrap.md@dev
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 ```
 
 This command:

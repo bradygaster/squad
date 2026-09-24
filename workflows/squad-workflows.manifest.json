@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "package": "bradygaster/squad",
-  "manifest": "aw.yml",
+  "package": "bradygaster/squad/workflows",
+  "manifest": "workflows/aw.yml",
   "minimum_gh_aw_version": "v0.89.21",
   "revision_policy": {
     "kind": "immutable-git-commit",
@@ -56,7 +56,7 @@
       "source": "workflows/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "fb849019bb88931777a410aaf7e4b7e1a28b532101c66e72b2fcf211733a7da3"
+      "source_sha256": "6036d4b86bc6b049489b7c09bc0a220749675955b3b5c751f0f484ccad022fc7"
     }
   ],
   "shared_runtime": [
@@ -66,7 +66,7 @@
       "package_destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "ownership": "manifest",
-      "sha256": "78f587706a90515722fd283a8c50d5dd09b9e4404079617dfb5033917ce6b513"
+      "sha256": "c43d042d0b10cb60e5ffec0afb96712eadb5745542a3dca411b4ae81c27a0a18"
     },
     {
       "path": "shared/squad-cast-validator.mjs",
@@ -122,7 +122,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/squad.md",
       "destination": ".github/workflows/shared/squad.md",
       "ownership": "manifest",
-      "sha256": "9e4a9bc61043deba797cf1787ae4847f344fea4392cd3b1a28e36c035289c154"
+      "sha256": "5c6663d8779a41e9166df35e9ae2e8a8fb3cf06c8aa3977f491a7b7335831b94"
     },
     {
       "path": "shared/squad-planning-ontology.md",
@@ -181,8 +181,15 @@
       "sha256": "ac627e305787c1c131fae6d86a95118095ee0a3507a813d83e847105fa1bd921"
     }
   ],
-  "skills": [],
+  "skills": [
+    {
+      "name": "gh-aw-enlistment",
+      "source": "workflows/skills/gh-aw-enlistment/SKILL.md",
+      "destination": ".github/skills/gh-aw-enlistment/SKILL.md",
+      "sha256": "1e5ff6bf5150df742157dca38e8af35a34c42522976d0a68e1885a0e8b51ae9c"
+    }
+  ],
   "bootstrap": {
-    "trigger_probe": "shared/squad-install-verifier.mjs"
+    "trigger_probe": "shared/squad-bootstrap-trigger-probe.json"
   }
 }

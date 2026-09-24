@@ -1,94 +1,95 @@
 name: Squad gh-aw hosted E2E
 
-# Repository configuration is intentionally external and fail-closed:
-# - environment: squad-gh-aw-e2e (add required reviewers for mutation approval)
-# - secret: SQUAD_GH_AW_E2E_TOKEN, scoped only to the one-shot consumer with
-#   Actions read, Contents read/write, Issues read, Pull requests read/write,
-#   and Workflows read/write
-# - consumer: fresh public repo named squad-gh-aw-e2e-*, Issues enabled,
-#   merge commits enabled, default workflow token read-only, and Actions-created
-#   pull requests enabled
+# This controller is intentionally available only through repository_dispatch,
+# which GitHub loads from the default branch. The squad-gh-aw-e2e environment
+# must additionally restrict deployment branches to the protected `dev` branch.
+# Configure these environment variables:
+# - SQUAD_GH_AW_E2E_TARGET_REPOSITORY (canonical owner/name)
+# - SQUAD_GH_AW_E2E_TARGET_REPOSITORY_ID (numeric repository ID)
+# - SQUAD_GH_AW_E2E_TARGET_OWNER_ID (numeric owner ID)
+# - SQUAD_GH_AW_E2E_TARGET_DEFAULT_SHA (immutable pristine default-branch SHA)
+# - SQUAD_GH_AW_E2E_PAT_ACTOR_LOGIN and SQUAD_GH_AW_E2E_PAT_ACTOR_ID
+# The SQUAD_GH_AW_E2E_TOKEN secret is scoped only to that one public consumer.
 on:
-  workflow_dispatch:
-    inputs:
-      target_repository:
-        description: 'Fresh one-shot public consumer repository (owner/name)'
-        required: true
-        type: string
-      confirm_repository:
-        description: 'Retype owner/name to authorize installation PR merges'
-        required: true
-        type: string
-      source_ref:
-        description: 'Squad git ref containing the bundle under test'
-        required: true
-        default: 'dev'
-        type: string
+  repository_dispatch:
+    types: [squad-gh-aw-hosted-e2e]
 
 permissions:
   contents: read
 
 concurrency:
-  group: squad-gh-aw-hosted-e2e-${{ inputs.target_repository }}
+  group: squad-gh-aw-hosted-e2e
   cancel-in-progress: false
 
 jobs:
   hosted-e2e:
     name: Install, merge, bootstrap, and probe
+    if: >-
+      github.repository == 'bradygaster/squad'
+      && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: squad-gh-aw-e2e
     steps:
-      - name: Initialize evidence directory
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/squad-gh-aw-hosted-e2e"
-          printf '{"run_id":"%s","source_repository":"%s"}\n' \
-            "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" \
-            > "$RUNNER_TEMP/squad-gh-aw-hosted-e2e/run.json"
-
-      - name: Validate dispatch authorization
-        env:
-          TARGET_REPOSITORY: ${{ inputs.target_repository }}
-          CONFIRM_REPOSITORY: ${{ inputs.confirm_repository }}
-        run: |
-          set -euo pipefail
-          test "$TARGET_REPOSITORY" = "$CONFIRM_REPOSITORY" || {
-            echo "::error::confirm_repository must exactly match target_repository"
-            exit 1
-          }
-          case "$TARGET_REPOSITORY" in
-            */squad-gh-aw-e2e-*) ;;
-            *)
-              echo "::error::The target repository name must begin with squad-gh-aw-e2e-"
-              exit 1
-              ;;
-          esac
-
-      - name: Checkout Squad source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install trusted controller dependencies
+        run: |
+          npm config set registry "https://packagefeedproxy.microsoft.io/npm/"
+          npm ci --ignore-scripts
 
       - name: Install pinned gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh extension install --pin v0.89.21 github/gh-aw
+        run: |
+          gh extension install --force --pin v0.89.21 github/gh-aw
+          test "$(gh aw --version | awk '{print $NF}')" = v0.89.21
 
-      - name: Run hosted journey
+      - name: Verify trusted default-branch controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          npm run gh-aw:integrity:check
+          node scripts/gh-aw-hosted-e2e.mjs source-preflight \
+            --source-repository "$GITHUB_REPOSITORY" \
+            --source-repository-id "$GITHUB_REPOSITORY_ID" \
+            --source-ref "$GITHUB_REF" \
+            --source-sha "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Run trusted hosted journey
         env:
           GH_TOKEN: ${{ secrets.SQUAD_GH_AW_E2E_TOKEN }}
-          TARGET_REPOSITORY: ${{ inputs.target_repository }}
-          CONFIRM_REPOSITORY: ${{ inputs.confirm_repository }}
-          SOURCE_REF: ${{ inputs.source_ref }}
+          TARGET_REPOSITORY: ${{ vars.SQUAD_GH_AW_E2E_TARGET_REPOSITORY }}
+          TARGET_REPOSITORY_ID: ${{ vars.SQUAD_GH_AW_E2E_TARGET_REPOSITORY_ID }}
+          TARGET_OWNER_ID: ${{ vars.SQUAD_GH_AW_E2E_TARGET_OWNER_ID }}
+          TARGET_DEFAULT_SHA: ${{ vars.SQUAD_GH_AW_E2E_TARGET_DEFAULT_SHA }}
+          PAT_ACTOR_LOGIN: ${{ vars.SQUAD_GH_AW_E2E_PAT_ACTOR_LOGIN }}
+          PAT_ACTOR_ID: ${{ vars.SQUAD_GH_AW_E2E_PAT_ACTOR_ID }}
+          SOURCE_READ_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           node scripts/gh-aw-hosted-e2e.mjs hosted \
             --target "$TARGET_REPOSITORY" \
-            --confirm "$CONFIRM_REPOSITORY" \
+            --target-repository-id "$TARGET_REPOSITORY_ID" \
+            --target-owner-id "$TARGET_OWNER_ID" \
+            --target-default-sha "$TARGET_DEFAULT_SHA" \
+            --pat-actor-login "$PAT_ACTOR_LOGIN" \
+            --pat-actor-id "$PAT_ACTOR_ID" \
             --source-repository "$GITHUB_REPOSITORY" \
-            --source-ref "$SOURCE_REF" \
+            --source-repository-id "$GITHUB_REPOSITORY_ID" \
+            --source-ref "$GITHUB_REF" \
+            --source-sha "$GITHUB_SHA" \
             --evidence "$RUNNER_TEMP/squad-gh-aw-hosted-e2e"
 
       - name: Upload hosted evidence

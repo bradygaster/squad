@@ -253,38 +253,12 @@ describe('gh-aw implement workflows', () => {
     );
   });
 
-  it('documents one-command installation in dependency order', () => {
-    const paths = [
-      'bradygaster/squad/workflows/squad.md@dev',
-      'bradygaster/squad/workflows/squad-implement-worker.md@dev',
-      'bradygaster/squad/workflows/squad-review.md@dev',
-      'bradygaster/squad/workflows/squad-deps-worker.md@dev',
-      'bradygaster/squad/workflows/squad-retro.md@dev',
-      'bradygaster/squad/workflows/squad-improvement-worker.md@dev',
-      'bradygaster/squad/workflows/squad-bootstrap.md@dev',
-    ];
-    const orderedInstallCommand = [
-      'gh aw add \\',
-      `  ${paths[0]} \\`,
-      `  ${paths[1]} \\`,
-      `  ${paths[2]} \\`,
-      `  ${paths[3]}`,
-    ].join('\n');
+  it('documents one immutable nested native package installation', () => {
     const normalizedGuide = guide.replace(/\r\n/g, '\n');
-    const hasOrderedInstallCommand = (markdown: string): boolean =>
-      [...markdown.matchAll(/```bash\n([\s\S]*?)\n```/g)]
-        .some(match => match[1].includes(orderedInstallCommand));
-
-    expect(hasOrderedInstallCommand(normalizedGuide)).toBe(true);
-
-    const reorderedGuide = normalizedGuide.replaceAll(
-      `${paths[0]} \\\n  ${paths[1]}`,
-      `${paths[1]} \\\n  ${paths[0]}`,
-    );
-    expect(hasOrderedInstallCommand(reorderedGuide)).toBe(false);
-    expect(guide).toMatch(
-      /Keep the dispatcher first\. `gh aw add` discovers its general worker, dependency\s+worker, reviewer, and retrospective dependencies while compiling it; the explicit\s+entries then confirm the complete install surface without creating duplicates\./,
-    );
+    expect(normalizedGuide).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+    expect(normalizedGuide).toContain('exactly seven workflows, fifteen runtime');
+    expect(normalizedGuide).toContain('one enlistment skill');
+    expect(normalizedGuide).not.toMatch(/gh aw add \\\n\s+bradygaster\/squad\/workflows\/squad\.md/);
   });
 });
 

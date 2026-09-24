@@ -65,7 +65,7 @@ SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
   exit 1
 }
 
-gh aw add "bradygaster/squad@${SQUAD_SHA}"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
@@ -221,13 +221,14 @@ SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
   echo "STOP: could not resolve an immutable 40-character Squad commit SHA." >&2
   exit 1
 }
-gh aw add "bradygaster/squad@${SQUAD_SHA}"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 ```
 
-The root `aw.yml` is the canonical package registration. It installs the
-dispatcher, workers, reviewer, retrospective, bootstrap, runtime guards,
-integrity manifest, and enlistment skill from the same resolved commit. The
-installed top-level workflow set is:
+The nested `workflows/aw.yml` is the canonical package registration. Its
+package boundary prevents unrelated repository skills or agents from being
+auto-discovered. It installs exactly seven workflows, fifteen runtime
+resources, one integrity manifest, and one enlistment skill from the same
+resolved commit. The installed top-level workflow set is:
 
 - `squad.md` and `squad.lock.yml`
 - `squad-implement-worker.md` and `squad-implement-worker.lock.yml`
@@ -1648,7 +1649,7 @@ same native package as one unit:
 ```bash
 SQUAD_SHA="<40-character-commit-sha>"
 
-gh aw add "bradygaster/squad@${SQUAD_SHA}" --force
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
 node .github/workflows/shared/squad-install-verifier.mjs \

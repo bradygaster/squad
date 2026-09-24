@@ -14,6 +14,7 @@ on:
       - ".github/aw/squad-workflows.manifest.json"
       - ".github/aw/packages/*.json"
       - ".github/aw/squad/runtime/**"
+      - ".github/workflows/shared/squad-bootstrap-trigger-probe.json"
   workflow_dispatch:
 if: github.ref_name == github.event.repository.default_branch
 permissions:
@@ -141,6 +142,7 @@ pre-agent-steps:
       #!/usr/bin/env bash
       set -euo pipefail
       cd "${GITHUB_WORKSPACE:?}"
+      install_verifier=".github/workflows/shared/squad-install-verifier.mjs"
       cast_validator=".github/workflows/shared/squad-cast-validator.mjs"
       bootstrap_validator=".github/workflows/shared/squad-bootstrap-validator.mjs"
       check_hash() {
@@ -156,6 +158,7 @@ pre-agent-steps:
         node --check "$path" >/dev/null
       }
       # BEGIN GENERATED RESOURCE DIGESTS
+      check_hash "$install_verifier" "c43d042d0b10cb60e5ffec0afb96712eadb5745542a3dca411b4ae81c27a0a18"
       check_hash "$cast_validator" "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
       check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
       # END GENERATED RESOURCE DIGESTS

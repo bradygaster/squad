@@ -141,11 +141,13 @@ SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
   echo "STOP: could not resolve an immutable 40-character Squad commit SHA." >&2
   exit 1
 }
-gh aw add "bradygaster/squad@${SQUAD_SHA}"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 ```
 
-The root `aw.yml` is the only supported distribution registration. It installs
-the complete set at the same resolved revision:
+The nested `workflows/aw.yml` is the only supported distribution registration.
+It isolates package auto-discovery from unrelated repository skills and agents,
+and installs exactly seven workflows, fifteen runtime resources, and one
+`gh-aw-enlistment` skill at the same resolved revision:
 
 - `squad.md` + `squad.lock.yml`
 - `squad-implement-worker.md` + `squad-implement-worker.lock.yml`
@@ -323,7 +325,7 @@ gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
 git switch -c chore/squad-gh-aw-bootstrap
 SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
 [[ "${SQUAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
-gh aw add "bradygaster/squad@${SQUAD_SHA}"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve

@@ -1,178 +1,224 @@
-import { createHash } from 'node:crypto';
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import {
+  authorizeTarget,
+  sanitizedEnvironment,
+  sourcePreflight,
+} from '../scripts/gh-aw-hosted-e2e.mjs';
+import {
+  assertInstalledManifestIdentity,
+  loadBundleContract,
+  loadInstalledBundleContract,
+} from '../scripts/gh-aw-hosted-e2e-contract.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const SCRIPT = resolve(ROOT, 'scripts/gh-aw-hosted-e2e.mjs');
+const SCRIPT = readFileSync(resolve(ROOT, 'scripts/gh-aw-hosted-e2e.mjs'), 'utf8');
 const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/squad-gh-aw-hosted-e2e.yml'), 'utf8');
-const workspaces: string[] = [];
+const SOURCE_SHA = 'a'.repeat(40);
 
-function sha256(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+function sourceArgs(overrides: Record<string, string> = {}) {
+  return {
+    source_repository: 'bradygaster/squad',
+    source_repository_id: '1151205052',
+    source_ref: 'refs/heads/dev',
+    source_sha: SOURCE_SHA,
+    ...overrides,
+  };
 }
 
-function write(root: string, path: string, content: string): void {
-  const target = resolve(root, path);
-  mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, content);
+function sourceApi(args: string[]) {
+  const path = args[1];
+  if (path === 'repos/bradygaster/squad') {
+    return {
+      id: 1151205052,
+      full_name: 'bradygaster/squad',
+      default_branch: 'dev',
+      owner: { login: 'bradygaster', id: 41929050 },
+      private: false,
+      archived: false,
+      disabled: false,
+      is_template: false,
+    };
+  }
+  if (path === 'repos/bradygaster/squad/branches/dev') {
+    return { protected: true, sha: SOURCE_SHA };
+  }
+  throw new Error(`unexpected API call: ${args.join(' ')}`);
 }
 
-function fixture() {
-  const source = mkdtempSync(resolve(tmpdir(), 'gh-aw-hosted-source-'));
-  const consumer = mkdtempSync(resolve(tmpdir(), 'gh-aw-hosted-consumer-'));
-  workspaces.push(source, consumer);
-
-  write(source, 'workflows/alpha.md', 'alpha source\n');
-  write(source, '.github/workflows/alpha.lock.yml', 'alpha lock\n');
-  write(source, 'workflows/shared/runtime.mjs', 'export const runtime = true;\n');
-  write(source, 'workflows/shared/squad-install-verifier.mjs', 'export const verifier = true;\n');
-  const manifest = `${JSON.stringify({
-    schema_version: 1,
-    workflows: [{
-      name: 'alpha',
-      source: 'workflows/alpha.md',
-      destination: '.github/workflows/alpha.md',
-      lock: '.github/workflows/alpha.lock.yml',
-      source_sha256: sha256(resolve(source, 'workflows/alpha.md')),
-    }],
-    shared_runtime: [{
-      path: 'shared/runtime.mjs',
-      source: 'workflows/shared/runtime.mjs',
-      package_destination: '.github/aw/squad/runtime/shared/runtime.mjs',
-      destination: '.github/workflows/shared/installed-runtime.mjs',
-      owner: 'alpha',
-      sha256: sha256(resolve(source, 'workflows/shared/runtime.mjs')),
-    }, {
-      path: 'shared/squad-install-verifier.mjs',
-      source: 'workflows/shared/squad-install-verifier.mjs',
-      package_destination: '.github/workflows/shared/squad-install-verifier.mjs',
-      destination: '.github/workflows/shared/squad-install-verifier.mjs',
-      sha256: sha256(resolve(source, 'workflows/shared/squad-install-verifier.mjs')),
-    }],
-    bootstrap: { trigger_probe: 'shared/squad-install-verifier.mjs' },
-  }, null, 2)}\n`;
-  write(source, 'workflows/squad-workflows.manifest.json', manifest);
-
-  write(consumer, '.github/workflows/alpha.md', 'alpha source\n');
-  write(consumer, '.github/workflows/alpha.lock.yml', 'alpha lock\n');
-  write(consumer, '.github/workflows/shared/installed-runtime.mjs', 'export const runtime = true;\n');
-  write(consumer, '.github/workflows/shared/squad-install-verifier.mjs', 'export const verifier = true;\n');
-  write(consumer, '.github/aw/squad-workflows.manifest.json', manifest);
-  return { source, consumer };
+function sourceCommand(_command: string, args: string[]) {
+  if (args[0] === 'rev-parse') return SOURCE_SHA;
+  if (args[0] === 'status') return '';
+  if (args[0] === 'remote') return 'https://github.com/bradygaster/squad.git';
+  throw new Error(`unexpected command: ${args.join(' ')}`);
 }
 
-afterAll(() => {
-  for (const workspace of workspaces) rmSync(workspace, { recursive: true, force: true });
-});
+function targetArgs(overrides: Record<string, string> = {}) {
+  return {
+    target: 'bradygaster/squad-gh-aw-e2e-fixture',
+    target_repository_id: '1234',
+    target_owner_id: '41929050',
+    target_default_sha: 'b'.repeat(40),
+    pat_actor_login: 'bradygaster',
+    pat_actor_id: '41929050',
+    ...overrides,
+  };
+}
 
-describe('Squad gh-aw hosted E2E harness', () => {
-  it('is manual, environment-gated, least-privileged, and retains evidence', () => {
+function targetApi(overrides: { tree?: string[]; repo?: Record<string, unknown> } = {}) {
+  return (args: string[]) => {
+    const path = args[1];
+    if (path === 'user') return { login: 'bradygaster', id: 41929050 };
+    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture') {
+      return {
+        id: 1234,
+        full_name: 'bradygaster/squad-gh-aw-e2e-fixture',
+        default_branch: 'main',
+        owner: { login: 'bradygaster', id: 41929050 },
+        fork: false,
+        is_template: false,
+        archived: false,
+        disabled: false,
+        private: false,
+        visibility: 'public',
+        has_issues: true,
+        allow_merge_commit: true,
+        permissions: { push: true },
+        ...overrides.repo,
+      };
+    }
+    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture/actions/permissions/workflow') {
+      return { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true };
+    }
+    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture/branches/main') {
+      return { sha: 'b'.repeat(40) };
+    }
+    if (path?.startsWith('repos/bradygaster/squad-gh-aw-e2e-fixture/git/trees/')) {
+      return { truncated: false, tree: (overrides.tree ?? ['README.md']).map(path => ({ path })) };
+    }
+    if (args[0] === 'pr') return [];
+    if (args[0] === 'issue') return [];
+    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture/actions/artifacts') {
+      return { artifacts: [] };
+    }
+    throw new Error(`unexpected API call: ${args.join(' ')}`);
+  };
+}
+
+describe('Squad gh-aw hosted E2E controller', () => {
+  it('uses only a default-branch repository_dispatch controller and one PAT step', () => {
     const parsed = parse(WORKFLOW);
+    expect(parsed.on.repository_dispatch.types).toEqual(['squad-gh-aw-hosted-e2e']);
+    expect(parsed.on.workflow_dispatch).toBeUndefined();
+    expect(WORKFLOW).not.toContain('inputs.source_ref');
+    expect(WORKFLOW).toContain("github.ref_name == github.event.repository.default_branch");
+    expect(WORKFLOW).toContain('protected `dev` branch');
+    expect(WORKFLOW.match(/SQUAD_GH_AW_E2E_TOKEN/g)).toHaveLength(2);
     expect(parsed.jobs['hosted-e2e'].environment).toBe('squad-gh-aw-e2e');
-    expect(WORKFLOW).toContain('workflow_dispatch:');
-    expect(WORKFLOW).not.toMatch(/\npush:|\npull_request:/);
-    expect(WORKFLOW).toContain('environment: squad-gh-aw-e2e');
-    expect(WORKFLOW).toContain('permissions:\n  contents: read');
-    expect(WORKFLOW).toContain('SQUAD_GH_AW_E2E_TOKEN');
-    expect(WORKFLOW).toContain('confirm_repository');
-    expect(WORKFLOW).toContain('squad-gh-aw-e2e-*');
-    expect(WORKFLOW).toContain('v0.89.21');
-    expect(WORKFLOW).toContain('if: always()');
-    expect(WORKFLOW).toContain('retention-days: 30');
+    expect(parsed.permissions).toEqual({ contents: 'read' });
   });
 
-  it('does not auto-merge generated Squad work', () => {
-    const script = readFileSync(SCRIPT, 'utf8');
-    expect(script).toContain("head', 'squad/bootstrap-cast'");
-    expect(script).toContain('castPrs[0].isDraft');
-    expect(script).toContain('generated_work_merged: false');
-    expect(script).not.toMatch(/pr', 'merge'[\s\S]{0,200}squad\/bootstrap-cast/);
+  it('removes credentials from candidate child process environments', () => {
+    process.env.GH_TOKEN = 'secret';
+    process.env.SQUAD_GH_AW_E2E_TOKEN = 'secret';
+    process.env.OTHER_CREDENTIAL = 'secret';
+    process.env.ARBITRARY_UNTRUSTED_VALUE = 'secret';
+    const env = sanitizedEnvironment({ SAFE_VALUE: 'ok' });
+    expect(env.GH_TOKEN).toBeUndefined();
+    expect(env.SQUAD_GH_AW_E2E_TOKEN).toBeUndefined();
+    expect(env.OTHER_CREDENTIAL).toBeUndefined();
+    expect(env.ARBITRARY_UNTRUSTED_VALUE).toBeUndefined();
+    expect(env.SAFE_VALUE).toBe('ok');
+    delete process.env.GH_TOKEN;
+    delete process.env.SQUAD_GH_AW_E2E_TOKEN;
+    delete process.env.OTHER_CREDENTIAL;
+    delete process.env.ARBITRARY_UNTRUSTED_VALUE;
   });
 
-  it('diagnoses incomplete and stale installs, then recovers from canonical sources', () => {
-    const { source, consumer } = fixture();
-    rmSync(resolve(consumer, '.github/workflows/alpha.lock.yml'));
-    writeFileSync(
-      resolve(consumer, '.github/workflows/shared/installed-runtime.mjs'),
-      'export const runtime = false;\n',
+  it('binds the controller to the trusted repository, protected default ref, head, and origin', () => {
+    expect(sourcePreflight(sourceArgs(), ROOT, {
+      ghJson: sourceApi,
+      runChild: sourceCommand,
+    })).toMatchObject({ id: 1151205052, sha: SOURCE_SHA });
+    expect(() => sourcePreflight(sourceArgs({ source_ref: 'refs/heads/feature' }), ROOT, {
+      ghJson: sourceApi,
+      runChild: sourceCommand,
+    })).toThrow(/default branch ref/);
+    expect(() => sourcePreflight(sourceArgs({ source_repository_id: '9' }), ROOT, {
+      ghJson: sourceApi,
+      runChild: sourceCommand,
+    })).toThrow(/trusted Squad repository/);
+  });
+
+  it('authorizes immutable target and actor identities and a complete pristine tree', () => {
+    const contract = loadBundleContract(ROOT);
+    const source = { id: 1151205052, full_name: 'bradygaster/squad' };
+    expect(authorizeTarget(targetArgs(), source, contract, {
+      ghJson: targetApi(),
+    })).toMatchObject({ target: 'bradygaster/squad-gh-aw-e2e-fixture', defaultSha: 'b'.repeat(40) });
+
+    expect(() => authorizeTarget(targetArgs({ target_repository_id: '999' }), source, contract, {
+      ghJson: targetApi(),
+    })).toThrow(/numeric identity/);
+    expect(() => authorizeTarget(targetArgs({ target_default_sha: 'c'.repeat(40) }), source, contract, {
+      ghJson: targetApi(),
+    })).toThrow(/configured pristine SHA/);
+    expect(() => authorizeTarget(targetArgs(), source, contract, {
+      ghJson: targetApi({ repo: { fork: true } }),
+    })).toThrow(/non-fork/);
+    expect(() => authorizeTarget(targetArgs(), source, contract, {
+      ghJson: targetApi({ tree: ['.github/aw/packages/stale.json'] }),
+    })).toThrow(/not pristine/);
+  });
+
+  it('loads only the exact canonical manifest and has no fallback contract', () => {
+    const contract = loadBundleContract(ROOT);
+    expect(contract.package).toBe('bradygaster/squad/workflows');
+    expect(contract.workflows).toHaveLength(7);
+    expect(contract.runtime).toHaveLength(15);
+    expect(contract.skills).toHaveLength(1);
+    expect(contract.triggerProbe).toBe('shared/squad-bootstrap-trigger-probe.json');
+    expect(() => loadInstalledBundleContract(resolve(ROOT, 'does-not-exist'))).toThrow(/missing or invalid/);
+    expect(() => assertInstalledManifestIdentity(resolve(ROOT, 'packages'), ROOT)).toThrow(
+      /Required file is missing/,
     );
-
-    const failed = spawnSync('node', [
-      SCRIPT,
-      'diagnose',
-      '--root', consumer,
-      '--contract-root', source,
-    ], { encoding: 'utf8' });
-    expect(failed.status).toBe(1);
-    const diagnosis = JSON.parse(failed.stdout);
-    expect(diagnosis.valid).toBe(false);
-    expect(diagnosis.findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'missing', path: '.github/workflows/alpha.lock.yml' }),
-      expect.objectContaining({ code: 'stale', path: '.github/workflows/shared/installed-runtime.mjs' }),
-    ]));
-
-    const repaired = execFileSync('node', [
-      SCRIPT,
-      'repair',
-      '--root', consumer,
-      '--source-root', source,
-      '--contract-root', source,
-    ], { encoding: 'utf8' });
-    expect(JSON.parse(repaired).valid).toBe(true);
-    expect(readFileSync(resolve(consumer, '.github/aw/squad-workflows.manifest.json'), 'utf8'))
-      .toBe(readFileSync(resolve(source, 'workflows/squad-workflows.manifest.json'), 'utf8'));
+    expect(readFileSync(
+      resolve(ROOT, 'scripts/gh-aw-hosted-e2e-contract.mjs'),
+      'utf8',
+    )).not.toContain('FALLBACK_');
   });
 
-  it('loads the native installed manifest and honors runtime destinations', async () => {
-    const { consumer } = fixture();
-    const contract = await import('../scripts/gh-aw-hosted-e2e-contract.mjs');
-    const loaded = contract.loadInstalledBundleContract(consumer);
-    expect(loaded.source).toBe('.github/aw/squad-workflows.manifest.json');
-    expect(loaded.runtime[0]).toMatchObject({
-      path: 'shared/runtime.mjs',
-      source: 'workflows/shared/runtime.mjs',
-      packageDestination: '.github/aw/squad/runtime/shared/runtime.mjs',
-      destination: '.github/workflows/shared/installed-runtime.mjs',
-      owner: 'alpha',
-    });
-    expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');
+  it('uses the non-executable unowned sentinel with exact staged diff and retained bytes', () => {
+    expect(SCRIPT).toContain("kind: 'squad-bootstrap-trigger-probe'");
+    expect(SCRIPT).toContain('trusted_source_sha: sourceSha');
+    expect(SCRIPT).toContain('hosted_run_id:');
+    expect(SCRIPT).toContain('install_merge_sha:');
+    expect(SCRIPT).toContain('default_branch_sha:');
+    expect(SCRIPT).toContain('assertExactStagedDiff(checkout, new Set([TRIGGER_PROBE_DESTINATION]))');
+    expect(SCRIPT).not.toContain('appendFileSync');
+    expect(SCRIPT).not.toContain("contract.runtime.find(({ path }) => path === contract.triggerProbe)");
   });
 
-  it('consumes the finalized canonical bundle through one adapter', async () => {
-    const contract = await import('../scripts/gh-aw-hosted-e2e-contract.mjs');
-    const loaded = contract.loadBundleContract(ROOT);
-    expect(loaded.workflows.map((workflow: { name: string }) => workflow.name)).toEqual([
-      'squad',
-      'squad-implement-worker',
-      'squad-review',
-      'squad-deps-worker',
-      'squad-retro',
-      'squad-improvement-worker',
-      'squad-bootstrap',
-    ]);
-    expect(loaded.minimumGhAwVersion).toBe('v0.89.21');
-    expect(loaded.workflows[0]).toMatchObject({
-      source: 'workflows/package/squad.md',
-      destination: '.github/workflows/squad.md',
-      lock: '.github/workflows/squad.lock.yml',
-    });
-    expect(loaded.runtime.find((entry: { path: string }) => entry.path === 'shared/squad.md'))
-      .toMatchObject({
-        packageDestination: '.github/aw/squad/runtime/shared/squad.md',
-        destination: '.github/workflows/shared/squad.md',
-      });
-    expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');
-    expect(readFileSync(SCRIPT, 'utf8')).not.toContain("'squad-improvement-worker'");
+  it('bounds polling, verifies merge heads, rejects duplicates, and cleans recovery branches', () => {
+    expect(SCRIPT).toContain('Date.now() + 20 * 60 * 1000');
+    expect(SCRIPT).toContain('Date.now() + 5 * 60 * 1000');
+    expect(SCRIPT).toContain('Expected exactly one bootstrap run');
+    expect(SCRIPT).toContain('Bootstrap created duplicate pull requests or issues');
+    expect(SCRIPT).toContain('does not equal merge SHA');
+    expect(SCRIPT).toContain("['pr', 'close'");
+    expect(SCRIPT).toContain("['api', '--method', 'DELETE'");
+    expect(SCRIPT).toContain('rmSync(checkout, { recursive: true, force: true })');
+  });
+
+  it('never executes candidate package or installed verifier with inherited credentials', () => {
+    expect(SCRIPT).toContain('env: sanitizedEnvironment(options.env)');
+    expect(SCRIPT).toContain("runChild('gh', ['aw', 'add'");
+    expect(SCRIPT).toContain('env: { GH_TOKEN: sourceReadToken }');
+    expect(SCRIPT).toContain("runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs'");
+    expect(SCRIPT).not.toMatch(/privileged\('node'/);
+    expect(SCRIPT).not.toMatch(/privileged\('gh', \['aw'/);
   });
 });
