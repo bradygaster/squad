@@ -1,0 +1,87 @@
+{
+  "profile": "squad-charter/v0.1",
+  "requiredCapabilities": [
+    "squad-charter/v0.1/parse",
+    "squad-charter/v0.1/validate",
+    "squad-charter/v0.1/edit",
+    "squad-charter/v0.1/legacy-consume"
+  ],
+  "fixtures": [
+    {
+      "path": "positive/canonical.md",
+      "expected": {
+        "accepted": true,
+        "conforms": true,
+        "conformance": "canonical",
+        "diagnostics": [],
+        "identityId": "architect",
+        "reasoningEffort": "high",
+        "contextTier": "long_context"
+      }
+    },
+    {
+      "path": "negative/invalid-behavior.md",
+      "expected": {
+        "accepted": false,
+        "conforms": false,
+        "conformance": "invalid",
+        "diagnostics": [
+          { "code": "SQC005", "severity": "error", "line": 4, "column": 3 },
+          { "code": "SQC007", "severity": "error", "line": 17, "column": 3 },
+          { "code": "SQC004", "severity": "error", "line": 18, "column": 3 },
+          { "code": "SQC008", "severity": "error", "line": 19, "column": 3 }
+        ]
+      }
+    },
+    {
+      "path": "legacy/template-style.md",
+      "expected": {
+        "accepted": true,
+        "conforms": false,
+        "conformance": "noncanonical-compatible",
+        "diagnostics": [
+          { "code": "SQC104", "severity": "warning", "line": 1, "column": 1 },
+          { "code": "SQC104", "severity": "warning", "line": 1, "column": 1 },
+          { "code": "SQC104", "severity": "warning", "line": 1, "column": 1 },
+          { "code": "SQC102", "severity": "warning", "line": 3, "column": 1 },
+          { "code": "SQC103", "severity": "warning", "line": 3, "column": 1 },
+          { "code": "SQC105", "severity": "warning", "line": 9, "column": 1 }
+        ],
+        "identityName": "Legacy Agent",
+        "identityRole": "Developer"
+      }
+    },
+    {
+      "path": "round-trip/extensions.md",
+      "expected": {
+        "accepted": true,
+        "conforms": true,
+        "conformance": "canonical",
+        "diagnostics": [],
+        "identityId": "extensible-agent",
+        "serializedOutputPath": "round-trip/extensions.md",
+        "editedOutputPath": "round-trip/extensions.edited.md"
+      }
+    }
+  ],
+  "duplicateFields": [
+    { "section": "Identity", "name": "ID", "value": "`duplicate-agent`" },
+    { "section": "Identity", "name": "Purpose", "value": "Duplicate purpose." },
+    { "section": "Identity", "name": "Name", "value": "Duplicate Agent" },
+    { "section": "Identity", "name": "Role", "value": "Tester" },
+    { "section": "Identity", "name": "Expertise", "value": "testing" },
+    { "section": "Identity", "name": "Style", "value": "Direct" },
+    { "section": "Model", "name": "Preferred", "value": "auto" },
+    { "section": "Model", "name": "Rationale", "value": "Testing." },
+    { "section": "Model", "name": "Fallback", "value": "fallback-model" },
+    { "section": "Model", "name": "Reasoning Effort", "value": "auto" },
+    { "section": "Model", "name": "Context Tier", "value": "auto" }
+  ],
+  "duplicateSections": [
+    "Identity",
+    "Accountable Responsibilities",
+    "Non-Responsibilities",
+    "Collaboration and Review Authority",
+    "Model"
+  ]
+}

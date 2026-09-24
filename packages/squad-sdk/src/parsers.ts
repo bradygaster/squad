@@ -45,12 +45,41 @@ export {
   compileCharterFull,
 } from './agents/charter-compiler.js';
 
+export {
+  CHARTER_CAPABILITIES,
+  CHARTER_DIAGNOSTIC_CODES,
+  CHARTER_DIAGNOSTIC_SEVERITIES,
+  CHARTER_PROFILE,
+  CHARTER_PROFILE_METADATA,
+  validateCharterMarkdown,
+} from './agents/charter-validator.js';
+
+export type {
+  CharterCapability,
+  CharterConformance,
+  CharterDiagnostic,
+  CharterDiagnosticCode,
+  CharterDiagnosticSeverity,
+  CharterValidationOptions,
+  CharterValidationResult,
+} from './agents/charter-validator.js';
+
 export type {
   ParsedCharter,
   CharterCompileOptions,
   CharterConfigOverrides,
+  CharterSourceMetadata,
   CompiledCharter,
 } from './agents/charter-compiler.js';
+
+export {
+  parseCharter,
+  serializeCharter,
+} from './state/io/charter-io.js';
+
+export type {
+  CharterSerializeOptions,
+} from './state/io/charter-io.js';
 
 // --- skills/skill-loader.ts ---
 export {

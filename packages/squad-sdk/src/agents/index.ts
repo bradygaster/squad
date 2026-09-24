@@ -38,8 +38,25 @@ export {
   type CharterCompileOptions, 
   type CharterConfigOverrides, 
   type ParsedCharter,
+  type CharterSourceMetadata,
   type CompiledCharter,
 } from './charter-compiler.js';
+
+export {
+  CHARTER_CAPABILITIES,
+  CHARTER_DIAGNOSTIC_CODES,
+  CHARTER_DIAGNOSTIC_SEVERITIES,
+  CHARTER_PROFILE,
+  CHARTER_PROFILE_METADATA,
+  validateCharterMarkdown,
+  type CharterCapability,
+  type CharterConformance,
+  type CharterDiagnostic,
+  type CharterDiagnosticCode,
+  type CharterDiagnosticSeverity,
+  type CharterValidationOptions,
+  type CharterValidationResult,
+} from './charter-validator.js';
 
 // --- M1-9 Model Selection + M3-5 Model Fallback ---
 export { 

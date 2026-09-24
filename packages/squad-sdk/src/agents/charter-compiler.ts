@@ -8,8 +8,12 @@
 
 import { SquadCustomAgentConfig } from '../adapter/types.js';
 import { ConfigurationError } from '../adapter/errors.js';
-import { normalizeEol } from '../utils/normalize-eol.js';
 import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS } from '../config/models.js';
+import {
+  scanCharterMarkdown,
+  type CharterMarkdownField,
+  type CharterMarkdownScan,
+} from './charter-markdown.js';
 
 /** Set form for fast lookup. */
 const VALID_EFFORTS = new Set<string>(VALID_REASONING_EFFORTS);
@@ -66,16 +70,18 @@ export interface CharterConfigOverrides {
  * Parsed charter structure.
  */
 export interface ParsedCharter {
-  /** Identity section: name, role, expertise, style */
+  /** Identity section: canonical ID/purpose plus legacy descriptive fields */
   identity: {
+    id?: string;
+    purpose?: string;
     name?: string;
     role?: string;
     expertise?: string[];
     style?: string;
   };
-  /** What I Own section content */
+  /** Accountable Responsibilities section content, or legacy What I Own */
   ownership?: string;
-  /** Boundaries section content */
+  /** Non-Responsibilities section content, or legacy Boundaries */
   boundaries?: string;
   /** Model preference from ## Model section */
   modelPreference?: string;
@@ -85,12 +91,31 @@ export interface ParsedCharter {
   modelFallback?: string;
   /** Reasoning effort preference from ## Model section */
   reasoningEffort?: string;
+  /** Authored reasoning effort, including auto or an unsupported value */
+  authoredReasoningEffort?: string;
   /** Context tier preference from ## Model section */
   contextTier?: string;
-  /** Collaboration section content */
+  /** Authored context tier, including auto or an unsupported value */
+  authoredContextTier?: string;
+  /** Collaboration and Review Authority content, or legacy Collaboration */
   collaboration?: string;
   /** Full charter content */
   fullContent: string;
+  /** Source metadata used by lossless charter editors */
+  source?: CharterSourceMetadata;
+}
+
+/**
+ * Source representation retained for lossless no-op and extension-preserving
+ * charter edits.
+ */
+export interface CharterSourceMetadata {
+  /** Semantic snapshot captured when the source was parsed */
+  semanticKey: string;
+  /** Whether the source already uses the canonical responsibility headings */
+  canonicalShape: boolean;
+  /** Unknown namespaced extension sections in source order, byte-for-byte */
+  extensions: readonly string[];
 }
 
 /**
@@ -176,22 +201,31 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
       ? `Expertise: ${parsed.identity.expertise.join(', ')}`
       : `${role || 'Agent'}`;
 
-    // Resolve model: config override > charter preference
-    const resolvedModel = configOverrides?.model || parsed.modelPreference;
+    // Resolve model: config override > charter preference. "auto" is authored
+    // intent for runtime selection, never a literal model override.
+    const configuredModel = configOverrides?.model?.trim();
+    const charterModel = parsed.modelPreference?.trim();
+    const resolvedModel = configuredModel?.toLowerCase() === 'auto'
+      ? undefined
+      : configuredModel || (charterModel?.toLowerCase() === 'auto' ? undefined : charterModel);
 
     // Resolve reasoning effort: config override > charter preference
     // Normalize: "auto" and invalid values resolve to undefined
     const configEffort = configOverrides?.reasoningEffort?.toLowerCase();
     const charterEffort = parsed.reasoningEffort; // already validated during parsing
     const validConfigEffort = configEffort && configEffort !== 'auto' && VALID_EFFORTS.has(configEffort) ? configEffort : undefined;
-    const resolvedReasoningEffort = validConfigEffort || charterEffort;
+    const resolvedReasoningEffort = configEffort === 'auto'
+      ? undefined
+      : validConfigEffort || charterEffort;
 
     // Resolve context tier: config override > charter preference
     // Normalize: "auto" and invalid values resolve to undefined
     const configTier = configOverrides?.contextTier?.toLowerCase();
     const charterTier = parsed.contextTier; // already validated during parsing
     const validConfigTier = configTier && configTier !== 'auto' && VALID_TIERS.has(configTier) ? configTier : undefined;
-    const resolvedContextTier = validConfigTier || charterTier;
+    const resolvedContextTier = configTier === 'auto'
+      ? undefined
+      : validConfigTier || charterTier;
 
     // Resolve tools: config override > charter-extracted tools
     const resolvedTools = configOverrides?.tools;
@@ -231,7 +265,7 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
  * @returns Parsed charter structure
  */
 export function parseCharterMarkdown(content: string): ParsedCharter {
-  content = normalizeEol(content);
+  const scan = scanCharterMarkdown(content);
   const result: ParsedCharter = {
     identity: {},
     fullContent: content,
@@ -241,106 +275,170 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     return result;
   }
   
-  // Extract ## Identity section
-  const identityMatch = content.match(/##\s+Identity\s*\n([\s\S]*?)(?=\n##|\n---|$)/i);
-  if (identityMatch) {
-    const identityContent = identityMatch[1]!;
-    
-    // Parse identity fields
-    const nameMatch = identityContent.match(/\*\*Name:\*\*\s*(.+)/i);
-    if (nameMatch) result.identity.name = nameMatch[1]!.trim();
-    
-    const roleMatch = identityContent.match(/\*\*Role:\*\*\s*(.+)/i);
-    if (roleMatch) result.identity.role = roleMatch[1]!.trim();
-    
-    const expertiseMatch = identityContent.match(/\*\*Expertise:\*\*\s*(.+)/i);
-    if (expertiseMatch) {
-      result.identity.expertise = expertiseMatch[1]!
+  const identityFields = fieldsInSection(scan, 'Identity');
+  const id = findField(identityFields, 'ID');
+  if (id) result.identity.id = stripCode(id.value);
+
+  const purpose = findField(identityFields, 'Purpose');
+  if (purpose) result.identity.purpose = purpose.value.trim();
+
+  const name = findField(identityFields, 'Name');
+  if (name) result.identity.name = name.value.trim();
+
+  const role = findField(identityFields, 'Role');
+  if (role) result.identity.role = role.value.trim();
+
+  const expertise = findField(identityFields, 'Expertise');
+  if (expertise) {
+    result.identity.expertise = expertise.value
         .split(',')
         .map(e => e.trim())
         .filter(e => e.length > 0);
-    }
-    
-    const styleMatch = identityContent.match(/\*\*Style:\*\*\s*(.+)/i);
-    if (styleMatch) result.identity.style = styleMatch[1]!.trim();
   }
+
+  const style = findField(identityFields, 'Style');
+  if (style) result.identity.style = style.value.trim();
 
   // Legacy charters identify the agent in the H1 instead of an Identity section.
   if (!result.identity.name || !result.identity.role) {
-    const titleMatch = content.match(
-      /^#\s+(.+?)\s+(?:—|–|-)\s+(.+?)\s*$/m,
-    );
+    const titleMatch = scan.h1?.name.match(/^(.+?)\s+(?:—|–|-)\s+(.+?)$/);
     if (titleMatch) {
       result.identity.name ??= titleMatch[1]!.trim();
       result.identity.role ??= titleMatch[2]!.trim();
     }
   }
   
-  // Extract ## What I Own section
-  const ownershipMatch = content.match(/##\s+What I Own\s*\n([\s\S]*?)(?=\n##|\n---|$)/i);
-  if (ownershipMatch) {
-    result.ownership = ownershipMatch[1]!.trim();
-  }
+  // Extract canonical ownership section or its legacy alias.
+  result.ownership = findSectionBody(scan, 'Accountable Responsibilities', 'What I Own');
   
-  // Extract ## Boundaries section
-  const boundariesMatch = content.match(/##\s+Boundaries\s*\n([\s\S]*?)(?=\n##|\n---|$)/i);
-  if (boundariesMatch) {
-    result.boundaries = boundariesMatch[1]!.trim();
-  }
+  // Extract canonical non-responsibilities section or its legacy alias.
+  result.boundaries = findSectionBody(scan, 'Non-Responsibilities', 'Boundaries');
   
   // Extract ## Model section
-  const modelMatch = content.match(/##\s+Model\s*\n([\s\S]*?)(?=\n##|\n---|$)/i);
-  if (modelMatch) {
-    const modelContent = modelMatch[1]!;
-    const preferredMatch = modelContent.match(/\*\*Preferred:\*\*\s*(.+)/i);
-    if (preferredMatch) {
-      result.modelPreference = preferredMatch[1]!.trim();
+  const modelFields = fieldsInSection(scan, 'Model');
+  const preferred = findField(modelFields, 'Preferred');
+  if (preferred) result.modelPreference = preferred.value.trim();
+
+  const rationale = findField(modelFields, 'Rationale');
+  if (rationale) result.modelRationale = rationale.value.trim();
+
+  const fallback = findField(modelFields, 'Fallback');
+  if (fallback) result.modelFallback = fallback.value.trim();
+
+  const effort = findField(modelFields, 'Reasoning Effort');
+  if (effort) {
+    const raw = effort.value.trim().toLowerCase();
+    result.authoredReasoningEffort = raw;
+    // Normalize: "auto" → undefined, invalid values → undefined
+    if (raw !== 'auto' && VALID_EFFORTS.has(raw)) {
+      result.reasoningEffort = raw;
+    } else if (raw !== 'auto') {
+      // Surface invalid charter input to the author instead of dropping it silently.
+      console.warn(
+        `[squad] charter parse: ignoring invalid reasoning effort "${raw}" `
+        + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto)`,
+      );
     }
-    const rationaleMatch = modelContent.match(/\*\*Rationale:\*\*\s*(.+)/i);
-    if (rationaleMatch) {
-      result.modelRationale = rationaleMatch[1]!.trim();
-    }
-    const fallbackMatch = modelContent.match(/\*\*Fallback:\*\*\s*(.+)/i);
-    if (fallbackMatch) {
-      result.modelFallback = fallbackMatch[1]!.trim();
-    }
-    const effortMatch = modelContent.match(/\*\*Reasoning Effort:\*\*\s*(.+)/i);
-    if (effortMatch) {
-      const raw = effortMatch[1]!.trim().toLowerCase();
-      // Normalize: "auto" → undefined, invalid values → undefined
-      if (raw !== 'auto' && VALID_EFFORTS.has(raw)) {
-        result.reasoningEffort = raw;
-      } else if (raw !== 'auto') {
-        // Surface invalid charter input to the author instead of dropping it silently.
-        console.warn(
-          `[squad] charter parse: ignoring invalid reasoning effort "${raw}" `
-          + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto)`,
-        );
-      }
-    }
-    const tierMatch = modelContent.match(/\*\*Context Tier:\*\*\s*(.+)/i);
-    if (tierMatch) {
-      const raw = tierMatch[1]!.trim().toLowerCase();
-      // Normalize: "auto" → undefined, invalid values → undefined
-      if (raw !== 'auto' && VALID_TIERS.has(raw)) {
-        result.contextTier = raw;
-      } else if (raw !== 'auto') {
-        // Surface invalid charter input to the author instead of dropping it silently.
-        console.warn(
-          `[squad] charter parse: ignoring invalid context tier "${raw}" `
-          + `(expected ${VALID_CONTEXT_TIERS.join(', ')}, or auto)`,
-        );
-      }
+  }
+
+  const tier = findField(modelFields, 'Context Tier');
+  if (tier) {
+    const raw = tier.value.trim().toLowerCase();
+    result.authoredContextTier = raw;
+    // Normalize: "auto" → undefined, invalid values → undefined
+    if (raw !== 'auto' && VALID_TIERS.has(raw)) {
+      result.contextTier = raw;
+    } else if (raw !== 'auto') {
+      // Surface invalid charter input to the author instead of dropping it silently.
+      console.warn(
+        `[squad] charter parse: ignoring invalid context tier "${raw}" `
+        + `(expected ${VALID_CONTEXT_TIERS.join(', ')}, or auto)`,
+      );
     }
   }
   
-  // Extract ## Collaboration section
-  const collaborationMatch = content.match(/##\s+Collaboration\s*\n([\s\S]*?)(?=\n##|\n---|$)/i);
-  if (collaborationMatch) {
-    result.collaboration = collaborationMatch[1]!.trim();
-  }
-  
+  // Extract canonical collaboration section or its legacy alias.
+  result.collaboration = findSectionBody(
+    scan,
+    'Collaboration and Review Authority',
+    'Collaboration',
+  );
+
+  Object.defineProperty(result, 'source', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: {
+      semanticKey: charterSemanticKey(result),
+      canonicalShape: hasCanonicalShape(scan),
+      extensions: scan.sections
+        .filter(section => section.isExtension)
+        .map(section => section.raw),
+    } satisfies CharterSourceMetadata,
+  });
+
   return result;
+}
+
+/** @internal Stable comparison key for source-aware serialization. */
+export function charterSemanticKey(charter: ParsedCharter): string {
+  return JSON.stringify({
+    identity: charter.identity,
+    ownership: charter.ownership,
+    boundaries: charter.boundaries,
+    modelPreference: charter.modelPreference,
+    modelRationale: charter.modelRationale,
+    modelFallback: charter.modelFallback,
+    reasoningEffort: charter.reasoningEffort,
+    authoredReasoningEffort: charter.authoredReasoningEffort,
+    contextTier: charter.contextTier,
+    authoredContextTier: charter.authoredContextTier,
+    collaboration: charter.collaboration,
+  });
+}
+
+function fieldsInSection(
+  scan: CharterMarkdownScan,
+  sectionName: string,
+): readonly CharterMarkdownField[] {
+  return scan.fields.filter(
+    field => field.section.toLowerCase() === sectionName.toLowerCase(),
+  );
+}
+
+function findField(
+  fields: readonly CharterMarkdownField[],
+  name: string,
+): CharterMarkdownField | undefined {
+  return fields.find(field => field.name.toLowerCase() === name.toLowerCase());
+}
+
+function findSectionBody(
+  scan: CharterMarkdownScan,
+  ...names: readonly string[]
+): string | undefined {
+  const section = scan.sections.find(candidate =>
+    names.some(name => candidate.name.toLowerCase() === name.toLowerCase()),
+  );
+  return section?.body;
+}
+
+function stripCode(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.startsWith('`') && trimmed.endsWith('`')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+}
+
+function hasCanonicalShape(scan: CharterMarkdownScan): boolean {
+  const names = new Set(scan.sections.map(section => section.name.toLowerCase()));
+  return names.has('identity')
+    && names.has('accountable responsibilities')
+    && names.has('non-responsibilities')
+    && names.has('collaboration and review authority')
+    && !names.has('what i own')
+    && !names.has('boundaries')
+    && !names.has('collaboration');
 }
 
 /**
