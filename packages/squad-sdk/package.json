@@ -237,7 +237,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^1.0.13",
+    "@github/copilot-sdk": "^1.0.14",
     "vscode-jsonrpc": "^9.0.2"
   },
   "optionalDependencies": {
@@ -254,7 +254,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
-    "@types/node": "^26.5.0",
+    "@types/node": "^26.6.1",
     "@types/sql.js": "^1.4.10",
     "@types/ws": "^8.5.13",
     "typedoc": "~0.28.20",
