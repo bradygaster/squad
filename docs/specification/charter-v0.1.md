@@ -10,12 +10,15 @@
 
 **Editor:** Squad project maintainers
 
-**Publication date:** 2026-09-24
+**Draft date:** 2026-09-24
 
-**Source revision:** `squad-charter-v0.1-wd3`
+**Working-draft provenance:** [PR #2074](https://github.com/bradygaster/squad/pull/2074),
+whose revision lineage starts at immutable review baseline
+[`ab80da18087b7d37755db2c3cc5880d194a10f52`](https://github.com/bradygaster/squad/commit/ab80da18087b7d37755db2c3cc5880d194a10f52).
+Each subsequent draft snapshot is identified by its immutable Git commit in
+that pull request.
 
-**Immutable publication tag:** Not assigned; this is a source-controlled
-working draft
+**Immutable publication tag:** None; this working draft is not a publication
 
 **Feedback:** [Issue #2069](https://github.com/bradygaster/squad/issues/2069)
 
@@ -61,10 +64,12 @@ profile version is selected by the calling API or surrounding manifest; v0.1
 has no in-document version marker.
 
 An API that claims portable conformance MUST require the caller to supply the
-profile identifier. Missing selection produces `SQC014`. The TypeScript
-reference implementation also exposes `validateCharterMarkdown` as a
-convenience API that defaults to `squad-charter/v0.1`; this behavior is not
-explicit negotiation, and its result always reports the selected profile.
+profile identifier. Missing selection produces `SQC014`. A language-specific
+implementation MAY expose a separately named convenience validator or compiler
+that defaults a profile, but that default is implementation-specific and MUST
+NOT be treated as portable conformance behavior. The TypeScript reference
+implementation's `validateCharterMarkdown` and `compileCharterFull` convenience
+paths default to `squad-charter/v0.1` and report the selected profile.
 
 A consumer asked to process a profile other than one it supports MUST return an
 unsupported-profile error and MUST NOT reinterpret the document as v0.1.
@@ -154,6 +159,8 @@ are accepted for legacy ingestion but make the document
 **noncanonical-compatible**. Editors preserve them when their canonical
 semantics cannot be represented without data loss. They are not behavioral
 inputs except that `Name` and `Role` may supply legacy display metadata.
+Each present compatibility field produces its own `SQC107`, independently of
+whether any other optional field, including `Context Tier`, is present.
 
 Missing behavioral fields mean no charter preference. `auto` preserves the
 author's request for runtime selection and MUST NOT become a literal runtime
@@ -232,7 +239,7 @@ Diagnostics sort by line, column, then the code order below.
 | `SQC102` | warning | Missing canonical Identity ID |
 | `SQC103` | warning | Missing canonical Identity Purpose |
 | `SQC104` | warning | Missing canonical responsibility section |
-| `SQC105` | warning | Legacy responsibility headings |
+| `SQC105` | warning | Legacy responsibility heading; one diagnostic per heading |
 | `SQC106` | warning | Noncanonical extension heading |
 | `SQC107` | warning | Compatibility field present |
 | `SQC108` | warning | Unknown or noncanonically ordered standard section |
@@ -247,6 +254,7 @@ Implementations claim operations individually:
 | `squad-charter/v0.1/validate` | Emit the diagnostics and classification above |
 | `squad-charter/v0.1/edit` | Canonical serialization plus lossless extension preservation |
 | `squad-charter/v0.1/legacy-consume` | Accept documented legacy aliases without calling them canonical |
+| `squad-charter/v0.1/runtime` | Validate before applying portable behavioral fields, reject invalid input, and expose normalized runtime results |
 
 An implementation claiming a capability MUST pass every manifest case that
 lists that capability. A validation result reports only the validator
@@ -260,11 +268,16 @@ enforce tool, filesystem, network, model, and review policy. It MUST NOT grant
 capabilities because a charter requests them. Links, commands, encoded text,
 HTML comments, code blocks, and extension content are untrusted data.
 
-A runtime that applies `Preferred`, `Reasoning Effort`, or `Context Tier` MUST
-validate the charter first and MUST reject invalid input without applying any
-of those fields. The TypeScript compiler validates before resolving behavior.
-Its compatibility path for omitted `charterContent` generates a canonical,
-behavior-neutral charter; explicitly empty or invalid content is rejected.
+A runtime claiming `squad-charter/v0.1/runtime` that applies `Preferred`,
+`Reasoning Effort`, or `Context Tier` MUST validate the charter first and MUST
+reject invalid input without applying any of those fields. Runtime expectations
+in the manifest apply only to cases that declare this capability.
+
+The TypeScript reference compiler validates before resolving behavior. Its
+default profile and its compatibility path that generates a canonical,
+behavior-neutral charter when `charterContent` is omitted are convenience
+behaviors of that implementation, not requirements for generic validators or
+other runtimes. Explicitly empty or invalid content is rejected.
 
 ## 12. Mandatory conformance suite
 
@@ -277,6 +290,26 @@ CRLF behavior, path mismatch, extension ordering, canonical output, legacy
 ingestion, and `auto` runtime semantics. The manifest, not the TypeScript
 harness, defines case inputs, profile selection, paths, edits, outputs,
 classifications, parsed semantics, and ordered diagnostic ranges.
+
+The language-neutral field contract is
+[`manifest.schema.json`](../../test-fixtures/spec/charter-v0.1/manifest.schema.json).
+Every manifest contains:
+
+- `$schema`, `schemaVersion`, `profile`, the complete `capabilities` list, and
+  uniquely identified `cases`;
+- per-case `capabilities`, exactly one input source (`fixture` or `text`),
+  nullable path/profile inputs, and the named validation API;
+- an always-present validation expectation with classification, capability
+  report, and ordered diagnostic ranges;
+- parsed semantics only for `parse` cases, input/edit/output data only for
+  `edit` cases, and compile/rejection results only for `runtime` cases.
+
+For a failing runtime case, `errorCodes` is the exact ordered validation-code
+sequence returned with the rejection. For a successful runtime case, the three
+`resolved*` values are the normalized behavior inputs, where `null` means no
+override. Harnesses MUST reject unknown capabilities, missing declared
+capability coverage, missing diagnostic-code coverage, and disagreement between
+an operation's capability declaration and its expectation fields.
 
 ## 13. Informative TypeScript implementation details
 
@@ -309,6 +342,8 @@ console.log(CHARTER_CAPABILITIES.edit, updated);
 
 ## 14. Errata
 
-No errata are recorded for source revision `squad-charter-v0.1-wd3`. Errata for
-a future tagged publication will be listed in this section with publication
-date, affected section, and correction.
+No published revision exists, so there are no publication errata. Working-draft
+corrections are recorded as new immutable commits in
+[PR #2074](https://github.com/bradygaster/squad/pull/2074). Errata for a future
+tagged publication will list its publication date, affected section, and
+correction here.

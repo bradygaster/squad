@@ -8,12 +8,15 @@
 
 **Editor:** Squad project maintainers
 
-**Publication date:** 2026-09-24
+**Draft date:** 2026-09-24
 
-**Source revision:** `squad-core-v0.1-wd3`
+**Working-draft provenance:** [PR #2074](https://github.com/bradygaster/squad/pull/2074),
+whose revision lineage starts at immutable review baseline
+[`ab80da18087b7d37755db2c3cc5880d194a10f52`](https://github.com/bradygaster/squad/commit/ab80da18087b7d37755db2c3cc5880d194a10f52).
+Each subsequent draft snapshot is identified by its immutable Git commit in
+that pull request.
 
-**Immutable publication tag:** Not assigned; this is a source-controlled
-working draft
+**Immutable publication tag:** None; this working draft is not a publication
 
 **Feedback:** [Issue #2069](https://github.com/bradygaster/squad/issues/2069)
 
@@ -157,15 +160,18 @@ backward-compatible additions increment `MINOR`; changes that can alter
 accepted documents or existing semantics increment `MAJOR` and reset `MINOR`
 to `0`.
 
-Working-draft source revisions such as `squad-core-v0.1-wd3` identify review
-snapshots but are not immutable publications. Implementations MUST NOT infer
-compatibility with an unsupported identifier or source revision.
+Working-draft snapshots are identified by immutable Git commit SHA and are not
+publications. Human-readable draft labels are not revision identifiers.
+Implementations MUST NOT infer compatibility with an unsupported profile
+identifier or a working-draft commit.
 
 ### 10.1 Errata
 
-No errata are recorded for source revision `squad-core-v0.1-wd3`. Errata for a
-future tagged publication will be listed in this subsection with publication
-date, affected section, and correction.
+No published revision exists, so there are no publication errata. Working-draft
+corrections are recorded as new immutable commits in
+[PR #2074](https://github.com/bradygaster/squad/pull/2074). Errata for a future
+tagged publication will list its publication date, affected section, and
+correction here.
 
 ## 11. Trust boundary
 

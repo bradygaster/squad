@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CHARTER_CAPABILITIES,
+  CHARTER_DIAGNOSTIC_CODES,
   CHARTER_PROFILE,
   CHARTER_PROFILE_METADATA,
   compileCharterFull,
@@ -96,10 +97,22 @@ interface ManifestCase {
 }
 
 interface FixtureManifest {
+  $schema: './manifest.schema.json';
   schemaVersion: 1;
   profile: string;
   capabilities: CharterCapability[];
   cases: ManifestCase[];
+}
+
+interface ManifestSchema {
+  $defs: {
+    capability: { enum: CharterCapability[] };
+    diagnostic: {
+      properties: {
+        code: { enum: string[] };
+      };
+    };
+  };
 }
 
 const FIXTURE_ROOT = path.resolve(__dirname, '..', 'test-fixtures', 'spec', 'charter-v0.1');
@@ -108,6 +121,12 @@ async function loadManifest(): Promise<FixtureManifest> {
   return JSON.parse(
     await readFile(path.join(FIXTURE_ROOT, 'manifest.json'), 'utf8'),
   ) as FixtureManifest;
+}
+
+async function loadManifestSchema(manifest: FixtureManifest): Promise<ManifestSchema> {
+  return JSON.parse(
+    await readFile(path.join(FIXTURE_ROOT, manifest.$schema), 'utf8'),
+  ) as ManifestSchema;
 }
 
 async function readCaseSource(testCase: ManifestCase): Promise<string> {
@@ -178,12 +197,36 @@ function eolName(value: string): 'LF' | 'CRLF' | 'CR' {
   return 'LF';
 }
 
+function runtimeErrorCodes(error: unknown): string[] {
+  if (typeof error !== 'object' || error === null || !('context' in error)) return [];
+  const context = error.context;
+  if (typeof context !== 'object' || context === null || !('metadata' in context)) return [];
+  const metadata = context.metadata;
+  if (typeof metadata !== 'object' || metadata === null || !('diagnostics' in metadata)) {
+    return [];
+  }
+  if (!Array.isArray(metadata.diagnostics)) return [];
+  return metadata.diagnostics.flatMap(diagnostic =>
+    typeof diagnostic === 'object'
+      && diagnostic !== null
+      && 'code' in diagnostic
+      && typeof diagnostic.code === 'string'
+      ? [diagnostic.code]
+      : [],
+  );
+}
+
 describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
   it('declares the published profile metadata and every operational capability', async () => {
     const manifest = await loadManifest();
+    const schema = await loadManifestSchema(manifest);
+    expect(manifest.$schema).toBe('./manifest.schema.json');
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.profile).toBe(CHARTER_PROFILE);
     expect(manifest.capabilities).toEqual(Object.values(CHARTER_CAPABILITIES));
+    expect(schema.$defs.capability.enum).toEqual(manifest.capabilities);
+    expect(schema.$defs.diagnostic.properties.code.enum)
+      .toEqual(CHARTER_DIAGNOSTIC_CODES);
     expect(CHARTER_PROFILE_METADATA).toEqual({
       id: CHARTER_PROFILE,
       artifactClass: 'required',
@@ -191,11 +234,53 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
       repositoryRelativePath: '.squad/agents/{id}/charter.md',
     });
 
+    const caseIds = manifest.cases.map(testCase => testCase.id);
+    expect(new Set(caseIds).size).toBe(caseIds.length);
+
     for (const capability of manifest.capabilities) {
       expect(
         manifest.cases.some(testCase => testCase.capabilities.includes(capability)),
         capability,
       ).toBe(true);
+    }
+
+    const coveredDiagnostics = new Set(
+      manifest.cases.flatMap(testCase =>
+        testCase.expected.validation.diagnostics.map(diagnostic => diagnostic.code),
+      ),
+    );
+    expect(
+      [...coveredDiagnostics].sort(),
+      'every normative diagnostic code has portable manifest coverage',
+    ).toEqual([...CHARTER_DIAGNOSTIC_CODES].sort());
+
+    for (const testCase of manifest.cases) {
+      expect(testCase.capabilities, `${testCase.id}: known capabilities`).toEqual(
+        testCase.capabilities.filter(capability =>
+          manifest.capabilities.includes(capability),
+        ),
+      );
+      expect(
+        testCase.capabilities.includes(CHARTER_CAPABILITIES.validate),
+        `${testCase.id}: validation capability`,
+      ).toBe(true);
+      expect(
+        testCase.expected.parsed !== null,
+        `${testCase.id}: parse applicability`,
+      ).toBe(testCase.capabilities.includes(CHARTER_CAPABILITIES.parse));
+      expect(
+        testCase.serialization !== null
+          && testCase.expected.serialization !== null,
+        `${testCase.id}: edit applicability`,
+      ).toBe(testCase.capabilities.includes(CHARTER_CAPABILITIES.edit));
+      expect(
+        testCase.expected.runtime !== null,
+        `${testCase.id}: runtime applicability`,
+      ).toBe(testCase.capabilities.includes(CHARTER_CAPABILITIES.runtime));
+      if (testCase.capabilities.includes(CHARTER_CAPABILITIES.runtime)) {
+        expect(testCase.input.profile, `${testCase.id}: explicit runtime profile`)
+          .toBe(manifest.profile);
+      }
     }
   });
 
@@ -250,7 +335,12 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
           .toEqual(testCase.expected.serialization?.validation);
       }
 
-      if (testCase.expected.runtime !== null) {
+      if (testCase.capabilities.includes(CHARTER_CAPABILITIES.runtime)) {
+        const runtimeExpectation = testCase.expected.runtime;
+        expect(runtimeExpectation, `${testCase.id}: runtime expectation`).not.toBeNull();
+        if (runtimeExpectation === null) {
+          throw new Error(`${testCase.id}: runtime capability requires expected.runtime`);
+        }
         const compile = () => compileCharterFull({
           agentName: 'manifest-agent',
           charterPath: testCase.input.path ?? 'agents/manifest-agent/charter.md',
@@ -258,17 +348,15 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
           ...(testCase.input.profile === null ? {} : { profile: testCase.input.profile }),
         });
 
-        if (!testCase.expected.runtime.compile) {
-          let message = '';
+        if (!runtimeExpectation.compile) {
+          let errorCodes: string[] = [];
           try {
             compile();
           } catch (error) {
-            message = error instanceof Error ? error.message : String(error);
+            errorCodes = runtimeErrorCodes(error);
           }
-          expect(message, `${testCase.id}: runtime rejection`).not.toBe('');
-          for (const code of testCase.expected.runtime.errorCodes) {
-            expect(message, `${testCase.id}: ${code}`).toContain(code);
-          }
+          expect(errorCodes, `${testCase.id}: runtime rejection codes`)
+            .toEqual(runtimeExpectation.errorCodes);
         } else {
           const compiled = compile();
           expect({
@@ -276,9 +364,9 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
             resolvedReasoningEffort: compiled.resolvedReasoningEffort ?? null,
             resolvedContextTier: compiled.resolvedContextTier ?? null,
           }, `${testCase.id}: runtime semantics`).toEqual({
-            resolvedModel: testCase.expected.runtime.resolvedModel,
-            resolvedReasoningEffort: testCase.expected.runtime.resolvedReasoningEffort,
-            resolvedContextTier: testCase.expected.runtime.resolvedContextTier,
+            resolvedModel: runtimeExpectation.resolvedModel,
+            resolvedReasoningEffort: runtimeExpectation.resolvedReasoningEffort,
+            resolvedContextTier: runtimeExpectation.resolvedContextTier,
           });
         }
       }

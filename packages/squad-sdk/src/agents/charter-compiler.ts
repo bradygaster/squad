@@ -42,8 +42,9 @@ export interface CharterCompileOptions {
   charterContent?: string;
   /**
    * Charter profile used for validation. The convenience compiler defaults to
-   * `squad-charter/v0.1`; portable conformance claims must use the explicit
-   * conformance validator instead.
+   * `squad-charter/v0.1`. This TypeScript-specific default is not part of the
+   * portable runtime capability; portable conformance cases select a profile
+   * explicitly.
    */
   profile?: string;
   /** Content of team.md (team roster) */
@@ -166,6 +167,9 @@ export function compileCharter(options: CharterCompileOptions): SquadCustomAgent
 
 /**
  * Compile a charter with full metadata including resolved model/tools.
+ *
+ * This is the TypeScript reference runtime adapter. Its omitted-content and
+ * default-profile conveniences are not requirements for other implementations.
  * 
  * @param options - Charter compilation options
  * @returns CompiledCharter with full metadata

@@ -1,11 +1,13 @@
 {
+  "$schema": "./manifest.schema.json",
   "schemaVersion": 1,
   "profile": "squad-charter/v0.1",
   "capabilities": [
     "squad-charter/v0.1/parse",
     "squad-charter/v0.1/validate",
     "squad-charter/v0.1/edit",
-    "squad-charter/v0.1/legacy-consume"
+    "squad-charter/v0.1/legacy-consume",
+    "squad-charter/v0.1/runtime"
   ],
   "cases": [
     {
@@ -123,7 +125,10 @@
     },
     {
       "id": "invalid-behavior-is-rejected-before-runtime-application",
-      "capabilities": ["squad-charter/v0.1/validate"],
+      "capabilities": [
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/runtime"
+      ],
       "input": {
         "fixture": "negative/invalid-behavior.md",
         "text": null,
@@ -217,7 +222,9 @@
             {"code": "SQC107", "severity": "warning", "start": {"line": 5, "column": 3}, "end": {"line": 5, "column": 11}, "path": "agents/legacy-agent/charter.md"},
             {"code": "SQC107", "severity": "warning", "start": {"line": 6, "column": 3}, "end": {"line": 6, "column": 16}, "path": "agents/legacy-agent/charter.md"},
             {"code": "SQC107", "severity": "warning", "start": {"line": 7, "column": 3}, "end": {"line": 7, "column": 12}, "path": "agents/legacy-agent/charter.md"},
-            {"code": "SQC105", "severity": "warning", "start": {"line": 9, "column": 1}, "end": {"line": 9, "column": 13}, "path": "agents/legacy-agent/charter.md"}
+            {"code": "SQC105", "severity": "warning", "start": {"line": 9, "column": 1}, "end": {"line": 9, "column": 13}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC105", "severity": "warning", "start": {"line": 12, "column": 1}, "end": {"line": 12, "column": 13}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC105", "severity": "warning", "start": {"line": 15, "column": 1}, "end": {"line": 15, "column": 16}, "path": "agents/legacy-agent/charter.md"}
           ]
         },
         "parsed": {
@@ -458,7 +465,8 @@
       "id": "runtime-auto-remains-selection-not-literal-override",
       "capabilities": [
         "squad-charter/v0.1/parse",
-        "squad-charter/v0.1/validate"
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/runtime"
       ],
       "input": {
         "fixture": null,
@@ -759,7 +767,9 @@
             {"code": "SQC011", "severity": "error", "start": {"line": 13, "column": 1}, "end": {"line": 13, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
             {"code": "SQC105", "severity": "warning", "start": {"line": 13, "column": 1}, "end": {"line": 13, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
             {"code": "SQC011", "severity": "error", "start": {"line": 19, "column": 1}, "end": {"line": 19, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC105", "severity": "warning", "start": {"line": 19, "column": 1}, "end": {"line": 19, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
             {"code": "SQC011", "severity": "error", "start": {"line": 25, "column": 1}, "end": {"line": 25, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC105", "severity": "warning", "start": {"line": 25, "column": 1}, "end": {"line": 25, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
             {"code": "SQC011", "severity": "error", "start": {"line": 31, "column": 1}, "end": {"line": 31, "column": 8}, "path": "agents/duplicate-agent/charter.md"},
             {"code": "SQC004", "severity": "error", "start": {"line": 32, "column": 3}, "end": {"line": 32, "column": 16}, "path": "agents/duplicate-agent/charter.md"}
           ]
@@ -871,6 +881,417 @@
           "capabilities": ["squad-charter/v0.1/validate"],
           "diagnostics": [
             {"code": "SQC108", "severity": "warning", "start": {"line": 16, "column": 1}, "end": {"line": 16, "column": 37}, "path": "agents/ordered-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "empty-charter",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "",
+        "path": null,
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC001",
+              "severity": "error",
+              "start": {
+                "line": 1,
+                "column": 1
+              },
+              "end": {
+                "line": 1,
+                "column": 1
+              },
+              "path": null
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "missing-structural-h1",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "## Identity\n- **ID:** `missing-h1`\n- **Purpose:** Exercise the missing H1 diagnostic.\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n",
+        "path": "agents/missing-h1/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC002",
+              "severity": "error",
+              "start": {
+                "line": 1,
+                "column": 1
+              },
+              "end": {
+                "line": 1,
+                "column": 1
+              },
+              "path": "agents/missing-h1/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "empty-model-preference",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Empty Preference — Tester\n\n## Identity\n- **ID:** `empty-preference`\n- **Purpose:** Exercise an empty preferred model.\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n\n## Model\n- **Preferred:**\n",
+        "path": "agents/empty-preference/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC006",
+              "severity": "error",
+              "start": {
+                "line": 17,
+                "column": 3
+              },
+              "end": {
+                "line": 17,
+                "column": 16
+              },
+              "path": "agents/empty-preference/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "empty-identity-purpose",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Empty Purpose — Tester\n\n## Identity\n- **ID:** `empty-purpose`\n- **Purpose:**\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n",
+        "path": "agents/empty-purpose/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC009",
+              "severity": "error",
+              "start": {
+                "line": 5,
+                "column": 3
+              },
+              "end": {
+                "line": 5,
+                "column": 14
+              },
+              "path": "agents/empty-purpose/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "missing-identity-section-and-fields",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Missing Identity — Tester\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n",
+        "path": "agents/missing-identity/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC101",
+              "severity": "warning",
+              "start": {
+                "line": 1,
+                "column": 1
+              },
+              "end": {
+                "line": 1,
+                "column": 1
+              },
+              "path": "agents/missing-identity/charter.md"
+            },
+            {
+              "code": "SQC102",
+              "severity": "warning",
+              "start": {
+                "line": 1,
+                "column": 1
+              },
+              "end": {
+                "line": 1,
+                "column": 1
+              },
+              "path": "agents/missing-identity/charter.md"
+            },
+            {
+              "code": "SQC103",
+              "severity": "warning",
+              "start": {
+                "line": 1,
+                "column": 1
+              },
+              "end": {
+                "line": 1,
+                "column": 1
+              },
+              "path": "agents/missing-identity/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "unknown-standard-section",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Unknown Section — Tester\n\n## Identity\n- **ID:** `unknown-section`\n- **Purpose:** Exercise the unknown-section diagnostic.\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n\n## Notes\n- This is not a namespaced extension.\n",
+        "path": "agents/unknown-section/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC108",
+              "severity": "warning",
+              "start": {
+                "line": 16,
+                "column": 1
+              },
+              "end": {
+                "line": 16,
+                "column": 8
+              },
+              "path": "agents/unknown-section/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "compatibility-identity-fields-without-context-tier",
+      "capabilities": [
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/legacy-consume"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Compatibility Identity — Tester\n\n## Identity\n- **ID:** `compatibility-identity`\n- **Purpose:** Prove compatibility fields are diagnosed independently.\n- **Name:** Compatibility Identity\n- **Role:** Tester\n- **Expertise:** validation, portability\n- **Style:** Deterministic\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n",
+        "path": "agents/compatibility-identity/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC107",
+              "severity": "warning",
+              "start": {
+                "line": 6,
+                "column": 3
+              },
+              "end": {
+                "line": 6,
+                "column": 11
+              },
+              "path": "agents/compatibility-identity/charter.md"
+            },
+            {
+              "code": "SQC107",
+              "severity": "warning",
+              "start": {
+                "line": 7,
+                "column": 3
+              },
+              "end": {
+                "line": 7,
+                "column": 11
+              },
+              "path": "agents/compatibility-identity/charter.md"
+            },
+            {
+              "code": "SQC107",
+              "severity": "warning",
+              "start": {
+                "line": 8,
+                "column": 3
+              },
+              "end": {
+                "line": 8,
+                "column": 16
+              },
+              "path": "agents/compatibility-identity/charter.md"
+            },
+            {
+              "code": "SQC107",
+              "severity": "warning",
+              "start": {
+                "line": 9,
+                "column": 3
+              },
+              "end": {
+                "line": 9,
+                "column": 12
+              },
+              "path": "agents/compatibility-identity/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "compatibility-model-fallback-without-context-tier",
+      "capabilities": [
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/legacy-consume"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Compatibility Fallback — Tester\n\n## Identity\n- **ID:** `compatibility-fallback`\n- **Purpose:** Prove Fallback is diagnosed independently.\n\n## Accountable Responsibilities\n- Validate portable artifacts.\n\n## Non-Responsibilities\n- Do not infer missing behavior.\n\n## Collaboration and Review Authority\n- Report deterministic results.\n\n## Model\n- **Preferred:** auto\n- **Fallback:** example-model\n",
+        "path": "agents/compatibility-fallback/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC107",
+              "severity": "warning",
+              "start": {
+                "line": 18,
+                "column": 3
+              },
+              "end": {
+                "line": 18,
+                "column": 15
+              },
+              "path": "agents/compatibility-fallback/charter.md"
+            }
           ]
         },
         "parsed": null,
