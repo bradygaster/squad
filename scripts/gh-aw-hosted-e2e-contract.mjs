@@ -74,6 +74,7 @@ function normalizeManifest(root, manifest, source) {
 
   return {
     source,
+    minimumGhAwVersion: manifest.minimum_gh_aw_version,
     workflows,
     runtime,
     triggerProbe,

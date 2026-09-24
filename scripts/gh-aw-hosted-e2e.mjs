@@ -265,10 +265,17 @@ function hosted(args, repositoryRoot) {
   if (!/^[0-9a-f]{40}$/.test(resolvedSourceSha)) {
     throw new Error(`Could not resolve ${sourceRepository}@${sourceRef} to an immutable commit SHA`);
   }
+  const checkedOutSourceSha = run('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
+  if (checkedOutSourceSha !== resolvedSourceSha) {
+    throw new Error(
+      `Checked-out source ${checkedOutSourceSha} does not match resolved package revision ${resolvedSourceSha}`,
+    );
+  }
   writeJson(resolve(evidence, 'source-revision.json'), {
     repository: sourceRepository,
     requested_ref: sourceRef,
     resolved_sha: resolvedSourceSha,
+    checked_out_sha: checkedOutSourceSha,
   });
 
   const checkout = resolve(tmpdir(), `squad-gh-aw-e2e-${process.env.GITHUB_RUN_ID ?? Date.now()}`);

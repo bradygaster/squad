@@ -149,7 +149,7 @@ describe('Squad gh-aw hosted E2E harness', () => {
     expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');
   });
 
-  it('keeps the seven-workflow fallback in one adapter', async () => {
+  it('consumes the finalized canonical bundle through one adapter', async () => {
     const contract = await import('../scripts/gh-aw-hosted-e2e-contract.mjs');
     const loaded = contract.loadBundleContract(ROOT);
     expect(loaded.workflows.map((workflow: { name: string }) => workflow.name)).toEqual([
@@ -161,6 +161,17 @@ describe('Squad gh-aw hosted E2E harness', () => {
       'squad-improvement-worker',
       'squad-bootstrap',
     ]);
+    expect(loaded.minimumGhAwVersion).toBe('v0.89.21');
+    expect(loaded.workflows[0]).toMatchObject({
+      source: 'workflows/package/squad.md',
+      destination: '.github/workflows/squad.md',
+      lock: '.github/workflows/squad.lock.yml',
+    });
+    expect(loaded.runtime.find((entry: { path: string }) => entry.path === 'shared/squad.md'))
+      .toMatchObject({
+        packageDestination: '.github/aw/squad/runtime/shared/squad.md',
+        destination: '.github/workflows/shared/squad.md',
+      });
     expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');
     expect(readFileSync(SCRIPT, 'utf8')).not.toContain("'squad-improvement-worker'");
   });
