@@ -635,6 +635,8 @@ describe('gh-aw: shared component imports', () => {
       'shared/squad-improvement-gate.mjs',
       'shared/squad-retro-evidence.mjs',
       'shared/squad-retro-provenance.mjs',
+      'shared/squad-implementation-provenance.mjs',
+      'shared/implementation-provenance-v1.schema.json',
     ];
     const builtinResources = [
       'shared/builtins/scribe-charter.md',
@@ -715,16 +717,20 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'squad-improvement-worker',
     'squad-bootstrap',
   ];
-  const expectedRuntimeModules = [
+  const expectedRuntimeResources = [
+    'shared/implementation-provenance-v1.schema.json',
     'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
+    'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
   ];
 
-  function runtimeModuleReferences(text: string): string[] {
-    return [...text.matchAll(/(?:\.github\/workflows\/)?(shared\/[A-Za-z0-9._/-]+\.mjs)/g)]
+  function runtimeResourceReferences(text: string): string[] {
+    return [...text.matchAll(
+      /(?:\.github\/workflows\/)?(shared\/(?:[A-Za-z0-9._/-]+\.mjs|implementation-provenance-v1\.schema\.json))/g,
+    )]
       .map(match => match[1]);
   }
 
@@ -770,21 +776,21 @@ describe('gh-aw: clean install runtime resource closure', () => {
     return workflowDir;
   }
 
-  it('emits every shared runtime module referenced by all seven sources and locks', () => {
+  it('emits every shared runtime resource referenced by all seven sources and locks', () => {
     const workflowDir = createCleanInstalledTarget();
     const references = new Set<string>();
     for (const workflowName of workflowNames) {
       for (const extension of ['md', 'lock.yml']) {
         const file = join(workflowDir, `${workflowName}.${extension}`);
         expect(existsSync(file), `${file} must exist in the installed target`).toBe(true);
-        for (const reference of runtimeModuleReferences(readText(file))) {
+        for (const reference of runtimeResourceReferences(readText(file))) {
           references.add(reference);
         }
       }
     }
 
     const sortedReferences = [...references].sort();
-    expect(sortedReferences).toEqual(expectedRuntimeModules);
+    expect(sortedReferences).toEqual(expectedRuntimeResources);
     assertRuntimeClosure(workflowDir, sortedReferences);
 
     for (const modulePath of sortedReferences) {
@@ -1164,7 +1170,9 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // Raised 193 -> 194 KB for the command-only lifecycle next-action contract.
   // Its validation and retry guidance are inside the on-demand plan-validation
   // skill; the ambient prompt remains below the independently enforced 40 KB cap.
-  const SOURCE_GROWTH_BUDGET_KB = 194;
+  // Raised 194 -> 198 KB for versioned work-to-agent provenance. The additional
+  // contract is confined to on-demand planning/activation skills.
+  const SOURCE_GROWTH_BUDGET_KB = 198;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1700,7 +1708,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):

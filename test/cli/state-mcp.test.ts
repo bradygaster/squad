@@ -95,18 +95,18 @@ describe('state-mcp bridge', () => {
   });
 
   it.each(['orphan', 'two-layer'] as const)(
-    'writes all casting runtime state keys through the %s backend',
+    'writes casting policy but rejects individual casting pair writes through the %s backend',
     async (stateBackend) => {
       initSquad(stateBackend);
       const messages: JsonRpcMessage[] = [];
       const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
       const castingState = [
-        ['casting/policy.json', '{"mode":"auto"}\n'],
-        ['casting/registry.json', '{"agents":{}}\n'],
-        ['casting/history.json', '{"events":[]}\n'],
+        ['casting/policy.json', '{"mode":"auto"}\n', false],
+        ['casting/registry.json', '{"agents":{}}\n', true],
+        ['casting/history.json', '{"events":[]}\n', true],
       ] as const;
 
-      for (const [key, content] of castingState) {
+      for (const [key, content, rejected] of castingState) {
         const writeIndex = messages.length;
         await session.handleRequest({
           jsonrpc: '2.0',
@@ -117,7 +117,7 @@ describe('state-mcp bridge', () => {
             arguments: { key, content },
           },
         });
-        expect(resultAsRecord(messages[writeIndex]!)['isError']).not.toBe(true);
+        expect(resultAsRecord(messages[writeIndex]!)['isError']).toBe(rejected);
 
         const readIndex = messages.length;
         await session.handleRequest({
@@ -129,7 +129,11 @@ describe('state-mcp bridge', () => {
             arguments: { key },
           },
         });
-        expect(resultAsRecord(messages[readIndex]!)['content']).toEqual([{ type: 'text', text: content }]);
+        if (rejected) {
+          expect(resultAsRecord(messages[readIndex]!)['isError']).toBe(true);
+        } else {
+          expect(resultAsRecord(messages[readIndex]!)['content']).toEqual([{ type: 'text', text: content }]);
+        }
         expect(existsSync(join(TMP, '.squad', ...key.split('/')))).toBe(false);
       }
 
