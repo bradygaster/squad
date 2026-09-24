@@ -21,6 +21,7 @@ export type { CharterSourceMetadata } from './agents/charter-compiler.js';
 export type { CompiledCharter } from './agents/charter-compiler.js';
 export type { CharterCapability } from './agents/charter-validator.js';
 export type { CharterConformance } from './agents/charter-validator.js';
+export type { CharterConformanceOptions } from './agents/charter-validator.js';
 export type { CharterDiagnostic } from './agents/charter-validator.js';
 export type { CharterDiagnosticCode } from './agents/charter-validator.js';
 export type { CharterDiagnosticSeverity } from './agents/charter-validator.js';

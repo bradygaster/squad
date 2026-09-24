@@ -38,12 +38,16 @@ export const CHARTER_DIAGNOSTIC_CODES = [
   'SQC011',
   'SQC012',
   'SQC013',
+  'SQC014',
+  'SQC015',
   'SQC101',
   'SQC102',
   'SQC103',
   'SQC104',
   'SQC105',
   'SQC106',
+  'SQC107',
+  'SQC108',
 ] as const;
 
 export type CharterDiagnosticCode = typeof CHARTER_DIAGNOSTIC_CODES[number];
@@ -77,6 +81,11 @@ export interface CharterValidationOptions {
   profile?: string;
 }
 
+export interface CharterConformanceOptions extends CharterValidationOptions {
+  /** Explicit profile selection is required for a conformance claim. */
+  profile: string;
+}
+
 export interface CharterValidationResult {
   profile: string;
   /** True only for canonical profile documents. */
@@ -94,7 +103,7 @@ interface FieldDefinition {
 }
 
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const EXTENSION_PATTERN = /^X-[a-z0-9]+(?:-[a-z0-9]+)*-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const EXTENSION_PATTERN = /^X-([a-z0-9]+)-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const CANONICAL_RESPONSIBILITY_SECTIONS = [
   'Accountable Responsibilities',
   'Non-Responsibilities',
@@ -130,6 +139,13 @@ const UNIQUE_MACHINE_FIELDS: readonly FieldDefinition[] = [
   { name: 'Reasoning Effort', section: 'Model' },
   { name: 'Context Tier', section: 'Model' },
 ] as const;
+const COMPATIBILITY_FIELDS: readonly FieldDefinition[] = [
+  { name: 'Name', section: 'Identity' },
+  { name: 'Role', section: 'Identity' },
+  { name: 'Expertise', section: 'Identity' },
+  { name: 'Style', section: 'Identity' },
+  { name: 'Fallback', section: 'Model' },
+] as const;
 const VALID_EFFORTS = new Set<string>(VALID_REASONING_EFFORTS);
 const VALID_TIERS = new Set<string>(VALID_CONTEXT_TIERS);
 const DIAGNOSTIC_ORDER = new Map(
@@ -146,7 +162,28 @@ export function validateCharterMarkdown(
   markdown: string,
   options: CharterValidationOptions = {},
 ): CharterValidationResult {
-  const requestedProfile = options.profile ?? CHARTER_PROFILE;
+  return validateCharter(markdown, options, false);
+}
+
+/**
+ * Validate a charter for an explicit portable conformance claim.
+ *
+ * Unlike {@link validateCharterMarkdown}, this API never assumes a profile.
+ * JavaScript callers that omit `profile` receive SQC014.
+ */
+export function validateCharterConformance(
+  markdown: string,
+  options: CharterConformanceOptions,
+): CharterValidationResult {
+  return validateCharter(markdown, options, true);
+}
+
+function validateCharter(
+  markdown: string,
+  options: CharterValidationOptions | undefined,
+  requireExplicitProfile: boolean,
+): CharterValidationResult {
+  const requestedProfile = options?.profile;
   const diagnostics: CharterDiagnostic[] = [];
   const add = (
     code: CharterDiagnosticCode,
@@ -164,34 +201,54 @@ export function validateCharterMarkdown(
       column,
       endLine: location.line,
       endColumn: column + width - 1,
-      ...(options.path ? { path: options.path } : {}),
+      ...(options?.path ? { path: options.path } : {}),
     });
   };
 
-  if (requestedProfile !== CHARTER_PROFILE) {
+  if (requireExplicitProfile && requestedProfile === undefined) {
+    add(
+      'SQC014',
+      'error',
+      'portable conformance validation requires an explicit profile',
+      { line: 1 },
+    );
+    return createResult('', diagnostics, []);
+  }
+
+  const selectedProfile = requestedProfile ?? CHARTER_PROFILE;
+  if (selectedProfile !== CHARTER_PROFILE) {
     add(
       'SQC013',
       'error',
-      `unsupported charter profile "${requestedProfile}"`,
+      `unsupported charter profile "${selectedProfile}"`,
       { line: 1 },
     );
-    return createResult(requestedProfile, diagnostics, []);
+    return createResult(selectedProfile, diagnostics, []);
   }
 
   const scan = scanCharterMarkdown(markdown);
   if (!markdown.trim()) {
     add('SQC001', 'error', 'charter.md must not be empty', { line: 1 });
-    return createResult(requestedProfile, diagnostics);
+    return createResult(selectedProfile, diagnostics);
   }
 
   if (!scan.h1) {
     add('SQC002', 'error', 'charter.md must contain an H1 identity heading', { line: 1 });
-  } else if (!/^.+?\s+(?:—|–|-)\s+.+?$/.test(scan.h1.name)) {
+  } else if (!/^.+?\s+—\s+.+?$/.test(scan.h1.name)) {
     add(
       'SQC003',
       'warning',
       'the canonical H1 form is "# <display name> — <role>"',
       headingLocation(scan.h1),
+    );
+  }
+
+  for (const duplicate of scan.h1s.slice(1)) {
+    add(
+      'SQC015',
+      'error',
+      'charter.md must contain at most one structural H1 identity',
+      headingLocation(duplicate),
     );
   }
 
@@ -245,7 +302,7 @@ export function validateCharterMarkdown(
       );
     }
 
-    const pathId = profileIdentityFromPath(options.path);
+    const pathId = profileIdentityFromPath(options?.path);
     if (pathId !== undefined && pathId !== normalizedId) {
       add(
         'SQC010',
@@ -306,6 +363,43 @@ export function validateCharterMarkdown(
     );
   }
 
+  const canonicalSectionNames = [
+    'Identity',
+    ...CANONICAL_RESPONSIBILITY_SECTIONS,
+    'Model',
+  ];
+  const standardSections = scan.sections.filter(section => !section.isExtension);
+  const unknownSection = standardSections.find(section =>
+    !canonicalSectionNames.some(name => equalName(name, section.name))
+    && !LEGACY_RESPONSIBILITY_SECTIONS.some(name => equalName(name, section.name)),
+  );
+  if (unknownSection) {
+    add(
+      'SQC108',
+      'warning',
+      `section "${unknownSection.name}" is not part of the canonical v0.1 shape`,
+      headingLocation(unknownSection),
+    );
+  }
+
+  const canonicalSections = standardSections.filter(section =>
+    canonicalSectionNames.some(name => equalName(name, section.name)),
+  );
+  const canonicalOrder = canonicalSections.map(section =>
+    canonicalSectionNames.findIndex(name => equalName(name, section.name)),
+  );
+  const outOfOrderIndex = canonicalOrder.findIndex(
+    (order, index) => index > 0 && order < canonicalOrder[index - 1]!,
+  );
+  if (outOfOrderIndex >= 0) {
+    add(
+      'SQC108',
+      'warning',
+      'standard sections are not in canonical v0.1 order',
+      headingLocation(canonicalSections[outOfOrderIndex]!),
+    );
+  }
+
   const preferred = findField(scan.fields, 'Preferred', 'Model');
   if (preferred && !preferred.value.trim()) {
     add(
@@ -340,6 +434,21 @@ export function validateCharterMarkdown(
         fieldLocation(contextTier),
       );
     }
+
+    for (const compatibilityField of COMPATIBILITY_FIELDS) {
+      for (const field of findFields(
+        scan.fields,
+        compatibilityField.name,
+        compatibilityField.section,
+      )) {
+        add(
+          'SQC107',
+          'warning',
+          `compatibility field "${compatibilityField.name}" is accepted but is not canonical v0.1`,
+          fieldLocation(field),
+        );
+      }
+    }
   }
 
   const extensions = scan.sections.filter(section => section.isExtension);
@@ -372,7 +481,7 @@ export function validateCharterMarkdown(
     || diagnosticIndex(left.code) - diagnosticIndex(right.code),
   );
 
-  return createResult(requestedProfile, diagnostics);
+  return createResult(selectedProfile, diagnostics);
 }
 
 function createResult(
@@ -450,7 +559,7 @@ function headingLocation(
   return {
     line: heading.line,
     column: heading.column,
-    width: heading.name.length + 3,
+    width: heading.width,
   };
 }
 
@@ -460,7 +569,7 @@ function fieldLocation(
   return {
     line: field.line,
     column: field.column,
-    width: field.name.length + 5,
+    width: field.width,
   };
 }
 

@@ -1,87 +1,882 @@
 {
+  "schemaVersion": 1,
   "profile": "squad-charter/v0.1",
-  "requiredCapabilities": [
+  "capabilities": [
     "squad-charter/v0.1/parse",
     "squad-charter/v0.1/validate",
     "squad-charter/v0.1/edit",
     "squad-charter/v0.1/legacy-consume"
   ],
-  "fixtures": [
+  "cases": [
     {
-      "path": "positive/canonical.md",
+      "id": "canonical-document",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
       "expected": {
-        "accepted": true,
-        "conforms": true,
-        "conformance": "canonical",
-        "diagnostics": [],
-        "identityId": "architect",
-        "reasoningEffort": "high",
-        "contextTier": "long_context"
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": "auto",
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": "high",
+          "authoredReasoningEffort": "high",
+          "contextTier": "long_context",
+          "authoredContextTier": "long_context"
+        },
+        "serialization": null,
+        "runtime": null
       }
     },
     {
-      "path": "negative/invalid-behavior.md",
-      "expected": {
-        "accepted": false,
-        "conforms": false,
-        "conformance": "invalid",
-        "diagnostics": [
-          { "code": "SQC005", "severity": "error", "line": 4, "column": 3 },
-          { "code": "SQC007", "severity": "error", "line": 17, "column": 3 },
-          { "code": "SQC004", "severity": "error", "line": 18, "column": 3 },
-          { "code": "SQC008", "severity": "error", "line": 19, "column": 3 }
+      "id": "canonical-known-field-edit-orders-collaboration-before-model",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Keep architecture and conformance coherent."
+          }
         ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": "auto",
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": "high",
+          "authoredReasoningEffort": "high",
+          "contextTier": "long_context",
+          "authoredContextTier": "long_context"
+        },
+        "serialization": {
+          "output": "# Architect — Lead Architect\n\n## Identity\n\n- **ID:** `architect`\n- **Purpose:** Keep architecture and conformance coherent.\n\n## Accountable Responsibilities\n\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n\n- Adjudicates compatibility disputes.\n\n## Model\n\n**Preferred:** auto\n**Reasoning Effort:** high\n**Context Tier:** long_context\n",
+          "outputFixture": null,
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
       }
     },
     {
-      "path": "legacy/template-style.md",
+      "id": "invalid-behavior-is-rejected-before-runtime-application",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "negative/invalid-behavior.md",
+        "text": null,
+        "path": "docs/invalid-behavior.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
       "expected": {
-        "accepted": true,
-        "conforms": false,
-        "conformance": "noncanonical-compatible",
-        "diagnostics": [
-          { "code": "SQC104", "severity": "warning", "line": 1, "column": 1 },
-          { "code": "SQC104", "severity": "warning", "line": 1, "column": 1 },
-          { "code": "SQC104", "severity": "warning", "line": 1, "column": 1 },
-          { "code": "SQC102", "severity": "warning", "line": 3, "column": 1 },
-          { "code": "SQC103", "severity": "warning", "line": 3, "column": 1 },
-          { "code": "SQC105", "severity": "warning", "line": 9, "column": 1 }
-        ],
-        "identityName": "Legacy Agent",
-        "identityRole": "Developer"
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {
+              "code": "SQC005",
+              "severity": "error",
+              "start": {"line": 4, "column": 3},
+              "end": {"line": 4, "column": 9},
+              "path": "docs/invalid-behavior.md"
+            },
+            {
+              "code": "SQC007",
+              "severity": "error",
+              "start": {"line": 17, "column": 3},
+              "end": {"line": 17, "column": 23},
+              "path": "docs/invalid-behavior.md"
+            },
+            {
+              "code": "SQC004",
+              "severity": "error",
+              "start": {"line": 18, "column": 3},
+              "end": {"line": 18, "column": 23},
+              "path": "docs/invalid-behavior.md"
+            },
+            {
+              "code": "SQC008",
+              "severity": "error",
+              "start": {"line": 19, "column": 3},
+              "end": {"line": 19, "column": 19},
+              "path": "docs/invalid-behavior.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": {
+          "compile": false,
+          "errorCodes": ["SQC005", "SQC007", "SQC004", "SQC008"],
+          "resolvedModel": null,
+          "resolvedReasoningEffort": null,
+          "resolvedContextTier": null
+        }
       }
     },
     {
-      "path": "round-trip/extensions.md",
+      "id": "legacy-ingestion-and-canonical-migration",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit",
+        "squad-charter/v0.1/legacy-consume"
+      ],
+      "input": {
+        "fixture": "legacy/template-style.md",
+        "text": null,
+        "path": "agents/legacy-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": []
+      },
       "expected": {
-        "accepted": true,
-        "conforms": true,
-        "conformance": "canonical",
-        "diagnostics": [],
-        "identityId": "extensible-agent",
-        "serializedOutputPath": "round-trip/extensions.md",
-        "editedOutputPath": "round-trip/extensions.edited.md"
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC104", "severity": "warning", "start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC104", "severity": "warning", "start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC104", "severity": "warning", "start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC102", "severity": "warning", "start": {"line": 3, "column": 1}, "end": {"line": 3, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC103", "severity": "warning", "start": {"line": 3, "column": 1}, "end": {"line": 3, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 4, "column": 3}, "end": {"line": 4, "column": 11}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 5, "column": 3}, "end": {"line": 5, "column": 11}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 6, "column": 3}, "end": {"line": 6, "column": 16}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 7, "column": 3}, "end": {"line": 7, "column": 12}, "path": "agents/legacy-agent/charter.md"},
+            {"code": "SQC105", "severity": "warning", "start": {"line": 9, "column": 1}, "end": {"line": 9, "column": 13}, "path": "agents/legacy-agent/charter.md"}
+          ]
+        },
+        "parsed": {
+          "identity": {
+            "id": null,
+            "purpose": null,
+            "name": "Legacy Agent",
+            "role": "Developer",
+            "expertise": ["TypeScript", "testing"],
+            "style": "Direct"
+          },
+          "ownership": "- Legacy compatibility.",
+          "boundaries": "- Does not own architecture.",
+          "collaboration": "- Works with the lead.",
+          "modelPreference": "auto",
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": "auto",
+          "contextTier": null,
+          "authoredContextTier": "auto"
+        },
+        "serialization": {
+          "output": "# Legacy Agent — Developer\n\n## Identity\n\n- **Name:** Legacy Agent\n- **Role:** Developer\n- **Expertise:** TypeScript, testing\n- **Style:** Direct\n\n## Accountable Responsibilities\n\n- Legacy compatibility.\n\n## Non-Responsibilities\n\n- Does not own architecture.\n\n## Collaboration and Review Authority\n\n- Works with the lead.\n\n## Model\n\n**Preferred:** auto\n**Reasoning Effort:** auto\n**Context Tier:** auto\n",
+          "outputFixture": null,
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": false,
+            "classification": "noncanonical-compatible",
+            "diagnostics": [
+              {"code": "SQC102", "severity": "warning", "start": {"line": 3, "column": 1}, "end": {"line": 3, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+              {"code": "SQC103", "severity": "warning", "start": {"line": 3, "column": 1}, "end": {"line": 3, "column": 1}, "path": "agents/legacy-agent/charter.md"},
+              {"code": "SQC107", "severity": "warning", "start": {"line": 5, "column": 3}, "end": {"line": 5, "column": 11}, "path": "agents/legacy-agent/charter.md"},
+              {"code": "SQC107", "severity": "warning", "start": {"line": 6, "column": 3}, "end": {"line": 6, "column": 11}, "path": "agents/legacy-agent/charter.md"},
+              {"code": "SQC107", "severity": "warning", "start": {"line": 7, "column": 3}, "end": {"line": 7, "column": 16}, "path": "agents/legacy-agent/charter.md"},
+              {"code": "SQC107", "severity": "warning", "start": {"line": 8, "column": 3}, "end": {"line": 8, "column": 12}, "path": "agents/legacy-agent/charter.md"}
+            ]
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "extension-no-op-is-byte-exact",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": "round-trip/extensions.md",
+        "text": null,
+        "path": "agents/extensible-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": []
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "extensible-agent",
+            "purpose": "Verify unknown extension preservation requirements.",
+            "name": "Extensible Agent",
+            "role": "Integrator",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Integration behavior.",
+          "boundaries": "- Extension interpretation.",
+          "collaboration": "- Coordinates with extension owners.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null
+        },
+        "serialization": {
+          "output": null,
+          "outputFixture": "round-trip/extensions.md",
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "extension-edit-preserves-bytes-and-order",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": "round-trip/extensions.md",
+        "text": null,
+        "path": "agents/extensible-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Verify edited fields without losing unknown extensions."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "extensible-agent",
+            "purpose": "Verify unknown extension preservation requirements.",
+            "name": "Extensible Agent",
+            "role": "Integrator",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Integration behavior.",
+          "boundaries": "- Extension interpretation.",
+          "collaboration": "- Coordinates with extension owners.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null
+        },
+        "serialization": {
+          "output": null,
+          "outputFixture": "round-trip/extensions.edited.md",
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "crlf-known-edit-preserves-line-endings",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# CRLF Agent — Tester\r\n\r\n## Identity\r\n- **ID:** `crlf-agent`\r\n- **Purpose:** Original purpose.\r\n\r\n## Accountable Responsibilities\r\n- Test CRLF.\r\n\r\n## Non-Responsibilities\r\n- LF normalization.\r\n\r\n## Collaboration and Review Authority\r\n- Review byte preservation.\r\n\r\n## X-example-data\r\n\r\nopaque: true\r\n",
+        "path": "agents/crlf-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Edited purpose."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "crlf-agent",
+            "purpose": "Original purpose.",
+            "name": "CRLF Agent",
+            "role": "Tester",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Test CRLF.",
+          "boundaries": "- LF normalization.",
+          "collaboration": "- Review byte preservation.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null
+        },
+        "serialization": {
+          "output": "# CRLF Agent — Tester\r\n\r\n## Identity\r\n\r\n- **ID:** `crlf-agent`\r\n- **Purpose:** Edited purpose.\r\n\r\n## Accountable Responsibilities\r\n\r\n- Test CRLF.\r\n\r\n## Non-Responsibilities\r\n\r\n- LF normalization.\r\n\r\n## Collaboration and Review Authority\r\n\r\n- Review byte preservation.\r\n\r\n## X-example-data\r\n\r\nopaque: true\r\n",
+          "outputFixture": null,
+          "eol": "CRLF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "runtime-auto-remains-selection-not-literal-override",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Auto Agent — Tester\n\n## Identity\n- **ID:** `auto-agent`\n- **Purpose:** Verify automatic runtime selection.\n\n## Accountable Responsibilities\n- Test runtime selection.\n\n## Non-Responsibilities\n- Select literal auto identifiers.\n\n## Collaboration and Review Authority\n- Review runtime preferences.\n\n## Model\n- **Preferred:** auto\n- **Reasoning Effort:** auto\n- **Context Tier:** auto\n",
+        "path": "agents/auto-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "auto-agent",
+            "purpose": "Verify automatic runtime selection.",
+            "name": "Auto Agent",
+            "role": "Tester",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Test runtime selection.",
+          "boundaries": "- Select literal auto identifiers.",
+          "collaboration": "- Review runtime preferences.",
+          "modelPreference": "auto",
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": "auto",
+          "contextTier": null,
+          "authoredContextTier": "auto"
+        },
+        "serialization": null,
+        "runtime": {
+          "compile": true,
+          "errorCodes": [],
+          "resolvedModel": null,
+          "resolvedReasoningEffort": null,
+          "resolvedContextTier": null
+        }
+      }
+    },
+    {
+      "id": "conformance-api-requires-profile",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": null,
+        "profile": null,
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [],
+          "diagnostics": [
+            {"code": "SQC014", "severity": "error", "start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 1}, "path": null}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "convenience-validator-defaults-to-v0.1",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": null,
+        "profile": null,
+        "validationApi": "convenience"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "unsupported-profile-fails-closed",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": null,
+        "profile": "squad-charter/v9",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v9",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [],
+          "diagnostics": [
+            {"code": "SQC013", "severity": "error", "start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 1}, "path": null}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "posix-profile-path-matches-identity",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": "/repo/.squad/agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "windows-profile-path-matches-identity",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": "C:\\repo\\.squad\\agents\\architect\\charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "profile-path-mismatch",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": ".squad/agents/different-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC010", "severity": "error", "start": {"line": 4, "column": 3}, "end": {"line": 4, "column": 9}, "path": ".squad/agents/different-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "unrelated-path-provides-no-profile-identity",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": "positive/canonical.md",
+        "text": null,
+        "path": "docs/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "all-machine-field-duplicates",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": null,
+        "text": "# Duplicate Agent — Tester\n\n## Identity\n- **ID:** `duplicate-agent`\n- **ID:** `duplicate-agent`\n- **Purpose:** First.\n- **Purpose:** Second.\n- **Name:** One\n- **Name:** Two\n- **Role:** Tester\n- **Role:** Reviewer\n- **Expertise:** testing\n- **Expertise:** review\n- **Style:** Direct\n- **Style:** Careful\n\n## Accountable Responsibilities\n- Test duplicates.\n\n## Non-Responsibilities\n- Production use.\n\n## Collaboration and Review Authority\n- Review diagnostics.\n\n## Model\n- **Preferred:** auto\n- **Preferred:** model\n- **Rationale:** First.\n- **Rationale:** Second.\n- **Fallback:** first\n- **Fallback:** second\n- **Reasoning Effort:** high\n- **Reasoning Effort:** low\n- **Context Tier:** default\n- **Context Tier:** long_context\n",
+        "path": "agents/duplicate-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC004", "severity": "error", "start": {"line": 5, "column": 3}, "end": {"line": 5, "column": 9}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 7, "column": 3}, "end": {"line": 7, "column": 14}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 8, "column": 3}, "end": {"line": 8, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 9, "column": 3}, "end": {"line": 9, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 9, "column": 3}, "end": {"line": 9, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 10, "column": 3}, "end": {"line": 10, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 11, "column": 3}, "end": {"line": 11, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 11, "column": 3}, "end": {"line": 11, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 12, "column": 3}, "end": {"line": 12, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 13, "column": 3}, "end": {"line": 13, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 13, "column": 3}, "end": {"line": 13, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 14, "column": 3}, "end": {"line": 14, "column": 12}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 15, "column": 3}, "end": {"line": 15, "column": 12}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 15, "column": 3}, "end": {"line": 15, "column": 12}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 28, "column": 3}, "end": {"line": 28, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 30, "column": 3}, "end": {"line": 30, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 31, "column": 3}, "end": {"line": 31, "column": 15}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 32, "column": 3}, "end": {"line": 32, "column": 15}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC107", "severity": "warning", "start": {"line": 32, "column": 3}, "end": {"line": 32, "column": 15}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 34, "column": 3}, "end": {"line": 34, "column": 23}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 36, "column": 3}, "end": {"line": 36, "column": 19}, "path": "agents/duplicate-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "duplicate-structural-identities-and-sections",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": null,
+        "text": "# Duplicate Agent — Tester\n# Second Identity — Tester\n\n## Identity\n- **ID:** `duplicate-agent`\n- **Purpose:** Duplicate structure.\n\n## Identity\n\n## Accountable Responsibilities\n- First.\n\n## What I Own\n- Duplicate alias.\n\n## Non-Responsibilities\n- First.\n\n## Boundaries\n- Duplicate alias.\n\n## Collaboration and Review Authority\n- First.\n\n## Collaboration\n- Duplicate alias.\n\n## Model\n- **Preferred:** auto\n\n## Model\n- **Preferred:** auto\n",
+        "path": "agents/duplicate-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC015", "severity": "error", "start": {"line": 2, "column": 1}, "end": {"line": 2, "column": 26}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC011", "severity": "error", "start": {"line": 8, "column": 1}, "end": {"line": 8, "column": 11}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC011", "severity": "error", "start": {"line": 13, "column": 1}, "end": {"line": 13, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC105", "severity": "warning", "start": {"line": 13, "column": 1}, "end": {"line": 13, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC011", "severity": "error", "start": {"line": 19, "column": 1}, "end": {"line": 19, "column": 13}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC011", "severity": "error", "start": {"line": 25, "column": 1}, "end": {"line": 25, "column": 16}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC011", "severity": "error", "start": {"line": 31, "column": 1}, "end": {"line": 31, "column": 8}, "path": "agents/duplicate-agent/charter.md"},
+            {"code": "SQC004", "severity": "error", "start": {"line": 32, "column": 3}, "end": {"line": 32, "column": 16}, "path": "agents/duplicate-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "extension-grammar-and-case-collision",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": null,
+        "text": "# Extension Agent — Tester\n\n## Identity\n- **ID:** `extension-agent`\n- **Purpose:** Validate extension ownership grammar.\n\n## Accountable Responsibilities\n- Test extensions.\n\n## Non-Responsibilities\n- Interpret opaque bytes.\n\n## Collaboration and Review Authority\n- Review collisions.\n\n## X-Example-data\none\n\n## x-example-data\ntwo\n\n## X-example\nthree\n",
+        "path": "agents/extension-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC106", "severity": "warning", "start": {"line": 16, "column": 1}, "end": {"line": 16, "column": 17}, "path": "agents/extension-agent/charter.md"},
+            {"code": "SQC012", "severity": "error", "start": {"line": 19, "column": 1}, "end": {"line": 19, "column": 17}, "path": "agents/extension-agent/charter.md"},
+            {"code": "SQC106", "severity": "warning", "start": {"line": 19, "column": 1}, "end": {"line": 19, "column": 17}, "path": "agents/extension-agent/charter.md"},
+            {"code": "SQC106", "severity": "warning", "start": {"line": 22, "column": 1}, "end": {"line": 22, "column": 12}, "path": "agents/extension-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "reserved-squad-extension-is-mechanically-valid",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": null,
+        "text": "# Extension Agent — Tester\n\n## Identity\n- **ID:** `extension-agent`\n- **Purpose:** Validate reserved extension syntax.\n\n## Accountable Responsibilities\n- Test extensions.\n\n## Non-Responsibilities\n- Claim Squad namespace ownership.\n\n## Collaboration and Review Authority\n- Review extension syntax.\n\n## X-squad-policy\nopaque: true\n",
+        "path": "agents/extension-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": []
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "noncanonical-h1-separator",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": null,
+        "text": "# Separator Agent - Tester\n\n## Identity\n- **ID:** `separator-agent`\n- **Purpose:** Validate the canonical separator.\n\n## Accountable Responsibilities\n- Test headings.\n\n## Non-Responsibilities\n- Accept hyphen as canonical.\n\n## Collaboration and Review Authority\n- Review headings.\n",
+        "path": "agents/separator-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC003", "severity": "warning", "start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 26}, "path": "agents/separator-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "noncanonical-standard-section-order",
+      "capabilities": ["squad-charter/v0.1/validate"],
+      "input": {
+        "fixture": null,
+        "text": "# Ordered Agent — Tester\n\n## Identity\n- **ID:** `ordered-agent`\n- **Purpose:** Validate section order.\n\n## Accountable Responsibilities\n- Test ordering.\n\n## Non-Responsibilities\n- Reorder silently.\n\n## Model\n- **Preferred:** auto\n\n## Collaboration and Review Authority\n- Review ordering.\n",
+        "path": "agents/ordered-agent/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": false,
+          "classification": "noncanonical-compatible",
+          "capabilities": ["squad-charter/v0.1/validate"],
+          "diagnostics": [
+            {"code": "SQC108", "severity": "warning", "start": {"line": 16, "column": 1}, "end": {"line": 16, "column": 37}, "path": "agents/ordered-agent/charter.md"}
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
       }
     }
-  ],
-  "duplicateFields": [
-    { "section": "Identity", "name": "ID", "value": "`duplicate-agent`" },
-    { "section": "Identity", "name": "Purpose", "value": "Duplicate purpose." },
-    { "section": "Identity", "name": "Name", "value": "Duplicate Agent" },
-    { "section": "Identity", "name": "Role", "value": "Tester" },
-    { "section": "Identity", "name": "Expertise", "value": "testing" },
-    { "section": "Identity", "name": "Style", "value": "Direct" },
-    { "section": "Model", "name": "Preferred", "value": "auto" },
-    { "section": "Model", "name": "Rationale", "value": "Testing." },
-    { "section": "Model", "name": "Fallback", "value": "fallback-model" },
-    { "section": "Model", "name": "Reasoning Effort", "value": "auto" },
-    { "section": "Model", "name": "Context Tier", "value": "auto" }
-  ],
-  "duplicateSections": [
-    "Identity",
-    "Accountable Responsibilities",
-    "Non-Responsibilities",
-    "Collaboration and Review Authority",
-    "Model"
   ]
 }

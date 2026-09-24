@@ -12,6 +12,7 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import type { SquadState } from '../state/squad-state.js';
 import { randomUUID } from 'node:crypto';
 import { parseCharterMarkdown } from './charter-compiler.js';
+import { validateCharterMarkdown } from './charter-validator.js';
 import { EventBus } from '../client/event-bus.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy } from '../runtime/otel-metrics.js';
@@ -48,9 +49,11 @@ export {
   CHARTER_DIAGNOSTIC_SEVERITIES,
   CHARTER_PROFILE,
   CHARTER_PROFILE_METADATA,
+  validateCharterConformance,
   validateCharterMarkdown,
   type CharterCapability,
   type CharterConformance,
+  type CharterConformanceOptions,
   type CharterDiagnostic,
   type CharterDiagnosticCode,
   type CharterDiagnosticSeverity,
@@ -184,6 +187,7 @@ export class CharterCompiler {
     if (content === undefined) {
       throw new Error(`Charter file not found: ${charterPath}`);
     }
+    assertValidRuntimeCharter(content, charterPath);
     const parsed = parseCharterMarkdown(content);
 
     const name = parsed.identity.name ?? basename(dirname(charterPath));
@@ -214,6 +218,7 @@ export class CharterCompiler {
       throw new Error('compileByName requires SquadState — pass state to CharterCompiler constructor');
     }
     const content = await this.state.agents.get(agentName).charter();
+    assertValidRuntimeCharter(content, `agents/${agentName}/charter.md`);
     const parsed = parseCharterMarkdown(content);
 
     const name = parsed.identity.name ?? agentName;
@@ -282,6 +287,17 @@ export class CharterCompiler {
       .filter((r): r is PromiseFulfilledResult<AgentCharter> => r.status === 'fulfilled')
       .map((r) => r.value);
   }
+}
+
+function assertValidRuntimeCharter(content: string, charterPath: string): void {
+  const validation = validateCharterMarkdown(content, { path: charterPath });
+  if (validation.accepted) return;
+
+  const summary = validation.diagnostics
+    .filter(diagnostic => diagnostic.severity === 'error')
+    .map(diagnostic => `${diagnostic.code} at ${diagnostic.line}:${diagnostic.column}`)
+    .join(', ');
+  throw new Error(`Invalid charter at ${charterPath}: ${summary}`);
 }
 
 // --- Agent Session Manager ---

@@ -14,6 +14,11 @@ import {
   type CharterMarkdownField,
   type CharterMarkdownScan,
 } from './charter-markdown.js';
+import {
+  CHARTER_PROFILE,
+  validateCharterMarkdown,
+  type CharterValidationResult,
+} from './charter-validator.js';
 
 /** Set form for fast lookup. */
 const VALID_EFFORTS = new Set<string>(VALID_REASONING_EFFORTS);
@@ -29,8 +34,18 @@ export interface CharterCompileOptions {
   agentName: string;
   /** Full path to the agent's charter.md file */
   charterPath: string;
-  /** Raw charter markdown content (if already loaded) */
+  /**
+   * Raw charter markdown content. When omitted, the compatibility compiler
+   * generates a canonical, behavior-neutral charter from `agentName`. Passing
+   * an empty or invalid string is rejected.
+   */
   charterContent?: string;
+  /**
+   * Charter profile used for validation. The convenience compiler defaults to
+   * `squad-charter/v0.1`; portable conformance claims must use the explicit
+   * conformance validator instead.
+   */
+  profile?: string;
   /** Content of team.md (team roster) */
   teamContext?: string;
   /** Routing rules content */
@@ -114,6 +129,8 @@ export interface CharterSourceMetadata {
   semanticKey: string;
   /** Whether the source already uses the canonical responsibility headings */
   canonicalShape: boolean;
+  /** Source line ending used when canonical known-field edits are emitted */
+  eol: '\n' | '\r\n' | '\r';
   /** Unknown namespaced extension sections in source order, byte-for-byte */
   extensions: readonly string[];
 }
@@ -132,6 +149,8 @@ export interface CompiledCharter extends SquadCustomAgentConfig {
   resolvedTools?: string[];
   /** Parsed charter data */
   parsed: ParsedCharter;
+  /** Validation performed before behavior-affecting fields were applied */
+  validation: CharterValidationResult;
 }
 
 /**
@@ -156,13 +175,38 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
   const { agentName, charterPath, charterContent, teamContext, routingRules, decisions, pluginContext, configOverrides } = options;
 
   try {
-    const parsed = parseCharterMarkdown(charterContent ?? '');
+    const generatedCompatibility = charterContent === undefined;
+    const content = charterContent ?? createCompatibilityCharter(agentName);
+    const validation = validateCharterMarkdown(content, {
+      path: charterPath,
+      profile: options.profile ?? CHARTER_PROFILE,
+    });
+    if (!validation.accepted) {
+      const summary = validation.diagnostics
+        .filter(diagnostic => diagnostic.severity === 'error')
+        .map(diagnostic => `${diagnostic.code} at ${diagnostic.line}:${diagnostic.column}`)
+        .join(', ');
+      throw new ConfigurationError(
+        `Invalid charter for agent '${agentName}' at ${charterPath}: ${summary}`,
+        {
+          agentName,
+          operation: 'compileCharter',
+          timestamp: new Date(),
+          metadata: {
+            charterPath,
+            profile: validation.profile,
+            diagnostics: validation.diagnostics,
+          },
+        },
+      );
+    }
+    const parsed = parseCharterMarkdown(content);
     
     // Build the complete prompt by composing sections
     const promptParts: string[] = [];
     
     // Add charter content
-    promptParts.push(parsed.fullContent || `# ${agentName} Charter\n\nAgent charter content.`);
+    promptParts.push(parsed.fullContent);
     
     // Add team context if available
     if (teamContext) {
@@ -195,7 +239,11 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
     // Config overrides win over charter-parsed values
     const role = configOverrides?.role || parsed.identity.role;
     const displayName = configOverrides?.displayName
-      || (role ? `${capitalize(agentName)} — ${role}` : capitalize(agentName));
+      || (generatedCompatibility
+        ? capitalize(agentName)
+        : role
+          ? `${capitalize(agentName)} — ${role}`
+          : capitalize(agentName));
     
     const description = parsed.identity.expertise?.length
       ? `Expertise: ${parsed.identity.expertise.join(', ')}`
@@ -242,6 +290,7 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
       resolvedContextTier,
       resolvedTools,
       parsed,
+      validation,
     };
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
@@ -371,6 +420,7 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     value: {
       semanticKey: charterSemanticKey(result),
       canonicalShape: hasCanonicalShape(scan),
+      eol: scan.eol,
       extensions: scan.sections
         .filter(section => section.isExtension)
         .map(section => section.raw),
@@ -431,14 +481,40 @@ function stripCode(value: string): string {
 }
 
 function hasCanonicalShape(scan: CharterMarkdownScan): boolean {
-  const names = new Set(scan.sections.map(section => section.name.toLowerCase()));
-  return names.has('identity')
-    && names.has('accountable responsibilities')
-    && names.has('non-responsibilities')
-    && names.has('collaboration and review authority')
-    && !names.has('what i own')
-    && !names.has('boundaries')
-    && !names.has('collaboration');
+  if (scan.h1s.length !== 1 || !/^.+?\s+—\s+.+?$/.test(scan.h1s[0]!.name)) {
+    return false;
+  }
+
+  const standardSections = scan.sections.filter(section => !section.isExtension);
+  const names = standardSections.map(section => section.name.toLowerCase());
+  const expected = [
+    'identity',
+    'accountable responsibilities',
+    'non-responsibilities',
+    'collaboration and review authority',
+  ];
+  if (names.length === expected.length + 1) expected.push('model');
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    return false;
+  }
+
+  const canonicalExtensions = scan.sections
+    .filter(section => section.isExtension)
+    .every(section => /^X-[a-z0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(section.name));
+  if (!canonicalExtensions) return false;
+
+  const compatibilityFields = new Set(['name', 'role', 'expertise', 'style', 'fallback']);
+  if (scan.fields.some(field => compatibilityFields.has(field.name.toLowerCase()))) {
+    return false;
+  }
+
+  const identityFields = fieldsInSection(scan, 'Identity');
+  const ids = identityFields.filter(field => field.name.toLowerCase() === 'id');
+  const purposes = identityFields.filter(field => field.name.toLowerCase() === 'purpose');
+  return ids.length === 1
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(stripCode(ids[0]!.value))
+    && purposes.length === 1
+    && purposes[0]!.value.trim().length > 0;
 }
 
 /**
@@ -447,4 +523,23 @@ function hasCanonicalShape(scan: CharterMarkdownScan): boolean {
 function capitalize(str: string): string {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function createCompatibilityCharter(agentName: string): string {
+  const displayName = capitalize(agentName);
+  return `# ${displayName} — Agent
+
+## Identity
+- **ID:** \`${agentName}\`
+- **Purpose:** Provide compatibility behavior when no charter content was supplied.
+
+## Accountable Responsibilities
+- Follow the caller-provided task.
+
+## Non-Responsibilities
+- No additional responsibilities are inferred.
+
+## Collaboration and Review Authority
+- Follow caller-provided collaboration and review instructions.
+`;
 }

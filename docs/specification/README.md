@@ -2,7 +2,7 @@
 
 **Core version:** 0.1
 
-**Status:** Draft
+**Status:** Working Draft
 
 **Document class:** Informative index; linked core/profile documents identify
 their normative sections
@@ -34,5 +34,6 @@ RFC 3339, and CommonMark 0.31.2.
 The core and each artifact profile are versioned independently. Draft `0.x`
 documents may change before publication, and unsupported versions fail closed.
 After publication, a revision is immutable: editorial corrections are recorded
-as dated errata, while behavioral changes require a new profile version. See
+as dated errata, while normative changes require a new `vMAJOR.MINOR`
+identifier. Patch components are not used. See
 [Core v0.1 §10](core-v0.1.md#10-publication-errata-and-versioning).

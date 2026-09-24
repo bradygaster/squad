@@ -8,44 +8,98 @@ import {
   compileCharterFull,
   parseCharterMarkdown,
   serializeCharter,
+  validateCharterConformance,
   validateCharterMarkdown,
-  type CharterConformance,
-  type CharterDiagnosticCode,
-  type CharterDiagnosticSeverity,
+  type CharterCapability,
+  type CharterDiagnostic,
+  type ParsedCharter,
 } from '@bradygaster/squad-sdk/parsers';
 
-interface ExpectedDiagnostic {
-  code: CharterDiagnosticCode;
-  severity: CharterDiagnosticSeverity;
-  line: number;
-  column: number;
+type ValidationApi = 'conformance' | 'convenience';
+type SerializationMode = 'canonical' | 'legacy' | 'preserve';
+
+interface ManifestDiagnostic {
+  code: string;
+  severity: 'error' | 'warning';
+  start: { line: number; column: number };
+  end: { line: number; column: number };
+  path: string | null;
+}
+
+interface ParsedSemantics {
+  identity: {
+    id: string | null;
+    purpose: string | null;
+    name: string | null;
+    role: string | null;
+    expertise: string[] | null;
+    style: string | null;
+  };
+  ownership: string | null;
+  boundaries: string | null;
+  collaboration: string | null;
+  modelPreference: string | null;
+  modelRationale: string | null;
+  modelFallback: string | null;
+  reasoningEffort: string | null;
+  authoredReasoningEffort: string | null;
+  contextTier: string | null;
+  authoredContextTier: string | null;
+}
+
+interface ManifestCase {
+  id: string;
+  capabilities: CharterCapability[];
+  input: {
+    fixture: string | null;
+    text: string | null;
+    path: string | null;
+    profile: string | null;
+    validationApi: ValidationApi;
+  };
+  serialization: {
+    mode: SerializationMode;
+    edits: Array<{
+      field: 'identity.purpose';
+      value: string;
+    }>;
+  } | null;
+  expected: {
+    validation: {
+      profile: string;
+      accepted: boolean;
+      conforms: boolean;
+      classification: 'canonical' | 'noncanonical-compatible' | 'invalid';
+      capabilities: CharterCapability[];
+      diagnostics: ManifestDiagnostic[];
+    };
+    parsed: ParsedSemantics | null;
+    serialization: {
+      output: string | null;
+      outputFixture: string | null;
+      eol: 'LF' | 'CRLF' | 'CR';
+      validation: {
+        accepted: boolean;
+        conforms: boolean;
+        classification: 'canonical' | 'noncanonical-compatible' | 'invalid';
+        diagnostics: ManifestDiagnostic[];
+      };
+    } | null;
+    runtime: {
+      compile: boolean;
+      errorCodes: string[];
+      resolvedModel: string | null;
+      resolvedReasoningEffort: string | null;
+      resolvedContextTier: string | null;
+    } | null;
+  };
 }
 
 interface FixtureManifest {
+  schemaVersion: 1;
   profile: string;
-  requiredCapabilities: string[];
-  fixtures: Array<{
-    path: string;
-    expected: {
-      accepted: boolean;
-      conforms: boolean;
-      conformance: CharterConformance;
-      diagnostics: ExpectedDiagnostic[];
-      identityId?: string;
-      identityName?: string;
-      identityRole?: string;
-      reasoningEffort?: string;
-      contextTier?: string;
-      serializedOutputPath?: string;
-      editedOutputPath?: string;
-    };
-  }>;
-  duplicateFields: Array<{
-    section: 'Identity' | 'Model';
-    name: string;
-    value: string;
-  }>;
-  duplicateSections: string[];
+  capabilities: CharterCapability[];
+  cases: ManifestCase[];
 }
 
 const FIXTURE_ROOT = path.resolve(__dirname, '..', 'test-fixtures', 'spec', 'charter-v0.1');
@@ -56,33 +110,80 @@ async function loadManifest(): Promise<FixtureManifest> {
   ) as FixtureManifest;
 }
 
-const CANONICAL = `# Contract Agent — Tester
+async function readCaseSource(testCase: ManifestCase): Promise<string> {
+  if (testCase.input.fixture !== null) {
+    return readFile(path.join(FIXTURE_ROOT, testCase.input.fixture), 'utf8');
+  }
+  if (testCase.input.text !== null) return testCase.input.text;
+  throw new Error(`${testCase.id}: exactly one input source is required`);
+}
 
-## Identity
-- **ID:** \`contract-agent\`
-- **Purpose:** Exercise the charter contract.
+function validateCase(testCase: ManifestCase, markdown: string) {
+  const options = {
+    ...(testCase.input.path === null ? {} : { path: testCase.input.path }),
+    ...(testCase.input.profile === null ? {} : { profile: testCase.input.profile }),
+  };
+  return testCase.input.validationApi === 'conformance'
+    ? Reflect.apply(validateCharterConformance, undefined, [markdown, options])
+    : validateCharterMarkdown(markdown, options);
+}
 
-## Accountable Responsibilities
-- Contract tests.
+function normalizeDiagnostics(
+  diagnostics: readonly CharterDiagnostic[],
+): ManifestDiagnostic[] {
+  return diagnostics.map(diagnostic => ({
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    start: { line: diagnostic.line, column: diagnostic.column },
+    end: { line: diagnostic.endLine, column: diagnostic.endColumn },
+    path: diagnostic.path ?? null,
+  }));
+}
 
-## Non-Responsibilities
-- Runtime authorization.
+function normalizeParsed(parsed: ParsedCharter): ParsedSemantics {
+  return {
+    identity: {
+      id: parsed.identity.id ?? null,
+      purpose: parsed.identity.purpose ?? null,
+      name: parsed.identity.name ?? null,
+      role: parsed.identity.role ?? null,
+      expertise: parsed.identity.expertise ?? null,
+      style: parsed.identity.style ?? null,
+    },
+    ownership: parsed.ownership ?? null,
+    boundaries: parsed.boundaries ?? null,
+    collaboration: parsed.collaboration ?? null,
+    modelPreference: parsed.modelPreference ?? null,
+    modelRationale: parsed.modelRationale ?? null,
+    modelFallback: parsed.modelFallback ?? null,
+    reasoningEffort: parsed.reasoningEffort ?? null,
+    authoredReasoningEffort: parsed.authoredReasoningEffort ?? null,
+    contextTier: parsed.contextTier ?? null,
+    authoredContextTier: parsed.authoredContextTier ?? null,
+  };
+}
 
-## Collaboration and Review Authority
-- Reviews public API compatibility.
+function applyEdits(parsed: ParsedCharter, testCase: ManifestCase): void {
+  for (const edit of testCase.serialization?.edits ?? []) {
+    if (edit.field === 'identity.purpose') {
+      parsed.identity.purpose = edit.value;
+    }
+  }
+}
 
-## Model
-- **Preferred:** auto
-- **Reasoning Effort:** auto
-- **Context Tier:** auto
-`;
+function eolName(value: string): 'LF' | 'CRLF' | 'CR' {
+  const first = value.match(/\r\n|\r|\n/)?.[0];
+  if (first === '\r\n') return 'CRLF';
+  if (first === '\r') return 'CR';
+  return 'LF';
+}
 
-describe('Squad Charter Profile v0.1', () => {
-  it('executes the language-neutral conformance manifest', async () => {
+describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
+  it('declares the published profile metadata and every operational capability', async () => {
     const manifest = await loadManifest();
-
+    expect(manifest.schemaVersion).toBe(1);
     expect(manifest.profile).toBe(CHARTER_PROFILE);
-    expect(manifest.requiredCapabilities).toEqual(Object.values(CHARTER_CAPABILITIES));
+    expect(manifest.capabilities).toEqual(Object.values(CHARTER_CAPABILITIES));
     expect(CHARTER_PROFILE_METADATA).toEqual({
       id: CHARTER_PROFILE,
       artifactClass: 'required',
@@ -90,308 +191,97 @@ describe('Squad Charter Profile v0.1', () => {
       repositoryRelativePath: '.squad/agents/{id}/charter.md',
     });
 
-    for (const fixture of manifest.fixtures) {
-      const fixturePath = path.join(FIXTURE_ROOT, fixture.path);
-      const markdown = await readFile(fixturePath, 'utf8');
-      const validation = validateCharterMarkdown(markdown, { path: fixture.path });
-      const parsed = parseCharterMarkdown(markdown);
-
-      expect(validation.accepted, fixture.path).toBe(fixture.expected.accepted);
-      expect(validation.conforms, fixture.path).toBe(fixture.expected.conforms);
-      expect(validation.conformance, fixture.path).toBe(fixture.expected.conformance);
-      expect(validation.capabilities, fixture.path).toEqual([CHARTER_CAPABILITIES.validate]);
+    for (const capability of manifest.capabilities) {
       expect(
-        validation.diagnostics.map(({ code, severity, line, column }) => ({
-          code,
-          severity,
-          line,
-          column,
-        })),
-        fixture.path,
-      ).toEqual(fixture.expected.diagnostics);
-
-      if (fixture.expected.identityId) {
-        expect(parsed.identity.id, fixture.path).toBe(fixture.expected.identityId);
-      }
-      if (fixture.expected.identityName) {
-        expect(parsed.identity.name, fixture.path).toBe(fixture.expected.identityName);
-      }
-      if (fixture.expected.identityRole) {
-        expect(parsed.identity.role, fixture.path).toBe(fixture.expected.identityRole);
-      }
-      if (fixture.expected.reasoningEffort) {
-        expect(parsed.reasoningEffort, fixture.path).toBe(fixture.expected.reasoningEffort);
-      }
-      if (fixture.expected.contextTier) {
-        expect(parsed.contextTier, fixture.path).toBe(fixture.expected.contextTier);
-      }
-    }
-  });
-
-  it('preserves exact source on canonical no-op and exact extensions after a known edit', async () => {
-    const manifest = await loadManifest();
-    const fixture = manifest.fixtures.find(item => item.expected.editedOutputPath);
-    expect(fixture).toBeDefined();
-
-    const markdown = await readFile(path.join(FIXTURE_ROOT, fixture!.path), 'utf8');
-    const expectedNoOp = await readFile(
-      path.join(FIXTURE_ROOT, fixture!.expected.serializedOutputPath!),
-      'utf8',
-    );
-    const expectedEdited = await readFile(
-      path.join(FIXTURE_ROOT, fixture!.expected.editedOutputPath!),
-      'utf8',
-    );
-    const parsed = parseCharterMarkdown(markdown);
-
-    expect(serializeCharter(parsed)).toBe(expectedNoOp);
-
-    parsed.identity.purpose = 'Verify edited fields without losing unknown extensions.';
-    const edited = serializeCharter(parsed);
-    expect(edited).toBe(expectedEdited);
-    expect(edited.indexOf('## X-example-deployment'))
-      .toBeLessThan(edited.indexOf('## X-example-policy'));
-  });
-
-  it('uses one scanner that ignores structural lookalikes in opaque contexts', async () => {
-    const markdown = await readFile(
-      path.join(FIXTURE_ROOT, 'round-trip', 'extensions.md'),
-      'utf8',
-    );
-    const parsed = parseCharterMarkdown(markdown);
-    const validation = validateCharterMarkdown(markdown);
-
-    expect(parsed.identity.id).toBe('extensible-agent');
-    expect(parsed.modelPreference).toBeUndefined();
-    expect(parsed.reasoningEffort).toBeUndefined();
-    expect(parsed.contextTier).toBeUndefined();
-    expect(validation).toMatchObject({
-      accepted: true,
-      conforms: true,
-      conformance: 'canonical',
-      diagnostics: [],
-    });
-  });
-
-  it('preserves CRLF source exactly and preserves CRLF extension bytes after editing', () => {
-    const markdown = CANONICAL.replace(/\n/g, '\r\n')
-      + '\r\n## X-example-data\r\n\r\nopaque: true\r\n';
-    const parsed = parseCharterMarkdown(markdown);
-    expect(serializeCharter(parsed)).toBe(markdown);
-
-    parsed.identity.purpose = 'Edited purpose.';
-    const edited = serializeCharter(parsed);
-    expect(edited).toContain('## X-example-data\r\n\r\nopaque: true\r\n');
-    expect(validateCharterMarkdown(edited).accepted).toBe(true);
-  });
-
-  it('enforces profile identity for POSIX and Windows paths only', () => {
-    expect(
-      validateCharterMarkdown(CANONICAL, {
-        path: '/repo/.squad/agents/contract-agent/charter.md',
-      }).diagnostics,
-    ).toEqual([]);
-    expect(
-      validateCharterMarkdown(CANONICAL, {
-        path: 'C:\\repo\\.squad\\agents\\contract-agent\\charter.md',
-      }).diagnostics,
-    ).toEqual([]);
-    expect(
-      validateCharterMarkdown(CANONICAL, {
-        path: 'agents/contract-agent/charter.md',
-      }).diagnostics,
-    ).toEqual([]);
-
-    const mismatch = validateCharterMarkdown(CANONICAL, {
-      path: '.squad/agents/different-agent/charter.md',
-    });
-    expect(mismatch.diagnostics.map(diagnostic => diagnostic.code)).toEqual(['SQC010']);
-    expect(mismatch.diagnostics[0]).toMatchObject({ line: 4, column: 3 });
-
-    expect(
-      validateCharterMarkdown(CANONICAL, { path: 'docs/charter.md' }).diagnostics,
-    ).toEqual([]);
-  });
-
-  it('rejects every duplicate standard machine field', async () => {
-    const manifest = await loadManifest();
-    for (const duplicate of manifest.duplicateFields) {
-      const markdown = charterWithDuplicateField(duplicate);
-      const diagnostics = validateCharterMarkdown(markdown).diagnostics;
-      expect(
-        diagnostics.filter(diagnostic => diagnostic.code === 'SQC004'),
-        `${duplicate.section}.${duplicate.name}`,
-      ).toHaveLength(1);
-    }
-  });
-
-  it('rejects duplicate standard sections, including semantic legacy aliases', async () => {
-    const manifest = await loadManifest();
-    for (const section of manifest.duplicateSections) {
-      const markdown = `${CANONICAL}\n## ${section}\n`;
-      expect(
-        validateCharterMarkdown(markdown).diagnostics.some(
-          diagnostic => diagnostic.code === 'SQC011',
-        ),
-        section,
+        manifest.cases.some(testCase => testCase.capabilities.includes(capability)),
+        capability,
       ).toBe(true);
     }
-
-    const aliasDuplicate = CANONICAL.replace(
-      '## Non-Responsibilities',
-      '## Boundaries\n\nLegacy duplicate.\n\n## Non-Responsibilities',
-    );
-    expect(
-      validateCharterMarkdown(aliasDuplicate).diagnostics.some(
-        diagnostic => diagnostic.code === 'SQC011',
-      ),
-    ).toBe(true);
   });
 
-  function charterWithDuplicateField(
-    duplicate: FixtureManifest['duplicateFields'][number],
-  ): string {
-    const duplicateLines = [
-      `- **${duplicate.name}:** ${duplicate.value}`,
-      `- **${duplicate.name}:** ${duplicate.value}`,
-    ].join('\n');
-    const identityFields = duplicate.section === 'Identity'
-      ? [
-          ...(duplicate.name === 'ID' ? [] : ['- **ID:** `contract-agent`']),
-          ...(duplicate.name === 'Purpose' ? [] : ['- **Purpose:** Exercise the charter contract.']),
-          duplicateLines,
-        ].join('\n')
-      : [
-          '- **ID:** `contract-agent`',
-          '- **Purpose:** Exercise the charter contract.',
-        ].join('\n');
-    const modelFields = duplicate.section === 'Model'
-      ? duplicateLines
-      : [
-          '- **Preferred:** auto',
-          '- **Reasoning Effort:** auto',
-          '- **Context Tier:** auto',
-        ].join('\n');
+  it('executes every normative case without synthesizing cases in TypeScript', async () => {
+    const manifest = await loadManifest();
 
-    return [
-      '# Contract Agent — Tester',
-      '',
-      '## Identity',
-      identityFields,
-      '',
-      '## Accountable Responsibilities',
-      '- Contract tests.',
-      '',
-      '## Non-Responsibilities',
-      '- Runtime authorization.',
-      '',
-      '## Collaboration and Review Authority',
-      '- Reviews public API compatibility.',
-      '',
-      '## Model',
-      modelFields,
-      '',
-    ].join('\n');
-  }
+    for (const testCase of manifest.cases) {
+      const markdown = await readCaseSource(testCase);
+      const validation = validateCase(testCase, markdown);
+      expect(
+        {
+          profile: validation.profile,
+          accepted: validation.accepted,
+          conforms: validation.conforms,
+          classification: validation.conformance,
+          capabilities: validation.capabilities,
+          diagnostics: normalizeDiagnostics(validation.diagnostics),
+        },
+        testCase.id,
+      ).toEqual(testCase.expected.validation);
 
-  it('emits canonical responsibility headings unless legacy mode is explicit', async () => {
-    const legacy = await readFile(
-      path.join(FIXTURE_ROOT, 'legacy', 'template-style.md'),
-      'utf8',
-    );
-    const parsed = parseCharterMarkdown(legacy);
-    const canonical = serializeCharter(parsed);
+      if (testCase.expected.parsed !== null) {
+        expect(
+          normalizeParsed(parseCharterMarkdown(markdown)),
+          `${testCase.id}: parsed semantics`,
+        ).toEqual(testCase.expected.parsed);
+      }
 
-    expect(canonical).toContain('## Accountable Responsibilities');
-    expect(canonical).toContain('## Non-Responsibilities');
-    expect(canonical).toContain('## Collaboration and Review Authority');
-    expect(canonical).not.toContain('## What I Own');
-    expect(serializeCharter(parsed, { format: 'legacy' })).toContain('## What I Own');
-    expect(serializeCharter(parsed, { format: 'preserve' })).toBe(legacy);
-  });
+      if (testCase.serialization !== null) {
+        const parsed = parseCharterMarkdown(markdown);
+        applyEdits(parsed, testCase);
+        const output = serializeCharter(parsed, { format: testCase.serialization.mode });
+        const expectedOutput = testCase.expected.serialization?.outputFixture
+          ? await readFile(
+              path.join(FIXTURE_ROOT, testCase.expected.serialization.outputFixture),
+              'utf8',
+            )
+          : testCase.expected.serialization?.output;
+        expect(output, `${testCase.id}: serialized output`).toBe(expectedOutput);
+        expect(eolName(output), `${testCase.id}: line endings`)
+          .toBe(testCase.expected.serialization?.eol);
+        const outputValidation = validateCharterConformance(output, {
+          profile: manifest.profile,
+          ...(testCase.input.path === null ? {} : { path: testCase.input.path }),
+        });
+        expect({
+          accepted: outputValidation.accepted,
+          conforms: outputValidation.conforms,
+          classification: outputValidation.conformance,
+          diagnostics: normalizeDiagnostics(outputValidation.diagnostics),
+        }, `${testCase.id}: serialized output validation`)
+          .toEqual(testCase.expected.serialization?.validation);
+      }
 
-  it('preserves authored auto preferences without producing runtime overrides', () => {
-    const compiled = compileCharterFull({
-      agentName: 'contract-agent',
-      charterPath: '.squad/agents/contract-agent/charter.md',
-      charterContent: CANONICAL,
-    });
+      if (testCase.expected.runtime !== null) {
+        const compile = () => compileCharterFull({
+          agentName: 'manifest-agent',
+          charterPath: testCase.input.path ?? 'agents/manifest-agent/charter.md',
+          charterContent: markdown,
+          ...(testCase.input.profile === null ? {} : { profile: testCase.input.profile }),
+        });
 
-    expect(compiled.parsed.modelPreference).toBe('auto');
-    expect(compiled.parsed.authoredReasoningEffort).toBe('auto');
-    expect(compiled.parsed.authoredContextTier).toBe('auto');
-    expect(compiled.resolvedModel).toBeUndefined();
-    expect(compiled.resolvedReasoningEffort).toBeUndefined();
-    expect(compiled.resolvedContextTier).toBeUndefined();
-    expect(serializeCharter(compiled.parsed)).toBe(CANONICAL);
-
-    const explicitAutoOverride = compileCharterFull({
-      agentName: 'contract-agent',
-      charterPath: '.squad/agents/contract-agent/charter.md',
-      charterContent: CANONICAL
-        .replace('**Preferred:** auto', '**Preferred:** supported-model')
-        .replace('**Reasoning Effort:** auto', '**Reasoning Effort:** high')
-        .replace('**Context Tier:** auto', '**Context Tier:** long_context'),
-      configOverrides: {
-        model: 'auto',
-        reasoningEffort: 'auto',
-        contextTier: 'auto',
-      },
-    });
-    expect(explicitAutoOverride.resolvedModel).toBeUndefined();
-    expect(explicitAutoOverride.resolvedReasoningEffort).toBeUndefined();
-    expect(explicitAutoOverride.resolvedContextTier).toBeUndefined();
-  });
-
-  it('reports unsupported profiles and extension collisions deterministically', () => {
-    const unsupported = validateCharterMarkdown(CANONICAL, {
-      profile: 'squad-charter/v9',
-    });
-    expect(unsupported).toMatchObject({
-      accepted: false,
-      conforms: false,
-      conformance: 'invalid',
-      capabilities: [],
-    });
-    expect(unsupported.diagnostics.map(diagnostic => diagnostic.code)).toEqual(['SQC013']);
-
-    const extensions = `${CANONICAL}
-## X-Example-Data
-
-one
-
-## x-example-data
-
-two
-`;
-    expect(
-      validateCharterMarkdown(extensions).diagnostics.map(
-        diagnostic => diagnostic.code,
-      ),
-    ).toEqual(['SQC106', 'SQC012', 'SQC106']);
-  });
-
-  it('returns identical diagnostic ordering and ranges across runs', () => {
-    const markdown = `# Invalid Agent
-
-## Identity
-- **ID:** Invalid Agent
-- **Purpose:**
-- **Purpose:** duplicate
-
-## Model
-- **Context Tier:** huge
-- **Reasoning Effort:** turbo
-`;
-    const first = validateCharterMarkdown(markdown);
-    const second = validateCharterMarkdown(markdown);
-
-    expect(second).toEqual(first);
-    expect(first.diagnostics.every(diagnostic =>
-      diagnostic.line >= 1
-      && diagnostic.column >= 1
-      && diagnostic.endLine >= diagnostic.line
-      && diagnostic.endColumn >= diagnostic.column,
-    )).toBe(true);
+        if (!testCase.expected.runtime.compile) {
+          let message = '';
+          try {
+            compile();
+          } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+          }
+          expect(message, `${testCase.id}: runtime rejection`).not.toBe('');
+          for (const code of testCase.expected.runtime.errorCodes) {
+            expect(message, `${testCase.id}: ${code}`).toContain(code);
+          }
+        } else {
+          const compiled = compile();
+          expect({
+            resolvedModel: compiled.resolvedModel ?? null,
+            resolvedReasoningEffort: compiled.resolvedReasoningEffort ?? null,
+            resolvedContextTier: compiled.resolvedContextTier ?? null,
+          }, `${testCase.id}: runtime semantics`).toEqual({
+            resolvedModel: testCase.expected.runtime.resolvedModel,
+            resolvedReasoningEffort: testCase.expected.runtime.resolvedReasoningEffort,
+            resolvedContextTier: testCase.expected.runtime.resolvedContextTier,
+          });
+        }
+      }
+    }
   });
 });

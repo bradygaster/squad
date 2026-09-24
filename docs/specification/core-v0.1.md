@@ -1,10 +1,23 @@
 # Squad Specification Core v0.1
 
-**Status:** Draft
+**Status:** Working Draft
 
 **Document class:** Normative unless a section is marked informative
 
 **Capability identifier:** `squad-core/v0.1`
+
+**Editor:** Squad project maintainers
+
+**Publication date:** 2026-09-24
+
+**Source revision:** `squad-core-v0.1-wd3`
+
+**Immutable publication tag:** Not assigned; this is a source-controlled
+working draft
+
+**Feedback:** [Issue #2069](https://github.com/bradygaster/squad/issues/2069)
+
+**Errata:** [§10.1](#101-errata)
 
 ## 1. Scope
 
@@ -21,8 +34,12 @@ telemetry, GitHub workflows, or a whole-Squad conformance claim.
   terminology used by profiles. A profile may select a deterministic subset
   rather than require a complete CommonMark implementation.
 
-The keywords **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**,
-and **MAY** are normative only when shown in uppercase.
+The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
+**SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **NOT RECOMMENDED**, **MAY**, and
+**OPTIONAL** in this document are to be interpreted as described in BCP 14
+[RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)
+[RFC 8174](https://www.rfc-editor.org/rfc/rfc8174) when, and only when, they
+appear in all capitals, as shown here.
 
 ## 3. Terms and conformance classes
 
@@ -66,11 +83,17 @@ Every profile MUST assign one of these classes:
 Classification is profile-specific and MUST NOT be interpreted as a
 requirement that every Squad installation contain every known artifact.
 
-## 6. Profile association and version handling
+## 6. Profile association, selection, and version handling
 
 A profile MUST define how an artifact is associated with that profile: path,
 an in-document marker, an API argument, or an explicit combination.
 Association MUST NOT rely on prose heuristics.
+
+An API that reports portable conformance MUST require an explicit profile
+identifier. Omission is an error, not negotiation. An implementation MAY offer
+a separately documented convenience API that defaults to one profile, but that
+API MUST identify the selected profile in its result and MUST NOT describe the
+default as explicit negotiation.
 
 Consumers MUST fail closed for an unsupported profile version. They MUST NOT
 silently process an unsupported version as the nearest known version. A
@@ -121,15 +144,28 @@ for migration or legacy compatibility.
 
 ## 10. Publication, errata, and versioning
 
-A published profile revision is immutable. Editorial corrections that do not
-change required behavior are recorded as dated errata linked from the
-specification index. A behavioral change requires a new profile version.
+A core or profile identifier ends in `vMAJOR.MINOR`, where `MAJOR` and `MINOR`
+are ASCII decimal integers without leading zeroes except the value `0`. The
+grammar is `v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)`. Patch components are not part
+of a Squad specification identifier.
 
-Draft `0.x` documents MAY change before publication. Implementations MUST NOT
-infer compatibility with an unrecognized `0.x` version. Stable versions use
-semantic intent: patch versions clarify without changing accepted documents,
-minor versions add backward-compatible capabilities, and major versions may
-change document validity or semantics.
+A tagged publication of a core or profile revision is immutable. Editorial
+corrections that do not change required behavior are recorded as dated errata
+without changing the identifier. A normative change requires a new identifier.
+For `v0.x`, every normative change increments `MINOR`. Starting with `v1.0`,
+backward-compatible additions increment `MINOR`; changes that can alter
+accepted documents or existing semantics increment `MAJOR` and reset `MINOR`
+to `0`.
+
+Working-draft source revisions such as `squad-core-v0.1-wd3` identify review
+snapshots but are not immutable publications. Implementations MUST NOT infer
+compatibility with an unsupported identifier or source revision.
+
+### 10.1 Errata
+
+No errata are recorded for source revision `squad-core-v0.1-wd3`. Errata for a
+future tagged publication will be listed in this subsection with publication
+date, affected section, and correction.
 
 ## 11. Trust boundary
 
