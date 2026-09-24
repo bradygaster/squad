@@ -193,7 +193,8 @@ export function parseImplementMergeProvenance(body, headRef) {
   if (violations.length) return { ok: false, enforced: true, origin: 'merge-continuation', violations };
 
   const text = normalizeText(body);
-  const markerOccurrences = text.match(/<!-- squad:implement\b/g) || [];
+  const markerPattern = new RegExp(`<${'!--'} squad:implement\\b`, 'g');
+  const markerOccurrences = text.match(markerPattern) || [];
   const matches = [];
   let fence = null;
   for (const line of text.split('\n')) {

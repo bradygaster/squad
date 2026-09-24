@@ -9,7 +9,7 @@
  */
 
 import { afterAll, describe, it, expect } from 'vitest';
-import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
@@ -24,6 +24,14 @@ import {
   formatViolations,
   type ContractToken,
 } from './gh-aw-shell-contract';
+import {
+  CONTRACT_DESTINATION,
+  CONTRACT_SOURCE,
+  PACKAGE_NAME,
+  WORKFLOW_NAMES,
+  checkSource,
+  verifyInstall,
+} from '../workflows/shared/squad-install-verifier.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
@@ -723,6 +731,7 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'shared/squad-cast-validator.mjs',
     'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
+    'shared/squad-install-verifier.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
   ];
@@ -758,13 +767,13 @@ describe('gh-aw: clean install runtime resource closure', () => {
       cpSync(join(WORKFLOWS_DIR, imported), destination);
     }
 
-    // gh-aw v0.89.2 installs squad.md first, recursively installs its worker
-    // dependencies, and then skips the explicit worker entries as duplicates.
-    // Model that observed behavior by copying only the root workflow resources.
-    for (const resource of extractResources(extractFrontmatter(SQUAD_WORKFLOW))) {
-      const destination = join(workflowDir, resource);
-      mkdirSync(dirname(destination), { recursive: true });
-      cpSync(join(WORKFLOWS_DIR, resource), destination);
+    for (const workflowName of workflowNames) {
+      const source = join(WORKFLOWS_DIR, `${workflowName}.md`);
+      for (const resource of extractResources(extractFrontmatter(source))) {
+        const destination = join(workflowDir, resource);
+        mkdirSync(dirname(destination), { recursive: true });
+        cpSync(join(WORKFLOWS_DIR, resource), destination);
+      }
     }
 
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
@@ -3499,5 +3508,95 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
       skipsInit(`## Coordinator\n\n| Name | Role | Notes |\n|------|------|-------|\n| Squad | Coordinator | Routes work. |\n\n${HEADER}\n`),
       'only the Members table describes the cast; the Coordinator table is always present',
     ).toBe(false);
+  });
+});
+
+describe('gh-aw: canonical package integrity contract', () => {
+  const revisionA = 'a'.repeat(40);
+  const revisionB = 'b'.repeat(40);
+
+  function copyInto(root: string, source: string, destination: string): void {
+    const target = join(root, destination);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(process.cwd(), source), target);
+  }
+
+  function makeConsumer(revision = revisionA): string {
+    const root = createTestWorkspace('gh-aw-package-contract-');
+    copyInto(root, CONTRACT_SOURCE, CONTRACT_DESTINATION);
+    const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
+    for (const workflow of contract.workflows) {
+      copyInto(root, workflow.source, workflow.destination);
+      const lock = join(root, workflow.lock);
+      mkdirSync(dirname(lock), { recursive: true });
+      writeFileSync(lock, `# test lock for ${workflow.name}\n`);
+    }
+    for (const resource of contract.shared_runtime) {
+      copyInto(root, resource.source, resource.package_destination);
+      copyInto(root, resource.source, resource.destination);
+    }
+    const owned = [
+      ...contract.workflows,
+      ...contract.shared_runtime.map((entry: { source: string; package_destination: string }) => ({
+        source: entry.source,
+        destination: entry.package_destination,
+      })),
+      { source: CONTRACT_SOURCE, destination: CONTRACT_DESTINATION },
+    ].map((entry: { source: string; destination: string }) => ({
+      source: entry.source,
+      destination: entry.destination,
+      sha256: createHash('sha256').update(readFileSync(join(root, entry.destination))).digest('hex'),
+    }));
+    const ownership = join(root, '.github/aw/packages/bradygaster-squad-test.json');
+    mkdirSync(dirname(ownership), { recursive: true });
+    writeFileSync(ownership, `${JSON.stringify({
+      schemaVersion: 1,
+      package: PACKAGE_NAME,
+      source: `${PACKAGE_NAME}@${revision}`,
+      resolvedCommit: revision,
+      installer: 'gh-aw test',
+      files: owned,
+    }, null, 2)}\n`);
+    return root;
+  }
+
+  it('registers exactly seven workflows with a bootstrap trigger probe', () => {
+    expect(checkSource(process.cwd())).toEqual([]);
+    const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
+    expect(contract.workflows.map((entry: { name: string }) => entry.name)).toEqual(WORKFLOW_NAMES);
+    expect(contract.bootstrap.trigger_probe).toBe('shared/squad-install-verifier.mjs');
+  });
+
+  it('accepts a coherent consumer and rejects missing bootstrap', () => {
+    const root = makeConsumer();
+    expect(verifyInstall(root, { expectedRevision: revisionA }).failures).toEqual([]);
+    unlinkSync(join(root, '.github/workflows/squad-bootstrap.md'));
+    expect(verifyInstall(root).failures).toContain(
+      'Required installed file is missing: .github/workflows/squad-bootstrap.md.',
+    );
+  });
+
+  it('rejects stale digests and missing lock/resource pairs', () => {
+    const root = makeConsumer();
+    writeFileSync(join(root, '.github/workflows/shared/squad-cast-validator.mjs'), 'stale\n');
+    unlinkSync(join(root, '.github/workflows/squad-review.lock.yml'));
+    unlinkSync(join(root, '.github/aw/squad/runtime/shared/builtins/scribe-charter.md'));
+    const failures = verifyInstall(root).failures.join('\n');
+    expect(failures).toContain('Installed digest mismatch for .github/workflows/shared/squad-cast-validator.mjs');
+    expect(failures).toContain('Required generated lock is missing: .github/workflows/squad-review.lock.yml.');
+    expect(failures).toContain(
+      'Required installed file is missing: .github/aw/squad/runtime/shared/builtins/scribe-charter.md.',
+    );
+  });
+
+  it('rejects mixed package revisions', () => {
+    const root = makeConsumer();
+    const ownershipPath = join(root, '.github/aw/packages/bradygaster-squad-test.json');
+    const ownership = JSON.parse(readFileSync(ownershipPath, 'utf8'));
+    ownership.source = `${PACKAGE_NAME}@${revisionB}`;
+    writeFileSync(ownershipPath, `${JSON.stringify(ownership, null, 2)}\n`);
+    expect(verifyInstall(root).failures).toContain(
+      `Package ownership source must be ${PACKAGE_NAME}@${revisionA}.`,
+    );
   });
 });

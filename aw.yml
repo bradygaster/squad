@@ -1,0 +1,54 @@
+manifest-version: "1"
+min-version: v0.89.21
+name: Squad Agentic Workflows
+emoji: "🤖"
+description: Complete, integrity-checked Squad workflow bundle for issue-driven planning and implementation.
+license: MIT
+includes:
+  - source: workflows/package/squad.md
+    destination: .github/workflows/squad.md
+  - source: workflows/package/squad-implement-worker.md
+    destination: .github/workflows/squad-implement-worker.md
+  - source: workflows/squad-review.md
+    destination: .github/workflows/squad-review.md
+  - source: workflows/package/squad-deps-worker.md
+    destination: .github/workflows/squad-deps-worker.md
+  - source: workflows/package/squad-retro.md
+    destination: .github/workflows/squad-retro.md
+  - source: workflows/squad-improvement-worker.md
+    destination: .github/workflows/squad-improvement-worker.md
+  - source: workflows/squad-bootstrap.md
+    destination: .github/workflows/squad-bootstrap.md
+resources:
+  - source: workflows/shared/squad-install-verifier.mjs
+    destination: .github/workflows/shared/squad-install-verifier.mjs
+  - source: workflows/shared/squad-cast-validator.mjs
+    destination: .github/workflows/shared/squad-cast-validator.mjs
+  - source: workflows/shared/squad-bootstrap-validator.mjs
+    destination: .github/workflows/shared/squad-bootstrap-validator.mjs
+  - source: workflows/shared/squad-improvement-gate.mjs
+    destination: .github/workflows/shared/squad-improvement-gate.mjs
+  - source: workflows/shared/squad-retro-evidence.mjs
+    destination: .github/workflows/shared/squad-retro-evidence.mjs
+  - source: workflows/shared/squad-retro-provenance.mjs
+    destination: .github/workflows/shared/squad-retro-provenance.mjs
+  - source: workflows/shared/squad-implementation-provenance.mjs
+    destination: .github/workflows/shared/squad-implementation-provenance.mjs
+  - source: workflows/shared/squad.md
+    destination: .github/aw/squad/runtime/shared/squad.md
+  - source: workflows/shared/squad-planning-ontology.md
+    destination: .github/aw/squad/runtime/shared/squad-planning-ontology.md
+  - source: workflows/shared/squad-planning-policy.md
+    destination: .github/aw/squad/runtime/shared/squad-planning-policy.md
+  - source: workflows/shared/implementation-provenance-v1.schema.json
+    destination: .github/aw/squad/runtime/shared/implementation-provenance-v1.schema.json
+  - source: workflows/shared/builtins/scribe-charter.md
+    destination: .github/aw/squad/runtime/shared/builtins/scribe-charter.md
+  - source: workflows/shared/builtins/ralph-charter.md
+    destination: .github/aw/squad/runtime/shared/builtins/ralph-charter.md
+  - source: workflows/shared/builtins/rai-charter.md
+    destination: .github/aw/squad/runtime/shared/builtins/rai-charter.md
+  - source: workflows/shared/builtins/fact-checker-charter.md
+    destination: .github/aw/squad/runtime/shared/builtins/fact-checker-charter.md
+  - source: workflows/squad-workflows.manifest.json
+    destination: .github/aw/squad-workflows.manifest.json

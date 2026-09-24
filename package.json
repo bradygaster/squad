@@ -19,6 +19,8 @@
     "prebuild": "node scripts/bump-build.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
     "sync-templates": "node scripts/sync-templates.mjs --sync",
+    "gh-aw:integrity:check": "node workflows/shared/squad-install-verifier.mjs --check-source",
+    "gh-aw:integrity:write": "node workflows/shared/squad-install-verifier.mjs --write-source",
     "verify:team-isolation": "node scripts/verify-team-isolation.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -56,7 +58,8 @@
     "markdown-it": "^15.0.2",
     "markdownlint-cli2": "^0.23.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "yaml": "^2.9.1"
   },
   "keywords": [
     "copilot",

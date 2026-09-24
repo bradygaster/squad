@@ -1,11 +1,695 @@
 ---
+model: ${{ vars.SQUAD_MODEL || 'auto' }}
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
+ambient-folders:
+  - .squad
+safe-outputs:
+  jobs:
+    upsert-research-artifact:
+      description: Create or replace the single Squad research artifact for this issue.
+      runs-on: ubuntu-slim
+      needs: safe_outputs
+      permissions:
+        issues: write
+        pull-requests: write
+      max: 1
+      output: Research artifact updated.
+      inputs:
+        body:
+          description: Complete research Markdown with an H2 Squad Research heading and all required sections; structured data is normalized by the writer.
+          required: true
+          type: string
+      steps:
+        - name: Upsert Squad research artifact
+          uses: actions/github-script@v9
+          env:
+            ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || github.event.inputs.issue_number }}
+          with:
+            script: |
+              const { readFileSync } = await import("node:fs");
+              const issueNumber = Number(process.env.ISSUE_NUMBER);
+              if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+                core.setFailed("A valid issue or pull request number is required.");
+                return;
+              }
+
+              const output = JSON.parse(readFileSync(process.env.GH_AW_AGENT_OUTPUT, "utf8"));
+              const items = (output.items || []).filter(
+                (item) => item.type === "upsert_research_artifact",
+              );
+              if (items.length !== 1) {
+                core.setFailed(`Expected exactly one research update, found ${items.length}.`);
+                return;
+              }
+
+              const rawBody = String(items[0].body || "")
+                .replace(/<!--[\s\S]*?-->/g, "")
+                .trim();
+              if (rawBody.length > 50000) {
+                core.setFailed("Research body exceeds 50,000 characters.");
+                return;
+              }
+              const marker = '"squad_artifact":"research"';
+              const trailingMetadata = rawBody.match(
+                /\n+(?:Structured data:\s*\n+)?```json\s*(\{(?:(?!```)[\s\S])*?\})\s*```\s*$/i,
+              );
+              const body = trailingMetadata &&
+                trailingMetadata[1].replace(/\s/g, "").includes(marker)
+                ? rawBody.slice(0, trailingMetadata.index).trim()
+                : rawBody;
+              const firstLine = body.split(/\r?\n/, 1)[0];
+              const requiredSections = [
+                "Goals",
+                "Non-goals",
+                "Evidence table",
+                "Load-bearing assumptions",
+                "Open decisions",
+                "Acceptance framing",
+              ];
+              const hasRequiredSections = requiredSections.every((section) => {
+                const label = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                return new RegExp(
+                  `^(?:#{2,6}\\s+${label}|\\*\\*${label}\\*\\*)\\s*$`,
+                  "im",
+                ).test(body);
+              });
+              if (!/^##\s+.*\bSquad Research\b/i.test(firstLine) || !hasRequiredSections) {
+                core.setFailed("Research body must include an H2 Squad Research heading and every required section.");
+                return;
+              }
+              if (body.includes("Structured data:") || body.replace(/\s/g, "").includes(marker)) {
+                core.setFailed("Research body must omit structured data.");
+                return;
+              }
+
+              const data = JSON.stringify({
+                squad_artifact: "research",
+                schema_version: "1",
+                origin_issue: issueNumber,
+                phases: [],
+              });
+              const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+              const matches = comments
+                .filter((comment) => {
+                  if (comment.user?.login !== "github-actions[bot]") return false;
+                  const blocks = String(comment.body || "").matchAll(
+                    /```json\s*(\{(?:(?!```)[\s\S])*?\})\s*```/gi,
+                  );
+                  for (const block of blocks) {
+                    try {
+                      const candidate = JSON.parse(block[1]);
+                      if (
+                        candidate.squad_artifact === "research" &&
+                        candidate.schema_version === "1" &&
+                        candidate.origin_issue === issueNumber
+                      ) {
+                        return true;
+                      }
+                    } catch {
+                      // Ignore non-JSON fences and continue scanning this comment.
+                    }
+                  }
+                  return false;
+                })
+                .sort((left, right) =>
+                  String(left.created_at).localeCompare(String(right.created_at)),
+                );
+              const current = matches.at(-1);
+
+              if (current) {
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: current.id,
+                  body: finalBody,
+                });
+                for (const duplicate of matches.slice(0, -1)) {
+                  await github.rest.issues.deleteComment({
+                    ...context.repo,
+                    comment_id: duplicate.id,
+                  });
+                }
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  body: finalBody,
+                });
+              }
+    upsert-lifecycle-state:
+      description: Update the single Squad planning lifecycle comment for this issue.
+      runs-on: ubuntu-slim
+      needs: safe_outputs
+      permissions:
+        issues: write
+        pull-requests: write
+      max: 1
+      output: Lifecycle state updated.
+      inputs:
+        body:
+          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
+          required: true
+          type: string
+      steps:
+        - name: Upsert Squad lifecycle state
+          uses: actions/github-script@v9
+          env:
+            ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || github.event.inputs.issue_number }}
+          with:
+            script: |
+              const { readFileSync } = await import("node:fs");
+              const issueNumber = Number(process.env.ISSUE_NUMBER);
+              if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+                core.setFailed("A valid issue or pull request number is required.");
+                return;
+              }
+
+              const output = JSON.parse(readFileSync(process.env.GH_AW_AGENT_OUTPUT, "utf8"));
+              const items = (output.items || []).filter(
+                (item) => item.type === "upsert_lifecycle_state",
+              );
+              if (items.length !== 1) {
+                core.setFailed(`Expected exactly one lifecycle update, found ${items.length}.`);
+                return;
+              }
+
+              const rawBody = String(items[0].body || "")
+                .replace(/<!--[\s\S]*?-->/g, "")
+                .trim();
+              if (rawBody.length > 50000) {
+                core.setFailed("Lifecycle body exceeds 50,000 characters.");
+                return;
+              }
+              const marker = '"squad_artifact":"lifecycle-state"';
+              const trailingMetadata = rawBody.match(
+                /\n+(?:Structured data:\s*\n+)?```json\s*(\{(?:(?!```)[\s\S])*?\})\s*```\s*$/i,
+              );
+              const body = trailingMetadata &&
+                trailingMetadata[1].replace(/\s/g, "").includes(marker)
+                ? rawBody.slice(0, trailingMetadata.index).trim()
+                : rawBody;
+              const firstLine = body.split(/\r?\n/, 1)[0];
+              const hasLifecycleHeading =
+                /^##\s+/.test(firstLine) &&
+                /\blifecycle\b/i.test(firstLine) &&
+                (/\bsquad\b/i.test(firstLine) || /\bplanning\b/i.test(firstLine));
+              const hasState = /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+\S+/im.test(body);
+              const hasLastCommand = /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`[ \t]*$/im.test(body);
+              const hasActivationDone =
+                /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
+              const hasTerminalState =
+                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
+                hasActivationDone &&
+                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
+                /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
+              const hasNextAction = hasNextCommand || hasTerminalState;
+              if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
+                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
+                return;
+              }
+              if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {
+                core.setFailed("Lifecycle body must omit structured data.");
+                return;
+              }
+
+              const data = JSON.stringify({
+                squad_artifact: "lifecycle-state",
+                schema_version: "1",
+                origin_issue: issueNumber,
+                phases: [],
+              });
+              const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+              const matches = comments
+                .filter((comment) =>
+                  comment.user?.login === "github-actions[bot]" &&
+                  String(comment.body || "").replace(/\s/g, "").includes(marker),
+                )
+                .sort((left, right) =>
+                  String(left.created_at).localeCompare(String(right.created_at)),
+                );
+              const current = matches.at(-1);
+
+              if (current) {
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: current.id,
+                  body: finalBody,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  body: finalBody,
+                });
+              }
+    cast-failure:
+      name: Fail incomplete Cast
+      description: Fail a Cast run from an emitted factual failure record.
+      runs-on: ubuntu-slim
+      max: 1
+      inputs:
+        stage:
+          description: Bounded Cast failure stage.
+          required: true
+          type: string
+        command_category:
+          description: Exact command category for the stage.
+          required: true
+          type: string
+        exit_status:
+          description: Observed command exit status, or unavailable when the command did not start.
+          required: true
+          type: string
+        stderr:
+          description: Complete observed stderr without diagnosis or rewriting, including an empty string.
+          required: true
+          type: string
+      steps:
+        - name: Fail Cast terminal outcome
+          uses: actions/github-script@v9
+          with:
+            script: |
+              const fs = await import('node:fs');
+              const outputPath = process.env.GH_AW_AGENT_OUTPUT;
+              if (!outputPath) {
+                core.setFailed('GH_AW_AGENT_OUTPUT is unavailable for the Cast failure job.');
+                return;
+              }
+              let output;
+              try {
+                output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+              } catch (error) {
+                core.setFailed(`Unable to read Cast failure output: ${error instanceof Error ? error.message : String(error)}`);
+                return;
+              }
+              if (!output || !Array.isArray(output.items)) {
+                core.setFailed('Cast failure output does not contain an items array.');
+                return;
+              }
+              const malformedIndex = output.items.findIndex(
+                item => item === null || typeof item !== 'object' || Array.isArray(item),
+              );
+              if (malformedIndex !== -1) {
+                core.setFailed(`Cast failure output item ${malformedIndex} is not an object.`);
+                return;
+              }
+              const failures = output.items.filter(item => item.type === 'cast_failure');
+              if (failures.length !== 1) {
+                core.setFailed(`Expected exactly one cast_failure item, found ${failures.length}.`);
+                return;
+              }
+              const pullRequests = output.items.filter(item => item.type === 'create_pull_request');
+              if (pullRequests.length > 0) {
+                core.setFailed([
+                  `Conflicting Cast terminal outputs: found ${pullRequests.length} create_pull_request item(s) with cast_failure.`,
+                  'This post-agent diagnostic cannot prevent a concurrently materialized pull request.',
+                ].join('\n'));
+                return;
+              }
+
+              const categories = new Map([
+                ['discovery', 'validator resource discovery'],
+                ['integrity', 'SHA-256 authentication'],
+                ['syntax', 'node --check'],
+                ['validation', 'validator execution'],
+              ]);
+              const failure = failures[0];
+              if (!categories.has(failure.stage)) {
+                core.setFailed(`Invalid Cast failure stage: ${String(failure.stage)}`);
+                return;
+              }
+              if (failure.command_category !== categories.get(failure.stage)) {
+                core.setFailed(`Invalid command category for Cast failure stage ${failure.stage}.`);
+                return;
+              }
+              if (!/^(?:[0-9]{1,3}|unavailable)$/.test(String(failure.exit_status))) {
+                core.setFailed(`Invalid Cast failure exit status: ${String(failure.exit_status)}`);
+                return;
+              }
+              if (typeof failure.stderr !== 'string') {
+                core.setFailed('Cast failure stderr must be a string.');
+                return;
+              }
+
+              core.setFailed([
+                'Cast did not complete.',
+                `Stage: ${failure.stage}`,
+                `Command category: ${failure.command_category}`,
+                `Exit status: ${failure.exit_status}`,
+                'Stderr:',
+                failure.stderr,
+              ].join('\n'));
+  allowed-domains:
+    - learn.microsoft.com
+    - aspire.dev
+  activation-comments: ${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}
+  messages:
+    append-only-comments: true
+    run-success: 🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success.
+    run-failure: 🤖 [{workflow_name}]({run_url}) {status}. The requested result was not delivered.
+    pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
+  data:
+    type: object
+    properties:
+      squad_artifact:
+        type: string
+        enum:
+          - research
+          - plan
+          - plan-accepted
+          - phases-accepted
+          - triage
+          - lifecycle-state
+          - program
+          - implementation
+          - validation
+          - scope-accepted
+          - impl-accepted
+          - impl-phases-accepted
+          - phases-activated
+          - activated
+      schema_version:
+        type: string
+        enum:
+          - "1"
+      origin_issue:
+        type: integer
+        minimum: 1
+      phases:
+        type: array
+        items:
+          type: integer
+          minimum: 1
+    required:
+      - squad_artifact
+      - schema_version
+      - origin_issue
+      - phases
+    additionalProperties: false
+  create-pull-request:
+    title-prefix: "[squad] "
+    labels:
+      - squad
+    max: 3
+    auto-close-issue: false
+    allowed-base-branches:
+      - squad/*
+    allowed-files:
+      - .squad/**
+      - .github/agents/*.agent.md
+      - meet-the-squad.md
+    protected-files: allowed
+    max-patch-files: 500
+    expires: 14d
+  create-issue:
+    labels:
+      - squad
+    max: 75
+    require-temporary-id: true
+  add-labels:
+    allowed:
+      - squad
+      - squad:*
+    create-if-missing: true
+    issues: true
+    pull-requests: false
+    target: "*"
+    max: 110
+  add-comment:
+    max: 20
+    target: "*"
+  dispatch-workflow:
+    workflows:
+      - squad-implement-worker
+      - squad-deps-worker
+      - squad-review
+      - squad-retro
+      - squad-improvement-worker
+    max: 3
+jobs:
+  repair_activated_lifecycle:
+    name: Repair terminal Squad lifecycle
+    needs:
+      - agent
+      - detection
+      - safe_outputs
+    if: |-
+      ${{
+        !cancelled() &&
+        needs.agent.result == 'success' &&
+        needs.detection.result == 'success' &&
+        needs.safe_outputs.result == 'success' &&
+        !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
+        github.event_name == 'issue_comment' &&
+        (github.event.comment.body == '/squad activate' ||
+         github.event.comment.body == '/squad plan accept' ||
+         github.event.comment.body == '/squad plan activate')
+      }}
+    runs-on: ubuntu-slim
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Repair terminal lifecycle after idempotent activation
+        uses: actions/github-script@v9
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          SQUAD_COMMAND: ${{ github.event.comment.body }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const command = String(process.env.SQUAD_COMMAND || "").trim();
+            if (
+              !Number.isInteger(issueNumber) ||
+              issueNumber <= 0 ||
+              !["/squad activate", "/squad plan accept", "/squad plan activate"].includes(command)
+            ) {
+              core.setFailed("A valid whole-plan activation command and issue number are required.");
+              return;
+            }
+
+            const actor = String(context.payload.comment?.user?.login || "").trim();
+            if (!actor) {
+              core.setFailed("Lifecycle repair requires an identifiable comment author.");
+              return;
+            }
+            let permission;
+            try {
+              const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                ...context.repo,
+                username: actor,
+              });
+              permission = String(response.data?.permission || "").toLowerCase();
+            } catch (error) {
+              core.setFailed(`Unable to verify lifecycle repair permission for ${actor}: ${error.message}`);
+              return;
+            }
+            if (!["admin", "maintain", "write"].includes(permission)) {
+              core.info(`Lifecycle repair is not authorized for ${actor} with ${permission || "unresolved"} permission.`);
+              return;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+            const trusted = comments.filter(
+              (comment) => comment.user?.login === "github-actions[bot]",
+            );
+            const envelopeFor = (comment) => {
+              const matches = String(comment.body || "").matchAll(
+                /Structured data:\s*```json\s*([\s\S]*?)```/gi,
+              );
+              let envelope = null;
+              for (const match of matches) {
+                try {
+                  envelope = JSON.parse(match[1]);
+                } catch (error) {
+                  if (!(error instanceof SyntaxError)) throw error;
+                }
+              }
+              return envelope;
+            };
+            const artifacts = trusted.map((comment) => ({
+              comment,
+              envelope: envelopeFor(comment),
+            }));
+            const ok = artifacts.some(
+              ({ envelope: e }) =>
+                ["plan-accepted", "activated"].includes(e?.squad_artifact) &&
+                e?.schema_version === "1" &&
+                e?.origin_issue === issueNumber &&
+                Array.isArray(e?.phases) &&
+                (e.squad_artifact === "activated" || e.phases.length === 0),
+            );
+            if (!ok) {
+              core.info("No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.");
+              return;
+            }
+
+            const lifecycle = artifacts
+              .filter(
+                ({ envelope }) =>
+                  envelope?.squad_artifact === "lifecycle-state" &&
+                  envelope?.schema_version === "1" &&
+                  envelope?.origin_issue === issueNumber,
+              )
+              .sort(({ comment: left }, { comment: right }) =>
+                String(left.created_at).localeCompare(String(right.created_at)),
+              )
+              .at(-1)?.comment;
+            const lifecycleBody = String(lifecycle?.body || "");
+            const terminal =
+              /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(lifecycleBody) &&
+              (/^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(lifecycleBody) ||
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(lifecycleBody)) &&
+              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(lifecycleBody);
+            if (terminal) {
+              core.info("The newest lifecycle tracker already records terminal activation.");
+              return;
+            }
+
+            const body = [
+              `## 🧭 Squad Lifecycle State — Issue #${issueNumber}`,
+              "",
+              "- **State:** Activated",
+              "- **Plan:** ✅ Done",
+              "- **Activation:** ✅ Done",
+              `- **Last command:** \`${command}\``,
+              "- **Next action:** Track progress on the created task issues; no further planning action is required.",
+            ].join("\n");
+            const data = JSON.stringify({
+              squad_artifact: "lifecycle-state",
+              schema_version: "1",
+              origin_issue: issueNumber,
+              phases: [],
+            });
+            const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+
+            if (lifecycle) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: lifecycle.id,
+                body: finalBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issueNumber,
+                body: finalBody,
+              });
+            }
+  activation:
+    steps:
+      - name: Mint Squad GitHub App token
+        id: squad-app-token
+        if: ${{ vars.SQUAD_GITHUB_APP_ID != '' }}
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
+          private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+      - name: Resolve Squad standalone release
+        id: squad-release
+        env:
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v0.13.1' }}
+        run: |
+          set -euo pipefail
+          release_tag="${SQUAD_CLI_VERSION}"
+          case "${release_tag}" in
+            v*) ;;
+            *) release_tag="v${release_tag}" ;;
+          esac
+          if ! echo "${release_tag}" | LC_ALL=C grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::SQUAD_CLI_VERSION must be a semver release tag (for example v0.13.1)."
+            exit 1
+          fi
+          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
+      - name: Install Squad CLI from standalone release
+        id: squad-cli
+        uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377
+        with:
+          version: ${{ steps.squad-release.outputs.tag }}
+          skip-init: "true"
+      - name: Initialize Squad team
+        env:
+          GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+        run: |
+          # Preserve committed cast state: if .squad/team.md already exists with
+          # roster entries, skip init to avoid overwriting a merged cast (#1657).
+          # Only data rows count as roster entries: a scaffolded team.md carries
+          # the table header and separator, and treating those as a cast skips
+          # init, leaving a team the readiness check then rejects (#1605).
+          if [ -f ".squad/team.md" ] && awk '
+            /^## Members/ { in_members = 1; next }
+            /^## / { in_members = 0 }
+            in_members && /^\|/ && !/^\|[[:space:]]*Name[[:space:]]*\|/ && /[[:alnum:]]/ { found = 1 }
+            END { exit found ? 0 : 1 }
+          ' .squad/team.md; then
+            echo "✓ Existing squad team detected with roster entries — skipping init."
+          else
+            echo "No existing squad team found — running squad init."
+            squad init --preset default --state-backend local
+          fi
+      - name: Verify npm-free Squad state wiring
+        run: |
+          set -euo pipefail
+          if [ -f .mcp.json ] && grep -q '"npx"' .mcp.json; then
+            echo "::error::.mcp.json references npx; expected the standalone Squad launcher."
+            exit 1
+          fi
+      - name: Run Squad health check
+        env:
+          GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+          SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}
+        run: |
+          set -euo pipefail
+          if squad help | grep -Fq 'Validate team state for CI'; then
+            squad health --json
+          else
+            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI pin."
+          fi
+      - name: Upload Squad state artifact
+        if: success()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: squad-state
+          include-hidden-files: true
+          path: |
+            .squad
+            .github/agents/squad.agent.md
+          if-no-files-found: error
+          retention-days: 1
+steps:
+  - name: Restore Squad state from activation artifact
+    continue-on-error: true
+    uses: actions/download-artifact@v8.0.1
+    with:
+      name: squad-state
+      path: ${{ github.workspace }}
 name: Squad
-run-name: "Squad — ${{ github.event.inputs.command || github.event.comment.body || github.event.issue.title || 'run' }}"
+run-name: Squad — ${{ github.event.inputs.command || github.event.comment.body || github.event.issue.title || 'run' }}
 description: Cast, connect, or adopt a Squad AI team for your repository
-emoji: "🤖"
+emoji: 🤖
 private: false
 on:
-  bots: ["github-actions[bot]"]
+  bots:
+    - github-actions[bot]
   roles: all
   slash_command:
     name: squad
@@ -16,37 +700,29 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'Squad command (e.g., cast, implement, connect org/repo, adopt org/repo, status)'
+        description: Squad command (e.g., cast, implement, connect org/repo, adopt org/repo, status)
         required: false
       issue_number:
-        description: 'Issue number to implement when run manually'
+        description: Issue number to implement when run manually
         required: false
         type: string
       aw_context:
-        description: 'Originating agentic workflow context'
+        description: Originating agentic workflow context
         required: false
         type: string
-if: >-
-  github.event_name != 'issues' ||
-  github.actor != 'github-actions[bot]' ||
-  github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' ||
-  !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
+if: github.event_name != 'issues' || github.actor != 'github-actions[bot]' || github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' || !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
 permissions:
   contents: read
   copilot-requests: write
   issues: read
   pull-requests: read
 concurrency:
-  group: "squad-${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}"
+  group: squad-${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
   job-discriminator: ${{ github.run_id }}
 network:
   allowed:
     - defaults
-imports:
-  - shared/squad.md
-  - shared/squad-planning-ontology.md
-  - shared/squad-planning-policy.md
 resources:
   - shared/squad-cast-validator.mjs
   - shared/squad-bootstrap-validator.mjs
@@ -61,13 +737,11 @@ resources:
   - shared/builtins/fact-checker-charter.md
 tools:
   bash: true
-  web-fetch:
+  web-fetch: null
   github:
     mode: gh-proxy
-    toolsets: [default]
-# pre-agent-steps (not steps:): runs after gh-aw's native base-branch/ambient
-# restores that can reintroduce a stale committed .squad/ snapshot late in the
-# job, so this stays the last writer of the four built-in charters.
+    toolsets:
+      - default
 pre-agent-steps:
   - name: Materialize canonical built-in support agents
     shell: bash
@@ -181,7 +855,7 @@ pre-agent-steps:
       SQUAD_CAST_VALIDATOR_RUNNER
       chmod 500 "$validator_runner"
   - name: Validate improvement command before the agent
-    uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+    uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
     env:
       GITHUB_TOKEN: ${{ github.token }}
     with:
@@ -192,190 +866,641 @@ pre-agent-steps:
           '.github/workflows/shared/squad-improvement-gate.mjs')).href);
         const result = await gate.validateImprovementCommand(context.payload, process.env);
         if (!result.ok) core.setFailed(gate.describeViolations(result.violations).join('; '));
-safe-outputs:
-  allowed-domains:
-    - learn.microsoft.com
-    - aspire.dev
-  activation-comments: ${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}
-  messages:
-    append-only-comments: true
-    run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."
-    run-failure: "🤖 [{workflow_name}]({run_url}) {status}. The requested result was not delivered."
-    pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
-  jobs:
-    cast-failure:
-      name: Fail incomplete Cast
-      description: "Fail a Cast run from an emitted factual failure record."
-      runs-on: ubuntu-slim
-      max: 1
-      inputs:
-        stage:
-          description: "Bounded Cast failure stage."
-          required: true
-          type: string
-        command_category:
-          description: "Exact command category for the stage."
-          required: true
-          type: string
-        exit_status:
-          description: "Observed command exit status, or unavailable when the command did not start."
-          required: true
-          type: string
-        stderr:
-          description: "Complete observed stderr without diagnosis or rewriting, including an empty string."
-          required: true
-          type: string
-      steps:
-        - name: Fail Cast terminal outcome
-          uses: actions/github-script@v9
-          with:
-            script: |
-              const fs = await import('node:fs');
-              const outputPath = process.env.GH_AW_AGENT_OUTPUT;
-              if (!outputPath) {
-                core.setFailed('GH_AW_AGENT_OUTPUT is unavailable for the Cast failure job.');
-                return;
-              }
-              let output;
-              try {
-                output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-              } catch (error) {
-                core.setFailed(`Unable to read Cast failure output: ${error instanceof Error ? error.message : String(error)}`);
-                return;
-              }
-              if (!output || !Array.isArray(output.items)) {
-                core.setFailed('Cast failure output does not contain an items array.');
-                return;
-              }
-              const malformedIndex = output.items.findIndex(
-                item => item === null || typeof item !== 'object' || Array.isArray(item),
-              );
-              if (malformedIndex !== -1) {
-                core.setFailed(`Cast failure output item ${malformedIndex} is not an object.`);
-                return;
-              }
-              const failures = output.items.filter(item => item.type === 'cast_failure');
-              if (failures.length !== 1) {
-                core.setFailed(`Expected exactly one cast_failure item, found ${failures.length}.`);
-                return;
-              }
-              const pullRequests = output.items.filter(item => item.type === 'create_pull_request');
-              if (pullRequests.length > 0) {
-                core.setFailed([
-                  `Conflicting Cast terminal outputs: found ${pullRequests.length} create_pull_request item(s) with cast_failure.`,
-                  'This post-agent diagnostic cannot prevent a concurrently materialized pull request.',
-                ].join('\n'));
-                return;
-              }
-
-              const categories = new Map([
-                ['discovery', 'validator resource discovery'],
-                ['integrity', 'SHA-256 authentication'],
-                ['syntax', 'node --check'],
-                ['validation', 'validator execution'],
-              ]);
-              const failure = failures[0];
-              if (!categories.has(failure.stage)) {
-                core.setFailed(`Invalid Cast failure stage: ${String(failure.stage)}`);
-                return;
-              }
-              if (failure.command_category !== categories.get(failure.stage)) {
-                core.setFailed(`Invalid command category for Cast failure stage ${failure.stage}.`);
-                return;
-              }
-              if (!/^(?:[0-9]{1,3}|unavailable)$/.test(String(failure.exit_status))) {
-                core.setFailed(`Invalid Cast failure exit status: ${String(failure.exit_status)}`);
-                return;
-              }
-              if (typeof failure.stderr !== 'string') {
-                core.setFailed('Cast failure stderr must be a string.');
-                return;
-              }
-
-              core.setFailed([
-                'Cast did not complete.',
-                `Stage: ${failure.stage}`,
-                `Command category: ${failure.command_category}`,
-                `Exit status: ${failure.exit_status}`,
-                'Stderr:',
-                failure.stderr,
-              ].join('\n'));
-  data:
-    type: object
-    properties:
-      squad_artifact:
-        type: string
-        enum:
-          - research
-          - plan
-          - plan-accepted
-          - phases-accepted
-          - triage
-          - lifecycle-state
-          - program
-          - implementation
-          - validation
-          - scope-accepted
-          - impl-accepted
-          - impl-phases-accepted
-          - phases-activated
-          - activated
-      schema_version:
-        type: string
-        enum: ["1"]
-      origin_issue:
-        type: integer
-        minimum: 1
-      phases:
-        type: array
-        items:
-          type: integer
-          minimum: 1
-    required:
-      - squad_artifact
-      - schema_version
-      - origin_issue
-      - phases
-    additionalProperties: false
-  create-pull-request:
-    title-prefix: "[squad] "
-    labels: [squad]
-    max: 3
-    auto-close-issue: false
-    allowed-base-branches:
-      - "squad/*"
-    allowed-files:
-      - ".squad/**"
-      - ".github/agents/*.agent.md"
-      - "meet-the-squad.md"
-    protected-files: allowed
-    max-patch-files: 500
-    expires: 14d
-  # Capacity: max activation is 50 issues. `max` counts safe-output ITEMS (tool
-  # calls), not label names; enforced at invocation and collection, neither fails
-  # the run. Derivation: `squad-plan-activate` > "Activation capacity budget".
-  create-issue:
-    labels: [squad]
-    # 50 worst-case issues + 25 bounded margin.
-    max: 75
-    require-temporary-id: true
-  add-labels:
-    allowed: [squad, "squad:*"]
-    create-if-missing: true
-    issues: true
-    pull-requests: false
-    target: "*"
-    # 50 calls worst case (one per issue); 100 label names worst case (2 each).
-    # 110 covers both readings of `max`. Do not reduce below create-issue max.
-    max: 110
-  add-comment:
-    max: 20
-    target: "*"
-  dispatch-workflow:
-    workflows: [squad-implement-worker, squad-deps-worker, squad-review, squad-retro, squad-improvement-worker]
-    max: 3
 ---
 
+<!-- Generated by the Squad integrity tool. Edit workflows/*.md and run npm run gh-aw:integrity:write. -->
+<!-- squad-package-import: shared/squad.md -->
+
+## Working with Squad
+
+Squad's team state (`.squad/`) and its Copilot custom agent
+(`.github/agents/squad.agent.md`) were initialized during activation and restored
+into this checkout before you started — do **not** install Squad or run `squad init`
+yourself.
+
+- Verify `.squad/team.md` exists before delegating work to the team. If it is
+  missing, the activation-job bootstrap step failed — call `noop` and explain
+  why instead of proceeding.
+- Coordinate work through the Squad team already defined in `.squad/` rather
+  than proposing a brand-new team from scratch.
+- This run uses the `local` state backend, and the Squad `state-mcp` bridge is
+  **not** available (the agent runs with `--disable-builtin-mcps`). Treat `.squad/`
+  as plain files on disk.
+- State does **not** carry over between runs unless a committed `.squad/team.md`
+  with roster entries exists — in that case, the bootstrap preserves it. The
+  casting registry, session logs, and any output produced live only for this run.
+<!-- squad-package-import: shared/squad-planning-ontology.md -->
+## skill: `squad-planning-ontology`
+---
+description: Squad planning ontology — artifact schemas, lifecycle state machine, and the structured artifact registry. Load for any planning mode before producing or reading a planning artifact.
+---
+# Planning Ontology & Artifact Schemas
+
+> **Version:** 2.0 · **Owner:** Agent systems role · **Status:** Active
+>
+> **Decision Ratifications:**
+> - `copilot-plan-workflow-ux.md` → **Ratified Option A + Option 3**: Explicit commands (`/squad plan accept`) under the `/squad` namespace; planning logic lives in `shared/` components imported by `squad.md`. This file IS the shared component.
+> - `copilot-sdlc-workflows.md` → **Ratified Option B (phased)**: Ship optional composable SDLC workflows. The planning ontology is the first deliverable; `shared/implement.md` and `shared/review.md` follow as separate issues.
+
+---
+
+## 1. Ontology Table
+
+| Concept | Purpose | GitHub Representation | `squad_artifact` | Schema |
+|---------|---------|----------------------|------------------|--------|
+| **Intent** | Define what we're building and why | Root issue body | (issue body itself) | — |
+| **Research** | Gather evidence and context | Issue comment | `research` | 1 |
+| **Triage** | Classify findings → work / decision / excluded | Issue comment | `triage` | 1 |
+| **Program Plan** | Strategic decomposition into initiatives/epics | Issue comment | `program` | 1 |
+| **Implementation Plan** | PR-sized tasks with deps and sizing | Issue comment | `implementation` | 1 |
+| **Validation** | Verify postconditions before activation | Issue comment | `validation` | 1 |
+| **Scope Acceptance** | Confirm program plan is approved | Issue comment | `scope-accepted` | 1 |
+| **Impl Acceptance** | Confirm implementation plan is approved | Issue comment | `impl-accepted` | 1 |
+| **Activation** | Create sub-issues and begin execution | Issue comment | `activated` | 1 |
+| **Lifecycle State** | Running summary updated on each transition | Issue comment | `lifecycle-state` | 1 |
+
+### Preconditions & Postconditions
+
+| Artifact | Preconditions | Postconditions |
+|----------|---------------|----------------|
+| Research | Intent exists (issue body non-empty) | Evidence gathered; sources cited |
+| Triage | Research comment exists | Each finding classified: work / decision / excluded |
+| Program Plan | Triage comment exists | Initiatives and epics defined with user stories |
+| Implementation Plan | Program plan exists | PR-sized tasks with dependencies, sizing, rollout order |
+| Validation | Implementation plan exists | All postconditions checked; pass/fail reported |
+| Scope Acceptance | Program plan exists; user approves | Program scope locked |
+| Impl Acceptance | Implementation plan exists; validation passes | Impl plan locked |
+| Activation | Impl acceptance exists | Sub-issues created; labels applied; lifecycle complete |
+
+---
+
+## 2. State Transition Table
+
+```
+idle → researching
+  triggered_by: /squad research
+  requires: intent (issue body)
+  produces: squad_artifact=research
+
+researching → triaging
+  triggered_by: /squad triage
+  requires: squad_artifact=research
+  produces: squad_artifact=triage
+
+triaging → program_planning
+  triggered_by: /squad plan program
+  requires: squad_artifact=triage
+  produces: squad_artifact=program
+
+program_planning → implementation_planning
+  triggered_by: /squad plan implementation
+  requires: squad_artifact=program
+  produces: squad_artifact=implementation
+
+implementation_planning → validating
+  triggered_by: /squad plan validate
+  requires: squad_artifact=implementation
+  produces: squad_artifact=validation
+
+validating → scope_accepted
+  triggered_by: /squad plan accept scope
+  requires: squad_artifact=program
+  produces: squad_artifact=scope-accepted
+
+scope_accepted → impl_accepted
+  triggered_by: /squad plan accept implementation
+  requires: squad_artifact=validation with human-readable RESULT: PASS
+  produces: squad_artifact=impl-accepted
+
+impl_accepted → activated
+  triggered_by: /squad plan activate
+  requires: squad_artifact=impl-accepted
+  produces: squad_artifact=activated
+```
+
+**Idempotency rule:** Re-running any command updates the existing artifact comment (edit, not duplicate). The lifecycle state comment is always updated on every transition. Idempotency applies to research, triage, program plan, implementation plan, and validation artifacts. Acceptance and activation artifacts are immutable once written — re-running these commands is a no-op if matching structured data already exists.
+
+**Concurrency:** Concurrent acceptance commands are serialized by the workflow's concurrency group. Duplicate artifacts are harmless — subsequent phases select the newest matching structured data.
+
+**Revision:** `/squad plan revise <feedback>` may be issued from any planning state (program_planning, implementation_planning, or validating). It revises the most recent plan artifact and resets validation if present.
+
+---
+
+## 3. Artifact Schemas
+
+Each artifact is a human-readable Markdown comment plus gh-aw safe-output `data`. The minimum envelope is:
+
+```json
+{
+  "squad_artifact": "{artifact_kind}",
+  "schema_version": "1",
+  "origin_issue": 123,
+  "phases": []
+}
+```
+
+gh-aw requires every declared schema property. Use `phases: []` for non-phase artifacts and the accumulated phase numbers for phase-state artifacts. gh-aw appends the validated envelope as a `Structured data:` fenced JSON block. HTML comments are unsupported for Squad state because gh-aw removes them from compiled prompts and sanitized bodies.
+
+### 3.1 Intent (Root Issue Body)
+
+The issue body IS the intent. No special format required, but structured intents improve output:
+
+```markdown
+## Goal
+<What we're building and why>
+
+## Success Criteria
+- <Measurable outcome 1>
+- <Measurable outcome 2>
+
+## Constraints
+- <Technical or organizational constraints>
+
+## Context
+<Links, prior art, relevant decisions>
+```
+
+### 3.2 Research Findings
+
+```markdown
+## Research Findings
+
+### Summary
+<1-3 sentence overview of what was discovered>
+
+### Sources
+| # | Source | Type | Key Insight |
+|---|--------|------|-------------|
+| 1 | <link/file/doc> | <codebase/docs/external> | <insight> |
+
+### Online sources
+<`consulted` — list the URLs fetched this run (each also cited above); or
+`unavailable — <reason>` when no external documentation was fetched. Makes
+degradation observable: never claim `consulted` for a page not actually fetched.>
+
+### Findings
+#### Finding 1: <title>
+<Evidence and analysis>
+
+#### Finding 2: <title>
+<Evidence and analysis>
+
+### Open Questions
+- <Unresolved question needing human input>
+
+### Recommendations
+- <Actionable recommendation derived from evidence>
+```
+
+### 3.3 Triage Disposition
+
+```markdown
+## Triage Disposition
+
+### Work Items (→ planning)
+| # | Item | Source | Rationale |
+|---|------|--------|-----------|
+| 1 | <work description> | Finding N | <why this is work> |
+
+### Decisions Needed (→ decision gate)
+| # | Decision | Context | Options |
+|---|----------|---------|---------|
+| 1 | <decision question> | Finding N | <A, B, C> |
+
+### Excluded (→ out of scope)
+| # | Item | Reason |
+|---|------|--------|
+| 1 | <excluded item> | <why excluded> |
+
+### Triage Summary
+- **Work items:** N
+- **Decisions pending:** N
+- **Excluded:** N
+```
+
+### 3.4 Program Plan
+
+```markdown
+## Program Plan
+
+### Initiatives
+#### Initiative 1: <name>
+- **Goal:** <what this achieves>
+- **Epics:**
+  - Epic 1.1: <title> — <scope summary>
+  - Epic 1.2: <title> — <scope summary>
+
+### Milestone Map
+| Milestone | Epics | Target |
+|-----------|-------|--------|
+| M1: <name> | 1.1, 1.2 | <relative ordering> |
+
+### User Stories
+| Epic | Story | Acceptance Criteria |
+|------|-------|--------------------|
+| 1.1 | As a <who>, I want <what>, so that <why> | <criteria> |
+
+### Dependencies
+- Epic 1.2 depends on Epic 1.1
+- <other dependency>
+
+### Scope Boundary
+- **In scope:** <explicit inclusions>
+- **Out of scope:** <explicit exclusions>
+```
+
+### 3.5 Implementation Plan
+
+```markdown
+## Implementation Plan
+
+### Tasks
+| # | Title | Epic | Size | Depends On | Agent |
+|---|-------|------|------|------------|-------|
+| 1 | <PR-sized task title> | 1.1 | S | — | <squad member> |
+| 2 | <PR-sized task title> | 1.1 | M | 1 | <squad member> |
+
+**Sizing key:** XS (<1h) · S (1-3h) · M (3-8h) · L (1-2d) · XL (2-5d)
+
+### Rollout Order
+1. **Phase 1 (foundation):** Tasks 1, 2
+2. **Phase 2 (features):** Tasks 3, 4, 5
+3. **Phase 3 (polish):** Tasks 6, 7
+
+### Risk Register
+| Risk | Mitigation | Impact |
+|------|-----------|--------|
+| <risk> | <mitigation strategy> | <H/M/L> |
+
+### GitHub Mapping
+- Issues: one per task row
+- Dependencies: GitHub sub-issue relationships
+- Milestones: one per rollout phase
+- Labels: per `size_representation` policy (default: body; when `label`: `size:{t-shirt}`) + `squad` + agent label
+```
+
+### 3.6 Validation Result
+
+```markdown
+## Plan Validation
+
+### Result: <✅ PASS | ❌ FAIL>
+
+### Checks
+
+One row per check in `squad-plan-validate` Step 2 — that numbered table is the
+sole check vocabulary. Do not invent check names, do not restate their pass
+thresholds here, and do not omit a row: a check absent from this table has not
+been run, and an omitted row is not a pass.
+
+| Check | Status | Detail |
+|-------|--------|--------|
+| <check number and name from Step 2> | <✅ or ❌> | <diagnostic when ❌; — when ✅> |
+
+### Diagnostics (if FAIL)
+- <Specific issue and suggested fix>
+```
+
+> **Status cells are determined, never shipped.** An earlier revision of this
+> schema listed five check names each pre-filled `✅`, so the model was handed a
+> table in which the verdict was already `PASS` and asked to reproduce it. It did
+> — including on a run whose agent bindings were entirely invalid (#1801). A
+> concrete literal in a prompt gets copied verbatim (#1784); when that literal is
+> a verdict, the check clears itself. Every cell the model must determine uses
+> `<placeholder>` syntax, and `test/gh-aw-quality.test.ts` enforces it.
+
+### 3.7 Acceptance Records
+
+**Scope Acceptance:**
+```markdown
+## Scope Accepted
+
+- **Program plan version:** <comment link>
+- **Accepted by:** <user>
+- **Date:** <ISO date>
+- **Notes:** <optional remarks>
+```
+
+**Implementation Acceptance:**
+```markdown
+## Implementation Accepted
+
+- **Implementation plan version:** <comment link>
+- **Validation result:** ✅ PASS (<comment link>)
+- **Accepted by:** <user>
+- **Date:** <ISO date>
+- **Notes:** <optional remarks>
+```
+
+**Activation Record:**
+```markdown
+## Execution Activated
+
+- **Issues created:** N
+- **Milestone(s):** <milestone links>
+- **Assigned agents:** <list>
+- **Created issues:**
+  | # | Title | Issue | Size | Agent |
+  |---|-------|-------|------|-------|
+  | 1 | <title> | #NNN | S | <agent> |
+```
+
+The activation artifact body also carries an `Activation bindings:` fenced JSON
+block containing a non-empty array. Each entry
+maps a plan task number and raw agent assignment to its task issue reference,
+epic identifier, epic issue reference, and the epic's complete distinct agent
+set from the full accepted plan (including other activation phases). It records both task and derived
+epic labels reported as accepted label operations (defined below), or their omission reasons
+(`multi-owner` or `non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
+records the actual `squad:copilot` label. This mapping is mandatory for
+`phases-activated`, `activated`, `phases-accepted`, and `plan-accepted` artifacts —
+every fast-path (`/squad activate`) and granular (`/squad plan activate`) artifact
+that creates or recognizes issues carries it; neither path may omit it or ship an
+empty array. It remains in the body rather than
+the safe-output `data` envelope because gh-aw expands nested data schemas beyond
+GitHub's expression-size limit. The post-activation checker can still
+fail closed without matching model-authored titles.
+
+**Issue references are quoted strings, never bare numbers.** `issue` and `epic_issue`
+carry a `#`-prefixed reference in a JSON string: an item's own gh-aw `temporary_id`
+(`"#aw_task3"`) when this run created it, or its verified real number (`"#123"`) when the
+item was reused or matched by title. The agent never learns a created issue's real number
+during its turn, so it never writes one; gh-aw rewrites `#aw_…` references in a comment body
+to `#{real number}` once the issue exists. Quoting is required for validity: that
+substitution is plain text replacement across the whole body — it does not skip fenced code
+blocks — and preserves the `#`, so bare `"issue":#aw_task3` becomes invalid `"issue":#42`
+while quoted becomes `"issue":"#42"`. A reference still matching `#aw_…` was never resolved;
+consumers MUST treat it as a failure rather than skipping or repairing it.
+
+**Reported labels mean accepted label operations.** A `label` / `epic_label` asserts that an
+`add_labels` safe output carrying that label was accepted for that same issue, targeted by
+its temporary ID or verified real number. It does not assert the label was observed on the
+issue — safe outputs are applied after the agent turn — and never means it was carried by
+`create-issue`, whose `labels:` field cannot create a missing label. Verifying bindings
+against the labels actually present is the post-activation checker's job.
+
+---
+
+## 4. Structured Artifact Registry
+
+| `squad_artifact` | Artifact | `phases` Data | Cardinality | Update Behavior |
+|------------------|----------|---------------|-------------|-----------------|
+| `research` | Research findings | `[]` | 1 current per issue | Replace body |
+| `plan` | Fast-path plan | `[]` | 1 current per issue | Replace body |
+| `plan-accepted` | Fast-path full acceptance | `[]` | 1 total | Immutable |
+| `phases-accepted` | Fast-path accepted phase state | Accumulated accepted phases | 1 current per issue | Replace accumulated state |
+| `triage` | Triage disposition | `[]` | 1 current per issue | Replace body |
+| `program` | Program plan | `[]` | 1 current per issue | Replace body |
+| `implementation` | Implementation plan | `[]` | 1 current per issue | Replace body |
+| `validation` | Validation result | `[]`; body has `RESULT: PASS` or `FAIL` | 1 current per issue | Replace body |
+| `scope-accepted` | Scope acceptance | `[]` | 1 total | Immutable |
+| `impl-accepted` | Full implementation acceptance | `[]` | 1 total | Immutable |
+| `impl-phases-accepted` | Accepted implementation phase state | Accumulated accepted phases | 1 current per issue | Replace accumulated state |
+| `phases-activated` | Activated phase state | Accumulated activated phases | 1 current per issue | Replace accumulated state |
+| `activated` | Terminal activation record | All phases when phased; otherwise `[]` | 1 total | Immutable |
+| `lifecycle-state` | Lifecycle summary | `[]` | 1 current per issue | Updated every transition |
+
+Every entry also requires `schema_version: "1"` and the triggering `origin_issue`.
+
+**Version bump rule:** When this data contract changes incompatibly, increment `schema_version`. Consumers may continue recognizing earlier structured schemas during a migration window.
+
+---
+
+## 5. Lifecycle Summary Format
+
+This comment is created on first transition and updated on every subsequent transition:
+
+```markdown
+## Planning Lifecycle
+
+| Phase | Status | Artifact | Updated |
+|-------|--------|----------|---------|
+| Intent | ✅ Done | (issue body) | <date> |
+| Research | ✅ Done | <comment link> | <date> |
+| Triage | ✅ Done | <comment link> | <date> |
+| Program Plan | ⬚ Pending | — | — |
+| Implementation Plan | ⬚ Pending | — | — |
+| Validation | ⬚ Pending | — | — |
+| Scope Accepted | ⬚ Pending | — | — |
+| Impl Accepted | ⬚ Pending | — | — |
+| Activated | ⬚ Pending | — | — |
+
+**Current state:** Triaged
+**Last command:** `/squad triage` by @user at <timestamp>
+**Next action:** `/squad plan program`
+**Guidance:** Create a program plan from triage dispositions.
+**Also available:** `/squad triage revise <feedback>` — adjust triage before planning
+```
+
+For nonterminal states, `Next action` is only the backticked `/squad` command;
+put prose elsewhere. `Activated` is terminal and may use terminal prose there.
+Its canonical granular command is `/squad plan activate`.
+
+Status icons: `✅ Done` · `⏳ In Progress` · `⬚ Pending` · `❌ Failed` · `⏭ Skipped`
+
+---
+
+## 6. Backward Compatibility
+
+### Fast-Path Mapping
+
+The original `/squad plan` and `/squad plan accept` commands remain fully supported as **fast paths** that combine multiple lifecycle phases:
+
+| Legacy Command | Equivalent Phases | Artifact Data Produced |
+|---------------|-------------------|------------------------|
+| `/squad plan` | program + implementation (combined) | `squad_artifact=plan` |
+| `/squad plan accept` | scope + impl + activate (combined) | See note below |
+| `/squad plan revise` | revise (same as granular) | Updates `squad_artifact=plan` |
+| `/squad research` | research (unchanged) | `squad_artifact=research` |
+
+> **`/squad plan accept` behavior:** When only a fast-path `plan` artifact exists, accept produces `plan-accepted` or `phases-accepted`. When granular artifacts exist, accept runs the granular accept/activate sequence, producing `scope-accepted`, `impl-accepted`, and `activated` artifacts instead.
+
+### Coexistence Rules
+
+1. Fast-path artifact kinds (`plan`, `plan-accepted`, `phases-accepted`) and granular artifact kinds (`program`, `implementation`, etc.) are **independent namespaces** — they do not interfere.
+2. An issue may use EITHER the fast path OR the granular path, not both simultaneously.
+3. If a granular artifact exists and a user runs `/squad plan` (fast path), the system warns that granular planning is in progress and asks for confirmation.
+4. The lifecycle state comment tracks whichever path is active.
+
+Legacy Squad HTML markers are not scanned. gh-aw removes HTML comments during prompt compilation and safe-output sanitization; durable state uses the structured data registry above.
+
+---
+
+## 7. Command Surface
+
+| Command | Mode | Phase | `squad_artifact` Output |
+|---------|------|-------|-------------------------|
+| `/squad research` | Research | researching | `research` |
+| `/squad triage` | Triage | triaging | `triage` |
+| `/squad plan program` | Program Planning | program_planning | `program` |
+| `/squad plan implementation` | Impl Planning | implementation_planning | `implementation` |
+| `/squad plan validate` | Validation | validating | `validation` |
+| `/squad plan accept scope` | Scope Acceptance | scope_accepted | `scope-accepted` |
+| `/squad plan accept implementation` | Impl Acceptance | impl_accepted | `impl-accepted` or `impl-phases-accepted` |
+| `/squad plan activate` | Activation | activated | `activated` or `phases-activated` |
+| `/squad plan revise <feedback>` | Revision | (current phase) | Updates latest plan artifact |
+| `/squad plan` | Fast path (plan) | — | `plan` |
+| `/squad plan accept` | Fast path (accept) | — | `plan-accepted` or `phases-accepted` |
+
+### Execution Model Support
+
+All commands work identically under both execution models:
+- **Persistent Squad** (long-running cast): Agents referenced by name in assignments.
+- **Ephemeral Squad** (single-shot): Agent assignments become labels; cast is performed at activation time if none exists.
+
+---
+
+## Design Principles
+
+1. **Research produces evidence, not backlog** — findings inform triage, not issue creation.
+2. **Triage is a human-in-the-loop gate** — nothing becomes work without classification.
+3. **Program ≠ Implementation** — strategic scope and tactical tasks are separate products.
+4. **GitHub-native hierarchy** — sub-issues, milestones, and dependencies over custom labels.
+5. **Relative sizing** — XS/S/M/L/XL signals effort, not hours.
+6. **Postcondition validation** — acceptance checks structure before creating real artifacts.
+7. **Idempotent commands** — re-running updates rather than duplicates.
+8. **Path independence** — fast path and granular path coexist without conflict.
+
+## end skill: `squad-planning-ontology`
+<!-- squad-package-import: shared/squad-planning-policy.md -->
+## skill: `squad-planning-policy-schema`
+---
+description: Squad planning policy schema — profiles, artifact limits, sizing, and precedence rules. Load together with squad-planning-policy when resolving policy for a planning mode.
+---
+# Planning Policy
+
+## Purpose
+Planning policy controls how Squad's planning workflow behaves for a given repository. 
+Customers configure policy in their issue body or `.squad/planning-policy.md` file.
+When no policy is specified, sensible defaults apply.
+
+## Policy Schema
+
+### Artifact Limits
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_issues` | 20 | Maximum issues created per activation |
+| `max_milestones` | 5 | Maximum milestones per program plan |
+| `max_epics` | 10 | Maximum epics per program plan |
+| `max_tasks_per_epic` | 8 | Maximum implementation tasks per epic |
+
+### Sizing
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `sizing_scale` | `XS,S,M,L,XL` | Valid size values |
+| `max_task_size` | `L` | Tasks larger than this must be split |
+| `sizing_method` | `relative` | `relative` (story points-like) or `none` (skip sizing) |
+
+### Hierarchy
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `require_milestones` | `true` | Epics must be assigned to milestones |
+| `require_acceptance_criteria` | `true` | All items must have acceptance criteria |
+| `require_agent_assignment` | `false` | Tasks must have an assigned agent |
+| `min_stories_per_epic` | 1 | Minimum user stories per epic |
+
+### GitHub Representation
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `use_github_milestones` | `true` | Create GitHub milestones (vs. just documenting them) |
+| `use_sub_issues` | `true` | Use native sub-issue links when available |
+| `use_project_fields` | `false` | Write to GitHub Project fields (requires project) |
+| `label_strategy` | `squad` | Label prefix for created issues |
+| `size_representation` | `body` | `body` (in issue body), `label` (as labels), `project_field` |
+
+### Validation Strictness
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `strict_traceability` | `true` | Every impl task must trace to a program item |
+| `allow_oversized_with_justification` | `false` | Allow L+ tasks if rationale provided |
+| `require_all_decisions_resolved` | `true` | Block acceptance until all decisions resolved |
+| `cycle_detection` | `error` | `error` (block), `warn` (advisory), `skip` |
+
+## Profiles
+
+Profiles are named bundles of settings for common use cases.
+
+### `default` — Balanced
+All defaults as specified above. Good for most projects.
+
+### `lean` — Minimal Process
+```
+max_issues: 10
+require_milestones: false
+require_acceptance_criteria: false
+require_agent_assignment: false
+sizing_method: none
+strict_traceability: false
+```
+
+### `enterprise` — Maximum Rigor
+```
+max_issues: 50
+require_milestones: true
+require_acceptance_criteria: true
+require_agent_assignment: true
+strict_traceability: true
+allow_oversized_with_justification: false
+require_all_decisions_resolved: true
+use_github_milestones: true
+use_project_fields: true
+```
+
+### `spike` — Exploration/Prototype
+```
+max_issues: 5
+max_epics: 3
+require_milestones: false
+require_acceptance_criteria: false
+sizing_method: none
+strict_traceability: false
+cycle_detection: warn
+```
+
+## How Policy is Resolved (precedence order)
+
+1. **Issue body** — a `Squad-Policy:` directive line (see [Policy in Issue Body](#policy-in-issue-body))
+2. **Repository file** — `.squad/planning-policy.md` with YAML frontmatter
+3. **Profile name** — Matches a built-in or custom profile
+4. **Default** — All defaults apply
+
+## Custom Profiles
+
+Users can define custom profiles in `.squad/planning-policy.md`:
+
+```yaml
+---
+profile: custom
+settings:
+  max_issues: 30
+  require_milestones: true
+  sizing_method: relative
+  max_task_size: M
+---
+```
+
+## Policy in Issue Body
+
+Embed policy inline for per-issue customization by adding a `Squad-Policy:` line
+on its own line anywhere in the issue body:
+
+```markdown
+Squad-Policy: lean
+```
+
+Or override specific settings:
+
+```markdown
+Squad-Policy: default
+Squad-Setting: max_issues=30, require_milestones=false
+```
+
+> **Do not use HTML comments** (for example `<!-- squad-policy: lean -->`) for
+> this. GitHub Agentic Workflows strips HTML comments before the agent sees the
+> issue body, so a policy hidden in a comment is silently ignored. The directive
+> must be visible Markdown text.
+
+## end skill: `squad-planning-policy-schema`
 ## Planning Artifact Data Contract (all modes)
 
 gh-aw strips HTML comments, so never use them as state markers. Every

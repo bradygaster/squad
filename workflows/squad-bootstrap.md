@@ -8,8 +8,12 @@ on:
     branches:
       - "**"
     paths:
-      - ".github/workflows/squad-bootstrap.md"
-      - ".github/workflows/squad-bootstrap.lock.yml"
+      - ".github/workflows/squad*.md"
+      - ".github/workflows/squad*.lock.yml"
+      - ".github/workflows/shared/**"
+      - ".github/aw/squad-workflows.manifest.json"
+      - ".github/aw/packages/*.json"
+      - ".github/aw/squad/runtime/**"
   workflow_dispatch:
 if: github.ref_name == github.event.repository.default_branch
 permissions:
@@ -25,6 +29,7 @@ network:
   allowed:
     - defaults
 resources:
+  - shared/squad-install-verifier.mjs
   - shared/squad-cast-validator.mjs
   - shared/squad-bootstrap-validator.mjs
   - shared/builtins/scribe-charter.md
@@ -38,6 +43,11 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 pre-agent-steps:
+  - name: Verify coherent Squad package installation
+    shell: bash
+    run: |
+      set -euo pipefail
+      node .github/workflows/shared/squad-install-verifier.mjs --verify-install
   - name: Inspect deterministic bootstrap state
     id: bootstrap-state
     uses: actions/github-script@v9
@@ -145,8 +155,10 @@ pre-agent-steps:
         }
         node --check "$path" >/dev/null
       }
-      check_hash "$cast_validator" "31e568ae4a0cc372f5b79d4b024ba8b7af1f38feac54034221fb203da9918ab4"
+      # BEGIN GENERATED RESOURCE DIGESTS
+      check_hash "$cast_validator" "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
       check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --root "$PWD" \
         --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \

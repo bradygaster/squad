@@ -739,8 +739,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
-      - name: Install gh-aw v0.87.10 (pinned)
-        run: gh extension install --pin v0.87.10 github/gh-aw
+      - name: Install gh-aw v0.89.21 (pinned)
+        run: gh extension install --pin v0.89.21 github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -749,6 +749,9 @@ jobs:
           echo "### gh-aw compiler" >> "$GITHUB_STEP_SUMMARY"
           gh aw --version | tee -a "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify canonical package manifest and generated digests
+        run: npm run gh-aw:integrity:check
 
       - name: Set up deploy layout
         # Mirror workflows/ → <tmpdir>/.github/workflows/ then git init so
@@ -760,6 +763,7 @@ jobs:
           mkdir -p "$COMPILE_DIR/.github/workflows"
           cp -r workflows/. "$COMPILE_DIR/.github/workflows/"
           git -C "$COMPILE_DIR" init --quiet
+          git -C "$COMPILE_DIR" remote add origin https://github.com/example/squad-consumer.git
 
       - name: Compile all seven workflows (--strict) and verify lock files
         # Failures accumulate rather than short-circuit so every result is
@@ -815,3 +819,27 @@ jobs:
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**✅ All seven workflows compiled, all seven lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify a clean native package consumer
+        env:
+          SQUAD_SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          CONSUMER_DIR="$(mktemp -d)"
+          trap 'rm -rf "$CONSUMER_DIR"' EXIT
+          git -C "$CONSUMER_DIR" init --quiet
+          git -C "$CONSUMER_DIR" remote add origin https://github.com/example/squad-consumer.git
+          (
+            cd "$CONSUMER_DIR"
+            gh aw add "$GITHUB_WORKSPACE"
+            node .github/workflows/shared/squad-install-verifier.mjs \
+              --write-local-test-ownership \
+              --source-revision "$SQUAD_SOURCE_REVISION"
+            node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
+            gh aw compile --strict --approve --no-check-update
+            gh aw compile --strict --no-check-update
+            node .github/workflows/shared/squad-install-verifier.mjs \
+              --verify-install \
+              --source-revision "$SQUAD_SOURCE_REVISION" \
+              --strict-compile
+          )
