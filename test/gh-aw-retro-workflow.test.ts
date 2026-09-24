@@ -1539,7 +1539,7 @@ describe('Squad retrospective workflow integration', () => {
     // create-pull-request, so gh-aw adds no checkout of its own.
     expect(steps).toMatch(/uses: actions\/checkout@[0-9a-f]{40}/);
     expect(steps).toContain('persist-credentials: false');
-    expect(steps).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
+    expect(steps).toContain('ref: ${{ github.workflow_sha }}');
     expect(steps).toContain('SQUAD_RETRO_DEFAULT_BRANCH');
     expect(RETRO).toContain('shared/squad-retro-provenance.mjs');
     expect(RETRO.replace(/\s+/g, ' ')).toContain('REFUSED here');
@@ -1616,9 +1616,18 @@ describe('Squad retrospective workflow integration', () => {
     const parsed = JSON.parse(payload!) as { workflow_name: string; inputs: Record<string, string> };
     expect(parsed.workflow_name).toBe('squad-implement-worker');
     expect(Object.keys(parsed.inputs).sort()).toEqual([
-      'issue_number', 'request_origin', 'retro_action_key',
+      'implementation_session_id',
+      'implementation_session_origin_run_attempt',
+      'implementation_session_origin_run_id',
+      'implementation_session_origin_workflow',
+      'issue_number',
+      'request_origin',
+      'retro_action_key',
     ]);
     expect(parsed.inputs.request_origin).toBe('squad-retro');
+    expect(parsed.inputs.implementation_session_id).toContain(
+      'squad-implementation-session/v1/',
+    );
     expect(RETRO.replace(/\s+/g, ' ')).toContain('Do not supply `aw_context`');
   });
 
@@ -1736,10 +1745,10 @@ describe('Squad retrospective workflow integration', () => {
   // with that branch's `.squad/config.json` and that branch's guard code. Both
   // the pin and the ordering are asserted against the real compiler output.
   // -------------------------------------------------------------------------
-  it('compiles the dispatch guard behind an unconditional, default-branch-pinned checkout', () => {
+  it('compiles the dispatch guard behind an unconditional immutable workflow checkout', () => {
     const job = safeOutputsJob(compiledRetroLock());
 
-    const trustedIndex = job.indexOf('name: Checkout trusted base for the dispatch guard');
+    const trustedIndex = job.indexOf('name: Checkout executing workflow commit for the dispatch guard');
     const guardIndex = job.indexOf('name: Enforce retro dispatch provenance before any output');
     const processIndex = job.indexOf('name: Process Safe Outputs');
     expect(trustedIndex).toBeGreaterThan(-1);
@@ -1750,9 +1759,7 @@ describe('Squad retrospective workflow integration', () => {
     expect(trustedStep).toContain(
       'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
     );
-    // The pin itself. `refs/heads/` is deliberate: an empty default_branch
-    // fails the checkout instead of silently falling back to the trigger ref.
-    expect(trustedStep).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
+    expect(trustedStep).toContain('ref: ${{ github.workflow_sha }}');
     expect(trustedStep).toContain('persist-credentials: false');
     expect(trustedStep).toContain('path: .squad-trusted-base');
     expect(trustedStep).not.toMatch(/\n\s+(if|continue-on-error):/);
@@ -2782,6 +2789,7 @@ describe('Squad retro dispatch output guard', () => {
       issue_number: String(target),
       request_origin: 'squad-retro',
       retro_action_key: ACTION_KEY,
+      implementation_session_id: 'squad-implementation-session/v1/123/7',
     },
     ...overrides,
   });
@@ -2965,11 +2973,13 @@ describe('Squad retro dispatch output guard', () => {
       issue_number: `#${TEMP_ID}`,
       request_origin: 'squad-retro',
       retro_action_key: 'not-a-fingerprint',
+      implementation_session_id: 'squad-implementation-session/v1/123/7',
     }))).toContain('dispatch-action-key-malformed');
     expect(kinds(withInputs({
       issue_number: `#${TEMP_ID}`,
       request_origin: 'squad-retro',
       retro_action_key: ACTION_KEY,
+      implementation_session_id: 'squad-implementation-session/v1/123/7',
       aw_context: '{"workflow_id":"forged"}',
     }))).toContain('dispatch-input-not-allowed');
   });

@@ -14,6 +14,7 @@ import {
   type StateBackendType,
 } from '@bradygaster/squad-sdk';
 import { parseCharterMarkdown } from '@bradygaster/squad-sdk/agents';
+import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import {
   parseRoutingRulesMarkdown,
   parseTeamMarkdown,
@@ -122,11 +123,9 @@ function normalizeAgentRef(value: string): string {
 
 function readRegistry(squadDir: string): CastingRegistry {
   const displayPath = 'casting/registry.json';
-  const registryPath = path.join(squadDir, 'casting', 'registry.json');
-  const parsed = parseJsonObject(
-    readRequiredFile(registryPath, displayPath),
-    displayPath,
-  );
+  const pair = readCastingRegistryPair(path.join(squadDir, 'casting'));
+  const parsed = pair.registry;
+  if (!parsed) throw new Error(`${displayPath} is missing`);
   if (!isRecord(parsed.agents)) {
     throw new Error(`${displayPath} must contain an agents object`);
   }

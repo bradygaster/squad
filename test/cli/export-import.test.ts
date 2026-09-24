@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, readFile, writeFile } from 'fs/promises';
+import { mkdir, readdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -12,6 +12,10 @@ import { tmpdir } from 'os';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runExport } from '@bradygaster/squad-cli/commands/export';
 import { runImport } from '@bradygaster/squad-cli/commands/import';
+import {
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+} from '@bradygaster/squad-sdk/casting';
 
 const EXT_ROOT = join(tmpdir(), `.test-cli-export-ext-${randomBytes(4).toString('hex')}`);
 const EXT_GLOBAL = join(tmpdir(), `.test-cli-export-ext-global-${randomBytes(4).toString('hex')}`);
@@ -83,9 +87,24 @@ describe('CLI: export/import commands', () => {
     // Create casting state
     const castingDir = join(TEST_ROOT, '.squad', 'casting');
     await mkdir(castingDir, { recursive: true });
-    await writeFile(
-      join(castingDir, 'registry.json'),
-      JSON.stringify({ roles: ['lead', 'dev'] }, null, 2)
+    const pair = readCastingRegistryPair(castingDir);
+    const nextHistory = {
+      assignment_cast_snapshots: pair.history?.assignment_cast_snapshots,
+      universe_usage_history: pair.history?.universe_usage_history,
+    };
+    const nextRegistry = {
+      ...pair.registry,
+      revision: Number(pair.registry?.revision) + 1,
+      roles: ['lead', 'dev'],
+    };
+    delete nextRegistry.transaction_id;
+    commitCastingRegistryPair(
+      castingDir,
+      pair.registryRaw,
+      nextRegistry,
+      pair.historyRaw,
+      nextHistory,
+      Number(pair.registry?.revision) + 1,
     );
     
     await runExport(TEST_ROOT);
@@ -94,7 +113,21 @@ describe('CLI: export/import commands', () => {
     const content = await readFile(exportPath, 'utf-8');
     const manifest = JSON.parse(content);
     
-    expect(manifest.casting.registry).toEqual({ roles: ['lead', 'dev'] });
+    expect(manifest.casting.registry).toMatchObject({ roles: ['lead', 'dev'] });
+  });
+
+  it('fails closed instead of exporting a split casting generation', async () => {
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    await writeFile(
+      join(castingDir, 'history.json'),
+      JSON.stringify({ assignment_cast_snapshots: {}, universe_usage_history: [] }) + '\n',
+    );
+    const exportPath = join(TEST_ROOT, 'split-export.json');
+
+    await expect(runExport(TEST_ROOT, exportPath)).rejects.toThrow(
+      /stable commit manifest|transaction metadata/,
+    );
+    expect(existsSync(exportPath)).toBe(false);
   });
 
   it('should export agent charters and histories', async () => {
@@ -157,6 +190,124 @@ describe('CLI: export/import commands', () => {
     // Verify directory was created
     expect(existsSync(join(IMPORT_ROOT, '.squad'))).toBe(true);
     expect(existsSync(join(IMPORT_ROOT, '.squad', 'agents', 'lead'))).toBe(true);
+  });
+
+  it.each([
+    {
+      name: 'malformed history root',
+      mutate: (history: Record<string, unknown>) => {
+        history['assignment_cast_snapshots'] = [];
+      },
+      expected: /history shape is invalid/,
+    },
+    {
+      name: 'partial history snapshot',
+      mutate: (history: Record<string, unknown>) => {
+        history['assignment_cast_snapshots'] = {
+          partial: { created_at: '2026-09-21T00:00:00.000Z' },
+        };
+      },
+      expected: /history snapshot is malformed/,
+    },
+    {
+      name: 'extra history field',
+      mutate: (history: Record<string, unknown>) => {
+        history['unexpected'] = true;
+      },
+      expected: /unexpected fields/,
+    },
+    {
+      name: 'history revision mismatch',
+      mutate: (history: Record<string, unknown>) => {
+        history['registry_revision'] = Number(history['registry_revision']) + 1;
+      },
+      expected: /history registry revision does not match/,
+    },
+    {
+      name: 'history snapshot with an unknown agent',
+      mutate: (history: Record<string, unknown>) => {
+        history['assignment_cast_snapshots'] = {
+          invalid: {
+            created_at: '2026-09-21T00:00:00.000Z',
+            agents: ['missing-agent'],
+            universe: 'test',
+          },
+        };
+      },
+      expected: /history snapshot references unknown agents/,
+    },
+  ])('rejects $name with zero filesystem mutation', async ({ mutate, expected }) => {
+    const exportPath = join(TEST_ROOT, 'strict-import.json');
+    const manifest = {
+      version: '1.0',
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        } as Record<string, unknown>,
+      },
+      agents: {},
+      skills: [],
+    };
+    mutate(manifest.casting.history);
+    await writeFile(exportPath, JSON.stringify(manifest));
+
+    await expect(runImport(IMPORT_ROOT, exportPath, false)).rejects.toThrow(expected);
+    expect(await readdir(IMPORT_ROOT)).toEqual([]);
+  });
+
+  it('rejects an absent casting pair with zero filesystem mutation', async () => {
+    const exportPath = join(TEST_ROOT, 'missing-pair-import.json');
+    await writeFile(exportPath, JSON.stringify({
+      version: '1.0',
+      casting: { policy: { universe: 'descriptive' } },
+      agents: {},
+      skills: [],
+    }));
+
+    await expect(runImport(IMPORT_ROOT, exportPath, false)).rejects.toThrow(
+      /complete casting registry and history pair is required/,
+    );
+    expect(await readdir(IMPORT_ROOT)).toEqual([]);
+  });
+
+  it('validates malformed history before archiving an existing squad', async () => {
+    await runInit(IMPORT_ROOT);
+    const existingTeamPath = join(IMPORT_ROOT, '.squad', 'team.md');
+    await writeFile(existingTeamPath, '# Existing Team\n');
+    const before = (await readdir(IMPORT_ROOT)).sort();
+    const exportPath = join(TEST_ROOT, 'malformed-force-import.json');
+    await writeFile(exportPath, JSON.stringify({
+      version: '1.0',
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: [],
+          universe_usage_history: [],
+        },
+      },
+      agents: {},
+      skills: [],
+    }));
+
+    await expect(runImport(IMPORT_ROOT, exportPath, true)).rejects.toThrow(
+      /history shape is invalid/,
+    );
+    expect((await readdir(IMPORT_ROOT)).sort()).toEqual(before);
+    expect(await readFile(existingTeamPath, 'utf8')).toBe('# Existing Team\n');
   });
 
   it('should fail import without --force if squad exists', async () => {
@@ -312,7 +463,19 @@ describe('CLI: export/import commands', () => {
       version: '1.0',
       exported_at: new Date().toISOString(),
       squad_version: '0.6.0',
-      casting: {},
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        },
+      },
       agents: { '../../../etc/evil': { charter: 'malicious content' } },
       skills: [],
     };
@@ -333,7 +496,19 @@ describe('CLI: export/import commands', () => {
       version: '1.0',
       exported_at: new Date().toISOString(),
       squad_version: '0.6.0',
-      casting: {},
+      casting: {
+        registry: {
+          schema: 'squad-agent-provenance/v1',
+          schema_version: 1,
+          revision: 1,
+          generated_at: '2026-09-21T00:00:00.000Z',
+          agents: {},
+        },
+        history: {
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        },
+      },
       agents: {},
       skills: [],
     };
@@ -355,7 +530,11 @@ describe('CLI: export/import commands', () => {
 describe('CLI: export with externalized state (#1396)', () => {
   const origAppData = process.env['APPDATA'];
   const origXdgConfig = process.env['XDG_CONFIG_HOME'];
-  const externalStateDir = join(EXT_GLOBAL, 'squad', 'projects', EXT_PROJECT_KEY);
+  const origHome = process.env['HOME'];
+  const externalBase = process.platform === 'darwin'
+    ? join(EXT_GLOBAL, 'Library', 'Application Support')
+    : EXT_GLOBAL;
+  const externalStateDir = join(externalBase, 'squad', 'projects', EXT_PROJECT_KEY);
 
   beforeEach(async () => {
     if (existsSync(EXT_ROOT)) {
@@ -368,6 +547,8 @@ describe('CLI: export with externalized state (#1396)', () => {
     // Point resolveGlobalSquadPath() inside EXT_GLOBAL (not the real user dir)
     if (process.platform === 'win32') {
       process.env['APPDATA'] = EXT_GLOBAL;
+    } else if (process.platform === 'darwin') {
+      process.env['HOME'] = EXT_GLOBAL;
     } else {
       process.env['XDG_CONFIG_HOME'] = EXT_GLOBAL;
     }
@@ -384,6 +565,18 @@ describe('CLI: export with externalized state (#1396)', () => {
     await writeFile(join(externalStateDir, 'team.md'), '# External Team\n');
     await writeFile(join(externalStateDir, 'decisions.md'), '# External Decisions\n');
     await writeFile(join(externalStateDir, 'agents', 'alice', 'charter.md'), '# Alice Charter\n');
+    await mkdir(join(externalStateDir, 'casting'), { recursive: true });
+    await writeFile(join(externalStateDir, 'casting', 'registry.json'), JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T00:00:00.000Z',
+      agents: {},
+    }));
+    await writeFile(join(externalStateDir, 'casting', 'history.json'), JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }));
   });
 
   afterEach(async () => {
@@ -391,6 +584,8 @@ describe('CLI: export with externalized state (#1396)', () => {
     else process.env['APPDATA'] = origAppData;
     if (origXdgConfig === undefined) delete process.env['XDG_CONFIG_HOME'];
     else process.env['XDG_CONFIG_HOME'] = origXdgConfig;
+    if (origHome === undefined) delete process.env['HOME'];
+    else process.env['HOME'] = origHome;
 
     if (existsSync(EXT_ROOT)) {
       await rm(EXT_ROOT, { recursive: true, force: true });

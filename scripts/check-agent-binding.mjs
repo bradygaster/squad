@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // `activated` / `phases-activated` come from the granular `/squad plan activate` path
@@ -15,6 +17,210 @@ const ACTIVATION_ARTIFACT_PATTERN = new RegExp(
 const VALID_OMISSIONS = new Set(['multi-owner', 'non-roster']);
 const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 const RESOLVED_REFERENCE = /^#?(\d+)$/;
+const AGENT_PROVENANCE_SCHEMA = 'squad-agent-provenance/v1';
+const WORK_AGENT_BINDING_SCHEMA = 'squad-work-agent-binding/v1';
+const CASTING_HISTORY_FIELDS = new Set([
+  'assignment_cast_snapshots',
+  'universe_usage_history',
+  'transaction_id',
+  'registry_revision',
+]);
+
+function parseCastingObject(raw, label) {
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} is invalid JSON: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} root is malformed`);
+  }
+  return value;
+}
+
+function validateCastingHistory(history, registry) {
+  const unknownField = Object.keys(history).find(key => !CASTING_HISTORY_FIELDS.has(key));
+  if (unknownField !== undefined) {
+    throw new Error(`casting history contains unknown top-level field "${unknownField}"`);
+  }
+  if (!history.assignment_cast_snapshots
+    || typeof history.assignment_cast_snapshots !== 'object'
+    || Array.isArray(history.assignment_cast_snapshots)
+    || !Array.isArray(history.universe_usage_history)) {
+    throw new Error('casting history shape is malformed');
+  }
+  for (const [key, snapshot] of Object.entries(history.assignment_cast_snapshots)) {
+    if (!key || !snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)
+      || typeof snapshot.created_at !== 'string'
+      || !Number.isFinite(Date.parse(snapshot.created_at))
+      || !Array.isArray(snapshot.agents)
+      || snapshot.agents.some(agent => typeof agent !== 'string' || !(agent in registry.agents))
+      || typeof snapshot.universe !== 'string' || !snapshot.universe) {
+      throw new Error('casting history snapshot is malformed or references unknown agents');
+    }
+  }
+  for (const usage of history.universe_usage_history) {
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage)
+      || typeof usage.universe !== 'string' || !usage.universe
+      || typeof usage.used_at !== 'string'
+      || !Number.isFinite(Date.parse(usage.used_at))) {
+      throw new Error('casting universe usage history is malformed');
+    }
+  }
+}
+
+function isCanonicalLegacyGenesis(registry, history) {
+  const agents = registry.agents;
+  const agentIds = Object.keys(agents);
+  const snapshots = Object.entries(history.assignment_cast_snapshots);
+  const usage = history.universe_usage_history;
+  if (agentIds.length === 0 || snapshots.length !== 1 || usage.length !== 1) {
+    return false;
+  }
+
+  const snapshotEntry = snapshots[0];
+  if (!snapshotEntry) return false;
+  const [snapshotKey, rawSnapshot] = snapshotEntry;
+  const rawUsage = usage[0];
+  if (hasRevisionToken(snapshotKey)
+    || !rawSnapshot
+    || typeof rawSnapshot !== 'object'
+    || Array.isArray(rawSnapshot)
+    || !rawUsage
+    || typeof rawUsage !== 'object'
+    || Array.isArray(rawUsage)) {
+    return false;
+  }
+  const snapshot = rawSnapshot;
+  const usageRecord = rawUsage;
+  const snapshotAgents = snapshot.agents;
+  const snapshotCreatedAt = Date.parse(snapshot.created_at);
+  const generatedAt = Date.parse(registry.generated_at);
+  if (!Array.isArray(snapshotAgents)
+    || snapshotAgents.some(agentId => typeof agentId !== 'string')
+    || new Set(snapshotAgents).size !== snapshotAgents.length
+    || snapshotAgents.length !== agentIds.length
+    || snapshotAgents.some(agentId => !Object.hasOwn(agents, agentId))
+    || typeof snapshot.universe !== 'string'
+    || snapshot.universe.length === 0
+    || !Number.isFinite(snapshotCreatedAt)
+    || snapshotCreatedAt > generatedAt
+    || usageRecord.universe !== snapshot.universe
+    || Date.parse(usageRecord.used_at) !== snapshotCreatedAt) {
+    return false;
+  }
+
+  return Object.values(agents).every(agent =>
+    agent.status === 'active'
+    && agent.universe === snapshot.universe
+    && Date.parse(agent.created_at) === snapshotCreatedAt);
+}
+
+const REVISION_TOKEN_PATTERN = /(?:^|[-_])(?:revision[-_]*\d+|r\d+)(?=[-_]|$)/i;
+
+function hasRevisionToken(snapshotKey) {
+  return REVISION_TOKEN_PATTERN.test(snapshotKey);
+}
+
+function validateLegacyCastingGeneration(registry, history) {
+  if (registry.transaction_id !== undefined
+    || history.transaction_id !== undefined
+    || history.registry_revision !== undefined) {
+    throw new Error('casting generation metadata exists without a commit manifest');
+  }
+  const snapshots = Object.entries(history.assignment_cast_snapshots);
+  if (registry.revision === 1 && Object.keys(registry.agents).length === 0
+    && snapshots.length === 0 && history.universe_usage_history.length === 0) {
+    return;
+  }
+  if (registry.revision === 1 && isCanonicalLegacyGenesis(registry, history)) {
+    return;
+  }
+  const revisions = new Set();
+  let currentGeneration = false;
+  const generatedAt = Date.parse(registry.generated_at);
+  const snapshotEvidence = new Map();
+  for (const [key, snapshot] of snapshots) {
+    const match = key.match(/(?:^|[-_])(?:revision-|r)(\d+)(?:[-_]|$)/i);
+    if (!match) throw new Error('casting history snapshot lacks generation evidence');
+    const revision = Number(match[1]);
+    if (!Number.isSafeInteger(revision) || revision < 1 || revision > registry.revision
+      || revisions.has(revision) || Date.parse(snapshot.created_at) > generatedAt) {
+      throw new Error('casting registry/history pair is mixed-generation');
+    }
+    revisions.add(revision);
+    if (revision === registry.revision && Date.parse(snapshot.created_at) === generatedAt) {
+      currentGeneration = true;
+    }
+    const evidence = `${snapshot.universe}\u0000${snapshot.created_at}`;
+    snapshotEvidence.set(evidence, (snapshotEvidence.get(evidence) ?? 0) + 1);
+  }
+  const usageEvidence = new Map();
+  for (const usage of history.universe_usage_history) {
+    if (Date.parse(usage.used_at) > generatedAt) {
+      throw new Error('casting registry/history pair is mixed-generation');
+    }
+    const evidence = `${usage.universe}\u0000${usage.used_at}`;
+    usageEvidence.set(evidence, (usageEvidence.get(evidence) ?? 0) + 1);
+  }
+  const complete = Array.from({ length: registry.revision }, (_, index) => index + 1);
+  const implicitGenesis = registry.revision === 1 ? complete : complete.slice(1);
+  const revisionEvidence = [complete, implicitGenesis].some(expected =>
+    expected.length === revisions.size && expected.every(revision => revisions.has(revision)));
+  const matchingEvidence = snapshotEvidence.size === usageEvidence.size
+    && [...snapshotEvidence].every(([key, count]) => usageEvidence.get(key) === count);
+  if (!revisionEvidence || !currentGeneration || !matchingEvidence) {
+    throw new Error('casting registry/history pair is mixed-generation');
+  }
+}
+
+async function readOptionalFile(path) {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+export async function validateCastingPairFiles(registryFile) {
+  const castingDir = dirname(registryFile);
+  const [registryRaw, historyRaw, journalRaw, manifestRaw] = await Promise.all([
+    readOptionalFile(registryFile),
+    readOptionalFile(join(castingDir, 'history.json')),
+    readOptionalFile(join(castingDir, 'registry-history.transaction.json')),
+    readOptionalFile(join(castingDir, 'registry-history.commit.json')),
+  ]);
+  if (registryRaw === undefined || historyRaw === undefined) {
+    throw new Error('complete casting registry/history pair is required');
+  }
+  if (journalRaw !== undefined) {
+    throw new Error('casting transaction is awaiting roll-forward');
+  }
+  const registry = parseCastingObject(registryRaw, 'casting registry');
+  const history = parseCastingObject(historyRaw, 'casting history');
+  parseAgentRegistry(registry);
+  validateCastingHistory(history, registry);
+  if (manifestRaw === undefined) {
+    validateLegacyCastingGeneration(registry, history);
+    return registry;
+  }
+  const manifest = parseCastingObject(manifestRaw, 'casting commit manifest');
+  const digest = raw => createHash('sha256').update(raw).digest('hex');
+  if (typeof manifest.transaction_id !== 'string'
+    || !Number.isSafeInteger(manifest.registry_revision)
+    || manifest.registry_revision < 1
+    || registry.transaction_id !== manifest.transaction_id
+    || history.transaction_id !== manifest.transaction_id
+    || history.registry_revision !== manifest.registry_revision
+    || registry.revision !== manifest.registry_revision
+    || digest(registryRaw) !== manifest.registry_sha256
+    || digest(historyRaw) !== manifest.history_sha256) {
+    throw new Error('casting registry/history pair does not match the stable commit manifest');
+  }
+  return registry;
+}
 
 // Standalone certainty claims a label-operation report may never make: safe outputs like
 // `add_labels` are applied in a post-agent job, so an activation/acceptance run only ever
@@ -45,6 +251,59 @@ function normalize(value) {
 
 function slugify(value) {
   return normalize(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+export function parseAgentRegistry(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('agent provenance registry root is malformed');
+  }
+  if (value.schema !== AGENT_PROVENANCE_SCHEMA || value.schema_version !== 1) {
+    throw new Error(`agent provenance registry must use ${AGENT_PROVENANCE_SCHEMA}`);
+  }
+  if (!Number.isInteger(value.revision) || value.revision < 1) {
+    throw new Error('agent provenance registry revision must be a positive integer');
+  }
+  if (!value.agents || typeof value.agents !== 'object' || Array.isArray(value.agents)) {
+    throw new Error('agent provenance registry agents map is malformed');
+  }
+  const agents = new Map();
+  const displayNames = new Set();
+  for (const [id, record] of Object.entries(value.agents)) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || !record || typeof record !== 'object') {
+      throw new Error(`agent provenance registry entry "${id}" is malformed`);
+    }
+    if (!['active', 'inactive', 'retired'].includes(record.status)) {
+      throw new Error(`agent provenance registry entry "${id}" has invalid status`);
+    }
+    const displayName = typeof record.display_name === 'string' ? record.display_name.trim() : '';
+    if (!displayName || record.persistent_name !== displayName ||
+        typeof record.role !== 'string' || !record.role.trim() ||
+        typeof record.universe !== 'string' || !record.universe.trim() ||
+        !Number.isFinite(Date.parse(record.created_at)) ||
+        !Number.isFinite(Date.parse(record.updated_at)) ||
+        (record.status === 'retired' && !Number.isFinite(Date.parse(record.retired_at)))) {
+      throw new Error(`agent provenance registry entry "${id}" is incomplete`);
+    }
+    const normalizedName = normalize(displayName);
+    if (displayNames.has(normalizedName)) {
+      throw new Error(`agent provenance registry display name "${displayName}" is duplicated`);
+    }
+    displayNames.add(normalizedName);
+    if (record.avatar !== undefined) {
+      const expectedPrefix = `.squad/agents/${id}/`;
+      const avatarPath = record.avatar?.path;
+      if (record.avatar?.kind !== 'repository-path'
+        || typeof avatarPath !== 'string'
+        || !avatarPath.startsWith(expectedPrefix)
+        || avatarPath.length === expectedPrefix.length
+        || avatarPath.includes('\\')
+        || avatarPath.split('/').some(segment => segment === '.' || segment === '..')) {
+        throw new Error(`agent provenance registry entry "${id}" has invalid avatar path`);
+      }
+    }
+    agents.set(id, record);
+  }
+  return { revision: value.revision, agents };
 }
 
 /**
@@ -255,7 +514,64 @@ function validateReportedOutcome(binding, prefix, expected) {
   }
 }
 
-function validateTaskBinding(binding, roster) {
+function validateBindingAuthority(binding, issue, artifact, authority) {
+  if (!authority) return { epicAgentIds: [] };
+  if (binding.binding_schema !== WORK_AGENT_BINDING_SCHEMA || binding.binding_version !== 1) {
+    throw new Error(`issue #${issue}: binding must use ${WORK_AGENT_BINDING_SCHEMA}`);
+  }
+  if (binding.producer !== 'squad') {
+    throw new Error(`issue #${issue}: binding producer must be squad`);
+  }
+  if (binding.repository !== authority.repository) {
+    throw new Error(`issue #${issue}: binding repository does not match ${authority.repository}`);
+  }
+  if (binding.origin_issue !== artifact.origin_issue || binding.artifact !== artifact.squad_artifact) {
+    throw new Error(`issue #${issue}: binding origin or artifact identity does not match its comment`);
+  }
+  if (binding.registry_schema !== AGENT_PROVENANCE_SCHEMA) {
+    throw new Error(`issue #${issue}: binding registry schema is unsupported`);
+  }
+  if (!Number.isInteger(binding.registry_revision) || binding.registry_revision < 1) {
+    throw new Error(`issue #${issue}: binding registry revision is invalid`);
+  }
+  if (binding.registry_revision > authority.registry.revision) {
+    throw new Error(`issue #${issue}: binding registry revision is newer than the available registry`);
+  }
+  if (binding.agent_id === null) {
+    if (!['external-agent', 'non-roster', 'legacy-plan-missing-id'].includes(binding.identity_omission_reason)) {
+      throw new Error(`issue #${issue}: null agent_id requires an explicit identity omission reason`);
+    }
+  } else {
+    if (binding.identity_omission_reason !== undefined) {
+      throw new Error(`issue #${issue}: identity omission reason conflicts with agent_id`);
+    }
+    if (typeof binding.agent_id !== 'string' || !authority.registry.agents.has(binding.agent_id)) {
+      throw new Error(`issue #${issue}: agent_id is absent from the producer registry`);
+    }
+  }
+  if (!Array.isArray(binding.epic_agent_ids)) {
+    throw new Error(`issue #${issue}: epic_agent_ids must be an array`);
+  }
+  const epicAgentIds = [...new Set(binding.epic_agent_ids)];
+  if (
+    epicAgentIds.length !== binding.epic_agent_ids.length ||
+    (binding.agent_id !== null && !epicAgentIds.includes(binding.agent_id))
+  ) {
+    throw new Error(`issue #${issue}: epic_agent_ids are duplicated or exclude agent_id`);
+  }
+  for (const agentId of epicAgentIds) {
+    if (typeof agentId !== 'string' || !authority.registry.agents.has(agentId)) {
+      throw new Error(`issue #${issue}: epic_agent_ids references an unknown producer id`);
+    }
+  }
+  if (binding.epic_identity_omission_reason !== undefined &&
+      binding.epic_identity_omission_reason !== 'partial') {
+    throw new Error(`issue #${issue}: invalid epic identity omission reason`);
+  }
+  return { epicAgentIds: epicAgentIds.sort() };
+}
+
+function validateTaskBinding(binding, roster, artifact, authority) {
   if (!binding || typeof binding !== 'object') {
     throw new Error('binding has no valid issue number');
   }
@@ -276,9 +592,10 @@ function validateTaskBinding(binding, roster) {
   if (epicAgents.length !== binding.epic_agents.length || !epicAgents.includes(agent)) {
     throw new Error(`issue #${issue}: epic_agents are empty, duplicated, or exclude the task agent`);
   }
+  const { epicAgentIds } = validateBindingAuthority(binding, issue, artifact, authority);
   const expected = expectedLabel(agent, roster);
   validateReportedOutcome({ ...binding, issue }, '', expected);
-  return { issue, epicIssue, epicAgents, expected };
+  return { issue, epicIssue, epicAgents, epicAgentIds, expected };
 }
 
 function validateActualLabels(issue, labels, expected) {
@@ -297,7 +614,7 @@ export function validateBindings(artifact, roster, labelsByIssue) {
   return validateActivation(artifact, roster, labelsByIssue);
 }
 
-export function validateActivation(artifact, roster, labelsByIssue, expectedOrigin) {
+export function validateActivation(artifact, roster, labelsByIssue, expectedOrigin, authority) {
   if (!artifact || !ACTIVATION_ARTIFACTS.has(artifact.squad_artifact)) return { skipped: true };
   if (artifact.schema_version !== '1') throw new Error('activation artifact schema_version must be 1');
   if (!Number.isInteger(artifact.origin_issue) || artifact.origin_issue < 1) {
@@ -314,13 +631,24 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
   }
 
   const seen = new Set();
+  const seenTasks = new Set();
   const epics = new Map();
   const epicIssuesByIdentifier = new Map();
+  let expectedRegistryRevision;
   for (const rawBinding of artifact.bindings) {
-    const { issue, epicIssue, epicAgents, expected } = validateTaskBinding(rawBinding, roster);
+    const { issue, epicIssue, epicAgents, epicAgentIds, expected } =
+      validateTaskBinding(rawBinding, roster, artifact, authority);
     const binding = { ...rawBinding, issue, epic_issue: epicIssue };
     if (seen.has(issue)) throw new Error(`issue #${issue}: duplicate binding`);
     seen.add(issue);
+    if (authority) {
+      if (seenTasks.has(binding.task)) throw new Error(`task ${binding.task}: duplicate binding`);
+      seenTasks.add(binding.task);
+      expectedRegistryRevision ??= binding.registry_revision;
+      if (binding.registry_revision !== expectedRegistryRevision) {
+        throw new Error(`issue #${issue}: registry_revision conflicts with other bindings`);
+      }
+    }
     validateActualLabels(issue, labelsByIssue.get(issue), expected);
 
     const epicIdentifier = normalize(binding.epic);
@@ -333,6 +661,7 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
     const epic = epics.get(epicIssue) ?? {
       epic: epicIdentifier,
       agents: epicAgents,
+      agentIds: epicAgentIds,
       bindings: [],
     };
     if (epic.epic !== epicIdentifier) {
@@ -341,11 +670,32 @@ export function validateActivation(artifact, roster, labelsByIssue, expectedOrig
     if (epic.agents.join('\0') !== epicAgents.join('\0')) {
       throw new Error(`epic issue #${epicIssue}: inconsistent epic_agents sets`);
     }
+    if (authority && epic.agentIds.join('\0') !== epicAgentIds.join('\0')) {
+      throw new Error(`epic issue #${epicIssue}: inconsistent epic_agent_ids sets`);
+    }
     epic.bindings.push(binding);
     epics.set(epicIssue, epic);
   }
 
   for (const [epicIssue, epic] of epics) {
+    if (authority) {
+      const expectedAgentIds = [...new Set(
+        epic.bindings.map(binding => binding.agent_id).filter(agentId => agentId !== null),
+      )].sort();
+      const hasIdentityOmission = epic.bindings.some(binding => binding.agent_id === null);
+      for (const binding of epic.bindings) {
+        const actualAgentIds = [...binding.epic_agent_ids].sort();
+        if (actualAgentIds.join('\0') !== expectedAgentIds.join('\0')) {
+          throw new Error(`epic issue #${epicIssue}: epic_agent_ids do not match the complete epic task-agent set`);
+        }
+        if (hasIdentityOmission && binding.epic_identity_omission_reason !== 'partial') {
+          throw new Error(`epic issue #${epicIssue}: every binding requires partial omission when an epic task omits agent_id`);
+        }
+        if (!hasIdentityOmission && binding.epic_identity_omission_reason !== undefined) {
+          throw new Error(`epic issue #${epicIssue}: partial omission conflicts with a complete epic agent set`);
+        }
+      }
+    }
     const expected = epic.agents.length > 1
       ? { label: null, omission: 'multi-owner' }
       : expectedLabel(epic.agents[0], roster);
@@ -382,6 +732,8 @@ async function main() {
   }
 
   const roster = parseRoster(await readFile(args['team-file'], 'utf8'));
+  const registryFile = args['registry-file'] ?? join(dirname(args['team-file']), 'casting', 'registry.json');
+  const registry = parseAgentRegistry(await validateCastingPairFiles(registryFile));
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN is required for activation binding checks');
 
@@ -399,13 +751,16 @@ async function main() {
       ? artifact.bindings.flatMap(binding => [extractIssueNumber(binding?.issue), extractIssueNumber(binding?.epic_issue)]).filter(Number.isInteger)
       : [];
     const labels = await fetchLabels(args.repo, [...new Set(issues)], token);
-    const result = validateActivation(artifact, roster, labels, comment.issue);
+    const result = validateActivation(artifact, roster, labels, comment.issue, {
+      repository: args.repo,
+      registry,
+    });
     checked += result.checked;
   }
   console.log(checked === 0 ? 'No activation artifact found; skipping.' : `Validated ${checked} activation bindings.`);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
     console.error(`Agent binding check failed: ${error.message}`);
     process.exitCode = 1;

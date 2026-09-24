@@ -1,0 +1,232 @@
+{
+  "valid": {
+    "schema": "squad-agent-provenance/v1",
+    "schema_version": 1,
+    "revision": 2,
+    "generated_at": "2026-09-21T20:00:00.000Z",
+    "agents": {
+      "runtime-engineer": {
+        "display_name": "Kepler",
+        "persistent_name": "Kepler",
+        "role": "Runtime Engineer",
+        "universe": "descriptive",
+        "status": "active",
+        "created_at": "2026-09-20T20:00:00.000Z",
+        "updated_at": "2026-09-21T20:00:00.000Z",
+        "avatar": {
+          "kind": "repository-path",
+          "path": ".squad/agents/runtime-engineer/avatar.png"
+        }
+      }
+    }
+  },
+  "partial": {
+    "schema": "squad-agent-provenance/v1",
+    "schema_version": 1,
+    "revision": 2,
+    "generated_at": "2026-09-21T20:00:00.000Z",
+    "agents": {
+      "runtime-engineer": {
+        "display_name": "Kepler",
+        "persistent_name": "Kepler",
+        "role": "Runtime Engineer",
+        "universe": "descriptive",
+        "status": "active",
+        "created_at": "2026-09-20T20:00:00.000Z",
+        "updated_at": "2026-09-21T20:00:00.000Z"
+      },
+      "broken-agent": {
+        "display_name": "Broken",
+        "persistent_name": "Different",
+        "role": "",
+        "universe": "descriptive",
+        "status": "active",
+        "created_at": "not-a-date",
+        "updated_at": "not-a-date"
+      }
+    }
+  },
+  "unsupported": {
+    "schema": "squad-agent-provenance/v2",
+    "schema_version": 2,
+    "revision": 1,
+    "generated_at": "2026-09-21T20:00:00.000Z",
+    "agents": {}
+  },
+  "binding_valid": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    }
+  ],
+  "binding_partial": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 3,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "unknown-agent",
+      "epic_agent_ids": []
+    }
+  ],
+  "binding_epic_conflict": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    },
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "2",
+      "issue": "#2067",
+      "epic": "1.1",
+      "epic_issue": "#2068",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    }
+  ],
+  "binding_inconsistent_epic_sets": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"],
+      "epic_identity_omission_reason": "partial"
+    },
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "2",
+      "issue": "#2067",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": null,
+      "identity_omission_reason": "external-agent",
+      "epic_agent_ids": [],
+      "epic_identity_omission_reason": "partial"
+    }
+  ],
+  "binding_mixed_omission": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    },
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "2",
+      "issue": "#2067",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": null,
+      "identity_omission_reason": "external-agent",
+      "epic_agent_ids": ["runtime-engineer"],
+      "epic_identity_omission_reason": "partial"
+    }
+  ],
+  "binding_mixed_revision": [
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 1,
+      "task": "1",
+      "issue": "#2066",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    },
+    {
+      "binding_schema": "squad-work-agent-binding/v1",
+      "binding_version": 1,
+      "producer": "squad",
+      "repository": "bradygaster/squad",
+      "origin_issue": 45,
+      "artifact": "activated",
+      "registry_schema": "squad-agent-provenance/v1",
+      "registry_revision": 2,
+      "task": "2",
+      "issue": "#2067",
+      "epic": "1.1",
+      "epic_issue": "#2065",
+      "agent_id": "runtime-engineer",
+      "epic_agent_ids": ["runtime-engineer"]
+    }
+  ]
+}
