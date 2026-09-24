@@ -1,5 +1,7 @@
 # Squad Artifact Inventory
 
+**Document class:** Informative
+
 **Audit date:** 2026-09-24
 
 **Purpose:** Profile planning and parser-drift evidence for issue #2069.

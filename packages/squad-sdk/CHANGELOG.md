@@ -9,7 +9,8 @@
 - Add the `squad-charter/v0.1` parser, validator, and editor contract. The public
   parser surface now includes typed diagnostics, profile and capability
   metadata, canonical/legacy conformance classification, path-aware identity
-  checks, canonical serialization, and lossless unknown extension preservation.
+  checks, explicit conformance profile selection, validation-before-compilation,
+  canonical serialization order, and lossless unknown extension preservation.
 
 ## 0.10.0
 

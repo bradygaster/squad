@@ -2,17 +2,37 @@
 
 <!-- cspell:ignore xhigh -->
 
-**Status:** Draft
+**Status:** Working Draft
 
 **Document class:** Normative unless a section is marked informative
 
 **Profile identifier:** `squad-charter/v0.1`
+
+**Editor:** Squad project maintainers
+
+**Publication date:** 2026-09-24
+
+**Source revision:** `squad-charter-v0.1-wd3`
+
+**Immutable publication tag:** Not assigned; this is a source-controlled
+working draft
+
+**Feedback:** [Issue #2069](https://github.com/bradygaster/squad/issues/2069)
+
+**Errata:** [§14](#14-errata)
 
 **Artifact class:** required
 
 **Squad-root-relative path:** `agents/{id}/charter.md`
 
 **Repository-relative example:** `.squad/agents/{id}/charter.md`
+
+The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
+**SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **NOT RECOMMENDED**, **MAY**, and
+**OPTIONAL** in this document are to be interpreted as described in BCP 14
+[RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)
+[RFC 8174](https://www.rfc-editor.org/rfc/rfc8174) when, and only when, they
+appear in all capitals, as shown here.
 
 ## 1. Purpose and authority
 
@@ -25,16 +45,31 @@ available, `Identity ID` MUST equal `{id}` after converting Windows separators
 to `/`. Paths that are neither exactly `agents/{id}/charter.md` nor terminated
 by `.squad/agents/{id}/charter.md` provide no profile path context.
 
-## 2. Association and unsupported versions
+## 2. Normative references
+
+- [Squad Specification Core v0.1](core-v0.1.md) defines common paths,
+  conformance, diagnostics, versioning, publication, and trust requirements.
+- [BCP 14](https://www.rfc-editor.org/info/bcp14), comprising RFC 2119 and
+  RFC 8174, defines requirement-keyword interpretation.
+- [CommonMark 0.31.2](https://spec.commonmark.org/0.31.2/) defines the Markdown
+  terms used by the deterministic subset below.
+
+## 3. Association and unsupported versions
 
 The artifact path associates a charter with the charter artifact family. The
-profile version is selected explicitly by the calling API or surrounding
-manifest; v0.1 has no in-document version marker.
+profile version is selected by the calling API or surrounding manifest; v0.1
+has no in-document version marker.
+
+An API that claims portable conformance MUST require the caller to supply the
+profile identifier. Missing selection produces `SQC014`. The TypeScript
+reference implementation also exposes `validateCharterMarkdown` as a
+convenience API that defaults to `squad-charter/v0.1`; this behavior is not
+explicit negotiation, and its result always reports the selected profile.
 
 A consumer asked to process a profile other than one it supports MUST return an
 unsupported-profile error and MUST NOT reinterpret the document as v0.1.
 
-## 3. Canonical document shape
+## 4. Canonical document shape
 
 ```markdown
 # Display Name — Role
@@ -60,18 +95,21 @@ unsupported-profile error and MUST NOT reinterpret the document as v0.1.
 
 The H1, `Identity`, and three canonical responsibility sections define the
 canonical presentation. `Model` is optional. Producers MUST emit canonical
-responsibility headings unless an API caller explicitly requests legacy
-output.
+sections in this order: `Identity`, `Accountable Responsibilities`,
+`Non-Responsibilities`, `Collaboration and Review Authority`, optional
+`Model`, then extensions. Producers MUST use the em dash (`—`) H1 separator
+and canonical responsibility headings unless an API caller explicitly requests
+legacy output.
 
 `Purpose` is one non-empty, single-line Markdown field value. The profile does
 not attempt to determine whether prose is grammatically a sentence.
 
-## 4. Deterministic Markdown subset
+## 5. Deterministic Markdown subset
 
 Structural recognition uses these rules, in order:
 
-1. Only ATX H1 and H2 headings beginning in column one are structural. Setext
-   headings and H3-H6 headings are prose.
+1. Only ATX H1 and H2 headings beginning in column one are structural. Exactly
+   one structural H1 is allowed. Setext headings and H3-H6 headings are prose.
 2. A machine field is a single line with zero to three leading spaces, an
    optional list marker, then `**Label:** value`.
 3. Headings and fields inside fenced code are ignored. Fences use at least
@@ -89,7 +127,7 @@ Structural recognition uses these rules, in order:
 These rules are the required observable behavior. Implementations need not use
 the same scanner internally.
 
-## 5. Machine-readable fields
+## 6. Machine-readable fields
 
 Labels and standard section names are ASCII case-insensitive. Every field in
 this table has cardinality zero-or-one within its owning section.
@@ -98,18 +136,24 @@ this table has cardinality zero-or-one within its owning section.
 |---|---|---:|---|
 | Identity | `ID` | required | Lowercase kebab-case: `[a-z0-9]+(?:-[a-z0-9]+)*` |
 | Identity | `Purpose` | required | Non-empty single-line purpose |
-| Identity | `Name` | legacy optional | Display name |
-| Identity | `Role` | legacy optional | Role |
-| Identity | `Expertise` | legacy optional | Comma-separated informative list |
-| Identity | `Style` | legacy optional | Informative style text |
+| Identity | `Name` | compatibility only | Display name |
+| Identity | `Role` | compatibility only | Role |
+| Identity | `Expertise` | compatibility only | Comma-separated informative list |
+| Identity | `Style` | compatibility only | Informative style text |
 | Model | `Preferred` | optional | Model identifier or `auto` |
 | Model | `Rationale` | optional | Informative prose |
-| Model | `Fallback` | legacy optional | Informative hint, not a portable fallback chain |
+| Model | `Fallback` | compatibility only | Informative hint, not a portable fallback chain |
 | Model | `Reasoning Effort` | optional | `auto`, `low`, `medium`, `high`, `xhigh`, or `max` |
 | Model | `Context Tier` | optional | `auto`, `default`, or `long_context` |
 
 Every standard semantic section also has cardinality zero-or-one. A canonical
 heading and its legacy alias count as the same semantic section.
+
+The compatibility fields `Name`, `Role`, `Expertise`, `Style`, and `Fallback`
+are accepted for legacy ingestion but make the document
+**noncanonical-compatible**. Editors preserve them when their canonical
+semantics cannot be represented without data loss. They are not behavioral
+inputs except that `Name` and `Role` may supply legacy display metadata.
 
 Missing behavioral fields mean no charter preference. `auto` preserves the
 author's request for runtime selection and MUST NOT become a literal runtime
@@ -117,7 +161,7 @@ override. Unsupported model identifiers MAY be preserved as authored text but
 MUST NOT be claimed as executable without runtime support. Invalid reasoning
 or context values are validation errors and MUST NOT become runtime overrides.
 
-## 6. Canonical and legacy handling
+## 7. Canonical and legacy handling
 
 Consumers MAY accept these legacy aliases:
 
@@ -134,18 +178,24 @@ Consumers MAY accept these legacy aliases:
 
 A document with only warning diagnostics is **noncanonical-compatible**, not
 canonical. Validators expose both canonical `conforms` and broader `accepted`
-status. Legacy output requires an explicit editor mode.
+status. Legacy output requires an explicit editor mode. Canonical known-field
+edits emit standard sections in the order defined by §4. If required canonical
+identity semantics are unavailable, the editor preserves compatibility fields
+and the result remains noncanonical-compatible rather than inventing values.
 
-## 7. Extensions
+## 8. Extensions
 
-Extension headings use `## X-<namespace>-<name>`. Canonical names use lowercase
-kebab-case namespace and name segments. Names compare case-insensitively; two
-headings that differ only by case collide and are invalid.
+Extension headings use `## X-<namespace>-<name>`. The namespace is the first
+non-hyphen segment after `X-` and matches `[a-z0-9]+`. The name is every
+remaining segment and matches `[a-z0-9]+(?:-[a-z0-9]+)*`. Therefore
+`X-example-deploy-policy` has namespace `example` and name `deploy-policy`.
+The namespace `squad` is reserved for the Squad specification project.
 
-The namespace owner defines extension semantics. `X-squad-*` is reserved for
-the Squad specification project; third parties MUST use a namespace they
-control. Unknown consumers MUST treat extension bodies as opaque, untrusted
-bytes.
+Extension identity is the complete `namespace-name` pair. Comparison is ASCII
+case-insensitive; two headings with the same pair collide even when casing
+differs. Noncanonical casing produces `SQC106`; a collision additionally
+produces `SQC012`. Third parties MUST use a namespace they control. Unknown
+consumers MUST treat extension bodies as opaque, untrusted bytes.
 
 Editors:
 
@@ -155,7 +205,7 @@ Editors:
 - MAY rewrite known standard sections into canonical form;
 - MUST NOT interpret extension body content as standard charter structure.
 
-## 8. Diagnostics
+## 9. Diagnostics
 
 Missing constructs are anchored at line 1 or, when present, the nearest owning
 H1/H2 heading. Duplicate diagnostics point to the second and later occurrence.
@@ -176,14 +226,18 @@ Diagnostics sort by line, column, then the code order below.
 | `SQC011` | error | Duplicate standard semantic section |
 | `SQC012` | error | Case-insensitive extension collision |
 | `SQC013` | error | Unsupported profile |
+| `SQC014` | error | Explicit profile omitted from conformance API |
+| `SQC015` | error | Duplicate structural H1 identity |
 | `SQC101` | warning | Missing canonical Identity section |
 | `SQC102` | warning | Missing canonical Identity ID |
 | `SQC103` | warning | Missing canonical Identity Purpose |
 | `SQC104` | warning | Missing canonical responsibility section |
 | `SQC105` | warning | Legacy responsibility headings |
 | `SQC106` | warning | Noncanonical extension heading |
+| `SQC107` | warning | Compatibility field present |
+| `SQC108` | warning | Unknown or noncanonically ordered standard section |
 
-## 9. Operational capabilities
+## 10. Operational capabilities
 
 Implementations claim operations individually:
 
@@ -194,18 +248,25 @@ Implementations claim operations individually:
 | `squad-charter/v0.1/edit` | Canonical serialization plus lossless extension preservation |
 | `squad-charter/v0.1/legacy-consume` | Accept documented legacy aliases without calling them canonical |
 
-The TypeScript reference implementation exports all four identifiers. A
-validation result reports only the validator capability because running
-validation does not prove that parsing or editing was exercised.
+An implementation claiming a capability MUST pass every manifest case that
+lists that capability. A validation result reports only the validator
+capability because running validation does not prove that parsing or editing
+was exercised.
 
-## 10. Security
+## 11. Runtime validation and security
 
 Charters are instructions, not authorization. A runtime MUST independently
 enforce tool, filesystem, network, model, and review policy. It MUST NOT grant
 capabilities because a charter requests them. Links, commands, encoded text,
 HTML comments, code blocks, and extension content are untrusted data.
 
-## 11. Mandatory conformance suite
+A runtime that applies `Preferred`, `Reasoning Effort`, or `Context Tier` MUST
+validate the charter first and MUST reject invalid input without applying any
+of those fields. The TypeScript compiler validates before resolving behavior.
+Its compatibility path for omitted `charterContent` generates a canonical,
+behavior-neutral charter; explicitly empty or invalid content is rejected.
+
+## 12. Mandatory conformance suite
 
 Implementations claiming a capability MUST run the applicable cases in
 `test-fixtures/spec/charter-v0.1/manifest.json`. The suite defines exact
@@ -213,19 +274,24 @@ diagnostic code, severity, location, ordering, path behavior, parsed semantics,
 capability reporting, profile handling, and round-trip output. It includes
 every standard field and section duplicate, fenced and opaque fake structure,
 CRLF behavior, path mismatch, extension ordering, canonical output, legacy
-ingestion, and `auto` runtime semantics.
+ingestion, and `auto` runtime semantics. The manifest, not the TypeScript
+harness, defines case inputs, profile selection, paths, edits, outputs,
+classifications, parsed semantics, and ordered diagnostic ranges.
 
-## 12. Informative TypeScript API example
+## 13. Informative TypeScript implementation details
+
+The exported TypeScript names, module paths, and example below are informative.
+They do not constrain implementations in other languages.
 
 ```ts
 import {
   CHARTER_CAPABILITIES,
   parseCharterMarkdown,
   serializeCharter,
-  validateCharterMarkdown,
+  validateCharterConformance,
 } from '@bradygaster/squad-sdk/parsers';
 
-const validation = validateCharterMarkdown(markdown, {
+const validation = validateCharterConformance(markdown, {
   profile: 'squad-charter/v0.1',
   path: '.squad/agents/reviewer/charter.md',
 });
@@ -240,3 +306,9 @@ const updated = serializeCharter(charter);
 
 console.log(CHARTER_CAPABILITIES.edit, updated);
 ```
+
+## 14. Errata
+
+No errata are recorded for source revision `squad-charter-v0.1-wd3`. Errata for
+a future tagged publication will be listed in this section with publication
+date, affected section, and correction.

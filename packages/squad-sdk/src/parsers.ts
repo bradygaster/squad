@@ -51,12 +51,14 @@ export {
   CHARTER_DIAGNOSTIC_SEVERITIES,
   CHARTER_PROFILE,
   CHARTER_PROFILE_METADATA,
+  validateCharterConformance,
   validateCharterMarkdown,
 } from './agents/charter-validator.js';
 
 export type {
   CharterCapability,
   CharterConformance,
+  CharterConformanceOptions,
   CharterDiagnostic,
   CharterDiagnosticCode,
   CharterDiagnosticSeverity,

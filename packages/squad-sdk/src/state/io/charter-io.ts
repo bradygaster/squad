@@ -61,6 +61,7 @@ export function serializeCharter(
   }
 
   const lines: string[] = [];
+  const eol = charter.source?.eol ?? '\n';
 
   // Title line
   const name = charter.identity.name ?? 'Agent';
@@ -68,8 +69,8 @@ export function serializeCharter(
   lines.push(`# ${name} — ${role}`);
   lines.push('');
 
-  // Style quote
-  if (charter.identity.style) {
+  // Compatibility-only style prose is emitted only in explicit legacy mode.
+  if (format === 'legacy' && charter.identity.style) {
     lines.push(`> ${charter.identity.style}`);
     lines.push('');
   }
@@ -89,7 +90,10 @@ export function serializeCharter(
   if (!charter.identity.purpose && charter.identity.role) {
     lines.push(`- **Role:** ${charter.identity.role}`);
   }
-  if (charter.identity.expertise && charter.identity.expertise.length > 0) {
+  if (
+    charter.identity.expertise
+    && charter.identity.expertise.length > 0
+  ) {
     lines.push(`- **Expertise:** ${charter.identity.expertise.join(', ')}`);
   }
   if (charter.identity.style) {
@@ -125,6 +129,14 @@ export function serializeCharter(
     lines.push('');
   }
 
+  // Collaboration section
+  if (charter.collaboration !== undefined) {
+    lines.push(`## ${headings.collaboration}`);
+    lines.push('');
+    lines.push(charter.collaboration);
+    lines.push('');
+  }
+
   // Model section
   if (
     charter.modelPreference
@@ -157,17 +169,9 @@ export function serializeCharter(
     lines.push('');
   }
 
-  // Collaboration section
-  if (charter.collaboration !== undefined) {
-    lines.push(`## ${headings.collaboration}`);
-    lines.push('');
-    lines.push(charter.collaboration);
-    lines.push('');
-  }
-
-  const canonical = lines.join('\n').trimEnd() + '\n';
+  const canonical = lines.join(eol).trimEnd() + eol;
   const extensions = charter.source?.extensions.join('') ?? '';
   return extensions
-    ? `${canonical.trimEnd()}\n\n${extensions}`
+    ? `${canonical.trimEnd()}${eol}${eol}${extensions}`
     : canonical;
 }

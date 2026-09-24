@@ -11,6 +11,7 @@ export interface CharterMarkdownHeading {
   readonly name: string;
   readonly line: number;
   readonly column: number;
+  readonly width: number;
   readonly start: number;
   readonly isExtension: boolean;
 }
@@ -20,6 +21,7 @@ export interface CharterMarkdownField {
   readonly value: string;
   readonly line: number;
   readonly column: number;
+  readonly width: number;
   readonly section: string;
 }
 
@@ -33,6 +35,7 @@ export interface CharterMarkdownScan {
   readonly markdown: string;
   readonly eol: '\n' | '\r\n' | '\r';
   readonly h1?: CharterMarkdownHeading;
+  readonly h1s: readonly CharterMarkdownHeading[];
   readonly sections: readonly CharterMarkdownSection[];
   readonly fields: readonly CharterMarkdownField[];
 }
@@ -64,6 +67,7 @@ export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
   const lines = splitSourceLines(markdown);
   const sections: CharterMarkdownSection[] = [];
   const fields: CharterMarkdownField[] = [];
+  const h1s: CharterMarkdownHeading[] = [];
   let h1: CharterMarkdownHeading | undefined;
   let currentSection: PendingSection | undefined;
   let extensionTail = false;
@@ -136,6 +140,7 @@ export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
           name,
           line: sourceLine.line,
           column: text.indexOf('##') + 1,
+          width: text.length,
           start: sourceLine.start,
           headingEnd: sourceLine.end - sourceLine.eol.length,
           isExtension,
@@ -147,17 +152,19 @@ export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
 
     if (extensionTail) continue;
 
-    if (!h1) {
-      const h1Match = text.match(H1);
-      if (h1Match) {
-        h1 = {
-          name: h1Match[1]!.trim(),
-          line: sourceLine.line,
-          column: text.indexOf('#') + 1,
-          start: sourceLine.start,
-          isExtension: false,
-        };
-      }
+    const h1Match = text.match(H1);
+    if (h1Match) {
+      const heading: CharterMarkdownHeading = {
+        name: h1Match[1]!.trim(),
+        line: sourceLine.line,
+        column: text.indexOf('#') + 1,
+        width: text.length,
+        start: sourceLine.start,
+        isExtension: false,
+      };
+      h1s.push(heading);
+      h1 ??= heading;
+      continue;
     }
 
     if (!currentSection) continue;
@@ -168,6 +175,7 @@ export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
         value: fieldMatch[2]!,
         line: sourceLine.line,
         column: text.indexOf('**') + 1,
+        width: fieldMatch[1]!.trim().length + 5,
         section: currentSection.name,
       });
     }
@@ -179,6 +187,7 @@ export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
     markdown,
     eol: detectEol(markdown),
     ...(h1 ? { h1 } : {}),
+    h1s,
     sections,
     fields,
   };
