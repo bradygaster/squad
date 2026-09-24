@@ -853,6 +853,11 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     expect(factChecker).toMatch(/Never emit `RESULT: PASS`, `RESULT: FAIL`/);
   });
 
+  it('uses automatic model resolution instead of the literal inherited model', () => {
+    expect(factChecker).toMatch(/^model: auto$/m);
+    expect(factChecker).not.toMatch(/^model: inherited$/m);
+  });
+
   it('requires all five DA elements with concrete semantic thresholds', () => {
     for (const section of [
       '##### Steelman of the opposition',
@@ -876,6 +881,13 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     );
     expect(validation).toMatch(/copied verdict,[\s\S]*cannot become `RESULT: PASS`/);
     expect(validation).toMatch(/Structural PASS alone cannot produce overall PASS/);
+  });
+
+  it('emits lifecycle next actions in the deterministic writer format', () => {
+    expect(validation).toContain('**Next action:** `/squad plan accept scope`');
+    expect(validation).toContain('**Next action:** `/squad plan validate`');
+    expect(validation).toMatch(/backticked command must\s+be the entire field value/);
+    expect(validation).toMatch(/retry\s+context in a separate\s+`\*\*Guidance:\*\*` field/);
   });
 
   it('distinguishes a neatly formatted bad plan from a genuinely validated plan', () => {
@@ -1019,6 +1031,7 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
     expect(lifecycle).toContain('Activation = `✅ Done`');
     expect(lifecycle).toContain('state =\n  Activated');
     expect(lifecycle).toContain('This is terminal');
+    expect(lifecycle).toContain('explicit terminal prose');
   });
 
   it('repairs stale lifecycle state on an idempotent activate rerun', () => {

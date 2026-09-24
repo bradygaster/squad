@@ -38,6 +38,10 @@ import {
 } from '../ralph/triage.js';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
+import {
+  readCastingRegistryPair,
+  validateCastingRegistryPairRaw,
+} from '../casting/durable-registry.js';
 
 // ---------------------------------------------------------------------------
 // Public markers & limits
@@ -690,19 +694,40 @@ export function syncTeamCapabilities(
   options: SyncTeamCapabilitiesOptions,
 ): SyncTeamCapabilitiesResult {
   const storage = options.storage ?? new FSStorageProvider();
+  let registry: unknown;
+  if (storage instanceof FSStorageProvider) {
+    registry = readCastingRegistryPair(join(options.squadDir, 'casting')).registry;
+  } else {
+    const castingDir = join(options.squadDir, 'casting');
+    const registryRaw = readOptional(storage, join(castingDir, 'registry.json'));
+    const historyRaw = readOptional(storage, join(castingDir, 'history.json'));
+    const journalRaw = readOptional(
+      storage,
+      join(castingDir, 'registry-history.transaction.json'),
+    );
+    const manifestRaw = readOptional(
+      storage,
+      join(castingDir, 'registry-history.commit.json'),
+    );
+    registry = validateCastingRegistryPairRaw(
+      registryRaw,
+      historyRaw,
+      journalRaw,
+      manifestRaw,
+    ).registry;
+  }
+
+  const existing = readOptional(storage, options.agentFile);
+  if (existing === undefined) {
+    return {
+      updated: false,
+      profile: buildTeamCapabilityProfile({}),
+      skipped: 'missing-agent-file',
+    };
+  }
 
   const teamMarkdown = readOptional(storage, join(options.squadDir, 'team.md'));
   const routingMarkdown = readOptional(storage, join(options.squadDir, 'routing.md'));
-
-  let registry: unknown;
-  const registryRaw = readOptional(storage, join(options.squadDir, 'casting', 'registry.json'));
-  if (registryRaw) {
-    try {
-      registry = JSON.parse(registryRaw);
-    } catch {
-      registry = undefined;
-    }
-  }
 
   const charters: Record<string, string> = {};
   const agentsDir = join(options.squadDir, 'agents');
@@ -724,11 +749,6 @@ export function syncTeamCapabilities(
     charters,
     registry,
   });
-
-  const existing = readOptional(storage, options.agentFile);
-  if (existing === undefined) {
-    return { updated: false, profile, skipped: 'missing-agent-file' };
-  }
 
   const next = applyTeamCapabilitiesBlock(existing, renderTeamCapabilitiesBlock(profile));
   if (next === normalizeEol(existing)) {

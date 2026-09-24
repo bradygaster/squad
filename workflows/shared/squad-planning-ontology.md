@@ -395,9 +395,14 @@ This comment is created on first transition and updated on every subsequent tran
 
 **Current state:** Triaged
 **Last command:** `/squad triage` by @user at <timestamp>
-**Next action:** `/squad plan program` — create a program plan from triage dispositions
+**Next action:** `/squad plan program`
+**Guidance:** Create a program plan from triage dispositions.
 **Also available:** `/squad triage revise <feedback>` — adjust triage before planning
 ```
+
+For nonterminal states, `Next action` is only the backticked `/squad` command;
+put prose elsewhere. `Activated` is terminal and may use terminal prose there.
+Its canonical granular command is `/squad plan activate`.
 
 Status icons: `✅ Done` · `⏳ In Progress` · `⬚ Pending` · `❌ Failed` · `⏭ Skipped`
 

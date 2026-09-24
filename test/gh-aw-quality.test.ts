@@ -492,7 +492,7 @@ describe('#1916: lifecycle comment updates use a deterministic safe-output job',
       "!contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state')",
     );
     expect(shared).toContain("github.event.comment.body == '/squad activate'");
-    expect(shared).toContain('envelope?.squad_artifact === "plan-accepted"');
+    expect(shared).toContain('["plan-accepted", "activated"].includes(e?.squad_artifact)');
     expect(shared).toContain('name: Repair terminal lifecycle after idempotent activation');
   });
 
@@ -635,6 +635,8 @@ describe('gh-aw: shared component imports', () => {
       'shared/squad-improvement-gate.mjs',
       'shared/squad-retro-evidence.mjs',
       'shared/squad-retro-provenance.mjs',
+      'shared/squad-implementation-provenance.mjs',
+      'shared/implementation-provenance-v1.schema.json',
     ];
     const builtinResources = [
       'shared/builtins/scribe-charter.md',
@@ -715,16 +717,20 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'squad-improvement-worker',
     'squad-bootstrap',
   ];
-  const expectedRuntimeModules = [
+  const expectedRuntimeResources = [
+    'shared/implementation-provenance-v1.schema.json',
     'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
+    'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
   ];
 
-  function runtimeModuleReferences(text: string): string[] {
-    return [...text.matchAll(/(?:\.github\/workflows\/)?(shared\/[A-Za-z0-9._/-]+\.mjs)/g)]
+  function runtimeResourceReferences(text: string): string[] {
+    return [...text.matchAll(
+      /(?:\.github\/workflows\/)?(shared\/(?:[A-Za-z0-9._/-]+\.mjs|implementation-provenance-v1\.schema\.json))/g,
+    )]
       .map(match => match[1]);
   }
 
@@ -770,21 +776,21 @@ describe('gh-aw: clean install runtime resource closure', () => {
     return workflowDir;
   }
 
-  it('emits every shared runtime module referenced by all seven sources and locks', () => {
+  it('emits every shared runtime resource referenced by all seven sources and locks', () => {
     const workflowDir = createCleanInstalledTarget();
     const references = new Set<string>();
     for (const workflowName of workflowNames) {
       for (const extension of ['md', 'lock.yml']) {
         const file = join(workflowDir, `${workflowName}.${extension}`);
         expect(existsSync(file), `${file} must exist in the installed target`).toBe(true);
-        for (const reference of runtimeModuleReferences(readText(file))) {
+        for (const reference of runtimeResourceReferences(readText(file))) {
           references.add(reference);
         }
       }
     }
 
     const sortedReferences = [...references].sort();
-    expect(sortedReferences).toEqual(expectedRuntimeModules);
+    expect(sortedReferences).toEqual(expectedRuntimeResources);
     assertRuntimeClosure(workflowDir, sortedReferences);
 
     for (const modulePath of sortedReferences) {
@@ -1161,7 +1167,12 @@ describe('gh-aw: prompt budget & planning import regression', () => {
   // source independently verifies the triggering comment author's live repository
   // permission before the deterministic repair job can write a terminal state.
   // The ambient prompt remains below its separate 40 KB delivery guard.
-  const SOURCE_GROWTH_BUDGET_KB = 193;
+  // Raised 193 -> 194 KB for the command-only lifecycle next-action contract.
+  // Its validation and retry guidance are inside the on-demand plan-validation
+  // skill; the ambient prompt remains below the independently enforced 40 KB cap.
+  // Raised 194 -> 198 KB for versioned work-to-agent provenance. The additional
+  // contract is confined to on-demand planning/activation skills.
+  const SOURCE_GROWTH_BUDGET_KB = 198;
   const SOURCE_GROWTH_BUDGET_BYTES = SOURCE_GROWTH_BUDGET_KB * 1024;
 
   it('squad-planning-ontology.md is in the imports list', () => {
@@ -1658,6 +1669,10 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     );
     expect(compiled).toContain('github.rest.repos.getCollaboratorPermissionLevel');
     expect(compiled).toContain('["admin", "maintain", "write"].includes(permission)');
+    expect(compiled).toContain("github.event.comment.body == '/squad plan activate'");
+    expect(compiled).toContain(
+      '["/squad activate", "/squad plan accept", "/squad plan activate"].includes(command)',
+    );
   }, 20000);
 
   it('compiles Cast failure into a queryable post-agent job that fails the run', () => {
@@ -1693,7 +1708,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"');
+    expect(normalizedRunnerStep).toContain('validator_expected_sha256="62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"');
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):
@@ -2598,12 +2613,14 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     // Must use headRefName field and startsWith to match squad/cast-{repo} patterns
     expect(content).toMatch(/gh pr list/i);
     expect(content).toMatch(/headRefName/);
+    expect(content).toContain('.headRefName == "squad/bootstrap-cast"');
     expect(content).toMatch(/startswith\("squad\/cast-"\)/);
     expect(content).toMatch(/open Cast PR.*found|cast PR.*found|Cast PR is found/i);
     // Exact --head matching truncates the branch name and never finds squad/cast-{repo}; must be forbidden
     expect(content).not.toMatch(/--head "squad\/cast-"/);
     // squad/cast-member-* must be excluded so Cast Member PRs cannot satisfy Cast dedup
     expect(content).toMatch(/startswith\("squad\/cast-member-"\).*\| not|\| not.*startswith\("squad\/cast-member-"\)/);
+    expect(content).toMatch(/More than one candidate is ambiguous: fail closed/i);
   });
 
   it('Cast PR dedup stops without opening a duplicate PR', () => {
@@ -2875,13 +2892,23 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     expect(result).toContain('"number": 42');
   });
 
-  it('Cast Member branch (squad/cast-member-*) is excluded and returns null', () => {
+  it('deterministic bootstrap Cast branch satisfies the filter', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/bootstrap-cast', number: 2, url: 'https://github.com/org/repo/pull/2' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toContain('"headRefName": "squad/bootstrap-cast"');
+    expect(result).toContain('"number": 2');
+  });
+
+  it('Cast Member branch (squad/cast-member-*) is excluded and returns an empty array', () => {
     const filter = extractJqFilter();
     const prs = JSON.stringify([
       { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
     ]);
     const result = runJqFilter(prs, filter);
-    expect(result).toBe('null');
+    expect(result).toBe('[]');
   });
 
   it('a closed Cast PR is absent from the open-PR scan, allowing additive retry', () => {
@@ -2895,7 +2922,7 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
       },
     ];
     const openPrs = allPrs.filter(pr => pr.state === 'OPEN');
-    expect(runJqFilter(JSON.stringify(openPrs), filter)).toBe('null');
+    expect(runJqFilter(JSON.stringify(openPrs), filter)).toBe('[]');
     expect(squadContent).toMatch(/If no open Cast PR found.*Execute Cast Mode/s);
   });
 
@@ -2908,6 +2935,18 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     const result = runJqFilter(prs, filter);
     expect(result).toContain('"headRefName": "squad/cast-myrepo"');
     expect(result).not.toContain('squad/cast-member-dev');
+  });
+
+  it('returns every exact Cast candidate so ambiguity cannot be hidden by first', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/bootstrap-cast', number: 2, url: 'https://github.com/org/repo/pull/2' },
+      { headRefName: 'squad/cast-myrepo', number: 42, url: 'https://github.com/org/repo/pull/42' },
+      { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
+    ]);
+    const result = JSON.parse(runJqFilter(prs, filter));
+    expect(result.map((pullRequest: { number: number }) => pullRequest.number)).toEqual([2, 42]);
+    expect(squadContent).toContain('Never choose the first result heuristically.');
   });
 });
 

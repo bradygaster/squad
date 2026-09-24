@@ -64,9 +64,22 @@ pre-agent-steps:
         })).filter((issue) => !issue.pull_request);
         let state;
         try {
+          const preliminary = stateModule.classifyBootstrapState({
+            pullRequests,
+            issues,
+            defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+          });
+          const comments = preliminary.issue
+            ? await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: preliminary.issue.number,
+                per_page: 100,
+              })
+            : [];
           state = stateModule.classifyBootstrapState({
             pullRequests,
             issues,
+            comments,
             defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
           });
         } catch (error) {
@@ -81,7 +94,9 @@ pre-agent-steps:
           ? state.pull_request.merge_commit_sha
           : state.pull_request?.head_sha;
         core.setOutput('cast_ref', castRef || '');
-        core.info(`Bootstrap recovery action: ${state.action}`);
+        core.info(
+          `Bootstrap recovery action: ${state.action}; research artifacts: ${state.research_artifact_count}`,
+        );
   - name: Restore an existing Cast tree for partial recovery
     if: steps.bootstrap-state.outputs.cast_ref != ''
     uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -130,14 +145,17 @@ pre-agent-steps:
         }
         node --check "$path" >/dev/null
       }
-      check_hash "$cast_validator" "f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
-      check_hash "$bootstrap_validator" "a37ba8185d5831a340661c89ece02631b0d99dde38d8deb75bd642fd61518750"
+      check_hash "$cast_validator" "31e568ae4a0cc372f5b79d4b024ba8b7af1f38feac54034221fb203da9918ab4"
+      check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
       node "$bootstrap_validator" \
         --root "$PWD" \
         --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
         --repository "${GITHUB_REPOSITORY:?}" \
         --default-branch "${SQUAD_BOOTSTRAP_DEFAULT_BRANCH:?}" \
         --link-mode placeholder
+      node "$bootstrap_validator" \
+        --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
+        > "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json"
       SQUAD_BOOTSTRAP_VALIDATOR
       chmod 500 "$runner"
 safe-outputs:
@@ -158,10 +176,38 @@ safe-outputs:
         issues: write
         pull-requests: write
       inputs:
-        payload:
-          description: Complete validated Squad bootstrap payload JSON.
+        payload_encoding:
+          description: Fixed bootstrap payload encoding; must be base64.
           required: true
           type: string
+        payload_byte_length:
+          description: Canonical decimal UTF-8 byte length, at most 96000.
+          required: true
+          type: string
+        payload_sha256:
+          description: Lowercase SHA-256 of the complete UTF-8 payload bytes.
+          required: true
+          type: string
+        payload_chunk_count:
+          description: Canonical decimal count of populated chunks, from 1 through 16.
+          required: true
+          type: string
+        payload_chunk_00: { type: string }
+        payload_chunk_01: { type: string }
+        payload_chunk_02: { type: string }
+        payload_chunk_03: { type: string }
+        payload_chunk_04: { type: string }
+        payload_chunk_05: { type: string }
+        payload_chunk_06: { type: string }
+        payload_chunk_07: { type: string }
+        payload_chunk_08: { type: string }
+        payload_chunk_09: { type: string }
+        payload_chunk_10: { type: string }
+        payload_chunk_11: { type: string }
+        payload_chunk_12: { type: string }
+        payload_chunk_13: { type: string }
+        payload_chunk_14: { type: string }
+        payload_chunk_15: { type: string }
       steps:
         - name: Checkout trusted default branch
           uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,11 +242,13 @@ safe-outputs:
                 core.setFailed(`Expected exactly one materialize_bootstrap item, found ${items.length}.`);
                 return;
               }
+              let payloadText;
               let payload;
               try {
-                payload = JSON.parse(String(items[0].payload || ''));
+                payloadText = validatorModule.reconstructBootstrapPayload(items[0]);
+                payload = JSON.parse(payloadText);
               } catch (error) {
-                core.setFailed(`Bootstrap payload is invalid JSON: ${error.message}`);
+                core.setFailed(`Bootstrap payload transport is invalid: ${error.message}`);
                 return;
               }
               const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
@@ -209,7 +257,7 @@ safe-outputs:
                 mkdirSync(dirname(target), { recursive: true });
                 writeFileSync(target, String(file.content || ''));
               }
-              writeFileSync(payloadPath, `${JSON.stringify(payload)}\n`);
+              writeFileSync(payloadPath, payloadText);
 
               const validate = (candidate, linkMode) => {
                 writeFileSync(payloadPath, `${JSON.stringify(candidate)}\n`);
@@ -237,12 +285,26 @@ safe-outputs:
                   state: 'all',
                   per_page: 100,
                 })).filter((issue) => !issue.pull_request);
+                const preliminary = stateModule.classifyBootstrapState({
+                  pullRequests,
+                  issues,
+                  defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                });
+                const comments = preliminary.issue
+                  ? await github.paginate(github.rest.issues.listComments, {
+                      ...context.repo,
+                      issue_number: preliminary.issue.number,
+                      per_page: 100,
+                    })
+                  : [];
                 return {
                   pullRequests,
                   issues,
+                  comments,
                   state: stateModule.classifyBootstrapState({
                     pullRequests,
                     issues,
+                    comments,
                     defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
                   }),
                 };
@@ -254,7 +316,7 @@ safe-outputs:
                 return;
               }
               if (snapshot.state.action === 'noop') {
-                core.info('The deterministic Cast PR and research-proposals issue already exist.');
+                core.info('The deterministic Cast PR, research-proposals issue, and research artifact already exist.');
                 return;
               }
 
@@ -372,22 +434,65 @@ safe-outputs:
               validate(finalPayload, 'resolved');
 
               snapshot = await listState();
+              let issueNumber;
               if (snapshot.state.issue) {
                 if (snapshot.state.issue.state !== 'open') {
                   core.info(`Bootstrap issue #${snapshot.state.issue.number} is closed; preserving human state.`);
                   return;
                 }
+                issueNumber = snapshot.state.issue.number;
                 await github.rest.issues.update({
                   ...context.repo,
-                  issue_number: snapshot.state.issue.number,
+                  issue_number: issueNumber,
                   title: stateModule.BOOTSTRAP_ISSUE_TITLE,
                   body: finalPayload.issue_body,
                 });
               } else {
-                await github.rest.issues.create({
+                const createdIssue = await github.rest.issues.create({
                   ...context.repo,
                   title: stateModule.BOOTSTRAP_ISSUE_TITLE,
                   body: finalPayload.issue_body,
+                });
+                issueNumber = createdIssue.data.number;
+              }
+
+              const researchBody = validatorModule.createBootstrapResearchComment(
+                finalPayload.issue_body,
+                issueNumber,
+              );
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+              const researchArtifacts = validatorModule.findBootstrapResearchArtifacts(
+                comments,
+                issueNumber,
+              );
+              const currentResearch = researchArtifacts.at(-1);
+              if (currentResearch) {
+                if (validatorModule.isBootstrapResearchSeed(currentResearch)) {
+                  await github.rest.issues.updateComment({
+                    ...context.repo,
+                    comment_id: currentResearch.id,
+                    body: researchBody,
+                  });
+                } else {
+                  core.info(
+                    `Preserving focused research artifact comment #${currentResearch.id}.`,
+                  );
+                }
+                for (const duplicate of researchArtifacts.slice(0, -1)) {
+                  await github.rest.issues.deleteComment({
+                    ...context.repo,
+                    comment_id: duplicate.id,
+                  });
+                }
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  body: researchBody,
                 });
               }
 ---
@@ -412,6 +517,8 @@ Read `.github/workflows/squad-bootstrap-state.json` before doing any analysis.
   issue from it, and request materialization.
 - `create_pr`: generate the Cast tree and request materialization; the writer
   updates the one marked issue with the real PR link.
+- `create_research`: preserve both linked artifacts and materialize or repair
+  their one canonical structured research comment.
 
 Never request more than one `materialize_bootstrap` output. The typed writer
 rechecks all pages of pull requests and issues, fails closed on duplicate or
@@ -520,6 +627,17 @@ The issue body must:
 10. State that `/squad implement` is used only on generated implementation
     tasks, never on a proposal ID.
 11. End at assignable implementation issues in the actionable-backlog checklist.
+12. Include these exact numbered guidance lines:
+    - `1. Review and merge the linked draft Cast PR.`
+    - `2. Rerun /squad triage to classify these existing proposals, or use focused /squad research ... first when deeper research is desired.` Wrap each command in Markdown code spans.
+    - `3. Run /squad plan, review the plan, then run /squad activate to create assignable implementation issues.` Wrap each command in Markdown code spans.
+
+The typed writer derives one concise canonical `squad_artifact=research`
+comment from these validated proposal sections. Do not repeat the full research
+artifact in the payload or issue body. A later focused `/squad research ...`
+run replaces this seed through the normal research upsert contract. Bootstrap
+recovery preserves a newer focused research artifact rather than replacing it
+with the shorter seed.
 
 Keep the issue concise and evidence-led. Do not copy the detailed research
 exemplar's long audit format.
@@ -533,7 +651,26 @@ Run exactly:
 ```
 
 Only exit status zero with stdout exactly
-`Squad bootstrap validation passed.` authorizes one call to
-`materialize_bootstrap`, with the complete payload file serialized as its
-`payload` string. Any other result is terminal: emit no materialization output,
+`Squad bootstrap validation passed.` authorizes reading
+`.github/workflows/squad-bootstrap-envelope.json`. That file is the only
+transport source for one `materialize_bootstrap` call.
+
+The envelope contains:
+
+- `payload_encoding`: exactly `base64`
+- `payload_byte_length`: canonical decimal UTF-8 byte length, maximum 96,000
+- `payload_sha256`: lowercase SHA-256 of the complete payload bytes
+- `payload_chunk_count`: canonical decimal from 1 through 16
+- `payload_chunk_00` through `payload_chunk_15`: only the populated fixed slots
+
+Each populated chunk is `NN:` followed by canonical Base64 for at most 6,000
+payload bytes, so every string is at most 8,003 bytes and stays conservatively
+below gh-aw's 10,240-byte per-string input limit. Pass every property from the
+envelope byte-for-byte to the typed safe-output call. Do not reserialize the
+payload, recompute metadata, rename slots, add unused slots, or split semantic
+generation into separate Cast and research outputs. The writer reconstructs the
+one shared payload and verifies order, count, bounds, UTF-8, total byte length,
+and SHA-256 before parsing any JSON.
+
+Any validation or envelope error is terminal: emit no materialization output,
 report the exact validator stderr, and stop.

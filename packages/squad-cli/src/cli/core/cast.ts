@@ -13,6 +13,12 @@ import {
 } from '@bradygaster/squad-sdk';
 import {
   CastingEngine,
+  acquireCastingRegistryLockAsync,
+  commitCastingRegistryPair,
+  prepareCastingRegistryPairLocked,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
+  reconcileAgentProvenanceRegistry,
   type CastMember as EngineCastMember,
   type AgentRole as EngineAgentRole,
 } from '@bradygaster/squad-sdk/casting';
@@ -60,6 +66,8 @@ const RAI_POLICY_TEMPLATE = `# RAI Policy
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface CastMember {
+  /** Immutable producer-owned id. Required when renaming an existing agent. */
+  id?: string;
   name: string;
   role: string;
   scope: string;
@@ -521,10 +529,10 @@ function readBuiltinCharter(
 
 // ── Team file updaters ─────────────────────────────────────────────
 
-function buildMembersTable(members: CastMember[]): string {
+function buildMembersTable(members: CastMember[], memberIds?: ReadonlyMap<string, string>): string {
   let table = `## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n`;
   for (const m of members) {
-    const nameLower = memberId(m.name);
+    const nameLower = memberIds?.get(m.name) ?? memberId(m.name);
     table += `| ${m.name} | ${m.role} | \`.squad/agents/${nameLower}/charter.md\` | ✅ Active |\n`;
   }
   return table;
@@ -564,6 +572,76 @@ function buildRoutingTable(members: CastMember[]): string {
   return table;
 }
 
+function validateCastProposal(proposal: CastProposal): void {
+  if (!proposal || typeof proposal !== 'object') throw new Error('Cast proposal is required');
+  if (typeof proposal.universe !== 'string' || proposal.universe.trim().length === 0) {
+    throw new Error('Cast proposal universe is required');
+  }
+  if (typeof proposal.projectDescription !== 'string') {
+    throw new Error('Cast proposal project description must be a string');
+  }
+  if (!Array.isArray(proposal.members)) throw new Error('Cast proposal members must be an array');
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const member of proposal.members) {
+    if (
+      !member
+      || typeof member.name !== 'string'
+      || member.name.trim().length === 0
+      || typeof member.role !== 'string'
+      || member.role.trim().length === 0
+      || typeof member.scope !== 'string'
+      || member.scope.trim().length === 0
+      || typeof member.emoji !== 'string'
+    ) {
+      throw new Error('Every cast member requires a name, role, scope, and emoji');
+    }
+    const id = member.id ?? memberId(member.name);
+    if (ids.has(id) || names.has(member.name)) {
+      throw new Error(`Duplicate cast member identity: ${member.name}`);
+    }
+    ids.add(id);
+    names.add(member.name);
+  }
+}
+
+function validateExistingCastingInputs(
+  storage: FSStorageProvider,
+  castingDir: string,
+): void {
+  if (!storage.existsSync(castingDir)) return;
+  const registryPath = join(castingDir, 'registry.json');
+  const historyPath = join(castingDir, 'history.json');
+  const registryExists = storage.existsSync(registryPath);
+  const historyExists = storage.existsSync(historyPath);
+  if (registryExists !== historyExists) {
+    throw new Error('Cannot cast with only one of casting/registry.json and casting/history.json');
+  }
+  if (
+    registryExists
+    || storage.existsSync(join(castingDir, 'registry-history.transaction.json'))
+    || storage.existsSync(join(castingDir, 'registry-history.commit.json'))
+  ) {
+    readCastingRegistryPair(castingDir);
+  }
+  const policyRaw = storage.readSync(join(castingDir, 'policy.json'));
+  if (policyRaw !== undefined) {
+    let policy: unknown;
+    try {
+      policy = JSON.parse(policyRaw) as unknown;
+    } catch (error) {
+      throw new Error(
+        `Cannot cast with malformed casting/policy.json: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+      throw new Error('Cannot cast with malformed casting/policy.json');
+    }
+  }
+}
+
 // ── Main cast function ─────────────────────────────────────────────
 
 /**
@@ -577,28 +655,74 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const castingDir = join(squadDir, 'casting');
   const filesCreated: string[] = [];
   const membersCreated: string[] = [];
-  const now = new Date().toISOString();
   const templatesDir = getTemplatesDir();
+  validateCastProposal(proposal);
+  validateExistingCastingInputs(storage, castingDir);
+  await storage.mkdir(castingDir, { recursive: true });
+  const releaseCastLock = await acquireCastingRegistryLockAsync(castingDir, 'CLI cast');
 
-  // Built-ins are fixed support identities, not routable Cast specialists.
-  const specialistMembers = proposal.members.filter(member => !builtinId(member.name));
-  const supportMembers = [scribeMember(), ralphMember(), RaiMember(), factCheckerMember()];
-  const allMembers = [...specialistMembers, ...supportMembers];
+  try {
+    recoverCastingRegistryTransaction(castingDir);
+    const existingPair = prepareCastingRegistryPairLocked(castingDir);
+    const now = new Date().toISOString();
+    // Built-ins are fixed support identities, not routable Cast specialists.
+    const specialistMembers = proposal.members.filter(member => !builtinId(member.name));
+    const supportMembers = [scribeMember(), ralphMember(), RaiMember(), factCheckerMember()];
+    const registryPath = join(castingDir, 'registry.json');
+    const existingRegistry = existingPair.registry;
+    const registry = reconcileAgentProvenanceRegistry(
+      existingRegistry,
+      specialistMembers.map((member) => ({
+        id: member.id ?? memberId(member.name),
+        displayName: member.name,
+        role: member.role,
+        universe: proposal.universe,
+      })),
+      { generatedAt: now, retireMissing: true },
+    );
+    const specialistIds = new Map<string, string>();
+    for (const [id, record] of Object.entries(registry.agents)) {
+      if (record.status === 'active') specialistIds.set(record.display_name, id);
+    }
+    const allMembers = [
+      ...specialistMembers.map(member => ({
+        member,
+        id: specialistIds.get(member.name) ?? member.id ?? memberId(member.name),
+      })),
+      ...supportMembers.map(member => ({ member, id: memberId(member.name) })),
+    ];
 
-  // Create agent directories and files
-  for (const member of allMembers) {
-    const nameLower = memberId(member.name);
-    const agentDir = join(agentsDir, nameLower);
+    // Create agent directories and files
+    for (const { member, id } of allMembers) {
+      const agentDir = join(agentsDir, id);
+      const alumniDir = join(agentsDir, '_alumni', id);
+      if (!builtinId(member.name) && storage.existsSync(alumniDir)) {
+        if (storage.existsSync(agentDir)) {
+          throw new Error(`Cannot reactivate agent "${id}": active and alumni directories both exist`);
+        }
+        storage.renameSync(alumniDir, agentDir);
+      }
 
-    const charterPath = join(agentDir, 'charter.md');
-    const charter = builtinId(member.name)
-      ? readBuiltinCharter(storage, templatesDir, member)
-      : generateCharter(member);
-    await storage.write(charterPath, charter);
-    filesCreated.push(charterPath);
+      const charterPath = join(agentDir, 'charter.md');
+      const charter = builtinId(member.name)
+        ? readBuiltinCharter(storage, templatesDir, member)
+        : generateCharter(member);
+      await storage.write(charterPath, charter);
+      filesCreated.push(charterPath);
 
-    membersCreated.push(member.name);
-  }
+      membersCreated.push(member.name);
+    }
+    for (const [id, record] of Object.entries(registry.agents)) {
+      if (record.status !== 'retired') continue;
+      const activeDir = join(agentsDir, id);
+      const alumniDir = join(agentsDir, '_alumni', id);
+      if (storage.existsSync(activeDir) && storage.existsSync(alumniDir)) {
+        throw new Error(`Cannot retire agent "${id}": active and alumni directories both exist`);
+      }
+      if (storage.existsSync(activeDir)) {
+      storage.renameSync(activeDir, alumniDir);
+      }
+    }
 
   // Create or update team.md
   const teamPath = join(squadDir, 'team.md');
@@ -607,7 +731,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     const content = await storage.read(teamPath) ?? '';
     const membersIdx = content.indexOf('## Members');
     if (membersIdx !== -1) {
-      let newContent = replaceSection(content, ['## Members'], buildMembersTable(specialistMembers));
+      let newContent = replaceSection(
+        content,
+        ['## Members'],
+        buildMembersTable(specialistMembers, specialistIds),
+      );
       if (
         newContent.includes('## Built-in Support Agents')
         || newContent.includes('## Support Identities')
@@ -648,7 +776,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       '|------|------|-------|',
       '| Squad | Coordinator | Routes work, enforces handoffs and reviewer gates. |',
       '',
-      buildMembersTable(specialistMembers),
+      buildMembersTable(specialistMembers, specialistIds),
       buildSupportTable(),
       '## Project Context',
       '',
@@ -690,37 +818,41 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   }
 
   // Create casting state files
-  const registryAgents: Record<string, object> = {};
   const snapshotAgents: string[] = [];
   for (const member of specialistMembers) {
-    const nameLower = memberId(member.name);
-    registryAgents[nameLower] = {
-      created_at: now,
-      persistent_name: member.name,
-      universe: proposal.universe,
-      status: 'active',
-    };
-    snapshotAgents.push(nameLower);
+    snapshotAgents.push(specialistIds.get(member.name) ?? memberId(member.name));
   }
 
-  const registry = { agents: registryAgents };
-  await storage.write(join(castingDir, 'registry.json'), JSON.stringify(registry, null, 2) + '\n');
-  filesCreated.push(join(castingDir, 'registry.json'));
-
-  const history = {
-    assignment_cast_snapshots: {
-      [`repl-cast-${now}`]: {
-        created_at: now,
-        agents: snapshotAgents,
-        universe: proposal.universe,
+    const historyPath = join(castingDir, 'history.json');
+    let priorHistory: {
+      assignment_cast_snapshots?: Record<string, unknown>;
+      universe_usage_history?: unknown[];
+    } = {};
+    priorHistory = (existingPair.history ?? {}) as typeof priorHistory;
+    const history = {
+      assignment_cast_snapshots: {
+        ...(priorHistory.assignment_cast_snapshots ?? {}),
+        [`repl-cast-r${registry.revision}-${now}`]: {
+          created_at: now,
+          agents: snapshotAgents,
+          universe: proposal.universe,
+        },
       },
-    },
-    universe_usage_history: [
-      { universe: proposal.universe, used_at: now },
-    ],
-  };
-  await storage.write(join(castingDir, 'history.json'), JSON.stringify(history, null, 2) + '\n');
-  filesCreated.push(join(castingDir, 'history.json'));
+      universe_usage_history: [
+        ...(priorHistory.universe_usage_history ?? []),
+        { universe: proposal.universe, used_at: now },
+      ],
+    };
+    commitCastingRegistryPair(
+      castingDir,
+      existingPair.registryRaw,
+      registry as unknown as Record<string, unknown>,
+      existingPair.historyRaw,
+      history,
+      registry.revision,
+    );
+    filesCreated.push(registryPath);
+    filesCreated.push(historyPath);
 
   const policy = { universe_allowlist: ['*'], max_capacity: 25 };
   await storage.write(join(castingDir, 'policy.json'), JSON.stringify(policy, null, 2) + '\n');
@@ -741,7 +873,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
   // Sync new agents into squad.config.ts (if present)
   for (const member of specialistMembers) {
-    await addAgentToConfig(teamRoot, memberId(member.name), member.role);
+    await addAgentToConfig(
+      teamRoot,
+      specialistIds.get(member.name) ?? memberId(member.name),
+      member.role,
+    );
   }
 
   // Re-advertise the cast in .github/agents/squad.agent.md (#1608). Cast
@@ -761,7 +897,10 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     );
   }
 
-  return { teamRoot, membersCreated, filesCreated };
+    return { teamRoot, membersCreated, filesCreated };
+  } finally {
+    releaseCastLock();
+  }
 }
 
 // ── Display helpers ────────────────────────────────────────────────
