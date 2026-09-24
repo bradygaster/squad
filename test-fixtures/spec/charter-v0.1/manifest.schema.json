@@ -360,7 +360,7 @@
               "type": ["string", "null"]
             },
             "validationApi": {
-              "enum": ["conformance", "convenience"]
+              "const": "conformance"
             }
           },
           "oneOf": [
