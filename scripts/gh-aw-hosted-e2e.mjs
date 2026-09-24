@@ -10,7 +10,12 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadBundleContract } from './gh-aw-hosted-e2e-contract.mjs';
+import {
+  CANONICAL_MANIFEST_PATH,
+  INSTALLED_MANIFEST_PATH,
+  loadBundleContract,
+  loadInstalledBundleContract,
+} from './gh-aw-hosted-e2e-contract.mjs';
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -81,9 +86,9 @@ function inspectInstallation(root, contract) {
 
   for (const workflow of contract.workflows) {
     inspect(workflow.source, workflow.source_sha256);
-    inspect(workflow.lock, workflow.lock_sha256);
+    inspect(workflow.lock);
   }
-  for (const runtime of contract.runtime) inspect(runtime.path, runtime.sha256);
+  for (const runtime of contract.runtime) inspect(runtime.destination, runtime.sha256);
 
   return {
     valid: findings.length === 0,
@@ -97,18 +102,27 @@ function repairInstallation(root, sourceRoot, contract) {
   const workflowRoot = resolve(root, '.github/workflows');
   const sourceWorkflowRoot = resolve(sourceRoot, 'workflows');
   const paths = [
-    ...contract.workflows.flatMap((workflow) => [workflow.source, workflow.lock]),
-    ...contract.runtime.map((runtime) => runtime.path),
+    ...contract.workflows.flatMap((workflow) => [
+      { source: workflow.source, destination: workflow.source },
+      { source: workflow.lock, destination: workflow.lock },
+    ]),
+    ...contract.runtime.map((runtime) => ({
+      source: runtime.path,
+      destination: runtime.destination,
+    })),
   ];
-  for (const relativePath of paths) {
-    const source = resolve(sourceWorkflowRoot, relativePath);
+  for (const entry of paths) {
+    const source = resolve(sourceWorkflowRoot, entry.source);
     if (!existsSync(source)) {
-      throw new Error(`Recovery source is missing workflows/${relativePath}`);
+      throw new Error(`Recovery source is missing workflows/${entry.source}`);
     }
-    const target = resolve(workflowRoot, relativePath);
+    const target = resolve(workflowRoot, entry.destination);
     mkdirSync(dirname(target), { recursive: true });
     cpSync(source, target);
   }
+  const manifestTarget = resolve(root, INSTALLED_MANIFEST_PATH);
+  mkdirSync(dirname(manifestTarget), { recursive: true });
+  cpSync(resolve(sourceRoot, CANONICAL_MANIFEST_PATH), manifestTarget);
 }
 
 function requireArg(args, name) {
@@ -269,7 +283,16 @@ function hosted(args, repositoryRoot) {
     run('gh', ['aw', 'add', ...refs], { cwd: checkout, capture: false, timeout: 600_000 });
     run('gh', ['aw', 'compile', '--strict'], { cwd: checkout, capture: false, timeout: 600_000 });
 
-    const installedContract = loadBundleContract(repositoryRoot);
+    const canonicalManifest = readFileSync(resolve(repositoryRoot, CANONICAL_MANIFEST_PATH), 'utf8');
+    const installedManifest = readFileSync(resolve(checkout, INSTALLED_MANIFEST_PATH), 'utf8');
+    if (installedManifest !== canonicalManifest) {
+      throw new Error('Installed bundle manifest is not byte-for-byte identical to the canonical manifest');
+    }
+    const installedContract = loadInstalledBundleContract(checkout);
+    if (installedContract.workflows.map(({ name }) => name).join('\n')
+      !== contract.workflows.map(({ name }) => name).join('\n')) {
+      throw new Error('Installed bundle manifest does not match the canonical workflow order');
+    }
     const diagnosis = inspectInstallation(checkout, {
       ...installedContract,
       digest(relativePath) {

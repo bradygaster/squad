@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -37,23 +36,33 @@ function fixture() {
   write(source, 'workflows/alpha.md', 'alpha source\n');
   write(source, 'workflows/alpha.lock.yml', 'alpha lock\n');
   write(source, 'workflows/shared/runtime.mjs', 'export const runtime = true;\n');
-  write(source, 'workflows/squad-workflows.manifest.json', `${JSON.stringify({
+  write(source, 'workflows/shared/squad-install-verifier.mjs', 'export const verifier = true;\n');
+  const manifest = `${JSON.stringify({
     schema_version: 1,
     workflows: [{
       name: 'alpha',
       source: 'alpha.md',
       lock: 'alpha.lock.yml',
       source_sha256: sha256(resolve(source, 'workflows/alpha.md')),
-      lock_sha256: sha256(resolve(source, 'workflows/alpha.lock.yml')),
     }],
     shared_runtime: [{
       path: 'shared/runtime.mjs',
+      destination: 'shared/installed-runtime.mjs',
+      owner: 'alpha',
       sha256: sha256(resolve(source, 'workflows/shared/runtime.mjs')),
+    }, {
+      path: 'shared/squad-install-verifier.mjs',
+      sha256: sha256(resolve(source, 'workflows/shared/squad-install-verifier.mjs')),
     }],
-    bootstrap: { trigger_probe: 'shared/runtime.mjs' },
-  }, null, 2)}\n`);
+    bootstrap: { trigger_probe: 'shared/squad-install-verifier.mjs' },
+  }, null, 2)}\n`;
+  write(source, 'workflows/squad-workflows.manifest.json', manifest);
 
-  cpSync(resolve(source, 'workflows'), resolve(consumer, '.github/workflows'), { recursive: true });
+  write(consumer, '.github/workflows/alpha.md', 'alpha source\n');
+  write(consumer, '.github/workflows/alpha.lock.yml', 'alpha lock\n');
+  write(consumer, '.github/workflows/shared/installed-runtime.mjs', 'export const runtime = true;\n');
+  write(consumer, '.github/workflows/shared/squad-install-verifier.mjs', 'export const verifier = true;\n');
+  write(consumer, '.github/aw/squad-workflows.manifest.json', manifest);
   return { source, consumer };
 }
 
@@ -87,7 +96,10 @@ describe('Squad gh-aw hosted E2E harness', () => {
   it('diagnoses incomplete and stale installs, then recovers from canonical sources', () => {
     const { source, consumer } = fixture();
     rmSync(resolve(consumer, '.github/workflows/alpha.lock.yml'));
-    writeFileSync(resolve(consumer, '.github/workflows/shared/runtime.mjs'), 'export const runtime = false;\n');
+    writeFileSync(
+      resolve(consumer, '.github/workflows/shared/installed-runtime.mjs'),
+      'export const runtime = false;\n',
+    );
 
     const failed = spawnSync('node', [
       SCRIPT,
@@ -100,7 +112,7 @@ describe('Squad gh-aw hosted E2E harness', () => {
     expect(diagnosis.valid).toBe(false);
     expect(diagnosis.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'missing', path: '.github/workflows/alpha.lock.yml' }),
-      expect.objectContaining({ code: 'stale', path: '.github/workflows/shared/runtime.mjs' }),
+      expect.objectContaining({ code: 'stale', path: '.github/workflows/shared/installed-runtime.mjs' }),
     ]));
 
     const repaired = execFileSync('node', [
@@ -111,6 +123,21 @@ describe('Squad gh-aw hosted E2E harness', () => {
       '--contract-root', source,
     ], { encoding: 'utf8' });
     expect(JSON.parse(repaired).valid).toBe(true);
+    expect(readFileSync(resolve(consumer, '.github/aw/squad-workflows.manifest.json'), 'utf8'))
+      .toBe(readFileSync(resolve(source, 'workflows/squad-workflows.manifest.json'), 'utf8'));
+  });
+
+  it('loads the native installed manifest and honors runtime destinations', async () => {
+    const { consumer } = fixture();
+    const contract = await import('../scripts/gh-aw-hosted-e2e-contract.mjs');
+    const loaded = contract.loadInstalledBundleContract(consumer);
+    expect(loaded.source).toBe('.github/aw/squad-workflows.manifest.json');
+    expect(loaded.runtime[0]).toMatchObject({
+      path: 'shared/runtime.mjs',
+      destination: 'shared/installed-runtime.mjs',
+      owner: 'alpha',
+    });
+    expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');
   });
 
   it('keeps the seven-workflow fallback in one adapter', async () => {
@@ -125,6 +152,7 @@ describe('Squad gh-aw hosted E2E harness', () => {
       'squad-improvement-worker',
       'squad-bootstrap',
     ]);
+    expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');
     expect(readFileSync(SCRIPT, 'utf8')).not.toContain("'squad-improvement-worker'");
   });
 });
