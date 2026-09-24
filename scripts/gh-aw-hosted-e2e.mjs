@@ -63,12 +63,11 @@ function writeJson(path, value) {
 }
 
 function inspectInstallation(root, contract) {
-  const workflowRoot = resolve(root, '.github/workflows');
   const findings = [];
   const inspect = (relativePath, expectedDigest) => {
-    const path = resolve(workflowRoot, relativePath);
+    const path = resolve(root, relativePath);
     if (!existsSync(path)) {
-      findings.push({ code: 'missing', path: `.github/workflows/${relativePath}` });
+      findings.push({ code: 'missing', path: relativePath });
       return;
     }
     if (expectedDigest) {
@@ -76,7 +75,7 @@ function inspectInstallation(root, contract) {
       if (actual !== expectedDigest) {
         findings.push({
           code: 'stale',
-          path: `.github/workflows/${relativePath}`,
+          path: relativePath,
           expected_sha256: expectedDigest,
           actual_sha256: actual,
         });
@@ -85,7 +84,7 @@ function inspectInstallation(root, contract) {
   };
 
   for (const workflow of contract.workflows) {
-    inspect(workflow.source, workflow.source_sha256);
+    inspect(workflow.destination, workflow.source_sha256);
     inspect(workflow.lock);
   }
   for (const runtime of contract.runtime) inspect(runtime.destination, runtime.sha256);
@@ -99,24 +98,22 @@ function inspectInstallation(root, contract) {
 }
 
 function repairInstallation(root, sourceRoot, contract) {
-  const workflowRoot = resolve(root, '.github/workflows');
-  const sourceWorkflowRoot = resolve(sourceRoot, 'workflows');
   const paths = [
     ...contract.workflows.flatMap((workflow) => [
-      { source: workflow.source, destination: workflow.source },
+      { source: workflow.source, destination: workflow.destination },
       { source: workflow.lock, destination: workflow.lock },
     ]),
     ...contract.runtime.map((runtime) => ({
-      source: runtime.path,
+      source: runtime.source,
       destination: runtime.destination,
     })),
   ];
   for (const entry of paths) {
-    const source = resolve(sourceWorkflowRoot, entry.source);
+    const source = resolve(sourceRoot, entry.source);
     if (!existsSync(source)) {
-      throw new Error(`Recovery source is missing workflows/${entry.source}`);
+      throw new Error(`Recovery source is missing ${entry.source}`);
     }
-    const target = resolve(workflowRoot, entry.destination);
+    const target = resolve(root, entry.destination);
     mkdirSync(dirname(target), { recursive: true });
     cpSync(source, target);
   }
@@ -260,6 +257,19 @@ function hosted(args, repositoryRoot) {
     );
   }
   writeJson(resolve(evidence, 'preflight.json'), { target: targetInfo, permissions });
+  const resolvedSourceSha = run('gh', [
+    'api',
+    `repos/${sourceRepository}/commits/${sourceRef}`,
+    '--jq', '.sha',
+  ]);
+  if (!/^[0-9a-f]{40}$/.test(resolvedSourceSha)) {
+    throw new Error(`Could not resolve ${sourceRepository}@${sourceRef} to an immutable commit SHA`);
+  }
+  writeJson(resolve(evidence, 'source-revision.json'), {
+    repository: sourceRepository,
+    requested_ref: sourceRef,
+    resolved_sha: resolvedSourceSha,
+  });
 
   const checkout = resolve(tmpdir(), `squad-gh-aw-e2e-${process.env.GITHUB_RUN_ID ?? Date.now()}`);
   const remoteBranches = new Set();
@@ -277,11 +287,27 @@ function hosted(args, repositoryRoot) {
     const installBranch = `squad-e2e/install-${process.env.GITHUB_RUN_ID ?? Date.now()}`;
     remoteBranches.add(installBranch);
     run('git', ['switch', '-c', installBranch], { cwd: checkout });
-    const refs = contract.workflows.map(
-      ({ source }) => `${sourceRepository}/workflows/${source}@${sourceRef}`,
-    );
-    run('gh', ['aw', 'add', ...refs], { cwd: checkout, capture: false, timeout: 600_000 });
+    run('gh', ['aw', 'add', `${sourceRepository}@${resolvedSourceSha}`], {
+      cwd: checkout,
+      capture: false,
+      timeout: 600_000,
+    });
+    run('gh', ['aw', 'compile', '--strict', '--approve'], {
+      cwd: checkout,
+      capture: false,
+      timeout: 600_000,
+    });
+    run('node', [
+      '.github/workflows/shared/squad-install-verifier.mjs',
+      '--materialize-runtime',
+    ], { cwd: checkout, capture: false });
     run('gh', ['aw', 'compile', '--strict'], { cwd: checkout, capture: false, timeout: 600_000 });
+    run('node', [
+      '.github/workflows/shared/squad-install-verifier.mjs',
+      '--verify-install',
+      '--source-revision', resolvedSourceSha,
+      '--strict-compile',
+    ], { cwd: checkout, capture: false, timeout: 600_000 });
 
     const canonicalManifest = readFileSync(resolve(repositoryRoot, CANONICAL_MANIFEST_PATH), 'utf8');
     const installedManifest = readFileSync(resolve(checkout, INSTALLED_MANIFEST_PATH), 'utf8');
@@ -296,7 +322,7 @@ function hosted(args, repositoryRoot) {
     const diagnosis = inspectInstallation(checkout, {
       ...installedContract,
       digest(relativePath) {
-        const path = resolve(checkout, '.github/workflows', relativePath);
+        const path = resolve(checkout, relativePath);
         return run('shasum', ['-a', '256', path]).split(/\s+/)[0];
       },
     });
@@ -330,10 +356,12 @@ function hosted(args, repositoryRoot) {
     const runtimeBranch = `squad-e2e/runtime-${process.env.GITHUB_RUN_ID ?? Date.now()}`;
     remoteBranches.add(runtimeBranch);
     run('git', ['switch', '-C', runtimeBranch, `origin/${targetInfo.defaultBranchRef.name}`], { cwd: checkout });
-    const probe = resolve(checkout, '.github/workflows', contract.triggerProbe);
+    const triggerRuntime = contract.runtime.find(({ path }) => path === contract.triggerProbe);
+    if (!triggerRuntime) throw new Error(`Trigger probe is absent from shared_runtime: ${contract.triggerProbe}`);
+    const probe = resolve(checkout, triggerRuntime.destination);
     if (!existsSync(probe)) throw new Error(`Trigger probe is missing: ${contract.triggerProbe}`);
     appendFileSync(probe, `\n<!-- hosted-e2e-trigger-probe:${process.env.GITHUB_RUN_ID ?? Date.now()} -->\n`);
-    run('git', ['add', '--', `.github/workflows/${contract.triggerProbe}`], { cwd: checkout });
+    run('git', ['add', '--', triggerRuntime.destination], { cwd: checkout });
     run('git', ['commit', '-m', 'test: probe Squad bootstrap runtime trigger'], { cwd: checkout });
     const updateStartedAt = Date.now();
     const update = createAndMergePr({
@@ -394,7 +422,7 @@ try {
     const result = inspectInstallation(root, {
       ...contract,
       digest(relativePath) {
-        const path = resolve(root, '.github/workflows', relativePath);
+        const path = resolve(root, relativePath);
         return run('shasum', ['-a', '256', path]).split(/\s+/)[0];
       },
     });
@@ -410,7 +438,7 @@ try {
     const result = inspectInstallation(root, {
       ...contract,
       digest(relativePath) {
-        const path = resolve(root, '.github/workflows', relativePath);
+        const path = resolve(root, relativePath);
         return run('shasum', ['-a', '256', path]).split(/\s+/)[0];
       },
     });

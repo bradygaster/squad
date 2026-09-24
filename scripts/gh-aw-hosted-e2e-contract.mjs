@@ -37,6 +37,7 @@ function normalizeManifest(root, manifest, source) {
     if (!entry
       || typeof entry.name !== 'string'
       || typeof entry.source !== 'string'
+      || typeof entry.destination !== 'string'
       || typeof entry.lock !== 'string'
       || typeof entry.source_sha256 !== 'string') {
       throw new Error(`${CANONICAL_MANIFEST_PATH} contains an invalid workflow entry`);
@@ -44,6 +45,7 @@ function normalizeManifest(root, manifest, source) {
     return {
       name: entry.name,
       source: entry.source,
+      destination: entry.destination,
       lock: entry.lock,
       source_sha256: entry.source_sha256,
     };
@@ -55,6 +57,8 @@ function normalizeManifest(root, manifest, source) {
     }
     return {
       path: entry.path,
+      source: entry.source ?? `workflows/${entry.path}`,
+      packageDestination: entry.package_destination ?? entry.destination,
       destination: entry.destination ?? entry.path,
       owner: entry.owner ?? entry.ownership,
       sha256: entry.sha256,
@@ -74,7 +78,7 @@ function normalizeManifest(root, manifest, source) {
     runtime,
     triggerProbe,
     digest(path) {
-      return sha256(resolve(root, 'workflows', path));
+      return sha256(resolve(root, path));
     },
   };
 }
@@ -93,13 +97,19 @@ export function loadBundleContract(root) {
     source: 'hosted-e2e fallback adapter',
     workflows: FALLBACK_WORKFLOWS.map((name) => ({
       name,
-      source: `${name}.md`,
-      lock: `${name}.lock.yml`,
+      source: `workflows/${name}.md`,
+      destination: `.github/workflows/${name}.md`,
+      lock: `.github/workflows/${name}.lock.yml`,
     })),
-    runtime: FALLBACK_RUNTIME.map((path) => ({ path, destination: path })),
+    runtime: FALLBACK_RUNTIME.map((path) => ({
+      path,
+      source: `workflows/${path}`,
+      packageDestination: `.github/workflows/${path}`,
+      destination: `.github/workflows/${path}`,
+    })),
     triggerProbe: 'shared/squad-install-verifier.mjs',
     digest(path) {
-      return sha256(resolve(root, 'workflows', path));
+      return sha256(resolve(root, path));
     },
   };
 }

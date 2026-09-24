@@ -34,24 +34,30 @@ function fixture() {
   workspaces.push(source, consumer);
 
   write(source, 'workflows/alpha.md', 'alpha source\n');
-  write(source, 'workflows/alpha.lock.yml', 'alpha lock\n');
+  write(source, '.github/workflows/alpha.lock.yml', 'alpha lock\n');
   write(source, 'workflows/shared/runtime.mjs', 'export const runtime = true;\n');
   write(source, 'workflows/shared/squad-install-verifier.mjs', 'export const verifier = true;\n');
   const manifest = `${JSON.stringify({
     schema_version: 1,
     workflows: [{
       name: 'alpha',
-      source: 'alpha.md',
-      lock: 'alpha.lock.yml',
+      source: 'workflows/alpha.md',
+      destination: '.github/workflows/alpha.md',
+      lock: '.github/workflows/alpha.lock.yml',
       source_sha256: sha256(resolve(source, 'workflows/alpha.md')),
     }],
     shared_runtime: [{
       path: 'shared/runtime.mjs',
-      destination: 'shared/installed-runtime.mjs',
+      source: 'workflows/shared/runtime.mjs',
+      package_destination: '.github/aw/squad/runtime/shared/runtime.mjs',
+      destination: '.github/workflows/shared/installed-runtime.mjs',
       owner: 'alpha',
       sha256: sha256(resolve(source, 'workflows/shared/runtime.mjs')),
     }, {
       path: 'shared/squad-install-verifier.mjs',
+      source: 'workflows/shared/squad-install-verifier.mjs',
+      package_destination: '.github/workflows/shared/squad-install-verifier.mjs',
+      destination: '.github/workflows/shared/squad-install-verifier.mjs',
       sha256: sha256(resolve(source, 'workflows/shared/squad-install-verifier.mjs')),
     }],
     bootstrap: { trigger_probe: 'shared/squad-install-verifier.mjs' },
@@ -81,6 +87,7 @@ describe('Squad gh-aw hosted E2E harness', () => {
     expect(WORKFLOW).toContain('SQUAD_GH_AW_E2E_TOKEN');
     expect(WORKFLOW).toContain('confirm_repository');
     expect(WORKFLOW).toContain('squad-gh-aw-e2e-*');
+    expect(WORKFLOW).toContain('v0.89.21');
     expect(WORKFLOW).toContain('if: always()');
     expect(WORKFLOW).toContain('retention-days: 30');
   });
@@ -134,7 +141,9 @@ describe('Squad gh-aw hosted E2E harness', () => {
     expect(loaded.source).toBe('.github/aw/squad-workflows.manifest.json');
     expect(loaded.runtime[0]).toMatchObject({
       path: 'shared/runtime.mjs',
-      destination: 'shared/installed-runtime.mjs',
+      source: 'workflows/shared/runtime.mjs',
+      packageDestination: '.github/aw/squad/runtime/shared/runtime.mjs',
+      destination: '.github/workflows/shared/installed-runtime.mjs',
       owner: 'alpha',
     });
     expect(loaded.triggerProbe).toBe('shared/squad-install-verifier.mjs');

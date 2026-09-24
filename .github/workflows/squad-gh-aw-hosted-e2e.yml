@@ -74,7 +74,7 @@ jobs:
       - name: Install pinned gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh extension install --pin v0.87.10 github/gh-aw
+        run: gh extension install --pin v0.89.21 github/gh-aw
 
       - name: Run hosted journey
         env:
