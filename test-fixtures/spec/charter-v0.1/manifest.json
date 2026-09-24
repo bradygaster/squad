@@ -543,31 +543,6 @@
       }
     },
     {
-      "id": "convenience-validator-defaults-to-v0.1",
-      "capabilities": ["squad-charter/v0.1/validate"],
-      "input": {
-        "fixture": "positive/canonical.md",
-        "text": null,
-        "path": null,
-        "profile": null,
-        "validationApi": "convenience"
-      },
-      "serialization": null,
-      "expected": {
-        "validation": {
-          "profile": "squad-charter/v0.1",
-          "accepted": true,
-          "conforms": true,
-          "classification": "canonical",
-          "capabilities": ["squad-charter/v0.1/validate"],
-          "diagnostics": []
-        },
-        "parsed": null,
-        "serialization": null,
-        "runtime": null
-      }
-    },
-    {
       "id": "unsupported-profile-fails-closed",
       "capabilities": ["squad-charter/v0.1/validate"],
       "input": {

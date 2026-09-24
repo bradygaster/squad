@@ -1,5 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
+import Ajv2020, {
+  type AnySchema,
+  type ErrorObject,
+  type ValidateFunction,
+} from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import {
   CHARTER_CAPABILITIES,
@@ -16,7 +21,7 @@ import {
   type ParsedCharter,
 } from '@bradygaster/squad-sdk/parsers';
 
-type ValidationApi = 'conformance' | 'convenience';
+type ValidationApi = 'conformance';
 type SerializationMode = 'canonical' | 'legacy' | 'preserve';
 
 interface ManifestDiagnostic {
@@ -104,7 +109,7 @@ interface FixtureManifest {
   cases: ManifestCase[];
 }
 
-interface ManifestSchema {
+interface ManifestSchema extends Record<string, unknown> {
   $defs: {
     capability: { enum: CharterCapability[] };
     diagnostic: {
@@ -117,16 +122,41 @@ interface ManifestSchema {
 
 const FIXTURE_ROOT = path.resolve(__dirname, '..', 'test-fixtures', 'spec', 'charter-v0.1');
 
-async function loadManifest(): Promise<FixtureManifest> {
+async function loadManifestDocument(): Promise<FixtureManifest> {
   return JSON.parse(
     await readFile(path.join(FIXTURE_ROOT, 'manifest.json'), 'utf8'),
   ) as FixtureManifest;
 }
 
-async function loadManifestSchema(manifest: FixtureManifest): Promise<ManifestSchema> {
+async function loadManifestSchema(): Promise<ManifestSchema> {
   return JSON.parse(
-    await readFile(path.join(FIXTURE_ROOT, manifest.$schema), 'utf8'),
+    await readFile(path.join(FIXTURE_ROOT, 'manifest.schema.json'), 'utf8'),
   ) as ManifestSchema;
+}
+
+async function compileManifestValidator(): Promise<ValidateFunction> {
+  const schema = await loadManifestSchema();
+  const ajv = new Ajv2020({
+    allErrors: true,
+    allowUnionTypes: true,
+    strict: true,
+  });
+  return ajv.compile(schema as AnySchema);
+}
+
+async function loadManifest(): Promise<FixtureManifest> {
+  const manifest = await loadManifestDocument();
+  const validateManifest = await compileManifestValidator();
+  if (!validateManifest(manifest)) {
+    throw new Error(
+      `Invalid charter conformance manifest:\n${JSON.stringify(validateManifest.errors, null, 2)}`,
+    );
+  }
+  return manifest;
+}
+
+function schemaErrorKeywords(errors: ErrorObject[] | null | undefined): string[] {
+  return errors?.map(error => error.keyword) ?? [];
 }
 
 async function readCaseSource(testCase: ManifestCase): Promise<string> {
@@ -142,9 +172,7 @@ function validateCase(testCase: ManifestCase, markdown: string) {
     ...(testCase.input.path === null ? {} : { path: testCase.input.path }),
     ...(testCase.input.profile === null ? {} : { profile: testCase.input.profile }),
   };
-  return testCase.input.validationApi === 'conformance'
-    ? Reflect.apply(validateCharterConformance, undefined, [markdown, options])
-    : validateCharterMarkdown(markdown, options);
+  return Reflect.apply(validateCharterConformance, undefined, [markdown, options]);
 }
 
 function normalizeDiagnostics(
@@ -217,9 +245,141 @@ function runtimeErrorCodes(error: unknown): string[] {
 }
 
 describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
+  it('validates the published manifest against its Draft 2020-12 schema', async () => {
+    await expect(loadManifest()).resolves.toMatchObject({
+      $schema: './manifest.schema.json',
+      schemaVersion: 1,
+      profile: CHARTER_PROFILE,
+    });
+  });
+
+  it('rejects representative schema mutations', async () => {
+    const manifest = await loadManifestDocument();
+    const validateManifest = await compileManifestValidator();
+    const firstCase = manifest.cases[0];
+    const parseCase = manifest.cases.find(testCase =>
+      testCase.expected.parsed !== null);
+    expect(firstCase).toBeDefined();
+    expect(parseCase).toBeDefined();
+    if (firstCase === undefined || parseCase === undefined) {
+      throw new Error('manifest requires cases for schema mutation coverage');
+    }
+
+    const { schemaVersion: _schemaVersion, ...missingRequired } = manifest;
+    const invalidManifests: Array<{
+      name: string;
+      document: unknown;
+      keyword: string;
+    }> = [
+      {
+        name: 'forbidden top-level property',
+        document: { ...manifest, unexpected: true },
+        keyword: 'additionalProperties',
+      },
+      {
+        name: 'missing required schema version',
+        document: missingRequired,
+        keyword: 'required',
+      },
+      {
+        name: 'invalid validation result type',
+        document: {
+          ...manifest,
+          cases: [
+            {
+              ...firstCase,
+              expected: {
+                ...firstCase.expected,
+                validation: {
+                  ...firstCase.expected.validation,
+                  accepted: 'true',
+                },
+              },
+            },
+            ...manifest.cases.slice(1),
+          ],
+        },
+        keyword: 'type',
+      },
+      {
+        name: 'invalid expectation enum',
+        document: {
+          ...manifest,
+          cases: [
+            {
+              ...firstCase,
+              expected: {
+                ...firstCase.expected,
+                validation: {
+                  ...firstCase.expected.validation,
+                  classification: 'accepted',
+                },
+              },
+            },
+            ...manifest.cases.slice(1),
+          ],
+        },
+        keyword: 'enum',
+      },
+      {
+        name: 'both input sources supplied',
+        document: {
+          ...manifest,
+          cases: [
+            {
+              ...firstCase,
+              input: {
+                ...firstCase.input,
+                fixture: 'positive/canonical.md',
+                text: '# duplicate source',
+              },
+            },
+            ...manifest.cases.slice(1),
+          ],
+        },
+        keyword: 'oneOf',
+      },
+      {
+        name: 'invalid case identifier pattern',
+        document: {
+          ...manifest,
+          cases: [
+            { ...firstCase, id: 'INVALID_CASE_ID' },
+            ...manifest.cases.slice(1),
+          ],
+        },
+        keyword: 'pattern',
+      },
+      {
+        name: 'parsed expectation without parse capability',
+        document: {
+          ...manifest,
+          cases: manifest.cases.map(testCase =>
+            testCase.id === parseCase.id
+              ? {
+                  ...testCase,
+                  capabilities: testCase.capabilities.filter(
+                    capability => capability !== CHARTER_CAPABILITIES.parse,
+                  ),
+                }
+              : testCase),
+        },
+        keyword: 'type',
+      },
+    ];
+
+    for (const mutation of invalidManifests) {
+      expect(validateManifest(mutation.document), mutation.name).toBe(false);
+      expect(
+        schemaErrorKeywords(validateManifest.errors),
+        `${mutation.name}: schema keyword`,
+      ).toContain(mutation.keyword);
+    }
+  });
+
   it('declares the published profile metadata and every operational capability', async () => {
     const manifest = await loadManifest();
-    const schema = await loadManifestSchema(manifest);
+    const schema = await loadManifestSchema();
     expect(manifest.$schema).toBe('./manifest.schema.json');
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.profile).toBe(CHARTER_PROFILE);
@@ -371,5 +531,23 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
         }
       }
     }
+  });
+});
+
+describe('TypeScript charter validator reference behavior', () => {
+  it('defaults the convenience validator to v0.1 without making it portable', async () => {
+    const markdown = await readFile(
+      path.join(FIXTURE_ROOT, 'positive', 'canonical.md'),
+      'utf8',
+    );
+
+    expect(validateCharterMarkdown(markdown)).toMatchObject({
+      profile: CHARTER_PROFILE,
+      accepted: true,
+      conforms: true,
+      conformance: 'canonical',
+      capabilities: [CHARTER_CAPABILITIES.validate],
+      diagnostics: [],
+    });
   });
 });

@@ -277,7 +277,9 @@ The TypeScript reference compiler validates before resolving behavior. Its
 default profile and its compatibility path that generates a canonical,
 behavior-neutral charter when `charterContent` is omitted are convenience
 behaviors of that implementation, not requirements for generic validators or
-other runtimes. Explicitly empty or invalid content is rejected.
+other runtimes. The convenience validator's default-profile behavior is covered
+only by reference-implementation tests and is intentionally absent from the
+portable manifest. Explicitly empty or invalid content is rejected.
 
 ## 12. Mandatory conformance suite
 
@@ -298,7 +300,7 @@ Every manifest contains:
 - `$schema`, `schemaVersion`, `profile`, the complete `capabilities` list, and
   uniquely identified `cases`;
 - per-case `capabilities`, exactly one input source (`fixture` or `text`),
-  nullable path/profile inputs, and the named validation API;
+  nullable path/profile inputs, and the portable conformance API;
 - an always-present validation expectation with classification, capability
   report, and ordered diagnostic ranges;
 - parsed semantics only for `parse` cases, input/edit/output data only for
@@ -310,6 +312,9 @@ sequence returned with the rejection. For a successful runtime case, the three
 override. Harnesses MUST reject unknown capabilities, missing declared
 capability coverage, missing diagnostic-code coverage, and disagreement between
 an operation's capability declaration and its expectation fields.
+Harnesses MUST validate the manifest against `manifest.schema.json` before
+executing cases. A manifest that fails schema validation is not a conformance
+suite and MUST NOT be partially executed.
 
 ## 13. Informative TypeScript implementation details
 
