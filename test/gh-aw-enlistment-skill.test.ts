@@ -202,6 +202,15 @@ describe('gh-aw-enlistment skill', () => {
       expect(content.indexOf("issues_enabled=")).toBeLessThan(content.indexOf('gh aw add \\'));
     });
 
+    it('keeps the standalone correct example fail-closed', () => {
+      const correctExample = content.slice(content.indexOf('### ✓ Correct:'));
+      expect(correctExample).toContain('if ! gh api --method PATCH "repos/${owner_repo}"');
+      expect(correctExample).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+      expect(correctExample).toContain('exit 1');
+    });
+
     it('forbids blanket staging and mandates explicit paths', () => {
       expect(content).toMatch(/git add \.|git add -A|git commit -a/); // referenced as an anti-pattern
       expect(content).toContain('git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/');
@@ -267,6 +276,26 @@ describe('gh-aw-enlistment skill', () => {
       expect(issuesCheck).toBeLessThan(guide.indexOf('gh aw add \\'));
       expect(agentGuide).toContain('verifies that GitHub Issues are enabled');
       expect(agentGuide).toContain('bootstrap creates a research/proposals issue');
+    });
+
+    it('keeps standalone public install snippets behind the Issues guard', () => {
+      const readme = readLF('README.md');
+      const readmeInstall = readme.slice(readme.indexOf('### Install'));
+      expect(readmeInstall.indexOf("issues_enabled=")).toBeGreaterThan(-1);
+      expect(readmeInstall.indexOf("issues_enabled=")).toBeLessThan(
+        readmeInstall.indexOf('gh aw add \\'),
+      );
+      expect(readmeInstall).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+
+      const setupSection = guide.slice(
+        guide.indexOf('### Enable GitHub Issues'),
+        guide.indexOf('### Allow workflow-created pull requests'),
+      );
+      expect(setupSection).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
     });
 
     it('activates slash commands only after the bootstrap PR reaches the default branch', () => {

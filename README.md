@@ -569,6 +569,23 @@ has repository administration permission, and stops before creating a bootstrap
 PR when an administrator must enable them.
 
 ```bash
+set -euo pipefail
+
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: A repository administrator must enable Settings > General > Features > Issues." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
