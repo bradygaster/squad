@@ -737,7 +737,7 @@ jobs:
       - name: Install gh-aw v0.89.21 (pinned)
         run: |
           gh extension install --force --pin v0.89.21 github/gh-aw
-          test "$(gh aw --version | awk '{print $NF}')" = v0.89.21
+          test "$(gh aw --version 2>&1 | awk '{print $NF}')" = v0.89.21
         env:
           GH_TOKEN: ${{ github.token }}
 

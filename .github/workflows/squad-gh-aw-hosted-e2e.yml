@@ -52,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh extension install --force --pin v0.89.21 github/gh-aw
-          test "$(gh aw --version | awk '{print $NF}')" = v0.89.21
+          test "$(gh aw --version 2>&1 | awk '{print $NF}')" = v0.89.21
 
       - name: Verify trusted default-branch controller
         env:
