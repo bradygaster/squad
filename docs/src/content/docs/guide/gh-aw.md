@@ -186,6 +186,11 @@ if [ "${issues_enabled}" != "true" ]; then
     exit 1
   fi
 fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
 ```
 
 The GET is non-mutating, and the conditional PATCH makes this safe to rerun.

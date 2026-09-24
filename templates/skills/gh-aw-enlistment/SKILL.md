@@ -330,9 +330,18 @@ default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.n
 
 issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
 if [ "${issues_enabled}" != "true" ]; then
-  gh api --method PATCH "repos/${owner_repo}" -F has_issues=true --silent
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun enlistment." >&2
+    exit 1
+  fi
 fi
-test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true"
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
 
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
