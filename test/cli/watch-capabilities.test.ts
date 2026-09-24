@@ -18,7 +18,12 @@ const {
   mockExecFile,
   mockExecFileSync,
   mockFsExistsSync,
+  mockFsMkdirSync,
+  mockFsReadFileSync,
+  mockFsUnlinkSync,
   mockRmSync,
+  mockListModels,
+  mockDisconnect,
 } = vi.hoisted(() => ({
   mockStorage: {
     existsSync: vi.fn(() => true),
@@ -33,13 +38,27 @@ const {
   }),
   mockExecFileSync: vi.fn((): string => ''),
   mockFsExistsSync: vi.fn((): boolean => false),
+  mockFsMkdirSync: vi.fn(),
+  mockFsReadFileSync: vi.fn((): string => ''),
+  mockFsUnlinkSync: vi.fn(),
   mockRmSync: vi.fn(),
+  mockListModels: vi.fn().mockResolvedValue([]),
+  mockDisconnect: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ── Module mocks ────────────────────────────────────────────────────
 
 vi.mock('@bradygaster/squad-sdk', () => ({
   FSStorageProvider: vi.fn(function () { return mockStorage; }),
+}));
+
+vi.mock('@bradygaster/squad-sdk/client', () => ({
+  SquadClient: vi.fn(function () {
+    return {
+      listModels: mockListModels,
+      disconnect: mockDisconnect,
+    };
+  }),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -49,6 +68,9 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('node:fs', () => ({
   existsSync: mockFsExistsSync,
+  mkdirSync: mockFsMkdirSync,
+  readFileSync: mockFsReadFileSync,
+  unlinkSync: mockFsUnlinkSync,
   rmSync: mockRmSync,
 }));
 
@@ -102,7 +124,11 @@ describe('Watch Capabilities', () => {
     mockStorage.existsSync.mockReturnValue(true);
     mockStorage.listSync.mockReturnValue([]);
     mockFsExistsSync.mockReturnValue(false);
+    mockFsMkdirSync.mockReturnValue(undefined);
+    mockFsReadFileSync.mockReturnValue('');
     mockRmSync.mockReturnValue(undefined);
+    mockListModels.mockResolvedValue([]);
+    mockDisconnect.mockResolvedValue(undefined);
     mockExecFile.mockImplementation((...args: unknown[]) => {
       const cb = findCallback(args);
       if (cb) cb(null, '', '');
@@ -344,6 +370,70 @@ describe('Watch Capabilities', () => {
         expect(result.success).toBe(true);
         expect(result.summary).toContain('agent dispatched');
         expect(result.data?.dispatched).toBe(1);
+      });
+
+      it('reports estimated context utilization from Copilot usage output', async () => {
+        mockFsExistsSync.mockReturnValue(true);
+        mockFsReadFileSync.mockReturnValue(JSON.stringify({
+          currentModel: 'gpt-5.4',
+          lastCallInputTokens: 80_000,
+          lastCallOutputTokens: 20_000,
+        }));
+        mockListModels.mockResolvedValue([{
+          id: 'gpt-5.4',
+          name: 'GPT-5.4',
+          capabilities: { limits: { max_context_window_tokens: 200_000 } },
+        }]);
+        const cap = new ExecuteCapability();
+        const ctx = makeContext({
+          adapter: mockAdapter([{ id: 1, title: 'Fix bug', tags: ['squad:eecom'] }]),
+        });
+
+        const result = await cap.execute(ctx);
+
+        expect(result.success).toBe(true);
+        expect(result.summary).toContain('context 50.0% (estimated)');
+        expect(result.data?.contextUtilization).toEqual({
+          model: 'gpt-5.4',
+          occupiedTokens: 100_000,
+          contextWindowTokens: 200_000,
+          utilization: 0.5,
+          source: 'estimated',
+        });
+        expect(mockFsUnlinkSync).toHaveBeenCalledOnce();
+        expect(mockDisconnect).toHaveBeenCalledOnce();
+      });
+
+      it('does not add Copilot usage flags to a custom agent command', async () => {
+        const cap = new ExecuteCapability();
+        const ctx = makeContext({
+          agentCmd: 'my-agent --flag',
+          adapter: mockAdapter([{ id: 1, title: 'Fix bug', tags: ['squad'] }]),
+        });
+
+        await cap.execute(ctx);
+
+        const args = mockExecFile.mock.calls.at(-1)?.[1] as string[];
+        expect(args).not.toContain('--usage-output-file');
+        expect(mockFsMkdirSync).not.toHaveBeenCalled();
+      });
+
+      it('still dispatches when usage capture cannot be initialized', async () => {
+        mockFsMkdirSync.mockImplementation(() => {
+          throw new Error('read-only state');
+        });
+        const cap = new ExecuteCapability();
+        const ctx = makeContext({
+          adapter: mockAdapter([{ id: 1, title: 'Fix bug', tags: ['squad'] }]),
+        });
+
+        const result = await cap.execute(ctx);
+
+        expect(result.success).toBe(true);
+        expect(result.summary).toContain('context telemetry unavailable');
+        expect(result.data?.contextTelemetryError).toContain('read-only state');
+        const args = mockExecFile.mock.calls.at(-1)?.[1] as string[];
+        expect(args).not.toContain('--usage-output-file');
       });
 
       it('handles adapter errors gracefully', async () => {
