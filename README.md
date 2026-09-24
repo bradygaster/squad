@@ -561,6 +561,13 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 
 <!-- cspell:ignore agentics -->
 
+Squad requires GitHub Issues: slash commands are issue comments, and the merged
+bootstrap creates a research/proposals issue. Follow the
+[supported seven-step quick start](docs/src/content/docs/guide/gh-aw.md#quick-start),
+which checks and enables Issues before installation when the authenticated user
+has repository administration permission, and stops before creating a bootstrap
+PR when an administrator must enable them.
+
 ```bash
 gh aw add \
   bradygaster/squad/workflows/squad.md@dev \
