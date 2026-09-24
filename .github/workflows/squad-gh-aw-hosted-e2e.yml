@@ -1,0 +1,101 @@
+name: Squad gh-aw hosted E2E
+
+# Repository configuration is intentionally external and fail-closed:
+# - environment: squad-gh-aw-e2e (add required reviewers for mutation approval)
+# - secret: SQUAD_GH_AW_E2E_TOKEN, scoped only to the one-shot consumer with
+#   Actions read, Contents read/write, Issues read, Pull requests read/write,
+#   and Workflows read/write
+# - consumer: fresh public repo named squad-gh-aw-e2e-*, Issues enabled,
+#   merge commits enabled, default workflow token read-only, and Actions-created
+#   pull requests enabled
+on:
+  workflow_dispatch:
+    inputs:
+      target_repository:
+        description: 'Fresh one-shot public consumer repository (owner/name)'
+        required: true
+        type: string
+      confirm_repository:
+        description: 'Retype owner/name to authorize installation PR merges'
+        required: true
+        type: string
+      source_ref:
+        description: 'Squad git ref containing the bundle under test'
+        required: true
+        default: 'dev'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: squad-gh-aw-hosted-e2e-${{ inputs.target_repository }}
+  cancel-in-progress: false
+
+jobs:
+  hosted-e2e:
+    name: Install, merge, bootstrap, and probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: squad-gh-aw-e2e
+    steps:
+      - name: Initialize evidence directory
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/squad-gh-aw-hosted-e2e"
+          printf '{"run_id":"%s","source_repository":"%s"}\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" \
+            > "$RUNNER_TEMP/squad-gh-aw-hosted-e2e/run.json"
+
+      - name: Validate dispatch authorization
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+          CONFIRM_REPOSITORY: ${{ inputs.confirm_repository }}
+        run: |
+          set -euo pipefail
+          test "$TARGET_REPOSITORY" = "$CONFIRM_REPOSITORY" || {
+            echo "::error::confirm_repository must exactly match target_repository"
+            exit 1
+          }
+          case "$TARGET_REPOSITORY" in
+            */squad-gh-aw-e2e-*) ;;
+            *)
+              echo "::error::The target repository name must begin with squad-gh-aw-e2e-"
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout Squad source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Install pinned gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install --pin v0.87.10 github/gh-aw
+
+      - name: Run hosted journey
+        env:
+          GH_TOKEN: ${{ secrets.SQUAD_GH_AW_E2E_TOKEN }}
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+          CONFIRM_REPOSITORY: ${{ inputs.confirm_repository }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          node scripts/gh-aw-hosted-e2e.mjs hosted \
+            --target "$TARGET_REPOSITORY" \
+            --confirm "$CONFIRM_REPOSITORY" \
+            --source-repository "$GITHUB_REPOSITORY" \
+            --source-ref "$SOURCE_REF" \
+            --evidence "$RUNNER_TEMP/squad-gh-aw-hosted-e2e"
+
+      - name: Upload hosted evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7
+        with:
+          name: squad-gh-aw-hosted-e2e-${{ github.run_id }}
+          path: ${{ runner.temp }}/squad-gh-aw-hosted-e2e/
+          if-no-files-found: error
+          retention-days: 30
