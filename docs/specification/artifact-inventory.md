@@ -41,7 +41,9 @@ responsibility sections, while the active specialists used the first. It also
 parsed `Reasoning Effort` and `Context Tier`, but the charter serializer omitted
 both fields. The reference implementation now recognizes canonical and legacy
 aliases, preserves both behavioral fields in serialization, and exposes a
-deterministic validator.
+deterministic validator plus an independently declared runtime capability. The
+portable conformance manifest is governed by a language-neutral JSON Schema and
+covers every normative diagnostic code.
 
 ## Profile sequencing
 

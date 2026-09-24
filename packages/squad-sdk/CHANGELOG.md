@@ -10,7 +10,9 @@
   parser surface now includes typed diagnostics, profile and capability
   metadata, canonical/legacy conformance classification, path-aware identity
   checks, explicit conformance profile selection, validation-before-compilation,
-  canonical serialization order, and lossless unknown extension preservation.
+  a separately declared runtime capability, canonical serialization order,
+  lossless unknown extension preservation, and a schema-defined portable
+  manifest with complete diagnostic coverage.
 
 ## 0.10.0
 

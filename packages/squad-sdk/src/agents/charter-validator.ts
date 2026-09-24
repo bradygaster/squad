@@ -19,6 +19,7 @@ export const CHARTER_CAPABILITIES = {
   validate: 'squad-charter/v0.1/validate',
   edit: 'squad-charter/v0.1/edit',
   legacyConsume: 'squad-charter/v0.1/legacy-consume',
+  runtime: 'squad-charter/v0.1/runtime',
 } as const;
 
 export type CharterCapability =
@@ -351,15 +352,15 @@ function validateCharter(
     }
   }
 
-  const firstLegacy = scan.sections.find(heading =>
+  const legacySections = scan.sections.filter(heading =>
     LEGACY_RESPONSIBILITY_SECTIONS.some(section => equalName(section, heading.name)),
   );
-  if (firstLegacy) {
+  for (const legacySection of legacySections) {
     add(
       'SQC105',
       'warning',
-      'legacy responsibility headings are consumer-compatible but are not canonical v0.1',
-      headingLocation(firstLegacy),
+      `legacy responsibility heading "${legacySection.name}" is consumer-compatible but is not canonical v0.1`,
+      headingLocation(legacySection),
     );
   }
 
@@ -434,20 +435,20 @@ function validateCharter(
         fieldLocation(contextTier),
       );
     }
+  }
 
-    for (const compatibilityField of COMPATIBILITY_FIELDS) {
-      for (const field of findFields(
-        scan.fields,
-        compatibilityField.name,
-        compatibilityField.section,
-      )) {
-        add(
-          'SQC107',
-          'warning',
-          `compatibility field "${compatibilityField.name}" is accepted but is not canonical v0.1`,
-          fieldLocation(field),
-        );
-      }
+  for (const compatibilityField of COMPATIBILITY_FIELDS) {
+    for (const field of findFields(
+      scan.fields,
+      compatibilityField.name,
+      compatibilityField.section,
+    )) {
+      add(
+        'SQC107',
+        'warning',
+        `compatibility field "${compatibilityField.name}" is accepted but is not canonical v0.1`,
+        fieldLocation(field),
+      );
     }
   }
 
