@@ -145,7 +145,7 @@ pre-agent-steps:
         }
         node --check "$path" >/dev/null
       }
-      check_hash "$cast_validator" "f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      check_hash "$cast_validator" "31e568ae4a0cc372f5b79d4b024ba8b7af1f38feac54034221fb203da9918ab4"
       check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
       node "$bootstrap_validator" \
         --root "$PWD" \

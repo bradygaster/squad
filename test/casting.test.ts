@@ -2,7 +2,9 @@
  * Tests for CastingEngine (M3-2, Issue #138)
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   CastingEngine,
   type CastingConfig,
@@ -10,6 +12,39 @@ import {
   type AgentRole,
   type UniverseId,
 } from '@bradygaster/squad-sdk/casting';
+
+const castingRoots: string[] = [];
+
+function castingDir(): string {
+  const root = mkdtempSync(join(process.cwd(), '.casting-registry-test-'));
+  const dir = join(root, 'casting');
+  mkdirSync(dir);
+  castingRoots.push(root);
+  return dir;
+}
+
+function registryRaw(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T00:00:00.000Z',
+    agents: {},
+    ...overrides,
+  });
+}
+
+function historyRaw(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    assignment_cast_snapshots: {},
+    universe_usage_history: [],
+    ...overrides,
+  });
+}
+
+afterEach(() => {
+  for (const root of castingRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe('CastingEngine', () => {
   const engine = new CastingEngine();
@@ -227,5 +262,45 @@ describe('CastingRegistry (legacy)', () => {
     const reg = new CastingRegistry({ castingDir: '.squad/casting' });
     expect(reg.getAllEntries()).toEqual([]);
     expect(reg.getByRole('lead')).toBeUndefined();
+  });
+
+  it.each([
+    {
+      name: 'missing pair',
+      write: (_dir: string) => {},
+      expected: /both files are required/,
+    },
+    {
+      name: 'one-sided pair',
+      write: (dir: string) => writeFileSync(join(dir, 'registry.json'), registryRaw()),
+      expected: /both files are required/,
+    },
+    {
+      name: 'mixed generation pair',
+      write: (dir: string) => {
+        writeFileSync(join(dir, 'registry.json'), registryRaw({ transaction_id: 'registry-generation' }));
+        writeFileSync(join(dir, 'history.json'), historyRaw({
+          transaction_id: 'history-generation',
+          registry_revision: 1,
+        }));
+      },
+      expected: /transaction metadata exists without a commit manifest/,
+    },
+    {
+      name: 'malformed history',
+      write: (dir: string) => {
+        writeFileSync(join(dir, 'registry.json'), registryRaw());
+        writeFileSync(join(dir, 'history.json'), JSON.stringify({
+          assignment_cast_snapshots: [],
+          universe_usage_history: [],
+        }));
+      },
+      expected: /history shape is invalid/,
+    },
+  ])('fails closed on a $name', async ({ write, expected }) => {
+    const dir = castingDir();
+    write(dir);
+    const { CastingRegistry } = await import('@bradygaster/squad-sdk/casting');
+    await expect(new CastingRegistry({ castingDir: dir }).load()).rejects.toThrow(expected);
   });
 });
