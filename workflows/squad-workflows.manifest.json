@@ -14,7 +14,7 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "f7e506316bdac67cd6ec45325ab08a76d29f602335546d07949aac50e8ede40e"
+      "source_sha256": "9c073f07a9edf6ce926f5fc11a0bdc6826e8e1f94ad778b263fba12eb8618c15"
     },
     {
       "name": "squad-implement-worker",
@@ -138,7 +138,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/squad-planning-policy.md",
       "destination": ".github/workflows/shared/squad-planning-policy.md",
       "ownership": "manifest",
-      "sha256": "1abda4d79e00ac86d485be8bcc0769e275e303f5e094fdcc781cb1efb8468f85"
+      "sha256": "e5941906125d7f41d7c59458acc26b3168498e72c8fac8deb7cdb6b6e913e82f"
     },
     {
       "path": "shared/implementation-provenance-v1.schema.json",

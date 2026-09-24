@@ -1370,7 +1370,7 @@ description: Squad planning policy schema — profiles, artifact limits, sizing,
 # Planning Policy
 
 ## Purpose
-Planning policy controls how Squad's planning workflow behaves for a given repository. 
+Planning policy controls how Squad's planning workflow behaves for a given repository.
 Customers configure policy in their issue body or `.squad/planning-policy.md` file.
 When no policy is specified, sensible defaults apply.
 
