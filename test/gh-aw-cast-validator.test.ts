@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { compileFunction, constants as vmConstants } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { requirePosixShell } from './posix-shell';
+import { readCastingRegistryPair } from '../packages/squad-sdk/src/casting/durable-registry.js';
+import { validateCastingPairFiles } from '../scripts/check-agent-binding.mjs';
 
 const validator = join(process.cwd(), 'scripts', 'validate-gh-aw-cast.mjs');
 const resourcePath = join(process.cwd(), 'workflows', 'shared', 'squad-cast-validator.mjs');
@@ -25,6 +27,26 @@ const builtins = [
   { id: 'rai', name: 'Rai' },
   { id: 'fact-checker', name: 'Fact Checker' },
 ];
+
+const revisionSeparatorRuns = Array.from({ length: 6 }, (_, length) => (
+  length === 0 ? [''] : Array.from({ length: 2 ** length }, (_, value) => (
+    value
+      .toString(2)
+      .padStart(length, '0')
+      .replaceAll('0', '-')
+      .replaceAll('1', '_')
+  ))
+)).flat();
+
+interface RegistryFixture {
+  revision: number;
+  agents: Record<string, {
+    status: string;
+    role: string;
+    created_at: string;
+    retired_at?: string;
+  }>;
+}
 
 /** Byte-for-byte canonical content of a built-in charter, as shipped with the workflow. */
 function builtinCanonicalContent(id: string): Buffer {
@@ -166,13 +188,23 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   workspaces.push(runnerTemp);
   write(root, '.squad/team.md', teamMarkdown());
   write(root, '.squad/routing.md', routingMarkdown());
-  write(root, '.squad/casting/registry.json', JSON.stringify({
+  const legacyRegistry = {
     agents: Object.fromEntries(active.map(({ id, name }) => [
       id,
-      { persistent_name: name, status: 'active', universe: 'descriptive' },
+      {
+        persistent_name: name,
+        role: active.find(member => member.id === id)?.role,
+        status: 'active',
+        universe: 'descriptive',
+        created_at: '2026-09-20T00:00:00.000Z',
+      },
     ])),
+  };
+  write(root, '.squad/casting/registry.json', JSON.stringify(legacyRegistry));
+  write(root, '.squad/casting/history.json', JSON.stringify({
+    assignment_cast_snapshots: {},
+    universe_usage_history: [],
   }));
-  write(root, '.squad/casting/history.json', '{}\n');
   write(root, '.squad/casting/policy.json', '{}\n');
   for (const member of active) {
     write(root, `.squad/agents/${member.id}/charter.md`, `# ${member.name} — ${member.role}\n`);
@@ -190,6 +222,41 @@ function createFixture(): { root: string; payload: string; runnerTemp: string } 
   const payload = join(root, '.github', 'workflows', 'squad-cast-payload.json');
   mkdirSync(dirname(payload), { recursive: true });
   writeFileSync(payload, JSON.stringify(corePayload), 'utf8');
+  expect(spawnSync('git', ['init', '-q'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['config', 'user.email', 'cast-validator@example.com'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['config', 'user.name', 'Cast Validator'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['add', '.'], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['commit', '-qm', 'base cast'], { cwd: root }).status).toBe(0);
+  write(root, '.squad/casting/registry.json', JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T00:00:00.000Z',
+    agents: Object.fromEntries(active.map(({ id, name, role }) => [
+      id,
+      {
+        display_name: name,
+        persistent_name: name,
+        role,
+        status: 'active',
+        universe: 'descriptive',
+        created_at: '2026-09-20T00:00:00.000Z',
+        updated_at: '2026-09-21T00:00:00.000Z',
+      },
+    ])),
+  }));
+  write(root, '.squad/casting/history.json', JSON.stringify({
+    assignment_cast_snapshots: {
+      'cast-r1-2026-09-21T00:00:00.000Z': {
+        created_at: '2026-09-21T00:00:00.000Z',
+        agents: [],
+        universe: 'descriptive',
+      },
+    },
+    universe_usage_history: [
+      { universe: 'descriptive', used_at: '2026-09-21T00:00:00.000Z' },
+    ],
+  }));
   return { root, payload, runnerTemp };
 }
 
@@ -197,6 +264,84 @@ function validate(root: string, payload: string) {
   return spawnSync(process.execPath, [validator, '--root', root, '--payload', payload], {
     encoding: 'utf8',
   });
+}
+
+function validateWorkflowResource(root: string, payload: string) {
+  return spawnSync(process.execPath, [resourcePath, '--root', root, '--payload', payload], {
+    encoding: 'utf8',
+  });
+}
+
+function writeCanonicalGenesisPair(
+  root: string,
+  snapshotKey = 'active-team-reset-2026-09-20',
+): void {
+  const createdAt = '2026-09-20T00:00:00.000Z';
+  const historyCreatedAt = '2026-09-19T17:00:00.000-07:00';
+  write(root, '.squad/casting/registry.json', JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T00:00:00.000Z',
+    agents: Object.fromEntries(active.map(({ id, name, role }) => [
+      id,
+      {
+        display_name: name,
+        persistent_name: name,
+        role,
+        status: 'active',
+        universe: 'descriptive',
+        created_at: createdAt,
+        updated_at: '2026-09-21T00:00:00.000Z',
+      },
+    ])),
+  }));
+  write(root, '.squad/casting/history.json', JSON.stringify({
+    assignment_cast_snapshots: {
+      [snapshotKey]: {
+        created_at: historyCreatedAt,
+        agents: active.map(({ id }) => id),
+        universe: 'descriptive',
+      },
+    },
+    universe_usage_history: [
+      { universe: 'descriptive', used_at: historyCreatedAt },
+    ],
+  }));
+}
+
+function readRegistry(root: string): RegistryFixture {
+  return JSON.parse(
+    readFileSync(join(root, '.squad', 'casting', 'registry.json'), 'utf8'),
+  ) as RegistryFixture;
+}
+
+function writeRegistry(root: string, registry: RegistryFixture): void {
+  write(root, '.squad/casting/registry.json', JSON.stringify(registry));
+}
+
+function commitRegistry(root: string): void {
+  expect(spawnSync('git', [
+    'add',
+    '.squad/casting/registry.json',
+    '.squad/casting/history.json',
+  ], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['commit', '-qm', 'versioned registry'], { cwd: root }).status).toBe(0);
+}
+
+function advanceHistory(root: string, revision: number, generatedAt: string): void {
+  const historyPath = join(root, '.squad', 'casting', 'history.json');
+  const history = JSON.parse(readFileSync(historyPath, 'utf8'));
+  history.assignment_cast_snapshots[`cast-r${revision}-${generatedAt}`] = {
+    created_at: generatedAt,
+    agents: [],
+    universe: 'descriptive',
+  };
+  history.universe_usage_history.push({
+    universe: 'descriptive',
+    used_at: generatedAt,
+  });
+  write(root, '.squad/casting/history.json', JSON.stringify(history));
 }
 
 function resourceSource(): string {
@@ -346,6 +491,260 @@ describe('GH-AW Cast final-tree validator', () => {
     expect(commandDigest).toBe(sha256(canonical));
   });
 
+  it.each([
+    {
+      name: 'missing casting pair',
+      mutate: (root: string) => {
+        rmSync(join(root, '.squad', 'casting', 'registry.json'));
+        rmSync(join(root, '.squad', 'casting', 'history.json'));
+      },
+      expected: /complete registry\/history pair is required/,
+    },
+    {
+      name: 'one-sided casting pair',
+      mutate: (root: string) => rmSync(join(root, '.squad', 'casting', 'history.json')),
+      expected: /complete registry\/history pair is required/,
+    },
+    {
+      name: 'mixed-generation casting pair',
+      mutate: (root: string) => {
+        const registry = readRegistry(root);
+        registry.revision = 2;
+        registry.generated_at = '2026-09-21T00:01:00.000Z';
+        writeRegistry(root, registry);
+      },
+      expected: /mixed-generation/,
+    },
+    {
+      name: 'malformed casting history',
+      mutate: (root: string) => write(root, '.squad/casting/history.json', JSON.stringify({
+        assignment_cast_snapshots: [],
+        universe_usage_history: [],
+      })),
+      expected: /history shape is malformed/,
+    },
+    {
+      name: 'casting history with an unknown field',
+      mutate: (root: string) => {
+        const historyPath = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(historyPath, 'utf8'));
+        history.unexpected = true;
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+      expected: /unknown top-level field "unexpected"/,
+    },
+  ])('rejects a $name', ({ mutate, expected }) => {
+    const fixture = createFixture();
+    mutate(fixture.root);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(expected);
+  });
+
+  it('matches SDK and activation-checker acceptance for canonical legacy genesis', async () => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(readCastingRegistryPair(castingDir, 1).registry?.revision).toBe(1);
+    await expect(validateCastingPairFiles(registryFile)).resolves.toMatchObject({ revision: 1 });
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each(revisionSeparatorRuns.map(separators => [
+    separators || '(zero separators)',
+    `active-team-revision${separators}42-reset`,
+  ]))('rejects every separator run through length five (%s) across all validators', async (
+    _separators,
+    snapshotKey,
+  ) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root, snapshotKey);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow();
+    await expect(validateCastingPairFiles(registryFile)).rejects.toThrow();
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status).not.toBe(0);
+  });
+
+  it.each([
+    ['long mixed separator run', `active-team-revision${'-_'.repeat(64)}42-reset`],
+    ['case-insensitive marker', 'active-team-ReViSiOn__42-reset'],
+    ['prefix boundary at start', 'revision__1-reset'],
+    ['suffix boundary at end', 'active-team-revision__1'],
+    ['underscore token boundaries', 'active_team_revision__1_reset'],
+    ['short form at start', 'r1-reset'],
+    ['short form at end', 'active-team-r1'],
+    ['case-insensitive short form', 'active-team-R42-reset'],
+  ])('rejects canonical legacy genesis with $0 across all validators', async (_name, snapshotKey) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root, snapshotKey);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow();
+    await expect(validateCastingPairFiles(registryFile)).rejects.toThrow();
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status).not.toBe(0);
+  });
+
+  it.each([
+    ['revision inside another word', 'active-team-prerevision1-reset'],
+    ['revision marker extended as a word', 'active-team-revisionary1-reset'],
+    ['revision digits without a suffix boundary', 'active-team-revision1x-reset'],
+    ['revision marker without digits', 'active-team-revision__-reset'],
+    ['short form inside another word', 'active-team-arr1-reset'],
+    ['short form digits without a suffix boundary', 'active-team-r1x-reset'],
+    ['short form with separators before digits', 'active-team-r__1-reset'],
+    ['unrelated r-containing word', 'active-team-error1-reset'],
+    ['unrelated revision-containing word', 'active-team-supervision1-reset'],
+    ['digits without a marker', 'active-team-42-reset'],
+  ])('accepts canonical legacy genesis with $0', async (_name, snapshotKey) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root, snapshotKey);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(readCastingRegistryPair(castingDir, 1).registry?.revision).toBe(1);
+    await expect(validateCastingPairFiles(registryFile)).resolves.toMatchObject({ revision: 1 });
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    {
+      name: 'revision-2 registry with unrelated empty history',
+      mutate: (root: string) => {
+        const registryPath = join(root, '.squad', 'casting', 'registry.json');
+        const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+        registry.revision = 2;
+        write(root, '.squad/casting/registry.json', JSON.stringify(registry));
+        write(root, '.squad/casting/history.json', JSON.stringify({
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+        }));
+      },
+    },
+    {
+      name: 'multiple snapshots',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        history.assignment_cast_snapshots.second = {
+          ...Object.values(history.assignment_cast_snapshots)[0],
+        };
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'multiple usage records',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        history.universe_usage_history.push({ ...history.universe_usage_history[0] });
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'empty snapshot entry',
+      mutate: (root: string) => {
+        write(root, '.squad/casting/history.json', JSON.stringify({
+          assignment_cast_snapshots: { empty: {} },
+          universe_usage_history: [
+            { universe: 'descriptive', used_at: '2026-09-20T00:00:00.000Z' },
+          ],
+        }));
+      },
+    },
+    {
+      name: 'empty usage entry',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        history.universe_usage_history = [{}];
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'missing active-agent coverage',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        Object.values(history.assignment_cast_snapshots)[0].agents.pop();
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'duplicate active-agent coverage',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        const agents = Object.values(history.assignment_cast_snapshots)[0].agents;
+        agents.push(agents[0]);
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'inactive agent coverage',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'registry.json');
+        const registry = JSON.parse(readFileSync(path, 'utf8'));
+        registry.agents[active[0].id].status = 'inactive';
+        write(root, '.squad/casting/registry.json', JSON.stringify(registry));
+      },
+    },
+    {
+      name: 'universe mismatch',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        history.universe_usage_history[0].universe = 'functional';
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'creation timestamp mismatch',
+      mutate: (root: string) => {
+        const path = join(root, '.squad', 'casting', 'history.json');
+        const history = JSON.parse(readFileSync(path, 'utf8'));
+        const snapshot = Object.values(history.assignment_cast_snapshots)[0];
+        snapshot.created_at = '2026-09-20T00:01:00.000Z';
+        history.universe_usage_history[0].used_at = snapshot.created_at;
+        write(root, '.squad/casting/history.json', JSON.stringify(history));
+      },
+    },
+    {
+      name: 'malformed history',
+      mutate: (root: string) => {
+        write(root, '.squad/casting/history.json', JSON.stringify({
+          assignment_cast_snapshots: [],
+          universe_usage_history: [],
+        }));
+      },
+    },
+    {
+      name: 'one-sided pair',
+      mutate: (root: string) => {
+        rmSync(join(root, '.squad', 'casting', 'history.json'));
+      },
+    },
+  ])('matches SDK and activation-checker rejection for $name', async ({ mutate }) => {
+    const fixture = createFixture();
+    writeCanonicalGenesisPair(fixture.root);
+    mutate(fixture.root);
+    const castingDir = join(fixture.root, '.squad', 'casting');
+    const registryFile = join(castingDir, 'registry.json');
+
+    expect(() => readCastingRegistryPair(castingDir, 1)).toThrow();
+    await expect(validateCastingPairFiles(registryFile)).rejects.toThrow();
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status).not.toBe(0);
+  });
+
   it('declares the validator as a top-level gh-aw resource, not an imported skill', () => {
     const workflow = readFileSync(workflowPath, 'utf8');
     const resourcesBlock = workflow.match(/^resources:\n((?:  - .+\n)+)/m)?.[1] ?? '';
@@ -429,7 +828,7 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251, got [a-f0-9]{64}\./,
+      /Cast validator SHA-256 mismatch: expected 62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce, got [a-f0-9]{64}\./,
     );
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
@@ -590,6 +989,50 @@ describe('GH-AW Cast final-tree validator', () => {
     const result = validate(fixture.root, fixture.payload);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Cast validation passed');
+  });
+
+  it('rejects a non-monotonic registry revision', () => {
+    const fixture = createFixture();
+    commitRegistry(fixture.root);
+    const registry = readRegistry(fixture.root);
+    writeRegistry(fixture.root, registry);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/revision 1 must be greater than committed revision 1/);
+  });
+
+  it('rejects deletion of a committed stable id or tombstone', () => {
+    const fixture = createFixture();
+    const registry = readRegistry(fixture.root);
+    registry.agents.tester!.status = 'retired';
+    registry.agents.tester!.retired_at = '2026-09-21T00:00:00.000Z';
+    writeRegistry(fixture.root, registry);
+    commitRegistry(fixture.root);
+    const next = readRegistry(fixture.root);
+    next.revision = 2;
+    next.generated_at = '2026-09-21T00:01:00.000Z';
+    delete next.agents.tester;
+    writeRegistry(fixture.root, next);
+    advanceHistory(fixture.root, 2, next.generated_at);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/committed agent id "tester" was deleted/);
+  });
+
+  it('rejects mutation of immutable role and creation time', () => {
+    const fixture = createFixture();
+    commitRegistry(fixture.root);
+    const registry = readRegistry(fixture.root);
+    registry.revision = 2;
+    registry.generated_at = '2026-09-21T00:01:00.000Z';
+    registry.agents.lead!.role = 'Replacement';
+    registry.agents.lead!.created_at = '2026-09-22T00:00:00.000Z';
+    writeRegistry(fixture.root, registry);
+    advanceHistory(fixture.root, 2, registry.generated_at);
+    const result = validate(fixture.root, fixture.payload);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/changed immutable role/);
+    expect(result.stderr).toMatch(/changed immutable created_at/);
   });
 
   it('rejects a built-in placed inside the specialist Members roster', () => {

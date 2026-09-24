@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -178,6 +178,16 @@ const minimalProposal: CastProposal = {
   ],
 };
 
+async function snapshotTree(root: string, relative = ''): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {};
+  for (const entry of await readdir(join(root, relative), { withFileTypes: true })) {
+    const child = join(relative, entry.name);
+    if (entry.isDirectory()) Object.assign(snapshot, await snapshotTree(root, child));
+    else snapshot[child] = await readFile(join(root, child), 'utf8');
+  }
+  return snapshot;
+}
+
 describe('createTeam', () => {
   let tempDir: string;
 
@@ -264,6 +274,117 @@ describe('createTeam', () => {
         expect(routing).not.toMatch(new RegExp(`\\|[^\\n]*\\| ${builtin} \\|`));
       }
       expect(Object.keys(registry.agents)).toEqual(['ripley', 'dallas', 'kane']);
+    });
+
+    it('emits versioned provenance and preserves ids across display-name changes', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const renamed: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.map((member) =>
+          member.role === 'Lead' ? { ...member, id: 'ripley', name: 'Commander' } : member,
+        ),
+      };
+
+      await createTeam(tempDir, renamed);
+
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as {
+        schema: string;
+        schema_version: number;
+        revision: number;
+        agents: Record<string, { display_name: string; persistent_name: string; role: string }>;
+      };
+      expect(registry).toMatchObject({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 2,
+      });
+      expect(registry.agents.ripley).toMatchObject({
+        display_name: 'Commander',
+        persistent_name: 'Commander',
+        role: 'Lead',
+      });
+      expect(registry.agents.commander).toBeUndefined();
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley', 'charter.md'))).toBe(true);
+    });
+
+    it('rejects a rename that does not carry the existing stable id', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const ambiguousRename: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.map((member) =>
+          member.role === 'Lead' ? { ...member, name: 'Commander' } : member,
+        ),
+      };
+
+      await expect(createTeam(tempDir, ambiguousRename)).rejects.toThrow(
+        /supply the existing stable id for a rename/,
+      );
+    });
+
+    it('performs zero filesystem mutations when casting history is malformed', async () => {
+      const castingDir = join(tempDir, '.squad', 'casting');
+      await mkdir(castingDir, { recursive: true });
+      await writeFile(join(castingDir, 'registry.json'), JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-09-21T00:00:00.000Z',
+        agents: {},
+      }) + '\n');
+      await writeFile(
+        join(castingDir, 'history.json'),
+        '{"assignment_cast_snapshots":[],"universe_usage_history":[]}\n',
+      );
+      await writeFile(join(castingDir, 'policy.json'), '{"universe_allowlist":["*"]}\n');
+      const before = await snapshotTree(tempDir);
+
+      await expect(createTeam(tempDir, minimalProposal)).rejects.toThrow(/history shape is invalid/);
+
+      expect(await snapshotTree(tempDir)).toEqual(before);
+    });
+
+    it('serializes concurrent recasts and increments revisions without losing agents', async () => {
+      await Promise.all([
+        createTeam(tempDir, minimalProposal),
+        createTeam(tempDir, minimalProposal),
+      ]);
+
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as { revision: number; agents: Record<string, { status: string }> };
+      expect(registry.revision).toBe(2);
+      expect(Object.keys(registry.agents).sort()).toEqual(['dallas', 'kane', 'ripley']);
+      expect(Object.values(registry.agents).every(agent => agent.status === 'active')).toBe(true);
+      expect(existsSync(join(tempDir, '.squad', 'casting', 'registry.lock'))).toBe(false);
+      const history = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'history.json'), 'utf-8'),
+      ) as { assignment_cast_snapshots: Record<string, unknown> };
+      expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(2);
+    });
+
+    it('cycles retire, reactivate, and retire without duplicate active/alumni directories', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const withoutLead: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.filter(member => member.role !== 'Lead'),
+      };
+      await createTeam(tempDir, withoutLead);
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(false);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(true);
+
+      await createTeam(tempDir, {
+        ...minimalProposal,
+        members: minimalProposal.members.map(member =>
+          member.role === 'Lead' ? { ...member, id: 'ripley' } : member),
+      });
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(true);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(false);
+
+      await createTeam(tempDir, withoutLead);
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(false);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(true);
     });
 
     it('restores the disabled Coding Agent contract', async () => {

@@ -27,7 +27,17 @@ async function scaffold(root: string): Promise<void> {
   await writeFile(join(sq, 'decisions.md'), '# Decisions\n');
   await writeFile(
     join(sq, 'casting', 'registry.json'),
-    JSON.stringify({ agents: [] }, null, 2),
+    JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T00:00:00.000Z',
+      agents: {},
+    }, null, 2),
+  );
+  await writeFile(
+    join(sq, 'casting', 'history.json'),
+    JSON.stringify({ assignment_cast_snapshots: {}, universe_usage_history: [] }, null, 2),
   );
   // Copilot agent discovery file (#533)
   await mkdir(join(root, '.github', 'agents'), { recursive: true });
@@ -72,6 +82,23 @@ describe('squad doctor', () => {
     expect(squadDirCheck?.status).toBe('fail');
     // When .squad/ is missing the file checks are skipped — .squad/ + squad.agent.md + Node version + 2 ESM checks + Copilot CLI
     expect(checks.length).toBe(6);
+  });
+
+  it('fails closed when registry and history generations do not match', async () => {
+    await scaffold(TEST_ROOT);
+    await writeFile(
+      join(TEST_ROOT, '.squad', 'casting', 'history.json'),
+      JSON.stringify({
+        transaction_id: 'history-generation',
+        registry_revision: 1,
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
+      }),
+    );
+
+    const checks = await runDoctor(TEST_ROOT);
+    expect(checks.find(check => check.name === 'casting/registry.json exists'))
+      .toMatchObject({ status: 'fail' });
   });
 
   it('detects remote mode from config.json with teamRoot', async () => {
