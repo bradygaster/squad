@@ -69,6 +69,8 @@ jobs:
           cache: 'npm'
       - name: Install docs tools
         run: |
+          npm config set registry "https://packagefeedproxy.microsoft.io/npm/"
+          npm config set registry "https://registry.npmjs.org/"
           success=false
           for i in 1 2 3; do
             if npm install --no-save markdownlint-cli2 cspell; then success=true; break; fi
@@ -108,6 +110,7 @@ jobs:
       - name: Install docs dependencies
         run: |
           npm config set registry "https://packagefeedproxy.microsoft.io/npm/"
+          npm config set registry "https://registry.npmjs.org/"
           success=false
           for i in 1 2 3; do
             if npm ci --ignore-scripts; then success=true; break; fi
