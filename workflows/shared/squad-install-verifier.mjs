@@ -21,7 +21,7 @@ export const PACKAGE_MANIFEST = 'workflows/aw.yml';
 export const CONTRACT_SOURCE = 'workflows/squad-workflows.manifest.json';
 export const CONTRACT_DESTINATION = '.github/aw/squad-workflows.manifest.json';
 export const MIN_GH_AW_VERSION = 'v0.89.21';
-export const OWNERSHIP_ENTRY_COUNT = 24;
+export const OWNERSHIP_ENTRY_COUNT = 23;
 export const OWNERSHIP_DESTINATION =
   '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json';
 export const TRIGGER_PROBE = 'shared/squad-bootstrap-trigger-probe.json';
@@ -464,7 +464,6 @@ function expectedOwnership(contract) {
   return [
     ...contract.workflows.map(({ source, destination }) => ({ source, destination })),
     ...contract.shared_runtime.map(({ source, package_destination: destination }) => ({ source, destination })),
-    ...contract.skills.map(({ source, destination }) => ({ source, destination })),
     { source: CONTRACT_SOURCE, destination: CONTRACT_DESTINATION },
   ].sort((left, right) => left.destination.localeCompare(right.destination));
 }
@@ -507,10 +506,17 @@ function verifyOwnership(root, contract, expectedRevision) {
   return record.resolvedCommit;
 }
 
-function verifyInstalledBytes(root, contract) {
-  for (const entry of [...contract.workflows, ...contract.skills]) {
-    const expected = entry.source_sha256 ?? entry.sha256;
-    if (fileDigest(root, entry.destination) !== expected) {
+function verifyInstalledBytes(root, contract, revision) {
+  for (const entry of contract.workflows) {
+    const installed = readRequired(root, entry.destination);
+    const sourceBinding = `source: ${PACKAGE_NAME}@${revision}`;
+    const canonical = Buffer.from(installed.toString('utf8').replace(`\n${sourceBinding}\n---\n`, '\n---\n'));
+    if (sha256(canonical) !== entry.source_sha256) {
+      throw new Error(`Installed digest mismatch for ${entry.destination}.`);
+    }
+  }
+  for (const entry of contract.skills) {
+    if (fileDigest(root, entry.destination) !== entry.sha256) {
       throw new Error(`Installed digest mismatch for ${entry.destination}.`);
     }
   }
@@ -632,8 +638,8 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
       throw new Error('Expected revision must be a lowercase 40-character SHA.');
     }
     const { contract } = parseInstalledContract(root);
-    verifyInstalledBytes(root, contract);
     revision = verifyOwnership(root, contract, expectedRevision);
+    verifyInstalledBytes(root, contract, revision);
     verifyTriggerNamespace(root);
     verifyTriggerProbe(root, revision);
     if (strictCompile) strictCompileMatches(root);

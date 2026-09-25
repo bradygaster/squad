@@ -3553,7 +3553,6 @@ describe('gh-aw: canonical package integrity contract', () => {
         source: entry.source,
         destination: entry.package_destination,
       })),
-      ...contract.skills,
       { source: CONTRACT_SOURCE, destination: CONTRACT_DESTINATION },
     ].map((entry: { source: string; destination: string }) => ({
       source: entry.source,
