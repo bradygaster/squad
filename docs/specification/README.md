@@ -9,9 +9,10 @@
 **Working-draft provenance:** [PR #2078](https://github.com/bradygaster/squad/pull/2078)
 contains this suite revision. Its rejected review baseline is
 [`c03ba950fde071c8ec58a64504fdb7b5cf1206ef`](https://github.com/bradygaster/squad/commit/c03ba950fde071c8ec58a64504fdb7b5cf1206ef).
-Revision cycle 2 is authored by `agent-orchestration-dev`; the original
-Architect author and rejecting reviewers are excluded from implementation by
-the governance lockout.
+Revision cycle 2 was authored by `agent-orchestration-dev`; final revision
+cycle 3 is authored by `unit-contract-tester`. The original Architect author
+and rejecting reviewers are excluded from implementation by the governance
+lockout.
 
 The source index keeps `publication.revision` and `publication.digest` null
 while it is a working draft. After review, the exact head SHA is recorded in
@@ -26,17 +27,18 @@ index without a self-referential hash that would invalidate the commit.
 
 **Foundation profile:** [Squad Charter Profile v0.1](charter-v0.1.md)
 
-This directory maps all major stable or observable Squad surfaces. It
-distinguishes the one executable normative profile from experimental schemas,
-non-claimable requirements drafts, and informative coverage.
+This directory maps all major stable or observable Squad surfaces. Publication
+status is independent from maturity: this suite is an unpublished working
+draft even where a profile has executable conformance evidence.
 
 ## Maturity taxonomy
 
-The suite uses exactly four maturity values:
+The suite uses exactly five maturity values:
 
 | Maturity | Meaning | Claimable |
 |---|---|---|
-| `published-normative` | Executable manifest and schema with reviewed cases | Yes, only identifiers declared by that manifest |
+| `executable-normative-draft` | Normative working draft with an executable manifest and schema | Yes, only identifiers declared by that manifest; not published |
+| `experimental-normative-draft` | Normative working draft whose rules are exercised only through dependent profiles or partial evidence | No standalone claims |
 | `experimental-schema` | Machine-valid schema or fixture, but no complete conformance manifest | No |
 | `requirements-draft` | Conceptual and behavioral requirements awaiting portable fixtures | No |
 | `informative-draft` | Coverage, observations, or volatile requirements | No |
@@ -60,9 +62,9 @@ deviations are summarized here and expanded in the
 
 | ID | Maturity / class | Dependencies | Claimable capabilities | Schema/manifest | Implementation status | Known deviations | Reader entry path |
 |---|---|---|---|---|---|---|---|
-| `squad-core/v0.1` | `requirements-draft` / requirements | None | None | None | Terminology is used by Charter | Canonical JSON and publication rules incomplete | [Core](core-v0.1.md), then Charter |
+| `squad-core/v0.1` | `experimental-normative-draft` / normative profile | None | None | None | Normative rules are exercised by Charter; no standalone Core manifest | Canonical JSON and standalone Core cases incomplete | [Core](core-v0.1.md), then Charter |
 | `squad-interop/v0.1` | `experimental-schema` / normative schema | Core | None | Shared evidence schema; no manifest | Evidence validation is executable | No discovery or replay corpus | [Interoperability](interoperability-conventions-v0.1.md) |
-| `squad-charter/v0.1` | `published-normative` / normative profile | Core | `squad-charter/v0.1/parse`, `squad-charter/v0.1/validate`, `squad-charter/v0.1/edit`, `squad-charter/v0.1/legacy-consume`, `squad-charter/v0.1/runtime` | Manifest and schema | Parser, validator, editor, compiler, and cases implemented | None registered | [Charter](charter-v0.1.md) |
+| `squad-charter/v0.1` | `executable-normative-draft` / normative profile | Core | `squad-charter/v0.1/parse`, `squad-charter/v0.1/validate`, `squad-charter/v0.1/edit`, `squad-charter/v0.1/legacy-consume`, `squad-charter/v0.1/runtime` | Manifest and schema | Parser, validator, editor, compiler, and cases implemented | None registered | [Charter](charter-v0.1.md) |
 | `squad-team-routing/v0.1` | `requirements-draft` / requirements | Core, Interop, Charter | None | None | Roster and routing exist in multiple shapes | Fallback and ambiguity differ | [Roster, then routing](team-routing-v0.1.md) |
 | `squad-configuration-casting/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Configuration, registry, and history implemented | Legacy shapes and runtime-only keys | [Configuration, casting, provenance](configuration-casting-v0.1.md) |
 | `squad-governance-review/v0.1` | `experimental-schema` / normative schema | Core, Interop, Team/Routing | None | Evidence schema plus rejection fixture; no manifest | Rejection records are machine-valid | Baseline owner self-revision conflict | [Evidence contract, then transitions](governance-review-v0.1.md) |
@@ -140,17 +142,18 @@ and the GitHub binding
 identify their narrower assumptions. An informative precedent does not become
 a suite requirement merely by being cited.
 
-The existing `test/docs-links.test.ts` command scans `docs/src/content/**` and
-the root README, not `docs/specification/**`; there is no existing supported
-link-check command for this directory. The suite test verifies every indexed
-specification, schema, manifest, and fixture path exists. External URL
-availability and section anchors remain review-time checks until the repository
-link checker expands its supported scope.
+`test/specification-suite.test.ts` deterministically checks every Markdown file
+in this directory for relative targets, local heading anchors, and absolute
+HTTPS external citations. It also verifies every indexed specification,
+schema, manifest, and fixture path. The check is intentionally offline:
+external URL availability and remote anchor existence remain review-time or
+publication-pipeline checks.
 
 ## Versioning policy
 
 Profile identifiers use `vMAJOR.MINOR`; mutable state revisions, provider API
 versions, implementation versions, and the observed portable-bundle `1.0`
-version are distinct. Draft documents may change before promotion. Published
-normative revisions are immutable except for dated errata; behavior changes
+version are distinct. Draft documents may change before promotion. Only a
+`publication.status` of `published` denotes an immutable publication; published
+normative revisions are immutable except for dated errata, and behavior changes
 require a new profile version.

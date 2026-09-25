@@ -104,7 +104,8 @@
         "id": { "$ref": "#/$defs/profileId" },
         "maturity": {
           "enum": [
-            "published-normative",
+            "executable-normative-draft",
+            "experimental-normative-draft",
             "experimental-schema",
             "requirements-draft",
             "informative-draft"

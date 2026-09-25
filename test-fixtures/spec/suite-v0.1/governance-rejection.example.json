@@ -3,29 +3,29 @@
   "schema": "squad-governance-review/v0.1",
   "id": "1416ae81-91ef-48b3-b6fa-9b810b86b012",
   "type": "squad.governance.rejected",
-  "source": "github:bradygaster/squad",
-  "subject": "review-subject:change-request/2078",
+  "source": "https://example.invalid/squad/governance",
+  "subject": "urn:squad:example:review-subject:change-request-42",
   "time": "2026-09-25T14:17:33Z",
   "actor": {
-    "uid": "squad-member:docs-devrel"
+    "uid": "urn:squad:example:actor:reviewer"
   },
   "authority": {
     "action": "review.reject",
-    "issuer": "squad:bradygaster/squad",
-    "providerIdentity": "github:reviewer-login",
-    "basis": "review-gate:publication",
-    "policyRevision": "governance-2026-09-25"
+    "issuer": "urn:squad:example:issuer:test-suite",
+    "providerIdentity": "urn:squad:example:provider-identity:reviewer",
+    "basis": "urn:squad:example:review-gate:publication",
+    "policyRevision": "urn:squad:example:policy:governance-v1"
   },
   "resource": {
-    "uid": "review-subject:change-request/2078",
-    "revision": "c03ba950fde071c8ec58a64504fdb7b5cf1206ef",
-    "expectedRevision": "c03ba950fde071c8ec58a64504fdb7b5cf1206ef",
-    "resultRevision": "c03ba950fde071c8ec58a64504fdb7b5cf1206ef"
+    "uid": "urn:squad:example:review-subject:change-request-42",
+    "revision": "urn:squad:example:revision:rejected-1",
+    "expectedRevision": "urn:squad:example:revision:rejected-1",
+    "resultRevision": "urn:squad:example:revision:rejected-1"
   },
   "correlationId": "8d1f7875-b855-4996-93fd-fee67c775188",
   "causationId": null,
-  "idempotencyKey": "review:2078:c03ba950:docs-devrel",
-  "replayKey": "github-review:2078:c03ba950:1",
+  "idempotencyKey": "example-review:change-request-42:revision-1",
+  "replayKey": "example-provider-review:change-request-42:revision-1",
   "payloadDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "redaction": "metadata-only",
   "extensions": {},
@@ -35,18 +35,19 @@
       "currentState": "rejected"
     },
     "reviewedSubject": {
-      "uid": "github:bradygaster/squad#2078",
-      "revision": "c03ba950fde071c8ec58a64504fdb7b5cf1206ef"
+      "uid": "urn:squad:example:review-subject:change-request-42",
+      "revision": "urn:squad:example:revision:rejected-1"
     },
-    "accountableOwnerUid": "squad-member:architect",
-    "revisionAuthorUid": "squad-member:architect",
-    "reviewerUid": "squad-member:docs-devrel",
-    "lockoutUids": ["squad-member:architect"],
-    "eligibleRevisionAuthorUids": ["squad-member:agent-orchestration-dev"],
+    "accountableOwnerUid": "urn:squad:example:actor:owner",
+    "currentRevisionAuthorUid": "urn:squad:example:actor:current-author",
+    "successorRevisionAuthorUid": "urn:squad:example:actor:successor-author",
+    "reviewerUid": "urn:squad:example:actor:reviewer",
+    "lockoutUids": ["urn:squad:example:actor:current-author"],
+    "eligibleRevisionAuthorUids": ["urn:squad:example:actor:successor-author"],
     "blockers": [
       {
         "code": "publication-maturity-overclaim",
-        "location": "docs/specification/README.md",
+        "location": "example/specification.md",
         "requirement": "Requirements-only drafts are non-claimable",
         "evidence": "The rejected index advertised capabilities without manifests",
         "clearCondition": "Downgrade unsupported claims and publish promotion criteria",

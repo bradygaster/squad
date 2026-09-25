@@ -13,7 +13,8 @@ render them beneath `.squad/`.
 | Surface | Repository evidence | Disposition | Specification | Maturity or promotion rationale |
 |---|---|---|---|---|
 | Discovery, negotiation, authority identity, shared evidence, secrets | Core/profile metadata, registry IDs, events, audit records | Experimental shared schema; no claim | Interoperability Conventions v0.1 | Evidence schema exists; discovery and negotiation need a manifest |
-| Agent charter | `agents/{id}/charter.md`, compiler, validator, fixtures | Normative profile now | Charter v0.1 | Stable parser and round-trip evidence |
+| Core rules | profile identifiers, paths, diagnostics, trust boundary | Experimental normative working draft; no standalone claim | Core v0.1 | Charter depends on and exercises Core rules, but Core has no standalone manifest |
+| Agent charter | `agents/{id}/charter.md`, compiler, validator, fixtures | Executable normative working draft | Charter v0.1 | Stable parser and round-trip evidence; publication remains `working-draft` |
 | Team roster | `team.md`, roster templates, presets | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with roster parsing, mutation, join, and diagnostic cases |
 | Routing ownership | `routing.md`, routing parser, coordinator tests | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with priority, fallback, ambiguity, stale-write, and resolution cases |
 | Runtime configuration | `config.json`, config schema and loaders | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with precedence and source-evidence cases |
