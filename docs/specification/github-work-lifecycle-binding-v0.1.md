@@ -126,12 +126,35 @@ provider range is revalidated.
 
 ## 8. Versioned provider assumptions and references
 
-This draft assumes GitHub REST API version `2022-11-28`, GraphQL schema behavior
-observed on 2026-09-25, and `gh` operations that map to those APIs. A conforming
-binding must publish its exact supported API versions and observation date.
-An unavailable version returns `unsupported-provider-version`; a changed field,
-enum, mutation, or ruleset behavior returns `provider-drift` and fails closed
-for mutation until revalidated.
+This draft assumes GitHub REST API version `2022-11-28`. GraphQL field names and
+`gh` transport behavior are informative provider observations only; they are
+not normative evidence for this non-claimable binding. A future executable
+binding is expected to publish exact supported API versions and observation
+dates. An unavailable version is expected to return
+`unsupported-provider-version`; a changed field, enum, mutation, or ruleset
+behavior is expected to return `provider-drift` and fail closed for mutation
+until revalidated.
+
+The GraphQL field observation was reproduced on 2026-09-25 with this schema
+introspection query:
+
+```graphql
+query SquadBindingSchemaObservation {
+  issue: __type(name: "Issue") {
+    fields { name }
+  }
+  pullRequest: __type(name: "PullRequest") {
+    fields { name }
+  }
+}
+```
+
+The relevant field catalogs are
+[GitHub GraphQL `Issue`](https://docs.github.com/en/graphql/reference/objects#issue)
+and
+[GitHub GraphQL `PullRequest`](https://docs.github.com/en/graphql/reference/objects#pullrequest).
+This observation establishes reproducibility of field discovery only; it does
+not establish snapshot atomicity, transition semantics, or conformance.
 
 GitHub API versions and this binding version are independent. Namespaced labels
 and evidence fields round-trip. Issue bodies and comments are untrusted input.

@@ -63,8 +63,10 @@ existence, model output, or a passing validator must not be treated as human
 approval.
 
 PRD prose quality, completeness, and preferred decomposition style are
-informative. Artifact identities, revisions, traceability links, dependencies,
-acceptance, and activation transitions are normative.
+informative. Planning-record identities, revisions, traceability links,
+dependencies, acceptance, and activation transitions are future-profile
+requirements that become normative only after an executable manifest is
+published.
 
 ## 5. Activation
 

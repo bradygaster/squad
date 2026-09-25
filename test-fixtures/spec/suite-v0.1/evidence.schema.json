@@ -183,7 +183,8 @@
         "transition",
         "reviewedSubject",
         "accountableOwnerUid",
-        "revisionAuthorUid",
+        "currentRevisionAuthorUid",
+        "successorRevisionAuthorUid",
         "reviewerUid",
         "blockers",
         "lockoutUids",
@@ -290,11 +291,16 @@
           }
         },
         "accountableOwnerUid": { "$ref": "#/$defs/uid" },
-        "revisionAuthorUid": { "$ref": "#/$defs/uid" },
+        "currentRevisionAuthorUid": { "$ref": "#/$defs/uid" },
+        "successorRevisionAuthorUid": {
+          "anyOf": [
+            { "$ref": "#/$defs/uid" },
+            { "type": "null" }
+          ]
+        },
         "reviewerUid": { "$ref": "#/$defs/uid" },
         "blockers": {
           "type": "array",
-          "minItems": 1,
           "items": { "$ref": "#/$defs/blocker" }
         },
         "lockoutUids": {
@@ -304,7 +310,6 @@
         },
         "eligibleRevisionAuthorUids": {
           "type": "array",
-          "minItems": 1,
           "items": { "$ref": "#/$defs/uid" },
           "uniqueItems": true
         },
@@ -331,7 +336,133 @@
         },
         "replayDisposition": { "enum": ["original", "duplicate-same-result"] },
         "gateResult": { "enum": ["accepted", "rejected", "conflict", "escalated"] }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "rejected" }
+                },
+                "required": ["currentState"]
+              }
+            },
+            "required": ["transition"]
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/blocker" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": { "const": "open" }
+                      }
+                    }
+                  ]
+                }
+              },
+              "lockoutUids": { "type": "array", "minItems": 1 },
+              "successorRevisionAuthorUid": { "$ref": "#/$defs/uid" },
+              "gateResult": { "const": "rejected" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "approved" }
+                },
+                "required": ["currentState"]
+              }
+            },
+            "required": ["transition"]
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/blocker" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": { "enum": ["cleared", "waived"] }
+                      }
+                    }
+                  ]
+                }
+              },
+              "successorRevisionAuthorUid": { "type": "null" },
+              "gateResult": { "const": "accepted" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "escalated" }
+                },
+                "required": ["currentState"]
+              }
+            },
+            "required": ["transition"]
+          },
+          "then": {
+            "properties": {
+              "gateResult": { "const": "escalated" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "escalation": {
+                "type": "object",
+                "properties": {
+                  "deadlocked": { "const": true }
+                },
+                "required": ["deadlocked"]
+              }
+            },
+            "required": ["escalation"]
+          },
+          "then": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "escalated" }
+                }
+              },
+              "eligibleRevisionAuthorUids": { "type": "array", "maxItems": 0 },
+              "successorRevisionAuthorUid": { "type": "null" },
+              "escalation": {
+                "type": "object",
+                "required": ["reason"],
+                "properties": {
+                  "status": { "const": "required" },
+                  "reason": { "type": "string", "minLength": 1 }
+                }
+              },
+              "gateResult": { "const": "escalated" }
+            }
+          }
+        }
+      ]
     }
   }
 }

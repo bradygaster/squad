@@ -10,7 +10,11 @@
   "dialects": [
     {
       "id": "charter-v0-1",
-      "description": "Published Charter v0.1 executable conformance manifest."
+      "description": "Executable Charter v0.1 working-draft conformance manifest."
+    },
+    {
+      "id": "normative-draft",
+      "description": "Normative working draft without standalone claimable capabilities."
     },
     {
       "id": "suite-v0-1",
@@ -27,10 +31,10 @@
   "profiles": [
     {
       "id": "squad-core/v0.1",
-      "maturity": "requirements-draft",
-      "documentClass": "requirements",
+      "maturity": "experimental-normative-draft",
+      "documentClass": "normative-profile",
       "spec": "docs/specification/core-v0.1.md",
-      "dialect": "requirements-only",
+      "dialect": "normative-draft",
       "dependencies": [],
       "conformanceClasses": [],
       "implementationRoles": ["producer", "consumer", "editor", "validator", "executor"],
@@ -63,7 +67,7 @@
     },
     {
       "id": "squad-charter/v0.1",
-      "maturity": "published-normative",
+      "maturity": "executable-normative-draft",
       "documentClass": "normative-profile",
       "spec": "docs/specification/charter-v0.1.md",
       "dialect": "charter-v0-1",
