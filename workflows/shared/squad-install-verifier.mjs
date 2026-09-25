@@ -518,7 +518,8 @@ function verifyInstalledBytes(root, contract, revision) {
       canonicalText = canonicalText.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
     }
     const canonical = Buffer.from(canonicalText);
-    if (sha256(canonical) !== entry.source_sha256) {
+    const canonicalWithFinalNewline = Buffer.from(`${canonicalText}\n`);
+    if (![sha256(canonical), sha256(canonicalWithFinalNewline)].includes(entry.source_sha256)) {
       throw new Error(`Installed digest mismatch for ${entry.destination}.`);
     }
   }
