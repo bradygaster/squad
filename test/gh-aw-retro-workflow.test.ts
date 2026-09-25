@@ -1500,11 +1500,9 @@ describe('Squad retrospective workflow integration', () => {
     expect(REVIEWER).not.toContain('"request_origin": "squad-review"');
     expect(IMPLEMENTER).toContain('"request_origin": "squad-implement"');
     expect(CI).toContain(
-      'for WF in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do',
+      'for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do',
     );
-    expect(CI).toContain(
-      'squad-deps-worker.lock.yml squad-retro.lock.yml squad-improvement-worker.lock.yml; do',
-    );
+    expect(CI).toContain('test -f ".github/workflows/${workflow}.lock.yml"');
   });
 
   it('keeps governance changes human-reviewed and partial retries idempotent', () => {

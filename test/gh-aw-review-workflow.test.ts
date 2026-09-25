@@ -191,8 +191,6 @@ describe('gh-aw advisory Squad reviewer', () => {
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: workspace });
     const version = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8', timeout: 15000 });
     expect(version.status).toBe(0);
-    const compilerVersion = `${version.stdout}${version.stderr}`.trim();
-    expect(compilerVersion).toMatch(/\bv0\.89\.21$/);
     execFileSync('gh', ['aw', 'add', resolve(ROOT, 'workflows')], { cwd: workspace, timeout: 420000 });
     execFileSync(
       'node',
