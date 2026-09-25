@@ -4,11 +4,19 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative unless marked informative
+**Document class:** Non-normative requirements draft
 
 **Profile identifier:** `squad-execution-preferences/v0.1`
 
-**Maturity:** Experimental normative
+**Maturity:** Requirements draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** The reference runtime resolves preferences and
+fallbacks, but no provider-neutral manifest exists.
+
+**Known deviations:** Model catalogs, availability snapshots, authorization,
+and fallback chains remain runtime policy.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`, `squad-charter/v0.1`,
 `squad-configuration-casting/v0.1`
@@ -25,18 +33,18 @@ authorization, or an implementation's selection algorithm.
 An execution preference has `model`, `modelClass`, `reasoningEffort`,
 `contextTier`, `fallback`, and `source`. Each value is either absent, `auto`,
 or an authored identifier from the applicable vocabulary. Absence means no
-preference. `auto` asks the executor to select and MUST NOT be sent to a
+preference. `auto` asks the executor to select and must not be sent to a
 provider as a literal model or tier.
 
 Portable reasoning intent is `low`, `medium`, `high`, `xhigh`, or `max`.
-Portable context intent is `default` or `long_context`. Executors MAY support a
-subset but MUST make unsupported values observable.
+Portable context intent is `default` or `long_context`. Executors may support a
+subset but must make unsupported values observable.
 
 ## 3. Precedence
 
 The order is explicit operation input, session directive, repository
 configuration, charter preference, task-aware automatic policy, then platform
-default. A higher layer MAY set `auto`, which delegates selection to lower
+default. A higher layer may set `auto`, which delegates selection to lower
 runtime policy without erasing the source evidence.
 
 ## 4. Resolution result and states
@@ -48,22 +56,22 @@ Resolution produces `requested`, `selected`, `source`, `fallbackAttempt`,
 
 Availability means the runtime can address a model. Authorization means the
 actor may use it. Policy disposition means local implementation policy permits
-it. These checks are independent and MUST NOT be collapsed into one silent
+it. These checks are independent and must not be collapsed into one silent
 fallback.
 
 ## 5. Runtime fallback behavior
 
-Fallback MAY be `none`, `same-provider`, `same-class`, or `platform-default`.
-An executor MUST NOT broaden beyond the authored constraint. Every attempt MUST
+Fallback may be `none`, `same-provider`, `same-class`, or `platform-default`.
+An executor must not broaden beyond the authored constraint. Every attempt must
 be recorded. After the configured attempt limit, execution fails explicitly.
 Provider-specific chains and current model names are informative implementation
 policy, not part of this profile.
 
-## 6. Capabilities and behavior classes
+## 6. Candidate operations and behavior classes
 
-Capabilities are `preferences.consume`, `preferences.resolve`,
+Candidate operations are `preferences.consume`, `preferences.resolve`,
 `preferences.explain`, and `preferences.execute`. Canonical executors preserve
-source and disposition evidence. Compatible executors MAY map unsupported
+source and disposition evidence. Compatible executors may map unsupported
 reasoning or context values to provider vocabulary only when the mapping is
 declared and loss is reported.
 
@@ -84,11 +92,11 @@ semantics fail closed.
 ## 9. Security and privacy
 
 Preferences never grant provider access, tools, data access, or spending
-authority. Diagnostics MUST NOT expose credentials, account entitlements, or
+authority. Diagnostics must not expose credentials, account entitlements, or
 private policy text.
 
-## 10. Conformance
+## 10. Promotion criteria
 
-Tests MUST cover absence versus `auto`, each precedence layer, unavailable and
-unauthorized models, policy denial, constrained fallback, exhausted retries,
-and reasoning/context subset mapping.
+Publish a manifest covering absence versus `auto`, each precedence layer,
+unavailable and unauthorized selections, policy denial, constrained fallback,
+exhausted retries, snapshot identity, and lossy reasoning/context mappings.

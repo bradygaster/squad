@@ -4,11 +4,19 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative unless marked informative
+**Document class:** Non-normative requirements draft
 
 **Profile identifier:** `squad-planning-activation/v0.1`
 
-**Maturity:** Experimental normative
+**Maturity:** Requirements draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** gh-aw emits observable planning records, but their
+provider envelope and fast-path behavior are not a portable manifest.
+
+**Known deviations:** Safe-output formatting, comment lookup, and activation
+limits remain provider-specific.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`,
 `squad-team-routing/v0.1`,
@@ -21,15 +29,15 @@ implementation decomposition, validation, acceptance, activation, and
 revision evidence. It does not standardize prompt text, issue-comment wording,
 estimation culture, or one provider's safe-output mechanism.
 
-## 2. Artifact envelope
+## 2. Planning record envelope
 
-Each artifact MUST declare profile, kind, schema version, intent ID, artifact
-ID, revision, predecessor IDs, producer, timestamp, content digest, and
+Each planning record must declare profile, kind, schema version, intent ID,
+record ID, revision, predecessor IDs, producer, timestamp, content digest, and
 idempotency key. Portable kinds are `intent`, `research`, `triage`, `program`,
 `implementation`, `validation`, `scope-acceptance`,
 `implementation-acceptance`, `activation`, and `lifecycle-state`.
 
-An intent MAY reference inline content, a file, or a URL. Consumers MUST record
+An intent may reference inline content, a file, or a URL. Consumers must record
 the content digest actually evaluated. A changed digest creates a new intent
 revision and invalidates dependent acceptance until revalidated.
 
@@ -39,19 +47,19 @@ revision and invalidates dependent acceptance until revalidated.
 implementation-planning -> validating -> scope-accepted ->
 implementation-accepted -> activated`
 
-Revision is allowed before activation and MUST identify artifacts superseded.
-A validation failure returns to implementation planning. Acceptance MUST name
+Revision is allowed before activation and must identify records superseded.
+A validation failure returns to implementation planning. Acceptance must name
 the exact accepted revision. Activation requires both acceptances and a passing
 validation over the same dependency closure.
 
 ## 4. Decomposition and acceptance
 
-Implementation tasks MUST have stable task IDs, acceptance criteria, dependency
+Implementation tasks must have stable task IDs, acceptance criteria, dependency
 IDs, accountable route, and activation disposition. Sizing, milestones, and
 meeting style are informative unless selected by an extension.
 
-Human or delegated authority MUST be recorded for acceptance. Mere artifact
-existence, model output, or a passing validator MUST NOT be treated as human
+Human or delegated authority must be recorded for acceptance. Mere record
+existence, model output, or a passing validator must not be treated as human
 approval.
 
 PRD prose quality, completeness, and preferred decomposition style are
@@ -61,15 +69,15 @@ acceptance, and activation transitions are normative.
 ## 5. Activation
 
 Activation maps accepted task IDs to provider work-item references. Partial
-activation MUST record the selected phase and remaining tasks. A task MUST NOT
+activation must record the selected phase and remaining tasks. A task must not
 be created twice for the same activation idempotency key. Unresolved temporary
 references fail closed.
 
-## 6. Capabilities and roles
+## 6. Candidate operations and roles
 
-Capabilities are `planning.produce`, `planning.validate`,
+Candidate operations are `planning.produce`, `planning.validate`,
 `planning.accept-scope`, `planning.accept-implementation`, and
-`planning.activate`. Producers create artifacts; validators check structure
+`planning.activate`. Producers create records; validators check structure
 and dependency closure; acceptors exercise authority; activators create work.
 
 ## 7. Diagnostics and failure semantics
@@ -77,24 +85,23 @@ and dependency closure; acceptors exercise authority; activators create work.
 Missing intent, stale digest, unknown dependency, cyclic dependency, unroutable
 task, failed validation, mismatched acceptance revision, unresolved reference,
 capacity limit, and partial provider mutation are distinct failures. Partial
-mutation MUST return created references and a resumable boundary.
+mutation must return created references and a resumable boundary.
 
 ## 8. Idempotency, retry, and concurrency
 
 Draft stages are replaceable revisions, not destructive edits. Acceptance
 records are immutable. Activation uses compare-and-swap on accepted revisions
-and provider idempotency keys. Concurrent activation attempts MUST converge on
+and provider idempotency keys. Concurrent activation attempts must converge on
 one mapping or fail with an explicit conflict.
 
 ## 9. Versioning, extensions, and security
 
 Artifact schema versions negotiate independently. Namespaced kinds and fields
 round-trip. Intake content is untrusted; links, commands, and embedded prompts
-MUST NOT execute merely because they appear in a PRD. Secrets SHOULD be
-referenced, not copied into artifacts.
+must not execute merely because they appear in a PRD. Secrets should be referenced, not copied into planning records.
 
-## 10. Conformance
+## 10. Promotion criteria
 
-Fixtures MUST cover granular and fast paths, PRD changes, validation failure,
-acceptance revision mismatch, partial activation, duplicate retry, concurrent
-activation, and dependency cycles.
+Publish a manifest covering granular and fast paths, intent changes, validation
+failure, acceptance revision mismatch, partial activation, duplicate retry,
+concurrent activation, provider limits, and dependency cycles.

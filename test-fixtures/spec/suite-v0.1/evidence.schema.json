@@ -38,12 +38,33 @@
     "actor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uid", "issuer", "providerIdentity", "authorityBasis"],
+      "required": ["uid"],
       "properties": {
         "uid": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "issuer",
+        "providerIdentity",
+        "basis",
+        "policyRevision"
+      ],
+      "properties": {
+        "action": { "type": "string", "minLength": 1 },
         "issuer": { "type": "string", "minLength": 1 },
         "providerIdentity": { "type": "string", "minLength": 1 },
-        "authorityBasis": { "type": "string", "minLength": 1 }
+        "basis": { "type": "string", "minLength": 1 },
+        "policyRevision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" }
+          ]
+        }
       }
     },
     "resource": {
@@ -93,5 +114,224 @@
       "propertyNames": { "pattern": "^[a-z0-9]+:[a-z0-9][a-z0-9.-]*$" }
     },
     "data": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema": { "const": "squad-governance-review/v0.1" }
+        },
+        "required": ["schema"]
+      },
+      "then": {
+        "required": ["authority", "replayKey"],
+        "properties": {
+          "authority": { "$ref": "#/properties/authority" },
+          "replayKey": { "$ref": "#/properties/replayKey" },
+          "resource": {
+            "type": "object",
+            "required": [
+              "uid",
+              "revision",
+              "expectedRevision",
+              "resultRevision"
+            ],
+            "properties": {
+              "uid": { "$ref": "#/properties/resource/properties/uid" },
+              "revision": { "$ref": "#/properties/resource/properties/revision" },
+              "expectedRevision": { "$ref": "#/properties/resource/properties/expectedRevision" },
+              "resultRevision": { "$ref": "#/properties/resource/properties/resultRevision" }
+            }
+          },
+          "data": { "$ref": "#/$defs/governanceTransition" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "minLength": 1 },
+    "revision": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer" }
+      ]
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "location",
+        "requirement",
+        "evidence",
+        "clearCondition",
+        "status"
+      ],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 },
+        "requirement": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 },
+        "clearCondition": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["open", "cleared", "waived"] }
+      }
+    },
+    "governanceTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transition",
+        "reviewedSubject",
+        "accountableOwnerUid",
+        "revisionAuthorUid",
+        "reviewerUid",
+        "blockers",
+        "lockoutUids",
+        "eligibleRevisionAuthorUids",
+        "escalation",
+        "replayDisposition",
+        "gateResult"
+      ],
+      "properties": {
+        "transition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["priorState", "currentState"],
+          "properties": {
+            "priorState": {
+              "enum": [
+                "draft",
+                "submitted",
+                "under-review",
+                "rejected",
+                "reassignment-required",
+                "revising",
+                "approved",
+                "completed",
+                "escalated",
+                "dispositioned"
+              ]
+            },
+            "currentState": {
+              "enum": [
+                "draft",
+                "submitted",
+                "under-review",
+                "rejected",
+                "reassignment-required",
+                "revising",
+                "approved",
+                "completed",
+                "escalated",
+                "dispositioned"
+              ]
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "priorState": { "const": "draft" },
+                "currentState": { "const": "submitted" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "submitted" },
+                "currentState": { "const": "under-review" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "under-review" },
+                "currentState": { "enum": ["approved", "rejected"] }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "rejected" },
+                "currentState": {
+                  "enum": ["reassignment-required", "escalated"]
+                }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "reassignment-required" },
+                "currentState": { "enum": ["revising", "escalated"] }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "revising" },
+                "currentState": { "const": "submitted" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "approved" },
+                "currentState": { "const": "completed" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "escalated" },
+                "currentState": { "const": "dispositioned" }
+              }
+            }
+          ]
+        },
+        "reviewedSubject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["uid", "revision"],
+          "properties": {
+            "uid": { "$ref": "#/$defs/uid" },
+            "revision": { "$ref": "#/$defs/revision" }
+          }
+        },
+        "accountableOwnerUid": { "$ref": "#/$defs/uid" },
+        "revisionAuthorUid": { "$ref": "#/$defs/uid" },
+        "reviewerUid": { "$ref": "#/$defs/uid" },
+        "blockers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/blocker" }
+        },
+        "lockoutUids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uid" },
+          "uniqueItems": true
+        },
+        "eligibleRevisionAuthorUids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/uid" },
+          "uniqueItems": true
+        },
+        "escalation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "deadlocked"],
+          "properties": {
+            "status": { "enum": ["not-required", "required", "resolved"] },
+            "deadlocked": { "type": "boolean" },
+            "authorityUid": {
+              "anyOf": [
+                { "$ref": "#/$defs/uid" },
+                { "type": "null" }
+              ]
+            },
+            "reason": {
+              "anyOf": [
+                { "type": "string", "minLength": 1 },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "replayDisposition": { "enum": ["original", "duplicate-same-result"] },
+        "gateResult": { "enum": ["accepted", "rejected", "conflict", "escalated"] }
+      }
+    }
   }
 }

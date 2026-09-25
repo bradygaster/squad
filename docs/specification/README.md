@@ -6,91 +6,151 @@
 
 **Draft date:** 2026-09-25
 
-**Working-draft provenance:** [PR #2074](https://github.com/bradygaster/squad/pull/2074),
-whose revision lineage starts at immutable review baseline
-[`ab80da18087b7d37755db2c3cc5880d194a10f52`](https://github.com/bradygaster/squad/commit/ab80da18087b7d37755db2c3cc5880d194a10f52).
-Each subsequent draft snapshot is identified by its immutable Git commit in
-that pull request; no publication tag has been assigned.
+**Working-draft provenance:** [PR #2078](https://github.com/bradygaster/squad/pull/2078)
+contains this suite revision. Its rejected review baseline is
+[`c03ba950fde071c8ec58a64504fdb7b5cf1206ef`](https://github.com/bradygaster/squad/commit/c03ba950fde071c8ec58a64504fdb7b5cf1206ef).
+Revision cycle 2 is authored by `agent-orchestration-dev`; the original
+Architect author and rejecting reviewers are excluded from implementation by
+the governance lockout.
 
-**Document class:** Informative index; linked core/profile documents identify
-their normative sections
+The source index keeps `publication.revision` and `publication.digest` null
+while it is a working draft. After review, the exact head SHA is recorded in
+the PR body and review report. A publication pipeline may copy the source index
+into a release artifact, set `publication.status` to `published`, insert that
+already-existing reviewed head SHA, and compute the release artifact digest.
+The derived release index is attached to the tag or release; it is not committed
+back onto the same commit. This records an immutable revision in the suite
+index without a self-referential hash that would invalidate the commit.
+
+**Document class:** Informative registry and navigation index
+
 **Foundation profile:** [Squad Charter Profile v0.1](charter-v0.1.md)
 
-This directory defines portable contracts for the on-disk artifacts that make
-up a Squad. The specification is independent of the TypeScript reference
-implementation. A producer or consumer can implement one artifact profile
-without claiming that an entire Squad is conformant.
+This directory maps all major stable or observable Squad surfaces. It
+distinguishes the one executable normative profile from experimental schemas,
+non-claimable requirements drafts, and informative coverage.
 
-## Documents
+## Maturity taxonomy
 
-- [Core v0.1](core-v0.1.md) defines shared terminology, conformance classes,
-  versions, paths, extensions, and trust requirements.
-- [Interoperability Conventions v0.1](interoperability-conventions-v0.1.md)
-  defines suite discovery, stable authority identities, negotiation, shared
-  evidence, replay protection, and privacy/secrets exclusion.
-- [Charter Profile v0.1](charter-v0.1.md) defines the first normative artifact
-  profile for `.squad/agents/{id}/charter.md`.
-- [Team and Routing Profile v0.1](team-routing-v0.1.md) defines accountable
-  roster entries, capability ownership, and deterministic route selection.
-- [Configuration and Casting Profile v0.1](configuration-casting-v0.1.md)
-  defines configuration precedence, cast provenance, and revision joins.
-- [Governance and Review Profile v0.1](governance-review-v0.1.md) defines
-  reviewer independence, rejection lockout, reassignment, escalation, and
-  approval evidence.
-- [Execution Preferences Profile v0.1](execution-preferences-v0.1.md) separates
-  portable execution intent from provider catalogs and runtime policy.
-- [Planning and Activation Profile v0.1](planning-activation-v0.1.md) defines
-  PRD intake, decomposition, acceptance, and activation evidence.
-- [Ceremony Profile v0.1](ceremony-v0.1.md) defines observable ceremony
-  declarations and completion records without standardizing meeting culture.
-- [Work Lifecycle Profile v0.1](work-lifecycle-v0.1.md) defines the
-  provider-neutral issue-to-change lifecycle.
-- [GitHub Work Lifecycle Binding v0.1](github-work-lifecycle-binding-v0.1.md)
-  maps the neutral lifecycle to GitHub issues, labels, branches, pull requests,
-  checks, reviews, merges, and closure.
-- [Coordination and Handoff Profile v0.1](coordination-handoff-v0.1.md) defines
-  portable handoff envelopes and idempotent delivery semantics.
-- [Automation Profile v0.1](automation-v0.1.md) defines schedule manifests,
-  execution claims, retry evidence, and provider boundaries.
-- [State and Memory Requirements v0.1](state-memory-requirements-v0.1.md) is an
-  informative requirements draft with explicit promotion criteria.
-- [Artifact inventory and coverage matrix](artifact-inventory.md) traces the
-  repository surface to its specification disposition and maturity.
-- [`test-fixtures/spec/charter-v0.1/`](../../test-fixtures/spec/charter-v0.1/)
-  contains language-neutral positive, negative, legacy, and round-trip
-  fixtures. Its [`manifest.schema.json`](../../test-fixtures/spec/charter-v0.1/manifest.schema.json)
-  defines the portable manifest field contract.
-- [`test-fixtures/spec/suite-v0.1/`](../../test-fixtures/spec/suite-v0.1/)
-  contains the `squad-conformance/v0.1` suite index, reusable evidence schema,
-  and language-neutral governance evidence example. The index registers the
-  existing Charter v0.1 manifest unchanged as a legacy dialect.
+The suite uses exactly four maturity values:
 
-## Dependency layers
+| Maturity | Meaning | Claimable |
+|---|---|---|
+| `published-normative` | Executable manifest and schema with reviewed cases | Yes, only identifiers declared by that manifest |
+| `experimental-schema` | Machine-valid schema or fixture, but no complete conformance manifest | No |
+| `requirements-draft` | Conceptual and behavioral requirements awaiting portable fixtures | No |
+| `informative-draft` | Coverage, observations, or volatile requirements | No |
 
-1. `squad-core/v0.1` defines common conformance, diagnostics, versioning,
-   extension, and trust rules.
-2. `squad-interop/v0.1` defines discovery, negotiation, authority identity,
-   shared evidence, concurrency, replay protection, and secrets exclusion.
-3. Artifact profiles define portable files and evidence independent of any
-   hosted provider.
-4. Protocol profiles define state transitions and messages spanning artifacts.
-5. Provider bindings map neutral protocol concepts to provider resources.
-6. Informative requirements documents preserve conceptual coverage where
-   interoperability evidence is not mature enough for a truthful schema.
+The document-class vocabulary is `normative-profile`, `normative-schema`,
+`requirements`, and `informative`. The only conformance-class vocabulary is
+`canonical`, `compatible`, `legacy`, and `runtime`. Implementation roles
+(`producer`, `consumer`, `editor`, `validator`, and `executor`) describe what
+software does; they are not claims.
 
-Conformance is capability-specific. Supporting a GitHub binding does not imply
-support for every artifact profile, and accepting one profile operation does
-not imply editor, validator, executor, or provider capability.
+Capability identifiers use one grammar:
+`squad-<profile>/v<major>.<minor>/<operation>`. The suite defines no `#operation`
+alias. A registry entry without an executable manifest has no claimable
+capabilities or conformance classes.
 
-Normative references are maintained in
-[Core v0.1 §2](core-v0.1.md#2-normative-references), including BCP 14,
-RFC 3339, and CommonMark 0.31.2.
+## Document registry
+
+`Schema/manifest` uses `schema`, `manifest`, `fixture`, or `none`. Known
+deviations are summarized here and expanded in the
+[coverage matrix](artifact-inventory.md#known-unstable-and-non-conforming-behavior).
+
+| ID | Maturity / class | Dependencies | Claimable capabilities | Schema/manifest | Implementation status | Known deviations | Reader entry path |
+|---|---|---|---|---|---|---|---|
+| `squad-core/v0.1` | `requirements-draft` / requirements | None | None | None | Terminology is used by Charter | Canonical JSON and publication rules incomplete | [Core](core-v0.1.md), then Charter |
+| `squad-interop/v0.1` | `experimental-schema` / normative schema | Core | None | Shared evidence schema; no manifest | Evidence validation is executable | No discovery or replay corpus | [Interoperability](interoperability-conventions-v0.1.md) |
+| `squad-charter/v0.1` | `published-normative` / normative profile | Core | `squad-charter/v0.1/parse`, `squad-charter/v0.1/validate`, `squad-charter/v0.1/edit`, `squad-charter/v0.1/legacy-consume`, `squad-charter/v0.1/runtime` | Manifest and schema | Parser, validator, editor, compiler, and cases implemented | None registered | [Charter](charter-v0.1.md) |
+| `squad-team-routing/v0.1` | `requirements-draft` / requirements | Core, Interop, Charter | None | None | Roster and routing exist in multiple shapes | Fallback and ambiguity differ | [Roster, then routing](team-routing-v0.1.md) |
+| `squad-configuration-casting/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Configuration, registry, and history implemented | Legacy shapes and runtime-only keys | [Configuration, casting, provenance](configuration-casting-v0.1.md) |
+| `squad-governance-review/v0.1` | `experimental-schema` / normative schema | Core, Interop, Team/Routing | None | Evidence schema plus rejection fixture; no manifest | Rejection records are machine-valid | Baseline owner self-revision conflict | [Evidence contract, then transitions](governance-review-v0.1.md) |
+| `squad-execution-preferences/v0.1` | `requirements-draft` / requirements | Core, Interop, Charter, Configuration/Casting | None | None | Runtime selection exists | Provider catalogs and fallback are policy | [Execution preferences](execution-preferences-v0.1.md) |
+| `squad-planning-activation/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing, Work Lifecycle | None | None | gh-aw planning records exist | Safe-output and limits are provider-specific | [Planning and activation](planning-activation-v0.1.md) |
+| `squad-ceremony/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Builder preserves triggers and schedules | Event names, `auto`, and cooldown are unstable | [Ceremonies](ceremony-v0.1.md) |
+| `squad-work-lifecycle/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing, Governance | None | None | Neutral state design only | No shared transition traces | [Neutral lifecycle](work-lifecycle-v0.1.md) |
+| `squad-work-github/v0.1` | `requirements-draft` / requirements binding | Interop, Work Lifecycle, Governance | None | None | GitHub adapters exist | No deterministic provider transcripts | [GitHub binding](github-work-lifecycle-binding-v0.1.md) |
+| `squad-coordination-handoff/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Session and handoff implementations exist | Ordering and recovery are provider-specific | [Coordination](coordination-handoff-v0.1.md) |
+| `squad-automation/v0.1` | `requirements-draft` / requirements | Core, Interop, Coordination | None | None | Local and GitHub schedulers exist | Time, retry, and drift evidence differ | [Automation](automation-v0.1.md) |
+| `squad-state-memory-requirements/v0.1` | `informative-draft` / informative | Core, Interop | None | None | Several state and memory providers exist | No common authority, recovery, or privacy corpus | [State authority, then memory classification](state-memory-requirements-v0.1.md) |
+| `squad-portable-bundle/v1.0` | `informative-draft` / observed implementation surface | Core and Interop rules apply conceptually | None | Tested JSON shape; no published schema or manifest | `squad export` and `squad import` round-trip team, routing, decisions, casting, agents, and skills | Bundle `1.0` does not use Core profile grammar; histories, decisions, skills, and casting policy can contain sensitive data | [Coverage and promotion requirements](artifact-inventory.md#portable-export-and-import-bundle) |
+
+The machine-readable registry is
+[`test-fixtures/spec/suite-v0.1/index.json`](../../test-fixtures/spec/suite-v0.1/index.json).
+The governance JSON is registered as a fixture, not a conformance manifest.
+Charter v0.1's manifest, schema, case IDs, and capability identifiers remain
+unchanged.
+
+## Textual dependency adjacency and DAG
+
+Adjacency list:
+
+```text
+squad-core/v0.1 -> []
+squad-interop/v0.1 -> [squad-core/v0.1]
+squad-charter/v0.1 -> [squad-core/v0.1]
+squad-team-routing/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-charter/v0.1]
+squad-configuration-casting/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-team-routing/v0.1]
+squad-governance-review/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-team-routing/v0.1]
+squad-execution-preferences/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-charter/v0.1, squad-configuration-casting/v0.1]
+squad-work-lifecycle/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-team-routing/v0.1, squad-governance-review/v0.1]
+squad-work-github/v0.1 -> [squad-interop/v0.1, squad-work-lifecycle/v0.1, squad-governance-review/v0.1]
+squad-planning-activation/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-team-routing/v0.1, squad-work-lifecycle/v0.1]
+squad-ceremony/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-team-routing/v0.1]
+squad-coordination-handoff/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-team-routing/v0.1]
+squad-automation/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-coordination-handoff/v0.1]
+squad-state-memory-requirements/v0.1 -> [squad-core/v0.1, squad-interop/v0.1]
+squad-portable-bundle/v1.0 -> [conceptual Core and Interop constraints; no profile claim]
+```
+
+DAG reading order:
+
+```text
+Core
+├── Charter (only claimable profile)
+├── Interop shared schema
+│   ├── Team/Routing
+│   │   ├── Configuration/Casting
+│   │   │   └── Execution Preferences
+│   │   ├── Governance
+│   │   │   └── Work Lifecycle
+│   │   │       ├── GitHub Binding
+│   │   │       └── Planning/Activation
+│   │   ├── Ceremony
+│   │   └── Coordination
+│   │       └── Automation
+│   └── State/Memory Requirements
+└── Portable Bundle observation (applies Core/Interop constraints without a claim)
+```
+
+There is no dependency cycle. Provider-neutral requirements precede the GitHub
+binding. State authority and memory classification remain separate promotion
+tracks.
+
+## External reference policy
+
+Material external assumptions use stable, versioned, section-level links and
+are labeled normative or informative in the document that imports them. Core
+[§2](core-v0.1.md#2-normative-references) imports BCP 14, RFC 3339, and
+CommonMark 0.31.2. Interoperability
+[§10](interoperability-conventions-v0.1.md#10-versioned-references-and-precedents)
+and the GitHub binding
+[§8](github-work-lifecycle-binding-v0.1.md#8-versioned-provider-assumptions-and-references)
+identify their narrower assumptions. An informative precedent does not become
+a suite requirement merely by being cited.
+
+The existing `test/docs-links.test.ts` command scans `docs/src/content/**` and
+the root README, not `docs/specification/**`; there is no existing supported
+link-check command for this directory. The suite test verifies every indexed
+specification, schema, manifest, and fixture path exists. External URL
+availability and section anchors remain review-time checks until the repository
+link checker expands its supported scope.
 
 ## Versioning policy
 
-The core and each artifact profile are versioned independently. Draft `0.x`
-documents may change before publication, and unsupported versions fail closed.
-After publication, a revision is immutable: editorial corrections are recorded
-as dated errata, while normative changes require a new `vMAJOR.MINOR`
-identifier. Patch components are not used. See
-[Core v0.1 §10](core-v0.1.md#10-publication-errata-and-versioning).
+Profile identifiers use `vMAJOR.MINOR`; mutable state revisions, provider API
+versions, implementation versions, and the observed portable-bundle `1.0`
+version are distinct. Draft documents may change before promotion. Published
+normative revisions are immutable except for dated errata; behavior changes
+require a new profile version.

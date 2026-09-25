@@ -2,11 +2,19 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative unless marked informative
+**Document class:** Non-normative requirements draft
 
 **Profile identifier:** `squad-automation/v0.1`
 
-**Maturity:** Experimental normative
+**Maturity:** Requirements draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** Local and GitHub scheduling implementations exist,
+but there is no portable execution manifest.
+
+**Known deviations:** Time-zone behavior, retry evidence, generated-provider
+drift, and result records differ by provider.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`,
 `squad-coordination-handoff/v0.1`
@@ -28,7 +36,7 @@ concurrency key. Trigger types are `cron`, `interval`, `event`, and `startup`.
 Task classes are `workflow`, `script`, `agent`, and `webhook`; bindings map
 class names to implementation operations.
 
-Task references are inert data. Consumers MUST NOT execute a task until
+Task references are inert data. Consumers must not execute a task until
 authorization and provider policy checks succeed.
 
 ## 3. Execution states
@@ -41,13 +49,13 @@ Run and attempt records use the shared evidence envelope.
 
 ## 4. Trigger and time semantics
 
-Cron bindings MUST declare time zone and daylight-saving behavior. Interval
+Cron bindings must declare time zone and daylight-saving behavior. Interval
 triggers use elapsed duration, not calendar arithmetic. Event triggers require
 a stable event ID. Startup triggers are idempotent per executor startup ID.
 
-## 5. Capabilities and roles
+## 5. Candidate operations and roles
 
-Capabilities are `automation.consume`, `automation.evaluate`,
+Candidate operations are `automation.consume`, `automation.evaluate`,
 `automation.claim`, `automation.execute`, and `automation.generate-provider`.
 Evaluators decide eligibility; executors claim and run; generators emit
 provider-native configuration but do not become manifest authority.
@@ -57,7 +65,7 @@ provider-native configuration but do not become manifest authority.
 Invalid triggers, unknown providers, denied tasks, claim conflict, timeout,
 spawn failure, nonzero result, generation drift, and exhausted retries are
 distinct failures. Claims use compare-and-swap. A run key deduplicates retries
-and multi-provider delivery. Provider generation MUST be reproducible from the
+and multi-provider delivery. Provider generation must be reproducible from the
 same manifest and generator version.
 
 ## 7. Versioning and extensions
@@ -69,12 +77,12 @@ closed.
 ## 8. Security and privacy
 
 Script and webhook execution cross a trust boundary and require explicit
-authorization. Arguments MUST remain vectors rather than shell-concatenated
-strings. Logs and results MUST redact secrets and SHOULD store large output by
+authorization. Arguments must remain vectors rather than shell-concatenated
+strings. Logs and results must redact secrets and should store large output by
 reference.
 
-## 9. Conformance
+## 9. Promotion criteria
 
-Tests MUST cover every trigger, time zone declaration, duplicate event,
-startup deduplication, claim race, retry and backoff, timeout, provider
+Publish a manifest covering every trigger, time-zone declaration, duplicate
+event, startup deduplication, claim race, retry and backoff, timeout, provider
 generation drift, denied execution, and secret-safe diagnostics.

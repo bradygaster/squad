@@ -29,7 +29,7 @@
     "lint": "tsc --noEmit -p packages/squad-sdk/tsconfig.json && tsc --noEmit -p packages/squad-cli/tsconfig.json",
     "fix:crlf": "node scripts/fix-crlf-worktree.mjs",
     "lint:eslint": "eslint packages/ test/",
-    "lint:docs": "markdownlint-cli2 && cspell --no-progress --dot \"docs/src/content/**/*.md\" \"README.md\"",
+    "lint:docs": "markdownlint-cli2 \"docs/src/content/**/*.md\" \"docs/specification/**/*.md\" \"README.md\" && cspell --no-progress --dot \"docs/src/content/**/*.md\" \"docs/specification/**/*.md\" \"README.md\"",
     "dev:link": "npm run build && cd packages/squad-sdk && npm link && cd ../squad-cli && npm link",
     "dev:unlink": "cd packages/squad-cli && npm unlink && cd ../squad-sdk && npm unlink",
     "docs:api": "node scripts/generate-api-docs.mjs",

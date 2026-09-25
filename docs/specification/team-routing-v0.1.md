@@ -2,11 +2,21 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative unless marked informative
+**Document class:** Non-normative requirements draft
 
 **Profile identifier:** `squad-team-routing/v0.1`
 
-**Maturity:** Stable normative
+**Maturity:** Requirements draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** Roster and routing files are implemented, but no
+portable manifest covers their distinct parsing, mutation, join, and resolution
+contracts.
+
+**Known deviations:** Existing routing files do not share one fallback,
+priority, or ambiguity representation. See
+[Artifact Inventory: Known unstable behavior](artifact-inventory.md#known-unstable-and-non-conforming-behavior).
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`,
 `squad-charter/v0.1`
@@ -14,8 +24,6 @@
 **Artifacts:** `team.md`, `routing.md`
 
 **Feedback:** Issue #2069
-
-BCP 14 requirement keywords apply only when written in all capitals.
 
 ## 1. Scope and non-goals
 
@@ -35,69 +43,75 @@ coordinator executes route decisions.
 Authority uses the immutable actor UID from Interoperability Conventions, not a
 member ID, display name, role, or casting persona.
 
-## 3. Canonical artifacts
+## 3. Roster requirements
 
-`team.md` MUST contain a `Members` table with `ID`, `Role`, `Charter`, and
-`Status` semantics. Compatible headings and columns MAY vary, but validators
-MUST expose their mapping. Every active member MUST reference exactly one
+`team.md` must contain a `Members` table with `ID`, `Role`, `Charter`, and
+`Status` semantics. Compatible headings and columns may vary, but validators
+must expose their mapping. Every active member must reference exactly one
 existing charter whose identity matches the member ID.
 
-`routing.md` MUST contain a `Routing Table` with `Work Type`, `Route To`, and
-optional `Examples`. `Route To` MUST name exactly one active member. Support
-identities and coding agents MAY appear in the roster but MUST NOT be routing
+Roster promotion is independent of route-resolution promotion.
+
+## 4. Routing requirements
+
+`routing.md` must contain a `Routing Table` with `Work Type`, `Route To`, and
+optional `Examples`. `Route To` must name exactly one active member. Support
+identities and coding agents may appear in the roster but must not be routing
 destinations unless the team manifest explicitly grants accountable ownership.
 
-The suite index declares artifact-only conformance until a profile-specific
-manifest supplies document, mutation, and route-resolution cases.
+The suite index advertises no capability for this draft.
 
-## 4. Deterministic routing
+## 5. Deterministic routing
 
 1. An explicit, authorized member assignment wins.
 2. Otherwise the highest-priority matching route wins.
-3. Equal-priority matches are an ambiguity failure; consumers MUST NOT select
+3. Equal-priority matches are an ambiguity failure; consumers must not select
    by file order unless the profile extension declares that policy.
 4. No match uses the declared fallback member.
 5. No fallback produces `route-unresolved` and requires coordinator or human
    disposition.
 
-Classifiers MAY use different algorithms, but route evidence MUST identify the
+Classifiers may use different algorithms, but route evidence must identify the
 selected rule, input revision, confidence, and fallback use. Generated regexes,
 embeddings, prompts, and ranking algorithms are non-normative.
 
-## 5. Capabilities and behavior classes
+## 6. Candidate operations and implementation roles
 
-Capabilities are `team.produce`, `team.consume`, `team.edit`, `team.validate`,
-`routing.resolve`, and `routing.explain`. Canonical producers emit one active
-member row per ID and one primary owner per work type. Compatible consumers MAY
+Candidate operations are `team.produce`, `team.consume`, `team.edit`,
+`team.validate`, `routing.resolve`, and `routing.explain`. These operation names
+are design vocabulary, not claimable capability identifiers. Canonical producers emit one active
+member row per ID and one primary owner per work type. Compatible consumers may
 accept legacy display-name destinations if they resolve unambiguously.
 
-## 6. Diagnostics and failures
+## 7. Diagnostics and failures
 
-Validators MUST report stable diagnostics for duplicate IDs, missing charters,
+Validators must report stable diagnostics for duplicate IDs, missing charters,
 identity mismatch, unknown destinations, inactive destinations, duplicate work
-types, ambiguous priorities, and absent fallback. Invalid topology MUST fail
+types, ambiguous priorities, and absent fallback. Invalid topology must fail
 closed for execution while remaining available for diagnostic display.
 
-## 7. Idempotency, retry, and concurrency
+## 8. Idempotency, retry, and concurrency
 
-Applying the same roster or route revision is idempotent. Editors MUST use a
-revision or content digest for concurrent updates and MUST reject stale writes.
-Resolution is read-only and MAY retry after reloading a newer revision.
+Applying the same roster or route revision is idempotent. Editors must use a
+revision or content digest for concurrent updates and must reject stale writes.
+Resolution is read-only and may retry after reloading a newer revision.
 
-## 8. Versioning, extensions, and discovery
+## 9. Versioning, extensions, and discovery
 
 Profile selection is explicit. `X-` Markdown sections and namespaced topology
-properties are extensions and MUST round-trip unchanged. Consumers MUST fail
+properties are extensions and must round-trip unchanged. Consumers must fail
 closed on unsupported profile versions and unknown mandatory capabilities.
 
-## 9. Security, privacy, and authority
+## 10. Security, privacy, and authority
 
 Roster membership and routing do not grant provider authorization, repository
 write access, tools, secrets, or model entitlement. Artifact text is untrusted.
-Producers SHOULD avoid personal data in roles and examples.
+Producers should avoid personal data in roles and examples.
 
-## 10. Conformance
+## 11. Promotion criteria
 
-Conformance requires schema-valid topology fixtures, charter joins, ambiguity
-fixtures, stale-revision tests, and deterministic route evidence. A resolver
-MUST publish the exact capabilities it implements.
+Roster promotion requires schema-valid document and mutation cases, charter
+joins, extension round trips, and stable diagnostics. Routing promotion
+separately requires ambiguity, priority, fallback, stale-revision, and
+deterministic route-evidence cases. Only a future manifest may introduce
+claimable capability identifiers.

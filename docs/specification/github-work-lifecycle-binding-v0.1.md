@@ -2,11 +2,20 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative unless marked informative
+**Document class:** Non-normative requirements draft
 
 **Binding identifier:** `squad-work-github/v0.1`
 
-**Maturity:** Experimental normative provider binding
+**Maturity:** Requirements draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** GitHub adapters exist, but the repository has no
+versioned sanitized transcript corpus for deterministic provider mapping.
+
+**Known deviations:** API-version evidence, composite state, CAS tokens,
+multi-label handling, partial failure, and drift records are not emitted
+uniformly.
 
 **Depends on:** `squad-interop/v0.1`, `squad-work-lifecycle/v0.1`,
 `squad-governance-review/v0.1`
@@ -32,60 +41,112 @@ REST versus CLI transport, repository merge policy, or organization rulesets.
 
 ## 3. Labels and references
 
-The binding reserves `squad` and `squad:{member-id}`. Implementations MUST
+The binding reserves `squad` and `squad:{member-id}`. Implementations must
 ensure required labels exist before relying on them. Issue, pull request,
-commit, branch, and check references MUST include repository identity.
+commit, branch, and check references must include repository identity.
 
-Temporary safe-output references MAY be used during one transaction but MUST
+Temporary safe-output references may be used during one transaction but must
 resolve before the operation is considered successful.
 
-## 4. State mapping
+## 4. State mapping precedence and composition
 
-Open without accountable label is `untriaged`; labeled without workspace is
-`assigned`; claimed branch is `in-progress`; open pull request is
-`needs-review`; `CHANGES_REQUESTED` is `changes-requested`; failing required
-checks is `checks-failed`; current-revision approval plus passing required
-checks is `ready`; merged is `integrated`; issue closure after merge is `done`.
+Bindings evaluate one provider snapshot and retain every observed condition,
+then select one portable state by this precedence:
 
-Draft pull requests remain `in-progress` unless an extension declares them
-reviewable. A closed unmerged pull request is not integrated.
+1. merged change -> `integrated`, or `done` when the linked issue has an
+   explicit post-merge closure disposition;
+2. authorized cancellation or closed unmerged change -> `cancelled`;
+3. active dependency, authority, merge-conflict, or provider blocker ->
+   `blocked`;
+4. current-revision blocking review -> `changes-requested`;
+5. failed or cancelled required check -> `checks-failed`;
+6. current-revision independent approval plus passing required checks ->
+   `ready`;
+7. non-draft open pull request -> `needs-review`;
+8. draft pull request or claimed workspace -> `in-progress`;
+9. exactly one accountable owner label -> `assigned`;
+10. otherwise -> `untriaged`.
+
+Thus an open pull request with changes requested, failing checks, and a
+dependency blocker maps to `blocked`, while the review and check conditions
+remain in evidence for deterministic recovery. Clearing the blocker recomputes
+the snapshot and yields `changes-requested` before `checks-failed`.
+
+Multiple distinct `squad:{member-id}` labels are an ownership conflict, not
+first-label-wins behavior. Duplicate copies of the same label collapse to one
+condition. Draft pull requests remain `in-progress`. A closed unmerged pull
+request is `cancelled`, never `integrated`.
 
 ## 5. Review and merge authority
 
 GitHub review state alone does not prove reviewer independence or lockout; the
 governance evidence record supplies that proof. Branch protection, rulesets,
-actor permissions, and merge queue policy remain GitHub authority and MUST be
+actor permissions, and merge queue policy remain GitHub authority and must be
 checked at execution time.
 
-## 6. Idempotency and concurrency
+## 6. Revision tokens, idempotency, and stale writes
 
-Mutation keys SHOULD be stored in issue or pull request evidence. Creation
-retries MUST search exact recorded mappings before creating another resource.
-Updates use current issue or pull request revision evidence when available.
-Merge retries MUST recognize an already merged pull request as the original
-successful result.
+The portable observation token is the digest of a canonical provider snapshot
+containing repository node ID, issue node ID and `updated_at`, pull-request node
+ID and `updated_at`, head SHA, base SHA, review-decision snapshot, required-check
+snapshot, owner-label set, dependency-blocker set, and ruleset observation.
+Transport ETags may optimize reads but do not replace this token.
 
-## 7. Failure semantics
+Every mutation supplies the expected snapshot digest and an idempotency key.
+Immediately before mutation, the binding re-reads all fields used by the
+operation. A digest mismatch returns `conflict` with the fresh snapshot and no
+further mutation. A stale head SHA specifically returns `stale-revision`.
+Creation retries search the exact recorded mapping before creating a resource.
+Merge retries recognize an already merged pull request as the original result.
+The same idempotency key with a different request digest is invalid.
+
+## 7. Rate limits, partial failure, and provider drift
 
 Missing labels, inaccessible repositories, rate limits, secondary limits,
 ruleset denial, stale head SHA, merge conflicts, unresolved temporary
 references, partial issue creation, and webhook reordering are distinct
-failures. A binding MUST NOT silently treat label creation or authentication
+failures. A binding does not silently treat label creation or authentication
 failure as success.
 
-## 8. Versioning, extensions, security, and privacy
+Rate-limit evidence records the limit class, observed status and headers,
+provider request ID, retry-after or reset time, and whether any mutation
+occurred. Automatic retry is allowed only for an idempotent operation within
+the declared retry budget. Secondary-limit responses without a safe retry time
+remain blocked.
+
+A multi-step operation records each attempted provider mutation and its result.
+If a later step fails, the result is `partial-failure` with completed
+references, uncompensated effects, and an exact resume boundary. It is never
+reported as success. Compensation is a new authorized operation.
+
+Unknown enum values, removed fields, changed ruleset behavior, or a snapshot
+that cannot be represented produce `provider-drift`. Read-only diagnostic
+display may continue, but mutations fail closed until the binding's supported
+provider range is revalidated.
+
+## 8. Versioned provider assumptions and references
 
 This draft assumes GitHub REST API version `2022-11-28`, GraphQL schema behavior
 observed on 2026-09-25, and `gh` operations that map to those APIs. A conforming
-binding MUST publish its exact supported API versions and observation date.
+binding must publish its exact supported API versions and observation date.
 An unavailable version returns `unsupported-provider-version`; a changed field,
 enum, mutation, or ruleset behavior returns `provider-drift` and fails closed
 for mutation until revalidated.
 
 GitHub API versions and this binding version are independent. Namespaced labels
 and evidence fields round-trip. Issue bodies and comments are untrusted input.
-Tokens, authorization scopes, private check logs, and secret values MUST NOT be
+Tokens, authorization scopes, private check logs, and secret values must not be
 copied into portable records.
+
+Normative provider assumptions for a future binding are the version-header
+contract in
+[GitHub REST API versioning, "Specifying an API version"](https://docs.github.com/en/rest/about-the-rest-api/api-versions?apiVersion=2022-11-28#specifying-an-api-version)
+and the documented pull-request review states in
+[REST Pull Request Reviews, "Create a review"](https://docs.github.com/en/rest/pulls/reviews?apiVersion=2022-11-28#create-a-review-for-a-pull-request).
+The webhook retry and ordering discussion in
+[GitHub Webhooks, "Best practices for using webhooks"](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks)
+is informative because delivery policy is not itself a portable state
+transition.
 
 ## 9. Language-neutral example
 
@@ -93,14 +154,18 @@ copied into portable records.
 {
   "profile": "squad-work-github/v0.1",
   "workItem": "github:bradygaster/squad#2069",
-  "change": "github:bradygaster/squad!2074",
-  "head": "71634fde",
+  "change": "github:bradygaster/squad!2078",
+  "head": "c03ba950",
   "state": "needs-review"
 }
 ```
 
-## 10. Conformance
+## 10. Promotion criteria
 
-Binding tests MUST cover label provisioning, assignment, draft and ready pull
-requests, stale-head review, check failure, changes requested, lockout evidence,
-merge conflict, already-merged retry, closure, and reordered webhook events.
+Publish a provider-binding manifest with deterministic sanitized transcripts
+for label provisioning, zero/one/multiple owner labels, draft and ready pull
+requests, simultaneous blocker/review/check conditions, exact snapshot tokens,
+stale writes, check recovery, lockout evidence, merge conflict, already-merged
+retry, closure, primary and secondary rate limits, partial failure, drift, and
+reordered webhook events. Transcript fixtures must omit credentials, private
+logs, authorization headers, and personal data.

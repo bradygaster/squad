@@ -2,11 +2,20 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative unless marked informative
+**Document class:** Non-normative requirements draft
 
 **Profile identifier:** `squad-ceremony/v0.1`
 
-**Maturity:** Experimental normative
+**Maturity:** Requirements draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** The SDK builder preserves arbitrary trigger strings
+and schedule text. Existing tests demonstrate `manual`, `schedule`, and an
+event name (`pr-merged`); they do not prove runtime cooldown enforcement.
+
+**Known deviations:** Legacy `auto` is ambiguous, event names are not
+normalized, and cooldown currently has schedule-cadence evidence only.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`,
 `squad-team-routing/v0.1`
@@ -24,12 +33,15 @@ style, consensus, or synchronous human attendance.
 
 A ceremony declares ID, enabled state, trigger mode, timing, condition
 reference, facilitator selector, participant selectors, cooldown policy, input
-artifact kinds, and output requirements. Trigger modes are `manual`, `event`,
-and `schedule`. Natural-language conditions MAY be preserved but are
+record kinds, and output requirements. Canonical trigger modes are `manual`,
+`schedule`, and `event:<name>`. Existing bare event names such as `pr-merged`
+map to `event:pr-merged`. Legacy `auto` is accepted only as ambiguous compatible
+input and requires an implementation mapping to either a named event or a
+schedule. Natural-language conditions may be preserved but are
 noncanonical unless paired with a namespaced deterministic evaluator.
 
 Participant selectors are `accountable-owner`, `all-involved`,
-`all-relevant`, or explicit member IDs. Resolution MUST produce the exact
+`all-relevant`, or explicit member IDs. Resolution must produce the exact
 participant set used.
 
 ## 3. Execution record
@@ -44,13 +56,13 @@ owners, and dispositions.
 `eligible -> claimed -> running -> completed|failed|cancelled`
 
 Cooldown begins at terminal completion. A run during cooldown is `suppressed`
-with evidence and MUST NOT create a second active claim. Failure policy is
+with evidence and must not create a second active claim. Failure policy is
 `blocking` or `advisory`; advisory failure may permit the surrounding workflow
-to continue but MUST remain visible.
+to continue but must remain visible.
 
-## 5. Capabilities and roles
+## 5. Candidate operations and roles
 
-Capabilities are `ceremony.consume`, `ceremony.evaluate`,
+Candidate operations are `ceremony.consume`, `ceremony.evaluate`,
 `ceremony.facilitate`, and `ceremony.record`. The facilitator structures the
 run; participants provide inputs; the recorder persists outcomes; the
 coordinator enforces claim and cooldown.
@@ -58,8 +70,8 @@ coordinator enforces claim and cooldown.
 ## 6. Canonical and compatible behavior
 
 Canonical declarations use deterministic trigger references and participant
-selectors. Compatible consumers MAY ingest current Markdown tables and free
-text conditions but MUST classify evaluator-dependent behavior as informative.
+selectors. Compatible consumers may ingest current Markdown tables and free
+text conditions but must classify evaluator-dependent behavior as informative.
 
 ## 7. Diagnostics, idempotency, and concurrency
 
@@ -71,11 +83,12 @@ Claims require compare-and-swap so only one executor runs a ceremony instance.
 ## 8. Versioning, extensions, security, and privacy
 
 Agenda and output extensions use namespaces and round-trip. Ceremony prose is
-untrusted and cannot grant tools or authorization. Records SHOULD minimize
-personal attendance data and MUST NOT copy secrets from source artifacts.
+untrusted and cannot grant tools or authorization. Records should minimize
+personal attendance data and must not copy secrets from source records.
 
-## 9. Conformance
+## 9. Promotion criteria
 
-Tests MUST cover manual, event, and schedule triggers; selector resolution;
-cooldown suppression; advisory and blocking failures; duplicate claims; stale
-inputs; and decision/action output validation.
+Publish a manifest covering normalized manual, named-event, schedule, and
+legacy-`auto` inputs; selector resolution; injected-clock cooldown suppression;
+advisory and blocking failures; duplicate claims; stale inputs; and
+decision/action output validation.

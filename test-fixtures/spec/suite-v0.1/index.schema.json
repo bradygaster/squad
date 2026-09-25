@@ -68,7 +68,7 @@
     },
     "capability": {
       "type": "string",
-      "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)#[a-z0-9.-]+$"
+      "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)/[a-z0-9-]+$"
     },
     "dialect": {
       "type": "object",
@@ -85,18 +85,38 @@
       "required": [
         "id",
         "maturity",
+        "documentClass",
         "spec",
         "dialect",
         "dependencies",
-        "classes",
+        "conformanceClasses",
+        "implementationRoles",
         "capabilities",
         "manifest",
-        "manifestSchema"
+        "manifestSchema",
+        "fixtures",
+        "implementationStatus",
+        "knownDeviations",
+        "promotionCriteria",
+        "entryPoint"
       ],
       "properties": {
         "id": { "$ref": "#/$defs/profileId" },
         "maturity": {
-          "enum": ["stable-normative", "experimental-normative", "informative-volatile"]
+          "enum": [
+            "published-normative",
+            "experimental-schema",
+            "requirements-draft",
+            "informative-draft"
+          ]
+        },
+        "documentClass": {
+          "enum": [
+            "normative-profile",
+            "normative-schema",
+            "requirements",
+            "informative"
+          ]
         },
         "spec": { "$ref": "#/$defs/repoPath" },
         "dialect": { "type": "string", "minLength": 1 },
@@ -105,16 +125,27 @@
           "items": { "$ref": "#/$defs/profileId" },
           "uniqueItems": true
         },
-        "classes": {
+        "conformanceClasses": {
           "type": "array",
           "items": {
             "enum": [
-              "artifact-only",
-              "validator",
-              "editor",
-              "state-machine-executor",
-              "provider-binding",
+              "canonical",
+              "compatible",
+              "legacy",
               "runtime"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "implementationRoles": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "producer",
+              "consumer",
+              "editor",
+              "validator",
+              "executor"
             ]
           },
           "uniqueItems": true
@@ -135,8 +166,60 @@
             { "$ref": "#/$defs/repoPath" },
             { "type": "null" }
           ]
+        },
+        "fixtures": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repoPath" },
+          "uniqueItems": true
+        },
+        "implementationStatus": { "type": "string", "minLength": 1 },
+        "knownDeviations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "promotionCriteria": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "entryPoint": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "manifest": { "type": "null" }
+            },
+            "required": ["manifest"]
+          },
+          "then": {
+            "properties": {
+              "capabilities": { "type": "array", "maxItems": 0 },
+              "conformanceClasses": { "type": "array", "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "maturity": {
+                "enum": ["requirements-draft", "informative-draft"]
+              }
+            },
+            "required": ["maturity"]
+          },
+          "then": {
+            "properties": {
+              "documentClass": {
+                "enum": ["requirements", "informative"]
+              },
+              "capabilities": { "type": "array", "maxItems": 0 },
+              "conformanceClasses": { "type": "array", "maxItems": 0 }
+            }
+          }
         }
-      }
+      ]
     }
   }
 }
