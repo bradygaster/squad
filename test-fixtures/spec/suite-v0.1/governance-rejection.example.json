@@ -1,0 +1,66 @@
+{
+  "specversion": "squad-interop/v0.1",
+  "schema": "squad-governance-review/v0.1",
+  "id": "1416ae81-91ef-48b3-b6fa-9b810b86b012",
+  "type": "squad.governance.rejected",
+  "source": "https://example.invalid/squad/governance",
+  "subject": "urn:squad:example:review-subject:change-request-42",
+  "time": "2026-09-25T14:17:33Z",
+  "actor": {
+    "uid": "urn:squad:example:actor:reviewer"
+  },
+  "authority": {
+    "action": "review.reject",
+    "issuer": "urn:squad:example:issuer:test-suite",
+    "providerIdentity": "urn:squad:example:provider-identity:reviewer",
+    "basis": "urn:squad:example:review-gate:publication",
+    "policyRevision": "urn:squad:example:policy:governance-v1"
+  },
+  "resource": {
+    "uid": "urn:squad:example:review-subject:change-request-42",
+    "revision": "urn:squad:example:revision:rejected-1",
+    "expectedRevision": "urn:squad:example:revision:rejected-1",
+    "resultRevision": "urn:squad:example:revision:rejected-1"
+  },
+  "correlationId": "8d1f7875-b855-4996-93fd-fee67c775188",
+  "causationId": null,
+  "idempotencyKey": "example-review:change-request-42:revision-1",
+  "replayKey": "example-provider-review:change-request-42:revision-1",
+  "payloadDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "redaction": "metadata-only",
+  "extensions": {},
+  "data": {
+    "transition": {
+      "priorState": "under-review",
+      "currentState": "rejected"
+    },
+    "reviewedSubject": {
+      "uid": "urn:squad:example:review-subject:change-request-42",
+      "revision": "urn:squad:example:revision:rejected-1"
+    },
+    "accountableOwnerUid": "urn:squad:example:actor:owner",
+    "currentRevisionAuthorUid": "urn:squad:example:actor:current-author",
+    "successorRevisionAuthorUid": "urn:squad:example:actor:successor-author",
+    "reviewerUid": "urn:squad:example:actor:reviewer",
+    "lockoutUids": ["urn:squad:example:actor:current-author"],
+    "eligibleRevisionAuthorUids": ["urn:squad:example:actor:successor-author"],
+    "blockers": [
+      {
+        "code": "publication-maturity-overclaim",
+        "location": "example/specification.md",
+        "requirement": "Requirements-only drafts are non-claimable",
+        "evidence": "The rejected index advertised capabilities without manifests",
+        "clearCondition": "Downgrade unsupported claims and publish promotion criteria",
+        "status": "open"
+      }
+    ],
+    "escalation": {
+      "status": "not-required",
+      "deadlocked": false,
+      "authorityUid": null,
+      "reason": null
+    },
+    "replayDisposition": "original",
+    "gateResult": "rejected"
+  }
+}
