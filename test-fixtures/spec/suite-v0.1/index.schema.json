@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squad.dev/spec/squad-conformance/v0.1/index.schema.json",
+  "title": "Squad Conformance Suite Index v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suite", "schemaVersion", "publication", "dialects", "sharedSchemas", "profiles"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "suite": { "const": "squad-conformance/v0.1" },
+    "schemaVersion": { "const": 1 },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "revision", "digest"],
+      "properties": {
+        "status": { "enum": ["working-draft", "published"] },
+        "revision": {
+          "anyOf": [
+            { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+            { "type": "null" }
+          ]
+        },
+        "digest": {
+          "anyOf": [
+            { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "published" } } },
+          "then": {
+            "properties": {
+              "revision": { "type": "string" },
+              "digest": { "type": "string" }
+            }
+          }
+        }
+      ]
+    },
+    "dialects": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/dialect" }
+    },
+    "sharedSchemas": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repoPath" },
+      "uniqueItems": true
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profile" }
+    }
+  },
+  "$defs": {
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "(^/|(^|/)\\.\\.(/|$)|\\\\)" }
+    },
+    "profileId": {
+      "type": "string",
+      "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "capability": {
+      "type": "string",
+      "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)#[a-z0-9.-]+$"
+    },
+    "dialect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "maturity",
+        "spec",
+        "dialect",
+        "dependencies",
+        "classes",
+        "capabilities",
+        "manifest",
+        "manifestSchema"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/profileId" },
+        "maturity": {
+          "enum": ["stable-normative", "experimental-normative", "informative-volatile"]
+        },
+        "spec": { "$ref": "#/$defs/repoPath" },
+        "dialect": { "type": "string", "minLength": 1 },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/profileId" },
+          "uniqueItems": true
+        },
+        "classes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "artifact-only",
+              "validator",
+              "editor",
+              "state-machine-executor",
+              "provider-binding",
+              "runtime"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" },
+          "uniqueItems": true
+        },
+        "manifest": {
+          "anyOf": [
+            { "$ref": "#/$defs/repoPath" },
+            { "type": "null" }
+          ]
+        },
+        "manifestSchema": {
+          "anyOf": [
+            { "$ref": "#/$defs/repoPath" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}
