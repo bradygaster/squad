@@ -1,0 +1,188 @@
+{
+  "$schema": "./index.schema.json",
+  "suite": "squad-conformance/v0.1",
+  "schemaVersion": 1,
+  "publication": {
+    "status": "working-draft",
+    "revision": null,
+    "digest": null
+  },
+  "dialects": [
+    {
+      "id": "charter-v0-1-legacy",
+      "description": "Existing Charter v0.1 manifest dialect, registered unchanged."
+    },
+    {
+      "id": "suite-v0-1",
+      "description": "Reusable suite index and shared event/evidence schemas."
+    },
+    {
+      "id": "requirements-only",
+      "description": "No portable executable manifest yet; promotion criteria are normative planning input only."
+    }
+  ],
+  "sharedSchemas": [
+    "test-fixtures/spec/suite-v0.1/evidence.schema.json"
+  ],
+  "profiles": [
+    {
+      "id": "squad-core/v0.1",
+      "maturity": "stable-normative",
+      "spec": "docs/specification/core-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": [],
+      "classes": ["artifact-only"],
+      "capabilities": ["squad-core/v0.1#consume"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-interop/v0.1",
+      "maturity": "stable-normative",
+      "spec": "docs/specification/interoperability-conventions-v0.1.md",
+      "dialect": "suite-v0-1",
+      "dependencies": ["squad-core/v0.1"],
+      "classes": ["artifact-only", "validator"],
+      "capabilities": ["squad-interop/v0.1#evidence.validate"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-charter/v0.1",
+      "maturity": "stable-normative",
+      "spec": "docs/specification/charter-v0.1.md",
+      "dialect": "charter-v0-1-legacy",
+      "dependencies": ["squad-core/v0.1"],
+      "classes": ["artifact-only", "validator", "editor", "runtime"],
+      "capabilities": [
+        "squad-charter/v0.1#validate",
+        "squad-charter/v0.1#parse",
+        "squad-charter/v0.1#serialize",
+        "squad-charter/v0.1#runtime-compile"
+      ],
+      "manifest": "test-fixtures/spec/charter-v0.1/manifest.json",
+      "manifestSchema": "test-fixtures/spec/charter-v0.1/manifest.schema.json"
+    },
+    {
+      "id": "squad-team-routing/v0.1",
+      "maturity": "stable-normative",
+      "spec": "docs/specification/team-routing-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-charter/v0.1"],
+      "classes": ["artifact-only"],
+      "capabilities": ["squad-team-routing/v0.1#artifact"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-configuration-casting/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/configuration-casting-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-team-routing/v0.1"],
+      "classes": ["artifact-only"],
+      "capabilities": ["squad-configuration-casting/v0.1#artifact"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-governance-review/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/governance-review-v0.1.md",
+      "dialect": "suite-v0-1",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-team-routing/v0.1"],
+      "classes": ["state-machine-executor"],
+      "capabilities": ["squad-governance-review/v0.1#transition"],
+      "manifest": "test-fixtures/spec/suite-v0.1/governance-rejection.example.json",
+      "manifestSchema": "test-fixtures/spec/suite-v0.1/evidence.schema.json"
+    },
+    {
+      "id": "squad-execution-preferences/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/execution-preferences-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-charter/v0.1", "squad-configuration-casting/v0.1"],
+      "classes": ["artifact-only"],
+      "capabilities": ["squad-execution-preferences/v0.1#artifact"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-work-lifecycle/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/work-lifecycle-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-team-routing/v0.1", "squad-governance-review/v0.1"],
+      "classes": ["state-machine-executor"],
+      "capabilities": ["squad-work-lifecycle/v0.1#transition"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-work-github/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/github-work-lifecycle-binding-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-interop/v0.1", "squad-work-lifecycle/v0.1", "squad-governance-review/v0.1"],
+      "classes": ["provider-binding"],
+      "capabilities": ["squad-work-github/v0.1#binding"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-planning-activation/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/planning-activation-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-team-routing/v0.1", "squad-work-lifecycle/v0.1"],
+      "classes": ["state-machine-executor"],
+      "capabilities": ["squad-planning-activation/v0.1#transition"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-ceremony/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/ceremony-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-team-routing/v0.1"],
+      "classes": ["state-machine-executor"],
+      "capabilities": ["squad-ceremony/v0.1#transition"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-coordination-handoff/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/coordination-handoff-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-team-routing/v0.1"],
+      "classes": ["state-machine-executor"],
+      "capabilities": ["squad-coordination-handoff/v0.1#transition"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-automation/v0.1",
+      "maturity": "experimental-normative",
+      "spec": "docs/specification/automation-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-coordination-handoff/v0.1"],
+      "classes": ["state-machine-executor"],
+      "capabilities": ["squad-automation/v0.1#transition"],
+      "manifest": null,
+      "manifestSchema": null
+    },
+    {
+      "id": "squad-state-memory-requirements/v0.1",
+      "maturity": "informative-volatile",
+      "spec": "docs/specification/state-memory-requirements-v0.1.md",
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1"],
+      "classes": [],
+      "capabilities": [],
+      "manifest": null,
+      "manifestSchema": null
+    }
+  ]
+}

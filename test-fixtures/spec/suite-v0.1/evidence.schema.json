@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squad.dev/spec/squad-interop/v0.1/evidence.schema.json",
+  "title": "Squad Shared Event and Evidence Envelope v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specversion",
+    "schema",
+    "id",
+    "type",
+    "source",
+    "subject",
+    "time",
+    "actor",
+    "resource",
+    "correlationId",
+    "causationId",
+    "idempotencyKey",
+    "payloadDigest",
+    "redaction",
+    "data"
+  ],
+  "properties": {
+    "specversion": { "const": "squad-interop/v0.1" },
+    "schema": {
+      "type": "string",
+      "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "id": { "type": "string", "format": "uuid" },
+    "type": {
+      "type": "string",
+      "pattern": "^squad\\.[a-z0-9-]+\\.[a-z0-9.-]+$"
+    },
+    "source": { "type": "string", "format": "uri-reference" },
+    "subject": { "type": "string", "minLength": 1 },
+    "time": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "issuer", "providerIdentity", "authorityBasis"],
+      "properties": {
+        "uid": { "type": "string", "minLength": 1 },
+        "issuer": { "type": "string", "minLength": 1 },
+        "providerIdentity": { "type": "string", "minLength": 1 },
+        "authorityBasis": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "revision"],
+      "properties": {
+        "uid": { "type": "string", "minLength": 1 },
+        "revision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" }
+          ]
+        },
+        "expectedRevision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" },
+            { "type": "null" }
+          ]
+        },
+        "resultRevision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "causationId": {
+      "anyOf": [
+        { "type": "string", "format": "uuid" },
+        { "type": "null" }
+      ]
+    },
+    "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "replayKey": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "payloadDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "redaction": { "enum": ["none", "metadata-only", "content-redacted"] },
+    "extensions": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9]+:[a-z0-9][a-z0-9.-]*$" }
+    },
+    "data": { "type": "object" }
+  }
+}
