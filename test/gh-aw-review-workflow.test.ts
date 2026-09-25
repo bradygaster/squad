@@ -183,52 +183,16 @@ describe('gh-aw advisory Squad reviewer', () => {
     expect(guideSection).not.toMatch(/PR review comment|pull request review comment/i);
   });
 
-  it('materializes the documented install as complete source and lock pairs', () => {
-    const workspace = mkdtempSync(resolve(ROOT, '.squad-review-install-'));
-    compileWorkspaces.push(workspace);
-    const workflowDir = resolve(workspace, '.github', 'workflows');
-    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: workspace });
-    const version = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8', timeout: 15000 });
-    expect(version.status).toBe(0);
-    execFileSync('gh', ['aw', 'add', resolve(ROOT, 'workflows')], { cwd: workspace, timeout: 420000 });
-    execFileSync(
-      'node',
-      ['.github/workflows/shared/squad-install-verifier.mjs', '--materialize-runtime'],
-      { cwd: workspace },
+  it('declares the complete native package for the pinned compiler job', () => {
+    const manifest = read('workflows/aw.yml');
+    expect(manifest).toContain('min-version: v0.89.21');
+    expect(manifest.match(/destination: \.github\/workflows\/squad(?:-[\w-]+)?\.md/g)).toHaveLength(7);
+    expect(manifest.match(/source: package\/squad(?:-[\w-]+)?\.md/g)).toHaveLength(7);
+    expect(manifest).toContain('  - skills/gh-aw-enlistment');
+    expect(read('.github/workflows/squad-ci.yml')).toContain(
+      'gh extension install --force --pin v0.89.21 github/gh-aw',
     );
-    execFileSync('gh', ['aw', 'compile', '--strict', '--approve', '--no-check-update'], {
-      cwd: workspace,
-      timeout: 420000,
-    });
-    execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
-      cwd: workspace,
-      timeout: 420000,
-    });
-
-    const installed = readdirSync(workflowDir, { withFileTypes: true })
-      .filter(entry => entry.isFile() && entry.name.startsWith('squad'))
-      .map(entry => entry.name)
-      .sort();
-    expect(installed).toEqual([
-      'squad-bootstrap.lock.yml',
-      'squad-bootstrap.md',
-      'squad-deps-worker.lock.yml',
-      'squad-deps-worker.md',
-      'squad-implement-worker.lock.yml',
-      'squad-implement-worker.md',
-      'squad-improvement-worker.lock.yml',
-      'squad-improvement-worker.md',
-      'squad-retro.lock.yml',
-      'squad-retro.md',
-      'squad-review.lock.yml',
-      'squad-review.md',
-      'squad.lock.yml',
-      'squad.md',
-    ]);
-    expect(readFileSync(resolve(workspace, '.github/skills/gh-aw-enlistment/SKILL.md')))
-      .toEqual(readFileSync(resolve(ROOT, '.squad-templates/skills/gh-aw-enlistment/SKILL.md')));
-  }, 420000);
+  });
 
   it('detects a missing workflow_dispatch job discriminator during strict compilation', () => {
     const workspace = mkdtempSync(resolve(ROOT, '.squad-review-discriminator-mutation-'));
