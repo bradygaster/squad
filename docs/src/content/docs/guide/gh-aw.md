@@ -33,7 +33,23 @@ owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 gh extension list | grep -q 'github/gh-aw' || gh extension install github/gh-aw
 
-# 2. Allow GitHub Actions to create pull requests
+# 2. Require GitHub Issues, then allow GitHub Actions to create pull requests
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  echo "GitHub Issues are disabled; enabling them before workflow installation."
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun this quick start." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=true
@@ -104,6 +120,15 @@ contains the complete seven-workflow set. For a repeatable upgrade, pin all
 seven entries to one reviewed commit as described in
 [Upgrading the workflows](#upgrading-the-workflows).
 
+Step 2 deliberately checks Issues before creating the bootstrap branch or
+installing any workflow. Squad commands are issue comments, and the merged
+bootstrap creates a research/proposals issue; without Issues, the installation
+PR could merge but the bootstrap journey could not complete. Reading
+`.has_issues` is safe for normal repository access. Enabling it through
+`PATCH /repos/{owner}/{repo}` requires repository administration permission. If
+that update fails, stop before installation and ask an administrator to enable
+**Settings → General → Features → Issues**, then rerun the quick start.
+
 > Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skills
 > alongside the workflows, and it deliberately does not stage `.github/aw/logs/`.
 > Downloaded workflow logs are local diagnostic output — see [ignoring downloaded
@@ -136,12 +161,42 @@ issues exist.
 | Requirement | Details |
 |-------------|---------|
 | GitHub repo with Copilot | Copilot must be enabled for the repository |
+| GitHub Issues | Required for `/squad` issue comments and the bootstrap research/proposals issue; a repository administrator must be available to enable Issues if they are disabled |
 | `gh` CLI | [Install the GitHub CLI](https://cli.github.com/) and authenticate with `gh auth login` |
 | `gh aw` extension | `gh extension install github/gh-aw` |
 
 ---
 
 ## Setup
+
+### Enable GitHub Issues
+
+Squad receives commands through issue comments, and `squad-bootstrap` creates a
+research/proposals issue after the workflow-installation PR merges. Check the
+repository setting and enable it before installing any workflows:
+
+```bash
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: A repository administrator must enable Settings > General > Features > Issues." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+```
+
+The GET is non-mutating, and the conditional PATCH makes this safe to rerun.
+Changing `has_issues` requires repository administration permission. If the
+PATCH fails, do not continue to `gh aw add`: have an administrator enable Issues
+in repository settings, then rerun the supported quick start.
 
 ### Allow workflow-created pull requests
 
@@ -384,6 +439,7 @@ Use this checklist for the initial bootstrap and after any workflow update:
 
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
+| Repository readiness | Confirm `.has_issues` is `true`; if it is `false`, enable it before installing workflows | GitHub Issues are available for `/squad` comments and the bootstrap research/proposals issue; insufficient administration permission stops the install before a bootstrap PR is created |
 | Install | Run the seven-workflow `gh aw add` command on a bootstrap branch | All seven `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
 | Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All seven workflows succeed, only documented warnings remain, and all fourteen source/lock files exist |
 | Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |

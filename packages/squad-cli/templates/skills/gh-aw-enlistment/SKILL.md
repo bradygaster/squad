@@ -7,8 +7,8 @@ source: "Operationalized from the authoritative Squad gh-aw guide (docs/src/cont
 triggers: [set up Squad agentic workflows, enlist this repo in Squad, enlist my repository in Squad, install Squad gh-aw workflows, install Squad agentic workflows, add Squad gh aw workflows, bootstrap Squad in this repo, onboard this repo to Squad, set up /squad slash commands, gh aw add squad]
 tools:
   - name: "gh"
-    description: "GitHub CLI — repo identity, Actions permissions, PR creation, review request, and check watching."
-    when: "Every step: preflight identity/auth, enabling Actions-created PRs, opening and watching the bootstrap PR."
+    description: "GitHub CLI — repo identity, Issues and Actions settings, PR creation, review request, and check watching."
+    when: "Every step: preflight identity/auth, requiring Issues, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
     when: "Installing the seven @dev workflows and compiling them into deterministic .lock.yml files."
@@ -27,6 +27,12 @@ it: each step below is a gate with explicit success evidence and **STOP conditio
 The authoritative source is `docs/src/content/docs/guide/gh-aw.md` (mirrored at
 `https://bradygaster.github.io/squad/docs/guide/gh-aw/`). If that guide and this
 skill ever disagree, the guide wins — re-read it before proceeding.
+
+GitHub Issues are a hard prerequisite: `/squad` commands arrive as issue
+comments, and the merged bootstrap creates a research/proposals issue. Detect
+and enable Issues before creating the bootstrap branch or installing workflows,
+so the install cannot produce a PR whose post-merge bootstrap is unable to
+complete.
 
 **Portability contract:** resolve every repository identifier (owner, repo, default
 branch) **at runtime**. Never hardcode a placeholder like `{owner}/{repo}`. The only
@@ -73,10 +79,37 @@ git status --short
 - Confirm Copilot is enabled for the repository where checkable; the activation
   run and the requested `@copilot` review both depend on it.
 
-### 1. Allow Actions-created PRs while keeping the default token read-only
+### 1. Require GitHub Issues, then allow Actions-created PRs with a read-only token
 
-Squad opens PRs through GitHub Actions. Enable that **without** widening the
-default workflow token:
+Check the REST API's `has_issues` field first. If Issues are disabled, enable
+them before touching the install:
+
+```bash
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  echo "GitHub Issues are disabled; enabling them before workflow installation."
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun enlistment." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+```
+
+Reading `.has_issues` is non-mutating. Updating it through
+`PATCH /repos/{owner}/{repo}` requires repository administration permission.
+If the PATCH fails, **STOP before branch creation or `gh aw add`** and ask an
+administrator to enable **Settings → General → Features → Issues**. Do not
+continue with a bootstrap PR that cannot complete after merge.
+
+Squad also opens PRs through GitHub Actions. Enable that **without** widening
+the default workflow token:
 
 ```bash
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
@@ -295,6 +328,21 @@ gh pr checks --watch
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun enlistment." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 
@@ -353,6 +401,9 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 
 - ❌ **Hardcoding repository identifiers.** Always resolve `owner/repo` and the
   default branch at runtime with `gh repo view`.
+- ❌ **Installing while GitHub Issues are disabled.** `/squad` commands and the
+  bootstrap research/proposals issue require Issues. Enable them first, or stop
+  before installation if repository administration permission is unavailable.
 - ❌ **Blanket staging** (`git add .` / `-A` / `git commit -a`). Stage only
   `.gitattributes`, `.github/aw/`, `.github/workflows/`, `.github/skills/`, by path.
 - ❌ **Approving unknown safe updates.** Approve ONLY `SQUAD_GITHUB_APP_PRIVATE_KEY`,
