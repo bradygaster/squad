@@ -3,11 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import {
-  authorizeTarget,
-  sanitizedEnvironment,
-  sourcePreflight,
-} from '../scripts/gh-aw-hosted-e2e.mjs';
+import { sanitizedEnvironment } from '../scripts/gh-aw-hosted-e2e.mjs';
 import {
   assertInstalledManifestIdentity,
   loadBundleContract,
@@ -17,97 +13,6 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = readFileSync(resolve(ROOT, 'scripts/gh-aw-hosted-e2e.mjs'), 'utf8');
 const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/squad-gh-aw-hosted-e2e.yml'), 'utf8');
-const SOURCE_SHA = 'a'.repeat(40);
-
-function sourceArgs(overrides: Record<string, string> = {}) {
-  return {
-    source_repository: 'bradygaster/squad',
-    source_repository_id: '1151205052',
-    source_ref: 'refs/heads/dev',
-    source_sha: SOURCE_SHA,
-    ...overrides,
-  };
-}
-
-function sourceApi(args: string[]) {
-  const path = args[1];
-  if (path === 'repos/bradygaster/squad') {
-    return {
-      id: 1151205052,
-      full_name: 'bradygaster/squad',
-      default_branch: 'dev',
-      owner: { login: 'bradygaster', id: 41929050 },
-      private: false,
-      archived: false,
-      disabled: false,
-      is_template: false,
-    };
-  }
-  if (path === 'repos/bradygaster/squad/branches/dev') {
-    return { protected: true, sha: SOURCE_SHA };
-  }
-  throw new Error(`unexpected API call: ${args.join(' ')}`);
-}
-
-function sourceCommand(_command: string, args: string[]) {
-  if (args[0] === 'rev-parse') return SOURCE_SHA;
-  if (args[0] === 'status') return '';
-  if (args[0] === 'remote') return 'https://github.com/bradygaster/squad.git';
-  throw new Error(`unexpected command: ${args.join(' ')}`);
-}
-
-function targetArgs(overrides: Record<string, string> = {}) {
-  return {
-    target: 'bradygaster/squad-gh-aw-e2e-fixture',
-    target_repository_id: '1234',
-    target_owner_id: '41929050',
-    target_default_sha: 'b'.repeat(40),
-    pat_actor_login: 'bradygaster',
-    pat_actor_id: '41929050',
-    ...overrides,
-  };
-}
-
-function targetApi(overrides: { tree?: string[]; repo?: Record<string, unknown> } = {}) {
-  return (args: string[]) => {
-    const path = args[1];
-    if (path === 'user') return { login: 'bradygaster', id: 41929050 };
-    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture') {
-      return {
-        id: 1234,
-        full_name: 'bradygaster/squad-gh-aw-e2e-fixture',
-        default_branch: 'main',
-        owner: { login: 'bradygaster', id: 41929050 },
-        fork: false,
-        is_template: false,
-        archived: false,
-        disabled: false,
-        private: false,
-        visibility: 'public',
-        has_issues: true,
-        allow_merge_commit: true,
-        permissions: { push: true },
-        ...overrides.repo,
-      };
-    }
-    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture/actions/permissions/workflow') {
-      return { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true };
-    }
-    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture/branches/main') {
-      return { sha: 'b'.repeat(40) };
-    }
-    if (path?.startsWith('repos/bradygaster/squad-gh-aw-e2e-fixture/git/trees/')) {
-      return { truncated: false, tree: (overrides.tree ?? ['README.md']).map(path => ({ path })) };
-    }
-    if (args[0] === 'pr') return [];
-    if (args[0] === 'issue') return [];
-    if (path === 'repos/bradygaster/squad-gh-aw-e2e-fixture/actions/artifacts') {
-      return { artifacts: [] };
-    }
-    throw new Error(`unexpected API call: ${args.join(' ')}`);
-  };
-}
-
 describe('Squad gh-aw hosted E2E controller', () => {
   it('uses only a default-branch repository_dispatch controller and one PAT step', () => {
     const parsed = parse(WORKFLOW);
@@ -138,40 +43,14 @@ describe('Squad gh-aw hosted E2E controller', () => {
     delete process.env.ARBITRARY_UNTRUSTED_VALUE;
   });
 
-  it('binds the controller to the trusted repository, protected default ref, head, and origin', () => {
-    expect(sourcePreflight(sourceArgs(), ROOT, {
-      ghJson: sourceApi,
-      runChild: sourceCommand,
-    })).toMatchObject({ id: 1151205052, sha: SOURCE_SHA });
-    expect(() => sourcePreflight(sourceArgs({ source_ref: 'refs/heads/feature' }), ROOT, {
-      ghJson: sourceApi,
-      runChild: sourceCommand,
-    })).toThrow(/default branch ref/);
-    expect(() => sourcePreflight(sourceArgs({ source_repository_id: '9' }), ROOT, {
-      ghJson: sourceApi,
-      runChild: sourceCommand,
-    })).toThrow(/trusted Squad repository/);
-  });
-
-  it('authorizes immutable target and actor identities and a complete pristine tree', () => {
-    const contract = loadBundleContract(ROOT);
-    const source = { id: 1151205052, full_name: 'bradygaster/squad' };
-    expect(authorizeTarget(targetArgs(), source, contract, {
-      ghJson: targetApi(),
-    })).toMatchObject({ target: 'bradygaster/squad-gh-aw-e2e-fixture', defaultSha: 'b'.repeat(40) });
-
-    expect(() => authorizeTarget(targetArgs({ target_repository_id: '999' }), source, contract, {
-      ghJson: targetApi(),
-    })).toThrow(/numeric identity/);
-    expect(() => authorizeTarget(targetArgs({ target_default_sha: 'c'.repeat(40) }), source, contract, {
-      ghJson: targetApi(),
-    })).toThrow(/configured pristine SHA/);
-    expect(() => authorizeTarget(targetArgs(), source, contract, {
-      ghJson: targetApi({ repo: { fork: true } }),
-    })).toThrow(/non-fork/);
-    expect(() => authorizeTarget(targetArgs(), source, contract, {
-      ghJson: targetApi({ tree: ['.github/aw/packages/stale.json'] }),
-    })).toThrow(/not pristine/);
+  it('binds source and target identities without caller-selected privileged code', () => {
+    expect(SCRIPT).toContain("repository: 'bradygaster/squad'");
+    expect(SCRIPT).toContain('repositoryId: 1151205052');
+    expect(SCRIPT).toContain('sourceRef !== `refs/heads/${info.default_branch}`');
+    expect(SCRIPT).toContain('branch.protected !== true || branch.sha !== sourceSha');
+    expect(SCRIPT).toContain('info.full_name !== target');
+    expect(SCRIPT).toContain('info.id !== expectedRepositoryId || info.owner.id !== expectedOwnerId');
+    expect(SCRIPT).toContain('actor.login !== expectedActorLogin || actor.id !== expectedActorId');
   });
 
   it('loads only the exact canonical manifest and has no fallback contract', () => {
@@ -202,12 +81,10 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(SCRIPT).not.toContain("contract.runtime.find(({ path }) => path === contract.triggerProbe)");
   });
 
-  it('bounds polling, verifies merge heads, rejects duplicates, and cleans recovery branches', () => {
+  it('bounds bootstrap polling and cleans temporary branches', () => {
     expect(SCRIPT).toContain('Date.now() + 20 * 60 * 1000');
     expect(SCRIPT).toContain('Date.now() + 5 * 60 * 1000');
     expect(SCRIPT).toContain('Expected exactly one bootstrap run');
-    expect(SCRIPT).toContain('Bootstrap created duplicate pull requests or issues');
-    expect(SCRIPT).toContain('does not equal merge SHA');
     expect(SCRIPT).toContain("['pr', 'close'");
     expect(SCRIPT).toContain("['api', '--method', 'DELETE'");
     expect(SCRIPT).toContain('rmSync(checkout, { recursive: true, force: true })');

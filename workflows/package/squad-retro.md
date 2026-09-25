@@ -813,9 +813,6 @@ concurrency:
 network:
   allowed:
     - defaults
-resources:
-  - shared/squad-retro-evidence.mjs
-  - shared/squad-retro-provenance.mjs
 tools:
   bash: true
   github:

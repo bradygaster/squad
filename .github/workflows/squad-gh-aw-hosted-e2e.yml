@@ -7,7 +7,6 @@ name: Squad gh-aw hosted E2E
 # - SQUAD_GH_AW_E2E_TARGET_REPOSITORY (canonical owner/name)
 # - SQUAD_GH_AW_E2E_TARGET_REPOSITORY_ID (numeric repository ID)
 # - SQUAD_GH_AW_E2E_TARGET_OWNER_ID (numeric owner ID)
-# - SQUAD_GH_AW_E2E_TARGET_DEFAULT_SHA (immutable pristine default-branch SHA)
 # - SQUAD_GH_AW_E2E_PAT_ACTOR_LOGIN and SQUAD_GH_AW_E2E_PAT_ACTOR_ID
 # The SQUAD_GH_AW_E2E_TOKEN secret is scoped only to that one public consumer.
 on:
@@ -73,7 +72,6 @@ jobs:
           TARGET_REPOSITORY: ${{ vars.SQUAD_GH_AW_E2E_TARGET_REPOSITORY }}
           TARGET_REPOSITORY_ID: ${{ vars.SQUAD_GH_AW_E2E_TARGET_REPOSITORY_ID }}
           TARGET_OWNER_ID: ${{ vars.SQUAD_GH_AW_E2E_TARGET_OWNER_ID }}
-          TARGET_DEFAULT_SHA: ${{ vars.SQUAD_GH_AW_E2E_TARGET_DEFAULT_SHA }}
           PAT_ACTOR_LOGIN: ${{ vars.SQUAD_GH_AW_E2E_PAT_ACTOR_LOGIN }}
           PAT_ACTOR_ID: ${{ vars.SQUAD_GH_AW_E2E_PAT_ACTOR_ID }}
           SOURCE_READ_TOKEN: ${{ github.token }}
@@ -83,7 +81,6 @@ jobs:
             --target "$TARGET_REPOSITORY" \
             --target-repository-id "$TARGET_REPOSITORY_ID" \
             --target-owner-id "$TARGET_OWNER_ID" \
-            --target-default-sha "$TARGET_DEFAULT_SHA" \
             --pat-actor-login "$PAT_ACTOR_LOGIN" \
             --pat-actor-id "$PAT_ACTOR_ID" \
             --source-repository "$GITHUB_REPOSITORY" \

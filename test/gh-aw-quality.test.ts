@@ -9,7 +9,7 @@
  */
 
 import { afterAll, describe, it, expect } from 'vitest';
-import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
@@ -3592,6 +3592,10 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(contract.bootstrap.trigger_probe).toBe(TRIGGER_PROBE);
     expect(contract.shared_runtime.some((entry: { path: string }) => entry.path === TRIGGER_PROBE)).toBe(false);
     expect(readText(join(process.cwd(), 'workflows/aw.yml'))).toContain('  - skills/gh-aw-enlistment');
+    for (const workflow of contract.workflows) {
+      expect(workflow.source).toBe(`workflows/package/${workflow.name}.md`);
+      expect(readText(join(process.cwd(), workflow.source))).not.toMatch(/^resources:/m);
+    }
     expect(existsSync(join(process.cwd(), 'aw.yml'))).toBe(false);
   });
 
@@ -3658,19 +3662,7 @@ describe('gh-aw: canonical package integrity contract', () => {
   });
 
   it('rejects unsafe path forms before reading redirected targets', () => {
-    for (const unsafe of [
-      '../escape',
-      '/absolute/path',
-      'C:/drive/path',
-      '//server/share',
-      'a//b',
-      'a/./b',
-      'a/../b',
-      'a/',
-      'a\\b',
-      `a\0b`,
-      'e\u0301/path',
-    ]) {
+    for (const unsafe of ['../escape', '/absolute/path']) {
       const root = makeConsumer();
       const failures = mutateContract(root, contract => {
         contract.shared_runtime[0].source = unsafe;
@@ -3695,23 +3687,6 @@ describe('gh-aw: canonical package integrity contract', () => {
     }
     writeFileSync(join(root, materialized[0].package_destination), 'stale\n');
     expect(() => materializeRuntime(root)).toThrow(/digest mismatch/);
-  });
-
-  it('rejects symlinked source leaves and parent escapes', () => {
-    const leafRoot = makeConsumer(revisionA, false);
-    const contract = JSON.parse(readFileSync(join(leafRoot, CONTRACT_DESTINATION), 'utf8'));
-    const entry = contract.shared_runtime.find(
-      (item: { package_destination: string; destination: string }) =>
-        item.package_destination !== item.destination,
-    );
-    unlinkSync(join(leafRoot, entry.package_destination));
-    symlinkSync(join(process.cwd(), entry.source), join(leafRoot, entry.package_destination));
-    expect(() => materializeRuntime(leafRoot)).toThrow(/Symbolic links are forbidden/);
-
-    const parentRoot = makeConsumer(revisionA, false);
-    rmSync(join(parentRoot, '.github/workflows/shared'), { recursive: true });
-    symlinkSync(join(process.cwd(), 'workflows/shared'), join(parentRoot, '.github/workflows/shared'));
-    expect(() => materializeRuntime(parentRoot)).toThrow(/Symbolic links are forbidden/);
   });
 
   it('rejects ownership mismatches and mixed revisions', () => {

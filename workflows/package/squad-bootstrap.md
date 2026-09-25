@@ -1,6 +1,6 @@
 ---
 name: Squad Bootstrap
-run-name: "Squad bootstrap — ${{ github.repository }}"
+run-name: Squad bootstrap — ${{ github.repository }}
 description: Create one validated repository-derived Squad Cast PR and one linked research-proposals issue
 private: false
 on:
@@ -8,14 +8,14 @@ on:
     branches:
       - "**"
     paths:
-      - ".github/workflows/squad*.md"
-      - ".github/workflows/squad*.lock.yml"
-      - ".github/workflows/shared/**"
-      - ".github/aw/squad-workflows.manifest.json"
-      - ".github/aw/packages/*.json"
-      - ".github/aw/squad/runtime/**"
-      - ".github/workflows/shared/squad-bootstrap-trigger-probe.json"
-  workflow_dispatch:
+      - .github/workflows/squad*.md
+      - .github/workflows/squad*.lock.yml
+      - .github/workflows/shared/**
+      - .github/aw/squad-workflows.manifest.json
+      - .github/aw/packages/*.json
+      - .github/aw/squad/runtime/**
+      - .github/workflows/shared/squad-bootstrap-trigger-probe.json
+  workflow_dispatch: null
 if: github.ref_name == github.event.repository.default_branch
 permissions:
   contents: read
@@ -23,26 +23,19 @@ permissions:
   issues: read
   pull-requests: read
 concurrency:
-  group: "squad-bootstrap-${{ github.repository }}"
+  group: squad-bootstrap-${{ github.repository }}
   cancel-in-progress: false
   job-discriminator: ${{ github.run_id }}
 network:
   allowed:
     - defaults
-resources:
-  - shared/squad-install-verifier.mjs
-  - shared/squad-cast-validator.mjs
-  - shared/squad-bootstrap-validator.mjs
-  - shared/builtins/scribe-charter.md
-  - shared/builtins/ralph-charter.md
-  - shared/builtins/rai-charter.md
-  - shared/builtins/fact-checker-charter.md
 tools:
-  edit:
+  edit: null
   bash: true
   github:
     mode: gh-proxy
-    toolsets: [default]
+    toolsets:
+      - default
 pre-agent-steps:
   - name: Verify coherent Squad package installation
     shell: bash
@@ -110,7 +103,7 @@ pre-agent-steps:
         );
   - name: Restore an existing Cast tree for partial recovery
     if: steps.bootstrap-state.outputs.cast_ref != ''
-    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
     with:
       ref: ${{ steps.bootstrap-state.outputs.cast_ref }}
       persist-credentials: false
@@ -176,8 +169,8 @@ pre-agent-steps:
 safe-outputs:
   report-failed-jobs: false
   messages:
-    run-success: "🤖 [{workflow_name}]({run_url}) finished. Review the linked draft Cast PR and research-proposals issue before activating work."
-    run-failure: "🤖 [{workflow_name}]({run_url}) failed closed. No replacement bootstrap artifact was authorized."
+    run-success: 🤖 [{workflow_name}]({run_url}) finished. Review the linked draft Cast PR and research-proposals issue before activating work.
+    run-failure: 🤖 [{workflow_name}]({run_url}) failed closed. No replacement bootstrap artifact was authorized.
   jobs:
     materialize-bootstrap:
       name: Materialize validated Squad bootstrap
@@ -207,25 +200,41 @@ safe-outputs:
           description: Canonical decimal count of populated chunks, from 1 through 16.
           required: true
           type: string
-        payload_chunk_00: { type: string }
-        payload_chunk_01: { type: string }
-        payload_chunk_02: { type: string }
-        payload_chunk_03: { type: string }
-        payload_chunk_04: { type: string }
-        payload_chunk_05: { type: string }
-        payload_chunk_06: { type: string }
-        payload_chunk_07: { type: string }
-        payload_chunk_08: { type: string }
-        payload_chunk_09: { type: string }
-        payload_chunk_10: { type: string }
-        payload_chunk_11: { type: string }
-        payload_chunk_12: { type: string }
-        payload_chunk_13: { type: string }
-        payload_chunk_14: { type: string }
-        payload_chunk_15: { type: string }
+        payload_chunk_00:
+          type: string
+        payload_chunk_01:
+          type: string
+        payload_chunk_02:
+          type: string
+        payload_chunk_03:
+          type: string
+        payload_chunk_04:
+          type: string
+        payload_chunk_05:
+          type: string
+        payload_chunk_06:
+          type: string
+        payload_chunk_07:
+          type: string
+        payload_chunk_08:
+          type: string
+        payload_chunk_09:
+          type: string
+        payload_chunk_10:
+          type: string
+        payload_chunk_11:
+          type: string
+        payload_chunk_12:
+          type: string
+        payload_chunk_13:
+          type: string
+        payload_chunk_14:
+          type: string
+        payload_chunk_15:
+          type: string
       steps:
         - name: Checkout trusted default branch
-          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
           with:
             ref: refs/heads/${{ github.event.repository.default_branch }}
             persist-credentials: false
@@ -512,6 +521,7 @@ safe-outputs:
               }
 ---
 
+<!-- Generated by the Squad integrity tool. Edit workflows/*.md and run npm run gh-aw:integrity:write. -->
 # Automatic Squad Bootstrap
 
 Create the repository's initial Squad and research agenda automatically after

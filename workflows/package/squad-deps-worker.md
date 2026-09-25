@@ -701,9 +701,6 @@ network:
     - dotnet
     - go
     - node
-resources:
-  - shared/squad-implementation-provenance.mjs
-  - shared/implementation-provenance-v1.schema.json
 tools:
   edit: null
   bash: true

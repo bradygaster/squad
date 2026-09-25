@@ -835,10 +835,6 @@ network:
     - python
     - ruby
     - rust
-resources:
-  - shared/squad-retro-provenance.mjs
-  - shared/squad-implementation-provenance.mjs
-  - shared/implementation-provenance-v1.schema.json
 tools:
   edit: null
   bash: true

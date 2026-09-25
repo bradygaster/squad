@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 
 import {
-  copyFileSync,
+  cpSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -44,11 +42,11 @@ function deepFreeze(value) {
 export const WORKFLOW_TUPLES = deepFreeze([
   ['squad', 'workflows/package/squad.md', '.github/workflows/squad.md', '.github/workflows/squad.lock.yml'],
   ['squad-implement-worker', 'workflows/package/squad-implement-worker.md', '.github/workflows/squad-implement-worker.md', '.github/workflows/squad-implement-worker.lock.yml'],
-  ['squad-review', 'workflows/squad-review.md', '.github/workflows/squad-review.md', '.github/workflows/squad-review.lock.yml'],
+  ['squad-review', 'workflows/package/squad-review.md', '.github/workflows/squad-review.md', '.github/workflows/squad-review.lock.yml'],
   ['squad-deps-worker', 'workflows/package/squad-deps-worker.md', '.github/workflows/squad-deps-worker.md', '.github/workflows/squad-deps-worker.lock.yml'],
   ['squad-retro', 'workflows/package/squad-retro.md', '.github/workflows/squad-retro.md', '.github/workflows/squad-retro.lock.yml'],
-  ['squad-improvement-worker', 'workflows/squad-improvement-worker.md', '.github/workflows/squad-improvement-worker.md', '.github/workflows/squad-improvement-worker.lock.yml'],
-  ['squad-bootstrap', 'workflows/squad-bootstrap.md', '.github/workflows/squad-bootstrap.md', '.github/workflows/squad-bootstrap.lock.yml'],
+  ['squad-improvement-worker', 'workflows/package/squad-improvement-worker.md', '.github/workflows/squad-improvement-worker.md', '.github/workflows/squad-improvement-worker.lock.yml'],
+  ['squad-bootstrap', 'workflows/package/squad-bootstrap.md', '.github/workflows/squad-bootstrap.md', '.github/workflows/squad-bootstrap.lock.yml'],
 ]);
 
 export const RUNTIME_TUPLES = deepFreeze([
@@ -98,13 +96,6 @@ function stableJson(value) {
 
 function sha256(content) {
   return createHash('sha256').update(content).digest('hex');
-}
-
-function assertRegularFile(path, label) {
-  const stat = lstatSync(path);
-  if (stat.isSymbolicLink() || !stat.isFile()) {
-    throw new Error(`${label} must be a regular file and must not be a symbolic link.`);
-  }
 }
 
 function validatePathSyntax(value, expected, label) {
@@ -214,59 +205,30 @@ export function validateContract(contract) {
   return contract;
 }
 
-function rootContext(root) {
-  const absolute = resolve(root);
-  if (!existsSync(absolute)) throw new Error(`Repository root does not exist: ${absolute}`);
-  const real = realpathSync(absolute);
-  const stat = lstatSync(real);
-  if (!stat.isDirectory()) throw new Error('Repository root must be a directory.');
-  return { absolute, real };
-}
-
-function confinedPath(context, relativePath, { leafMayBeMissing = false } = {}) {
+function safePath(root, relativePath) {
   validatePathSyntax(relativePath, undefined, relativePath);
-  const candidate = resolve(context.real, relativePath);
-  if (candidate !== context.real && !candidate.startsWith(`${context.real}${sep}`)) {
+  const absoluteRoot = resolve(root);
+  const candidate = resolve(absoluteRoot, relativePath);
+  if (candidate !== absoluteRoot && !candidate.startsWith(`${absoluteRoot}${sep}`)) {
     throw new Error(`Path escapes repository root: ${relativePath}`);
-  }
-  let current = context.real;
-  const parts = relativePath.split('/');
-  for (let index = 0; index < parts.length; index += 1) {
-    current = join(current, parts[index]);
-    if (!existsSync(current)) {
-      if (!leafMayBeMissing && index === parts.length - 1) {
-        throw new Error(`Required file is missing: ${relativePath}`);
-      }
-      continue;
-    }
-    const stat = lstatSync(current);
-    if (stat.isSymbolicLink()) throw new Error(`Symbolic links are forbidden: ${relativePath}`);
-    if (index < parts.length - 1 && !stat.isDirectory()) {
-      throw new Error(`Path parent is not a directory: ${relativePath}`);
-    }
   }
   return candidate;
 }
 
-function readRegular(context, relativePath) {
-  const path = confinedPath(context, relativePath);
-  assertRegularFile(path, relativePath);
+function readRequired(root, relativePath) {
+  const path = safePath(root, relativePath);
+  if (!existsSync(path)) throw new Error(`Required file is missing: ${relativePath}`);
   return readFileSync(path);
 }
 
-function writeRegular(context, relativePath, content) {
-  const path = confinedPath(context, relativePath, { leafMayBeMissing: true });
-  confinedPath(context, dirname(relativePath), { leafMayBeMissing: true });
+function writePath(root, relativePath, content) {
+  const path = safePath(root, relativePath);
   mkdirSync(dirname(path), { recursive: true });
-  confinedPath(context, dirname(relativePath));
-  if (existsSync(path)) assertRegularFile(path, relativePath);
   writeFileSync(path, content);
-  confinedPath(context, relativePath);
-  assertRegularFile(path, relativePath);
 }
 
-function fileDigest(context, path) {
-  return sha256(readRegular(context, path));
+function fileDigest(root, path) {
+  return sha256(readRequired(root, path));
 }
 
 function splitWorkflow(content, path) {
@@ -313,6 +275,7 @@ function renderPackageWorkflow(root, name) {
     }
   }
   merged = deepMerge(merged, parsed);
+  delete merged.resources;
   return [
     '---',
     stringify(merged, { lineWidth: 0 }).trimEnd(),
@@ -324,16 +287,8 @@ function renderPackageWorkflow(root, name) {
   ].join('\n');
 }
 
-function packageWorkflowSource(root, name) {
-  const source = splitWorkflow(
-    readFileSync(resolve(root, `workflows/${name}.md`), 'utf8'),
-    `workflows/${name}.md`,
-  );
-  const require = createRequire(import.meta.url);
-  const { parse } = require('yaml');
-  return Array.isArray(parse(source.frontmatter).imports)
-    ? `workflows/package/${name}.md`
-    : `workflows/${name}.md`;
+function packageWorkflowSource(_root, name) {
+  return `workflows/package/${name}.md`;
 }
 
 export function buildContract(root) {
@@ -472,8 +427,8 @@ export function checkSource(root) {
   return failures;
 }
 
-function parseInstalledContract(context) {
-  const bytes = readRegular(context, CONTRACT_DESTINATION);
+function parseInstalledContract(root) {
+  const bytes = readRequired(root, CONTRACT_DESTINATION);
   let contract;
   try {
     contract = JSON.parse(bytes);
@@ -484,15 +439,16 @@ function parseInstalledContract(context) {
   return { bytes, contract };
 }
 
-function findOwnershipRecord(context) {
-  const packageDir = confinedPath(context, '.github/aw/packages');
+function findOwnershipRecord(root) {
+  const packageDir = safePath(root, '.github/aw/packages');
+  if (!existsSync(packageDir)) throw new Error('Package ownership metadata is missing.');
   const matches = [];
   for (const name of readdirSync(packageDir)) {
     if (!name.endsWith('.json')) continue;
     const relativePath = `.github/aw/packages/${name}`;
     let record;
     try {
-      record = JSON.parse(readRegular(context, relativePath));
+      record = JSON.parse(readRequired(root, relativePath));
     } catch {
       continue;
     }
@@ -513,8 +469,8 @@ function expectedOwnership(contract) {
   ].sort((left, right) => left.destination.localeCompare(right.destination));
 }
 
-function verifyOwnership(context, contract, expectedRevision) {
-  const record = findOwnershipRecord(context);
+function verifyOwnership(root, contract, expectedRevision) {
+  const record = findOwnershipRecord(root);
   assertKeys(record, ['schemaVersion', 'package', 'source', 'resolvedCommit', 'installer', 'files'], 'Package ownership');
   if (record.schemaVersion !== 1 || record.package !== PACKAGE_NAME) {
     throw new Error('Package ownership identity is invalid.');
@@ -543,7 +499,7 @@ function verifyOwnership(context, contract, expectedRevision) {
     assertDigest(owned.sha256, `Ownership digest ${index}`);
     if (seen.has(owned.destination)) throw new Error(`Duplicate ownership destination: ${owned.destination}`);
     seen.add(owned.destination);
-    const actualDigest = fileDigest(context, owned.destination);
+    const actualDigest = fileDigest(root, owned.destination);
     if (owned.sha256 !== actualDigest) {
       throw new Error(`Package ownership digest is stale for ${owned.destination}.`);
     }
@@ -551,26 +507,26 @@ function verifyOwnership(context, contract, expectedRevision) {
   return record.resolvedCommit;
 }
 
-function verifyInstalledBytes(context, contract) {
+function verifyInstalledBytes(root, contract) {
   for (const entry of [...contract.workflows, ...contract.skills]) {
     const expected = entry.source_sha256 ?? entry.sha256;
-    if (fileDigest(context, entry.destination) !== expected) {
+    if (fileDigest(root, entry.destination) !== expected) {
       throw new Error(`Installed digest mismatch for ${entry.destination}.`);
     }
   }
   for (const entry of contract.shared_runtime) {
     for (const destination of new Set([entry.package_destination, entry.destination])) {
-      if (fileDigest(context, destination) !== entry.sha256) {
+      if (fileDigest(root, destination) !== entry.sha256) {
         throw new Error(`Installed digest mismatch for ${destination}.`);
       }
     }
   }
-  for (const entry of contract.workflows) readRegular(context, entry.lock);
+  for (const entry of contract.workflows) readRequired(root, entry.lock);
 }
 
-function verifyTriggerNamespace(context) {
+function verifyTriggerNamespace(root) {
   const directory = '.github/workflows/shared';
-  const files = readdirSync(confinedPath(context, directory));
+  const files = readdirSync(safePath(root, directory));
   const unexpected = files.filter(
     (name) => name.startsWith('squad-bootstrap-trigger-')
       && name !== basename(TRIGGER_PROBE_DESTINATION),
@@ -580,12 +536,12 @@ function verifyTriggerNamespace(context) {
   }
 }
 
-function verifyTriggerProbe(context, revision) {
-  const path = resolve(context.real, TRIGGER_PROBE_DESTINATION);
+function verifyTriggerProbe(root, revision) {
+  const path = safePath(root, TRIGGER_PROBE_DESTINATION);
   if (!existsSync(path)) return;
   let probe;
   try {
-    probe = JSON.parse(readRegular(context, TRIGGER_PROBE_DESTINATION));
+    probe = JSON.parse(readRequired(root, TRIGGER_PROBE_DESTINATION));
   } catch (error) {
     throw new Error(`Bootstrap trigger probe must be valid JSON: ${error.message}`);
   }
@@ -623,16 +579,13 @@ function assertShaValue(value, label) {
   }
 }
 
-function strictCompileMatches(context) {
-  const scratchParent = '.squad-verify-workspaces';
-  const parent = confinedPath(context, scratchParent, { leafMayBeMissing: true });
-  mkdirSync(parent, { recursive: true });
-  const scratch = mkdtempSync(join(parent, 'compile-'));
+function strictCompileMatches(root) {
+  const scratch = mkdtempSync(join(resolve(root), '.squad-gh-aw-verify-'));
   try {
-    mkdirSync(resolve(scratch, '.github'), { recursive: true });
-    copyFileTree(confinedPath(context, '.github'), resolve(scratch, '.github'));
+    const origin = spawnChecked('git', ['config', '--get', 'remote.origin.url'], root).stdout.trim();
+    cpSync(safePath(root, '.github'), resolve(scratch, '.github'), { recursive: true });
     spawnChecked('git', ['init', '--quiet'], scratch);
-    spawnChecked('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], scratch);
+    spawnChecked('git', ['remote', 'add', 'origin', origin], scratch);
     const before = new Map(WORKFLOW_NAMES.map((name) => [
       name,
       readFileSync(resolve(scratch, `.github/workflows/${name}.lock.yml`)),
@@ -651,22 +604,7 @@ function strictCompileMatches(context) {
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
-    if (existsSync(parent) && readdirSync(parent).length === 0) {
-      rmSync(parent, { recursive: true });
-    }
   }
-}
-
-function copyFileTree(source, destination) {
-  const stat = lstatSync(source);
-  if (stat.isSymbolicLink()) throw new Error(`Symbolic links are forbidden: ${source}`);
-  if (stat.isDirectory()) {
-    mkdirSync(destination, { recursive: true });
-    for (const entry of readdirSync(source)) copyFileTree(join(source, entry), join(destination, entry));
-    return;
-  }
-  if (!stat.isFile()) throw new Error(`Non-regular source is forbidden: ${source}`);
-  copyFileSync(source, destination);
 }
 
 function spawnChecked(command, args, cwd) {
@@ -683,6 +621,7 @@ function spawnChecked(command, args, cwd) {
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
   }
+  return result;
 }
 
 export function verifyInstall(root, { expectedRevision = '', strictCompile = false } = {}) {
@@ -692,13 +631,12 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
     if (expectedRevision && !REVISION_PATTERN.test(expectedRevision)) {
       throw new Error('Expected revision must be a lowercase 40-character SHA.');
     }
-    const context = rootContext(root);
-    const { contract } = parseInstalledContract(context);
-    verifyInstalledBytes(context, contract);
-    revision = verifyOwnership(context, contract, expectedRevision);
-    verifyTriggerNamespace(context);
-    verifyTriggerProbe(context, revision);
-    if (strictCompile) strictCompileMatches(context);
+    const { contract } = parseInstalledContract(root);
+    verifyInstalledBytes(root, contract);
+    revision = verifyOwnership(root, contract, expectedRevision);
+    verifyTriggerNamespace(root);
+    verifyTriggerProbe(root, revision);
+    if (strictCompile) strictCompileMatches(root);
   } catch (error) {
     failures.push(error instanceof Error ? error.message : String(error));
   }
@@ -706,40 +644,36 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
 }
 
 export function verifyCanonicalManifest(sourceRoot, installedRoot) {
-  const source = rootContext(sourceRoot);
-  const installed = rootContext(installedRoot);
-  const canonical = readRegular(source, CONTRACT_SOURCE);
+  const canonical = readRequired(sourceRoot, CONTRACT_SOURCE);
   const parsed = JSON.parse(canonical);
   validateContract(parsed);
-  const installedBytes = readRegular(installed, CONTRACT_DESTINATION);
+  const installedBytes = readRequired(installedRoot, CONTRACT_DESTINATION);
   if (!canonical.equals(installedBytes)) {
     throw new Error('Installed manifest is not byte-identical to the trusted canonical manifest.');
   }
 }
 
 export function verifyResource(root, destination) {
-  const context = rootContext(root);
-  const { contract } = parseInstalledContract(context);
+  const { contract } = parseInstalledContract(root);
   const entry = [...contract.shared_runtime, ...contract.workflows, ...contract.skills]
     .find((candidate) => candidate.destination === destination);
   if (!entry) throw new Error(`Resource is not registered in the trusted Squad contract: ${destination}`);
-  const actual = fileDigest(context, destination);
+  const actual = fileDigest(root, destination);
   const expected = entry.source_sha256 ?? entry.sha256;
   if (actual !== expected) throw new Error(`Squad resource digest mismatch for ${destination}.`);
   return actual;
 }
 
 export function materializeRuntime(root) {
-  const context = rootContext(root);
-  const { contract } = parseInstalledContract(context);
+  const { contract } = parseInstalledContract(root);
   for (const entry of contract.shared_runtime) {
-    const content = readRegular(context, entry.package_destination);
+    const content = readRequired(root, entry.package_destination);
     if (sha256(content) !== entry.sha256) {
       throw new Error(`Package-owned runtime digest mismatch for ${entry.package_destination}.`);
     }
     if (entry.package_destination === entry.destination) continue;
-    writeRegular(context, entry.destination, content);
-    if (fileDigest(context, entry.destination) !== entry.sha256) {
+    writePath(root, entry.destination, content);
+    if (fileDigest(root, entry.destination) !== entry.sha256) {
       throw new Error(`Materialized runtime digest mismatch for ${entry.destination}.`);
     }
   }
@@ -747,13 +681,12 @@ export function materializeRuntime(root) {
 
 export function writeLocalTestOwnership(root, revision) {
   if (!REVISION_PATTERN.test(revision)) throw new Error('Local test revision must be a lowercase 40-character SHA.');
-  const context = rootContext(root);
-  const { contract } = parseInstalledContract(context);
+  const { contract } = parseInstalledContract(root);
   const files = expectedOwnership(contract).map((entry) => ({
     ...entry,
-    sha256: fileDigest(context, entry.destination),
+    sha256: fileDigest(root, entry.destination),
   }));
-  writeRegular(context, '.github/aw/packages/bradygaster-squad-workflows-local-test.json', stableJson({
+  writePath(root, '.github/aw/packages/bradygaster-squad-workflows-local-test.json', stableJson({
     schemaVersion: 1,
     package: PACKAGE_NAME,
     source: `${PACKAGE_NAME}@${revision}`,

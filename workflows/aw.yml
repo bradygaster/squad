@@ -9,15 +9,15 @@ includes:
     destination: .github/workflows/squad.md
   - source: package/squad-implement-worker.md
     destination: .github/workflows/squad-implement-worker.md
-  - source: squad-review.md
+  - source: package/squad-review.md
     destination: .github/workflows/squad-review.md
   - source: package/squad-deps-worker.md
     destination: .github/workflows/squad-deps-worker.md
   - source: package/squad-retro.md
     destination: .github/workflows/squad-retro.md
-  - source: squad-improvement-worker.md
+  - source: package/squad-improvement-worker.md
     destination: .github/workflows/squad-improvement-worker.md
-  - source: squad-bootstrap.md
+  - source: package/squad-bootstrap.md
     destination: .github/workflows/squad-bootstrap.md
   - skills/gh-aw-enlistment
 resources:

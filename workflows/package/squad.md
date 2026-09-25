@@ -723,18 +723,6 @@ concurrency:
 network:
   allowed:
     - defaults
-resources:
-  - shared/squad-cast-validator.mjs
-  - shared/squad-bootstrap-validator.mjs
-  - shared/squad-improvement-gate.mjs
-  - shared/squad-retro-evidence.mjs
-  - shared/squad-retro-provenance.mjs
-  - shared/squad-implementation-provenance.mjs
-  - shared/implementation-provenance-v1.schema.json
-  - shared/builtins/scribe-charter.md
-  - shared/builtins/ralph-charter.md
-  - shared/builtins/rai-charter.md
-  - shared/builtins/fact-checker-charter.md
 tools:
   bash: true
   web-fetch: null
