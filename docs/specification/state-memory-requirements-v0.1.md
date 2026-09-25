@@ -6,7 +6,15 @@
 
 **Requirements identifier:** `squad-state-memory-requirements/v0.1`
 
-**Maturity:** Informative and volatile
+**Maturity:** Informative draft; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** File, orphan-ref, two-layer, external, and memory
+providers exist with different authority and recovery semantics.
+
+**Known deviations:** No backend-neutral CAS, recovery, migration, privacy,
+retention, deletion, or cross-tenant fixture corpus exists.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`
 
@@ -18,7 +26,7 @@ provider-specific search. These implementations expose useful seams, but they
 do not yet share enough observable recovery and authority evidence for a
 truthful normative schema.
 
-## 2. Required future semantics
+## 2. State authority requirements
 
 A promoted profile needs to define:
 
@@ -29,31 +37,39 @@ A promoted profile needs to define:
 - append, replace, delete, archive, and tombstone semantics;
 - startup verification, degraded mode, circuit breaking, and recovery;
 - migration and rollback between backends without split-brain authority;
-- memory classification before provider dispatch;
-- provider availability, search provenance, deletion, retention, and audit;
 - trust boundaries among repository state, host-injected services, and remote
   providers;
 - encryption, secrets, privacy, redaction, and data residency declarations.
 
-## 3. Provisional authority rules
+## 3. Memory classification requirements
+
+A promoted memory profile needs stable classes before provider dispatch,
+provider availability and search provenance, retention and deletion behavior,
+audit evidence, and an explicit rule preventing forbidden or transient content
+from reaching durable providers.
+
+State-authority promotion does not imply memory-classification promotion, and
+memory promotion does not imply backend migration conformance.
+
+## 4. Provisional authority rules
 
 Static configuration and normative artifacts remain file-authoritative unless a
-profile says otherwise. Mutable state MUST have exactly one authority backend
-per collection. Mirrors and caches MUST identify their source revision and MUST
+profile says otherwise. Mutable state must have exactly one authority backend
+per collection. Mirrors and caches must identify their source revision and must
 NOT accept writes while authority is ambiguous.
 
-Memory classification MUST precede durable or external writes. Forbidden and
-transient content MUST NOT reach a durable provider. Provider failures MUST be
-observable and MUST NOT silently convert a denied write into local success.
+Memory classification must precede durable or external writes. Forbidden and
+transient content must not reach a durable provider. Provider failures must be
+observable and must not silently convert a denied write into local success.
 
-## 4. Candidate portable operations
+## 5. Candidate portable operations
 
 The likely operation set is `read`, `list`, `compare-and-swap-write`, `append`,
 `delete`, `archive`, `health`, `migrate`, `recover`, `classify`, `search`, and
 `promote`. Each operation needs request IDs, actor, expected revision, result
 revision, backend identity, diagnostics, and idempotency semantics.
 
-## 5. Security and privacy requirements
+## 6. Security and privacy requirements
 
 Backends must prevent path traversal and unauthorized ref access. Audit records
 should omit content by default. External providers require explicit enablement,
@@ -61,7 +77,7 @@ authorization, retention disclosure, deletion behavior, and secret filtering.
 Recovery tools must not leak state from another repository, worktree, user, or
 account.
 
-## 6. Promotion criteria
+## 7. Promotion criteria
 
 This document may become `squad-state-memory/v0.1` only after:
 
@@ -70,11 +86,13 @@ This document may become `squad-state-memory/v0.1` only after:
 2. compare-and-swap, duplicate retry, crash recovery, migration, rollback, and
    split-brain tests have common expected results;
 3. authority discovery and degraded-mode behavior are independently specified;
-4. memory classification and provider dispatch have stable vocabularies;
-5. a security review covers traversal, ref isolation, secrets, retention,
+4. state authority has a standalone manifest independent of memory providers;
+5. memory classification and provider dispatch have a separate stable
+   vocabulary and fixture set;
+6. a security review covers traversal, ref isolation, secrets, retention,
    deletion, and cross-tenant leakage.
 
-## 7. Intentionally deferred details
+## 8. Intentionally deferred details
 
 Git plumbing, SQLite layout, index algorithms, embeddings, ranking, cache
 format, circuit-breaker constants, prompt-only fallback, and provider product

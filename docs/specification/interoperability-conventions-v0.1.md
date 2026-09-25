@@ -4,11 +4,20 @@
 
 **Status:** Working Draft
 
-**Document class:** Normative
+**Document class:** Normative shared-schema draft
 
 **Capability identifier:** `squad-interop/v0.1`
 
-**Maturity:** Stable normative dependency
+**Maturity:** Experimental schema; non-claimable
+
+**Claimable capabilities:** None
+
+**Implementation status:** The shared evidence schema is executable. Discovery,
+negotiation, retention, and cross-implementation conformance manifests are not
+published.
+
+**Known deviations:** Current implementations do not expose one discovery
+document, authority assertion shape, or replay-retention policy.
 
 **Depends on:** `squad-core/v0.1`
 
@@ -25,7 +34,7 @@ An implementation MUST expose a discovery document or API result containing:
 
 - supported core, convention, profile, and binding identifiers;
 - exact capability identifiers and operations;
-- supported artifact or message schema versions;
+- supported file, record, or message schema versions;
 - canonical, compatible, and migration-only behavior classes;
 - extension namespaces owned or understood;
 - provider assumptions and implementation-policy boundaries.
@@ -36,13 +45,14 @@ compatibility.
 
 ## 3. Stable identity and authority
 
-Every actor, member, service, and artifact has an immutable UID scoped by an
+Every actor, member, service, and portable resource has an immutable UID scoped by an
 issuer. Display names, member IDs used as paths, roles, casting personas, and
 provider logins are attributes and MUST NOT be treated as the authority UID.
 
-An authority decision MUST identify actor UID, issuer, authenticated provider
-identity, authority basis, action, resource UID, and policy revision. Casting
-or persona changes MUST NOT alter authority.
+Neutral observations identify the actor UID without implying authority. When
+an authority assertion is present, it MUST identify action, issuer,
+authenticated provider identity, authority basis, resource UID, and policy
+revision. Casting or persona changes MUST NOT alter authority.
 
 ## 4. Shared event and evidence envelope
 
@@ -73,7 +83,7 @@ leases, and retry limits MUST be declared by the executing capability.
 
 ## 6. Canonical privacy and secrets exclusion
 
-Portable artifacts and evidence MUST NOT contain credentials, access tokens,
+Portable files, records, and evidence MUST NOT contain credentials, access tokens,
 private keys, session cookies, secret environment values, hidden prompts,
 unredacted sensitive tool output, or provider authorization headers.
 
@@ -99,18 +109,24 @@ versions assumed. Runtime drift outside the declared range returns
 `unsupported-provider-version` or `provider-drift`; it MUST NOT be silently
 treated as compatible.
 
-## 9. Conformance classes
+## 9. Capability identifiers, classes, and implementation roles
 
-Capabilities claim one or more classes: producer, consumer, editor, validator,
-executor, recorder, or provider binding. Claims are operation-specific and
-MUST include canonical versus compatible behavior.
+A claimable capability identifier has exactly this grammar:
+`squad-<profile>/v<major>.<minor>/<operation>`, where each name component uses
+lowercase ASCII letters, digits, and hyphens. The suite does not define a
+second `#operation` alias.
 
-The portable suite uses the externally claimable classes `artifact-only`,
-`validator`, `editor`, `state-machine-executor`, `provider-binding`, and
-`runtime`. The suite index at
-`test-fixtures/spec/suite-v0.1/index.json` records exact profile-prefixed
-capabilities, dependencies, dialect, maturity, manifests, and schemas. Partial
-claims are valid only when all applicable cases and dependency claims pass.
+The conformance-class vocabulary is `canonical`, `compatible`, `legacy`, and
+`runtime`. Classes describe the behavior evidenced by cases; they are not
+implementation roles. The implementation-role vocabulary is `producer`,
+`consumer`, `editor`, `validator`, and `executor`. A role alone is never a
+claim.
+
+Only a profile with a schema-valid executable manifest may advertise
+capabilities or conformance classes in the suite index. Requirements drafts
+retain implementation roles for design traceability but advertise no claims.
+The Charter v0.1 registration therefore uses its unchanged `/parse`,
+`/validate`, `/edit`, `/legacy-consume`, and `/runtime` identifiers.
 
 Portable case kinds are `positive`, `negative`, `compatibility`, `legacy`,
 `round-trip`, `mutation`, `transition`, `replay`, `concurrency`, `provider`,
@@ -118,14 +134,31 @@ and `security`. Runtime profiles SHOULD promote from requirements-only status
 using transition traces with injected clocks and IDs. Provider bindings SHOULD
 reference neutral case IDs and digests rather than duplicate lifecycle rules.
 
-Every normative profile requires falsifiable fixtures and an independent
+Every claimable normative profile requires falsifiable fixtures and an independent
 reviewer before publication. Passing a schema alone does not prove executor or
 authority conformance.
 
-## 10. Precedents
+## 10. Versioned references and precedents
 
-These conventions align conceptually with W3C conformance classes, Kubernetes
-UID/name and discovery separation, OCI media-type negotiation, RFC 9110
-idempotency semantics, CloudEvents 1.0.2, in-toto/SLSA provenance, and JSON
-Schema vocabularies. Those precedents are informative unless cited by a profile
-as a normative reference.
+The evidence envelope normatively uses
+[JSON Schema 2020-12 Core §8](https://json-schema.org/draft/2020-12/json-schema-core#section-8)
+for identifiers and references,
+[RFC 3339 §5.6](https://www.rfc-editor.org/rfc/rfc3339#section-5.6) for
+timestamps, and
+[RFC 9110 §9.2.2](https://www.rfc-editor.org/rfc/rfc9110#section-9.2.2) as the
+HTTP precedent for idempotent retry analysis.
+
+CloudEvents 1.0.2
+[§3.1](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md#required-attributes),
+Kubernetes UID/name separation, OCI media-type negotiation, and in-toto/SLSA
+provenance are informative design precedents; they are not imported wholesale
+into this schema.
+
+## 11. Promotion criteria
+
+Publish a manifest with neutral-observation, complete and incomplete authority,
+privacy/redaction, expected/result revision, duplicate event, repeated
+idempotency key, conflicting payload digest, replay, unsupported version, and
+extension cases. Discovery and negotiation require a separate executable
+document or API-result schema before this dependency can advertise a
+capability.

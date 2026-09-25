@@ -12,22 +12,24 @@ render them beneath `.squad/`.
 
 | Surface | Repository evidence | Disposition | Specification | Maturity or promotion rationale |
 |---|---|---|---|---|
-| Discovery, negotiation, authority identity, shared evidence, secrets | Core/profile metadata, registry IDs, events, audit records | Stable normative dependency | Interoperability Conventions v0.1 | Cross-cutting mechanics must be shared before profile-specific conformance |
+| Discovery, negotiation, authority identity, shared evidence, secrets | Core/profile metadata, registry IDs, events, audit records | Experimental shared schema; no claim | Interoperability Conventions v0.1 | Evidence schema exists; discovery and negotiation need a manifest |
 | Agent charter | `agents/{id}/charter.md`, compiler, validator, fixtures | Normative profile now | Charter v0.1 | Stable parser and round-trip evidence |
-| Team roster | `team.md`, roster templates, presets | Normative profile now | Team and Routing v0.1 | Stable identity/accountability join; presentation variants remain compatible |
-| Routing ownership | `routing.md`, routing parser, coordinator tests | Normative profile now | Team and Routing v0.1 | Deterministic table subset and fallback semantics are observable |
-| Runtime configuration | `config.json`, config schema and loaders | Normative profile now | Configuration and Casting v0.1 | Portable intent standardized; implementation-only keys remain extensions |
-| Casting provenance | `casting/registry.json`, `policy.json`, `history.json` | Normative profile now | Configuration and Casting v0.1 | Registry identity and revision join are stable; theme selection algorithm is informative |
-| Governance and review | `governance.md`, reviewer protocol, PR requirements | Normative protocol now | Governance and Review v0.1 | Lockout, evidence, reassignment, escalation, and approval are externally auditable |
-| Execution preferences | charters, config, model selector, lifecycle manager | Normative profile now | Execution Preferences v0.1 | Portable intent is stable; model catalogs and authorization remain runtime policy |
-| PRD intake and planning | `prd-intake.md`, planning ontology, gh-aw workflows | Normative protocol now | Planning and Activation v0.1 | Artifact kinds, acceptance gates, and idempotency are observable |
-| Ceremonies | `ceremonies.md`, ceremony reference, retro workflow | Normative artifact and record now | Ceremony v0.1 | Inputs, decisions, actions, roles, trigger, and cooldown are portable; meeting style is informative |
-| Work lifecycle | issue lifecycle template, platform interfaces, worktree tests | Normative protocol now | Work Lifecycle v0.1 | Neutral states and evidence can be provider-independent |
-| GitHub lifecycle | GitHub adapter, gh-aw workflows, issue/PR templates | Provider binding now | GitHub Work Lifecycle Binding v0.1 | GitHub resource mappings and failure semantics are observable |
-| Handoffs and sessions | spawn reference, lifecycle manager, event buses | Normative envelope now | Coordination and Handoff v0.1 | Message identity and idempotency are portable; session transport internals are not |
+| Team roster | `team.md`, roster templates, presets | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with roster parsing, mutation, join, and diagnostic cases |
+| Routing ownership | `routing.md`, routing parser, coordinator tests | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with priority, fallback, ambiguity, stale-write, and resolution cases |
+| Runtime configuration | `config.json`, config schema and loaders | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with precedence and source-evidence cases |
+| Casting identity | `casting/registry.json`, `policy.json` | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with identity, recast, join, and migration cases |
+| Casting provenance | `casting/history.json` | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with append-only history, revision, replay, and CAS cases |
+| Governance and review | `governance.md`, reviewer protocol, PR requirements | Experimental evidence schema; no claim | Governance and Review v0.1 | Add complete transition manifest beyond the representative rejection fixture |
+| Execution preferences | charters, config, model selector, lifecycle manager | Requirements draft; no claim | Execution Preferences v0.1 | Add provider-neutral resolution cases and loss reporting |
+| PRD intake and planning | `prd-intake.md`, planning ontology, gh-aw workflows | Requirements draft; no claim | Planning and Activation v0.1 | Add portable planning-record and activation manifest |
+| Ceremonies | `ceremonies.md`, ceremony reference, retro workflow | Requirements draft; no claim | Ceremony v0.1 | Normalize event vocabulary and prove cooldown with injected clocks |
+| Work lifecycle | issue lifecycle template, platform interfaces, worktree tests | Requirements draft; no claim | Work Lifecycle v0.1 | Run complete transition traces against two providers |
+| GitHub lifecycle | GitHub adapter, gh-aw workflows, issue/PR templates | Requirements binding draft; no claim | GitHub Work Lifecycle Binding v0.1 | Add deterministic sanitized provider transcripts |
+| Handoffs and sessions | spawn reference, lifecycle manager, event buses | Requirements draft; no claim | Coordination and Handoff v0.1 | Add portable envelope, ordering, expiry, and recovery cases |
 | State backends | state backend interfaces, worktree/orphan/two-layer implementations | Informative requirements now | State and Memory Requirements v0.1 | Authority and recovery vary by backend; promotion requires backend-neutral CAS fixtures |
 | Memory governance | memory classes, providers, audit records | Informative requirements now | State and Memory Requirements v0.1 | Classification is promising but provider naming and durable authority are not stable |
-| Automation | schedule manifest, scheduler, local and GitHub providers | Normative profile now | Automation v0.1 | Manifest, claims, retry, and result evidence are stable |
+| Automation | schedule manifest, scheduler, local and GitHub providers | Requirements draft; no claim | Automation v0.1 | Add portable trigger, clock, retry, drift, and result cases |
+| Portable export/import | `squad export`, `squad import`, CLI round-trip tests | Informative observed surface; no claim | `squad-portable-bundle/v1.0` coverage below | Tested implementation exists without a published schema or conformance manifest |
 | Skills | `skills/{name}/SKILL.md`, loader and discovery | Deferred | Future Skills Profile | Promote after metadata precedence, imports, script trust, and compatibility fixtures stabilize |
 | Coordinator prompts and UI wording | templates, generated agent prompt, shell | Informative guidance | Implementation documentation | Prompts and wording are implementation inputs, not interoperability contracts |
 | Telemetry and cost accounting | OpenTelemetry and cost modules | Deferred | Future Observability Binding | Promote after common event identity and privacy/redaction contracts stabilize |
@@ -89,7 +91,7 @@ is equally mature. The next promotion sequence is:
 - Current GitHub adapters rely on installed `gh` behavior and do not yet expose
   API-version negotiation evidence required by the GitHub binding.
 - Casting universe lists and persona names are volatile display metadata and
-  MUST NOT be used as authority identity.
+  must not be used as authority identity.
 - Publication requires an independent reviewer for each normative profile and
   binding; this working draft supplies reviewable contracts, not publication.
 - The reusable conformance dialect still needs shared document-case,
@@ -100,3 +102,28 @@ is equally mature. The next promotion sequence is:
   ordering, provider transcript sanitization, partial-failure taxonomy,
   pass/fail/skip semantics, required extensions, and deprecation windows remain
   explicit publication blockers.
+- The portable export/import bundle uses implementation version `1.0`, not the
+  Core `vMAJOR.MINOR` profile grammar, and has no published schema. Its histories,
+  decisions, skills, registry, and policy content require explicit privacy and
+  secrets review before sharing.
+
+## Portable export and import bundle
+
+The tested CLI surface exports and imports `team.md`, `routing.md`,
+`decisions.md`, casting registry/history/policy, agent charters and histories,
+and skills. Local files and GitHub repository transport are implemented.
+
+This surface is informative coverage under the provisional identifier
+`squad-portable-bundle/v1.0`; it is not a profile or capability claim. Core
+path-containment and version-separation rules apply conceptually. Interop
+privacy rules also apply: credentials, authorization headers, hidden prompts,
+secret environment values, private tool output, and unrelated personal data
+do not belong in a portable bundle. Current CLI warnings tell users to review
+histories, decisions, and team content, but the bundle has no field-level
+redaction declaration.
+
+Promotion requires a language-neutral schema, explicit required and optional
+fields, canonical serialization and digest rules, compatibility fixtures for
+legacy `team`/`decisions` aliases, import conflict semantics, version
+negotiation, secret and privacy mutation cases, and round trips that cover
+local and repository transport without provider credentials in evidence.
