@@ -3,7 +3,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { sanitizedEnvironment } from '../scripts/gh-aw-hosted-e2e.mjs';
+import {
+  assertPristineTarget,
+  guardedTargetMutation,
+  sanitizedEnvironment,
+  selectBootstrapOutputs,
+  waitForBootstrapOutputs,
+} from '../scripts/gh-aw-hosted-e2e.mjs';
 import {
   assertInstalledManifestIdentity,
   loadBundleContract,
@@ -13,6 +19,69 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = readFileSync(resolve(ROOT, 'scripts/gh-aw-hosted-e2e.mjs'), 'utf8');
 const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/squad-gh-aw-hosted-e2e.yml'), 'utf8');
+const CONTRACT = loadBundleContract(ROOT);
+const TARGET_SHA = '1'.repeat(40);
+const MOVED_SHA = '2'.repeat(40);
+const packageArtifactCases = [
+  ...CONTRACT.workflows.map(({ destination }) => ['workflow destination', destination]),
+  ...CONTRACT.workflows.map(({ lock }) => ['workflow lock', lock]),
+  ...CONTRACT.runtime.map(({ packageDestination }) => ['runtime package destination', packageDestination]),
+  ...CONTRACT.runtime.map(({ destination }) => ['materialized runtime destination', destination]),
+  ['installed manifest', '.github/aw/squad-workflows.manifest.json'],
+  ['package ownership metadata', '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json'],
+  ...CONTRACT.skills.map(({ destination }) => ['installed skill', destination]),
+  ['trigger sentinel', '.github/workflows/shared/squad-bootstrap-trigger-probe.json'],
+  ['package namespace residue', '.github/aw/squad/unknown-stale-file.md'],
+] as const;
+
+function fakeGitHub(overrides: Record<string, unknown> = {}) {
+  return {
+    getDefaultBranchSha: () => TARGET_SHA,
+    getTree: () => ({ truncated: false, paths: [] }),
+    listBranches: () => [{ name: 'main' }],
+    listPullRequests: () => [],
+    listIssues: () => [],
+    ...overrides,
+  };
+}
+
+const baseline = {
+  capturedAt: '2026-09-24T20:00:00.000Z',
+  defaultBranch: 'main',
+  defaultBranchSha: TARGET_SHA,
+  maximumPullRequestNumber: 10,
+  maximumIssueNumber: 20,
+};
+const installation = {
+  number: 11,
+  mergedAt: '2026-09-24T20:01:00.000Z',
+  mergeCommit: { oid: '3'.repeat(40) },
+};
+const bootstrapRun = {
+  databaseId: 30,
+  createdAt: '2026-09-24T20:01:05.000Z',
+  headSha: installation.mergeCommit.oid,
+};
+const currentCastPr = {
+  number: 12,
+  url: 'https://example.test/pr/12',
+  title: '[squad] Cast your Squad',
+  body: 'Cast proposal',
+  createdAt: '2026-09-24T20:01:06.000Z',
+  isDraft: true,
+  headRefName: 'squad/bootstrap-cast',
+  baseRefName: 'main',
+  state: 'open',
+};
+const currentResearchIssue = {
+  number: 21,
+  url: 'https://example.test/issues/21',
+  title: '[Research Proposals] Agent-discovered repo opportunities',
+  body: '<!-- squad:bootstrap-opportunities schema=1 -->\nCurrent proposals',
+  createdAt: '2026-09-24T20:01:07.000Z',
+  state: 'open',
+};
+
 describe('Squad gh-aw hosted E2E controller', () => {
   it('uses only a default-branch repository_dispatch controller and one PAT step', () => {
     const parsed = parse(WORKFLOW);
@@ -85,7 +154,7 @@ describe('Squad gh-aw hosted E2E controller', () => {
 
   it('bounds bootstrap polling and cleans temporary branches', () => {
     expect(SCRIPT).toContain('Date.now() + 20 * 60 * 1000');
-    expect(SCRIPT).toContain('Date.now() + 5 * 60 * 1000');
+    expect(SCRIPT).toContain('timeoutMs = 5 * 60 * 1000');
     expect(SCRIPT).toContain('Expected exactly one bootstrap run');
     expect(SCRIPT).toContain("['pr', 'close'");
     expect(SCRIPT).toContain("['api', '--method', 'DELETE'");
@@ -103,5 +172,138 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(SCRIPT).toContain("runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs'");
     expect(SCRIPT).not.toMatch(/privileged\('node'/);
     expect(SCRIPT).not.toMatch(/privileged\('gh', \['aw'/);
+  });
+
+  it.each(packageArtifactCases)('rejects a pre-existing %s at %s before mutation', (_label, artifactPath) => {
+    expect(() => assertPristineTarget(
+      'owner/consumer',
+      'main',
+      CONTRACT,
+      fakeGitHub({ getTree: () => ({ truncated: false, paths: [artifactPath] }) }),
+    )).toThrow(/Target is not pristine/);
+  });
+
+  it.each([
+    ['install branch', { branches: [{ name: 'squad-e2e/install-old' }] }],
+    ['probe branch', { branches: [{ name: 'squad-e2e/probe-old' }] }],
+    ['Cast branch', { branches: [{ name: 'squad/bootstrap-cast' }] }],
+    ['installation PR', {
+      pullRequests: [{
+        number: 1, title: 'ci: install Squad agentic workflows', headRefName: 'other',
+      }],
+    }],
+    ['probe PR', {
+      pullRequests: [{
+        number: 2, title: 'test: add Squad bootstrap trigger probe', headRefName: 'other',
+      }],
+    }],
+    ['Cast PR', {
+      pullRequests: [{
+        number: 3, title: '[squad] Cast your Squad', headRefName: 'squad/bootstrap-cast',
+      }],
+    }],
+    ['research issue title', {
+      issues: [{
+        number: 4, title: '[Research Proposals] Agent-discovered repo opportunities', body: '',
+      }],
+    }],
+    ['canonical research marker', {
+      issues: [{
+        number: 5, title: 'renamed', body: '<!-- squad:bootstrap-opportunities schema=1 -->',
+      }],
+    }],
+  ])('rejects a pre-existing %s before mutation', (_label, state) => {
+    const contract = loadBundleContract(ROOT);
+    expect(() => assertPristineTarget(
+      'owner/consumer',
+      'main',
+      contract,
+      fakeGitHub({
+        listBranches: () => state.branches ?? [{ name: 'main' }],
+        listPullRequests: () => state.pullRequests ?? [],
+        listIssues: () => state.issues ?? [],
+      }),
+    )).toThrow(/Target is not pristine/);
+  });
+
+  it('binds the pristine default SHA and fails closed when it moves before push', () => {
+    const contract = loadBundleContract(ROOT);
+    const captured = assertPristineTarget(
+      'owner/consumer',
+      'main',
+      contract,
+      fakeGitHub(),
+      () => Date.parse(baseline.capturedAt),
+    );
+    expect(captured.defaultBranchSha).toBe(TARGET_SHA);
+    let pushed = false;
+    expect(() => guardedTargetMutation({
+      target: 'owner/consumer',
+      defaultBranch: 'main',
+      expectedSha: captured.defaultBranchSha,
+      phase: 'installation push',
+      github: fakeGitHub({ getDefaultBranchSha: () => MOVED_SHA }),
+      mutate: () => { pushed = true; },
+    })).toThrow(/moved before installation push/);
+    expect(pushed).toBe(false);
+  });
+
+  it('does not accept old matching bootstrap outputs from --state all', () => {
+    const oldOutputs = {
+      castPrs: [{ ...currentCastPr, number: 9, createdAt: '2026-09-24T19:59:00.000Z' }],
+      issues: [{ ...currentResearchIssue, number: 19, createdAt: '2026-09-24T19:59:00.000Z' }],
+    };
+    let now = 0;
+    expect(() => waitForBootstrapOutputs(
+      'owner/consumer',
+      baseline,
+      installation,
+      bootstrapRun,
+      {
+        github: fakeGitHub({
+          listPullRequests: () => oldOutputs.castPrs,
+          listIssues: () => oldOutputs.issues,
+        }),
+        now: () => now,
+        pause: (milliseconds: number) => { now += milliseconds; },
+        timeoutMs: 20,
+        pollMs: 10,
+      },
+    )).toThrow(/Timed out/);
+  });
+
+  it('accepts newly created outputs attributable to the current installation run', () => {
+    let now = 0;
+    const github = fakeGitHub({
+      listPullRequests: () => [currentCastPr],
+      listIssues: () => [currentResearchIssue],
+    });
+    expect(waitForBootstrapOutputs(
+      'owner/consumer',
+      baseline,
+      installation,
+      bootstrapRun,
+      {
+        github,
+        now: () => now,
+        pause: (milliseconds: number) => { now += milliseconds; },
+        timeoutMs: 100,
+        pollMs: 10,
+      },
+    )).toEqual({ castPr: currentCastPr, researchIssue: currentResearchIssue });
+  });
+
+  it.each([
+    ['Cast PRs', {
+      castPrs: [currentCastPr, { ...currentCastPr, number: 13 }],
+      issues: [currentResearchIssue],
+    }],
+    ['research issues', {
+      castPrs: [currentCastPr],
+      issues: [currentResearchIssue, { ...currentResearchIssue, number: 22 }],
+    }],
+  ])('fails closed on duplicate current-run %s', (_label, outputs) => {
+    expect(() => selectBootstrapOutputs(outputs, baseline, installation, bootstrapRun))
+      .toThrow(/Ambiguous current bootstrap outputs/);
   });
 });

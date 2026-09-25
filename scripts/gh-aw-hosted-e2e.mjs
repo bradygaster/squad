@@ -30,6 +30,12 @@ const TRUSTED_SOURCE = Object.freeze({
   ownerId: 41929050,
 });
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const INSTALL_PR_TITLE = 'ci: install Squad agentic workflows';
+const PROBE_PR_TITLE = 'test: add Squad bootstrap trigger probe';
+const CAST_BRANCH = 'squad/bootstrap-cast';
+const CAST_PR_TITLE = '[squad] Cast your Squad';
+const RESEARCH_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
+const RESEARCH_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
 const SAFE_CHILD_ENV = Object.freeze([
   'CI',
   'GH_CONFIG_DIR',
@@ -112,6 +118,53 @@ function ghJson(args, options = {}) {
   const output = privileged('gh', args, options);
   return output ? JSON.parse(output) : null;
 }
+
+const githubAdapter = Object.freeze({
+  getDefaultBranchSha(target, branch) {
+    return ghJson([
+      'api', `repos/${target}/branches/${branch}`,
+      '--jq', '{sha:.commit.sha}',
+    ]).sha;
+  },
+  getTree(target, sha) {
+    return ghJson([
+      'api', `repos/${target}/git/trees/${sha}?recursive=1`,
+      '--jq', '{truncated,paths:[.tree[] | select(.type == "blob") | .path]}',
+    ]);
+  },
+  listBranches(target) {
+    return ghJson([
+      'api', '--paginate', '--slurp', `repos/${target}/branches?per_page=100`,
+    ]).flat().map(({ name }) => ({ name }));
+  },
+  listPullRequests(target) {
+    return ghJson([
+      'api', '--paginate', '--slurp', `repos/${target}/pulls?state=all&per_page=100`,
+    ]).flat().map((pullRequest) => ({
+      number: pullRequest.number,
+      url: pullRequest.html_url,
+      title: pullRequest.title,
+      body: pullRequest.body,
+      createdAt: pullRequest.created_at,
+      isDraft: pullRequest.draft,
+      headRefName: pullRequest.head.ref,
+      baseRefName: pullRequest.base.ref,
+      state: pullRequest.state,
+    }));
+  },
+  listIssues(target) {
+    return ghJson([
+      'api', '--paginate', '--slurp', `repos/${target}/issues?state=all&per_page=100`,
+    ]).flat().filter((issue) => !issue.pull_request).map((issue) => ({
+      number: issue.number,
+      url: issue.html_url,
+      title: issue.title,
+      body: issue.body,
+      createdAt: issue.created_at,
+      state: issue.state,
+    }));
+  },
+});
 
 function sourceGhJson(args) {
   const token = process.env.SOURCE_READ_TOKEN ?? process.env.GH_TOKEN;
@@ -196,7 +249,103 @@ function assertExactStagedDiff(cwd, expected) {
   if (deleted) throw new Error(`Staged deletions are forbidden: ${deleted}`);
 }
 
-export function authorizeTarget(args, sourceInfo) {
+function packageArtifactCategories(contract) {
+  return {
+    workflowDestinations: contract.workflows.map(({ destination }) => destination),
+    workflowLocks: contract.workflows.map(({ lock }) => lock),
+    runtimePackageDestinations: contract.runtime.map(({ packageDestination }) => packageDestination),
+    runtimeDestinations: contract.runtime.map(({ destination }) => destination),
+    manifest: [CONTRACT_DESTINATION],
+    ownership: [OWNERSHIP_DESTINATION],
+    skill: contract.skills.map(({ destination }) => destination),
+    triggerSentinel: [TRIGGER_PROBE_DESTINATION],
+  };
+}
+
+function matchingPriorRunArtifacts(branches, pullRequests, issues) {
+  return {
+    branches: branches.filter(({ name }) => name.startsWith('squad-e2e/install-')
+      || name.startsWith('squad-e2e/probe-')
+      || name === CAST_BRANCH),
+    pullRequests: pullRequests.filter(({ headRefName, title }) => (
+      headRefName.startsWith('squad-e2e/install-')
+      || headRefName.startsWith('squad-e2e/probe-')
+      || headRefName === CAST_BRANCH
+      || title === INSTALL_PR_TITLE
+      || title === PROBE_PR_TITLE
+      || title === CAST_PR_TITLE
+    )),
+    issues: issues.filter(({ title, body }) => (
+      title === RESEARCH_ISSUE_TITLE || (body ?? '').includes(RESEARCH_MARKER)
+    )),
+  };
+}
+
+export function assertPristineTarget(target, defaultBranch, contract, github = githubAdapter, now = Date.now) {
+  if (contract.workflows.length !== 7 || contract.runtime.length !== 15 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 7 workflows, 15 runtime resources, and 1 skill.');
+  }
+  const defaultBranchSha = github.getDefaultBranchSha(target, defaultBranch);
+  assertSha(defaultBranchSha, 'Target default-branch SHA');
+  const tree = github.getTree(target, defaultBranchSha);
+  if (tree.truncated) throw new Error('Target default-branch tree response was truncated.');
+  const paths = new Set(tree.paths);
+  const categories = packageArtifactCategories(contract);
+  const existingPaths = Object.entries(categories).flatMap(([category, candidates]) => (
+    candidates.filter((path) => paths.has(path)).map((path) => ({ category, path }))
+  ));
+  const packageNamespace = [...paths].filter((path) => path.startsWith('.github/aw/squad/'));
+  const branches = github.listBranches(target);
+  const pullRequests = github.listPullRequests(target);
+  const issues = github.listIssues(target);
+  const prior = matchingPriorRunArtifacts(branches, pullRequests, issues);
+  if (existingPaths.length > 0 || packageNamespace.length > 0
+    || prior.branches.length > 0 || prior.pullRequests.length > 0 || prior.issues.length > 0) {
+    throw new Error(`Target is not pristine: ${JSON.stringify({
+      packagePaths: existingPaths,
+      packageNamespace,
+      priorRunBranches: prior.branches.map(({ name }) => name),
+      priorRunPullRequests: prior.pullRequests.map(({ number }) => number),
+      priorRunIssues: prior.issues.map(({ number }) => number),
+    })}`);
+  }
+  return {
+    capturedAt: new Date(now()).toISOString(),
+    defaultBranch,
+    defaultBranchSha,
+    maximumPullRequestNumber: Math.max(0, ...pullRequests.map(({ number }) => number)),
+    maximumIssueNumber: Math.max(0, ...issues.map(({ number }) => number)),
+  };
+}
+
+export function assertTargetDefaultBranch(
+  target,
+  defaultBranch,
+  expectedSha,
+  phase,
+  github = githubAdapter,
+) {
+  const actualSha = github.getDefaultBranchSha(target, defaultBranch);
+  if (actualSha !== expectedSha) {
+    throw new Error(
+      `Target default branch moved before ${phase}: expected ${expectedSha}, found ${actualSha}.`,
+    );
+  }
+}
+
+export function guardedTargetMutation({
+  target,
+  defaultBranch,
+  expectedSha,
+  phase,
+  mutate,
+  github = githubAdapter,
+}) {
+  assertTargetDefaultBranch(target, defaultBranch, expectedSha, phase, github);
+  return mutate();
+}
+
+export function authorizeTarget(args, sourceInfo, contract, github = githubAdapter) {
   const target = requireArg(args, 'target');
   const expectedRepositoryId = Number(requireArg(args, 'target_repository_id'));
   const expectedOwnerId = Number(requireArg(args, 'target_owner_id'));
@@ -233,7 +382,8 @@ export function authorizeTarget(args, sourceInfo) {
     || workflowPermissions.can_approve_pull_request_reviews !== true) {
     throw new Error('Target Actions permissions do not match the supported secure configuration.');
   }
-  return { target, info, workflowPermissions, actor };
+  const baseline = assertPristineTarget(target, info.default_branch, contract, github);
+  return { target, info, workflowPermissions, actor, baseline };
 }
 
 function waitForBootstrapRun(target, headSha, startedAt, evidence) {
@@ -258,45 +408,122 @@ function waitForBootstrapRun(target, headSha, startedAt, evidence) {
   throw new Error(`Timed out waiting for bootstrap run at ${headSha}.`);
 }
 
-function bootstrapOutputs(target) {
-  const castPrs = ghJson([
-    'pr', 'list', '--repo', target, '--state', 'all', '--head', 'squad/bootstrap-cast',
-    '--json', 'number,url,isDraft,title,headRefName,baseRefName,state',
-  ]);
-  const issues = ghJson([
-    'issue', 'list', '--repo', target, '--state', 'all', '--limit', '100',
-    '--search', '"[Research Proposals] Agent-discovered repo opportunities" in:title',
-    '--json', 'number,url,title,body,state',
-  ]).filter((issue) => issue.title === '[Research Proposals] Agent-discovered repo opportunities'
-    && issue.body.includes('<!-- squad:bootstrap-opportunities schema=1 -->'));
-  return { castPrs, issues };
+function bootstrapOutputs(target, github = githubAdapter) {
+  return {
+    castPrs: github.listPullRequests(target),
+    issues: github.listIssues(target),
+  };
 }
 
-function waitForBootstrapOutputs(target) {
-  const deadline = Date.now() + 5 * 60 * 1000;
-  while (Date.now() < deadline) {
-    const outputs = bootstrapOutputs(target);
-    if (outputs.castPrs.length === 1 && outputs.castPrs[0].isDraft && outputs.issues.length === 1) {
-      return { castPr: outputs.castPrs[0], researchIssue: outputs.issues[0] };
-    }
-    sleep(10_000);
+export function selectBootstrapOutputs(outputs, baseline, installation, bootstrapRun) {
+  const cutoff = Math.max(
+    Date.parse(baseline.capturedAt),
+    Date.parse(installation.mergedAt),
+    Date.parse(bootstrapRun.createdAt),
+  );
+  const castPrs = outputs.castPrs.filter((pr) => (
+    pr.number > baseline.maximumPullRequestNumber
+    && Date.parse(pr.createdAt) >= cutoff
+    && pr.headRefName === CAST_BRANCH
+    && pr.baseRefName === baseline.defaultBranch
+    && pr.title === CAST_PR_TITLE
+    && pr.isDraft === true
+  ));
+  const issues = outputs.issues.filter((issue) => (
+    issue.number > baseline.maximumIssueNumber
+    && Date.parse(issue.createdAt) >= cutoff
+    && issue.title === RESEARCH_ISSUE_TITLE
+    && issue.body?.startsWith(RESEARCH_MARKER)
+  ));
+  if (castPrs.length > 1 || issues.length > 1) {
+    throw new Error(
+      `Ambiguous current bootstrap outputs: ${castPrs.length} Cast PRs and ${issues.length} research issues.`,
+    );
+  }
+  if (castPrs.length === 1 && issues.length === 1) {
+    return { castPr: castPrs[0], researchIssue: issues[0] };
+  }
+  return null;
+}
+
+export function waitForBootstrapOutputs(
+  target,
+  baseline,
+  installation,
+  bootstrapRun,
+  {
+    github = githubAdapter,
+    now = Date.now,
+    pause = sleep,
+    timeoutMs = 5 * 60 * 1000,
+    pollMs = 10_000,
+  } = {},
+) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const selected = selectBootstrapOutputs(
+      bootstrapOutputs(target, github),
+      baseline,
+      installation,
+      bootstrapRun,
+    );
+    if (selected) return selected;
+    pause(pollMs);
   }
   throw new Error('Timed out waiting for the draft Cast PR and bootstrap research issue.');
 }
 
-function createAndMergePr({ cwd, target, defaultBranch, branch, title, body, evidence }) {
+function createAndMergePr({
+  cwd,
+  target,
+  defaultBranch,
+  expectedBaseSha,
+  branch,
+  title,
+  body,
+  evidence,
+  github = githubAdapter,
+}) {
   privileged('gh', ['auth', 'setup-git']);
-  privileged('git', ['push', '--set-upstream', 'origin', branch], { cwd, capture: false });
-  const prUrl = privileged('gh', [
-    'pr', 'create', '--repo', target, '--base', defaultBranch, '--head', branch,
-    '--title', title, '--body', body,
-  ], { cwd });
+  guardedTargetMutation({
+    target,
+    defaultBranch,
+    expectedSha: expectedBaseSha,
+    phase: `${title} push`,
+    github,
+    mutate: () => privileged('git', ['push', '--set-upstream', 'origin', branch], {
+      cwd,
+      capture: false,
+    }),
+  });
+  const prUrl = guardedTargetMutation({
+    target,
+    defaultBranch,
+    expectedSha: expectedBaseSha,
+    phase: `${title} PR creation`,
+    github,
+    mutate: () => privileged('gh', [
+      'pr', 'create', '--repo', target, '--base', defaultBranch, '--head', branch,
+      '--title', title, '--body', body,
+    ], { cwd }),
+  });
   const pr = ghJson(['pr', 'view', prUrl, '--repo', target, '--json', 'number,url,state,headRefName,baseRefName']);
   writeJson(resolve(evidence, `pr-${pr.number}-created.json`), pr);
-  privileged('gh', ['pr', 'merge', String(pr.number), '--repo', target, '--merge', '--delete-branch'], {
-    cwd,
-    capture: false,
-    timeout: 300_000,
+  guardedTargetMutation({
+    target,
+    defaultBranch,
+    expectedSha: expectedBaseSha,
+    phase: `${title} merge`,
+    github,
+    mutate: () => privileged(
+      'gh',
+      ['pr', 'merge', String(pr.number), '--repo', target, '--merge', '--delete-branch'],
+      {
+        cwd,
+        capture: false,
+        timeout: 300_000,
+      },
+    ),
   });
   const merged = ghJson([
     'pr', 'view', String(pr.number), '--repo', target,
@@ -328,7 +555,7 @@ function hosted(args, repositoryRoot) {
   if (contract.workflows.length !== 7 || contract.runtime.length !== 15 || contract.skills.length !== 1) {
     throw new Error('Trusted package topology must be exactly 7 workflows, 15 runtime resources, and 1 skill.');
   }
-  const targetState = authorizeTarget(args, sourceInfo);
+  const targetState = authorizeTarget(args, sourceInfo, contract);
   mkdirSync(evidence, { recursive: true });
   writeJson(resolve(evidence, 'preflight.json'), targetState);
 
@@ -341,6 +568,12 @@ function hosted(args, repositoryRoot) {
       capture: false,
       timeout: 300_000,
     });
+    const clonedHead = runChild('git', ['rev-parse', 'HEAD'], { cwd: checkout });
+    if (clonedHead !== targetState.baseline.defaultBranchSha) {
+      throw new Error(
+        `Cloned target HEAD does not match pristine baseline: expected ${targetState.baseline.defaultBranchSha}, found ${clonedHead}.`,
+      );
+    }
     runChild('git', ['config', 'user.name', 'Squad hosted E2E'], { cwd: checkout });
     runChild('git', ['config', 'user.email', 'github-actions[bot]@users.noreply.github.com'], { cwd: checkout });
     const installBranch = `squad-e2e/install-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`;
@@ -384,8 +617,9 @@ function hosted(args, repositoryRoot) {
       cwd: checkout,
       target: targetState.target,
       defaultBranch: targetState.info.default_branch,
+      expectedBaseSha: targetState.baseline.defaultBranchSha,
       branch: installBranch,
-      title: 'ci: install Squad agentic workflows',
+      title: INSTALL_PR_TITLE,
       body: 'One-shot hosted E2E installation. Generated Squad work remains human-reviewed and is not merged.',
       evidence,
     });
@@ -396,7 +630,17 @@ function hosted(args, repositoryRoot) {
       installStartedAt,
       evidence,
     );
-    const outputs = waitForBootstrapOutputs(targetState.target);
+    writeJson(resolve(evidence, 'installation-identity.json'), {
+      baseline: targetState.baseline,
+      installation,
+      bootstrapRun: installRun,
+    });
+    const outputs = waitForBootstrapOutputs(
+      targetState.target,
+      targetState.baseline,
+      installation,
+      installRun,
+    );
 
     runChild('git', ['fetch', 'origin', targetState.info.default_branch], { cwd: checkout });
     const probeBranch = `squad-e2e/probe-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`;
@@ -421,8 +665,9 @@ function hosted(args, repositoryRoot) {
       cwd: checkout,
       target: targetState.target,
       defaultBranch: targetState.info.default_branch,
+      expectedBaseSha: installation.mergeCommit.oid,
       branch: probeBranch,
-      title: 'test: add Squad bootstrap trigger probe',
+      title: PROBE_PR_TITLE,
       body: 'One-shot non-executable sentinel proving the bootstrap path trigger.',
       evidence,
     });
