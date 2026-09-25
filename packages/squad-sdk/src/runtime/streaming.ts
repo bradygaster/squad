@@ -34,6 +34,8 @@ export interface StreamDelta {
 export interface UsageEvent {
   type: 'usage';
   sessionId: string;
+  /** Correlates usage with a persisted turn-start record when available. */
+  turnId?: string;
   agentName?: string;
   model: string;
   inputTokens: number;

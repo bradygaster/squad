@@ -21,7 +21,7 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
-import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, UsageLedger, estimateCost, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveSquadState, resolveGlobalSquadPath, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { parseAgentFromDescription } from './agent-name-parser.js';
@@ -232,6 +232,28 @@ export async function runShell(): Promise<void> {
 
   // Streaming pipeline for token usage and response latency metrics
   const streamingPipeline = new StreamingPipeline();
+  let usageLedger: UsageLedger | undefined;
+  let usageLedgerWarningShown = false;
+  let usageTurnSequence = 0;
+  const persistUsage = async (operation: (ledger: UsageLedger) => Promise<void>): Promise<void> => {
+    try {
+      const stateContext = resolveSquadState(teamRoot);
+      if (!stateContext) return;
+
+      usageLedger ??= new UsageLedger(stateContext.backend);
+      await operation(usageLedger);
+    } catch (error) {
+      if (!usageLedgerWarningShown) {
+        usageLedgerWarningShown = true;
+        console.error(`⚠ Failed to persist usage telemetry: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
+  const nextUsageTurnId = (sessionId: string): string =>
+    `${sessionId}:${Date.now()}:${++usageTurnSequence}`;
+  streamingPipeline.onUsage(async (event) => {
+    await persistUsage(ledger => ledger.append(event));
+  });
 
   // Shell-level observability metrics (auto-enabled when OTel is configured)
   const shellMetricsActive = enableShellMetrics();
@@ -424,6 +446,13 @@ export async function runShell(): Promise<void> {
     recordAgentSpawn(agentName, 'direct');
     // Attach streaming pipeline for token/latency metrics
     const sid = session.sessionId ?? `agent-${agentName}-${Date.now()}`;
+    const turnId = nextUsageTurnId(sid);
+    await persistUsage(ledger => ledger.recordTurnStart({
+      turnId,
+      sessionId: sid,
+      agentName,
+      timestamp: new Date(),
+    }));
     if (!streamingPipeline.isAttached(sid)) streamingPipeline.attachToSession(sid);
     streamingPipeline.markMessageStart(sid);
 
@@ -461,7 +490,9 @@ export async function runShell(): Promise<void> {
       const inputTokens = typeof event['inputTokens'] === 'number' ? event['inputTokens'] : 0;
       const outputTokens = typeof event['outputTokens'] === 'number' ? event['outputTokens'] : 0;
       const model = typeof event['model'] === 'string' ? event['model'] : 'unknown';
-      const estimatedCost = typeof event['estimatedCost'] === 'number' ? event['estimatedCost'] : 0;
+      const estimatedCost = typeof event['estimatedCost'] === 'number'
+        ? event['estimatedCost']
+        : estimateCost(model, inputTokens, outputTokens);
       // Update model display in agent panel
       registry.updateModel(agentName, model);
       shellApi?.refreshAgents();
@@ -469,6 +500,7 @@ export async function runShell(): Promise<void> {
       streamingPipeline.processEvent({
         type: 'usage',
         sessionId: sid,
+        turnId,
         agentName,
         model,
         inputTokens,
@@ -608,6 +640,13 @@ export async function runShell(): Promise<void> {
     // Record coordinator spawn metric
     recordAgentSpawn('coordinator', 'coordinator');
     const coordSid = coordinatorSession.sessionId ?? `coordinator-${Date.now()}`;
+    const turnId = nextUsageTurnId(coordSid);
+    await persistUsage(ledger => ledger.recordTurnStart({
+      turnId,
+      sessionId: coordSid,
+      agentName: 'coordinator',
+      timestamp: new Date(),
+    }));
     if (!streamingPipeline.isAttached(coordSid)) streamingPipeline.attachToSession(coordSid);
     streamingPipeline.markMessageStart(coordSid);
 
@@ -658,10 +697,13 @@ export async function runShell(): Promise<void> {
       const inputTokens = typeof event['inputTokens'] === 'number' ? event['inputTokens'] : 0;
       const outputTokens = typeof event['outputTokens'] === 'number' ? event['outputTokens'] : 0;
       const model = typeof event['model'] === 'string' ? event['model'] : 'unknown';
-      const estimatedCost = typeof event['estimatedCost'] === 'number' ? event['estimatedCost'] : 0;
+      const estimatedCost = typeof event['estimatedCost'] === 'number'
+        ? event['estimatedCost']
+        : estimateCost(model, inputTokens, outputTokens);
       streamingPipeline.processEvent({
         type: 'usage',
         sessionId: coordSid,
+        turnId,
         agentName: 'coordinator',
         model,
         inputTokens,
