@@ -1,0 +1,558 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Squad Charter Profile v0.1 conformance manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schemaVersion", "profile", "capabilities", "cases"],
+  "properties": {
+    "$schema": {
+      "const": "./manifest.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "const": "squad-charter/v0.1"
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "enum": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit",
+        "squad-charter/v0.1/legacy-consume",
+        "squad-charter/v0.1/runtime"
+      ]
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line", "column"],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "start", "end", "path"],
+      "properties": {
+        "code": {
+          "enum": [
+            "SQC001",
+            "SQC002",
+            "SQC003",
+            "SQC004",
+            "SQC005",
+            "SQC006",
+            "SQC007",
+            "SQC008",
+            "SQC009",
+            "SQC010",
+            "SQC011",
+            "SQC012",
+            "SQC013",
+            "SQC014",
+            "SQC015",
+            "SQC101",
+            "SQC102",
+            "SQC103",
+            "SQC104",
+            "SQC105",
+            "SQC106",
+            "SQC107",
+            "SQC108"
+          ]
+        },
+        "severity": {
+          "enum": ["error", "warning"]
+        },
+        "start": {
+          "$ref": "#/$defs/position"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        },
+        "path": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "accepted",
+        "conforms",
+        "classification",
+        "capabilities",
+        "diagnostics"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "conforms": {
+          "type": "boolean"
+        },
+        "classification": {
+          "enum": ["canonical", "noncanonical-compatible", "invalid"]
+        },
+        "capabilities": {
+          "type": "array",
+          "oneOf": [
+            {
+              "const": []
+            },
+            {
+              "const": ["squad-charter/v0.1/validate"]
+            }
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "parsed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "ownership",
+        "boundaries",
+        "collaboration",
+        "modelPreference",
+        "modelRationale",
+        "modelFallback",
+        "reasoningEffort",
+        "authoredReasoningEffort",
+        "contextTier",
+        "authoredContextTier"
+      ],
+      "properties": {
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "purpose", "name", "role", "expertise", "style"],
+          "properties": {
+            "id": {
+              "type": ["string", "null"]
+            },
+            "purpose": {
+              "type": ["string", "null"]
+            },
+            "name": {
+              "type": ["string", "null"]
+            },
+            "role": {
+              "type": ["string", "null"]
+            },
+            "expertise": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "style": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "ownership": {
+          "type": ["string", "null"]
+        },
+        "boundaries": {
+          "type": ["string", "null"]
+        },
+        "collaboration": {
+          "type": ["string", "null"]
+        },
+        "modelPreference": {
+          "type": ["string", "null"]
+        },
+        "modelRationale": {
+          "type": ["string", "null"]
+        },
+        "modelFallback": {
+          "type": ["string", "null"]
+        },
+        "reasoningEffort": {
+          "type": ["string", "null"]
+        },
+        "authoredReasoningEffort": {
+          "type": ["string", "null"]
+        },
+        "contextTier": {
+          "type": ["string", "null"]
+        },
+        "authoredContextTier": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "serialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "edits"],
+      "properties": {
+        "mode": {
+          "enum": ["canonical", "legacy", "preserve"]
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "value"],
+            "properties": {
+              "field": {
+                "const": "identity.purpose"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "serializationExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output", "outputFixture", "eol", "validation"],
+      "properties": {
+        "output": {
+          "type": ["string", "null"]
+        },
+        "outputFixture": {
+          "type": ["string", "null"]
+        },
+        "eol": {
+          "enum": ["LF", "CRLF", "CR"]
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accepted", "conforms", "classification", "diagnostics"],
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "conforms": {
+              "type": "boolean"
+            },
+            "classification": {
+              "enum": ["canonical", "noncanonical-compatible", "invalid"]
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtimeExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compile",
+        "errorCodes",
+        "resolvedModel",
+        "resolvedReasoningEffort",
+        "resolvedContextTier"
+      ],
+      "properties": {
+        "compile": {
+          "type": "boolean"
+        },
+        "errorCodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic/properties/code"
+          }
+        },
+        "resolvedModel": {
+          "type": ["string", "null"]
+        },
+        "resolvedReasoningEffort": {
+          "type": ["string", "null"]
+        },
+        "resolvedContextTier": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "capabilities", "input", "serialization", "expected"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "contains": {
+            "const": "squad-charter/v0.1/validate"
+          },
+          "items": {
+            "$ref": "#/$defs/capability"
+          }
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fixture", "text", "path", "profile", "validationApi"],
+          "properties": {
+            "fixture": {
+              "type": ["string", "null"]
+            },
+            "text": {
+              "type": ["string", "null"]
+            },
+            "path": {
+              "type": ["string", "null"]
+            },
+            "profile": {
+              "type": ["string", "null"]
+            },
+            "validationApi": {
+              "const": "conformance"
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "fixture": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "fixture": {
+                  "type": "null"
+                },
+                "text": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "serialization": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/serialization"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validation", "parsed", "serialization", "runtime"],
+          "properties": {
+            "validation": {
+              "$ref": "#/$defs/validation"
+            },
+            "parsed": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/parsed"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "serialization": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/serializationExpectation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtime": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/runtimeExpectation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "capabilities": {
+                "type": "array",
+                "contains": {
+                  "const": "squad-charter/v0.1/parse"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "expected": {
+                "type": "object",
+                "properties": {
+                  "parsed": {
+                    "$ref": "#/$defs/parsed"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "expected": {
+                "type": "object",
+                "properties": {
+                  "parsed": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "capabilities": {
+                "type": "array",
+                "contains": {
+                  "const": "squad-charter/v0.1/edit"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "serialization": {
+                "$ref": "#/$defs/serialization"
+              },
+              "expected": {
+                "type": "object",
+                "properties": {
+                  "serialization": {
+                    "$ref": "#/$defs/serializationExpectation"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "serialization": {
+                "type": "null"
+              },
+              "expected": {
+                "type": "object",
+                "properties": {
+                  "serialization": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "capabilities": {
+                "type": "array",
+                "contains": {
+                  "const": "squad-charter/v0.1/runtime"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "expected": {
+                "type": "object",
+                "properties": {
+                  "runtime": {
+                    "$ref": "#/$defs/runtimeExpectation"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "expected": {
+                "type": "object",
+                "properties": {
+                  "runtime": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

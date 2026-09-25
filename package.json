@@ -49,6 +49,7 @@
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.69.0",
     "@vitest/coverage-v8": "^4.1.11",
+    "ajv": "^8.20.0",
     "cspell": "^10.3.3",
     "eslint": "^10.10.0",
     "eslint-plugin-n": "^18.3.0",
