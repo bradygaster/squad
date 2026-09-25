@@ -738,6 +738,13 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('"payload_sha256"');
     expect(lock).not.toMatch(/"materialize-bootstrap":\{"inputs":\{"payload":/);
     expect(lock).toContain('reconstructBootstrapPayload(items[0])');
+    expect(lock).toContain('SQUAD_BOOTSTRAP_INSTALL_SHA: ${{ github.sha }}');
+    expect(lock).toContain('SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}');
+    expect(lock).toContain('SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}');
+    expect(lock).toContain('squad:bootstrap-provenance');
+    expect(lock).toContain('pullRequestDetails.head.repo?.full_name !== provenance.repository');
+    expect(lock).toContain('body: `${provenanceMarker}\\n${prBodyWithoutProvenance}`');
+    expect(lock).toContain('body: markedIssueBody');
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
 

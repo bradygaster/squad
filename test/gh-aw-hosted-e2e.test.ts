@@ -19,6 +19,7 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = readFileSync(resolve(ROOT, 'scripts/gh-aw-hosted-e2e.mjs'), 'utf8');
 const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/squad-gh-aw-hosted-e2e.yml'), 'utf8');
+const BOOTSTRAP_WORKFLOW = readFileSync(resolve(ROOT, 'workflows/squad-bootstrap.md'), 'utf8');
 const CONTRACT = loadBundleContract(ROOT);
 const TARGET_SHA = '1'.repeat(40);
 const MOVED_SHA = '2'.repeat(40);
@@ -38,9 +39,10 @@ function fakeGitHub(overrides: Record<string, unknown> = {}) {
   return {
     getDefaultBranchSha: () => TARGET_SHA,
     getTree: () => ({ truncated: false, paths: [] }),
-    listBranches: () => [{ name: 'main' }],
+    listBranches: () => [{ name: 'main', sha: TARGET_SHA }],
     listPullRequests: () => [],
     listIssues: () => [],
+    getUser: () => ACTIONS_BOT,
     ...overrides,
   };
 }
@@ -62,25 +64,56 @@ const bootstrapRun = {
   createdAt: '2026-09-24T20:01:05.000Z',
   headSha: installation.mergeCommit.oid,
 };
+const ACTIONS_BOT = {
+  login: 'github-actions[bot]',
+  id: 41898282,
+  type: 'Bot',
+};
+const CAST_SHA = '4'.repeat(40);
+const provenanceMarker = (overrides: Record<string, unknown> = {}) => (
+  `<!-- squad:bootstrap-provenance ${JSON.stringify({
+    schema: 1,
+    repository: 'owner/consumer',
+    run_id: String(bootstrapRun.databaseId),
+    install_sha: installation.mergeCommit.oid,
+    cast_sha: CAST_SHA,
+    ...overrides,
+  })} -->`
+);
 const currentCastPr = {
   number: 12,
   url: 'https://example.test/pr/12',
   title: '[squad] Cast your Squad',
-  body: 'Cast proposal',
+  body: `${provenanceMarker()}\nCast proposal`,
   createdAt: '2026-09-24T20:01:06.000Z',
   isDraft: true,
   headRefName: 'squad/bootstrap-cast',
+  headRepository: 'owner/consumer',
+  headSha: CAST_SHA,
   baseRefName: 'main',
+  baseSha: installation.mergeCommit.oid,
+  author: ACTIONS_BOT,
   state: 'open',
 };
 const currentResearchIssue = {
   number: 21,
   url: 'https://example.test/issues/21',
   title: '[Research Proposals] Agent-discovered repo opportunities',
-  body: '<!-- squad:bootstrap-opportunities schema=1 -->\nCurrent proposals',
+  body: `<!-- squad:bootstrap-opportunities schema=1 -->\n${provenanceMarker()}\nCurrent proposals`,
   createdAt: '2026-09-24T20:01:07.000Z',
+  author: ACTIONS_BOT,
   state: 'open',
 };
+const currentOutputs = (
+  castPr = currentCastPr,
+  researchIssue = currentResearchIssue,
+) => ({
+  target: 'owner/consumer',
+  expectedAuthor: ACTIONS_BOT,
+  castBranchSha: CAST_SHA,
+  castPrs: [castPr],
+  issues: [researchIssue],
+});
 
 describe('Squad gh-aw hosted E2E controller', () => {
   it('uses only a default-branch repository_dispatch controller and one PAT step', () => {
@@ -150,6 +183,16 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(SCRIPT).toContain('assertExactStagedDiff(checkout, new Set([TRIGGER_PROBE_DESTINATION]))');
     expect(SCRIPT).not.toContain('appendFileSync');
     expect(SCRIPT).not.toContain("contract.runtime.find(({ path }) => path === contract.triggerProbe)");
+  });
+
+  it('emits trusted run provenance into both bootstrap output bodies', () => {
+    expect(BOOTSTRAP_WORKFLOW).toContain('SQUAD_BOOTSTRAP_INSTALL_SHA: ${{ github.sha }}');
+    expect(BOOTSTRAP_WORKFLOW).toContain('SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}');
+    expect(BOOTSTRAP_WORKFLOW).toContain('SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}');
+    expect(BOOTSTRAP_WORKFLOW).toContain('<!-- squad:bootstrap-provenance ${JSON.stringify(provenance)} -->');
+    expect(BOOTSTRAP_WORKFLOW).toContain('pullRequestDetails.head.repo?.full_name !== provenance.repository');
+    expect(BOOTSTRAP_WORKFLOW).toContain('body: `${provenanceMarker}\\n${prBodyWithoutProvenance}`');
+    expect(BOOTSTRAP_WORKFLOW).toContain('body: markedIssueBody');
   });
 
   it('bounds bootstrap polling and cleans temporary branches', () => {
@@ -275,6 +318,10 @@ describe('Squad gh-aw hosted E2E controller', () => {
   it('accepts newly created outputs attributable to the current installation run', () => {
     let now = 0;
     const github = fakeGitHub({
+      listBranches: () => [
+        { name: 'main', sha: TARGET_SHA },
+        { name: 'squad/bootstrap-cast', sha: CAST_SHA },
+      ],
       listPullRequests: () => [currentCastPr],
       listIssues: () => [currentResearchIssue],
     });
@@ -291,6 +338,139 @@ describe('Squad gh-aw hosted E2E controller', () => {
         pollMs: 10,
       },
     )).toEqual({ castPr: currentCastPr, researchIssue: currentResearchIssue });
+  });
+
+  it('rejects the post-baseline fork spoof with public names and markers', () => {
+    const attacker = { login: 'attacker', id: 999, type: 'User' };
+    const spoofedPr = {
+      ...currentCastPr,
+      body: 'Cast proposal',
+      headRepository: 'attacker/consumer',
+      author: attacker,
+    };
+    const spoofedIssue = {
+      ...currentResearchIssue,
+      body: '<!-- squad:bootstrap-opportunities schema=1 -->\nAttacker proposals',
+      author: attacker,
+    };
+    expect(() => selectBootstrapOutputs(
+      currentOutputs(spoofedPr, spoofedIssue),
+      baseline,
+      installation,
+      bootstrapRun,
+    )).toThrow(/exactly one bootstrap provenance marker/);
+  });
+
+  it.each([
+    ['run ID', { run_id: '31' }],
+    ['install SHA', { install_sha: '5'.repeat(40) }],
+    ['repository', { repository: 'attacker/consumer' }],
+    ['Cast SHA marker', { cast_sha: '6'.repeat(40) }],
+  ])('rejects a mismatched %s provenance value', (_label, markerOverrides) => {
+    const marker = provenanceMarker(markerOverrides);
+    expect(() => selectBootstrapOutputs(
+      currentOutputs(
+        { ...currentCastPr, body: `${marker}\nCast proposal` },
+        {
+          ...currentResearchIssue,
+          body: `<!-- squad:bootstrap-opportunities schema=1 -->\n${marker}\nCurrent proposals`,
+        },
+      ),
+      baseline,
+      installation,
+      bootstrapRun,
+    )).toThrow(/expected current-run provenance/);
+  });
+
+  it('rejects outputs bound to different runs', () => {
+    const wrongIssueMarker = provenanceMarker({ run_id: '31' });
+    expect(() => selectBootstrapOutputs(
+      currentOutputs(currentCastPr, {
+        ...currentResearchIssue,
+        body: `<!-- squad:bootstrap-opportunities schema=1 -->\n${wrongIssueMarker}\nCurrent proposals`,
+      }),
+      baseline,
+      installation,
+      bootstrapRun,
+    )).toThrow(/expected current-run provenance/);
+  });
+
+  it.each([
+    ['missing marker', 'Cast proposal'],
+    ['malformed marker', '<!-- squad:bootstrap-provenance not-json -->\nCast proposal'],
+    ['duplicate marker', `${provenanceMarker()}\n${provenanceMarker()}\nCast proposal`],
+  ])('rejects a Cast PR with a %s', (_label, body) => {
+    expect(() => selectBootstrapOutputs(
+      currentOutputs({ ...currentCastPr, body }),
+      baseline,
+      installation,
+      bootstrapRun,
+    )).toThrow(/provenance marker/);
+  });
+
+  it.each([
+    ['missing marker', '<!-- squad:bootstrap-opportunities schema=1 -->\nCurrent proposals'],
+    ['malformed marker', '<!-- squad:bootstrap-opportunities schema=1 -->\n<!-- squad:bootstrap-provenance not-json -->\nCurrent proposals'],
+    ['duplicate marker', `<!-- squad:bootstrap-opportunities schema=1 -->\n${provenanceMarker()}\n${provenanceMarker()}\nCurrent proposals`],
+  ])('rejects a research issue with a %s', (_label, body) => {
+    expect(() => selectBootstrapOutputs(
+      currentOutputs(currentCastPr, { ...currentResearchIssue, body }),
+      baseline,
+      installation,
+      bootstrapRun,
+    )).toThrow(/provenance marker/);
+  });
+
+  it.each([
+    ['wrong PR author', {
+      castPr: { ...currentCastPr, author: { login: 'attacker', id: 999, type: 'User' } },
+      issue: currentResearchIssue,
+      outputs: {},
+      message: /expected GitHub Actions bot/,
+    }],
+    ['wrong issue author', {
+      castPr: currentCastPr,
+      issue: { ...currentResearchIssue, author: { login: 'attacker', id: 999, type: 'User' } },
+      outputs: {},
+      message: /expected GitHub Actions bot/,
+    }],
+    ['fork head repository', {
+      castPr: { ...currentCastPr, headRepository: 'attacker/consumer' },
+      issue: currentResearchIssue,
+      outputs: {},
+      message: /repository, branch, SHA, base, or draft state/,
+    }],
+    ['wrong PR head SHA', {
+      castPr: { ...currentCastPr, headSha: '6'.repeat(40) },
+      issue: currentResearchIssue,
+      outputs: {},
+      message: /expected current-run provenance/,
+    }],
+    ['wrong target branch SHA', {
+      castPr: currentCastPr,
+      issue: currentResearchIssue,
+      outputs: { castBranchSha: '6'.repeat(40) },
+      message: /repository, branch, SHA, base, or draft state/,
+    }],
+    ['wrong base SHA', {
+      castPr: { ...currentCastPr, baseSha: '6'.repeat(40) },
+      issue: currentResearchIssue,
+      outputs: {},
+      message: /repository, branch, SHA, base, or draft state/,
+    }],
+    ['wrong head branch', {
+      castPr: { ...currentCastPr, headRefName: 'squad/bootstrap-cast-spoof' },
+      issue: currentResearchIssue,
+      outputs: {},
+      message: /repository, branch, SHA, base, or draft state/,
+    }],
+  ])('rejects %s', (_label, testCase) => {
+    expect(() => selectBootstrapOutputs(
+      { ...currentOutputs(testCase.castPr, testCase.issue), ...testCase.outputs },
+      baseline,
+      installation,
+      bootstrapRun,
+    )).toThrow(testCase.message);
   });
 
   it.each([

@@ -36,6 +36,8 @@ const CAST_BRANCH = 'squad/bootstrap-cast';
 const CAST_PR_TITLE = '[squad] Cast your Squad';
 const RESEARCH_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
 const RESEARCH_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
+const PROVENANCE_MARKER_PATTERN = /^<!-- squad:bootstrap-provenance (\{[^\r\n]+\}) -->$/gm;
+const ACTIONS_BOT_LOGIN = 'github-actions[bot]';
 const SAFE_CHILD_ENV = Object.freeze([
   'CI',
   'GH_CONFIG_DIR',
@@ -135,7 +137,7 @@ const githubAdapter = Object.freeze({
   listBranches(target) {
     return ghJson([
       'api', '--paginate', '--slurp', `repos/${target}/branches?per_page=100`,
-    ]).flat().map(({ name }) => ({ name }));
+    ]).flat().map((branch) => ({ name: branch.name, sha: branch.commit.sha }));
   },
   listPullRequests(target) {
     return ghJson([
@@ -148,7 +150,15 @@ const githubAdapter = Object.freeze({
       createdAt: pullRequest.created_at,
       isDraft: pullRequest.draft,
       headRefName: pullRequest.head.ref,
+      headRepository: pullRequest.head.repo?.full_name,
+      headSha: pullRequest.head.sha,
       baseRefName: pullRequest.base.ref,
+      baseSha: pullRequest.base.sha,
+      author: {
+        login: pullRequest.user.login,
+        id: pullRequest.user.id,
+        type: pullRequest.user.type,
+      },
       state: pullRequest.state,
     }));
   },
@@ -161,8 +171,19 @@ const githubAdapter = Object.freeze({
       title: issue.title,
       body: issue.body,
       createdAt: issue.created_at,
+      author: {
+        login: issue.user.login,
+        id: issue.user.id,
+        type: issue.user.type,
+      },
       state: issue.state,
     }));
+  },
+  getUser(login) {
+    return ghJson([
+      'api', `users/${login}`,
+      '--jq', '{login,id,type}',
+    ]);
   },
 });
 
@@ -409,10 +430,53 @@ function waitForBootstrapRun(target, headSha, startedAt, evidence) {
 }
 
 function bootstrapOutputs(target, github = githubAdapter) {
+  const expectedAuthor = github.getUser(ACTIONS_BOT_LOGIN);
+  if (expectedAuthor.login !== ACTIONS_BOT_LOGIN
+    || expectedAuthor.type !== 'Bot'
+    || !Number.isSafeInteger(expectedAuthor.id)) {
+    throw new Error('GitHub Actions bot identity is unavailable or invalid.');
+  }
+  const castBranch = github.listBranches(target).find(({ name }) => name === CAST_BRANCH);
   return {
+    target,
+    expectedAuthor,
+    castBranchSha: castBranch?.sha,
     castPrs: github.listPullRequests(target),
     issues: github.listIssues(target),
   };
+}
+
+function parseBootstrapProvenance(body, label) {
+  const matches = [...String(body ?? '').matchAll(PROVENANCE_MARKER_PATTERN)];
+  if (matches.length !== 1) {
+    throw new Error(`${label} must contain exactly one bootstrap provenance marker.`);
+  }
+  let marker;
+  try {
+    marker = JSON.parse(matches[0][1]);
+  } catch {
+    throw new Error(`${label} bootstrap provenance marker is malformed.`);
+  }
+  const keys = Object.keys(marker).sort();
+  const expectedKeys = ['cast_sha', 'install_sha', 'repository', 'run_id', 'schema'];
+  if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)
+    || marker.schema !== 1
+    || typeof marker.repository !== 'string'
+    || typeof marker.run_id !== 'string'
+    || typeof marker.install_sha !== 'string'
+    || typeof marker.cast_sha !== 'string'
+    || !SHA_PATTERN.test(marker.install_sha)
+    || !SHA_PATTERN.test(marker.cast_sha)
+    || !/^[1-9][0-9]*$/.test(marker.run_id)) {
+    throw new Error(`${label} bootstrap provenance marker is malformed.`);
+  }
+  return marker;
+}
+
+function sameAuthor(actual, expected) {
+  return actual?.login === expected.login
+    && actual?.id === expected.id
+    && actual?.type === expected.type;
 }
 
 export function selectBootstrapOutputs(outputs, baseline, installation, bootstrapRun) {
@@ -424,16 +488,12 @@ export function selectBootstrapOutputs(outputs, baseline, installation, bootstra
   const castPrs = outputs.castPrs.filter((pr) => (
     pr.number > baseline.maximumPullRequestNumber
     && Date.parse(pr.createdAt) >= cutoff
-    && pr.headRefName === CAST_BRANCH
-    && pr.baseRefName === baseline.defaultBranch
     && pr.title === CAST_PR_TITLE
-    && pr.isDraft === true
   ));
   const issues = outputs.issues.filter((issue) => (
     issue.number > baseline.maximumIssueNumber
     && Date.parse(issue.createdAt) >= cutoff
     && issue.title === RESEARCH_ISSUE_TITLE
-    && issue.body?.startsWith(RESEARCH_MARKER)
   ));
   if (castPrs.length > 1 || issues.length > 1) {
     throw new Error(
@@ -441,7 +501,38 @@ export function selectBootstrapOutputs(outputs, baseline, installation, bootstra
     );
   }
   if (castPrs.length === 1 && issues.length === 1) {
-    return { castPr: castPrs[0], researchIssue: issues[0] };
+    const [castPr] = castPrs;
+    const [researchIssue] = issues;
+    const castMarker = parseBootstrapProvenance(castPr.body, 'Cast PR');
+    const issueMarker = parseBootstrapProvenance(researchIssue.body, 'Research issue');
+    const expectedMarker = {
+      schema: 1,
+      repository: outputs.target,
+      run_id: String(bootstrapRun.databaseId),
+      install_sha: installation.mergeCommit.oid,
+      cast_sha: castPr.headSha,
+    };
+    if (JSON.stringify(castMarker) !== JSON.stringify(expectedMarker)
+      || JSON.stringify(issueMarker) !== JSON.stringify(expectedMarker)) {
+      throw new Error('Bootstrap outputs do not share the expected current-run provenance.');
+    }
+    if (!researchIssue.body.startsWith(`${RESEARCH_MARKER}\n`)) {
+      throw new Error('Research issue is missing the canonical bootstrap marker.');
+    }
+    if (!sameAuthor(castPr.author, outputs.expectedAuthor)
+      || !sameAuthor(researchIssue.author, outputs.expectedAuthor)) {
+      throw new Error('Bootstrap outputs were not authored by the expected GitHub Actions bot.');
+    }
+    if (castPr.headRepository !== outputs.target
+      || castPr.headRefName !== CAST_BRANCH
+      || castPr.baseRefName !== baseline.defaultBranch
+      || castPr.baseSha !== installation.mergeCommit.oid
+      || castPr.headSha !== outputs.castBranchSha
+      || !SHA_PATTERN.test(castPr.headSha)
+      || castPr.isDraft !== true) {
+      throw new Error('Bootstrap Cast PR repository, branch, SHA, base, or draft state is invalid.');
+    }
+    return { castPr, researchIssue };
   }
   return null;
 }
