@@ -9,7 +9,7 @@
  */
 
 import { afterAll, describe, it, expect } from 'vitest';
-import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
@@ -24,6 +24,21 @@ import {
   formatViolations,
   type ContractToken,
 } from './gh-aw-shell-contract';
+import {
+  CONTRACT_DESTINATION,
+  CONTRACT_SOURCE,
+  OWNERSHIP_ENTRY_COUNT,
+  PACKAGE_NAME,
+  RUNTIME_TUPLES,
+  SKILL_TUPLES,
+  TRIGGER_PROBE,
+  TRIGGER_PROBE_DESTINATION,
+  WORKFLOW_NAMES,
+  checkSource,
+  materializeRuntime,
+  validateContract,
+  verifyInstall,
+} from '../workflows/shared/squad-install-verifier.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
@@ -723,6 +738,7 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'shared/squad-cast-validator.mjs',
     'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
+    'shared/squad-install-verifier.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
   ];
@@ -758,13 +774,13 @@ describe('gh-aw: clean install runtime resource closure', () => {
       cpSync(join(WORKFLOWS_DIR, imported), destination);
     }
 
-    // gh-aw v0.89.2 installs squad.md first, recursively installs its worker
-    // dependencies, and then skips the explicit worker entries as duplicates.
-    // Model that observed behavior by copying only the root workflow resources.
-    for (const resource of extractResources(extractFrontmatter(SQUAD_WORKFLOW))) {
-      const destination = join(workflowDir, resource);
-      mkdirSync(dirname(destination), { recursive: true });
-      cpSync(join(WORKFLOWS_DIR, resource), destination);
+    for (const workflowName of workflowNames) {
+      const source = join(WORKFLOWS_DIR, `${workflowName}.md`);
+      for (const resource of extractResources(extractFrontmatter(source))) {
+        const destination = join(workflowDir, resource);
+        mkdirSync(dirname(destination), { recursive: true });
+        cpSync(join(WORKFLOWS_DIR, resource), destination);
+      }
     }
 
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
@@ -3499,5 +3515,218 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
       skipsInit(`## Coordinator\n\n| Name | Role | Notes |\n|------|------|-------|\n| Squad | Coordinator | Routes work. |\n\n${HEADER}\n`),
       'only the Members table describes the cast; the Coordinator table is always present',
     ).toBe(false);
+  });
+});
+
+describe('gh-aw: canonical package integrity contract', () => {
+  const revisionA = 'a'.repeat(40);
+  const revisionB = 'b'.repeat(40);
+
+  function copyInto(root: string, source: string, destination: string): void {
+    const target = join(root, destination);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(process.cwd(), source), target);
+  }
+
+  function makeConsumer(revision = revisionA, materialize = true): string {
+    const root = createTestWorkspace('gh-aw-package-contract-');
+    copyInto(root, CONTRACT_SOURCE, CONTRACT_DESTINATION);
+    const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
+    for (const workflow of contract.workflows) {
+      copyInto(root, workflow.source, workflow.destination);
+      const lock = join(root, workflow.lock);
+      mkdirSync(dirname(lock), { recursive: true });
+      writeFileSync(lock, `# test lock for ${workflow.name}\n`);
+    }
+    for (const resource of contract.shared_runtime) {
+      copyInto(root, resource.source, resource.package_destination);
+      if (materialize && resource.package_destination !== resource.destination) {
+        copyInto(root, resource.source, resource.destination);
+      }
+    }
+    for (const skill of contract.skills) {
+      copyInto(root, skill.source, skill.destination);
+    }
+    const owned = [
+      ...contract.workflows,
+      ...contract.shared_runtime.map((entry: { source: string; package_destination: string }) => ({
+        source: entry.source,
+        destination: entry.package_destination,
+      })),
+      { source: CONTRACT_SOURCE, destination: CONTRACT_DESTINATION },
+    ].map((entry: { source: string; destination: string }) => ({
+      source: entry.source,
+      destination: entry.destination,
+      sha256: createHash('sha256').update(readFileSync(join(root, entry.destination))).digest('hex'),
+    })).sort((left, right) => left.destination.localeCompare(right.destination));
+    const ownership = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
+    mkdirSync(dirname(ownership), { recursive: true });
+    writeFileSync(ownership, `${JSON.stringify({
+      schemaVersion: 1,
+      package: PACKAGE_NAME,
+      source: `${PACKAGE_NAME}@${revision}`,
+      resolvedCommit: revision,
+      installer: 'gh-aw v0.89.21 test',
+      files: owned,
+    }, null, 2)}\n`);
+    return root;
+  }
+
+  function mutateContract(root: string, mutate: (contract: any) => void): string[] {
+    const path = join(root, CONTRACT_DESTINATION);
+    const contract = JSON.parse(readFileSync(path, 'utf8'));
+    mutate(contract);
+    writeFileSync(path, `${JSON.stringify(contract, null, 2)}\n`);
+    return verifyInstall(root).failures;
+  }
+
+  it('registers the exact nested 7/15/1 topology and safe trigger probe', () => {
+    expect(checkSource(process.cwd())).toEqual([]);
+    const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
+    expect(contract.workflows.map((entry: { name: string }) => entry.name)).toEqual(WORKFLOW_NAMES);
+    expect(contract.shared_runtime).toHaveLength(RUNTIME_TUPLES.length);
+    expect(contract.skills).toHaveLength(SKILL_TUPLES.length);
+    expect(contract.package).toBe('bradygaster/squad/workflows');
+    expect(contract.manifest).toBe('workflows/aw.yml');
+    expect(contract.bootstrap.trigger_probe).toBe(TRIGGER_PROBE);
+    expect(contract.shared_runtime.some((entry: { path: string }) => entry.path === TRIGGER_PROBE)).toBe(false);
+    expect(readText(join(process.cwd(), 'workflows/aw.yml'))).toContain('  - skills/gh-aw-enlistment');
+    for (const workflow of contract.workflows) {
+      expect(workflow.source).toBe(`workflows/package/${workflow.name}.md`);
+      expect(readText(join(process.cwd(), workflow.source))).not.toMatch(/^resources:/m);
+    }
+    expect(existsSync(join(process.cwd(), 'aw.yml'))).toBe(false);
+  });
+
+  it('accepts a coherent consumer with the exact ownership cardinality', () => {
+    const root = makeConsumer();
+    expect(verifyInstall(root, { expectedRevision: revisionA }).failures).toEqual([]);
+    const record = JSON.parse(readFileSync(
+      join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json'),
+      'utf8',
+    ));
+    expect(record.files).toHaveLength(OWNERSHIP_ENTRY_COUNT);
+  });
+
+  it('accepts only the deterministic retained bootstrap trigger sentinel', () => {
+    const root = makeConsumer();
+    const probePath = join(root, TRIGGER_PROBE_DESTINATION);
+    mkdirSync(dirname(probePath), { recursive: true });
+    writeFileSync(probePath, `${JSON.stringify({
+      schema_version: 1,
+      kind: 'squad-bootstrap-trigger-probe',
+      trusted_source_sha: revisionA,
+      hosted_run_id: '12345',
+      install_merge_sha: revisionB,
+      default_branch_sha: revisionB,
+    }, null, 2)}\n`);
+    expect(verifyInstall(root, { expectedRevision: revisionA }).failures).toEqual([]);
+    const probe = JSON.parse(readFileSync(probePath, 'utf8'));
+    probe.default_branch_sha = revisionA;
+    writeFileSync(probePath, `${JSON.stringify(probe, null, 2)}\n`);
+    expect(verifyInstall(root).failures.join('\n')).toContain(
+      'default_branch_sha must equal install_merge_sha',
+    );
+  });
+
+  it('rejects missing workflow, runtime, lock, skill, manifest, and stale bytes', () => {
+    const root = makeConsumer();
+    unlinkSync(join(root, '.github/workflows/squad-bootstrap.md'));
+    writeFileSync(join(root, '.github/workflows/shared/squad-cast-validator.mjs'), 'stale\n');
+    unlinkSync(join(root, '.github/workflows/squad-review.lock.yml'));
+    unlinkSync(join(root, '.github/aw/squad/runtime/shared/builtins/scribe-charter.md'));
+    unlinkSync(join(root, '.github/skills/gh-aw-enlistment/SKILL.md'));
+    const failures = verifyInstall(root).failures.join('\n');
+    expect(failures).toMatch(/missing|digest mismatch/i);
+
+    const missingManifest = makeConsumer();
+    unlinkSync(join(missingManifest, CONTRACT_DESTINATION));
+    expect(verifyInstall(missingManifest).failures.join('\n')).toContain('Required file is missing');
+  });
+
+  it('rejects missing, extra, reordered, duplicated, narrowed, redirected, and unknown fields', () => {
+    const mutations: Array<(contract: any) => void> = [
+      contract => { contract.workflows.pop(); },
+      contract => { contract.shared_runtime.push(contract.shared_runtime[0]); },
+      contract => { contract.workflows.reverse(); },
+      contract => { contract.workflows[1] = contract.workflows[0]; },
+      contract => { contract.shared_runtime = []; },
+      contract => { contract.workflows[0].destination = '.github/workflows/redirected.md'; },
+      contract => { contract.workflows[0].unknown = true; },
+      contract => { contract.extra = true; },
+    ];
+    for (const mutation of mutations) {
+      expect(mutateContract(makeConsumer(), mutation).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('rejects unsafe path forms before reading redirected targets', () => {
+    for (const unsafe of ['../escape', '/absolute/path']) {
+      const root = makeConsumer();
+      const failures = mutateContract(root, contract => {
+        contract.shared_runtime[0].source = unsafe;
+      });
+      expect(failures.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('rejects symlinked manifest leaves and runtime parents', () => {
+    const manifestRoot = makeConsumer();
+    const manifestPath = join(manifestRoot, CONTRACT_DESTINATION);
+    const manifestTarget = join(manifestRoot, 'redirected-manifest.json');
+    writeFileSync(manifestTarget, readFileSync(manifestPath));
+    unlinkSync(manifestPath);
+    symlinkSync(manifestTarget, manifestPath);
+    expect(verifyInstall(manifestRoot).failures.join('\n')).toContain('symbolic link');
+
+    const runtimeRoot = makeConsumer(revisionA, false);
+    const shared = join(runtimeRoot, '.github/workflows/shared');
+    const redirected = join(runtimeRoot, '.github/workflows/shared-redirected');
+    cpSync(shared, redirected, { recursive: true });
+    rmSync(shared, { recursive: true });
+    symlinkSync(redirected, shared, 'dir');
+    expect(() => materializeRuntime(runtimeRoot)).toThrow(/symbolic link/);
+  });
+
+  it('materializes package-only runtime bytes and rejects stale sources', () => {
+    const root = makeConsumer(revisionA, false);
+    const contract = JSON.parse(readFileSync(join(root, CONTRACT_DESTINATION), 'utf8'));
+    const materialized = contract.shared_runtime.filter(
+      (entry: { package_destination: string; destination: string }) =>
+        entry.package_destination !== entry.destination,
+    );
+    for (const entry of materialized) expect(existsSync(join(root, entry.destination))).toBe(false);
+    materializeRuntime(root);
+    for (const entry of materialized) {
+      expect(readFileSync(join(root, entry.destination)).equals(
+        readFileSync(join(root, entry.package_destination)),
+      )).toBe(true);
+    }
+    writeFileSync(join(root, materialized[0].package_destination), 'stale\n');
+    expect(() => materializeRuntime(root)).toThrow(/digest mismatch/);
+  });
+
+  it('rejects ownership mismatches and mixed revisions', () => {
+    const root = makeConsumer();
+    const ownershipPath = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
+    const ownership = JSON.parse(readFileSync(ownershipPath, 'utf8'));
+    ownership.source = `${PACKAGE_NAME}@${revisionB}`;
+    writeFileSync(ownershipPath, `${JSON.stringify(ownership, null, 2)}\n`);
+    expect(verifyInstall(root).failures.join('\n')).toContain('Package ownership source');
+
+    const extra = makeConsumer();
+    const extraPath = join(extra, '.github/aw/packages/bradygaster-squad-workflows-test.json');
+    const extraOwnership = JSON.parse(readFileSync(extraPath, 'utf8'));
+    extraOwnership.files.push(extraOwnership.files[0]);
+    writeFileSync(extraPath, `${JSON.stringify(extraOwnership, null, 2)}\n`);
+    expect(verifyInstall(extra).failures.join('\n')).toContain(
+      `Package ownership files must contain exactly ${OWNERSHIP_ENTRY_COUNT} entries.`,
+    );
+  });
+
+  it('rejects unsafe standalone contract shapes without filesystem access', () => {
+    const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
+    contract.skills[0].destination = '../outside';
+    expect(() => validateContract(contract)).toThrow(/unsafe path segment/);
   });
 });
