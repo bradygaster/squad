@@ -509,8 +509,15 @@ function verifyOwnership(root, contract, expectedRevision) {
 function verifyInstalledBytes(root, contract, revision) {
   for (const entry of contract.workflows) {
     const installed = readRequired(root, entry.destination);
-    const sourceBinding = `source: ${PACKAGE_NAME}@${revision}`;
-    const canonical = Buffer.from(installed.toString('utf8').replace(`\n${sourceBinding}\n---\n`, '\n---\n'));
+    const sourceBindings = [
+      `source: ${PACKAGE_NAME}@${revision}`,
+      `source: bradygaster/squad/${entry.source}@${revision}`,
+    ];
+    let canonicalText = installed.toString('utf8');
+    for (const sourceBinding of sourceBindings) {
+      canonicalText = canonicalText.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
+    }
+    const canonical = Buffer.from(canonicalText);
     if (sha256(canonical) !== entry.source_sha256) {
       throw new Error(`Installed digest mismatch for ${entry.destination}.`);
     }
