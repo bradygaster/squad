@@ -56,7 +56,7 @@
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "4a2cd73cb3395c512eec6e8620fc20387f47607604e87dc6bec66bf96f81b6c2"
+      "source_sha256": "fb1bc0f0c1f63e09f94892f99bfe857499803a7ec9465108cb128b99eb01a852"
     }
   ],
   "shared_runtime": [
@@ -66,7 +66,7 @@
       "package_destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "ownership": "manifest",
-      "sha256": "f2af6cebe2aecf1aa152f6871aa428fa5382b1027c92c1eaf4a49f767a4ba4a4"
+      "sha256": "0da2b31a80b47e428cb215a00d4655b54b7b66e4a6a2522f0f4da8f119d0346e"
     },
     {
       "path": "shared/squad-cast-validator.mjs",

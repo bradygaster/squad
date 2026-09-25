@@ -67,7 +67,13 @@ function requireArg(args, name) {
   return value;
 }
 
-export function sanitizedEnvironment(extra = {}) {
+export function sanitizedEnvironment(extra = {}, { allowGitHubToken = false } = {}) {
+  if ('SQUAD_GH_AW_E2E_TOKEN' in extra) {
+    throw new Error('SQUAD_GH_AW_E2E_TOKEN must never be passed to a child process.');
+  }
+  if ('GH_TOKEN' in extra && !allowGitHubToken) {
+    throw new Error('GH_TOKEN requires an explicitly privileged or source-read child process.');
+  }
   const env = Object.fromEntries(
     SAFE_CHILD_ENV.filter((key) => process.env[key] !== undefined)
       .map((key) => [key, process.env[key]]),
@@ -79,7 +85,7 @@ export function runChild(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     encoding: 'utf8',
-    env: sanitizedEnvironment(options.env),
+    env: sanitizedEnvironment(options.env, { allowGitHubToken: options.allowGitHubToken === true }),
     stdio: options.capture === false ? 'inherit' : 'pipe',
     timeout: options.timeout ?? 120_000,
   });
@@ -95,7 +101,11 @@ export function runChild(command, args, options = {}) {
 function privileged(command, args, options = {}) {
   const token = process.env.GH_TOKEN;
   if (!token) throw new Error('GH_TOKEN is required for the trusted hosted journey.');
-  return runChild(command, args, { ...options, env: { ...options.env, GH_TOKEN: token } });
+  return runChild(command, args, {
+    ...options,
+    allowGitHubToken: true,
+    env: { ...options.env, GH_TOKEN: token },
+  });
 }
 
 function ghJson(args, options = {}) {
@@ -106,7 +116,7 @@ function ghJson(args, options = {}) {
 function sourceGhJson(args) {
   const token = process.env.SOURCE_READ_TOKEN ?? process.env.GH_TOKEN;
   if (!token) throw new Error('A source repository read token is required.');
-  const output = runChild('gh', args, { env: { GH_TOKEN: token } });
+  const output = runChild('gh', args, { allowGitHubToken: true, env: { GH_TOKEN: token } });
   return output ? JSON.parse(output) : null;
 }
 
@@ -339,10 +349,14 @@ function hosted(args, repositoryRoot) {
 
     const sourceReadToken = process.env.SOURCE_READ_TOKEN;
     if (!sourceReadToken) throw new Error('SOURCE_READ_TOKEN is required for immutable package retrieval.');
+    if (sourceReadToken === process.env.GH_TOKEN) {
+      throw new Error('SOURCE_READ_TOKEN must not reuse the mutation-capable GH_TOKEN.');
+    }
     runChild('gh', ['aw', 'add', `${PACKAGE_NAME}@${sourceSha}`], {
       cwd: checkout,
       capture: false,
       timeout: 600_000,
+      allowGitHubToken: true,
       env: { GH_TOKEN: sourceReadToken },
     });
     runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs', '--materialize-runtime'], {

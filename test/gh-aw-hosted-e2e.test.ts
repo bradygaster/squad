@@ -37,6 +37,8 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(env.OTHER_CREDENTIAL).toBeUndefined();
     expect(env.ARBITRARY_UNTRUSTED_VALUE).toBeUndefined();
     expect(env.SAFE_VALUE).toBe('ok');
+    expect(() => sanitizedEnvironment({ GH_TOKEN: 'secret' })).toThrow(/explicitly privileged/);
+    expect(() => sanitizedEnvironment({ SQUAD_GH_AW_E2E_TOKEN: 'secret' })).toThrow(/never be passed/);
     delete process.env.GH_TOKEN;
     delete process.env.SQUAD_GH_AW_E2E_TOKEN;
     delete process.env.OTHER_CREDENTIAL;
@@ -91,8 +93,12 @@ describe('Squad gh-aw hosted E2E controller', () => {
   });
 
   it('never executes candidate package or installed verifier with inherited credentials', () => {
-    expect(SCRIPT).toContain('env: sanitizedEnvironment(options.env)');
+    expect(SCRIPT).toContain(
+      'env: sanitizedEnvironment(options.env, { allowGitHubToken: options.allowGitHubToken === true })',
+    );
     expect(SCRIPT).toContain("runChild('gh', ['aw', 'add'");
+    expect(SCRIPT).toContain('SOURCE_READ_TOKEN must not reuse the mutation-capable GH_TOKEN');
+    expect(SCRIPT).toContain('allowGitHubToken: true');
     expect(SCRIPT).toContain('env: { GH_TOKEN: sourceReadToken }');
     expect(SCRIPT).toContain("runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs'");
     expect(SCRIPT).not.toMatch(/privileged\('node'/);

@@ -9,7 +9,7 @@
  */
 
 import { afterAll, describe, it, expect } from 'vitest';
-import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
+import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
@@ -3668,6 +3668,24 @@ describe('gh-aw: canonical package integrity contract', () => {
       });
       expect(failures.length).toBeGreaterThan(0);
     }
+  });
+
+  it('rejects symlinked manifest leaves and runtime parents', () => {
+    const manifestRoot = makeConsumer();
+    const manifestPath = join(manifestRoot, CONTRACT_DESTINATION);
+    const manifestTarget = join(manifestRoot, 'redirected-manifest.json');
+    writeFileSync(manifestTarget, readFileSync(manifestPath));
+    unlinkSync(manifestPath);
+    symlinkSync(manifestTarget, manifestPath);
+    expect(verifyInstall(manifestRoot).failures.join('\n')).toContain('symbolic link');
+
+    const runtimeRoot = makeConsumer(revisionA, false);
+    const shared = join(runtimeRoot, '.github/workflows/shared');
+    const redirected = join(runtimeRoot, '.github/workflows/shared-redirected');
+    cpSync(shared, redirected, { recursive: true });
+    rmSync(shared, { recursive: true });
+    symlinkSync(redirected, shared, 'dir');
+    expect(() => materializeRuntime(runtimeRoot)).toThrow(/symbolic link/);
   });
 
   it('materializes package-only runtime bytes and rejects stale sources', () => {

@@ -3,9 +3,11 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -207,24 +209,45 @@ export function validateContract(contract) {
 
 function safePath(root, relativePath) {
   validatePathSyntax(relativePath, undefined, relativePath);
-  const absoluteRoot = resolve(root);
+  const absoluteRoot = realpathSync(resolve(root));
   const candidate = resolve(absoluteRoot, relativePath);
   if (candidate !== absoluteRoot && !candidate.startsWith(`${absoluteRoot}${sep}`)) {
     throw new Error(`Path escapes repository root: ${relativePath}`);
+  }
+  let current = absoluteRoot;
+  const segments = relativePath.split('/');
+  for (let index = 0; index < segments.length; index += 1) {
+    current = join(current, segments[index]);
+    const stat = lstatSync(current, { throwIfNoEntry: false });
+    if (!stat) break;
+    if (stat.isSymbolicLink()) throw new Error(`Path contains a symbolic link: ${relativePath}`);
+    if (index < segments.length - 1 && !stat.isDirectory()) {
+      throw new Error(`Path parent is not a directory: ${relativePath}`);
+    }
   }
   return candidate;
 }
 
 function readRequired(root, relativePath) {
   const path = safePath(root, relativePath);
-  if (!existsSync(path)) throw new Error(`Required file is missing: ${relativePath}`);
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (!stat) throw new Error(`Required file is missing: ${relativePath}`);
+  if (!stat.isFile()) throw new Error(`Required path is not a regular file: ${relativePath}`);
   return readFileSync(path);
 }
 
 function writePath(root, relativePath, content) {
-  const path = safePath(root, relativePath);
+  let path = safePath(root, relativePath);
   mkdirSync(dirname(path), { recursive: true });
+  path = safePath(root, relativePath);
+  const existing = lstatSync(path, { throwIfNoEntry: false });
+  if (existing && !existing.isFile()) {
+    throw new Error(`Write destination is not a regular file: ${relativePath}`);
+  }
   writeFileSync(path, content);
+  if (!lstatSync(path).isFile()) {
+    throw new Error(`Written destination is not a regular file: ${relativePath}`);
+  }
 }
 
 function fileDigest(root, path) {
