@@ -2,6 +2,8 @@
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
+> ⚠️ **Current status.** SDK-first initialization described in older entries below is now deprecated and will be removed in v2. Use markdown-first `squad init` for new teams.
+
 
 Full release history for Squad — from beta through the v1 TypeScript replatform. Jump to the version you're looking for, or read top-down to see how the project evolved.
 

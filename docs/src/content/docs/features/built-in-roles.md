@@ -62,7 +62,9 @@ Suggested team:
 Look right? [Yes] [Add someone] [Change a role] [Browse all roles]
 ```
 
-### In squad.config.ts (SDK Mode)
+### In an existing squad.config.ts (legacy SDK-first mode)
+
+> ⚠️ **Deprecated authoring mode.** Do not adopt `squad.config.ts` for a new team. This example remains for compatibility with existing projects.
 
 ```typescript
 import { useRole, defineSquad } from '@bradygaster/squad-sdk';
