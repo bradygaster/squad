@@ -8,8 +8,13 @@ on:
     branches:
       - "**"
     paths:
-      - ".github/workflows/squad-bootstrap.md"
-      - ".github/workflows/squad-bootstrap.lock.yml"
+      - ".github/workflows/squad*.md"
+      - ".github/workflows/squad*.lock.yml"
+      - ".github/workflows/shared/**"
+      - ".github/aw/squad-workflows.manifest.json"
+      - ".github/aw/packages/*.json"
+      - ".github/aw/squad/runtime/**"
+      - ".github/workflows/shared/squad-bootstrap-trigger-probe.json"
   workflow_dispatch:
 if: github.ref_name == github.event.repository.default_branch
 permissions:
@@ -25,6 +30,7 @@ network:
   allowed:
     - defaults
 resources:
+  - shared/squad-install-verifier.mjs
   - shared/squad-cast-validator.mjs
   - shared/squad-bootstrap-validator.mjs
   - shared/builtins/scribe-charter.md
@@ -38,6 +44,11 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 pre-agent-steps:
+  - name: Verify coherent Squad package installation
+    shell: bash
+    run: |
+      set -euo pipefail
+      node .github/workflows/shared/squad-install-verifier.mjs --verify-install
   - name: Inspect deterministic bootstrap state
     id: bootstrap-state
     uses: actions/github-script@v9
@@ -131,6 +142,7 @@ pre-agent-steps:
       #!/usr/bin/env bash
       set -euo pipefail
       cd "${GITHUB_WORKSPACE:?}"
+      install_verifier=".github/workflows/shared/squad-install-verifier.mjs"
       cast_validator=".github/workflows/shared/squad-cast-validator.mjs"
       bootstrap_validator=".github/workflows/shared/squad-bootstrap-validator.mjs"
       check_hash() {
@@ -145,8 +157,11 @@ pre-agent-steps:
         }
         node --check "$path" >/dev/null
       }
-      check_hash "$cast_validator" "f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      # BEGIN GENERATED RESOURCE DIGESTS
+      check_hash "$install_verifier" "0da2b31a80b47e428cb215a00d4655b54b7b66e4a6a2522f0f4da8f119d0346e"
+      check_hash "$cast_validator" "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
       check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --root "$PWD" \
         --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
@@ -219,6 +234,9 @@ safe-outputs:
           uses: actions/github-script@v9
           env:
             SQUAD_BOOTSTRAP_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+            SQUAD_BOOTSTRAP_INSTALL_SHA: ${{ github.sha }}
+            SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}
+            SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}
           with:
             script: |
               const { mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
@@ -427,11 +445,44 @@ safe-outputs:
               if (!pullRequest?.url) {
                 throw new Error('The deterministic Cast PR URL is unavailable after materialization.');
               }
+              const pullRequestDetails = (await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: pullRequest.number,
+              })).data;
+              const provenance = {
+                schema: 1,
+                repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
+                run_id: process.env.SQUAD_BOOTSTRAP_RUN_ID,
+                install_sha: process.env.SQUAD_BOOTSTRAP_INSTALL_SHA,
+                cast_sha: pullRequestDetails.head.sha,
+              };
+              if (provenance.repository !== `${context.repo.owner}/${context.repo.repo}`
+                || provenance.run_id !== String(context.runId)
+                || provenance.install_sha !== context.sha
+                || !/^[0-9a-f]{40}$/.test(provenance.install_sha)
+                || !/^[0-9a-f]{40}$/.test(provenance.cast_sha)
+                || pullRequestDetails.head.ref !== stateModule.BOOTSTRAP_BRANCH
+                || pullRequestDetails.head.repo?.full_name !== provenance.repository) {
+                throw new Error('Trusted bootstrap provenance inputs or Cast PR head identity are invalid.');
+              }
+              const provenanceMarker = `<!-- squad:bootstrap-provenance ${JSON.stringify(provenance)} -->`;
+              const prBodyWithoutProvenance = String(pullRequestDetails.body || payload.pr_body)
+                .replace(/^<!-- squad:bootstrap-provenance .* -->\r?\n?/gm, '');
+              await github.rest.pulls.update({
+                ...context.repo,
+                pull_number: pullRequest.number,
+                body: `${provenanceMarker}\n${prBodyWithoutProvenance}`,
+              });
               const finalPayload = {
                 ...payload,
                 issue_body: payload.issue_body.replace('{{CAST_PR_URL}}', pullRequest.url),
               };
               validate(finalPayload, 'resolved');
+              const issueBodyNewline = finalPayload.issue_body.indexOf('\n');
+              if (issueBodyNewline < 0) {
+                throw new Error('Validated bootstrap issue body has no marker delimiter.');
+              }
+              const markedIssueBody = `${finalPayload.issue_body.slice(0, issueBodyNewline)}\n${provenanceMarker}${finalPayload.issue_body.slice(issueBodyNewline)}`;
 
               snapshot = await listState();
               let issueNumber;
@@ -445,13 +496,13 @@ safe-outputs:
                   ...context.repo,
                   issue_number: issueNumber,
                   title: stateModule.BOOTSTRAP_ISSUE_TITLE,
-                  body: finalPayload.issue_body,
+                  body: markedIssueBody,
                 });
               } else {
                 const createdIssue = await github.rest.issues.create({
                   ...context.repo,
                   title: stateModule.BOOTSTRAP_ISSUE_TITLE,
-                  body: finalPayload.issue_body,
+                  body: markedIssueBody,
                 });
                 issueNumber = createdIssue.data.number;
               }

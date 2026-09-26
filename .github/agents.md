@@ -23,23 +23,22 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 > Agentic Workflows, execute the complete
 > [seven-step quick start](../docs/src/content/docs/guide/gh-aw.md#quick-start)
 > in their repository. Do not only quote or run the `gh aw add` command below.
-> The supported path configures workflow-created pull requests, installs and
-> validates the complete generated artifact set, commits it on an isolated
-> branch, and opens a human-reviewed bootstrap PR. Stop at that PR; the human
-> merges it. `/squad` slash commands become active only after that merge reaches
+> The supported path verifies that GitHub Issues are enabled (and enables them
+> when the authenticated user has repository administration permission),
+> configures workflow-created pull requests, installs and validates the complete
+> generated artifact set, commits it on an isolated branch, and opens a
+> human-reviewed bootstrap PR. If disabled Issues cannot be enabled, stop before
+> installation and ask a repository administrator to enable them. `/squad`
+> commands use issue comments, and bootstrap creates a research/proposals issue.
+> Stop at the bootstrap PR; the human merges it.
+> `/squad` slash commands become active only after that merge reaches
 > the repository's default branch.
 
 The quick start installs this workflow set:
 
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-  bradygaster/squad/workflows/squad-bootstrap.md@dev
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 ```
 
 This command:

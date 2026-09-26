@@ -2,15 +2,9 @@
 # Squad Bootstrap Component — installs and initializes Squad
 # (https://github.com/bradygaster/squad) in the activation job, then hands off
 # the generated team state to the agent job. This is the DISTRIBUTION version,
-# living under workflows/shared/ so users can pull the standard stack via:
-#   gh aw add \
-#     bradygaster/squad/workflows/squad.md@dev \
-#     bradygaster/squad/workflows/squad-implement-worker.md@dev \
-#     bradygaster/squad/workflows/squad-review.md@dev \
-#     bradygaster/squad/workflows/squad-deps-worker.md@dev \
-#     bradygaster/squad/workflows/squad-retro.md@dev \
-#     bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-#     bradygaster/squad/workflows/squad-bootstrap.md@dev
+# living under workflows/shared/ so users can pull the standard stack from one
+# immutable nested native package:
+#   gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 #
 # Adapted from Peli de Halleux's gh-aw integration:
 # https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md

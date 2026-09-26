@@ -128,32 +128,28 @@ describe('gh-aw-enlistment skill', () => {
       expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
     });
 
-    it('installs all seven @dev workflows and requires all fourteen generated files', () => {
-      for (const wf of [
-        'squad.md@dev',
-        'squad-implement-worker.md@dev',
-        'squad-review.md@dev',
-        'squad-deps-worker.md@dev',
-        'squad-retro.md@dev',
-        'squad-improvement-worker.md@dev',
-        'squad-bootstrap.md@dev',
-      ]) {
-        expect(content, `should install ${wf}`).toContain(wf);
-      }
-      expect(content).toContain('all **fourteen** files');
+    it('installs one immutable native package containing all seven workflows', () => {
+      expect(content).toContain('SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev');
+      expect(content).toContain('^' + '[0-9a-f]{40}' + '$');
+      expect(content).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+      for (const workflow of [
+        'squad.md',
+        'squad-implement-worker.md',
+        'squad-review.md',
+        'squad-deps-worker.md',
+        'squad-retro.md',
+        'squad-improvement-worker.md',
+        'squad-bootstrap.md',
+      ]) expect(content).toContain(workflow);
     });
 
-    it('requires every shared runtime guard in the emitted repository', () => {
-      for (const runtimeModule of [
-        'squad-cast-validator',
-        'squad-bootstrap-validator',
-        'squad-improvement-gate',
-        'squad-retro-evidence',
-        'squad-retro-provenance',
-      ]) {
-        expect(content).toContain(runtimeModule);
-      }
-      expect(content).toContain('if any required `shared/*.mjs` runtime module is missing');
+    it('requires the package verifier to validate every shared runtime guard', () => {
+      expect(content).toContain('squad-install-verifier.mjs --materialize-runtime');
+      expect(content).toContain('--verify-install');
+      expect(content).toContain('--source-revision "${SQUAD_SHA}"');
+      expect(content).toContain('--strict-compile');
+      expect(content).toContain('missing source/lock pair');
+      expect(content).toContain('stale source/resource digest');
     });
 
     it('requires a final strict compile without --approve', () => {
@@ -190,6 +186,29 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('default_workflow_permissions=read');
     });
 
+    it('requires GitHub Issues before installation and stops when they cannot be enabled', () => {
+      expect(content).toContain('gh api "repos/${owner_repo}" --jq \'.has_issues\'');
+      expect(content).toContain(
+        'gh api --method PATCH "repos/${owner_repo}"',
+      );
+      expect(content).toContain('-F has_issues=true --silent');
+      expect(content).toContain('requires repository administration permission');
+      expect(content).toContain('STOP before branch creation or `gh aw add`');
+      expect(content.indexOf("issues_enabled=")).toBeLessThan(content.indexOf('git switch -c'));
+      expect(content.indexOf("issues_enabled=")).toBeLessThan(
+        content.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+    });
+
+    it('keeps the standalone correct example fail-closed', () => {
+      const correctExample = content.slice(content.indexOf('### ✓ Correct:'));
+      expect(correctExample).toContain('if ! gh api --method PATCH "repos/${owner_repo}"');
+      expect(correctExample).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+      expect(correctExample).toContain('exit 1');
+    });
+
     it('forbids blanket staging and mandates explicit paths', () => {
       expect(content).toMatch(/git add \.|git add -A|git commit -a/); // referenced as an anti-pattern
       expect(content).toContain('git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/');
@@ -202,17 +221,10 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('[Research Proposals] Agent-discovered repo opportunities');
     });
 
-    it("documents extension check in both bash (grep -q) and PowerShell (Select-String guarding gh-aw install) forms", () => {
-      // Regression guard for Change B: the portability note must stay in the
-      // skill so Windows users are not silently left with a bash-only check.
-      expect(content, "bash form 'grep -q' must be present").toContain("grep -q 'github/gh-aw'");
-      // The PowerShell check must bind Select-String to the 'github/gh-aw'
-      // pattern AND guard an install — a bare Select-String anywhere is too loose.
-      // Allows for Markdown blockquote wrapping (leading '>') and line-wrapping
-      // (the install half may continue on the same or a wrapped line).
-      expect(content, "PowerShell form must bind Select-String to 'github/gh-aw' and guard an install").toMatch(
-        /Select-String\s+-Quiet\s+'github\/gh-aw'.*gh extension install github\/gh-aw/s
-      );
+    it('pins and verifies the package-capable gh-aw compiler', () => {
+      expect(content).toContain('gh extension install --force --pin v0.89.21 github/gh-aw');
+      expect(content).toContain('gh aw --version');
+      expect(content).toContain('PowerShell');
     });
 
     it('resolves repo identity at runtime (no hardcoded owner/repo placeholder)', () => {
@@ -243,6 +255,42 @@ describe('gh-aw-enlistment skill', () => {
       expect(guide).not.toContain('repos/{owner}/{repo}/actions/permissions/workflow');
     });
 
+    it('requires Issues before installation and documents the admin-permission stop', () => {
+      const issuesCheck = guide.indexOf(
+        'issues_enabled="$(gh api "repos/${owner_repo}" --jq \'.has_issues\')"',
+      );
+      expect(issuesCheck).toBeGreaterThan(-1);
+      expect(guide).toContain('-F has_issues=true --silent');
+      expect(guide).toContain('requires repository administration permission');
+      expect(guide).toContain('do not continue to `gh aw add`');
+      expect(issuesCheck).toBeLessThan(guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'));
+      expect(issuesCheck).toBeLessThan(
+        guide.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+      expect(agentGuide).toContain('verifies that GitHub Issues are enabled');
+      expect(agentGuide).toContain('bootstrap creates a research/proposals issue');
+    });
+
+    it('keeps standalone public install snippets behind the Issues guard', () => {
+      const readme = readLF('README.md');
+      const readmeInstall = readme.slice(readme.indexOf('### Install'));
+      expect(readmeInstall.indexOf("issues_enabled=")).toBeGreaterThan(-1);
+      expect(readmeInstall.indexOf("issues_enabled=")).toBeLessThan(
+        readmeInstall.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+      expect(readmeInstall).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+
+      const setupSection = guide.slice(
+        guide.indexOf('### Enable GitHub Issues'),
+        guide.indexOf('### Allow workflow-created pull requests'),
+      );
+      expect(setupSection).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+    });
+
     it('activates slash commands only after the bootstrap PR reaches the default branch', () => {
       expect(guide).toContain(
         'Once the bootstrap PR is merged into the default branch, the `/squad` slash',
@@ -254,19 +302,13 @@ describe('gh-aw-enlistment skill', () => {
       );
     });
 
-    it('makes public-guide runtime checks fail fast and upgrades every shared guard', () => {
-      expect(guide).toContain(
-        'test -f ".github/workflows/shared/${runtime_module}.mjs" || {',
-      );
-      for (const runtimeModule of [
-        'squad-cast-validator.mjs',
-        'squad-improvement-gate.mjs',
-        'squad-retro-evidence.mjs',
-        'squad-retro-provenance.mjs',
-      ]) {
-        expect(guide).toContain(runtimeModule);
-      }
-      expect(guide).toContain('builtins/fact-checker-charter.md');
+    it('makes public-guide package verification fail fast and coherent', () => {
+      expect(guide).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+      expect(guide).toContain('squad-install-verifier.mjs --materialize-runtime');
+      expect(guide).toContain('--verify-install');
+      expect(guide).toContain('--source-revision "${SQUAD_SHA}"');
+      expect(guide).toContain('--strict-compile');
+      expect(guide).toContain('package ownership metadata');
     });
   });
 

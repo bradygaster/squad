@@ -7,11 +7,11 @@ source: "Operationalized from the authoritative Squad gh-aw guide (docs/src/cont
 triggers: [set up Squad agentic workflows, enlist this repo in Squad, enlist my repository in Squad, install Squad gh-aw workflows, install Squad agentic workflows, add Squad gh aw workflows, bootstrap Squad in this repo, onboard this repo to Squad, set up /squad slash commands, gh aw add squad]
 tools:
   - name: "gh"
-    description: "GitHub CLI — repo identity, Actions permissions, PR creation, review request, and check watching."
-    when: "Every step: preflight identity/auth, enabling Actions-created PRs, opening and watching the bootstrap PR."
+    description: "GitHub CLI — repo identity, Issues and Actions settings, PR creation, review request, and check watching."
+    when: "Every step: preflight identity/auth, requiring Issues, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
-    when: "Installing the seven @dev workflows and compiling them into deterministic .lock.yml files."
+    when: "Installing the immutable native Squad package and compiling its seven workflows into deterministic .lock.yml files."
 ---
 
 ## Context
@@ -28,10 +28,16 @@ The authoritative source is `docs/src/content/docs/guide/gh-aw.md` (mirrored at
 `https://bradygaster.github.io/squad/docs/guide/gh-aw/`). If that guide and this
 skill ever disagree, the guide wins — re-read it before proceeding.
 
-**Portability contract:** resolve every repository identifier (owner, repo, default
-branch) **at runtime**. Never hardcode a placeholder like `{owner}/{repo}`. The only
-fixed identifier is the Squad source itself — `bradygaster/squad/workflows/...@dev` —
-because that is where the workflows are published.
+GitHub Issues are a hard prerequisite: `/squad` commands arrive as issue
+comments, and the merged bootstrap creates a research/proposals issue. Detect
+and enable Issues before creating the bootstrap branch or installing workflows,
+so the install cannot produce a PR whose post-merge bootstrap is unable to
+complete.
+
+**Portability contract:** resolve every target repository identifier (owner, repo,
+default branch) **at runtime**. Never hardcode a placeholder like `{owner}/{repo}`.
+Resolve the supported Squad channel once to a 40-character commit SHA, then use
+that one immutable revision for the complete package.
 
 **Idempotency contract:** the bootstrap is re-runnable. Never clobber existing
 workflows, prefer detecting prior state over duplicating it, and **stop clearly** on
@@ -53,16 +59,17 @@ owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 echo "Repo: ${owner_repo}  Default branch: ${default_branch}"
 
-# The gh-aw extension must be installed (install once if missing)
-gh extension list | grep -q 'github/gh-aw' || gh extension install github/gh-aw
+# Install the package-capable compiler version used by the distribution contract
+gh extension install --force --pin v0.89.21 github/gh-aw
+test "$(gh aw --version | awk '{print $NF}')" = "v0.89.21"
 
 # Git state must be understood and clean enough to isolate the install
 git status --short
 ```
 
-> **Portability — extension check:** the `grep -q` above is bash/Git Bash. On Windows
-> PowerShell use:
-> `if (-not (gh extension list | Select-String -Quiet 'github/gh-aw')) { gh extension install github/gh-aw }`
+> **Portability — compiler check:** use the equivalent PowerShell commands to
+> force-install `github/gh-aw` at `v0.89.21`, then confirm `gh aw --version`
+> reports that exact version before installation.
 
 - **STOP** if `gh auth status` is not logged in, or is logged in as the wrong
   identity for this repo (see the `gh-auth-isolation` skill to operate as a
@@ -73,10 +80,37 @@ git status --short
 - Confirm Copilot is enabled for the repository where checkable; the activation
   run and the requested `@copilot` review both depend on it.
 
-### 1. Allow Actions-created PRs while keeping the default token read-only
+### 1. Require GitHub Issues, then allow Actions-created PRs with a read-only token
 
-Squad opens PRs through GitHub Actions. Enable that **without** widening the
-default workflow token:
+Check the REST API's `has_issues` field first. If Issues are disabled, enable
+them before touching the install:
+
+```bash
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  echo "GitHub Issues are disabled; enabling them before workflow installation."
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun enlistment." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+```
+
+Reading `.has_issues` is non-mutating. Updating it through
+`PATCH /repos/{owner}/{repo}` requires repository administration permission.
+If the PATCH fails, **STOP before branch creation or `gh aw add`** and ask an
+administrator to enable **Settings → General → Features → Issues**. Do not
+continue with a bootstrap PR that cannot complete after merge.
+
+Squad also opens PRs through GitHub Actions. Enable that **without** widening
+the default workflow token:
 
 ```bash
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
@@ -99,24 +133,21 @@ git switch -c chore/squad-gh-aw-bootstrap
   not part of the Squad set. `gh aw add` is additive; if you see it about to
   replace an unrelated workflow, **STOP**.
 
-### 3. Install the seven supported workflows — in order, dispatcher first
+### 3. Resolve one immutable revision and install the native package
 
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-  bradygaster/squad/workflows/squad-bootstrap.md@dev
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+[[ "${SQUAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "STOP: could not resolve an immutable 40-character Squad commit SHA." >&2
+  exit 1
+}
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 ```
 
-Keep `squad.md` first: `gh aw add` discovers its worker/reviewer dependencies
-while compiling it, and the explicit entries confirm the full surface without
-creating duplicates. Keep `squad-bootstrap.md` last because it is the dedicated
-post-install workflow rather than a dispatcher dependency. The installed
-top-level set is exactly:
+The nested `workflows/aw.yml` is the only supported distribution registration.
+It isolates package auto-discovery from unrelated repository skills and agents,
+and installs exactly seven workflows, fifteen runtime resources, and one
+`gh-aw-enlistment` skill at the same resolved revision:
 
 - `squad.md` + `squad.lock.yml`
 - `squad-implement-worker.md` + `squad-implement-worker.lock.yml`
@@ -143,7 +174,8 @@ without dispatch and is rechecked before outputs. Draft PRs and human merge
 remain mandatory; closed-unmerged PRs never cause automatic replacements.
 See the guide for content-hash calculation and the one-retry recovery policy.
 
-`@dev` is intentional — it tracks the branch where new modes and fixes land first.
+The `dev` channel is used only to resolve `SQUAD_SHA`; the install itself never
+uses a moving branch reference.
 
 ### 4. Review the first-install safe-update report — approve ONLY the documented entries
 
@@ -177,7 +209,12 @@ gh aw compile --strict --approve   # first install only, when the safe-update wa
 ### 5. Always run the final strict compile WITHOUT `--approve`
 
 ```bash
+node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-install \
+  --source-revision "${SQUAD_SHA}" \
+  --strict-compile
 ```
 
 This must run after any first-install approval and before committing. Success
@@ -190,42 +227,14 @@ criteria:
 - **STOP** on any error, or on **any additional warning** beyond that single
   documented one.
 
-### 6. Require all seven source/lock pairs to exist
+### 6. Require the verifier to prove the complete consumer contract
 
-```bash
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
-  test -f ".github/workflows/${workflow}.md"      || { echo "MISSING ${workflow}.md"; exit 1; }
-  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
-done
-
-for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
-  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
-    echo "MISSING shared/${runtime_module}.mjs"
-    exit 1
-  }
-done
-
-# gh-aw strict compilation can still emit a JSON-escaped operator inside a
-# GitHub expression. GitHub rejects that workflow before any job starts.
-if grep -nE '\$\{\{[^}]*\\u00(26|3[cCeE])' .github/workflows/*.lock.yml; then
-  echo "Invalid JSON-escaped operator in compiled GitHub expression" >&2
-  exit 1
-fi
-```
-
-- **STOP** and rerun `gh aw compile --strict` if any `.lock.yml` is missing. Do not
-  open or merge the bootstrap PR until all **fourteen** files exist and strict
-  compilation passes.
-- **STOP** if any required `shared/*.mjs` runtime module is missing. The
-  dispatcher must install the complete transitive resource set; compile success
-  alone does not prove the worker pre-agent and output guards can execute.
-- **STOP** if the escaped-operator scan prints any line. Compile success alone is
-  insufficient: GitHub rejects these emitted expressions before creating jobs,
-  so the resulting failed run has no job logs to inspect.
-
-> On Windows PowerShell, the `for`/`test -f` loop above is POSIX. Use an
-> equivalent guard (e.g. `Test-Path`) or run it under Git Bash; the *logic* — all
-> fourteen files must exist — is what matters.
+- **STOP** if the verifier reports a missing source/lock pair, missing package
+  ownership record, stale source/resource digest, incomplete seven-workflow
+  registration, or mixed revision.
+- Use only the recovery commands printed by the verifier. They reinstall the
+  complete package at one immutable revision; never repair one workflow or
+  resource in isolation.
 
 ### 7. Inspect generated files, then stage only the documented surfaces
 
@@ -295,22 +304,35 @@ gh pr checks --watch
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun enlistment." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 
 git switch -c chore/squad-gh-aw-bootstrap
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-  bradygaster/squad/workflows/squad-bootstrap.md@dev
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+[[ "${SQUAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
+node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict           # final, no --approve; only the bot-trigger warning remains
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-install --source-revision "${SQUAD_SHA}" --strict-compile
 
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
 git commit -m "ci: add Squad agentic workflow"
@@ -353,6 +375,9 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 
 - ❌ **Hardcoding repository identifiers.** Always resolve `owner/repo` and the
   default branch at runtime with `gh repo view`.
+- ❌ **Installing while GitHub Issues are disabled.** `/squad` commands and the
+  bootstrap research/proposals issue require Issues. Enable them first, or stop
+  before installation if repository administration permission is unavailable.
 - ❌ **Blanket staging** (`git add .` / `-A` / `git commit -a`). Stage only
   `.gitattributes`, `.github/aw/`, `.github/workflows/`, `.github/skills/`, by path.
 - ❌ **Approving unknown safe updates.** Approve ONLY `SQUAD_GITHUB_APP_PRIVATE_KEY`,
@@ -370,4 +395,4 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 - ❌ **Auto-merging.** The workflow-installation PR and automatic Cast PR are
   both human-reviewed. The dedicated bootstrap wakes only after installation
   lands on the default branch.
-- ❌ **Opening the PR before all fourteen files exist and strict compile passes.**
+- ❌ **Opening the PR before the package verifier and strict compile pass.**

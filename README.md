@@ -561,15 +561,33 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 
 <!-- cspell:ignore agentics -->
 
+Squad requires GitHub Issues: slash commands are issue comments, and the merged
+bootstrap creates a research/proposals issue. Follow the
+[supported seven-step quick start](docs/src/content/docs/guide/gh-aw.md#quick-start),
+which checks and enables Issues before installation when the authenticated user
+has repository administration permission, and stops before creating a bootstrap
+PR when an administrator must enable them.
+
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-  bradygaster/squad/workflows/squad-bootstrap.md@dev
+set -euo pipefail
+
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: A repository administrator must enable Settings > General > Features > Issues." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 git add -- \
   .github/aw/ \
   .github/skills/ \

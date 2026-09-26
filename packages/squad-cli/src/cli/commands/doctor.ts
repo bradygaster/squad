@@ -13,6 +13,7 @@
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
+import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
@@ -201,11 +202,16 @@ function checkCastingRegistry(squadDir: string): DoctorCheck {
   if (!fileExists(registryPath)) {
     return { name: 'casting/registry.json exists', status: 'fail', message: 'file not found' };
   }
-  const data = tryReadJson(registryPath);
-  if (data === undefined) {
-    return { name: 'casting/registry.json exists', status: 'fail', message: 'file exists but is not valid JSON' };
+  try {
+    readCastingRegistryPair(path.join(squadDir, 'casting'));
+  } catch (error) {
+    return {
+      name: 'casting/registry.json exists',
+      status: 'fail',
+      message: `registry/history pair is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
-  return { name: 'casting/registry.json exists', status: 'pass', message: 'file present, valid JSON' };
+  return { name: 'casting/registry.json exists', status: 'pass', message: 'registry/history pair is consistent' };
 }
 
 function configuredStateBackend(squadDir: string): StateBackendType | undefined {

@@ -53,7 +53,7 @@ afterAll(() => {
 /** Every Markdown file this repo distributes through `gh aw add`. */
 function distributedWorkflowFiles(): string[] {
   const entrypoints = readdirSync(WORKFLOWS_DIR)
-    .filter((name) => name.endsWith('.md'))
+    .filter((name) => name.endsWith('.md') && name !== 'README.md')
     .map((name) => join(WORKFLOWS_DIR, name));
   const shared = readdirSync(SHARED_DIR)
     .filter((name) => name.endsWith('.md'))

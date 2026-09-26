@@ -31,9 +31,26 @@ set -euo pipefail
 gh auth status
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
-gh extension list | grep -q 'github/gh-aw' || gh extension install github/gh-aw
+gh extension install --force --pin v0.89.21 github/gh-aw
+test "$(gh aw --version | awk '{print $NF}')" = "v0.89.21"
 
-# 2. Allow GitHub Actions to create pull requests
+# 2. Require GitHub Issues, then allow GitHub Actions to create pull requests
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  echo "GitHub Issues are disabled; enabling them before workflow installation."
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: GitHub Issues are disabled and could not be enabled." >&2
+    echo "A repository administrator must enable Settings > General > Features > Issues, then rerun this quick start." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
 gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=true
@@ -41,44 +58,29 @@ gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
 # 3. Create a bootstrap branch
 git switch -c chore/squad-gh-aw-bootstrap
 
-# 4. Add the complete Squad workflow set from the supported dev channel
-SQUAD_WORKFLOW_REF="dev"
-gh aw add \
-  bradygaster/squad/workflows/squad.md@${SQUAD_WORKFLOW_REF} \
-  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_WORKFLOW_REF} \
-  bradygaster/squad/workflows/squad-review.md@${SQUAD_WORKFLOW_REF} \
-  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_WORKFLOW_REF} \
-  bradygaster/squad/workflows/squad-retro.md@${SQUAD_WORKFLOW_REF} \
-  bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_WORKFLOW_REF} \
-  bradygaster/squad/workflows/squad-bootstrap.md@${SQUAD_WORKFLOW_REF}
+# 4. Resolve the supported channel once, then install the complete native package
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+[[ "${SQUAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "STOP: could not resolve an immutable 40-character Squad commit SHA." >&2
+  exit 1
+}
+
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
 gh aw compile --strict --approve
 
-# 6. Always run the final strict compile without approval
+# Materialize package-owned runtime assets, then run the final strict compile
+node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
 
-# Verify every supported workflow has a source and generated lockfile
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
-  test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
-  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
-done
-
-# Verify every local runtime module referenced by those workflows was installed
-for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
-  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
-    echo "MISSING shared/${runtime_module}.mjs"
-    exit 1
-  }
-done
-
-# Strict compilation validates gh-aw's source contract; also reject JSON-escaped
-# operators inside emitted GitHub expressions, which GitHub rejects before jobs start.
-if grep -nE '\$\{\{[^}]*\\u00(26|3[cCeE])' .github/workflows/*.lock.yml; then
-  echo "Invalid JSON-escaped operator in compiled GitHub expression" >&2
-  exit 1
-fi
+# 6. Verify package ownership, exact committed bytes, all seven source/lock
+# pairs, one coherent revision, and a clean strict recompile.
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-install \
+  --source-revision "${SQUAD_SHA}" \
+  --strict-compile
 
 # 7. Commit the generated files and open the bootstrap PR
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
@@ -94,10 +96,21 @@ gh pr edit --add-reviewer @copilot
 gh pr checks --watch
 ```
 
-The quick start uses the supported `dev` channel so the workflow-installation PR
-contains the complete seven-workflow set. For a repeatable upgrade, pin all
-seven entries to one reviewed commit as described in
+The quick start resolves the supported `dev` channel once, then installs the
+native package at that immutable 40-character commit. The package owns the
+complete seven-workflow set, runtime guards, integrity manifest, and enlistment
+skill as one update unit. For an upgrade, resolve or select one reviewed commit
+and reinstall that same package as described in
 [Upgrading the workflows](#upgrading-the-workflows).
+
+Step 2 deliberately checks Issues before creating the bootstrap branch or
+installing any workflow. Squad commands are issue comments, and the merged
+bootstrap creates a research/proposals issue; without Issues, the installation
+PR could merge but the bootstrap journey could not complete. Reading
+`.has_issues` is safe for normal repository access. Enabling it through
+`PATCH /repos/{owner}/{repo}` requires repository administration permission. If
+that update fails, stop before installation and ask an administrator to enable
+**Settings → General → Features → Issues**, then rerun the quick start.
 
 > Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skills
 > alongside the workflows, and it deliberately does not stage `.github/aw/logs/`.
@@ -131,12 +144,42 @@ issues exist.
 | Requirement | Details |
 |-------------|---------|
 | GitHub repo with Copilot | Copilot must be enabled for the repository |
+| GitHub Issues | Required for `/squad` issue comments and the bootstrap research/proposals issue; a repository administrator must be available to enable Issues if they are disabled |
 | `gh` CLI | [Install the GitHub CLI](https://cli.github.com/) and authenticate with `gh auth login` |
 | `gh aw` extension | `gh extension install github/gh-aw` |
 
 ---
 
 ## Setup
+
+### Enable GitHub Issues
+
+Squad receives commands through issue comments, and `squad-bootstrap` creates a
+research/proposals issue after the workflow-installation PR merges. Check the
+repository setting and enable it before installing any workflows:
+
+```bash
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: A repository administrator must enable Settings > General > Features > Issues." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+```
+
+The GET is non-mutating, and the conditional PATCH makes this safe to rerun.
+Changing `has_issues` requires repository administration permission. If the
+PATCH fails, do not continue to `gh aw add`: have an administrator enable Issues
+in repository settings, then rerun the supported quick start.
 
 ### Allow workflow-created pull requests
 
@@ -173,22 +216,19 @@ compilation and human review are complete.
 ### Install the workflows
 
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev \
-  bradygaster/squad/workflows/squad-deps-worker.md@dev \
-  bradygaster/squad/workflows/squad-retro.md@dev \
-  bradygaster/squad/workflows/squad-improvement-worker.md@dev \
-  bradygaster/squad/workflows/squad-bootstrap.md@dev
+SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+[[ "${SQUAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "STOP: could not resolve an immutable 40-character Squad commit SHA." >&2
+  exit 1
+}
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 ```
 
-Keep the dispatcher first. `gh aw add` discovers its general worker, dependency
-worker, reviewer, and retrospective dependencies while compiling it; the explicit
-entries then confirm the complete install surface without creating duplicates.
-Keep `squad-bootstrap` last because it is the dedicated post-install workflow,
-not a dispatcher dependency.
-The installed top-level workflow set is:
+The nested `workflows/aw.yml` is the canonical package registration. Its
+package boundary prevents unrelated repository skills or agents from being
+auto-discovered. It installs exactly seven workflows, fifteen runtime
+resources, one integrity manifest, and one enlistment skill from the same
+resolved commit. The installed top-level workflow set is:
 
 - `squad.md` and `squad.lock.yml`
 - `squad-implement-worker.md` and `squad-implement-worker.lock.yml`
@@ -206,10 +246,11 @@ The install must also contain these executable runtime resources:
 - `shared/squad-retro-evidence.mjs`
 - `shared/squad-retro-provenance.mjs`
 
-The dispatcher declares the complete transitive resource set because gh-aw
-installs it first, discovers the dependent workflows, and then skips the later
-explicit worker entries as duplicates. Without that root declaration, a strict
-compile can succeed while the installed workers fail before the agent starts.
+The package owns every runtime resource. Because native gh-aw package resources
+allow JavaScript guards under `.github/workflows/shared/` but not Markdown or
+JSON at that destination, the package stores those remaining exact bytes under
+`.github/aw/squad/runtime/`. The verifier materializes them to their runtime
+paths and rejects any digest mismatch before the bootstrap PR can be opened.
 
 `squad-improvement-worker` is part of this standard install, not a separate
 add-on — it stays dormant until a maintainer approves a governance-scoped
@@ -219,7 +260,9 @@ auto-implementation](#retrospective-auto-implementation-opt-in) below).
 `gh aw add` also installs the Squad skills under `.github/skills/`, which is why
 the bootstrap commit stages that path alongside the workflows.
 
-> **Branch note:** `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
+> **Revision note:** `dev` is resolved once to `SQUAD_SHA`; the package install
+> itself uses only that immutable commit. Never install different Squad files
+> from different refs.
 
 This registers the Squad workflow in your repository's agentic workflow
 configuration and compiles the workflow definitions into deterministic
@@ -227,11 +270,9 @@ configuration and compiles the workflow definitions into deterministic
 --strict` explicitly before review so every installed source is validated
 together and the PR contains the exact generated lockfiles that passed.
 
-Strict compilation is necessary but does not prove GitHub will accept every
-emitted expression. The verification step also scans the lockfiles for
-JSON-escaped operators such as `\u0026` inside `${{ ... }}`. If that scan finds
-anything, stop: GitHub rejects that workflow before any job starts, producing a
-failed run with no jobs or logs.
+Strict compilation is necessary but not sufficient. The post-install verifier
+also checks package ownership metadata, exact source and runtime bytes, all seven
+source/lock pairs, and one coherent 40-character revision.
 
 ### Review first-install safe updates
 
@@ -379,6 +420,7 @@ Use this checklist for the initial bootstrap and after any workflow update:
 
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
+| Repository readiness | Confirm `.has_issues` is `true`; if it is `false`, enable it before installing workflows | GitHub Issues are available for `/squad` comments and the bootstrap research/proposals issue; insufficient administration permission stops the install before a bootstrap PR is created |
 | Install | Run the seven-workflow `gh aw add` command on a bootstrap branch | All seven `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
 | Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All seven workflows succeed, only documented warnings remain, and all fourteen source/lock files exist |
 | Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |
@@ -439,6 +481,74 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
 | Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
 | Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
+
+### Implementation provenance
+
+Every pull request created by the general implementation worker or dependency
+worker receives a `Squad implementation provenance:` comment using schema
+`https://bradygaster.github.io/squad/schemas/implementation-provenance/v1`.
+The pre-creation gate validates one strict provenance-record request and all
+replacement references. After the PR handler returns, a compiled safe-output
+script resolves the handler's temporary ID to the actual PR number, re-fetches
+the created PR and replacement evidence, constructs the authoritative payload
+from GitHub runtime context, and posts the comment as `github-actions[bot]`.
+Consumers and merge-continuation/replacement checks accept provenance only
+from that bot-authored boundary. No `"self"` or unresolved temporary identifier
+is durable evidence. The general worker also keeps the existing standalone
+`<!-- squad:implement issue={issue} run={run} -->` marker unchanged for
+backward compatibility.
+
+The dispatcher posts a bot-authored receipt before each worker dispatch. The
+worker verifies that receipt, the dispatcher Actions run, repository, run
+attempt, origin issue, selected worker, and deterministic session identifier
+before the agent starts. The `implementation_session_id` is minted by the
+dispatching `squad` or `squad-retro` run as
+`squad-implementation-session/v1/{repository-id}/{dispatcher-run-id}`. Treat it
+as opaque:
+
+- **Lifetime:** one scheduling wave. All implementation and dependency workers
+  dispatched by that run share the identifier.
+- **Retries and reruns:** rerunning the same dispatcher run or worker preserves
+  the identifier; `workflow_run.run_attempt` identifies the concrete rerun.
+  A new `/squad implement`, retrospective reconciliation, or merge-refill
+  dispatcher run starts a new session.
+- **Multiple pull requests:** several PRs may share one session when a parent
+  issue dispatches several ready leaf tasks. Session ID is not a PR ID.
+- **Replacement pull requests:** `replaces` explicitly lists verified earlier
+  PRs. Each referenced PR must exist in the same repository and carry one valid
+  provenance comment for the same origin issue and session. Duplicate,
+  malformed, nonexistent, or unrelated references fail closed.
+- **Multiple goals:** `origin_issue` is the primary scheduling goal. `goals`
+  lists every explicitly referenced issue and whether the PR closes or merely
+  relates to it. A PR may have multiple goals, but it has one origin issue.
+- **Pull request reference:** `pull_request.number` is always the actual
+  positive integer returned by the PR handler.
+
+Do not derive a missing session identifier from branch names, actors,
+timestamps, closing text, or textual similarity. A worker started directly by
+a human cannot mint an identity; it must have the exact bot-authored dispatcher
+receipt and matching Actions run. Missing
+provenance means the session is unknown. Consumers may continue to use the
+legacy implementation marker and closing references as their own explicit
+correlation sources, and may label branch correlation as inferred, but those
+sources do not manufacture a session ID.
+
+#### Compatibility and cache behavior
+
+| Producer evidence | Consumer treatment |
+|---|---|
+| Valid v1 payload | Authoritative for repository, origin, session, run, PR, goals, and replacements |
+| No v1 payload | Compatible legacy record; session remains unknown |
+| Malformed, duplicated, partial, or runtime-mismatched v1 payload | Invalid producer evidence; do not silently downgrade it to a valid v1 record |
+| Cached valid payload whose source cannot be refreshed | Retain only with an explicit stale/source-unavailable status |
+| Fresh source says the payload was removed or changed | Replace the cached source result; do not merge old fields into the new payload |
+
+Repositories upgrading from an older Squad workflow do not need to rewrite old
+pull requests. Recompile and commit the updated dispatcher, implementation
+worker, dependency worker, retrospective, shared validator, and schema
+together. Direct manual dispatches of either worker fail closed; use
+`/squad implement` or the retrospective relay so the dispatcher can create the
+authoritative receipt and bound session inputs.
 
 ### Where you can use slash commands
 
@@ -1533,67 +1643,34 @@ reviews.
 
 ## Upgrading
 
-Pin upgrades to one immutable 40-character Squad commit SHA. A bare `gh aw add`
-does not refresh files that are already installed, so use `--force`:
+Pin upgrades to one immutable 40-character Squad commit SHA, then update the
+same native package as one unit:
 
 ```bash
 SQUAD_SHA="<40-character-commit-sha>"
 
-gh aw add \
-  bradygaster/squad/workflows/squad.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-implement-worker.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-review.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-deps-worker.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-retro.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-improvement-worker.md@${SQUAD_SHA} \
-  bradygaster/squad/workflows/squad-bootstrap.md@${SQUAD_SHA} \
-  --force
-```
-
-`--force` overwrites the installed source files. Save any local source
-customizations first, then reapply them before the final compile. Never customize
-generated `.lock.yml` files.
-
-Existing local imports and resources are not guaranteed to refresh with the
-top-level files. Fetch every Squad shared import and resource at the same SHA:
-
-```bash
-mkdir -p .github/workflows/shared
-
-for shared_file in \
-  squad.md \
-  squad-planning-ontology.md \
-  squad-planning-policy.md \
-  squad-cast-validator.mjs \
-  squad-bootstrap-validator.mjs \
-  squad-improvement-gate.mjs \
-  squad-retro-evidence.mjs \
-  squad-retro-provenance.mjs \
-  builtins/scribe-charter.md \
-  builtins/ralph-charter.md \
-  builtins/rai-charter.md \
-  builtins/fact-checker-charter.md; do
-  mkdir -p ".github/workflows/shared/$(dirname "$shared_file")"
-  curl --fail --silent --show-error --location \
-    "https://raw.githubusercontent.com/bradygaster/squad/${SQUAD_SHA}/workflows/shared/${shared_file}" \
-    --output ".github/workflows/shared/${shared_file}"
-done
-
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force
+node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-install \
+  --source-revision "${SQUAD_SHA}" \
+  --strict-compile
 ```
 
-Confirm all seven source files and generated locks reference `SQUAD_SHA`, review
-the workflow diff, then commit them together. With gh-aw v0.87.10, do not use
-`gh aw update` for this immutable-pin flow: its stored source branch and cooldown
-can leave the installed sources at a different revision than the SHA you intend.
+`--force` overwrites package-owned files. Save local source customizations first,
+then reapply them before the final compile. Never customize generated
+`.lock.yml` files. The verifier rejects a mixed revision, stale digest, missing
+ownership record, missing source/lock pair, or absent runtime resource and
+prints the exact safe recovery commands.
 
 Use the complete upgrade block even when a failure appears limited to the
-first-run bootstrap workflow. Updating only `squad-bootstrap.md` can leave its
-validator or the rest of the workflow set at a different revision. The shared
-resource loop above explicitly refreshes `squad-bootstrap-validator.mjs` along
-with every other runtime dependency. Commit the refreshed sources, generated
-locks, and shared resources together. The default-branch push triggers bootstrap
-automatically; its push and branch gates intentionally reject other refs.
+first-run bootstrap workflow. Updating only `squad-bootstrap.md` is unsupported
+because it can leave its validator or the rest of the workflow set at a
+different revision. Commit the refreshed package ownership metadata, sources,
+generated locks, and runtime resources together. The default-branch push
+triggers bootstrap automatically; its push and branch gates intentionally reject
+other refs.
 
 ---
 

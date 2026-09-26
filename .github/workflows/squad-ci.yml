@@ -739,8 +739,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
-      - name: Install gh-aw v0.87.10 (pinned)
-        run: gh extension install --pin v0.87.10 github/gh-aw
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install verifier dependencies
+        run: |
+          npm config set registry "https://packagefeedproxy.microsoft.io/npm/"
+          npm ci --ignore-scripts
+
+      - name: Install gh-aw v0.89.21 (pinned)
+        run: |
+          gh extension install --force --pin v0.89.21 github/gh-aw
+          test "$(gh aw --version 2>&1 | awk '{print $NF}')" = v0.89.21
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -750,68 +762,38 @@ jobs:
           gh aw --version | tee -a "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Set up deploy layout
-        # Mirror workflows/ → <tmpdir>/.github/workflows/ then git init so
-        # gh aw compile sees the directory structure it expects in a consumer
-        # repo after `gh aw add`.
-        run: |
-          COMPILE_DIR=$(mktemp -d)
-          echo "COMPILE_DIR=$COMPILE_DIR" >> "$GITHUB_ENV"
-          mkdir -p "$COMPILE_DIR/.github/workflows"
-          cp -r workflows/. "$COMPILE_DIR/.github/workflows/"
-          git -C "$COMPILE_DIR" init --quiet
+      - name: Verify canonical package manifest and generated digests
+        run: npm run gh-aw:integrity:check
 
-      - name: Compile all seven workflows (--strict) and verify lock files
-        # Failures accumulate rather than short-circuit so every result is
-        # visible in one run.  A compiler that exits 0 without emitting a lock
-        # file is treated as failure — silent-success is a gate gap.
+      - name: Verify a clean native package consumer
+        env:
+          SQUAD_SOURCE_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
-          FAILED=0
-          echo "### Compile results" >> "$GITHUB_STEP_SUMMARY"
-          for WF in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker; do
-            printf -- '--- Compiling %s ---\n' "$WF"
-            if (cd "$COMPILE_DIR" && gh aw compile "$WF" --strict --approve --no-check-update 2>&1); then
-              printf '  => OK\n'
-              echo "✅ \`$WF\`" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::error::gh aw compile $WF --strict failed"
-              echo "❌ \`$WF\` compile failed" >> "$GITHUB_STEP_SUMMARY"
-              FAILED=$((FAILED + 1))
-            fi
-          done
-          printf -- '--- Compiling squad-bootstrap ---\n'
-          if (cd "$COMPILE_DIR" && gh aw compile squad-bootstrap --strict --approve --no-check-update 2>&1); then
-            printf '  => OK\n'
-            echo "✅ \`squad-bootstrap\`" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::error::gh aw compile squad-bootstrap --strict failed"
-            echo "❌ \`squad-bootstrap\` compile failed" >> "$GITHUB_STEP_SUMMARY"
-            FAILED=$((FAILED + 1))
-          fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Lock files" >> "$GITHUB_STEP_SUMMARY"
-          for LOCK in squad.lock.yml squad-implement-worker.lock.yml squad-review.lock.yml squad-deps-worker.lock.yml squad-retro.lock.yml squad-improvement-worker.lock.yml; do
-            if [ ! -f "$COMPILE_DIR/.github/workflows/$LOCK" ]; then
-              echo "::error::$LOCK not emitted — compiler exited 0 without writing output"
-              echo "❌ missing: \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
-              FAILED=$((FAILED + 1))
-            else
-              echo "✅ \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
-          if [ ! -f "$COMPILE_DIR/.github/workflows/squad-bootstrap.lock.yml" ]; then
-            echo "::error::squad-bootstrap.lock.yml not emitted — compiler exited 0 without writing output"
-            echo "❌ missing: \`squad-bootstrap.lock.yml\`" >> "$GITHUB_STEP_SUMMARY"
-            FAILED=$((FAILED + 1))
-          else
-            echo "✅ \`squad-bootstrap.lock.yml\`" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          if [ "$FAILED" -gt 0 ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "**❌ $FAILED failure(s) — gate fails closed**" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::$FAILED failure(s) — gate fails closed"
-            exit 1
-          fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**✅ All seven workflows compiled, all seven lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
+          CONSUMER_DIR="$GITHUB_WORKSPACE/.gh-aw-consumer"
+          rm -rf "$CONSUMER_DIR"
+          trap 'rm -rf "$CONSUMER_DIR"' EXIT
+          mkdir -p "$CONSUMER_DIR"
+          git -C "$CONSUMER_DIR" init --quiet
+          git -C "$CONSUMER_DIR" remote add origin https://github.com/example/squad-consumer.git
+          (
+            cd "$CONSUMER_DIR"
+            gh aw add "$GITHUB_WORKSPACE/workflows"
+            node .github/workflows/shared/squad-install-verifier.mjs \
+              --write-local-test-ownership \
+              --source-revision "$SQUAD_SOURCE_REVISION"
+            node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
+            test "$(find .github/workflows -maxdepth 1 -name 'squad*.md' | wc -l | tr -d ' ')" = 7
+            test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 15
+            test "$(find .github/skills/gh-aw-enlistment -type f | wc -l | tr -d ' ')" = 1
+            gh aw compile --strict --approve --no-check-update
+            for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
+              gh aw compile "$workflow" --strict --no-check-update
+              test -f ".github/workflows/${workflow}.lock.yml"
+            done
+            gh aw compile --strict --no-check-update
+            node .github/workflows/shared/squad-install-verifier.mjs \
+              --verify-install \
+              --source-revision "$SQUAD_SOURCE_REVISION" \
+              --strict-compile
+          )
