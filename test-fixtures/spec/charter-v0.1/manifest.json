@@ -2,6 +2,20 @@
   "$schema": "./manifest.schema.json",
   "schemaVersion": 1,
   "profile": "squad-charter/v0.1",
+  "revision": {
+    "specification": {
+      "artifact": "docs/specification/charter-v0.1.md",
+      "algorithm": "sha256",
+      "digest": "sha256:bac80dbac473cac35824ffdf0d7e219a96945f7e82b00c24936e8e707bd5b9e6"
+    },
+    "evidence": {
+      "artifact": "test-fixtures/spec/charter-v0.1/manifest.json",
+      "algorithm": "sha256",
+      "canonicalization": "rfc8785",
+      "scope": "manifest-excluding-revision",
+      "digest": "sha256:1f09c1954e056ea2072e3c79e286869790ae69751cba0ca4cfd58fd2fa0a92bb"
+    }
+  },
   "capabilities": [
     "squad-charter/v0.1/parse",
     "squad-charter/v0.1/validate",

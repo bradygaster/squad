@@ -3,7 +3,7 @@
   "title": "Squad Charter Profile v0.1 conformance manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schemaVersion", "profile", "capabilities", "cases"],
+  "required": ["$schema", "schemaVersion", "profile", "revision", "capabilities", "cases"],
   "properties": {
     "$schema": {
       "const": "./manifest.schema.json"
@@ -13,6 +13,9 @@
     },
     "profile": {
       "const": "squad-charter/v0.1"
+    },
+    "revision": {
+      "$ref": "#/$defs/revision"
     },
     "capabilities": {
       "type": "array",
@@ -30,6 +33,55 @@
     }
   },
   "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specification", "evidence"],
+      "properties": {
+        "specification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact", "algorithm", "digest"],
+          "properties": {
+            "artifact": {
+              "const": "docs/specification/charter-v0.1.md"
+            },
+            "algorithm": {
+              "const": "sha256"
+            },
+            "digest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact", "algorithm", "canonicalization", "scope", "digest"],
+          "properties": {
+            "artifact": {
+              "const": "test-fixtures/spec/charter-v0.1/manifest.json"
+            },
+            "algorithm": {
+              "const": "sha256"
+            },
+            "canonicalization": {
+              "const": "rfc8785"
+            },
+            "scope": {
+              "const": "manifest-excluding-revision"
+            },
+            "digest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        }
+      }
+    },
     "capability": {
       "enum": [
         "squad-charter/v0.1/parse",

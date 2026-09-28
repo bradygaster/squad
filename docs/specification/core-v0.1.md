@@ -55,8 +55,8 @@ appear in all capitals, as shown here.
   evidence surface.
 - **Capability:** one exact `<profile-id>/<operation>` identifier.
 - **Conformance claim:** a statement binding an implementation and version to
-  an exact profile revision, capability identifiers, applicable conformance
-  class, and evidence revision.
+  exact immutable specification and evidence revisions, capability identifiers,
+  and an applicable conformance class.
 - **Squad root:** the `.squad/` directory selected by an implementation.
 - **Artifact:** a file or directory beneath the Squad root described by a
   profile.
@@ -121,6 +121,21 @@ consumer MAY expose raw bytes without interpreting them.
 
 Core version, profile version, implementation version, and mutable state
 revision are independent. None implies another.
+
+### 6.1 Conformance revision binding
+
+Every conformance claim MUST identify both the exact specification revision and
+the exact evidence revision against which conformance was established. Each
+revision MUST use an immutable, machine-readable identifier whose derivation is
+defined by the applicable profile. A content digest is an immutable revision
+identifier when the profile defines the hashed bytes or canonical projection.
+
+Mutable branch names, pull request numbers, human-readable draft labels, and
+nullable publication metadata MUST NOT be used as either revision identifier.
+A working draft MAY be claimable when its profile supplies valid immutable
+specification and evidence revisions; working-draft status does not relax this
+requirement. Publication status, maturity, claimability, and claim revision are
+independent.
 
 ## 7. Common representation rules
 

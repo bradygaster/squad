@@ -70,6 +70,39 @@
       "type": "string",
       "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)/[a-z0-9-]+$"
     },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specification", "evidence"],
+      "properties": {
+        "specification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact", "algorithm", "digest"],
+          "properties": {
+            "artifact": { "$ref": "#/$defs/repoPath" },
+            "algorithm": { "const": "sha256" },
+            "digest": { "$ref": "#/$defs/digest" }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact", "algorithm", "canonicalization", "scope", "digest"],
+          "properties": {
+            "artifact": { "$ref": "#/$defs/repoPath" },
+            "algorithm": { "const": "sha256" },
+            "canonicalization": { "const": "rfc8785" },
+            "scope": { "const": "manifest-excluding-revision" },
+            "digest": { "$ref": "#/$defs/digest" }
+          }
+        }
+      }
+    },
     "dialect": {
       "type": "object",
       "additionalProperties": false,
@@ -87,6 +120,7 @@
         "maturity",
         "documentClass",
         "spec",
+        "revision",
         "dialect",
         "dependencies",
         "conformanceClasses",
@@ -120,6 +154,12 @@
           ]
         },
         "spec": { "$ref": "#/$defs/repoPath" },
+        "revision": {
+          "anyOf": [
+            { "$ref": "#/$defs/revision" },
+            { "type": "null" }
+          ]
+        },
         "dialect": { "type": "string", "minLength": 1 },
         "dependencies": {
           "type": "array",
@@ -196,8 +236,14 @@
           },
           "then": {
             "properties": {
+              "revision": { "type": "null" },
               "capabilities": { "type": "array", "maxItems": 0 },
               "conformanceClasses": { "type": "array", "maxItems": 0 }
+            }
+          },
+          "else": {
+            "properties": {
+              "revision": { "$ref": "#/$defs/revision" }
             }
           }
         },

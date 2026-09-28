@@ -105,6 +105,20 @@ interface FixtureManifest {
   $schema: './manifest.schema.json';
   schemaVersion: 1;
   profile: string;
+  revision: {
+    specification: {
+      artifact: string;
+      algorithm: 'sha256';
+      digest: string;
+    };
+    evidence: {
+      artifact: string;
+      algorithm: 'sha256';
+      canonicalization: 'rfc8785';
+      scope: 'manifest-excluding-revision';
+      digest: string;
+    };
+  };
   capabilities: CharterCapability[];
   cases: ManifestCase[];
 }
@@ -266,6 +280,7 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
     }
 
     const { schemaVersion: _schemaVersion, ...missingRequired } = manifest;
+    const { revision: _revision, ...missingRevision } = manifest;
     const invalidManifests: Array<{
       name: string;
       document: unknown;
@@ -280,6 +295,40 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
         name: 'missing required schema version',
         document: missingRequired,
         keyword: 'required',
+      },
+      {
+        name: 'missing immutable revision binding',
+        document: missingRevision,
+        keyword: 'required',
+      },
+      {
+        name: 'mutable specification revision',
+        document: {
+          ...manifest,
+          revision: {
+            ...manifest.revision,
+            specification: {
+              ...manifest.revision.specification,
+              algorithm: 'git-branch',
+              digest: 'dev',
+            },
+          },
+        },
+        keyword: 'const',
+      },
+      {
+        name: 'invalid evidence digest',
+        document: {
+          ...manifest,
+          revision: {
+            ...manifest.revision,
+            evidence: {
+              ...manifest.revision.evidence,
+              digest: 'sha256:not-a-digest',
+            },
+          },
+        },
+        keyword: 'pattern',
       },
       {
         name: 'invalid validation result type',
@@ -377,12 +426,24 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
     }
   });
 
-  it('declares the published profile metadata and every operational capability', async () => {
+  it('declares the profile metadata, immutable revisions, and every operational capability', async () => {
     const manifest = await loadManifest();
     const schema = await loadManifestSchema();
     expect(manifest.$schema).toBe('./manifest.schema.json');
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.profile).toBe(CHARTER_PROFILE);
+    expect(manifest.revision).toMatchObject({
+      specification: {
+        artifact: 'docs/specification/charter-v0.1.md',
+        algorithm: 'sha256',
+      },
+      evidence: {
+        artifact: 'test-fixtures/spec/charter-v0.1/manifest.json',
+        algorithm: 'sha256',
+        canonicalization: 'rfc8785',
+        scope: 'manifest-excluding-revision',
+      },
+    });
     expect(manifest.capabilities).toEqual(Object.values(CHARTER_CAPABILITIES));
     expect(schema.$defs.capability.enum).toEqual(manifest.capabilities);
     expect(schema.$defs.diagnostic.properties.code.enum)

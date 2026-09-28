@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { access, readFile, readdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import Ajv2020, { type AnySchema, type ValidateFunction } from 'ajv/dist/2020.js';
@@ -38,6 +39,27 @@ async function evidenceValidator(): Promise<ValidateFunction> {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'number' && !Number.isInteger(value)) {
+      throw new TypeError('Charter v0.1 evidence permits integers only');
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(item => canonicalJson(item)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map(key => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(',')}}`;
+}
+
+function sha256(value: string | Buffer): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 async function markdownFiles(root: string): Promise<string[]> {
@@ -397,7 +419,22 @@ describe('Squad specification suite v0.1', () => {
       profiles: Array<{
         id: string;
         maturity: string;
+        documentClass: string;
         spec: string;
+        revision: {
+          specification: {
+            artifact: string;
+            algorithm: string;
+            digest: string;
+          };
+          evidence: {
+            artifact: string;
+            algorithm: string;
+            canonicalization: string;
+            scope: string;
+            digest: string;
+          };
+        } | null;
         dialect: string;
         dependencies: string[];
         capabilities: string[];
@@ -419,12 +456,15 @@ describe('Squad specification suite v0.1', () => {
     expect(index.profiles.every(profile => !profile.maturity.startsWith('published'))).toBe(true);
     expect(index.profiles.find(profile => profile.id === 'squad-core/v0.1')).toMatchObject({
       maturity: 'experimental-normative-draft',
+      revision: null,
       manifest: null,
       capabilities: [],
       conformanceClasses: [],
     });
-    expect(index.profiles.find(profile => profile.id === 'squad-charter/v0.1')).toMatchObject({
+    const charterProfile = index.profiles.find(profile => profile.id === 'squad-charter/v0.1');
+    expect(charterProfile).toMatchObject({
       maturity: 'executable-normative-draft',
+      documentClass: 'normative-profile',
     });
     const claimableProfiles = index.profiles.filter(profile =>
       profile.manifest !== null ||
@@ -454,6 +494,7 @@ describe('Squad specification suite v0.1', () => {
       expect(profile.entryPoint, profile.id).not.toHaveLength(0);
 
       if (profile.manifest === null) {
+        expect(profile.revision, profile.id).toBeNull();
         expect(profile.manifestSchema, profile.id).toBeNull();
         expect(profile.capabilities, profile.id).toEqual([]);
         expect(profile.conformanceClasses, profile.id).toEqual([]);
@@ -462,6 +503,7 @@ describe('Squad specification suite v0.1', () => {
         expect(profile.manifestSchema, profile.id).not.toBeNull();
         const manifest = JSON.parse(await readFile(path.join(ROOT, profile.manifest), 'utf8')) as {
           profile: string;
+          revision: NonNullable<typeof profile.revision>;
           capabilities: string[];
           cases: Array<{ id: string }>;
         };
@@ -472,7 +514,15 @@ describe('Squad specification suite v0.1', () => {
 
         expect(validate(manifest), `${profile.id}: ${JSON.stringify(validate.errors, null, 2)}`).toBe(true);
         expect(manifest.profile).toBe(profile.id);
+        expect(profile.revision).toEqual(manifest.revision);
         expect(profile.capabilities).toEqual(manifest.capabilities);
+        expect(manifest.revision.specification.artifact).toBe(profile.spec);
+        expect(manifest.revision.evidence.artifact).toBe(profile.manifest);
+        expect(manifest.revision.specification.digest).toBe(
+          sha256(await readFile(path.join(ROOT, profile.spec))),
+        );
+        const { revision: _manifestRevision, ...evidencePayload } = manifest;
+        expect(manifest.revision.evidence.digest).toBe(sha256(canonicalJson(evidencePayload)));
         for (const testCase of manifest.cases) {
           const qualifiedId = `${profile.id}/${testCase.id}`;
           expect(caseIds.has(qualifiedId), qualifiedId).toBe(false);
@@ -488,6 +538,70 @@ describe('Squad specification suite v0.1', () => {
     for (const schema of index.sharedSchemas) {
       const document = JSON.parse(await readFile(path.join(ROOT, schema), 'utf8')) as AnySchema;
       expect(() => createAjv().compile(document)).not.toThrow();
+    }
+  });
+
+  it('keeps the human and machine Charter registries in semantic agreement', async () => {
+    const index = await readJson('index.json') as {
+      profiles: Array<{
+        id: string;
+        maturity: string;
+        documentClass: string;
+        dependencies: string[];
+        conformanceClasses: string[];
+        capabilities: string[];
+        manifest: string | null;
+        manifestSchema: string | null;
+        revision: unknown;
+      }>;
+    };
+    const charter = index.profiles.find(profile => profile.id === 'squad-charter/v0.1');
+    expect(charter).toBeDefined();
+    if (charter === undefined) throw new Error('Charter profile is missing');
+
+    const readme = await readFile(path.join(SPEC_ROOT, 'README.md'), 'utf8');
+    const row = readme.split('\n').find(line => line.startsWith('| `squad-charter/v0.1` |'));
+    expect(row).toBeDefined();
+    if (row === undefined) throw new Error('Charter registry row is missing');
+
+    expect(row).toContain(`\`${charter.maturity}\` / ${charter.documentClass.replace('-', ' ')}`);
+    expect(row).toContain('| Core |');
+    expect(charter.dependencies).toEqual(['squad-core/v0.1']);
+    expect(charter.conformanceClasses).toEqual(['canonical', 'compatible', 'legacy', 'runtime']);
+    for (const capability of charter.capabilities) expect(row).toContain(`\`${capability}\``);
+    expect(row).toContain('Manifest, schema, and immutable revision binding');
+    expect(charter.manifest).toBe('test-fixtures/spec/charter-v0.1/manifest.json');
+    expect(charter.manifestSchema).toBe('test-fixtures/spec/charter-v0.1/manifest.schema.json');
+    expect(charter.revision).not.toBeNull();
+  });
+
+  it('rejects missing, mutable, and invalid claim revision bindings', async () => {
+    const schema = await readJson('index.schema.json') as AnySchema;
+    const validate = createAjv().compile(schema);
+    const index = await readJson('index.json') as {
+      profiles: Array<Record<string, unknown>>;
+    };
+    const charterIndex = index.profiles.findIndex(
+      profile => profile['id'] === 'squad-charter/v0.1',
+    );
+    expect(charterIndex).toBeGreaterThanOrEqual(0);
+
+    const mutations: Array<(profile: Record<string, unknown>) => void> = [
+      profile => { delete profile['revision']; },
+      profile => {
+        const revision = profile['revision'] as Record<string, Record<string, unknown>>;
+        revision['specification']['digest'] = 'branch:dev';
+      },
+      profile => {
+        const revision = profile['revision'] as Record<string, Record<string, unknown>>;
+        revision['evidence']['canonicalization'] = 'JSON.stringify';
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const invalid = clone(index);
+      mutate(invalid.profiles[charterIndex]);
+      expect(validate(invalid), JSON.stringify(validate.errors, null, 2)).toBe(false);
     }
   });
 

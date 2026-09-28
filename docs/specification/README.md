@@ -20,6 +20,13 @@ The derived release index is attached to the tag or release; it is not committed
 back onto the same commit. This records an immutable revision in the suite
 index without a self-referential hash that would invalidate the commit.
 
+Publication metadata is not a conformance-claim binding. Every claimable
+profile instead carries a non-null `revision` object in the suite registry and
+its executable manifest. For Charter v0.1, that object binds the exact Charter
+document bytes and the canonical manifest evidence payload with SHA-256
+digests. This makes working-draft claims reproducible while publication
+metadata remains null.
+
 **Document class:** Informative registry and navigation index
 
 **Foundation profile:** [Squad Charter Profile v0.1](charter-v0.1.md)
@@ -61,7 +68,7 @@ deviations are summarized here and expanded in the
 |---|---|---|---|---|---|---|---|
 | `squad-core/v0.1` | `experimental-normative-draft` / normative profile | None | None | None | Normative rules are exercised by Charter; no standalone Core manifest | Canonical JSON and standalone Core cases incomplete | [Core](core-v0.1.md), then Charter |
 | `squad-interop/v0.1` | `requirements-draft` / requirements | Core | None | Reference evidence schema; no manifest | Schema and example records inform future profile design | No discovery, relational-invariant, or replay corpus | [Interoperability](interoperability-conventions-v0.1.md) |
-| `squad-charter/v0.1` | `executable-normative-draft` / normative profile | Core | `squad-charter/v0.1/parse`, `squad-charter/v0.1/validate`, `squad-charter/v0.1/edit`, `squad-charter/v0.1/legacy-consume`, `squad-charter/v0.1/runtime` | Manifest and schema | Parser, validator, editor, compiler, and cases implemented | None registered | [Charter](charter-v0.1.md) |
+| `squad-charter/v0.1` | `executable-normative-draft` / normative profile | Core | `squad-charter/v0.1/parse`, `squad-charter/v0.1/validate`, `squad-charter/v0.1/edit`, `squad-charter/v0.1/legacy-consume`, `squad-charter/v0.1/runtime` | Manifest, schema, and immutable revision binding | Parser, validator, editor, compiler, and cases implemented | None registered | [Charter](charter-v0.1.md) |
 | `squad-team-routing/v0.1` | `requirements-draft` / requirements | Core, Interop, Charter | None | None | Roster and routing exist in multiple shapes | Fallback and ambiguity differ | [Roster, then routing](team-routing-v0.1.md) |
 | `squad-configuration-casting/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Configuration, registry, and history implemented | Legacy shapes and runtime-only keys | [Configuration, casting, provenance](configuration-casting-v0.1.md) |
 | `squad-governance-review/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | Reference schema and rejection fixture; no manifest | TypeScript checks exercise implementation expectations only | No portable relational-invariant or transition corpus | [Evidence shape, then promotion criteria](governance-review-v0.1.md) |
@@ -79,7 +86,7 @@ The machine-readable registry is
 [`test-fixtures/spec/suite-v0.1/index.json`](../../test-fixtures/spec/suite-v0.1/index.json).
 The governance JSON is a reference fixture, not portable conformance evidence.
 Charter v0.1 is the only registered profile with a manifest, conformance
-classes, and capability identifiers.
+classes, capability identifiers, and immutable claim revisions.
 
 ## Textual dependency adjacency and DAG
 
@@ -154,4 +161,6 @@ versions, implementation versions, and the observed portable-bundle `1.0`
 version are distinct. Draft documents may change before promotion. Only a
 `publication.status` of `published` denotes an immutable publication; published
 normative revisions are immutable except for dated errata, and behavior changes
-require a new profile version.
+require a new profile version. Claimable working drafts remain bound to exact
+content digests through each profile's `revision` object; mutable branch names,
+pull request numbers, and null publication fields are never claim revisions.
