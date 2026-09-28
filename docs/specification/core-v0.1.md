@@ -46,6 +46,17 @@ appear in all capitals, as shown here.
 
 ## 3. Terms and conformance classes
 
+- **Squad:** a selected Squad root and the artifacts interpreted under
+  explicitly identified profiles. The term does not imply support for every
+  known profile.
+- **Implementation:** software that performs one or more declared profile
+  operations.
+- **Profile:** an independently versioned contract for a defined artifact or
+  evidence surface.
+- **Capability:** one exact `<profile-id>/<operation>` identifier.
+- **Conformance claim:** a statement binding an implementation and version to
+  an exact profile revision, capability identifiers, applicable conformance
+  class, and evidence revision.
 - **Squad root:** the `.squad/` directory selected by an implementation.
 - **Artifact:** a file or directory beneath the Squad root described by a
   profile.
@@ -58,6 +69,12 @@ appear in all capitals, as shown here.
 An implementation MUST declare exact operational capability identifiers.
 Supporting one profile operation MUST NOT be represented as support for every
 operation in that profile or for every Squad artifact.
+
+### 3.1 Informative composition guidance
+
+Profile dependencies establish an interpretation order. They do not confer
+transitive capabilities or conformance: an implementation claiming a dependent
+profile still declares and evidences each supported capability independently.
 
 ## 4. Root discovery, paths, and containment
 

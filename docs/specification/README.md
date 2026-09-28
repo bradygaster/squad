@@ -6,13 +6,10 @@
 
 **Draft date:** 2026-09-25
 
-**Working-draft provenance:** [PR #2078](https://github.com/bradygaster/squad/pull/2078)
-contains this suite revision. Its rejected review baseline is
-[`c03ba950fde071c8ec58a64504fdb7b5cf1206ef`](https://github.com/bradygaster/squad/commit/c03ba950fde071c8ec58a64504fdb7b5cf1206ef).
-Revision cycle 2 was authored by `agent-orchestration-dev`; final revision
-cycle 3 is authored by `unit-contract-tester`. The original Architect author
-and rejecting reviewers are excluded from implementation by the governance
-lockout.
+**Working-draft provenance:** [PR #2074](https://github.com/bradygaster/squad/pull/2074)
+contains the combined Core, Charter, and suite revision. The suite draft
+originated in [PR #2078](https://github.com/bradygaster/squad/pull/2078);
+the combined branch preserves its source-commit provenance.
 
 The source index keeps `publication.revision` and `publication.digest` null
 while it is a working draft. After review, the exact head SHA is recorded in
@@ -29,7 +26,7 @@ index without a self-referential hash that would invalidate the commit.
 
 This directory maps all major stable or observable Squad surfaces. Publication
 status is independent from maturity: this suite is an unpublished working
-draft even where a profile has executable conformance evidence.
+draft. Charter is the only profile with executable conformance evidence.
 
 ## Maturity taxonomy
 
@@ -63,11 +60,11 @@ deviations are summarized here and expanded in the
 | ID | Maturity / class | Dependencies | Claimable capabilities | Schema/manifest | Implementation status | Known deviations | Reader entry path |
 |---|---|---|---|---|---|---|---|
 | `squad-core/v0.1` | `experimental-normative-draft` / normative profile | None | None | None | Normative rules are exercised by Charter; no standalone Core manifest | Canonical JSON and standalone Core cases incomplete | [Core](core-v0.1.md), then Charter |
-| `squad-interop/v0.1` | `experimental-schema` / normative schema | Core | None | Shared evidence schema; no manifest | Evidence validation is executable | No discovery or replay corpus | [Interoperability](interoperability-conventions-v0.1.md) |
+| `squad-interop/v0.1` | `requirements-draft` / requirements | Core | None | Reference evidence schema; no manifest | Schema and example records inform future profile design | No discovery, relational-invariant, or replay corpus | [Interoperability](interoperability-conventions-v0.1.md) |
 | `squad-charter/v0.1` | `executable-normative-draft` / normative profile | Core | `squad-charter/v0.1/parse`, `squad-charter/v0.1/validate`, `squad-charter/v0.1/edit`, `squad-charter/v0.1/legacy-consume`, `squad-charter/v0.1/runtime` | Manifest and schema | Parser, validator, editor, compiler, and cases implemented | None registered | [Charter](charter-v0.1.md) |
 | `squad-team-routing/v0.1` | `requirements-draft` / requirements | Core, Interop, Charter | None | None | Roster and routing exist in multiple shapes | Fallback and ambiguity differ | [Roster, then routing](team-routing-v0.1.md) |
 | `squad-configuration-casting/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Configuration, registry, and history implemented | Legacy shapes and runtime-only keys | [Configuration, casting, provenance](configuration-casting-v0.1.md) |
-| `squad-governance-review/v0.1` | `experimental-schema` / normative schema | Core, Interop, Team/Routing | None | Evidence schema plus rejection fixture; no manifest | Rejection records are machine-valid | Baseline owner self-revision conflict | [Evidence contract, then transitions](governance-review-v0.1.md) |
+| `squad-governance-review/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | Reference schema and rejection fixture; no manifest | TypeScript checks exercise implementation expectations only | No portable relational-invariant or transition corpus | [Evidence shape, then promotion criteria](governance-review-v0.1.md) |
 | `squad-execution-preferences/v0.1` | `requirements-draft` / requirements | Core, Interop, Charter, Configuration/Casting | None | None | Runtime selection exists | Provider catalogs and fallback are policy | [Execution preferences](execution-preferences-v0.1.md) |
 | `squad-planning-activation/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing, Work Lifecycle | None | None | gh-aw planning records exist | Safe-output and limits are provider-specific | [Planning and activation](planning-activation-v0.1.md) |
 | `squad-ceremony/v0.1` | `requirements-draft` / requirements | Core, Interop, Team/Routing | None | None | Builder preserves triggers and schedules | Event names, `auto`, and cooldown are unstable | [Ceremonies](ceremony-v0.1.md) |
@@ -80,9 +77,9 @@ deviations are summarized here and expanded in the
 
 The machine-readable registry is
 [`test-fixtures/spec/suite-v0.1/index.json`](../../test-fixtures/spec/suite-v0.1/index.json).
-The governance JSON is registered as a fixture, not a conformance manifest.
-Charter v0.1's manifest, schema, case IDs, and capability identifiers remain
-unchanged.
+The governance JSON is a reference fixture, not portable conformance evidence.
+Charter v0.1 is the only registered profile with a manifest, conformance
+classes, and capability identifiers.
 
 ## Textual dependency adjacency and DAG
 
@@ -111,7 +108,7 @@ DAG reading order:
 ```text
 Core
 ├── Charter (only claimable profile)
-├── Interop shared schema
+├── Interop requirements and reference schema
 │   ├── Team/Routing
 │   │   ├── Configuration/Casting
 │   │   │   └── Execution Preferences
@@ -128,7 +125,8 @@ Core
 
 There is no dependency cycle. Provider-neutral requirements precede the GitHub
 binding. State authority and memory classification remain separate promotion
-tracks.
+tracks. This composition diagram is informative: dependency edges do not confer
+transitive capabilities or conformance claims.
 
 ## External reference policy
 

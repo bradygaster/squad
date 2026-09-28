@@ -12,7 +12,7 @@ render them beneath `.squad/`.
 
 | Surface | Repository evidence | Disposition | Specification | Maturity or promotion rationale |
 |---|---|---|---|---|
-| Discovery, negotiation, authority identity, shared evidence, secrets | Core/profile metadata, registry IDs, events, audit records | Experimental shared schema; no claim | Interoperability Conventions v0.1 | Evidence schema exists; discovery and negotiation need a manifest |
+| Discovery, negotiation, authority identity, shared evidence, secrets | Core/profile metadata, registry IDs, events, audit records | Requirements draft with a reference schema; no claim | Interoperability Conventions v0.1 | Discovery, relational invariants, and negotiation need portable manifests and cases |
 | Core rules | profile identifiers, paths, diagnostics, trust boundary | Experimental normative working draft; no standalone claim | Core v0.1 | Charter depends on and exercises Core rules, but Core has no standalone manifest |
 | Agent charter | `agents/{id}/charter.md`, compiler, validator, fixtures | Executable normative working draft | Charter v0.1 | Stable parser and round-trip evidence; publication remains `working-draft` |
 | Team roster | `team.md`, roster templates, presets | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with roster parsing, mutation, join, and diagnostic cases |
@@ -20,7 +20,7 @@ render them beneath `.squad/`.
 | Runtime configuration | `config.json`, config schema and loaders | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with precedence and source-evidence cases |
 | Casting identity | `casting/registry.json`, `policy.json` | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with identity, recast, join, and migration cases |
 | Casting provenance | `casting/history.json` | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with append-only history, revision, replay, and CAS cases |
-| Governance and review | `governance.md`, reviewer protocol, PR requirements | Experimental evidence schema; no claim | Governance and Review v0.1 | Add complete transition manifest beyond the representative rejection fixture |
+| Governance and review | `governance.md`, reviewer protocol, PR requirements | Requirements draft with reference checks; no claim | Governance and Review v0.1 | Add language-neutral relational invariants and a complete transition manifest |
 | Execution preferences | charters, config, model selector, lifecycle manager | Requirements draft; no claim | Execution Preferences v0.1 | Add provider-neutral resolution cases and loss reporting |
 | PRD intake and planning | `prd-intake.md`, planning ontology, gh-aw workflows | Requirements draft; no claim | Planning and Activation v0.1 | Add portable planning-record and activation manifest |
 | Ceremonies | `ceremonies.md`, ceremony reference, retro workflow | Requirements draft; no claim | Ceremony v0.1 | Normalize event vocabulary and prove cooldown with injected clocks |
@@ -81,8 +81,9 @@ is equally mature. The next promotion sequence is:
 **Recorded:** 2026-09-25
 
 - Current `.squad/governance.md` permits accountable-owner revision after a
-  rejection; the reviewer protocol and Governance Profile require independent
-  revision-author lockout.
+  rejection; the reviewer protocol and Governance requirements draft propose
+  independent revision-author lockout. That relationship is not yet portable
+  conformance behavior.
 - Current model selectors contain vendor names and fallback lists. Those are
   implementation policy and do not conform as portable preference vocabulary.
 - Current ceremony conditions are natural language. They are compatible input,

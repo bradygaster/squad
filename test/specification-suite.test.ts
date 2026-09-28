@@ -127,7 +127,7 @@ function findDependencyCycle(
   return null;
 }
 
-function governanceRelationshipErrors(value: {
+function referenceGovernanceRelationshipErrors(value: {
   causationId: string | null;
   data: {
     reviewerUid: string;
@@ -170,7 +170,7 @@ describe('Squad specification suite v0.1', () => {
   it.each([
     ['index.schema.json', 'index.json'],
     ['evidence.schema.json', 'governance-rejection.example.json'],
-  ])('validates %s fixtures', async (schemaFile, exampleFile) => {
+  ])('validates reference %s fixtures', async (schemaFile, exampleFile) => {
     const validate = createAjv().compile(await readJson(schemaFile) as AnySchema);
     const example = await readJson(exampleFile);
 
@@ -280,7 +280,7 @@ describe('Squad specification suite v0.1', () => {
     expect(validate(invalid)).toBe(false);
   });
 
-  it('enforces reviewer independence and revision-author eligibility', async () => {
+  it('checks reviewer independence and revision-author eligibility in the reference implementation', async () => {
     const example = await readJson('governance-rejection.example.json') as {
       data: {
         reviewerUid: string;
@@ -296,10 +296,10 @@ describe('Squad specification suite v0.1', () => {
     expect(example.data.eligibleRevisionAuthorUids).not.toContain(example.data.currentRevisionAuthorUid);
     expect(example.data.eligibleRevisionAuthorUids).not.toContain(example.data.reviewerUid);
     expect(example.data.eligibleRevisionAuthorUids).toContain(example.data.successorRevisionAuthorUid);
-    expect(governanceRelationshipErrors({ ...example, causationId: null })).toEqual([]);
+    expect(referenceGovernanceRelationshipErrors({ ...example, causationId: null })).toEqual([]);
   });
 
-  it('rejects invalid lockout and replay relationships', async () => {
+  it('detects invalid lockout and replay relationships in the reference implementation', async () => {
     const example = await readJson('governance-rejection.example.json') as {
       replayKey: string;
       idempotencyKey: string;
@@ -318,10 +318,10 @@ describe('Squad specification suite v0.1', () => {
     const invalidReplay = clone(example);
     invalidReplay.data.replayDisposition = 'duplicate-same-result';
 
-    expect(governanceRelationshipErrors({ ...invalidLockout, causationId: null })).toEqual(
+    expect(referenceGovernanceRelationshipErrors({ ...invalidLockout, causationId: null })).toEqual(
       expect.arrayContaining(['author-not-locked', 'locked-author-eligible']),
     );
-    expect(governanceRelationshipErrors({ ...invalidReplay, causationId: null })).toContain(
+    expect(referenceGovernanceRelationshipErrors({ ...invalidReplay, causationId: null })).toContain(
       'duplicate-without-original-link',
     );
   });
@@ -425,6 +425,24 @@ describe('Squad specification suite v0.1', () => {
     });
     expect(index.profiles.find(profile => profile.id === 'squad-charter/v0.1')).toMatchObject({
       maturity: 'executable-normative-draft',
+    });
+    const claimableProfiles = index.profiles.filter(profile =>
+      profile.manifest !== null ||
+      profile.capabilities.length > 0 ||
+      profile.conformanceClasses.length > 0
+    );
+    expect(claimableProfiles.map(profile => profile.id)).toEqual(['squad-charter/v0.1']);
+    expect(index.profiles.find(profile => profile.id === 'squad-interop/v0.1')).toMatchObject({
+      maturity: 'requirements-draft',
+      manifest: null,
+      capabilities: [],
+      conformanceClasses: [],
+    });
+    expect(index.profiles.find(profile => profile.id === 'squad-governance-review/v0.1')).toMatchObject({
+      maturity: 'requirements-draft',
+      manifest: null,
+      capabilities: [],
+      conformanceClasses: [],
     });
     expect(profileIds.size).toBe(index.profiles.length);
     expect(findDependencyCycle(index.profiles)).toBeNull();
