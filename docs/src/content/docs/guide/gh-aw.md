@@ -1813,6 +1813,13 @@ annotation; it never tries both until one passes. Compiled source comments,
 URLs, action pins, permissions and runtime bytes remain integrity-checked.
 No additional fields are removed during lock normalization.
 
+Manifest generation and installation test fixtures seed isolated compiler action
+locks with the immutable `setup` and `setup-cli` pins for gh-aw v0.89.21. Both
+source variants use the real strict compiler and validate its version and emitted
+action pins. This avoids a second network resolution returning a mutable version
+tag when credentials or the API are unavailable. Missing or altered pins fail
+generation; mutable-tag compiled locks still fail installation integrity.
+
 This fixes the post-merge installation failure in #2103: the old generator and
 local-consumer tests covered only per-workflow annotations, while the native
 installer also emitted package-root annotations. The difference was installation

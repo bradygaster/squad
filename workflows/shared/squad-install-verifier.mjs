@@ -33,6 +33,9 @@ export const TRIGGER_PROBE_DESTINATION =
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const LOCK_REVISION_PLACEHOLDER = 'f'.repeat(40);
+const COMPILER_ACTION_VERSION = 'v0.89.21';
+const COMPILER_ACTION_SHA = '924af5fdc64061cfbf66fb584c8b07e2ac230c60';
+const COMPILER_ACTION_REPOS = ['github/gh-aw-actions/setup', 'github/gh-aw-actions/setup-cli'];
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -361,6 +364,68 @@ export function normalizeCompiledLock(content, revision) {
     .replaceAll(revision, LOCK_REVISION_PLACEHOLDER);
 }
 
+export function validateCompilerActionPins(content) {
+  const text = String(content);
+  const metadata = text.match(/^# gh-aw-manifest: (.+)$/m);
+  const actions = metadata ? JSON.parse(metadata[1]).actions : undefined;
+  if (!Array.isArray(actions)
+    || !actions.some(action => action.repo === COMPILER_ACTION_REPOS[0])) {
+    throw new Error('Compiled workflow is missing the gh-aw setup action pin.');
+  }
+  for (const action of actions.filter(action => COMPILER_ACTION_REPOS.includes(action.repo))) {
+    if (action.sha !== COMPILER_ACTION_SHA || action.version !== COMPILER_ACTION_VERSION) {
+      throw new Error(`Compiled workflow has an invalid immutable action pin: ${action.repo}`);
+    }
+  }
+  const references = [...text.matchAll(/^\s+uses: (github\/gh-aw-actions\/setup(?:-cli)?)@(\S+)/gm)];
+  if (!references.some(([, repo]) => repo === COMPILER_ACTION_REPOS[0])
+    || references.some(([, repo, sha]) =>
+      sha !== COMPILER_ACTION_SHA || !actions.some(action => action.repo === repo))) {
+    throw new Error('Compiled workflow has missing or noncanonical gh-aw action references.');
+  }
+}
+
+export function compileWithPinnedActions(root, env = process.env) {
+  const command = env.SQUAD_GH_AW_BIN || 'gh';
+  const prefix = env.SQUAD_GH_AW_BIN ? [] : ['aw'];
+  const version = spawnSync(command, [...prefix, '--version'], {
+    cwd: root, encoding: 'utf8', env,
+  });
+  if (version.error || version.status !== 0
+    || `${version.stdout}${version.stderr}`.trim().split(/\s+/).at(-1) !== COMPILER_ACTION_VERSION
+    || MIN_GH_AW_VERSION !== COMPILER_ACTION_VERSION) {
+    throw version.error ?? new Error(`Compilation requires gh-aw ${COMPILER_ACTION_VERSION} with matching immutable action pins.`);
+  }
+  const path = resolve(root, '.github/aw/actions-lock.json');
+  const pins = {
+    entries: Object.fromEntries(COMPILER_ACTION_REPOS.map(repo => [
+      `${repo}@${COMPILER_ACTION_VERSION}`,
+      { repo, version: COMPILER_ACTION_VERSION, sha: COMPILER_ACTION_SHA },
+    ])),
+  };
+  if (existsSync(path)) {
+    const existing = JSON.parse(readFileSync(path, 'utf8'));
+    for (const [key, pin] of Object.entries(pins.entries)) {
+      const actual = existing.entries?.[key];
+      if (!actual || actual.repo !== pin.repo || actual.version !== pin.version || actual.sha !== pin.sha) {
+        throw new Error(`Compiler action lock has a missing or noncanonical pin: ${key}`);
+      }
+    }
+  } else {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, stableJson(pins), { flag: 'wx' });
+  }
+  const result = spawnSync(command, [...prefix, 'compile', '--strict', '--no-check-update'], {
+    cwd: root, encoding: 'utf8', env, timeout: 120_000,
+  });
+  if (result.error || result.status !== 0) {
+    throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
+  }
+  for (const name of WORKFLOW_NAMES) {
+    validateCompilerActionPins(readRequired(root, `.github/workflows/${name}.lock.yml`));
+  }
+}
+
 function buildLockDigests(root, renderedWorkflows, packageSource = false) {
   const scratch = mkdtempSync(join(resolve(root), '.squad-gh-aw-lock-digests-'));
   try {
@@ -374,19 +439,7 @@ function buildLockDigests(root, renderedWorkflows, packageSource = false) {
       );
     }
     spawnChecked('git', ['init', '--quiet'], scratch);
-    const ghAwBin = process.env.SQUAD_GH_AW_BIN;
-    const command = ghAwBin || 'gh';
-    const args = ghAwBin
-      ? ['compile', '--strict', '--no-check-update']
-      : ['aw', 'compile', '--strict', '--no-check-update'];
-    const result = spawnSync(command, args, {
-      cwd: scratch,
-      encoding: 'utf8',
-      env: process.env,
-    });
-    if (result.error || result.status !== 0) {
-      throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
-    }
+    compileWithPinnedActions(scratch);
     return new Map(WORKFLOW_NAMES.map((name) => {
       const lock = readRequired(scratch, `.github/workflows/${name}.lock.yml`);
       return [name, sha256(normalizeCompiledLock(lock, LOCK_REVISION_PLACEHOLDER))];

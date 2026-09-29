@@ -7,13 +7,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import {
   CONTRACT_DESTINATION,
   CONTRACT_SOURCE,
   PACKAGE_NAME,
-  normalizeCompiledLock,
+  compileWithPinnedActions,
 } from '../../workflows/shared/squad-install-verifier.mjs';
 
 interface ContractEntry {
@@ -131,49 +131,9 @@ export function createFirstInstallFixture(
       writeFileSync(path, installed);
     }
     execFileSync('git', ['init', '--quiet'], { cwd: scratch });
-    execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
-      cwd: scratch,
-      stdio: 'pipe',
-      timeout: 120_000,
-    });
-    let reportedMismatch = false;
+    compileWithPinnedActions(scratch);
     for (const entry of manifest.workflows as WorkflowEntry[]) {
-      const lock = readFileSync(resolve(scratch, entry.lock));
-      consumerFiles.set(entry.lock, lock);
-      const annotation = `source: ${PACKAGE_NAME}@${revision}`;
-      if (process.env.GITHUB_ACTIONS !== 'true' || reportedMismatch
-        || !consumerFiles.get(entry.destination)!.toString('utf8').includes(`\n${annotation}\n`)) continue;
-      const actual = normalizeCompiledLock(lock, revision);
-      const observed = sha256(Buffer.from(actual));
-      if (observed === entry.package_lock_sha256) continue;
-      reportedMismatch = true;
-      const baseline = createFirstInstallFixture(revision, 'workflow').consumerFiles.get(entry.lock)!;
-      const expected = normalizeCompiledLock(baseline, revision)
-        .replaceAll(`bradygaster/squad/${entry.source}`, PACKAGE_NAME)
-        .replaceAll(`/blob/${'f'.repeat(40)}/${entry.source}`, `/blob/${'f'.repeat(40)}/workflows`);
-      const baselineDigest = sha256(Buffer.from(expected));
-      const evidence = [
-        `Compiled fixture mismatch: ${entry.name}`,
-        annotation,
-        `Expected SHA: ${entry.package_lock_sha256}`,
-        `Observed SHA: ${observed}`,
-        `Reference SHA: ${baselineDigest}`,
-      ];
-      if (baselineDigest === entry.package_lock_sha256) {
-        writeFileSync(resolve(scratch, 'expected.normalized.yml'), expected);
-        writeFileSync(resolve(scratch, 'actual.normalized.yml'), actual);
-        const diff = spawnSync('git', [
-          'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv',
-          '--', 'expected.normalized.yml', 'actual.normalized.yml',
-        ], { cwd: scratch, encoding: 'utf8' });
-        if (diff.error || (diff.status !== 0 && diff.status !== 1)) {
-          throw diff.error ?? new Error(`Fixture diagnostic diff failed: ${diff.stderr}`);
-        }
-        evidence.push(diff.stdout.slice(0, 16_000));
-      } else {
-        evidence.push('Reference compilation did not match the committed digest; no trusted byte diff is available.');
-      }
-      console.error(evidence.join('\n'));
+      consumerFiles.set(entry.lock, readFileSync(resolve(scratch, entry.lock)));
     }
 
     for (const entry of manifest.shared_runtime as RuntimeEntry[]) {

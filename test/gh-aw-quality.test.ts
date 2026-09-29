@@ -38,9 +38,11 @@ import {
   WORKFLOW_NAMES,
   buildContract,
   checkSource,
+  compileWithPinnedActions,
   materializeRuntime,
   normalizeCompiledLock,
   validateContract,
+  validateCompilerActionPins,
   verifyInstall,
   verifyCanonicalManifest,
 } from '../workflows/shared/squad-install-verifier.mjs';
@@ -3898,7 +3900,7 @@ describe('gh-aw: canonical package integrity contract', () => {
       const root = makeConsumer(revision, true, sourceBinding);
       execFileSync('git', ['init', '--quiet'], { cwd: root });
       execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
-      execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], { cwd: root, stdio: 'pipe' });
+      compileWithPinnedActions(root);
       expect(verifyInstall(root, { expectedRevision: revision, strictCompile: true }).failures).toEqual([]);
       const contract = JSON.parse(readFileSync(join(root, CONTRACT_DESTINATION), 'utf8'));
       const review = contract.workflows.find((entry: { name: string }) => entry.name === 'squad-review');
@@ -3931,6 +3933,67 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(trees[0]).toBe(trees[1]);
     expect(commits[0]).not.toBe(commits[1]);
   }, 120_000);
+
+  it.each(['workflow', 'package'] as const)(
+    'strict-compiles %s digests without action-resolution credentials and rejects altered pins',
+    sourceBinding => {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      const env = {
+        ...process.env,
+        GH_CONFIG_DIR: join(root, 'empty-gh-config'),
+        GH_TOKEN: '',
+        GITHUB_TOKEN: '',
+        GH_PROMPT_DISABLED: 'true',
+      };
+      const api = spawnSync('gh', ['api', '/repos/github/gh-aw-actions/git/ref/tags/v0.89.21'], {
+        cwd: root, env, encoding: 'utf8', timeout: 10_000,
+      });
+      expect(api.error).toBeUndefined();
+      expect(api.status).not.toBe(0);
+      for (const name of WORKFLOW_NAMES) unlinkSync(join(root, `.github/workflows/${name}.lock.yml`));
+      execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
+        cwd: root, env, stdio: 'pipe', timeout: 120_000,
+      });
+      const unpinned = readFileSync(join(root, '.github/workflows/squad.lock.yml'), 'utf8');
+      expect(unpinned).toContain(`uses: github/gh-aw-actions/setup@${MIN_GH_AW_VERSION}`);
+      expect(() => validateCompilerActionPins(unpinned)).toThrow(/invalid immutable action pin/);
+      expect(verifyInstall(root).failures.join('\n'))
+        .toContain('Installed digest mismatch for .github/workflows/squad.lock.yml');
+      for (const name of WORKFLOW_NAMES) unlinkSync(join(root, `.github/workflows/${name}.lock.yml`));
+      rmSync(join(root, '.github/aw/actions-lock.json'), { force: true });
+      compileWithPinnedActions(root, env);
+      expect(verifyInstall(root).failures).toEqual([]);
+      expect(() => compileWithPinnedActions(root, { ...env, SQUAD_GH_AW_BIN: process.execPath }))
+        .toThrow(/requires gh-aw/);
+
+      const pinPath = join(root, '.github/aw/actions-lock.json');
+      const pins = JSON.parse(readFileSync(pinPath, 'utf8'));
+      for (const key of Object.keys(pins.entries)) {
+        for (const value of [undefined, MIN_GH_AW_VERSION, '0'.repeat(40)]) {
+          const altered = structuredClone(pins);
+          if (value === undefined) delete altered.entries[key];
+          else altered.entries[key].sha = value;
+          writeFileSync(pinPath, JSON.stringify(altered));
+          expect(() => compileWithPinnedActions(root, env)).toThrow(/missing or noncanonical pin/);
+        }
+      }
+
+      const lockPath = join(root, '.github/workflows/squad.lock.yml');
+      const original = readFileSync(lockPath, 'utf8');
+      const setup = pins.entries[`github/gh-aw-actions/setup@${MIN_GH_AW_VERSION}`];
+      for (const value of [MIN_GH_AW_VERSION, '0'.repeat(40)]) {
+        const altered = original.replaceAll(setup.sha, value);
+        expect(() => validateCompilerActionPins(altered)).toThrow(/invalid immutable action pin/);
+        writeFileSync(lockPath, altered);
+        expect(verifyInstall(root).failures.join('\n'))
+          .toContain('Installed digest mismatch for .github/workflows/squad.lock.yml');
+      }
+      expect(() => validateCompilerActionPins(original.replace(/^# gh-aw-manifest: .+\n/m, '')))
+        .toThrow(/missing the gh-aw setup action pin/);
+    },
+    120_000,
+  );
 
   function updateOwnedDigest(root: string, destination: string): void {
     const path = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
