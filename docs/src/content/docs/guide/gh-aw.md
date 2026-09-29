@@ -150,6 +150,13 @@ validated payload:
 - a draft Cast PR on `squad/bootstrap-cast`; and
 - `[Research Proposals] Agent-discovered repo opportunities`.
 
+Bootstrap submits the shared payload through one authenticated command. Runtime
+code assembles and validates its bounded chunks, then passes JSON directly to
+the existing typed safe-output tool; the agent never copies chunks into tool
+arguments. Missing, duplicate, reordered, malformed, oversized, or mismatched
+payloads fail closed before submission, and the write job independently
+revalidates the payload. A submission error is terminal, not permission to retry.
+
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
 evidence, use one of the issue's focused `/squad research ...` commands first;
@@ -1801,6 +1808,31 @@ then reapply them before the final compile. Never customize generated
 `.lock.yml` files. The verifier rejects a mixed revision, stale digest, missing
 ownership record, missing source/lock pair, or absent runtime resource and
 prints the exact safe recovery commands.
+
+The schema-v2 integrity manifest records two complete compiled lock digests per
+workflow: `lock_sha256` for a per-workflow source annotation and
+`package_lock_sha256` for a package-root annotation. gh-aw v0.89.21 emits
+`bradygaster/squad/workflows@SHA` for direct package includes, but can emit
+`bradygaster/squad/workflows/package/<workflow>.md@SHA` when installing dispatched
+dependencies. Fresh and forced installs can therefore contain different mixtures.
+The verifier selects one digest from the exact, ownership- and source-validated
+annotation; it never tries both until one passes. Compiled source comments,
+URLs, action pins, permissions and runtime bytes remain integrity-checked.
+No additional fields are removed during lock normalization.
+
+Manifest generation and installation test fixtures seed isolated compiler action
+locks with the immutable `setup` and `setup-cli` pins for gh-aw v0.89.21. Both
+source variants use the real strict compiler and validate its version and emitted
+action pins. This avoids a second network resolution returning a mutable version
+tag when credentials or the API are unavailable. Missing or altered pins fail
+generation; mutable-tag compiled locks still fail installation integrity.
+
+This fixes the post-merge installation failure in #2103: the old generator and
+local-consumer tests covered only per-workflow annotations, while the native
+installer also emitted package-root annotations. The difference was installation
+provenance, not the squash commit identity or a generated timestamp. Old manifests
+or manifests missing either digest are rejected; upgrade the entire package,
+including the verifier and manifest, using the block above.
 
 Use the complete upgrade block even when a failure appears limited to the
 first-run bootstrap workflow. Updating only `squad-bootstrap.md` is unsupported

@@ -13,6 +13,7 @@ import {
   CONTRACT_DESTINATION,
   CONTRACT_SOURCE,
   PACKAGE_NAME,
+  compileWithPinnedActions,
 } from '../../workflows/shared/squad-install-verifier.mjs';
 
 interface ContractEntry {
@@ -26,6 +27,7 @@ interface WorkflowEntry extends ContractEntry {
   lock: string;
   source_sha256: string;
   lock_sha256: string;
+  package_lock_sha256: string;
 }
 
 interface RuntimeEntry extends ContractEntry {
@@ -99,8 +101,12 @@ export function githubFile(content: Buffer): {
   };
 }
 
-export function createFirstInstallFixture(revision: string): InstallFixture {
-  const cached = fixtureCache.get(revision);
+export function createFirstInstallFixture(
+  revision: string,
+  sourceBinding: 'workflow' | 'package' | 'mixed' = 'workflow',
+): InstallFixture {
+  const cacheKey = `${revision}:${sourceBinding}`;
+  const cached = fixtureCache.get(cacheKey);
   if (cached) return cloneFixture(cached);
   const root = process.cwd();
   const manifestBytes = readFileSync(resolve(root, CONTRACT_SOURCE));
@@ -113,21 +119,19 @@ export function createFirstInstallFixture(revision: string): InstallFixture {
     mkdirSync(workflowRoot, { recursive: true });
     cpSync(resolve(root, 'workflows/shared'), resolve(workflowRoot, 'shared'), { recursive: true });
 
-    for (const entry of manifest.workflows as WorkflowEntry[]) {
+    for (const [index, entry] of (manifest.workflows as WorkflowEntry[]).entries()) {
       const canonical = readFileSync(resolve(root, entry.source));
       canonicalFiles.set(entry.source, canonical);
-      const installed = withSource(canonical, entry.source, revision);
+      const source = sourceBinding === 'package' || (sourceBinding === 'mixed' && index % 2 === 0)
+        ? 'workflows' : entry.source;
+      const installed = withSource(canonical, source, revision);
       consumerFiles.set(entry.destination, installed);
       const path = resolve(scratch, entry.destination);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, installed);
     }
     execFileSync('git', ['init', '--quiet'], { cwd: scratch });
-    execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
-      cwd: scratch,
-      stdio: 'pipe',
-      timeout: 120_000,
-    });
+    compileWithPinnedActions(scratch);
     for (const entry of manifest.workflows as WorkflowEntry[]) {
       consumerFiles.set(entry.lock, readFileSync(resolve(scratch, entry.lock)));
     }
@@ -169,7 +173,7 @@ export function createFirstInstallFixture(revision: string): InstallFixture {
       consumerFiles,
       canonicalFiles,
     };
-    fixtureCache.set(revision, fixture);
+    fixtureCache.set(cacheKey, fixture);
     return cloneFixture(fixture);
   } finally {
     rmSync(scratch, { recursive: true, force: true });

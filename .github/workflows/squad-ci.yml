@@ -791,6 +791,10 @@ jobs:
             test "$(find .github/workflows -maxdepth 1 -name 'squad*.md' | wc -l | tr -d ' ')" = 8
             test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 17
             test "$(find .github/skills/gh-aw-enlistment -type f | wc -l | tr -d ' ')" = 1
+            node --input-type=module -e '
+              import { compileWithPinnedActions } from "./.github/workflows/shared/squad-install-verifier.mjs";
+              compileWithPinnedActions(process.cwd());
+            '
             gh aw compile --strict --approve --no-check-update
             for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do
               gh aw compile "$workflow" --strict --no-check-update
