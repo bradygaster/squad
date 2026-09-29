@@ -353,8 +353,9 @@ of each exact diagnostic header below (including its workflow path):
 
 The native review advisory includes the compiler's standard explanation and
 Security Lab link. The following guard-policy dry-run lines are informational,
-not another warning. The bot-trigger warning is expected because
-`github-actions[bot]` enables controlled worker-continuation dispatches.
+not another warning. The bot-trigger warning is expected because `squad.md`
+configures both slash-command and `github-actions[bot]` triggers for controlled
+worker-continuation dispatches.
 
 Accept the native review advisory **only while all existing controls remain**:
 same-repository head restriction, base-controlled workflow source,
