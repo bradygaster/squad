@@ -3952,6 +3952,18 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(api.error).toBeUndefined();
       expect(api.status).not.toBe(0);
       for (const name of WORKFLOW_NAMES) unlinkSync(join(root, `.github/workflows/${name}.lock.yml`));
+      compileWithPinnedActions(root, env);
+      expect(verifyInstall(root).failures).toEqual([]);
+      const pinPath = join(root, '.github/aw/actions-lock.json');
+      const pins = JSON.parse(readFileSync(pinPath, 'utf8'));
+      // Model the observed unresolved result without relying on every compiler lookup failing.
+      const unresolved = structuredClone(pins);
+      for (const key of Object.keys(unresolved.entries)) {
+        unresolved.entries[key].sha = unresolved.entries[key].version;
+      }
+      writeFileSync(pinPath, JSON.stringify(unresolved));
+      expect(() => compileWithPinnedActions(root, env)).toThrow(/missing or noncanonical pin/);
+      for (const name of WORKFLOW_NAMES) unlinkSync(join(root, `.github/workflows/${name}.lock.yml`));
       execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
         cwd: root, env, stdio: 'pipe', timeout: 120_000,
       });
@@ -3967,8 +3979,6 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(() => compileWithPinnedActions(root, { ...env, SQUAD_GH_AW_BIN: process.execPath }))
         .toThrow(/requires gh-aw/);
 
-      const pinPath = join(root, '.github/aw/actions-lock.json');
-      const pins = JSON.parse(readFileSync(pinPath, 'utf8'));
       for (const key of Object.keys(pins.entries)) {
         for (const value of [undefined, MIN_GH_AW_VERSION, '0'.repeat(40)]) {
           const altered = structuredClone(pins);
