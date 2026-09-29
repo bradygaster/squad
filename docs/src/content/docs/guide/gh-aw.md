@@ -150,9 +150,347 @@ validated payload:
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
 evidence, use one of the issue's focused `/squad research ...` commands first;
-that replaces the bootstrap research seed. Review the resulting plan and run
-`/squad activate`. The bootstrap journey ends when assignable implementation
-issues exist.
+that replaces the bootstrap research seed. Run `/squad plan`, review the
+resulting plan, and then run `/squad activate`. The bootstrap journey ends when
+assignable implementation issues exist.
+
+## GitHub.com Agents-tab journey
+
+Use this journey when a GitHub.com **Agents** session is coordinating the
+installation and planning lifecycle. It is deliberately re-entrant: paste the
+same prompt into a new Agents session after each human merge. The agent must
+recover from repository, pull-request, issue, comment, and workflow-run state;
+it must not depend on the previous session remaining open.
+
+> **Authentication:** the agent needs a user-authenticated, write-capable
+> GitHub CLI or API credential. A local Copilot App session can use its
+> authenticated `gh` session. In a GitHub.com cloud session, first prove that
+> the available tool can write an issue comment as the authenticated user;
+> otherwise configure a write-capable user credential. The credential owner
+> must have write, maintain, or admin access because Squad authorizes planning
+> commands from `github.actor`.
+
+Replace `TARGET_REPO` at the top. Optionally customize `INSTALL_BRANCH`, then
+paste the complete prompt into the Agents tab:
+
+```text
+You are coordinating the supported Squad GitHub Agentic Workflows journey.
+
+TARGET_REPO="<OWNER/REPOSITORY>"
+SQUAD_SHA="<PENDING_CORRECTED_MERGED_SHA_AND_SUCCESSFUL_HOSTED_RERUNS>"
+INSTALL_BRANCH="chore/squad-gh-aw-bootstrap"
+
+Work only in TARGET_REPO. Verify that SQUAD_SHA is exactly 40 lowercase
+hexadecimal characters. Use that immutable commit for the complete install;
+do not resolve or substitute a moving branch. Use a user-authenticated,
+write-capable GitHub credential and confirm the credential owner has write,
+maintain, or admin access. If the available cloud-agent tool is read-only,
+stop and explain that a write-capable user credential is required.
+
+This prompt is re-entrant. At the start of every session, discover current
+state from GitHub: the default branch, repository settings, commits, all open
+and closed PRs, issues and comments, Actions runs, and files on the default
+branch. Never rely on memory or continuity from an earlier Agents session.
+Never create a second artifact merely because the earlier session ended.
+Never merge either human-gated PR.
+
+Apply this trust model throughout:
+- The installation PR is an explicit human boundary. Its PR-controlled
+  workflows, comments, reviews, and same-name checks are not trusted authority.
+- The first trusted authority is the post-merge Cast activation canary.
+- Trusted review runs only from the default branch through the base-controlled
+  pull_request_target workflow with checkout:false and API-only PR inspection.
+- Ordinary GITHUB_TOKEN cannot publish an authoritative Squad Review check.
+  Publication requires a dedicated GitHub App token minted only inside the
+  branch-restricted squad-review-authority environment. Reject App ID 15368 or
+  slug github-actions and fail closed when provisioning is absent or invalid.
+- /squad review only tells a human how to rerun the exact existing automatic
+  run with GitHub's Re-run all jobs action. It creates no manual authority.
+
+Classify the durable state, then perform only the first applicable phase.
+
+PHASE 1 — INSTALL OR RECOVER THE WORKFLOW INSTALLATION
+
+1. Authenticate with gh, resolve TARGET_REPO's default branch at runtime, and
+   check whether the pinned Squad install is already merged, is represented by
+   an open INSTALL_BRANCH PR, or has not started. Treat multiple candidate
+   installation PRs or unexplained generated-file drift as ambiguous and stop.
+2. Before installation, require GitHub Issues. If disabled, attempt to enable
+   them only with repository administration permission; otherwise stop before
+   changing files. Keep default Actions workflow permissions read-only while
+   enabling "Allow GitHub Actions to create and approve pull requests".
+3. Install gh-aw v0.89.21. On a clean isolated INSTALL_BRANCH, run:
+     gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+   Preserve unrelated workflows and changes.
+4. Review the first-install safe-update report. The only allowed entries are
+   secrets SQUAD_GITHUB_APP_PRIVATE_KEY, SQUAD_GITHUB_TOKEN, and
+   SQUAD_REVIEW_APP_PRIVATE_KEY, plus action
+   bradygaster/squad/.github/actions/squad-init. If and only if the report has
+   no other entry, run `gh aw compile --strict --approve`.
+5. Run:
+     node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
+     gh aw compile --strict
+     node .github/workflows/shared/squad-install-verifier.mjs \
+       --verify-install --source-revision "${SQUAD_SHA}" --strict-compile
+   The final compile must not use --approve.
+6. Verify the complete generated contract, not just a successful compiler exit.
+   Treat the installed .github/aw/squad-workflows.manifest.json as authoritative:
+   - every manifest workflow has both its named .md source and .lock.yml output;
+   - every shared_runtime entry exists at its declared runtime destination and
+     matches its SHA-256 digest;
+   - every manifest skill exists, including gh-aw-enlistment;
+   - package ownership/pin records under .github/aw/ and .gitattributes exist;
+   - every workflow, runtime resource, skill, and ownership record resolves to
+     the same SQUAD_SHA.
+   Print the verified workflow names, workflow count, runtime-resource count,
+   and skill names. Do not copy a count from this prompt: the final pinned
+   manifest is the contract.
+7. Stage only .gitattributes, .github/aw/, .github/workflows/, and
+   .github/skills/. Do not stage downloaded logs or optional editor settings.
+   Inspect the staged stat and prove that no deletion is staged. Commit, push,
+   open one PR to the runtime-resolved default branch, request @copilot review,
+   and report its URL and checks.
+8. STOP. Tell the human to review generated files, approve any
+   "Approve and run workflows" gate shown by GitHub, wait for required checks,
+   and merge the installation PR. Treat this as a human trust decision: do not
+   accept a Squad verdict or same-name check from the installation PR itself.
+   Do not wait indefinitely and do not merge it.
+
+If the installation PR already exists, inspect and update that PR rather than
+opening another. If it is already merged with the exact pinned contract,
+continue to Phase 2.
+
+PHASE 2 — VERIFY BOOTSTRAP OUTPUTS, THEN PAUSE FOR CAST
+
+1. Treat the installation PR as the explicit human trust boundary. Its
+   PR-controlled workflow, check name, and comments are not authoritative.
+   Trusted review begins only on the automatic post-merge Cast PR, from the
+   base-controlled pull_request_target workflow with checkout:false and
+   API-only inspection.
+2. Identify the installation merge commit on the default branch and inspect
+   the Squad Bootstrap run caused by that committed installation. Approve a
+   GitHub-required workflow gate only when a human is present to do so; never
+   claim the run happened merely because the source is merged.
+3. Verify the dedicated review authority is provisioned before expecting a
+   trusted Cast check:
+   - a dedicated GitHub App is installed with Checks read/write and the
+     required repository read permissions;
+   - the squad-review-authority environment has exactly one deployment branch
+     policy for the repository's default branch;
+   - environment variables SQUAD_REVIEW_APP_ID, SQUAD_REVIEW_APP_SLUG, and
+     SQUAD_REVIEW_APP_OWNER plus environment secret
+     SQUAD_REVIEW_APP_PRIVATE_KEY exist;
+   - those reviewer credential names are absent at repository scope;
+   - the configured App is not ID 15368 or slug github-actions.
+   If any item is missing, report the exact provisioning gap and STOP. Do not
+   substitute GITHUB_TOKEN, SQUAD_GITHUB_TOKEN, a PAT, or a guessed App ID.
+4. Verify durable bootstrap state:
+   - exactly one PR titled "[squad] Cast your Squad", with head
+     squad/bootstrap-cast and the repository's default branch as base;
+   - exactly one issue titled
+     "[Research Proposals] Agent-discovered repo opportunities", containing
+     the durable squad bootstrap marker;
+   - exactly one github-actions[bot] bootstrap research comment with the
+     canonical `squad_artifact: research` envelope for that issue;
+   - the Cast PR contains team.md, routing.md, agent charters,
+     .squad/casting/policy.json, registry.json, history.json,
+     .github/agents/squad.agent.md, and meet-the-squad.md.
+5. Treat the Cast PR as the first trusted activation canary. Require its
+   automatic Squad Review run to be pull_request_target from the default
+   branch, checkout:false, and API-only. Record and cross-check:
+   - repository, PR number, exact base SHA, and exact Cast head SHA;
+   - workflow path/SHA, event, run ID, run attempt, and native authority job;
+   - check name, external ID, details URL, conclusion, and attestation summary;
+   - returned check App ID/slug and matching attested publisher_app_id/slug.
+   The App identity must be the observed dedicated App, never
+   15368/github-actions. The external ID, details URL, run, attempt, event,
+   base, head, and App identity must all bind to the same automatic run.
+6. Bind the Cast PR, proposal issue, research comment, bootstrap run, install
+   merge SHA, and Cast head SHA to observed provenance. Do not infer missing
+   links. Do not configure the required ruleset from a guessed or user-supplied
+   integration ID; use only the App ID returned by this successful canary.
+7. Recovery rules:
+   - one missing PR or issue after a partial run: rerun the failed bootstrap
+     job and let its durable-state classifier create only the missing output;
+   - both outputs plus the research artifact already exist: do not rerun;
+   - a matching Cast PR was closed without merge: treat that as human opt-out
+     and do not create a replacement;
+   - duplicate or malformed matching PRs/issues: stop as ambiguous;
+   - failed run: fix the named cause and use "Re-run failed jobs"; do not
+     delete durable outputs to force a clean start.
+8. If the automatic review needs another attempt, /squad review may be used
+   only for instructions that point to this exact run and GitHub's
+   "Re-run all jobs" action. Do not dispatch or accept a manual review run.
+   If the Cast PR is open, report its URL, the linked proposal issue, exact
+   automatic review run, observed App ID/slug, and checks, then STOP. Tell the
+   human to review the proposed team, approve any required workflow run, wait
+   for checks, and merge the Cast PR. Do not merge it. A later Agents session
+   must start again from this prompt.
+
+Only continue to Phase 3 after the exact Cast PR is merged and the generated
+team exists on the default branch.
+
+PHASE 3 — RESUME PLANNING FROM THE DURABLE ISSUE
+
+1. Use the existing bootstrap research/proposals issue; do not open a new
+   planning issue. Read all paginated comments and select the newest canonical
+   artifact for this origin issue. Treat the lifecycle-state comment's next
+   action and the accepted artifacts as durable state.
+2. Post each command as the write-capable credential owner, then monitor the
+   corresponding issue_comment workflow run to completion. Before posting the
+   next command, verify its expected structured artifact exists. If a run is
+   cancelled, interrupted, or its result is uncertain, rerun the identical
+   command; do not skip ahead.
+3. Execute the granular reviewed path, resuming at the first missing artifact:
+     /squad research
+     /squad triage
+     /squad plan program
+     /squad plan implementation
+     /squad plan validate
+     /squad plan accept scope
+     /squad plan accept implementation
+     /squad plan activate
+   Stop on validation failure or a human-requested revision. Do not use
+   `/squad implement` until activation has produced assignable task issues.
+4. Before activation, count the accepted plan's epics plus tasks. The supported
+   single-run planning maximum is 50 issues; `create-issue: 75` is safe-output
+   headroom, not a 75-task promise. If more than 50 are planned, activate one
+   accepted phase at a time with `/squad plan activate phase {N}`.
+5. Reconcile activation:
+   - compare the accepted plan's declared epic/task total with the activated
+     artifact and its activation bindings;
+   - verify every created or title-matched epic/task exists, and verify its
+     `squad` plus applicable `squad:{agent}` labels;
+   - do not count the proposal/root issue or milestones as created plan issues;
+   - do not treat a green run as completeness proof. Check for an
+     `[aw] ... reported incomplete result` issue and read its created/expected
+     shortfall;
+   - if counts, bindings, or labels are incomplete, rerun the identical
+     activation command. Title matching and prior artifacts must resume without
+     duplicating existing issues.
+6. Finish only when the accepted plan, activation artifact/bindings, actual
+   epic/task issues, and labels reconcile. Report the proposal issue, workflow
+   runs, created/reused issue counts, any retries, and any remaining gaps.
+
+At every pause, give the human exact URLs and the one action required. Never
+promise automatic resume after this Agents session completes.
+```
+
+### Pinned package topology and remaining hosted evidence
+
+The prompt above documents the intended source and compiled contracts. Do not
+describe the end-to-end hosted behavior as observed until all three hosted
+journeys provide the evidence below.
+
+The current merged hosted-rerun candidate is merge commit
+`29e69f53abb7beb2fb8b8c4db55fbbeb4bf69f1a` from
+[#2105](https://github.com/bradygaster/squad/pull/2105). Its final reviewed PR
+head was `a6385a7dfddc03cf797cadc0d3ccc095ce686b04`. The dedicated review authority
+implementation entered that reviewed history at
+`b34f9523544c7fd9e50af75469bc03ac87882a4f`; later commits hardened and pinned
+the compiler path before the final review and merge. These SHAs identify
+reviewed and merged source, not successful hosted acceptance.
+
+The final immutable-success revision remains explicitly pending:
+`<PENDING_CORRECTED_MERGED_SHA_AND_SUCCESSFUL_HOSTED_RERUNS>`. Do not replace
+this placeholder until the dedicated review App and branch-restricted
+`squad-review-authority` environment are provisioned, the Cast canary records
+the observed App ID/slug and exact run/evidence binding, and all three hosted
+reruns below succeed with immutable evidence URLs.
+
+Keep the earlier hosted runs as failed evidence:
+
+- Pin `da7861de22483b83c0321ad534954e637a11dbdf` strictly compiled and verified,
+  then failed because the untouched base branch lacked the review guard:
+  [backend run](https://github.com/octodemo/zava-social-backend-template-20260928092124/actions/runs/36502122445)
+  and
+  [frontend run](https://github.com/octodemo/zava-social-frontend-template-20260928092124/actions/runs/36502078635).
+
+The next candidate,
+`60f2c452f6284d442a5932843f3ee64bf86fb928`, fixed the missing base-guard module
+but still failed closed when clean installation PRs lacked
+`.squad-review.json`. Preserve these exact check-runs API observations as failed
+evidence, not success:
+
+| Fixture/run | Head SHA | Failed check ID / external ID | Observed App |
+|-------------|----------|-------------------------------|--------------|
+| [Frontend `36508592252`](https://github.com/octodemo/zava-social-frontend-template-20260928092124/actions/runs/36508592252) | `bbc7b2be2f4a14297b06dc08cc0840142767552d` | `109216745657` / `2ea35b45-6972-5253-9610-ac8223222e42` | `15368` / `github-actions` |
+| [Queue worker `36508563702`](https://github.com/octodemo/zava-social-queue-worker-template-20260928092124/actions/runs/36508563702) | `a03809e6aa6cd09252864e8cd6ab1796210496ad` | `109216578400` / `4319de8a-d14f-55c1-84b9-2dd2f5822ed6` | `15368` / `github-actions` |
+| [Backend `36508961483`](https://github.com/octodemo/zava-social-backend-template-20260928092124/actions/runs/36508961483) | `4fe1195163555613ac8886a33259eea3e3401d13` | `109217634418` / `1ed1ff47-1dc6-536c-98f0-3262851dc8a0` | `15368` / `github-actions` |
+
+All three reached review-agent/detection work and then failed the required
+review path on the missing clean-install attribution. They do not satisfy any
+hosted-success placeholder. Their UUID external IDs and Actions-owned App
+identity are retained only as failed evidence; they are not the authoritative
+binding introduced by the merged architecture.
+
+All earlier runs are diagnostic evidence, not successful journey evidence. Do
+not delete, relabel, or cite them as proof that the dedicated review authority
+works.
+
+Authoritative inspection of `workflows/aw.yml` and
+`workflows/squad-workflows.manifest.json` at both final reviewed head
+`a6385a7dfddc03cf797cadc0d3ccc095ce686b04` and merged candidate
+`29e69f53abb7beb2fb8b8c4db55fbbeb4bf69f1a` confirms the same topology:
+
+- **8 workflows:** `squad`, `squad-implement-worker`, `squad-review`,
+  `squad-deps-worker`, `squad-retro`, `squad-improvement-worker`,
+  `squad-bootstrap`, and `squad-command-router`.
+- **17 shared runtime resources:** `shared/squad-review-guard.mjs`,
+  `shared/squad-install-verifier.mjs`, `shared/squad-command-contract.mjs`,
+  `shared/squad-cast-validator.mjs`, `shared/squad-bootstrap-validator.mjs`,
+  `shared/squad-improvement-gate.mjs`, `shared/squad-retro-evidence.mjs`,
+  `shared/squad-retro-provenance.mjs`,
+  `shared/squad-implementation-provenance.mjs`, `shared/squad.md`,
+  `shared/squad-planning-ontology.md`, `shared/squad-planning-policy.md`,
+  `shared/implementation-provenance-v1.schema.json`,
+  `shared/builtins/scribe-charter.md`, `shared/builtins/ralph-charter.md`,
+  `shared/builtins/rai-charter.md`, and
+  `shared/builtins/fact-checker-charter.md`.
+- **1 skill:** `gh-aw-enlistment`.
+
+The merged trust contract is also source- and compiled-contract tested:
+
+- the workflow is base-controlled `pull_request_target`, has
+  `checkout: false`, has no `workflow_dispatch`, and reads PR evidence only
+  through GitHub APIs;
+- the authoritative publisher runs only in `squad-review-authority`, mints a
+  dedicated GitHub App installation token, and has no `github.token` fallback;
+- an ordinary `GITHUB_TOKEN` can publish an Actions-owned same-name check, but
+  cannot publish or update the dedicated-App authoritative check;
+- the directly observed ordinary publisher identity is App `15368`,
+  `github-actions`; it is rejected. No dedicated publisher ID or slug is
+  claimed until a hosted Cast canary returns it from the check-runs API;
+- `Squad Review / review` is bound to exact external ID
+  `squad-review-authority/v1:{repository}:{pull_request}:{base_sha}:{head_sha}`,
+  exact head SHA, automatic run ID and attempt, `pull_request_target` event,
+  `.github/workflows/squad-review.lock.yml`, exact workflow/base SHA,
+  `Squad Review Authority / attest`, details URL for that run, and matching
+  check/attestation `publisher_app_id` and `publisher_app_slug`;
+- an App mismatch, missing credential, missing environment protection,
+  token-mint failure, duplicate authority job/check, stale head, or missing
+  external evidence fails closed.
+
+| Evidence | Required placeholder |
+|----------|----------------------|
+| Hosted backend clean-bootstrap set: pinned install, human installation merge, automatic bootstrap, exactly one draft Cast PR and one research-proposals issue, run-owned cleanup | `<HOSTED_RUN_1_URLS>` |
+| Hosted frontend full-lifecycle set: granular research, triage, plan acceptance and activation, implementation dispatch, automatic exact-head Squad Review required-check blocking and satisfaction, manual relay dedupe, human approval and merge, cleanup | `<HOSTED_RUN_2_URLS>` |
+| Hosted queue-worker negative/recovery set: malformed and unknown command fail-closed diagnostics, no-command non-event, reviewer equality, stale-verdict and relay blocking, recovery and idempotency, cleanup | `<HOSTED_RUN_3_URLS>` |
+
+Final evidence must show both human merge pauses, a new session recovering only
+from durable GitHub state, exact bootstrap output cardinality and provenance,
+the Cast canary's observed dedicated App ID/slug and exact automatic
+run/attempt/base/head/check binding, the granular planning artifacts, and
+accepted-plan-to-created-issue reconciliation. Until then, the recovery and
+end-to-end statements above are contract-based instructions, not a claim that
+the final hosted runs succeeded.
+
+The `squad-review-authority` environment now exists and is restricted to
+exactly the default branch, `dev`, but its required reviewer variables and
+secret are absent. Dedicated App creation/installation and credentials, the
+Cast canary, observed integration/ruleset binding, and all three hosted fixture
+reruns remain pending; issue
+[#2103](https://github.com/bradygaster/squad/issues/2103) remains open.
 
 ---
 
@@ -341,17 +679,31 @@ continuation dispatches. Any error or any additional warning is a stop condition
 Verify the complete source/lock surface:
 
 ```bash
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
-  test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
-  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
-done
+node --input-type=module <<'NODE'
+import { existsSync, readFileSync } from 'node:fs';
 
-for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
-  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
-    echo "MISSING shared/${runtime_module}.mjs"
-    exit 1
+const manifest = JSON.parse(
+  readFileSync('.github/aw/squad-workflows.manifest.json', 'utf8'),
+);
+for (const workflow of manifest.workflows) {
+  for (const path of [workflow.destination, workflow.lock]) {
+    if (!existsSync(path)) throw new Error(`Missing ${path}`);
   }
-done
+}
+for (const resource of manifest.shared_runtime) {
+  if (!existsSync(resource.destination)) {
+    throw new Error(`Missing ${resource.destination}`);
+  }
+}
+for (const skill of manifest.skills) {
+  if (!existsSync(skill.destination)) throw new Error(`Missing ${skill.destination}`);
+}
+console.log({
+  workflows: manifest.workflows.map(({ name }) => name),
+  runtime_resources: manifest.shared_runtime.length,
+  skills: manifest.skills.map(({ name }) => name),
+});
+NODE
 ```
 
 ### Open the bootstrap pull request

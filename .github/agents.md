@@ -41,6 +41,10 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 > dedicated GitHub App token minted only inside the exact-default-branch
 > `squad-review-authority` environment. Missing or misconfigured reviewer
 > credentials fail closed; the workflow never falls back to `github.token`.
+> The ordinary GitHub Actions App (`id: 15368`, slug: `github-actions`) is
+> explicitly rejected and cannot publish the authoritative required check.
+> `/squad review` only guides an operator to rerun the existing automatic
+> exact-head run; it does not dispatch a reviewer run.
 
 The quick start installs this workflow set:
 
@@ -51,18 +55,20 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 This command:
 
-1. Fetches the Squad dispatcher, general and dependency workers, independent reviewer with a required-check gate, retrospective, and approval-gated improvement worker
+1. Fetches the complete workflow set declared by the pinned package manifest
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
 ### Verify installation
 
-After running the command, confirm all eight source/lock pairs exist and strict
-compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
-Improvement Worker, plus the dedicated Bootstrap and Command Router workflows. The improvement
-worker is standard but dormant until an exact human approval is relayed through
-the dispatcher. Bootstrap wakes after the installation lands on the default
-branch and creates the linked draft Cast PR and research-proposals issue.
+After running the command, read `.github/aw/squad-workflows.manifest.json` and
+confirm every declared workflow has a source/lock pair, every runtime resource
+and skill exists with its declared digest, and strict compilation succeeds.
+Do not copy a workflow count from documentation: the manifest at the pinned
+commit is authoritative. The improvement worker is standard but dormant until
+an exact human approval is relayed through the dispatcher. Bootstrap wakes
+after the installation lands on the default branch and creates the linked draft
+Cast PR and research-proposals issue.
 
 Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
 `"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted
@@ -296,7 +302,12 @@ GitHub Agentic Workflows enforce output limits per run to prevent runaway mutati
 ### Implications
 
 - All mutations are explicitly declared — no surprise side effects
-- If a plan produces more than 20 tasks, activation will create the first 20; re-run to continue
+- The default planning policy allows 20 issues, while the enterprise profile
+  allows 50. The supported single activation maximum is 50 issues;
+  `create-issue: 75` is safe-output headroom, not a 75-task promise.
+- For a plan above the selected policy limit, revise the plan or policy. For
+  more than 50 accepted items, activate accepted phases separately with
+  `/squad plan activate phase {N}`.
 - Allowed branch patterns for PRs: `squad/*`
 - Allowed file patterns for PRs: `.squad/**`, `.github/agents/squad.agent.md`, `meet-the-squad.md`
 - Labels `[squad]` are applied automatically to all created issues and PRs
