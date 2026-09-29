@@ -9,7 +9,7 @@
  *   2. Its frontmatter advertises the documented trigger phrases (discoverability).
  *   3. Its body still encodes every critical safety gate (allowlist, strict
  *      compile, never-auto-merge, read-only token, explicit staging).
- *   4. The canonical source and both template mirrors are byte-for-byte identical
+ *   4. The canonical source and all four mirrors are byte-for-byte identical
  *      (the sync invariant every canonical skill upholds).
  */
 
@@ -41,6 +41,64 @@ function readRaw(rel: string): string {
 function readLF(rel: string): string {
   return readRaw(rel).replace(/\r\n/g, '\n');
 }
+
+const COMPILE_WARNINGS = [
+  '.github/workflows/squad-review.md: warning: pull_request_target is a very dangerous trigger.',
+  ".github/workflows/squad.md: warning: Both slash_command and bots triggers are configured. If a bot listed in bots: posts a comment that starts with the slash command text (e.g., /command-name), it will trigger the workflow and occupy the concurrency slot, potentially blocking simultaneous manual invocations. To ensure the workflow only runs on explicit user commands, remove the 'bots:' field.",
+];
+
+function assertCompileWarningContract(content: string): void {
+  const regions = [...content.matchAll(
+    /^<!-- compile-warning-allowlist-start -->\n```text\n([\s\S]*?)\n```\n<!-- compile-warning-allowlist-end -->$/gm,
+  )];
+  expect(regions).toHaveLength(1);
+  expect(regions[0][1].split('\n')).toEqual(COMPILE_WARNINGS);
+  const flat = content.replace(/\s+/g, ' ');
+  expect(flat).toContain('require exactly two warnings, one occurrence of each exact diagnostic header');
+  expect(flat).toContain('**STOP** on any error, or on **any additional warning** beyond these two exact documented diagnostics.');
+  expect(flat).toContain('Also STOP if either warning is missing, duplicated, changed, or attributed to another path');
+  expect(flat).toContain('Compiled 8 workflows: 8 succeeded, 2 warnings');
+  expect(flat).toContain('or if any required control is absent.');
+  expect(flat).toContain('Do not suppress warnings or use `--approve` to bypass this gate.');
+}
+
+describe.each([CANONICAL, ...MIRRORS, GUIDE])('%s strict compile warning contract', path => {
+  const content = readLF(path);
+
+  it('allows exactly the native review advisory and bot-trigger diagnostic with hard-stop semantics', () => {
+    assertCompileWarningContract(content);
+  });
+
+  it('conditions the native review exception on every existing control', () => {
+    const flat = content.replace(/\s+/g, ' ');
+    expect(flat).toContain('**only while all existing controls remain**');
+    for (const control of [
+      'same-repository head restriction', 'base-controlled workflow source',
+      '`checkout: false` agent path', 'API-only inspection', 'exact run/head/attempt guard',
+      'least-privilege jobs', 'advisory verdict', 'independent human approval',
+    ]) expect(flat).toContain(control);
+    expect(flat).toContain('`pull_request_target` is not generally safe');
+  });
+
+  it.each([
+    ['unknown third warning', `${COMPILE_WARNINGS.join('\n')}\n.github/workflows/squad.md: warning: unknown diagnostic`],
+    ['missing review warning', COMPILE_WARNINGS[1]],
+    ['missing bot warning', COMPILE_WARNINGS[0]],
+    ['duplicate warning', `${COMPILE_WARNINGS.join('\n')}\n${COMPILE_WARNINGS[0]}`],
+    ['different workflow path', COMPILE_WARNINGS.join('\n').replace('squad-review.md', 'untrusted.md')],
+    ['changed diagnostic', COMPILE_WARNINGS.join('\n').replace('very dangerous', 'safe')],
+  ])('rejects a contract mutation allowing %s', (_label, replacement) => {
+    const mutated = content.replace(COMPILE_WARNINGS.join('\n'), replacement);
+    expect(mutated).not.toBe(content);
+    expect(() => assertCompileWarningContract(mutated)).toThrow();
+  });
+
+  it('rejects removal of the error/additional-warning hard stop', () => {
+    const mutated = content.replace('**STOP** on any error', 'Continue on any error');
+    expect(mutated).not.toBe(content);
+    expect(() => assertCompileWarningContract(mutated)).toThrow();
+  });
+});
 
 describe('gh-aw-enlistment skill', () => {
   it('canonical SKILL.md exists', () => {
@@ -167,22 +225,6 @@ describe('gh-aw-enlistment skill', () => {
       // pattern.  Lines with --approve (L140, L259, L295) do not match because
       // --approve follows --strict before any #.
       expect(content).toMatch(/^gh aw compile --strict(\s+#[^\n]*)?$/m);
-    });
-
-    it('permits only the documented bot-trigger warning', () => {
-      expect(content).toMatch(/bot-trigger warning|bot trigger/i);
-    });
-
-    // The permission above is only safe because it is paired with a hard halt
-    // on anything else.  Asserting the allowance alone would keep passing if
-    // the STOP were deleted -- i.e. if the narrow exception silently became a
-    // blanket "warnings are fine".  Assert the gate itself, not just the
-    // carve-out.  Newlines are collapsed first because the sentence wraps.
-    it('halts on any error or any warning beyond the documented one', () => {
-      const flat = content.replace(/\s+/g, ' ');
-      expect(flat).toMatch(
-        /\*\*STOP\*\* on any error, or on \*\*any additional warning\*\* beyond that single documented one\./,
-      );
     });
 
     it('keeps the default workflow token read-only', () => {

@@ -222,11 +222,33 @@ This must run after any first-install approval and before committing. Success
 criteria:
 
 - All eight workflows compile successfully.
-- The **only** permitted warning is the known `squad.md` bot-trigger warning: it
-  configures both slash-command and `github-actions[bot]` triggers, and the bot
-  trigger is required for controlled worker-continuation dispatches.
-- **STOP** on any error, or on **any additional warning** beyond that single
-  documented one.
+- With gh-aw v0.89.21, require exactly two warnings, one occurrence of each
+  exact diagnostic header below (including its workflow path):
+
+<!-- compile-warning-allowlist-start -->
+```text
+.github/workflows/squad-review.md: warning: pull_request_target is a very dangerous trigger.
+.github/workflows/squad.md: warning: Both slash_command and bots triggers are configured. If a bot listed in bots: posts a comment that starts with the slash command text (e.g., /command-name), it will trigger the workflow and occupy the concurrency slot, potentially blocking simultaneous manual invocations. To ensure the workflow only runs on explicit user commands, remove the 'bots:' field.
+```
+<!-- compile-warning-allowlist-end -->
+
+The native review advisory includes the compiler's standard explanation and
+Security Lab link. The following guard-policy dry-run lines are informational,
+not another warning. The bot-trigger warning is expected because
+`github-actions[bot]` enables controlled worker-continuation dispatches.
+
+Accept the native review advisory **only while all existing controls remain**:
+same-repository head restriction, base-controlled workflow source,
+`checkout: false` agent path, API-only inspection, exact run/head/attempt guard,
+least-privilege jobs, advisory verdict, and independent human approval.
+`pull_request_target` is not generally safe; this narrow exception neither
+weakens those controls nor authorizes PR-head execution.
+
+**STOP** on any error, or on **any additional warning** beyond these two exact
+documented diagnostics. Also STOP if either warning is missing, duplicated,
+changed, or attributed to another path, if the summary is not
+`Compiled 8 workflows: 8 succeeded, 2 warnings`, or if any required control is
+absent. Do not suppress warnings or use `--approve` to bypass this gate.
 
 ### 6. Require the verifier to prove the complete consumer contract
 
