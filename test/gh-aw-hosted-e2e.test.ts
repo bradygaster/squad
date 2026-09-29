@@ -118,6 +118,16 @@ const currentOutputs = (
 });
 
 describe('Squad gh-aw hosted E2E controller', () => {
+  it('verifies and narrowly repairs staged ownership metadata before the installation commit', () => {
+    const gate = SCRIPT.indexOf('const staged = verifyStagedInstall(checkout,');
+    const commit = SCRIPT.indexOf("['commit', '-m', 'ci: install Squad agentic workflows']");
+    expect(gate).toBeGreaterThan(SCRIPT.indexOf("['add', '--', ...installPaths]"));
+    expect(gate).toBeLessThan(commit);
+    expect(SCRIPT.slice(gate, commit)).toContain('stageOwnership: true');
+    expect(SCRIPT.slice(gate, commit)).toContain('if (staged.failures.length > 0)');
+    expect(SCRIPT.slice(gate, commit)).toContain('throw new Error');
+  });
+
   it('uses only a default-branch repository_dispatch controller and one PAT step', () => {
     const parsed = parse(WORKFLOW);
     expect(parsed.on.repository_dispatch.types).toEqual(['squad-gh-aw-hosted-e2e']);

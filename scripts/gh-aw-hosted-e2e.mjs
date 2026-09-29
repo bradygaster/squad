@@ -21,6 +21,7 @@ import {
   TRIGGER_PROBE_DESTINATION,
   checkSource,
   verifyInstall,
+  verifyStagedInstall,
 } from '../workflows/shared/squad-install-verifier.mjs';
 
 const TRUSTED_SOURCE = Object.freeze({
@@ -802,6 +803,10 @@ function hosted(args, repositoryRoot) {
     const installPaths = ['.gitattributes', '.github/aw', '.github/workflows', '.github/skills', '.vscode']
       .filter((path) => existsSync(resolve(checkout, path)));
     runChild('git', ['add', '--', ...installPaths], { cwd: checkout });
+    const staged = verifyStagedInstall(checkout, { expectedRevision: sourceSha, stageOwnership: true });
+    if (staged.failures.length > 0) {
+      throw new Error(`STOP: required installation files could not be staged and verified:\n${staged.failures.join('\n')}`);
+    }
     runChild('git', ['commit', '-m', 'ci: install Squad agentic workflows'], { cwd: checkout });
     const installStartedAt = Date.now();
     const installation = createAndMergePr({

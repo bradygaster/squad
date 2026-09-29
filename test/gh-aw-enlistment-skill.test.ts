@@ -28,6 +28,7 @@ const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
 const GUIDE = 'docs/src/content/docs/guide/gh-aw.md';
 const AGENT_GUIDE = '.github/agents.md';
 const MIRRORS = [
+  `workflows/skills/${SKILL_ID}/SKILL.md`,
   `templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,
@@ -128,10 +129,11 @@ describe('gh-aw-enlistment skill', () => {
       expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
     });
 
-    it('installs one immutable native package containing all seven workflows', () => {
+    it('installs one immutable native package with the 8/17/1 topology', () => {
       expect(content).toContain('SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev');
       expect(content).toContain('^' + '[0-9a-f]{40}' + '$');
       expect(content).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+      expect(content).toContain('exactly eight workflows, seventeen runtime resources, and one');
       for (const workflow of [
         'squad.md',
         'squad-implement-worker.md',
@@ -140,6 +142,7 @@ describe('gh-aw-enlistment skill', () => {
         'squad-retro.md',
         'squad-improvement-worker.md',
         'squad-bootstrap.md',
+        'squad-command-router.md',
       ]) expect(content).toContain(workflow);
     });
 
@@ -219,6 +222,9 @@ describe('gh-aw-enlistment skill', () => {
     it('forbids blanket staging and mandates explicit paths', () => {
       expect(content).toMatch(/git add \.|git add -A|git commit -a/); // referenced as an anti-pattern
       expect(content).toContain('git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/');
+      expect(content.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
+        .toHaveLength(2);
+      expect(content).toContain('Never force-add a directory or glob');
     });
 
     it('never auto-merges and defers automatic casting until after the bootstrap PR merges', () => {
@@ -243,6 +249,11 @@ describe('gh-aw-enlistment skill', () => {
   describe('gh-aw bootstrap documentation', () => {
     const guide = readLF(GUIDE);
     const agentGuide = readLF(AGENT_GUIDE);
+
+    it('checks the staged installation before every bootstrap commit', () => {
+      expect(guide.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
+        .toHaveLength(2);
+    });
 
     it('requires agents to execute the complete quick start through PR creation', () => {
       expect(guide).toContain('**Agent action required:**');

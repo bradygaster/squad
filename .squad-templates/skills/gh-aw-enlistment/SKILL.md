@@ -11,7 +11,7 @@ tools:
     when: "Every step: preflight identity/auth, requiring Issues, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
-    when: "Installing the immutable native Squad package and compiling its seven workflows into deterministic .lock.yml files."
+    when: "Installing the immutable native Squad package and compiling its eight workflows into deterministic .lock.yml files."
 ---
 
 ## Context
@@ -146,7 +146,7 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 The nested `workflows/aw.yml` is the only supported distribution registration.
 It isolates package auto-discovery from unrelated repository skills and agents,
-and installs exactly seven workflows, fifteen runtime resources, and one
+and installs exactly eight workflows, seventeen runtime resources, and one
 `gh-aw-enlistment` skill at the same resolved revision:
 
 - `squad.md` + `squad.lock.yml`
@@ -156,11 +156,12 @@ and installs exactly seven workflows, fifteen runtime resources, and one
 - `squad-retro.md` + `squad-retro.lock.yml`
 - `squad-improvement-worker.md` + `squad-improvement-worker.lock.yml`
 - `squad-bootstrap.md` + `squad-bootstrap.lock.yml`
+- `squad-command-router.md` + `squad-command-router.lock.yml`
 
 `squad-improvement-worker` is part of the standard, coherent install above —
 not a separate opt-in add-on. It stays dormant until a maintainer approves a
 governance-scoped retrospective proposal (see the gh-aw guide's retrospective
-auto-implementation section); installing it alongside the other six keeps the
+auto-implementation section); installing it alongside the other seven keeps the
 full stack consistent and avoids a second bootstrap pass later.
 
 Report/proposal-only is the default. Ordinary fixes require the explicit
@@ -220,7 +221,7 @@ node .github/workflows/shared/squad-install-verifier.mjs \
 This must run after any first-install approval and before committing. Success
 criteria:
 
-- All seven workflows compile successfully.
+- All eight workflows compile successfully.
 - The **only** permitted warning is the known `squad.md` bot-trigger warning: it
   configures both slash-command and `github-actions[bot]` triggers, and the bot
   trigger is required for controlled worker-continuation dispatches.
@@ -230,7 +231,7 @@ criteria:
 ### 6. Require the verifier to prove the complete consumer contract
 
 - **STOP** if the verifier reports a missing source/lock pair, missing package
-  ownership record, stale source/resource digest, incomplete seven-workflow
+  ownership record, stale source/resource digest, incomplete eight-workflow
   registration, or mixed revision.
 - Use only the recovery commands printed by the verifier. They reinstall the
   complete package at one immutable revision; never repair one workflow or
@@ -258,6 +259,8 @@ Stage **only** the documented generated surfaces, then verify the staged set:
 
 ```bash
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
 # No deletions should be staged:
 test -z "$(git diff --cached --diff-filter=D --name-only)" || { echo "STOP: staged deletions"; exit 1; }
@@ -266,6 +269,15 @@ test -z "$(git diff --cached --diff-filter=D --name-only)" || { echo "STOP: stag
 - **STOP** if the staged diff shows **unexpected deletions**, **unexpected secrets**,
   edits to **unrelated files**, or committed **log/diagnostic output**. Re-scope with
   explicit `git add -- <path>` — never `git add .`, `git add -A`, or `git commit -a`.
+
+Consumer rules such as `packages/` can silently ignore the required ownership
+JSON under `.github/aw/packages/`. The staged verifier force-adds only the exact
+native package ownership JSON when it is ignored and untracked. It then verifies
+every manifest-required source, lock, runtime, skill, manifest and ownership
+file against the validated working-tree bytes in a snapshot of the Git index.
+**STOP before commit/push** on missing metadata, a staging failure, an omitted
+required file or a staged digest mismatch. Never force-add a directory or glob.
+Rerun this gate after changing or restaging any installation file.
 
 ### 8. Commit, push, and open the bootstrap PR to the captured default branch
 
@@ -360,6 +372,8 @@ node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-install --source-revision "${SQUAD_SHA}" --strict-compile
 
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git commit -m "ci: add Squad agentic workflow"
 git push -u origin HEAD
 gh pr create --base "${default_branch}" \
