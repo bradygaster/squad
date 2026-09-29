@@ -3992,6 +3992,57 @@ describe('gh-aw: canonical package integrity contract', () => {
     120_000,
   );
 
+  it('seeds native-consumer CI pins without usable authentication and rejects tampering', () => {
+    const workflow = parseDocument(readText(join(process.cwd(), '.github/workflows/squad-ci.yml'))).toJS();
+    const step = workflow.jobs['gh-aw-compile'].steps.find(
+      (candidate: { name?: string }) => candidate.name === 'Verify a clean native package consumer',
+    );
+    const seed = step.run.match(/node --input-type=module -e '([\s\S]*?)'/)?.[1];
+    expect(seed, 'native consumer must execute the version-bound pin helper').toBeDefined();
+    expect(step.run.indexOf('compileWithPinnedActions(process.cwd())'))
+      .toBeLessThan(step.run.indexOf('gh aw compile --strict --approve'));
+    expect(step.run).toContain('--verify-install');
+    expect(step.run).toContain('--strict-compile');
+
+    const root = makeConsumer(revisionA, true, 'package');
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+    // A deliberately invalid test credential prevents fallback to local keychain authentication.
+    const env = { ...process.env, GH_TOKEN: 'invalid-test-token', GITHUB_TOKEN: '' };
+    const compile = () => execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
+      cwd: root, env, stdio: 'pipe', timeout: 120_000,
+    });
+    const lockPath = join(root, '.github/workflows/squad.lock.yml');
+    compile();
+    const unpinned = readText(lockPath);
+    expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
+      .toBe('bf54175720e6e9ab3fe5d5e3054c28f3a69595c95cdf50e56f9b30988158270f');
+    expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+
+    const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {
+      cwd: root, env, encoding: 'utf8', timeout: 120_000,
+    });
+    const seeded = seedPins();
+    expect(seeded.status, seeded.stderr).toBe(0);
+    compile();
+    expect(verifyInstall(root, { expectedRevision: revisionA, strictCompile: true }).failures).toEqual([]);
+    const contract = JSON.parse(readText(join(root, CONTRACT_DESTINATION)));
+    for (const entry of contract.workflows) {
+      const lock = readText(join(root, entry.lock));
+      expect(() => validateCompilerActionPins(lock)).not.toThrow();
+      expect(createHash('sha256').update(normalizeCompiledLock(lock, revisionA)).digest('hex'))
+        .toBe(entry.package_lock_sha256);
+    }
+
+    const pinPath = join(root, '.github/aw/actions-lock.json');
+    const pins = JSON.parse(readText(pinPath));
+    pins.entries[`github/gh-aw-actions/setup@${MIN_GH_AW_VERSION}`].sha = '0'.repeat(40);
+    writeFileSync(pinPath, JSON.stringify(pins));
+    const tampered = seedPins();
+    expect(tampered.status).not.toBe(0);
+    expect(tampered.stderr).toContain('missing or noncanonical pin');
+  }, 120_000);
+
   function updateOwnedDigest(root: string, destination: string): void {
     const path = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
     const record = JSON.parse(readFileSync(path, 'utf8'));
