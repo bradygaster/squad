@@ -536,20 +536,28 @@ export function checkSource(root) {
       }
     }
     for (const required of [
-      'environment: squad-review-authority',
-      'SQUAD_REVIEW_APP_PRIVATE_KEY: ${{ secrets.SQUAD_REVIEW_APP_PRIVATE_KEY }}',
-      'github-token: ${{ steps.squad-review-app-token.outputs.token }}',
-      'published.data.app?.id !== expectedAppId',
-      "expectedAppId === 15368",
-      "expectedAppSlug === 'github-actions'",
+      'pull_request_target:',
+      'checkout: false',
+      'name: review',
+      'if: always()',
+      'needs: [agent, safe_outputs]',
+      'await guard.assertClearingReview',
     ]) {
       if (!reviewer.includes(required)) {
-        failures.push(`Dedicated review authority contract is missing: ${required}`);
+        failures.push(`Native review authority contract is missing: ${required}`);
       }
     }
-    const publishJob = reviewer.match(/\n  publish:\n([\s\S]*?)\n---\n/)?.[1] ?? '';
-    if (publishJob.includes('checks: write')) {
-      failures.push('Dedicated review publisher must not grant checks:write to github.token.');
+    for (const forbidden of [
+      'SQUAD_REVIEW_APP_',
+      'squad-review-authority',
+      'actions/create-github-app-token',
+      'checks: write',
+      'github.rest.checks.',
+      '\n  publish:\n',
+    ]) {
+      if (reviewer.includes(forbidden)) {
+        failures.push(`Native review authority contains a forbidden publisher surface: ${forbidden}`);
+      }
     }
   } catch (error) {
     failures.push(error instanceof Error ? error.message : String(error));

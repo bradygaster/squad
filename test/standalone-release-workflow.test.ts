@@ -707,8 +707,6 @@ describe('automated package publication', () => {
     expect(ghAwGuide).toContain('`.vscode/settings.json`');
     expect(ghAwGuide).toContain('SQUAD_GITHUB_APP_PRIVATE_KEY');
     expect(ghAwGuide).toContain('SQUAD_GITHUB_TOKEN');
-    expect(ghAwGuide).toContain('SQUAD_REVIEW_APP_PRIVATE_KEY');
-    expect(ghAwGuide).toContain('squad-review-authority');
     expect(ghAwGuide).toContain('both slash-command and `github-actions[bot]`');
     expect(ghAwGuide).toContain('The completion comment links the created Cast PR');
     expect(ghAwGuide).toContain('application CI is `action_required`');
