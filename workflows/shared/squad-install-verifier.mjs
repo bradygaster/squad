@@ -901,7 +901,8 @@ export function verifyStagedInstall(root, { expectedRevision = '', stageOwnershi
     }
     // Snapshot the index, not HEAD or the working tree, including unchanged tracked files.
     const tree = spawnChecked('git', ['write-tree'], root).stdout.trim();
-    const entries = spawnChecked('git', ['ls-tree', '-r', '-z', tree], root).stdout
+    // Exact allowlisted paths bound output; no recursion into unrelated or substituted trees.
+    const entries = spawnChecked('git', ['ls-tree', '-z', tree, '--', ...required], root).stdout
       .split('\0').filter(Boolean);
     const staged = new Map(entries.map(entry => {
       const tab = entry.indexOf('\t');

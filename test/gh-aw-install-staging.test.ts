@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,11 @@ import {
   verifyStagedInstall,
 } from '../workflows/shared/squad-install-verifier.mjs';
 import { createFirstInstallFixture } from './helpers/gh-aw-install-fixture.js';
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 const revision = 'a'.repeat(40);
 const roots: string[] = [];
@@ -49,10 +54,52 @@ function stagedPaths(root: string): string[] {
 }
 
 afterEach(() => {
+  vi.clearAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe('gh-aw: verified ownership staging under consumer ignore rules', () => {
+  it('bounds staged reads to required paths in a large unrelated consumer tree', () => {
+    const root = consumer();
+    const unrelated = 'consumer-data';
+    for (let index = 0; index < 20_000; index += 1) {
+      write(root, `${unrelated}/ordinary-file-${index.toString().padStart(5, '0')}.txt`, 'consumer content\n');
+    }
+    git(root, 'add', '--', unrelated);
+    git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'large consumer baseline');
+    write(root, `${unrelated}/ordinary-file-00000.txt`, 'unstaged consumer edit\n');
+    write(root, `${unrelated}/untracked.txt`, 'untracked consumer content\n');
+    const before = stagedPaths(root);
+    const tree = git(root, 'write-tree').trim();
+    const unbounded = spawnSync('git', ['ls-tree', '-r', '-z', tree], { cwd: root });
+    expect(unbounded.error).toMatchObject({ code: 'ENOBUFS' });
+    const manifest = JSON.parse(readFileSync(join(root, CONTRACT_DESTINATION), 'utf8'));
+    const required = [
+      CONTRACT_DESTINATION,
+      OWNERSHIP_DESTINATION,
+      ...manifest.workflows.flatMap((entry: { destination: string; lock: string }) =>
+        [entry.destination, entry.lock]),
+      ...manifest.shared_runtime.flatMap((entry: { package_destination: string; destination: string }) =>
+        [entry.package_destination, entry.destination]),
+      ...manifest.skills.map((entry: { destination: string }) => entry.destination),
+    ];
+    const spawn = vi.mocked(spawnSync);
+    spawn.mockClear();
+    expect(verifyStagedInstall(root, { expectedRevision: revision, stageOwnership: true }).failures).toEqual([]);
+    const queries = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'ls-tree');
+    expect(queries).toHaveLength(1);
+    expect(queries[0][1]).toEqual(['ls-tree', '-z', expect.any(String), '--', ...new Set(required)]);
+    const unrelatedObject = git(root, 'rev-parse', `HEAD:${unrelated}/ordinary-file-00000.txt`).trim();
+    const blobReads = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'cat-file');
+    expect(blobReads).toHaveLength(new Set(required).size);
+    expect(blobReads.some(([, args]) => args?.includes(unrelatedObject))).toBe(false);
+    expect(stagedPaths(root)).toEqual([...before, OWNERSHIP_DESTINATION].sort());
+    expect(git(root, 'diff', '--cached', '--name-only').trim()).toBe(OWNERSHIP_DESTINATION);
+    expect(git(root, 'diff', '--name-only').trim()).toBe(`${unrelated}/ordinary-file-00000.txt`);
+    expect(readFileSync(join(root, unrelated, 'untracked.txt'), 'utf8')).toBe('untracked consumer content\n');
+  }, 30_000);
+
   it('reproduces the silent omission, then force-stages only the exact required JSON', () => {
     const root = consumer();
     expect(verifyInstall(root, { expectedRevision: revision }).failures).toEqual([]);
@@ -97,6 +144,13 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     expect(stagedPaths(root)).not.toContain(OWNERSHIP_DESTINATION);
   });
 
+  it('fails closed when the verified index cannot be snapshotted', () => {
+    const root = consumer();
+    expect(verifyStagedInstall(root, { stageOwnership: true }).failures).toEqual([]);
+    write(root, '.git/index.lock', 'locked\n');
+    expect(verifyStagedInstall(root).failures.join('\n')).toMatch(/git failed:[\s\S]*index\.lock/);
+  });
+
   it.each([
     CONTRACT_DESTINATION,
     '.github/workflows/squad.md',
@@ -133,6 +187,18 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     const path = '.github/workflows/squad.md';
     const object = git(root, 'rev-parse', `:${path}`).trim();
     git(root, 'update-index', '--cacheinfo', `120000,${object},${path}`);
+    expect(verifyStagedInstall(root).failures.join('\n'))
+      .toContain(`Required staged path is not a regular file: ${path}`);
+  });
+
+  it('rejects a required path replaced by an index directory without reading its descendants', () => {
+    const root = consumer();
+    expect(verifyStagedInstall(root, { stageOwnership: true }).failures).toEqual([]);
+    const path = '.github/workflows/squad.md';
+    const object = git(root, 'rev-parse', `:${path}`).trim();
+    git(root, 'update-index', '--force-remove', '--', path);
+    git(root, 'update-index', '--add', '--cacheinfo', `100644,${object},${path}/unexpected.txt`);
+    expect(verifyInstall(root).failures).toEqual([]);
     expect(verifyStagedInstall(root).failures.join('\n'))
       .toContain(`Required staged path is not a regular file: ${path}`);
   });
