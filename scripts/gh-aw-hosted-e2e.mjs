@@ -635,7 +635,7 @@ function waitForBaseControlledReviewCanary(target, castPr, evidence) {
         '--jq', '{id,name,status,conclusion,head_sha,details_url,app:{id:.app.id,slug:.app.slug}}',
       ]);
       if (check.id !== checkId
-        || check.name !== 'review'
+        || check.name !== 'Squad Review / review'
         || check.head_sha !== castPr.headSha
         || check.status !== 'completed'
         || check.conclusion !== 'success'

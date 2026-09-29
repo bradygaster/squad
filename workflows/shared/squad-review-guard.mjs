@@ -344,21 +344,9 @@ export async function assertClearingReview(env, get, options = {}) {
       relay ? timestamp(target.pr.merged_at) : Date.now(),
     ),
   }));
-  let bound;
-  if (relay) {
-    const ordered = [...candidates].sort((left, right) =>
-      timestamp(left.review.submitted_at) - timestamp(right.review.submitted_at) ||
-      left.review.id - right.review.id);
-    const latest = ordered.at(-1);
-    requireThat(latest, 'missing verdict evidence for this run');
-    bound = candidates.filter(({ verdict }) =>
-      verdict.run_id === latest.verdict.run_id &&
-      verdict.run_attempt === latest.verdict.run_attempt);
-  } else {
-    bound = candidates.filter(({ verdict }) =>
-      String(verdict.run_id) === env.GITHUB_RUN_ID &&
-      String(verdict.run_attempt) === env.GITHUB_RUN_ATTEMPT);
-  }
+  const bound = relay ? candidates : candidates.filter(({ verdict }) =>
+    String(verdict.run_id) === env.GITHUB_RUN_ID &&
+    String(verdict.run_attempt) === env.GITHUB_RUN_ATTEMPT);
   requireThat(bound.length === 1, 'missing or duplicate verdict evidence for this run');
   const { review, verdict } = bound[0];
   const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();

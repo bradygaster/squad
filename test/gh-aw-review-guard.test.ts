@@ -257,26 +257,6 @@ describe('independent Squad review guard', () => {
     }
   });
 
-  it('relays the latest valid rerun attempt instead of rejecting prior attempt evidence', async () => {
-    const f = fixture(true);
-    const rerunVerdict = {
-      ...f.verdict,
-      timestamp: '2026-09-28T12:01:30Z',
-      run_attempt: 2,
-    };
-    const rerunReview = {
-      ...f.review,
-      id: 124,
-      submitted_at: '2026-09-28T12:01:31Z',
-      body: `${VERDICT_PREFIX}${JSON.stringify(rerunVerdict)}`,
-    };
-    f.run.run_attempt = 2;
-    f.state.reviews.push(rerunReview);
-    await expect(assertClearingReview(f.env, f.get, { relay: true }))
-      .resolves.toEqual(rerunVerdict);
-    expect(f.state.calls.some(route => route.endsWith('/attempts/2/jobs'))).toBe(true);
-  });
-
   it('refuses PR-controlled shaped review and job evidence from another run', async () => {
     const f = fixture(true);
     f.run.event = 'pull_request';
