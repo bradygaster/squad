@@ -263,11 +263,12 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 **When you detect a directive:**
 
 1. Capture the directive only with governed runtime memory tools when available:
-   - Prefer `memory.write` with class `decision` to persist the directive through the governed pipeline:
+   - Prefer `memory.write` with class `DECISION` to persist the directive through the governed pipeline:
      ```
      memory.write({
-       class: "decision",
-       key: "copilot-directive-{timestamp}",
+       class: "DECISION",
+       title: "User directive - {timestamp}",
+       author: "{user name} (via Copilot)",
        content: "### {timestamp}: User directive\n**By:** {user name} (via Copilot)\n**What:** {the directive, verbatim or lightly paraphrased}\n**Why:** User request — captured for team memory"
      })
      ```

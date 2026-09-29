@@ -187,7 +187,8 @@ User: "No, use the code search tools first, grep is too slow"
 ```
 [HIGH] + Add constraint: "Use code intelligence tools before grep"
   Source: "No, use the code search tools first, grep is too slow"
-  Target: .squad/agents/{agent}/history.md
+  Target: accountable tracked instruction via focused PR; governed runtime
+          memory for context only
 ```
 
 ### Example 2: Success Pattern
