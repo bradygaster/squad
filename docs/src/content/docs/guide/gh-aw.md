@@ -1802,6 +1802,24 @@ then reapply them before the final compile. Never customize generated
 ownership record, missing source/lock pair, or absent runtime resource and
 prints the exact safe recovery commands.
 
+The schema-v2 integrity manifest records two complete compiled lock digests per
+workflow: `lock_sha256` for a per-workflow source annotation and
+`package_lock_sha256` for a package-root annotation. gh-aw v0.89.21 emits
+`bradygaster/squad/workflows@SHA` for direct package includes, but can emit
+`bradygaster/squad/workflows/package/<workflow>.md@SHA` when installing dispatched
+dependencies. Fresh and forced installs can therefore contain different mixtures.
+The verifier selects one digest from the exact, ownership- and source-validated
+annotation; it never tries both until one passes. Compiled source comments,
+URLs, action pins, permissions and runtime bytes remain integrity-checked.
+No additional fields are removed during lock normalization.
+
+This fixes the post-merge installation failure in #2103: the old generator and
+local-consumer tests covered only per-workflow annotations, while the native
+installer also emitted package-root annotations. The difference was installation
+provenance, not the squash commit identity or a generated timestamp. Old manifests
+or manifests missing either digest are rejected; upgrade the entire package,
+including the verifier and manifest, using the block above.
+
 Use the complete upgrade block even when a failure appears limited to the
 first-run bootstrap workflow. Updating only `squad-bootstrap.md` is unsupported
 because it can leave its validator or the rest of the workflow set at a

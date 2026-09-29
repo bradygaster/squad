@@ -36,11 +36,13 @@ import {
   TRIGGER_PROBE,
   TRIGGER_PROBE_DESTINATION,
   WORKFLOW_NAMES,
+  buildContract,
   checkSource,
   materializeRuntime,
   normalizeCompiledLock,
   validateContract,
   verifyInstall,
+  verifyCanonicalManifest,
 } from '../workflows/shared/squad-install-verifier.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
@@ -3780,9 +3782,13 @@ describe('gh-aw: canonical package integrity contract', () => {
     cpSync(join(process.cwd(), source), target);
   }
 
-  function makeConsumer(revision = revisionA, materialize = true): string {
+  function makeConsumer(
+    revision = revisionA,
+    materialize = true,
+    sourceBinding: 'workflow' | 'package' | 'mixed' = 'workflow',
+  ): string {
     const root = createTestWorkspace('gh-aw-package-contract-');
-    const install = createFirstInstallFixture(revision);
+    const install = createFirstInstallFixture(revision, sourceBinding);
     copyInto(root, CONTRACT_SOURCE, CONTRACT_DESTINATION);
     const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
     for (const workflow of contract.workflows) {
@@ -3873,7 +3879,7 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(readText(join(process.cwd(), workflow.source))).not.toMatch(/^resources:/m);
     }
     expect(existsSync(join(process.cwd(), 'aw.yml'))).toBe(false);
-  });
+  }, 120_000);
 
   it('accepts a coherent consumer with the exact ownership cardinality', () => {
     const root = makeConsumer();
@@ -3883,6 +3889,125 @@ describe('gh-aw: canonical package integrity contract', () => {
       'utf8',
     ));
     expect(record.files).toHaveLength(OWNERSHIP_ENTRY_COUNT);
+  });
+
+  it.each(['workflow', 'package', 'mixed'] as const)(
+    'verifies %s source bindings at the immutable squash-merged revision',
+    sourceBinding => {
+      const revision = '6ec06cc79230cf71d55b484457e8f11190e20a49';
+      const root = makeConsumer(revision, true, sourceBinding);
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+      execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], { cwd: root, stdio: 'pipe' });
+      expect(verifyInstall(root, { expectedRevision: revision, strictCompile: true }).failures).toEqual([]);
+      const contract = JSON.parse(readFileSync(join(root, CONTRACT_DESTINATION), 'utf8'));
+      const review = contract.workflows.find((entry: { name: string }) => entry.name === 'squad-review');
+      expect(review.package_lock_sha256).not.toBe(review.lock_sha256);
+      expect(contract.schema_version).toBe(2);
+    },
+    120_000,
+  );
+
+  it('keeps both compiled digest variants stable across equivalent trees with different commit identities', () => {
+    const trees: string[] = [];
+    const commits: string[] = [];
+    for (const message of ['PR head', 'Squash merge']) {
+      const root = createTestWorkspace('gh-aw-commit-identity-');
+      cpSync(WORKFLOWS_DIR, join(root, 'workflows'), { recursive: true });
+      const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+      git(['init', '--quiet']);
+      git(['add', 'workflows']);
+      git(['-c', 'user.name=Contract Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', message]);
+      trees.push(git(['rev-parse', 'HEAD^{tree}']));
+      const revision = git(['rev-parse', 'HEAD']);
+      commits.push(revision);
+      expect(buildContract(root)).toEqual(JSON.parse(readFileSync(join(root, CONTRACT_SOURCE), 'utf8')));
+      for (const sourceBinding of ['workflow', 'package'] as const) {
+        expect(verifyInstall(makeConsumer(revision, true, sourceBinding), {
+          expectedRevision: revision,
+        }).failures).toEqual([]);
+      }
+    }
+    expect(trees[0]).toBe(trees[1]);
+    expect(commits[0]).not.toBe(commits[1]);
+  }, 120_000);
+
+  function updateOwnedDigest(root: string, destination: string): void {
+    const path = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
+    const record = JSON.parse(readFileSync(path, 'utf8'));
+    const entry = record.files.find((file: { destination: string }) => file.destination === destination);
+    entry.sha256 = createHash('sha256').update(readFileSync(join(root, destination))).digest('hex');
+    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+  }
+
+  it.each(['workflow', 'package'] as const)('rejects %s source and compiled provenance mutations', sourceBinding => {
+    const source = `${PACKAGE_NAME}${sourceBinding === 'workflow' ? '/package/squad-review.md' : ''}@${revisionA}`;
+    const sourcePath = '.github/workflows/squad-review.md';
+    const lockPath = '.github/workflows/squad-review.lock.yml';
+    const mutations: Array<[string, (text: string) => string]> = [
+      ['wrong owner', text => text.replaceAll('bradygaster/squad', 'attacker/squad')],
+      ['wrong repo', text => text.replaceAll('bradygaster/squad', 'bradygaster/other')],
+      ['wrong package', text => text.replaceAll('/workflows', '/other')],
+      ['wrong workflow', text => text.replaceAll(source, `${PACKAGE_NAME}/package/squad.md@${revisionA}`)],
+      ['wrong revision', text => text.replaceAll(revisionA, revisionB)],
+      ['unexpected suffix', text => text.replaceAll(source, `${source}/extra`)],
+      ['missing annotation', text => text.replace(`source: ${source}\n`, '')],
+      ['duplicate annotation', text => text.replace(`source: ${source}\n`, `source: ${source}\nsource: ${source}\n`)],
+    ];
+    for (const [label, mutate] of mutations) {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      const original = readFileSync(join(root, sourcePath), 'utf8');
+      const modified = mutate(original);
+      expect(modified, label).not.toBe(original);
+      writeFileSync(join(root, sourcePath), modified);
+      updateOwnedDigest(root, sourcePath);
+      expect(verifyInstall(root).failures.join('\n'), label).toMatch(/source binding|digest mismatch/);
+    }
+
+    const lockMutations: Array<[string, (text: string) => string]> = [
+      ...mutations.slice(0, 6),
+      ['wrong URL', text => text.replace('/bradygaster/squad/blob/', '/attacker/squad/blob/')],
+      ['mixed annotation', text => text.replace(`GH_AW_WORKFLOW_SOURCE: "${source}"`, 'GH_AW_WORKFLOW_SOURCE: "unknown"')],
+      ['missing annotation', text => text.replace(`          GH_AW_INFO_FRONTMATTER_SOURCE: "${source}"\n`, '')],
+      ['duplicate annotation', text => text.replace(`GH_AW_WORKFLOW_SOURCE: "${source}"`, `GH_AW_WORKFLOW_SOURCE: "${source}"\n          GH_AW_WORKFLOW_SOURCE: "${source}"`)],
+      ['action tamper', text => text.replace('uses: actions/github-script@', 'uses: attacker/github-script@')],
+      ['permission tamper', text => text.replace('contents: read', 'contents: write')],
+      ['payload tamper', text => text.replace('await guard.assertClearingReview', 'await guard.skipClearingReview')],
+    ];
+    for (const [label, mutate] of lockMutations) {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      const original = readFileSync(join(root, lockPath), 'utf8');
+      const modified = mutate(original);
+      expect(modified, label).not.toBe(original);
+      writeFileSync(join(root, lockPath), modified);
+      expect(verifyInstall(root).failures.length, label).toBeGreaterThan(0);
+    }
+
+    const root = makeConsumer(revisionA, true, sourceBinding);
+    const other = createFirstInstallFixture(revisionA, sourceBinding === 'workflow' ? 'package' : 'workflow');
+    writeFileSync(join(root, lockPath), other.consumerFiles.get(lockPath)!);
+    expect(verifyInstall(root).failures.join('\n')).toContain(`Installed digest mismatch for ${lockPath}`);
+  }, 120_000);
+
+  it('rejects old schemas, absent variants, runtime tampering and canonical manifest drift', () => {
+    const mutations: Array<(contract: any) => void> = [
+      contract => { contract.schema_version = 1; },
+      contract => { delete contract.workflows[0].package_lock_sha256; },
+      contract => { contract.workflows[0].package_lock_sha256 = 'invalid'; },
+    ];
+    for (const mutate of mutations) {
+      expect(mutateContract(makeConsumer(), mutate).length).toBeGreaterThan(0);
+    }
+    const root = makeConsumer();
+    const runtime = '.github/workflows/shared/squad-review-guard.mjs';
+    writeFileSync(join(root, runtime), '// tampered\n');
+    updateOwnedDigest(root, runtime);
+    expect(verifyInstall(root).failures.join('\n')).toContain(`Installed digest mismatch for ${runtime}`);
+
+    const drift = makeConsumer();
+    const manifestPath = join(drift, CONTRACT_DESTINATION);
+    writeFileSync(manifestPath, `${readFileSync(manifestPath, 'utf8')}\n`);
+    expect(() => verifyCanonicalManifest(process.cwd(), drift)).toThrow(/not byte-identical/);
   });
 
   it('normalizes only compiler-declared repository-scattered schedules', () => {

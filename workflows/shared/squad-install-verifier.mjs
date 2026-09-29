@@ -147,7 +147,9 @@ function assertDigest(value, label) {
 
 export function validateContract(contract) {
   assertKeys(contract, TOP_LEVEL_KEYS, 'Integrity contract');
-  if (contract.schema_version !== 1) throw new Error('Integrity contract schema_version must be 1.');
+  if (contract.schema_version !== 2) {
+    throw new Error('Integrity contract schema_version must be 2; reinstall the complete package from one immutable revision.');
+  }
   if (contract.package !== PACKAGE_NAME) throw new Error(`Integrity contract package must be ${PACKAGE_NAME}.`);
   if (contract.manifest !== PACKAGE_MANIFEST) throw new Error(`Integrity contract manifest must be ${PACKAGE_MANIFEST}.`);
   if (contract.minimum_gh_aw_version !== MIN_GH_AW_VERSION) {
@@ -161,7 +163,7 @@ export function validateContract(contract) {
   contract.workflows.forEach((entry, index) => {
     assertKeys(
       entry,
-      ['name', 'source', 'destination', 'lock', 'source_sha256', 'lock_sha256'],
+      ['name', 'source', 'destination', 'lock', 'source_sha256', 'lock_sha256', 'package_lock_sha256'],
       `Workflow entry ${index}`,
     );
     const [name, source, destination, lock] = WORKFLOW_TUPLES[index];
@@ -171,6 +173,7 @@ export function validateContract(contract) {
     validatePathSyntax(entry.lock, lock, `Workflow ${name} lock`);
     assertDigest(entry.source_sha256, `Workflow ${name} source_sha256`);
     assertDigest(entry.lock_sha256, `Workflow ${name} lock_sha256`);
+    assertDigest(entry.package_lock_sha256, `Workflow ${name} package_lock_sha256`);
   });
 
   assertArray(contract.shared_runtime, RUNTIME_TUPLES.length, 'Integrity contract shared_runtime');
@@ -326,14 +329,15 @@ function packageWorkflowSource(_root, name) {
   return `workflows/package/${name}.md`;
 }
 
-function workflowWithSource(content, name, revision) {
+function workflowWithSource(content, name, revision, packageSource) {
   const marker = '\n---\n';
   const end = content.indexOf(marker, 4);
   if (!content.startsWith('---\n') || end < 0) {
     throw new Error(`Generated package workflow has invalid frontmatter: ${name}`);
   }
+  const source = packageSource ? PACKAGE_NAME : `${PACKAGE_NAME}/package/${name}.md`;
   return `${content.slice(0, end)}
-source: ${PACKAGE_NAME}/package/${name}.md@${revision}${content.slice(end)}`;
+source: ${source}@${revision}${content.slice(end)}`;
 }
 
 export function normalizeCompiledLock(content, revision) {
@@ -357,7 +361,7 @@ export function normalizeCompiledLock(content, revision) {
     .replaceAll(revision, LOCK_REVISION_PLACEHOLDER);
 }
 
-function buildLockDigests(root, renderedWorkflows) {
+function buildLockDigests(root, renderedWorkflows, packageSource = false) {
   const scratch = mkdtempSync(join(resolve(root), '.squad-gh-aw-lock-digests-'));
   try {
     const workflowRoot = resolve(scratch, '.github/workflows');
@@ -366,7 +370,7 @@ function buildLockDigests(root, renderedWorkflows) {
     for (const [name, content] of renderedWorkflows) {
       writeFileSync(
         resolve(workflowRoot, `${name}.md`),
-        workflowWithSource(content, name, LOCK_REVISION_PLACEHOLDER),
+        workflowWithSource(content, name, LOCK_REVISION_PLACEHOLDER, packageSource),
       );
     }
     spawnChecked('git', ['init', '--quiet'], scratch);
@@ -397,8 +401,9 @@ export function buildContract(root) {
     name => [name, readFileSync(resolve(root, `workflows/package/${name}.md`), 'utf8')],
   ));
   const lockDigests = buildLockDigests(root, renderedWorkflows);
+  const packageLockDigests = buildLockDigests(root, renderedWorkflows, true);
   return validateContract({
-    schema_version: 1,
+    schema_version: 2,
     package: PACKAGE_NAME,
     manifest: PACKAGE_MANIFEST,
     minimum_gh_aw_version: MIN_GH_AW_VERSION,
@@ -413,6 +418,7 @@ export function buildContract(root) {
         lock,
         source_sha256: sha256(content),
         lock_sha256: lockDigests.get(name),
+        package_lock_sha256: packageLockDigests.get(name),
       };
     }),
     shared_runtime: RUNTIME_TUPLES.map(
@@ -645,21 +651,29 @@ function verifyOwnership(root, contract, expectedRevision) {
 }
 
 function verifyInstalledBytes(root, contract, revision) {
+  const lockDigests = new Map();
   for (const entry of contract.workflows) {
     const installed = readRequired(root, entry.destination);
-    const sourceBindings = [
-      `source: ${PACKAGE_NAME}@${revision}`,
-      `source: bradygaster/squad/${entry.source}@${revision}`,
-    ];
-    let canonicalText = installed.toString('utf8');
-    for (const sourceBinding of sourceBindings) {
-      canonicalText = canonicalText.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
+    const text = installed.toString('utf8');
+    const { frontmatter } = splitWorkflow(text, entry.destination);
+    const sourceLines = frontmatter.split('\n').filter(line => /^source:/.test(line));
+    const sourceBinding = sourceLines[0];
+    const sourceBindings = new Map([
+      [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
+      [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
+    ]);
+    if (sourceLines.length !== 1 || !sourceBindings.has(sourceBinding)
+      || !frontmatter.endsWith(`\n${sourceBinding}`)) {
+      throw new Error(`Installed source binding is invalid for ${entry.destination}.`);
     }
+    const canonicalText = text.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
     const canonical = Buffer.from(canonicalText);
     const canonicalWithFinalNewline = Buffer.from(`${canonicalText}\n`);
     if (![sha256(canonical), sha256(canonicalWithFinalNewline)].includes(entry.source_sha256)) {
       throw new Error(`Installed digest mismatch for ${entry.destination}.`);
     }
+    // Select from the verified source, never accept whichever lock digest happens to match.
+    lockDigests.set(entry.name, sourceBindings.get(sourceBinding));
   }
   for (const entry of contract.skills) {
     if (fileDigest(root, entry.destination) !== entry.sha256) {
@@ -677,9 +691,10 @@ function verifyInstalledBytes(root, contract, revision) {
   for (const entry of contract.workflows) {
     const normalized = normalizeCompiledLock(readRequired(root, entry.lock), revision);
     const observedDigest = sha256(normalized);
-    if (observedDigest !== entry.lock_sha256) {
+    const expectedDigest = lockDigests.get(entry.name);
+    if (observedDigest !== expectedDigest) {
       throw new Error(
-        `Installed digest mismatch for ${entry.lock}: expected ${entry.lock_sha256}, observed ${observedDigest}.`,
+        `Installed digest mismatch for ${entry.lock}: expected ${expectedDigest}, observed ${observedDigest}.`,
       );
     }
   }
@@ -851,7 +866,7 @@ export function writeLocalTestOwnership(root, revision) {
       throw new Error(`Installed workflow has invalid frontmatter: ${entry.destination}`);
     }
     const frontmatter = content.slice(0, end);
-    const source = `source: bradygaster/squad/${entry.source}@${revision}`;
+    const source = `source: ${PACKAGE_NAME}@${revision}`;
     const rebound = /^source:\s*.+$/m.test(frontmatter)
       ? `${frontmatter.replace(/^source:\s*.+$/m, source)}${content.slice(end)}`
       : `${frontmatter}\n${source}${content.slice(end)}`;
