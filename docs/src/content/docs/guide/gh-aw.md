@@ -84,6 +84,8 @@ node .github/workflows/shared/squad-install-verifier.mjs \
 
 # 7. Commit the generated files and open the bootstrap PR
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
 test -z "$(git diff --cached --diff-filter=D --name-only)"
 git commit -m "ci: add Squad agentic workflow"
@@ -364,6 +366,8 @@ done
 
 ```bash
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
 test -z "$(git diff --cached --diff-filter=D --name-only)"
 git commit -m "ci: add Squad agentic workflow"
@@ -380,6 +384,16 @@ This stages the workflow sources and lockfiles, the gh-aw manifest and pinned
 state under `.github/aw/`, the installed skills, and `.gitattributes`. Review
 the complete generated diff in the bootstrap PR, address Copilot review
 feedback, and wait for required checks. Merge only after human approval.
+
+Consumer ignore rules such as `packages/` can silently omit the required
+`.github/aw/packages/` ownership JSON from directory staging. The staged verifier
+force-adds only the exact native package ownership JSON when ignored and
+untracked, never unrelated ignored files. It checks every manifest-required
+source, lock, runtime, skill, manifest and ownership file in the Git index
+against the verified working-tree bytes. Missing metadata, failed staging,
+omitted required files or staged digest mismatches stop the install before
+commit/push. Never force-add a directory or glob; rerun the gate after edits or
+restaging, including package upgrades.
 
 `gh aw add` may also create `.vscode/settings.json` to enable Copilot for
 Markdown workflow files. The command above intentionally leaves that optional

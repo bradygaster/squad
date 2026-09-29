@@ -836,7 +836,7 @@ function strictCompileMatches(root) {
   }
 }
 
-function spawnChecked(command, args, cwd) {
+function spawnChecked(command, args, cwd, options = {}) {
   const safeEnvironment = Object.fromEntries(
     ['CI', 'GH_CONFIG_DIR', 'GH_HOST', 'HOME', 'LANG', 'LC_ALL', 'NO_COLOR', 'PATH', 'SHELL', 'TERM', 'TMPDIR']
       .filter((key) => process.env[key] !== undefined)
@@ -846,6 +846,7 @@ function spawnChecked(command, args, cwd) {
     cwd,
     encoding: 'utf8',
     env: safeEnvironment,
+    ...options,
   });
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
@@ -870,6 +871,59 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
     failures.push(error instanceof Error ? error.message : String(error));
   }
   return { failures, revision };
+}
+
+export function verifyStagedInstall(root, { expectedRevision = '', stageOwnership = false } = {}) {
+  const result = verifyInstall(root, { expectedRevision });
+  if (result.failures.length > 0) return result;
+  try {
+    const { contract } = parseInstalledContract(root);
+    // Only the native package's exact metadata path may bypass consumer ignore rules.
+    const ownership = readRequired(root, OWNERSHIP_DESTINATION);
+    if (JSON.parse(ownership).package !== PACKAGE_NAME) {
+      throw new Error(`Package ownership identity is invalid: ${OWNERSHIP_DESTINATION}`);
+    }
+    const required = new Set([
+      CONTRACT_DESTINATION,
+      OWNERSHIP_DESTINATION,
+      ...contract.workflows.flatMap(entry => [entry.destination, entry.lock]),
+      ...contract.shared_runtime.flatMap(entry => [entry.package_destination, entry.destination]),
+      ...contract.skills.map(entry => entry.destination),
+    ]);
+    const expected = new Map([...required].map(path => [path, fileDigest(root, path)]));
+    if (stageOwnership) {
+      const ignored = spawnChecked('git', [
+        'ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', OWNERSHIP_DESTINATION,
+      ], root).stdout.split('\0');
+      if (ignored.includes(OWNERSHIP_DESTINATION)) {
+        spawnChecked('git', ['add', '--force', '--', OWNERSHIP_DESTINATION], root);
+      }
+    }
+    // Snapshot the index, not HEAD or the working tree, including unchanged tracked files.
+    const tree = spawnChecked('git', ['write-tree'], root).stdout.trim();
+    // Exact allowlisted paths bound output; no recursion into unrelated or substituted trees.
+    const entries = spawnChecked('git', ['ls-tree', '-z', tree, '--', ...required], root).stdout
+      .split('\0').filter(Boolean);
+    const staged = new Map(entries.map(entry => {
+      const tab = entry.indexOf('\t');
+      return [entry.slice(tab + 1), entry.slice(0, tab).split(' ')];
+    }));
+    for (const [path, digest] of expected) {
+      const entry = staged.get(path);
+      if (!entry) throw new Error(`Required file is missing from staged tree: ${path}`);
+      const [mode, type, object] = entry;
+      if (type !== 'blob' || !['100644', '100755'].includes(mode)) {
+        throw new Error(`Required staged path is not a regular file: ${path}`);
+      }
+      const bytes = spawnChecked('git', ['cat-file', 'blob', object], root, { encoding: null }).stdout;
+      if (sha256(bytes) !== digest) {
+        throw new Error(`Staged digest mismatch for ${path}; stage the verified file before commit/push.`);
+      }
+    }
+  } catch (error) {
+    result.failures.push(error instanceof Error ? error.message : String(error));
+  }
+  return result;
 }
 
 export function verifyCanonicalManifest(sourceRoot, installedRoot) {
@@ -999,11 +1053,24 @@ export function run(argv = process.argv.slice(2), cwd = process.cwd()) {
       console.log(`Squad gh-aw installation verified at ${result.revision}.`);
       return 0;
     }
+    if (argv.includes('--verify-staged-install')) {
+      const result = verifyStagedInstall(root, {
+        expectedRevision: optionValue(argv, '--source-revision'),
+        stageOwnership: argv.includes('--stage-ownership'),
+      });
+      if (result.failures.length > 0) {
+        console.error('STOP: Squad required installation files could not be staged and verified; do not commit/push:');
+        for (const failure of result.failures) console.error(`- ${failure}`);
+        return 1;
+      }
+      console.log(`Squad gh-aw staged installation verified at ${result.revision}.`);
+      return 0;
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   }
-  console.error('Usage: squad-install-verifier.mjs --check-source|--write-source|--materialize-runtime|--verify-install|--verify-resource <path>');
+  console.error('Usage: squad-install-verifier.mjs --check-source|--write-source|--materialize-runtime|--verify-install|--verify-staged-install [--stage-ownership]|--verify-resource <path>');
   return 2;
 }
 
