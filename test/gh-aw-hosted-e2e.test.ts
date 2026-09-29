@@ -219,7 +219,7 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(SCRIPT).toContain('waitForBaseControlledReviewCanary');
     expect(SCRIPT).toContain("job.name === 'review'");
     expect(SCRIPT).toContain('job.check_run_url');
-    expect(SCRIPT).toContain("check.name !== 'Squad Review / review'");
+    expect(SCRIPT).toContain("check.name !== 'review'");
     expect(SCRIPT).toContain("check.app?.slug !== 'github-actions'");
     expect(SCRIPT).toContain("'@squad/base-controlled-bootstrap'");
     expect(SCRIPT).toContain("'@squad/base-controlled-review'");
