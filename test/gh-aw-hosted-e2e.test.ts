@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +9,7 @@ import {
   guardedTargetMutation,
   sanitizedEnvironment,
   selectBootstrapOutputs,
+  waitForBaseControlledReviewCanary,
   waitForBootstrapOutputs,
 } from '../scripts/gh-aw-hosted-e2e.mjs';
 import {
@@ -219,7 +221,8 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(SCRIPT).toContain('waitForBaseControlledReviewCanary');
     expect(SCRIPT).toContain("job.name === 'review'");
     expect(SCRIPT).toContain('job.check_run_url');
-    expect(SCRIPT).toContain("check.name !== 'Squad Review / review'");
+    expect(SCRIPT).toContain("check.name !== 'review'");
+    expect(SCRIPT).not.toContain("check.name !== 'Squad Review / review'");
     expect(SCRIPT).toContain("check.app?.slug !== 'github-actions'");
     expect(SCRIPT).toContain("'@squad/base-controlled-bootstrap'");
     expect(SCRIPT).toContain("'@squad/base-controlled-review'");
@@ -228,6 +231,76 @@ describe('Squad gh-aw hosted E2E controller', () => {
       SCRIPT.indexOf("kind: 'squad-bootstrap-trigger-probe'"),
     );
     expect(SCRIPT).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority|publisher_app_/);
+  });
+
+  it.each([
+    'native-job-name', 'ui-context-name', 'wrong-check-id', 'wrong-head',
+    'failed-check', 'incomplete-check', 'foreign-app', 'foreign-app-id',
+  ])('exercises the hosted canary API contract: %s', mutation => {
+    const target = 'owner/consumer';
+    const verdict = {
+      schema: 'squad-review-verdict/v1', repository: target,
+      pull_request: currentCastPr.number, base_sha: currentCastPr.baseSha,
+      head_sha: CAST_SHA, author_agent: '@squad/base-controlled-bootstrap',
+      reviewer_agent: '@squad/base-controlled-review', result: 'COMMENT',
+      event: 'pull_request_target', workflow_sha: currentCastPr.baseSha,
+      workflow_path: '.github/workflows/squad-review.lock.yml', run_id: 31, run_attempt: 1,
+    };
+    const run = {
+      id: 31, event: verdict.event, path: verdict.workflow_path, head_sha: CAST_SHA,
+      repository: { full_name: target }, run_attempt: 1,
+      display_title: `Squad review — PR #${currentCastPr.number}`,
+    };
+    const job = {
+      name: 'review', status: 'completed', conclusion: 'success',
+      check_run_url: `https://api.github.com/repos/${target}/check-runs/123`,
+    };
+    const check = {
+      id: 123, name: 'review', head_sha: CAST_SHA, status: 'completed', conclusion: 'success',
+      app: { id: 15368, slug: 'github-actions' },
+    };
+    switch (mutation) {
+      case 'ui-context-name': check.name = 'Squad Review / review'; break;
+      case 'wrong-check-id': check.id = 124; break;
+      case 'wrong-head': check.head_sha = TARGET_SHA; break;
+      case 'failed-check': check.conclusion = 'failure'; break;
+      case 'incomplete-check': check.status = 'in_progress'; break;
+      case 'foreign-app': check.app.slug = 'other'; break;
+      case 'foreign-app-id': check.app.id = 1; break;
+    }
+    const routes: string[] = [];
+    const request = (args: string[]) => {
+      const route = args.find(arg => arg.startsWith(`repos/${target}/`));
+      routes.push(route!);
+      switch (route) {
+        case `repos/${target}/pulls/${currentCastPr.number}/reviews?per_page=100`:
+          return [{
+            user: ACTIONS_BOT, commit_id: CAST_SHA,
+            body: `Squad-Review-Verdict: ${JSON.stringify(verdict)}`,
+          }];
+        case `repos/${target}/actions/runs/31`: return run;
+        case `repos/${target}/actions/runs/31/attempts/1/jobs?per_page=100`: return [{ jobs: [job] }];
+        case `repos/${target}/check-runs/123`: return check;
+        default: throw new Error(`Unexpected API route: ${route}`);
+      }
+    };
+    const evidence = mkdtempSync(resolve(tmpdir(), 'squad-review-canary-'));
+    try {
+      const execute = () => waitForBaseControlledReviewCanary(target, currentCastPr, evidence, {
+        request, now: () => 0, pause: () => { throw new Error('Unexpected polling'); },
+      });
+      if (mutation === 'native-job-name') {
+        expect(execute()).toEqual({ run, job, check, verdict });
+        expect(JSON.parse(readFileSync(
+          resolve(evidence, 'base-controlled-review-canary.json'), 'utf8',
+        )).check.name).toBe('review');
+      } else {
+        expect(execute).toThrow('not bound to the trusted review job');
+      }
+      expect(routes.at(-1)).toBe(`repos/${target}/check-runs/123`);
+    } finally {
+      rmSync(evidence, { recursive: true, force: true });
+    }
   });
 
   it('never executes candidate package or installed verifier with inherited credentials', () => {

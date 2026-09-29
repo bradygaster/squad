@@ -565,10 +565,15 @@ export function waitForBootstrapOutputs(
   throw new Error('Timed out waiting for the draft Cast PR and bootstrap research issue.');
 }
 
-function waitForBaseControlledReviewCanary(target, castPr, evidence) {
-  const deadline = Date.now() + 20 * 60 * 1000;
-  while (Date.now() < deadline) {
-    const reviews = ghJson([
+export function waitForBaseControlledReviewCanary(
+  target,
+  castPr,
+  evidence,
+  { request = ghJson, now = Date.now, pause = sleep } = {},
+) {
+  const deadline = now() + 20 * 60 * 1000;
+  while (now() < deadline) {
+    const reviews = request([
       'api',
       `repos/${target}/pulls/${castPr.number}/reviews?per_page=100`,
     ]);
@@ -598,7 +603,7 @@ function waitForBaseControlledReviewCanary(target, castPr, evidence) {
         || verdict.workflow_path !== '.github/workflows/squad-review.lock.yml') {
         throw new Error('Squad Review canary verdict is not bound to the base-controlled bootstrap activation.');
       }
-      const run = ghJson([
+      const run = request([
         'api', `repos/${target}/actions/runs/${verdict.run_id}`,
         '--jq',
         '{id,event,path,head_sha,run_attempt,status,conclusion,display_title,repository:{full_name:.repository.full_name}}',
@@ -611,7 +616,7 @@ function waitForBaseControlledReviewCanary(target, castPr, evidence) {
         || run.run_attempt < verdict.run_attempt) {
         throw new Error('Squad Review canary verdict is not bound to the base-controlled workflow run.');
       }
-      const jobs = ghJson([
+      const jobs = request([
         'api', '--paginate', '--slurp',
         `repos/${target}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}/jobs?per_page=100`,
       ]).flat().flatMap((page) => page.jobs ?? []);
@@ -628,14 +633,15 @@ function waitForBaseControlledReviewCanary(target, castPr, evidence) {
       if (!Number.isSafeInteger(checkId)) {
         throw new Error('Native Squad Review job did not expose a valid check-run binding.');
       }
-      const check = ghJson([
+      const check = request([
         'api',
         '-H', 'Accept: application/vnd.github+json',
         `repos/${target}/check-runs/${checkId}`,
         '--jq', '{id,name,status,conclusion,head_sha,details_url,app:{id:.app.id,slug:.app.slug}}',
       ]);
+      // The Checks API exposes the job name, not the UI's workflow/job context.
       if (check.id !== checkId
-        || check.name !== 'Squad Review / review'
+        || check.name !== 'review'
         || check.head_sha !== castPr.headSha
         || check.status !== 'completed'
         || check.conclusion !== 'success'
@@ -653,7 +659,7 @@ function waitForBaseControlledReviewCanary(target, castPr, evidence) {
       });
       return { run, job, check, verdict };
     }
-    sleep(10_000);
+    pause(10_000);
   }
   throw new Error('Timed out waiting for the base-controlled Squad Review activation canary.');
 }

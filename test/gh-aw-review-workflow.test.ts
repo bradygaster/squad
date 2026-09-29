@@ -75,6 +75,13 @@ function provenanceRows(workflow: string): string[] {
     .map(match => `${match[1]}:${match[2].trim()}:${match[3].trim()}`);
 }
 
+function assertRelayHeadBinding(workflow: string): void {
+  const relay = workflow.match(/## skill: `squad-review-relay`([\s\S]*?)(?=\n## skill:)/)?.[1] ?? '';
+  expect(relay).toContain("`head_sha` equals the pull request's exact current head SHA");
+  expect(relay).toMatch(/review guard binds `workflow_sha` to the pull request's exact base\s+SHA/);
+  expect(relay).toContain("the run's `head_sha` is not the workflow source SHA");
+}
+
 function assertReviewerContract(workflow: string): void {
   const yaml = frontmatter(workflow);
   const tools = yamlBlock(yaml, 'tools');
@@ -310,6 +317,19 @@ describe('gh-aw enforcing Squad reviewer', () => {
     expect(relay).not.toContain('dispatch-workflow');
     expect(relay).toMatch(/command did not rerun it\./);
     expect(relay).toMatch(/no base-controlled automatic review run exists for\s+the exact head/);
+    assertRelayHeadBinding(ROUTER);
+    assertRelayHeadBinding(read('workflows/package/squad.md'));
+  });
+
+  it('rejects dispatcher source mutations conflating API run head and workflow source', () => {
+    for (const mutation of [
+      ROUTER.replace("`head_sha` equals the pull request's exact current head SHA",
+        "`head_sha` equals the pull request's exact base SHA"),
+      ROUTER.replace("review guard binds `workflow_sha` to the pull request's exact base",
+        "review guard binds `workflow_sha` to the pull request's exact head"),
+    ]) {
+      expect(() => assertRelayHeadBinding(mutation)).toThrow();
+    }
   });
 
   it('limits slash commands to issue and pull request conversation surfaces', () => {

@@ -167,6 +167,23 @@ function makeBootstrap(f: ReturnType<typeof fixture>) {
   f.sync();
 }
 
+function retainFirstAttempt(f: ReturnType<typeof fixture>) {
+  const first = structuredClone(f.review);
+  first.body = `${VERDICT_PREFIX}${JSON.stringify({ ...f.verdict, result: 'REQUEST_CHANGES' })}`;
+  f.review.id = 124;
+  f.review.submitted_at = '2026-09-28T12:02:11Z';
+  f.verdict.timestamp = '2026-09-28T12:02:10Z';
+  f.verdict.run_attempt = 2;
+  f.run.run_attempt = 2;
+  f.run.run_started_at = FINISHED;
+  f.run.updated_at = '2026-09-28T12:02:30Z';
+  f.jobs[0].started_at = FINISHED;
+  f.jobs[0].completed_at = f.run.updated_at;
+  f.state.reviews = [first, f.review];
+  f.sync();
+  return first;
+}
+
 describe('independent Squad review guard', () => {
   it('uses reserved workflow roles only for the base-controlled post-install bootstrap PR', async () => {
     const f = fixture();
@@ -255,6 +272,86 @@ describe('independent Squad review guard', () => {
       expect(f.state.prReads).toBe(2);
       if (relay) expect(f.state.calls.some(route => route.endsWith('/jobs'))).toBe(true);
     }
+  });
+
+  it.each([false, true])('selects a successful rerun with retained attempt-1 rejection (reverse=%s)', async reverse => {
+    const f = fixture(true);
+    retainFirstAttempt(f);
+    if (reverse) f.state.reviews.reverse();
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
+    expect(f.state.calls).toContain(`repos/${REPOSITORY}/actions/runs/17/attempts/2/jobs`);
+    expect(f.state.calls).not.toContain(`repos/${REPOSITORY}/actions/runs/17/attempts/1/jobs`);
+  });
+
+  it('keeps the executing gate scoped to its exact attempt with retained older evidence', async () => {
+    const f = fixture();
+    retainFirstAttempt(f);
+    f.env.GITHUB_RUN_ATTEMPT = '2';
+    await expect(assertClearingReview(f.env, f.get)).resolves.toEqual(f.verdict);
+    f.state.reviews.push({ ...f.review, id: 125 });
+    await expect(assertClearingReview(f.env, f.get)).rejects.toThrow('duplicate verdict evidence');
+  });
+
+  it('orders by GitHub submission time and review ID, not verdict time or list order', async () => {
+    const f = fixture(true);
+    const first = retainFirstAttempt(f);
+    first.submitted_at = f.review.submitted_at;
+    first.body = `${VERDICT_PREFIX}${JSON.stringify({
+      ...f.verdict, run_attempt: 1, result: 'REQUEST_CHANGES', timestamp: first.submitted_at,
+    })}`;
+    f.state.reviews.reverse();
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
+    // Submission time takes precedence even when the earlier review has a larger ID.
+    first.submitted_at = SUBMITTED;
+    first.id = 125;
+    first.body = `${VERDICT_PREFIX}${JSON.stringify({
+      ...f.verdict, run_attempt: 1, result: 'REQUEST_CHANGES', timestamp: ISSUED,
+    })}`;
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
+  });
+
+  it('selects a newer automatic run independently of the relay environment run ID', async () => {
+    const f = fixture(true);
+    retainFirstAttempt(f);
+    f.verdict.run_id = 18;
+    f.verdict.run_attempt = f.run.run_attempt = 1;
+    f.sync();
+    const get = (route: string, fields?: Record<string, unknown>) =>
+      f.get(route.replace('/actions/runs/18', '/actions/runs/17'), fields);
+    await expect(assertClearingReview(f.env, get, { relay: true })).resolves.toEqual(f.verdict);
+  });
+
+  it('rejects duplicate verdicts for the selected attempt even with distinct review IDs', async () => {
+    const f = fixture(true);
+    retainFirstAttempt(f);
+    f.state.reviews.push({ ...f.review, id: 125 });
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('duplicate verdict evidence');
+  });
+
+  it.each([
+    'failed-run', 'failed-job', 'duplicate-job', 'wrong-workflow', 'wrong-event',
+    'wrong-head', 'replay', 'after-merge', 'malformed', 'invalid-id', 'latest-rejection',
+  ])('never falls back to an earlier attempt when the latest has %s', async mutation => {
+    const f = fixture(true);
+    retainFirstAttempt(f);
+    f.state.reviews[0].body = `${VERDICT_PREFIX}${JSON.stringify({
+      ...f.verdict, run_attempt: 1, timestamp: ISSUED,
+    })}`;
+    switch (mutation) {
+      case 'failed-run': f.run.conclusion = 'failure'; break;
+      case 'failed-job': f.jobs[0].conclusion = 'failure'; break;
+      case 'duplicate-job': f.jobs.push(f.jobs[0]); break;
+      case 'wrong-workflow': f.run.path = '.github/workflows/untrusted.yml'; break;
+      case 'wrong-event': f.run.event = 'workflow_dispatch'; break;
+      case 'wrong-head': f.run.head_sha = BASE; break;
+      case 'replay': f.run.run_started_at = f.run.updated_at; break;
+      case 'after-merge': f.jobs[0].completed_at = '2026-09-28T12:04:00Z'; break;
+      case 'malformed': f.review.body = `${VERDICT_PREFIX}{broken`; break;
+      case 'invalid-id': f.review.id = 0; break;
+      case 'latest-rejection': f.verdict.result = 'REQUEST_CHANGES'; f.sync(); break;
+    }
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow();
   });
 
   it('refuses PR-controlled shaped review and job evidence from another run', async () => {

@@ -80,7 +80,8 @@ export function validateVerdict(value, expected, review, now = Date.now()) {
     Number.isSafeInteger(value.run_attempt) && value.run_attempt > 0 &&
     value.workflow_path === WORKFLOW && value.workflow_sha === expected.workflow_sha,
   'invalid verdict result or run');
-  requireThat(review.user?.login === BOT && review.user?.id === BOT_ID &&
+  requireThat(Number.isSafeInteger(review.id) && review.id > 0 &&
+    review.user?.login === BOT && review.user?.id === BOT_ID &&
     review.user?.type === 'Bot' && review.commit_id === value.head_sha &&
     review.state === 'COMMENTED',
   'review author, commit, or native result mismatch');
@@ -344,9 +345,16 @@ export async function assertClearingReview(env, get, options = {}) {
       relay ? timestamp(target.pr.merged_at) : Date.now(),
     ),
   }));
-  const bound = relay ? candidates : candidates.filter(({ verdict }) =>
-    String(verdict.run_id) === env.GITHUB_RUN_ID &&
-    String(verdict.run_attempt) === env.GITHUB_RUN_ATTEMPT);
+  // GitHub retains reviews across reruns. Order by API metadata, never verdict prose.
+  if (relay) {
+    candidates.sort((a, b) =>
+      timestamp(b.review.submitted_at) - timestamp(a.review.submitted_at) ||
+      b.review.id - a.review.id);
+  }
+  const runId = relay ? String(candidates[0]?.verdict.run_id) : env.GITHUB_RUN_ID;
+  const runAttempt = relay ? String(candidates[0]?.verdict.run_attempt) : env.GITHUB_RUN_ATTEMPT;
+  const bound = candidates.filter(({ verdict }) =>
+    String(verdict.run_id) === runId && String(verdict.run_attempt) === runAttempt);
   requireThat(bound.length === 1, 'missing or duplicate verdict evidence for this run');
   const { review, verdict } = bound[0];
   const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();
