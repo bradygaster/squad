@@ -35,16 +35,14 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 > the repository's default branch.
 > The installation PR is a manual trust boundary: its PR-controlled workflow
 > cannot mint a trusted Squad verdict. After merge, require the automatically
-> opened Cast PR to pass the exact-head `Squad Review / review` attestation from
-> the base-controlled `pull_request_target` authority before treating bootstrap
-> or lifecycle automation as trusted. That check must be published by a
-> dedicated GitHub App token minted only inside the exact-default-branch
-> `squad-review-authority` environment. Missing or misconfigured reviewer
-> credentials fail closed; the workflow never falls back to `github.token`.
-> The ordinary GitHub Actions App (`id: 15368`, slug: `github-actions`) is
-> explicitly rejected and cannot publish the authoritative required check.
-> `/squad review` only guides an operator to rerun the existing automatic
-> exact-head run; it does not dispatch a reviewer run.
+> opened Cast PR to pass the deterministic relay's native
+> `Squad Review / review` job, which is authoritative only when it validates the
+> exact trusted automatic run from the base-controlled `pull_request_target`
+> workflow. Authoritative merge enforcement requires a source-bound
+> required-workflow or equivalent ruleset. Where source binding is unavailable,
+> treat the context as advisory and continue to require an independent human
+> approving review. The relay requires no separate PAT, GitHub App, private key,
+> secret, environment, or external service.
 
 The quick start installs this workflow set:
 

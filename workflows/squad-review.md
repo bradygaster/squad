@@ -73,7 +73,7 @@ safe-outputs:
     commit-id: "${{ github.event.pull_request.head.sha }}"
 jobs:
   review:
-    name: Squad Review Authority / attest
+    name: review
     if: always()
     needs: [agent, safe_outputs]
     runs-on: ubuntu-latest
@@ -119,159 +119,6 @@ jobs:
             const guard = await import(pathToFileURL(baseGuard).href);
             await guard.assertClearingReview(process.env,
               async (route, fields) => (await github.request(`GET /${route}`, fields)).data);
-  publish:
-    name: Publish Squad Review required check
-    if: always()
-    needs: [agent, safe_outputs, review]
-    runs-on: ubuntu-latest
-    environment: squad-review-authority
-    permissions:
-      actions: read
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Validate dedicated reviewer App configuration
-        env:
-          SQUAD_REVIEW_APP_ID: ${{ vars.SQUAD_REVIEW_APP_ID }}
-          SQUAD_REVIEW_APP_SLUG: ${{ vars.SQUAD_REVIEW_APP_SLUG }}
-          SQUAD_REVIEW_APP_OWNER: ${{ vars.SQUAD_REVIEW_APP_OWNER }}
-          SQUAD_REVIEW_APP_PRIVATE_KEY: ${{ secrets.SQUAD_REVIEW_APP_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          test "${SQUAD_REVIEW_APP_ID}" != "15368"
-          test "${SQUAD_REVIEW_APP_SLUG}" != "github-actions"
-          [[ "${SQUAD_REVIEW_APP_ID}" =~ ^[1-9][0-9]*$ ]]
-          [[ "${SQUAD_REVIEW_APP_SLUG}" =~ ^[a-z0-9][a-z0-9-]*$ ]]
-          [[ "${SQUAD_REVIEW_APP_OWNER}" =~ ^[A-Za-z0-9_.-]+$ ]]
-          test -n "${SQUAD_REVIEW_APP_PRIVATE_KEY}"
-      - name: Mint dedicated reviewer App token
-        id: squad-review-app-token
-        uses: actions/create-github-app-token@v3.2.0
-        with:
-          app-id: ${{ vars.SQUAD_REVIEW_APP_ID }}
-          private-key: ${{ secrets.SQUAD_REVIEW_APP_PRIVATE_KEY }}
-          owner: ${{ vars.SQUAD_REVIEW_APP_OWNER }}
-      - name: Publish exact-head required check
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          AUTHORITY_RESULT: ${{ needs.review.result }}
-          SQUAD_REVIEW_APP_ID: ${{ vars.SQUAD_REVIEW_APP_ID }}
-          SQUAD_REVIEW_APP_SLUG: ${{ vars.SQUAD_REVIEW_APP_SLUG }}
-          SQUAD_REVIEW_PR: ${{ github.event.pull_request.number }}
-          SQUAD_REVIEW_BASE: ${{ github.event.pull_request.base.sha }}
-          SQUAD_REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
-          SQUAD_REVIEW_WORKFLOW_SHA: ${{ github.workflow_sha }}
-        with:
-          github-token: ${{ steps.squad-review-app-token.outputs.token }}
-          script: |
-            const checkName = 'Squad Review / review';
-            const authorityJob = 'Squad Review Authority / attest';
-            const repository = process.env.GITHUB_REPOSITORY;
-            const [owner, repo] = repository.split('/');
-            const expectedAppId = Number(process.env.SQUAD_REVIEW_APP_ID);
-            const expectedAppSlug = process.env.SQUAD_REVIEW_APP_SLUG;
-            const pullRequest = Number(process.env.SQUAD_REVIEW_PR);
-            const baseSha = process.env.SQUAD_REVIEW_BASE;
-            const headSha = process.env.SQUAD_REVIEW_HEAD;
-            const workflowSha = process.env.SQUAD_REVIEW_WORKFLOW_SHA;
-            const runId = Number(process.env.GITHUB_RUN_ID);
-            const runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
-            if (!Number.isSafeInteger(expectedAppId) || expectedAppId < 1 ||
-                expectedAppId === 15368 ||
-                !/^[a-z0-9][a-z0-9-]*$/.test(expectedAppSlug) ||
-                expectedAppSlug === 'github-actions' ||
-                !Number.isSafeInteger(pullRequest) || pullRequest < 1 ||
-                !/^[0-9a-f]{40}$/.test(baseSha) || !/^[0-9a-f]{40}$/.test(headSha) ||
-                workflowSha !== baseSha || !Number.isSafeInteger(runId) || runId < 1 ||
-                !Number.isSafeInteger(runAttempt) || runAttempt < 1) {
-              core.setFailed('Invalid base-controlled Squad review check context.');
-              return;
-            }
-            const run = (await github.rest.actions.getWorkflowRun({
-              owner, repo, run_id: runId,
-            })).data;
-            if (run.event !== 'pull_request_target' ||
-                run.path !== '.github/workflows/squad-review.lock.yml' ||
-                run.head_sha !== workflowSha ||
-                run.repository.full_name !== repository) {
-              core.setFailed('Squad review check is not bound to the base-controlled workflow run.');
-              return;
-            }
-            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
-              owner, repo, run_id: runId, attempt_number: runAttempt, per_page: 100,
-            });
-            const authorityJobs = jobs.filter(job => job.name === authorityJob);
-            if (authorityJobs.length !== 1) {
-              core.setFailed('Missing or duplicate base-controlled Squad review authority job.');
-              return;
-            }
-            const succeeded = process.env.AUTHORITY_RESULT === 'success' &&
-              authorityJobs[0].conclusion === 'success';
-            const externalId =
-              `squad-review-authority/v1:${repository}:${pullRequest}:${baseSha}:${headSha}`;
-            const existing = await github.paginate(github.rest.checks.listForRef, {
-              owner, repo, ref: headSha, check_name: checkName, per_page: 100,
-            });
-            const owned = existing.filter(check =>
-              check.external_id === externalId &&
-              check.app?.id === expectedAppId &&
-              check.app?.slug === expectedAppSlug);
-            if (owned.length > 1) {
-              core.setFailed('Duplicate exact-head Squad review authority checks.');
-              return;
-            }
-            const detailsUrl =
-              `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${runId}`;
-            const output = {
-              title: succeeded
-                ? 'Base-controlled Squad review passed'
-                : 'Base-controlled Squad review did not pass',
-              summary: JSON.stringify({
-                schema: 'squad-review-check/v1',
-                repository,
-                pull_request: pullRequest,
-                base_sha: baseSha,
-                head_sha: headSha,
-                workflow_sha: workflowSha,
-                run_id: runId,
-                run_attempt: runAttempt,
-                event: 'pull_request_target',
-                workflow_path: '.github/workflows/squad-review.lock.yml',
-                authority_job: authorityJob,
-                publisher_app_id: expectedAppId,
-                publisher_app_slug: expectedAppSlug,
-              }),
-            };
-            const request = {
-              owner, repo, name: checkName, head_sha: headSha,
-              status: 'completed',
-              conclusion: succeeded ? 'success' : 'failure',
-              details_url: detailsUrl,
-              external_id: externalId,
-              output,
-            };
-            const published = owned.length === 1
-              ? await github.rest.checks.update({
-                ...request,
-                check_run_id: owned[0].id,
-              })
-              : await github.rest.checks.create(request);
-            if (published.data.app?.id !== expectedAppId ||
-                published.data.app?.slug !== expectedAppSlug) {
-              try {
-                await github.rest.checks.delete({
-                  owner, repo, check_run_id: published.data.id,
-                });
-              } finally {
-                core.setFailed(
-                  'Squad review check was not published by the configured dedicated GitHub App.'
-                );
-              }
-              return;
-            }
-            if (!succeeded) {
-              core.setFailed('Base-controlled Squad review authority did not succeed.');
-            }
 ---
 
 # Squad Review
@@ -310,11 +157,11 @@ Read `.squad-review.json` at the exact PR head SHA and the committed
 `persistent_name` entries in that registry, and must differ. Act as that
 `reviewer_agent`, reading its base-commit charter. Missing or malformed
 attribution is a refusal, never a fallback to a display name or GitHub login.
-The deterministic output guard and authority job repeat these checks. The
-publisher creates `Squad Review / review` on the exact PR head only after the
-native `Squad Review Authority / attest` job in the same base-controlled run
-succeeds. A refusal, missing verdict, stale head, malformed provenance, or
-same-named PR-controlled check cannot clear the authority contract.
+The deterministic output guard and final job repeat these checks. GitHub
+publishes the native job result as the stable `Squad Review / review` required
+status context. The job uses `if: always()` and fails unless the agent, safe
+outputs, and exact-head verdict gate all succeed. A refusal, missing verdict,
+stale head, or malformed provenance therefore fails the required job.
 
 The workflow-installation PR is an explicit human trust boundary. Its base does
 not contain this workflow, guard, or manifest, so no trusted automatic Squad
@@ -364,23 +211,26 @@ human and Copilot PRs) needs the committed stable-agent attribution above to
 clear the check. `Unattributed` is not permission to skip the gate or fabricate
 an identity. Malformed marker text remains a refusal on both trigger paths.
 
-## SHA deduplication
+## Run-attempt evidence
 
 Fetch all existing reviews on the pull request before analyzing the diff. The
 machine-readable review marker is a standalone final line:
 
 `Squad-Review-Head: {40-character lowercase head SHA}`
 
-If an existing bot review contains a `Squad-Review-Verdict:` record for the
-current head SHA and this exact workflow run ID and attempt, call `noop` and
-stop. Evidence from a different run or attempt cannot deduplicate or clear this
-run. The deterministic gate validates the `pull_request_target` event, immutable
-workflow SHA, workflow path, PR, base, head, run, attempt, native authority job,
-exact-head published check, and GitHub Actions App/bot identity; an arbitrary
-comment, PR-controlled workflow, same-named check, or legacy head marker is not
-clearing evidence. Re-fetch the pull request
-immediately before emitting outputs; if its head SHA changed, call `noop` and
-let the newer run review it.
+Every workflow run attempt must submit exactly one fresh review. Never use
+`noop` to reuse or deduplicate an existing `Squad-Review-Verdict:` record.
+The deterministic safe-output guard rejects any pre-existing verdict evidence
+for the current head SHA, workflow run ID, and attempt before it publishes the
+new review. Evidence from an earlier run or attempt is not reused; a GitHub
+Actions rerun receives an incremented attempt and must publish its own review.
+The deterministic gate validates the `pull_request_target` event, immutable
+workflow SHA, workflow path, PR, base, head, run, attempt, native `review` job,
+and GitHub Actions bot identity; an arbitrary comment, PR-controlled workflow,
+same-named job in a different run, attacker-claimed attempt number, or legacy
+head marker is not clearing evidence. Re-fetch the pull request immediately
+before emitting outputs; if its head SHA changed, call `noop` and let the newer
+run review it.
 
 ## Review procedure
 

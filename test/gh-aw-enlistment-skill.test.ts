@@ -115,11 +115,10 @@ describe('gh-aw-enlistment skill', () => {
 
       // Every backtick-delimited token in the region — order-independent exact set.
       const tokens = [...region.matchAll(/`([^`]+)`/g)].map(m => m[1]);
-      expect(tokens.slice().sort(), 'allowlist tokens must be exactly the four documented entries').toEqual(
+      expect(tokens.slice().sort(), 'allowlist tokens must be exactly the three documented entries').toEqual(
         [
           'SQUAD_GITHUB_APP_PRIVATE_KEY',
           'SQUAD_GITHUB_TOKEN',
-          'SQUAD_REVIEW_APP_PRIVATE_KEY',
           'bradygaster/squad/.github/actions/squad-init',
         ].sort()
       );
@@ -185,6 +184,13 @@ describe('gh-aw-enlistment skill', () => {
 
     it('keeps the default workflow token read-only', () => {
       expect(content).toContain('default_workflow_permissions=read');
+    });
+
+    it('uses native review authority without reviewer credentials or external services', () => {
+      expect(content).toContain('native GitHub Actions/gh-aw runtime identity');
+      expect(content).toContain('successful `review` job');
+      expect(content).toContain('context-only requirement');
+      expect(content).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
     });
 
     it('requires GitHub Issues before installation and stops when they cannot be enabled', () => {
@@ -301,6 +307,17 @@ describe('gh-aw-enlistment skill', () => {
       expect(agentGuide).toContain(
         '`/squad` slash commands become active only after that merge reaches',
       );
+    });
+
+    it('documents the native required review job without a credential prerequisite', () => {
+      const flatGuide = guide.replace(/\s+/g, ' ');
+      expect(flatGuide).toContain('stable required status context `Squad Review / review`');
+      expect(guide).toContain('No custom Checks API publisher');
+      expect(flatGuide).toContain('same-name source-identity question');
+      expect(flatGuide).toContain('context-only `Squad Review / review` requirement is advisory');
+      expect(agentGuide).toContain('requires no separate PAT');
+      expect(guide).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
+      expect(agentGuide).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
     });
 
     it('makes public-guide package verification fail fast and coherent', () => {

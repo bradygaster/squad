@@ -119,6 +119,9 @@ GitHub Actions bot comment, so editable PR prose cannot rebind an old bootstrap
 run to a changed branch head. Only after that base-controlled canary succeeds
 should the Cast/bootstrap lifecycle be treated as trusted. Do not enable the
 required check in a ruleset before this post-install canary has been observed.
+The review uses only the native GitHub Actions/gh-aw runtime identity; it does
+not require a reviewer PAT, GitHub App, private key, secret, environment, or
+external service.
 
 Step 2 deliberately checks Issues before creating the bootstrap branch or
 installing any workflow. Squad commands are issue comments, and the merged
@@ -200,10 +203,16 @@ Apply this trust model throughout:
 - The first trusted authority is the post-merge Cast activation canary.
 - Trusted review runs only from the default branch through the base-controlled
   pull_request_target workflow with checkout:false and API-only PR inspection.
-- Ordinary GITHUB_TOKEN cannot publish an authoritative Squad Review check.
-  Publication requires a dedicated GitHub App token minted only inside the
-  branch-restricted squad-review-authority environment. Reject App ID 15368 or
-  slug github-actions and fail closed when provisioning is absent or invalid.
+- The built-in gh-aw safe outputs publish COMMENT or logical REQUEST_CHANGES,
+  never APPROVE. The native workflow/job is Squad Review / review, uses
+  if: always(), and fails closed when any dependency or verdict binding fails.
+- The relay accepts only the exact trusted automatic run: repository, PR, base
+  and head SHAs, workflow path and immutable workflow SHA, run ID and attempt,
+  native review job, and current-head verdict must all match.
+- A context-only required status is advisory because the shared Actions App and
+  name do not prove workflow source. Authoritative merge enforcement needs a
+  source-bound required-workflow or equivalent policy; otherwise retain an
+  independent human approving review.
 - /squad review only tells a human how to rerun the exact existing automatic
   run with GitHub's Re-run all jobs action. It creates no manual authority.
 
@@ -223,8 +232,7 @@ PHASE 1 — INSTALL OR RECOVER THE WORKFLOW INSTALLATION
      gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
    Preserve unrelated workflows and changes.
 4. Review the first-install safe-update report. The only allowed entries are
-   secrets SQUAD_GITHUB_APP_PRIVATE_KEY, SQUAD_GITHUB_TOKEN, and
-   SQUAD_REVIEW_APP_PRIVATE_KEY, plus action
+   secrets SQUAD_GITHUB_APP_PRIVATE_KEY and SQUAD_GITHUB_TOKEN, plus action
    bradygaster/squad/.github/actions/squad-init. If and only if the report has
    no other entry, run `gh aw compile --strict --approve`.
 5. Run:
@@ -271,20 +279,7 @@ PHASE 2 — VERIFY BOOTSTRAP OUTPUTS, THEN PAUSE FOR CAST
    the Squad Bootstrap run caused by that committed installation. Approve a
    GitHub-required workflow gate only when a human is present to do so; never
    claim the run happened merely because the source is merged.
-3. Verify the dedicated review authority is provisioned before expecting a
-   trusted Cast check:
-   - a dedicated GitHub App is installed with Checks read/write and the
-     required repository read permissions;
-   - the squad-review-authority environment has exactly one deployment branch
-     policy for the repository's default branch;
-   - environment variables SQUAD_REVIEW_APP_ID, SQUAD_REVIEW_APP_SLUG, and
-     SQUAD_REVIEW_APP_OWNER plus environment secret
-     SQUAD_REVIEW_APP_PRIVATE_KEY exist;
-   - those reviewer credential names are absent at repository scope;
-   - the configured App is not ID 15368 or slug github-actions.
-   If any item is missing, report the exact provisioning gap and STOP. Do not
-   substitute GITHUB_TOKEN, SQUAD_GITHUB_TOKEN, a PAT, or a guessed App ID.
-4. Verify durable bootstrap state:
+3. Verify durable bootstrap state:
    - exactly one PR titled "[squad] Cast your Squad", with head
      squad/bootstrap-cast and the repository's default branch as base;
    - exactly one issue titled
@@ -295,21 +290,22 @@ PHASE 2 — VERIFY BOOTSTRAP OUTPUTS, THEN PAUSE FOR CAST
    - the Cast PR contains team.md, routing.md, agent charters,
      .squad/casting/policy.json, registry.json, history.json,
      .github/agents/squad.agent.md, and meet-the-squad.md.
-5. Treat the Cast PR as the first trusted activation canary. Require its
+4. Treat the Cast PR as the first trusted activation canary. Require its
    automatic Squad Review run to be pull_request_target from the default
    branch, checkout:false, and API-only. Record and cross-check:
    - repository, PR number, exact base SHA, and exact Cast head SHA;
-   - workflow path/SHA, event, run ID, run attempt, and native authority job;
-   - check name, external ID, details URL, conclusion, and attestation summary;
-   - returned check App ID/slug and matching attested publisher_app_id/slug.
-   The App identity must be the observed dedicated App, never
-   15368/github-actions. The external ID, details URL, run, attempt, event,
-   base, head, and App identity must all bind to the same automatic run.
-6. Bind the Cast PR, proposal issue, research comment, bootstrap run, install
-   merge SHA, and Cast head SHA to observed provenance. Do not infer missing
-   links. Do not configure the required ruleset from a guessed or user-supplied
-   integration ID; use only the App ID returned by this successful canary.
-7. Recovery rules:
+   - workflow path and immutable workflow SHA, event, run ID, and run attempt;
+   - the native review job named review and its Squad Review / review context;
+   - the current-head verdict bound to that same repository, PR, base, head,
+     workflow, run, attempt, and successful review job.
+   The safe outputs may publish COMMENT or logical REQUEST_CHANGES, never
+   APPROVE. Missing, stale, duplicate, or mismatched evidence fails closed.
+5. Bind the Cast PR, proposal issue, research comment, bootstrap run, install
+   merge SHA, Cast head SHA, and exact trusted review run to observed
+   provenance. Do not infer missing links. Treat a context-only required status
+   as advisory; use source-bound required-workflow or equivalent enforcement
+   when available, otherwise retain an independent human approving review.
+6. Recovery rules:
    - one missing PR or issue after a partial run: rerun the failed bootstrap
      job and let its durable-state classifier create only the missing output;
    - both outputs plus the research artifact already exist: do not rerun;
@@ -318,11 +314,11 @@ PHASE 2 — VERIFY BOOTSTRAP OUTPUTS, THEN PAUSE FOR CAST
    - duplicate or malformed matching PRs/issues: stop as ambiguous;
    - failed run: fix the named cause and use "Re-run failed jobs"; do not
      delete durable outputs to force a clean start.
-8. If the automatic review needs another attempt, /squad review may be used
+7. If the automatic review needs another attempt, /squad review may be used
    only for instructions that point to this exact run and GitHub's
    "Re-run all jobs" action. Do not dispatch or accept a manual review run.
    If the Cast PR is open, report its URL, the linked proposal issue, exact
-   automatic review run, observed App ID/slug, and checks, then STOP. Tell the
+   automatic review run and native review job, then STOP. Tell the
    human to review the proposed team, approve any required workflow run, wait
    for checks, and merge the Cast PR. Do not merge it. A later Agents session
    must start again from this prompt.
@@ -382,21 +378,27 @@ The prompt above documents the intended source and compiled contracts. Do not
 describe the end-to-end hosted behavior as observed until all three hosted
 journeys provide the evidence below.
 
-The current merged hosted-rerun candidate is merge commit
+The earlier merged hosted-rerun candidate was merge commit
 `29e69f53abb7beb2fb8b8c4db55fbbeb4bf69f1a` from
 [#2105](https://github.com/bradygaster/squad/pull/2105). Its final reviewed PR
-head was `a6385a7dfddc03cf797cadc0d3ccc095ce686b04`. The dedicated review authority
-implementation entered that reviewed history at
-`b34f9523544c7fd9e50af75469bc03ac87882a4f`; later commits hardened and pinned
-the compiler path before the final review and merge. These SHAs identify
-reviewed and merged source, not successful hosted acceptance.
+head was `a6385a7dfddc03cf797cadc0d3ccc095ce686b04`. Those SHAs remain historical
+review evidence, not successful hosted acceptance.
+
+The current corrected merged candidate is
+`6ec06cc79230cf71d55b484457e8f11190e20a49` from
+[#2109](https://github.com/bradygaster/squad/pull/2109). It replaces the
+dedicated reviewer App and external check publisher with the native gh-aw
+review and deterministic relay. The first-install evidence issue
+[#2103](https://github.com/bradygaster/squad/issues/2103) is reopened because
+fresh preparation at that merged SHA found stale normalized compiled-lock
+digests in the manifest before any fixture mutation. These facts establish the
+merged source contract and a current integrity blocker; they do not establish
+fresh hosted success.
 
 The final immutable-success revision remains explicitly pending:
 `<PENDING_CORRECTED_MERGED_SHA_AND_SUCCESSFUL_HOSTED_RERUNS>`. Do not replace
-this placeholder until the dedicated review App and branch-restricted
-`squad-review-authority` environment are provisioned, the Cast canary records
-the observed App ID/slug and exact run/evidence binding, and all three hosted
-reruns below succeed with immutable evidence URLs.
+this placeholder until all three hosted reruns below succeed at the final
+merged SHA with immutable evidence URLs.
 
 Keep the earlier hosted runs as failed evidence:
 
@@ -421,11 +423,11 @@ evidence, not success:
 All three reached review-agent/detection work and then failed the required
 review path on the missing clean-install attribution. They do not satisfy any
 hosted-success placeholder. Their UUID external IDs and Actions-owned App
-identity are retained only as failed evidence; they are not the authoritative
-binding introduced by the merged architecture.
+identity are retained only as honest evidence of the obsolete failed
+architecture; they are not part of the current native-review contract.
 
 All earlier runs are diagnostic evidence, not successful journey evidence. Do
-not delete, relabel, or cite them as proof that the dedicated review authority
+not delete, relabel, or cite them as proof that the corrected native review
 works.
 
 Authoritative inspection of `workflows/aw.yml` and
@@ -454,43 +456,52 @@ The merged trust contract is also source- and compiled-contract tested:
 - the workflow is base-controlled `pull_request_target`, has
   `checkout: false`, has no `workflow_dispatch`, and reads PR evidence only
   through GitHub APIs;
-- the authoritative publisher runs only in `squad-review-authority`, mints a
-  dedicated GitHub App installation token, and has no `github.token` fallback;
-- an ordinary `GITHUB_TOKEN` can publish an Actions-owned same-name check, but
-  cannot publish or update the dedicated-App authoritative check;
-- the directly observed ordinary publisher identity is App `15368`,
-  `github-actions`; it is rejected. No dedicated publisher ID or slug is
-  claimed until a hosted Cast canary returns it from the check-runs API;
-- `Squad Review / review` is bound to exact external ID
-  `squad-review-authority/v1:{repository}:{pull_request}:{base_sha}:{head_sha}`,
-  exact head SHA, automatic run ID and attempt, `pull_request_target` event,
-  `.github/workflows/squad-review.lock.yml`, exact workflow/base SHA,
-  `Squad Review Authority / attest`, details URL for that run, and matching
-  check/attestation `publisher_app_id` and `publisher_app_slug`;
-- an App mismatch, missing credential, missing environment protection,
-  token-mint failure, duplicate authority job/check, stale head, or missing
-  external evidence fails closed.
+- built-in gh-aw safe outputs emit a native `COMMENT` review carrying either a
+  logical `COMMENT` or `REQUEST_CHANGES` verdict; the reviewer never has
+  `APPROVE` authority;
+- the final native job is `review`, yielding `Squad Review / review`; it uses
+  `if: always()` and fails unless the agent, safe-output processing, and
+  deterministic current-head gate all succeed;
+- the relay binds the verdict to the exact trusted automatic repository, PR,
+  base SHA, head SHA, `pull_request_target` run, workflow path, immutable
+  workflow/base SHA, run ID, run attempt, native `review` job, and verdict;
+- each rerun must publish fresh evidence for its new attempt; missing,
+  duplicate, stale, replayed, or mismatched evidence fails closed;
+- no custom Checks API publisher, reviewer PAT, GitHub App, App ID/slug/owner,
+  private key, secret, token minting, environment, integration binding,
+  attestation schema, hosted attestor, or external service is involved;
+- `/squad review` provides rerun guidance only and never dispatches reviewer
+  authority;
+- a context-only required `Squad Review / review` status is advisory because
+  the same GitHub Actions App and workflow/job name do not prove workflow
+  source. Authoritative merge enforcement requires a source-bound
+  required-workflow or equivalent policy. When that is unavailable, retain an
+  independent human approving review.
 
 | Evidence | Required placeholder |
 |----------|----------------------|
 | Hosted backend clean-bootstrap set: pinned install, human installation merge, automatic bootstrap, exactly one draft Cast PR and one research-proposals issue, run-owned cleanup | `<HOSTED_RUN_1_URLS>` |
-| Hosted frontend full-lifecycle set: granular research, triage, plan acceptance and activation, implementation dispatch, automatic exact-head Squad Review required-check blocking and satisfaction, manual relay dedupe, human approval and merge, cleanup | `<HOSTED_RUN_2_URLS>` |
+| Hosted frontend full-lifecycle set: granular research, triage, plan acceptance and activation, implementation dispatch, automatic exact-head native Squad Review binding and relay, human approval and merge, cleanup | `<HOSTED_RUN_2_URLS>` |
 | Hosted queue-worker negative/recovery set: malformed and unknown command fail-closed diagnostics, no-command non-event, reviewer equality, stale-verdict and relay blocking, recovery and idempotency, cleanup | `<HOSTED_RUN_3_URLS>` |
 
 Final evidence must show both human merge pauses, a new session recovering only
 from durable GitHub state, exact bootstrap output cardinality and provenance,
-the Cast canary's observed dedicated App ID/slug and exact automatic
-run/attempt/base/head/check binding, the granular planning artifacts, and
+the Cast canary's exact automatic repository/PR/base/head/workflow/run/attempt/
+native-job/verdict binding, the granular planning artifacts, and
 accepted-plan-to-created-issue reconciliation. Until then, the recovery and
 end-to-end statements above are contract-based instructions, not a claim that
 the final hosted runs succeeded.
 
-The `squad-review-authority` environment now exists and is restricted to
-exactly the default branch, `dev`, but its required reviewer variables and
-secret are absent. Dedicated App creation/installation and credentials, the
-Cast canary, observed integration/ruleset binding, and all three hosted fixture
-reruns remain pending; issue
-[#2103](https://github.com/bradygaster/squad/issues/2103) remains open.
+The obsolete dedicated reviewer environment has been deleted. No reviewer
+credential, token, App, integration, or external service remains to provision.
+Fresh backend, frontend, and queue-worker installation preparation at
+`6ec06cc79230cf71d55b484457e8f11190e20a49` stopped before creating or updating
+any fixture branch, PR, or run because six normalized compiled lock digests in
+the manifest were stale. For example, `squad-review.lock.yml` expected
+`944dd438…` but strict compilation produced `c8a3666e…`. Correct the manifest
+integrity blocker at a new immutable merged SHA, then run all three hosted
+fixtures. Existing fixture PRs and runs remain untouched and are not success
+evidence.
 
 ---
 
@@ -636,21 +647,17 @@ source/lock pairs, and one coherent 40-character revision.
 
 On a clean repository, `gh aw add` reports these expected safe-update changes:
 
-- Restricted secrets: `SQUAD_GITHUB_APP_PRIVATE_KEY`, `SQUAD_GITHUB_TOKEN`, and
-  `SQUAD_REVIEW_APP_PRIVATE_KEY`
+- Restricted secrets: `SQUAD_GITHUB_APP_PRIVATE_KEY` and `SQUAD_GITHUB_TOKEN`
 - Action: `bradygaster/squad/.github/actions/squad-init`
 
 > **These are referenced names, not prerequisites.** `gh aw add` lists the secrets
 > the workflows *reference* so you can approve that surface — it is not asking you
-> to supply them during compilation. `SQUAD_GITHUB_APP_PRIVATE_KEY` and
-> `SQUAD_GITHUB_TOKEN` remain optional activation credentials; single-repo
-> activation can use the built-in `github.token`. Configure those only for cross-repo access or
+> to supply them. Both secrets are optional, they need not exist, and you do not
+> need to create either one to enlist a repository. Single-repo activation runs on
+> the built-in `github.token`. Configure these only for cross-repo access or
 > elevated permissions — see [enhanced permissions with a GitHub
 > App](#optional-enhanced-permissions-with-a-github-app) and [PAT
-> fallback](#optional-pat-fallback). `SQUAD_REVIEW_APP_PRIVATE_KEY` is different:
-> it belongs only in the branch-restricted `squad-review-authority` environment
-> described below. Trusted required-check publication intentionally fails closed
-> until that external prerequisite is provisioned.
+> fallback](#optional-pat-fallback).
 
 Review the report before approving it. If it contains only those documented
 entries, complete the first-install approval with:
@@ -787,47 +794,6 @@ a Personal Access Token:
 | `SQUAD_GITHUB_TOKEN` | Secret | Fallback PAT when no GitHub App is configured |
 
 **Auth precedence:** GitHub App token → `SQUAD_GITHUB_TOKEN` → `github.token`.
-
-### Required: dedicated review authority App
-
-The required `Squad Review / review` check must not use `github.token`.
-`github.token` checks are owned by the shared GitHub Actions App
-(`id: 15368`, slug: `github-actions`), which is also available to ordinary
-same-repository PR workflows. The reviewer instead mints a short-lived token
-for a dedicated GitHub App inside a protected environment and has no fallback.
-
-Before expecting the post-install Cast canary to pass:
-
-1. Create a dedicated GitHub App with repository **Checks: read and write** and
-   read access to Actions, contents, metadata, and pull requests. Install it
-   only on the consumer repository.
-2. Create the Actions environment **`squad-review-authority`**.
-3. Configure a custom deployment branch policy containing exactly the
-   repository default branch. Do not allow wildcard, feature, release, tag, or
-   additional branch policies; a PR workflow must not be able to request this
-   environment from its own ref.
-4. Store these reviewer-specific values in that environment, not as
-   repository-level Actions secrets or variables:
-
-   | Setting | Type | Purpose |
-   |---------|------|---------|
-   | `SQUAD_REVIEW_APP_ID` | Variable | Dedicated App numeric ID; must not be `15368` |
-   | `SQUAD_REVIEW_APP_SLUG` | Variable | Dedicated App slug; must not be `github-actions` |
-   | `SQUAD_REVIEW_APP_OWNER` | Variable | Repository owner where the App is installed |
-   | `SQUAD_REVIEW_APP_PRIVATE_KEY` | Secret | Dedicated App private key |
-
-The publisher validates the configured ID and slug, mints an installation token
-inside the environment, publishes with that token, and validates the App
-identity returned by the Checks API. Missing environment protection, missing
-credentials, token-mint failure, Actions App identity, or any ID/slug mismatch
-fails closed. An ordinary `github.token` may create a same-named check owned by
-the Actions App, but it cannot update the dedicated App's check and cannot
-satisfy an integration-bound ruleset.
-
-Before rollout, verify the four reviewer-specific names are absent from
-repository-level Actions secrets and variables. GitHub expression contexts can
-otherwise fall back to a repository-scoped value with the same name. The hosted
-controller treats that overlap as a hard configuration error.
 
 ---
 
@@ -1908,13 +1874,22 @@ exactly one pull request review. It returns:
 
 The trusted writer publishes these logical verdicts in a native `COMMENT`
 review: GitHub does not permit an account to approve or request changes on its
-own PR. The native `Squad Review Authority / attest` job proves that the base-controlled
-workflow executed. Its publisher creates `Squad Review / review` on the exact
-PR head with a `squad-review-check/v1` attestation linked to that run. A
-PR-controlled workflow may create advisory output with the same display name,
-but it cannot satisfy the relay without the successful native authority job and
-exact event/base/head/run/App binding. The status check enforces
-`REQUEST_CHANGES`; no additional bot accounts or Apps are needed.
+own PR. The final native job is named `review`, so GitHub exposes the stable
+required status context `Squad Review / review`. It uses `if: always()` and
+fails unless the agent, safe-output processing, and deterministic current-head
+verdict gate all succeed. The relay independently binds the verdict to the exact
+automatic `pull_request_target` run, workflow path, immutable base/workflow SHA,
+PR base/head, run ID and attempt, and that run attempt's successful `review`
+job. No custom Checks API publisher, reviewer credential, environment, hosted
+attestor, or external service is involved.
+
+Each successful run attempt starts with no verdict evidence for its exact run ID
+and attempt, then publishes exactly one fresh safe-output review. Pre-existing
+exact-attempt evidence is rejected rather than accepted through a `noop` or
+deduplication path, because another PR-controlled workflow shares the
+`github-actions[bot]` identity and could otherwise pre-seed a valid-looking
+record. A rerun receives an incremented attempt and must publish a new review;
+evidence from prior attempts is neither replayed nor reused.
 
 The reviewer has no file-editing, issue-creation,
 pull-request-creation, remediation, merge, or `APPROVE` authority. Its verdict
@@ -1928,9 +1903,9 @@ The lifecycle is:
 ```
 
 The epic relay repeats the guard before running the agent and before processing
-any outputs. It requires a clearing verdict, the successful native authority
-job from the base-controlled run, and the exact-head published check completed
-**before merge** for the merged PR's **head SHA**, not the merge commit.
+any outputs. It requires a clearing verdict and the successful native `review`
+job from the exact base-controlled run attempt completed **before merge** for
+the merged PR's **head SHA**, not the merge commit.
 Bypassing a missing Squad review at merge
 cannot silently advance the epic. Missing evidence stops the run with an explicit
 error; it never dispatches the next wave.
@@ -1940,29 +1915,38 @@ error; it never dispatches the next wave.
 The stable literal check name is **`Squad Review / review`**.
 There is no manual reviewer run. `/squad review` only explains how to rerun the
 existing automatic `pull_request_target` run, and only that exact base-controlled
-run ID, attempt, native authority job, and exact-head attestation can satisfy
-its emitted verdict and check.
+run ID, attempt, native authority job, and exact-head verdict can satisfy the
+relay.
 
 Brady (or the consumer repository administrator) must install/merge the complete
 generated bundle through the explicit human installation boundary, then observe
 a successful base-controlled `pull_request_target` check on the post-install
 draft Cast PR before
 changing rulesets. The installation PR itself is not evidence: its workflow and
-check name are controlled by that PR. The Cast canary remains intentionally red
-until the [dedicated review authority App](#required-dedicated-review-authority-app)
-and exact-default-branch environment policy are provisioned. Record the
-activation canary's actual
-check name, external ID, details URL, attestation summary, and GitHub App ID
-and slug from the check-runs API. The attestation's `publisher_app_id` and
-`publisher_app_slug` must equal the check's returned App identity and must not
-be `15368`/`github-actions`. Enable the required context with that observed App ID
-on `dev` **only after advisory soak** has met the
+check name are controlled by that PR. Record the activation canary's exact
+automatic run ID/attempt, workflow path and base SHA, native `review` job
+conclusion, exact PR head SHA, and the job's native `Squad Review / review`
+check-run binding. Enable the required context on `dev` **only after advisory soak** has met the
 evidence gate in #1734; promote to `main` after the agreed soak. This change
 does not modify repository rulesets and does not claim live soak evidence. Keep
 native human approving-review requirements enabled independently, with stale
-approvals dismissed. The bot's `COMMENT` is not a human approval. Do not use an
-unobserved guessed App ID, a user-supplied integration ID, an Actions-owned
-same-name check, or the manual job.
+approvals dismissed. The bot's `COMMENT` is not a human approval.
+Require branches to be up to date before merge (or an equivalent merge-queue
+freshness guarantee) so the required review run is always based on the current
+default-branch workflow and guard. Merge the workflow installation first,
+observe the post-merge Cast canary, and only then enable the required context.
+
+GitHub's context-only required-status-check configuration identifies the
+context by name and does not, by itself, demonstrate that another workflow
+cannot emit the same name. The relay is not vulnerable to that ambiguity
+because it reads the exact trusted run attempt's jobs. For authoritative merge enforcement, use a source-bound required-workflow or
+equivalent ruleset when the repository's GitHub plan and policy expose one. A
+context-only `Squad Review / review` requirement is advisory because a
+PR-controlled workflow may be able to emit the same workflow/job name through
+the shared GitHub Actions identity. If source-bound enforcement is unavailable,
+keep the same-name source-identity question explicit and retain independent
+human review rather than relying on that context alone; do not invent a
+credential or external attestor as a workaround.
 Because rulesets apply to all PRs, existing human/Copilot PRs must add committed
 attribution before enabling the requirement. Fork review remains unsupported;
 the workflow rejects foreign head repositories even though its base-controlled

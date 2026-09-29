@@ -1135,15 +1135,15 @@ post one `add-comment` explaining that `/squad review` must target a pull
 request, then stop.
 
 List workflow runs for `.github/workflows/squad-review.lock.yml`. Keep only
-`pull_request_target` runs associated with this pull request whose workflow
-head SHA equals the pull request's exact base SHA. Select the newest run by
-creation time, breaking ties by numeric run ID, then fetch its jobs and require
-exactly one job named `Squad Review Authority / attest`. Also fetch check runs
-for the exact current PR head and require exactly one `Squad Review / review`
-check whose external ID, details URL, GitHub Actions App identity, and
-`squad-review-check/v1` summary bind that base-controlled run, PR, base SHA,
-head SHA, run ID, and attempt. A same-named check without that binding is
-advisory only. If no matching run or authority check exists, emit exactly one
+`pull_request_target` runs associated with this pull request whose API
+`head_sha` equals the pull request's exact current head SHA and whose recorded
+pull request head equals the exact current head. Keep immutable workflow source
+separate: the review guard binds `workflow_sha` to the pull request's exact base
+SHA; the run's `head_sha` is not the workflow source SHA.
+Select the newest run by creation
+time, breaking ties by numeric run ID, then fetch that run attempt's jobs and
+require exactly one job named `review`. A same-named job from any other run is
+advisory only. If no matching run or native authority job exists, emit exactly one
 `add-comment` stating that no base-controlled automatic review run exists for
 the exact head and that a new PR event
 (`synchronize`, reopen, or ready-for-review) is required. Stop without implying
@@ -1156,8 +1156,8 @@ instruction:
 > Squad Review is automatic and cannot be dispatched from a branch. In the
 > selected base-controlled automatic run, choose **Re-run all jobs**. This
 > command did not rerun it. Only the new attempt of that exact
-> `pull_request_target` run can publish verdict evidence and the exact-head
-> `Squad Review / review` check for PR #{pull-request-number}
+> `pull_request_target` run can publish verdict evidence and complete the native
+> `Squad Review / review` required job for PR #{pull-request-number}
 > at head `{current-head-sha}`.
 
 Do not review the diff in this router, emit a verdict, edit files, create an
