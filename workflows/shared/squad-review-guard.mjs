@@ -1,21 +1,15 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { evaluateImplementDispatchInputs } from './squad-retro-provenance.mjs';
 
-export const CHECK_NAME = 'Squad Review / review';
 export const VERDICT_PREFIX = 'Squad-Review-Verdict: ';
 export const OVERRIDE_PREFIX = 'Squad-Review-Override: ';
 const WORKFLOW = '.github/workflows/squad-review.lock.yml';
-const AUTHORITY_JOB = 'Squad Review Authority / attest';
-const CHECK_SCHEMA = 'squad-review-check/v1';
-const CHECK_EXTERNAL_ID = 'squad-review-authority/v1';
+const AUTHORITY_JOB = 'review';
 const BOOTSTRAP_WORKFLOW = '.github/workflows/squad-bootstrap.lock.yml';
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[a-z][a-z0-9-]*$/;
 const BOT = 'github-actions[bot]';
 const BOT_ID = 41898282;
-const ACTIONS_APP_ID = 15368;
-const ACTIONS_APP_SLUG = 'github-actions';
-const APP_SLUG = /^[a-z0-9][a-z0-9-]*$/;
 const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
 const BOOTSTRAP_TITLE = '[squad] Cast your Squad';
 const BOOTSTRAP_AUTHOR = '@squad/base-controlled-bootstrap';
@@ -299,11 +293,8 @@ export async function enforceReviewOutputs(env, get, options = {}) {
     return String(verdict.run_id) === env.GITHUB_RUN_ID &&
       String(verdict.run_attempt) === env.GITHUB_RUN_ATTEMPT;
   });
-  requireThat(currentRun.length <= 1, 'duplicate verdict evidence for this run');
-  if (currentRun.length === 1) {
-    requireThat(verdicts.length === 0, 'unchanged head already has a verdict');
-    return;
-  }
+  requireThat(currentRun.length === 0,
+    'pre-existing verdict evidence for this run attempt is forbidden');
   requireThat(verdicts.length === 1, 'exactly one review is required; noop cannot clear review');
   const item = verdicts[0];
   requireThat(['COMMENT', 'REQUEST_CHANGES'].includes(item.event) &&
@@ -361,7 +352,7 @@ export async function assertClearingReview(env, get, options = {}) {
   const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();
   const run = await get(`repos/${target.repository}/actions/runs/${verdict.run_id}`);
   requireThat(run.event === 'pull_request_target' && run.path === WORKFLOW &&
-    run.repository?.full_name === target.repository && run.head_sha === target.workflow_sha &&
+    run.repository?.full_name === target.repository && run.head_sha === target.head_sha &&
     run.run_attempt >= verdict.run_attempt &&
     run.display_title === `Squad review \u2014 PR #${target.pull_request}` &&
     Array.isArray(run.pull_requests) &&
@@ -372,53 +363,21 @@ export async function assertClearingReview(env, get, options = {}) {
     await get(`repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}`);
   requireThat(attempt.event === 'pull_request_target' && attempt.path === WORKFLOW &&
     attempt.repository?.full_name === target.repository &&
-    attempt.head_sha === target.workflow_sha &&
+    attempt.head_sha === target.head_sha &&
     attempt.run_attempt === verdict.run_attempt &&
     timestamp(attempt.run_started_at) <= timestamp(verdict.timestamp) &&
     (attempt.status !== 'completed' ||
       timestamp(review.submitted_at) <= timestamp(attempt.updated_at)), 'verdict outside workflow run');
   if (relay) {
-    requireThat(run.status === 'completed' && run.conclusion === 'success', 'review run did not succeed');
+    requireThat(attempt.status === 'completed' && attempt.conclusion === 'success',
+      'review run attempt did not succeed');
     const jobs = await list(get,
-      `repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${run.run_attempt}/jobs`, 'jobs');
+      `repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}/jobs`,
+      'jobs');
     const authorityJobs = jobs.filter(job => job.name === AUTHORITY_JOB);
     requireThat(authorityJobs.length === 1 && authorityJobs[0].conclusion === 'success' &&
       timestamp(authorityJobs[0].completed_at) <= cutoff,
     'base-controlled review authority job did not pass before merge');
-    const checkRuns = await list(get,
-      `repos/${target.repository}/commits/${target.head_sha}/check-runs`, 'check_runs');
-    const externalId =
-      `${CHECK_EXTERNAL_ID}:${target.repository}:${target.pull_request}:${target.base_sha}:${target.head_sha}`;
-    const checks = checkRuns.filter(check => check.name === CHECK_NAME &&
-      check.external_id === externalId &&
-      Number.isSafeInteger(check.app?.id) &&
-      check.app.id > 0 &&
-      check.app.id !== ACTIONS_APP_ID &&
-      typeof check.app?.slug === 'string' &&
-      APP_SLUG.test(check.app.slug) &&
-      check.app.slug !== ACTIONS_APP_SLUG);
-    requireThat(checks.length === 1, 'missing or duplicate exact-head authority check');
-    const check = checks[0];
-    requireThat(check.head_sha === target.head_sha && check.status === 'completed' &&
-      check.conclusion === 'success' &&
-      check.details_url ===
-        `${env.GITHUB_SERVER_URL ?? 'https://github.com'}/${target.repository}/actions/runs/${verdict.run_id}`,
-    'required review check is not attributable to the dedicated GitHub App');
-    const summary = JSON.parse(check.output?.summary ?? '');
-    requireThat(exactKeys(summary, [
-      'schema', 'repository', 'pull_request', 'base_sha', 'head_sha', 'workflow_sha',
-      'run_id', 'run_attempt', 'event', 'workflow_path', 'authority_job',
-      'publisher_app_id', 'publisher_app_slug',
-    ]) && summary.schema === CHECK_SCHEMA && summary.repository === target.repository &&
-      summary.pull_request === target.pull_request && summary.base_sha === target.base_sha &&
-      summary.head_sha === target.head_sha && summary.workflow_sha === target.workflow_sha &&
-      summary.run_id === verdict.run_id && summary.run_attempt === run.run_attempt &&
-      summary.event === 'pull_request_target' && summary.workflow_path === WORKFLOW &&
-      summary.authority_job === AUTHORITY_JOB &&
-      summary.publisher_app_id === check.app.id &&
-      summary.publisher_app_slug === check.app.slug &&
-      timestamp(check.completed_at) <= cutoff,
-    'required review check attestation or dedicated App identity is invalid');
   }
   if (verdict.result === 'REQUEST_CHANGES') {
     const comments = await list(get, `repos/${target.repository}/issues/${target.pull_request}/comments`);

@@ -182,17 +182,17 @@ uses a moving branch reference.
 On a clean repo, `gh aw add` reports these expected safe updates and **nothing else**:
 
 <!-- allowlist-start -->
-- Restricted secrets: **`SQUAD_GITHUB_APP_PRIVATE_KEY`**,
-  **`SQUAD_GITHUB_TOKEN`**, and **`SQUAD_REVIEW_APP_PRIVATE_KEY`**
+- Restricted secrets: **`SQUAD_GITHUB_APP_PRIVATE_KEY`** and **`SQUAD_GITHUB_TOKEN`**
 - Action: **`bradygaster/squad/.github/actions/squad-init`**
 <!-- allowlist-end -->
 
-> **Compilation approval is not credential provisioning.** `gh aw add` lists
-> referenced names so you can approve the surface. `SQUAD_GITHUB_APP_PRIVATE_KEY`
-> and `SQUAD_GITHUB_TOKEN` remain optional activation credentials.
-> `SQUAD_REVIEW_APP_PRIVATE_KEY` is different: trusted check publication requires
-> it in the exact-default-branch `squad-review-authority` environment. Never put
-> reviewer credentials at repository scope and never fall back to `github.token`.
+> **These are referenced names, not prerequisites.** `gh aw add` lists the secrets
+> the workflows *reference* so you can approve that surface — it is not asking you
+> to supply them. Both secrets are optional, they need not exist, and neither is
+> required to enlist a repository. Single-repo activation runs on the built-in
+> `github.token`. Configure them only for cross-repo access or elevated
+> permissions. Auth precedence: GitHub App token, then the PAT, then
+> `github.token`. Never block an enlistment waiting for a credential.
 
 If — and only if — the report contains exactly those documented entries, complete
 the one-time approval:
@@ -284,25 +284,30 @@ gh pr checks --watch
   `main`.
 - Request Copilot review, address feedback, and wait for required checks.
 
-### 9. Verify the external review-authority prerequisite when API access permits
+### 9. Verify the native review contract after merge
 
-Before claiming trusted review is ready, query the repository environment. It
-must be named `squad-review-authority`, use custom deployment branch policies,
-allow exactly the captured `${default_branch}`, contain the environment secret
-`SQUAD_REVIEW_APP_PRIVATE_KEY`, and define environment variables
-`SQUAD_REVIEW_APP_ID`, `SQUAD_REVIEW_APP_SLUG`, and
-`SQUAD_REVIEW_APP_OWNER`. The App ID/slug must differ from
-`15368`/`github-actions`. All four reviewer-specific names must also be absent
-from repository-level Actions secrets and variables; repository fallback does
-not satisfy this gate.
+The installation PR remains an explicit human trust boundary. After a human
+merges it, inspect the automatically opened Cast PR and require the native
+`Squad Review / review` job from the base-controlled `pull_request_target`
+workflow to succeed. Verify the exact workflow path, immutable base/workflow
+SHA, PR base/head, run ID and attempt, successful `review` job, and exact-head
+GitHub Actions check-run binding.
 
-If the authenticated account cannot read environment configuration, or any
-requirement is absent, report the exact external prerequisite and do not claim
-the required check is trusted. The installation PR remains a human boundary;
-after it merges, the Cast canary intentionally fails closed until an
-administrator provisions the environment and reruns the base-controlled
-review. Configure a ruleset only from the canary check's observed App
-integration ID, never from user input or a guessed value.
+This review path uses only the native GitHub Actions/gh-aw runtime identity.
+Never request or provision a reviewer PAT, GitHub App, private key, secret,
+environment, hosted attestor, callback, or external service. The optional
+`SQUAD_GITHUB_APP_*` and `SQUAD_GITHUB_TOKEN` activation credentials remain
+unrelated to reviewer authority.
+
+For authoritative merge enforcement, use a source-bound required-workflow or
+equivalent ruleset when available. A context-only requirement for
+`Squad Review / review` is advisory because a PR-controlled workflow may be
+able to emit the same workflow/job name through the shared GitHub Actions
+identity. If source-bound enforcement is unavailable, retain independent human
+review rather than relying on that context alone or adding a credential-based
+publisher. Require branches to be up to date before merge (or use an equivalent
+merge-queue freshness guarantee), and enable the required context only after
+the workflow installation is merged and the post-merge Cast canary succeeds.
 
 ### 10. Never auto-merge — and explain what comes next
 
@@ -366,9 +371,8 @@ gh pr edit --add-reviewer @copilot   # then wait for review + checks; DO NOT mer
 ### ✓ Correct: STOP on an undocumented safe-update entry
 
 ```text
-gh aw add reports an additional secret: `ACME_DEPLOY_KEY`.
-→ This is NOT in the allowlist (SQUAD_GITHUB_APP_PRIVATE_KEY, SQUAD_GITHUB_TOKEN,
-  SQUAD_REVIEW_APP_PRIVATE_KEY)
+gh aw add reports a third secret: `ACME_DEPLOY_KEY`.
+→ This is NOT in the allowlist (SQUAD_GITHUB_APP_PRIVATE_KEY, SQUAD_GITHUB_TOKEN)
   and is NOT the squad-init action. Do NOT run `--approve`.
   Halt, report "unexpected safe-update entry: ACME_DEPLOY_KEY", and wait.
 ```
@@ -402,8 +406,7 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
 - ❌ **Blanket staging** (`git add .` / `-A` / `git commit -a`). Stage only
   `.gitattributes`, `.github/aw/`, `.github/workflows/`, `.github/skills/`, by path.
 - ❌ **Approving unknown safe updates.** Approve ONLY `SQUAD_GITHUB_APP_PRIVATE_KEY`,
-  `SQUAD_GITHUB_TOKEN`, `SQUAD_REVIEW_APP_PRIVATE_KEY`, and
-  `bradygaster/squad/.github/actions/squad-init`. Anything
+  `SQUAD_GITHUB_TOKEN`, and `bradygaster/squad/.github/actions/squad-init`. Anything
   else is a STOP.
 - ❌ **Treating `--approve` as the final compile.** Always finish with a plain
   `gh aw compile --strict` (no `--approve`).

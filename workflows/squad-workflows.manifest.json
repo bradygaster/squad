@@ -14,8 +14,8 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "bb7f231c852dfb73c5d1a6ba5e9f23f9f7c9fc5af9e1f1021c4c5213fd9389f9",
-      "lock_sha256": "f2e62f0ded2b937c99dcdab321f1ea2f886ff2f0537a324af4342908466a2bcf"
+      "source_sha256": "3dcf5517cac190c0cd98fc9e7f4cbb284ff11b7d76b356c508f1bb79b0c59690",
+      "lock_sha256": "8354d050354ea5f2ab3e63d3fe6b6648410f7e86691c2d8626c2318e4626a35f"
     },
     {
       "name": "squad-implement-worker",
@@ -30,8 +30,8 @@
       "source": "workflows/package/squad-review.md",
       "destination": ".github/workflows/squad-review.md",
       "lock": ".github/workflows/squad-review.lock.yml",
-      "source_sha256": "27adf384cbe16c11ec89f4ecd76c9087a409c911ab9760575a3254b1d21dfb56",
-      "lock_sha256": "c3ed91988744077da65cbbc8a77a6d262bf4dca3bbfc593ab520283c3e9ced6b"
+      "source_sha256": "545ba959d0e4cfc0ba4cc507c2ed2c0d4b2044ca3b9e20a746c8b39cdc100bef",
+      "lock_sha256": "944dd43831110142a9bb9832ff38d5eb4c0e4df14347781c869fbbccfc0d901f"
     },
     {
       "name": "squad-deps-worker",
@@ -62,8 +62,8 @@
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "9df28d8e4094b66e7ddf4aed1ff3626efaa65c1dcd3815984d70573b40af640d",
-      "lock_sha256": "9a23ee0bd51cd7dd69b91538872a3fce0fb2376423ce8ac56c7c9f6f5b7f4b1b"
+      "source_sha256": "0336b294366e17a4294108e5b87ffbc7a46f3213e3683de0c18a02250c39f7bc",
+      "lock_sha256": "9c924d0a40f4313c3e0a1435413141e88aac8b32b7c2429e74275970787c205e"
     },
     {
       "name": "squad-command-router",
@@ -81,7 +81,7 @@
       "package_destination": ".github/workflows/shared/squad-review-guard.mjs",
       "destination": ".github/workflows/shared/squad-review-guard.mjs",
       "ownership": "manifest",
-      "sha256": "6685f7e16b4ee13958bcdddf2a868a287f76b26913b0c17c4a943b398bbb4938"
+      "sha256": "0fea7b38811917b988f36876e8cca3ceddefcbe1f7c576c630d3ec274454fd50"
     },
     {
       "path": "shared/squad-install-verifier.mjs",
@@ -89,7 +89,7 @@
       "package_destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "ownership": "manifest",
-      "sha256": "4f385df488cc65165e398e499663c015ce63851cb9c938f4c3dd0af38d25f991"
+      "sha256": "71418638e37a53f570b13919bf5b232f5999be217dac4efc6b76e91918f85f16"
     },
     {
       "path": "shared/squad-command-contract.mjs",
@@ -217,7 +217,7 @@
       "name": "gh-aw-enlistment",
       "source": "workflows/skills/gh-aw-enlistment/SKILL.md",
       "destination": ".github/skills/gh-aw-enlistment/SKILL.md",
-      "sha256": "2123f535c9fa5863d85fbed89ec5820579222eb39d279ffe1dea9a79a13fbadb"
+      "sha256": "0ac1979ab70bce2b5aa428ce9319a91a664ba8bca3a9b8ca1dbca277cec87d99"
     }
   ],
   "bootstrap": {

@@ -6,10 +6,8 @@ import { parse } from 'yaml';
 import {
   assertPristineTarget,
   guardedTargetMutation,
-  observedRequiredCheck,
   sanitizedEnvironment,
   selectBootstrapOutputs,
-  validateReviewAuthorityEnvironment,
   waitForBootstrapOutputs,
 } from '../scripts/gh-aw-hosted-e2e.mjs';
 import {
@@ -219,103 +217,17 @@ describe('Squad gh-aw hosted E2E controller', () => {
 
   it('requires a base-controlled review canary after the manual installation boundary', () => {
     expect(SCRIPT).toContain('waitForBaseControlledReviewCanary');
-    expect(SCRIPT).toContain("check.name === 'Squad Review / review'");
-    expect(SCRIPT).toContain('check.app?.id === expectedApp.id');
-    expect(SCRIPT).toContain('check.app?.slug === expectedApp.slug');
-    expect(SCRIPT).toContain('observed_required_check');
-    expect(SCRIPT).toContain('integration_id: check.app.id');
+    expect(SCRIPT).toContain("job.name === 'review'");
+    expect(SCRIPT).toContain('job.check_run_url');
+    expect(SCRIPT).toContain("check.name !== 'Squad Review / review'");
+    expect(SCRIPT).toContain("check.app?.slug !== 'github-actions'");
     expect(SCRIPT).toContain("'@squad/base-controlled-bootstrap'");
     expect(SCRIPT).toContain("'@squad/base-controlled-review'");
     expect(SCRIPT).toContain("verdict.result !== 'COMMENT'");
     expect(SCRIPT.indexOf('waitForBaseControlledReviewCanary')).toBeLessThan(
       SCRIPT.indexOf("kind: 'squad-bootstrap-trigger-probe'"),
     );
-  });
-
-  it('requires a branch-restricted environment with reviewer-only App credentials', () => {
-    const environment = {
-      name: 'squad-review-authority',
-      deployment_branch_policy: {
-        custom_branch_policies: true,
-        protected_branches: false,
-      },
-    };
-    const policies = [{ type: 'branch', name: 'main' }];
-    const secrets = ['SQUAD_REVIEW_APP_PRIVATE_KEY'];
-    const variables = [
-      { name: 'SQUAD_REVIEW_APP_ID', value: '424242' },
-      { name: 'SQUAD_REVIEW_APP_SLUG', value: 'squad-review-authority' },
-      { name: 'SQUAD_REVIEW_APP_OWNER', value: 'owner' },
-    ];
-    expect(validateReviewAuthorityEnvironment(
-      environment,
-      policies,
-      secrets,
-      variables,
-      [],
-      [],
-      'main',
-      'owner',
-    )).toEqual({ id: 424242, slug: 'squad-review-authority', owner: 'owner' });
-
-    const invalid = [
-      [undefined, policies, secrets, variables, [], []],
-      [{ ...environment, deployment_branch_policy: null }, policies, secrets, variables, [], []],
-      [environment, [], secrets, variables, [], []],
-      [environment, [{ type: 'branch', name: '*' }], secrets, variables, [], []],
-      [environment, [...policies, { type: 'branch', name: 'release' }], secrets, variables, [], []],
-      [environment, policies, [], variables, [], []],
-      [environment, policies, secrets,
-        variables.filter(({ name }) => name !== 'SQUAD_REVIEW_APP_ID'), [], []],
-      [environment, policies, secrets, variables.map(variable =>
-        variable.name === 'SQUAD_REVIEW_APP_ID' ? { ...variable, value: '15368' } : variable), [], []],
-      [environment, policies, secrets, variables.map(variable =>
-        variable.name === 'SQUAD_REVIEW_APP_SLUG'
-          ? { ...variable, value: 'github-actions' }
-          : variable), [], []],
-      [environment, policies, secrets, variables.map(variable =>
-        variable.name === 'SQUAD_REVIEW_APP_OWNER'
-          ? { ...variable, value: 'attacker' }
-          : variable), [], []],
-      [environment, policies, secrets, variables, ['SQUAD_REVIEW_APP_PRIVATE_KEY'], []],
-      [environment, policies, secrets, variables, [], ['SQUAD_REVIEW_APP_ID']],
-    ] as const;
-    for (const args of invalid) {
-      expect(() => validateReviewAuthorityEnvironment(
-        args[0],
-        args[1],
-        args[2],
-        args[3],
-        args[4],
-        args[5],
-        'main',
-        'owner',
-      )).toThrow();
-    }
-  });
-
-  it('derives ruleset integration only from the observed dedicated canary check', () => {
-    const check = {
-      name: 'Squad Review / review',
-      app: { id: 424242, slug: 'squad-review-authority' },
-    };
-    const attestation = {
-      publisher_app_id: 424242,
-      publisher_app_slug: 'squad-review-authority',
-    };
-    expect(observedRequiredCheck(check, attestation)).toEqual({
-      context: 'Squad Review / review',
-      integration_id: 424242,
-      integration_slug: 'squad-review-authority',
-    });
-    expect(() => observedRequiredCheck(
-      { ...check, app: { id: 15368, slug: 'github-actions' } },
-      { publisher_app_id: 15368, publisher_app_slug: 'github-actions' },
-    )).toThrow();
-    expect(() => observedRequiredCheck(check, {
-      ...attestation,
-      publisher_app_id: 1,
-    })).toThrow();
+    expect(SCRIPT).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority|publisher_app_/);
   });
 
   it('never executes candidate package or installed verifier with inherited credentials', () => {

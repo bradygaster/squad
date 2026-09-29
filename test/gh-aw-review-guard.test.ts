@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  assertClearingReview, CHECK_NAME, enforceReviewOutputs, OVERRIDE_PREFIX,
+  assertClearingReview, enforceReviewOutputs, OVERRIDE_PREFIX,
   reviewTarget, validateAttribution, validateVerdict, VERDICT_PREFIX,
 } from '../workflows/shared/squad-review-guard.mjs';
 
@@ -16,8 +16,6 @@ const SUBMITTED = '2026-09-28T12:01:01Z';
 const FINISHED = '2026-09-28T12:02:00Z';
 const MERGED = '2026-09-28T12:03:00Z';
 const NOW = Date.parse('2026-09-28T12:04:00Z');
-const REVIEW_APP_ID = 424242;
-const REVIEW_APP_SLUG = 'squad-review-authority';
 const workspaces: string[] = [];
 
 afterEach(() => {
@@ -69,42 +67,16 @@ function fixture(relay = false) {
   const run = {
     event: 'pull_request_target', path: '.github/workflows/squad-review.lock.yml',
     display_title: 'Squad review \u2014 PR #42',
-    repository: { full_name: REPOSITORY }, head_sha: BASE, run_attempt: 1,
+    repository: { full_name: REPOSITORY }, head_sha: HEAD, run_attempt: 1,
     pull_requests: [{ number: 42, head: { sha: HEAD }, base: { repo: { name: 'example' } } }],
     run_started_at: START, updated_at: FINISHED, status: 'completed', conclusion: 'success',
   };
   const jobs = [{
-    name: 'Squad Review Authority / attest',
-    conclusion: 'success',
-    completed_at: FINISHED,
-  }];
-  const checkRuns = [{
-    id: 88,
-    name: CHECK_NAME,
-    external_id: `squad-review-authority/v1:${REPOSITORY}:42:${BASE}:${HEAD}`,
-    head_sha: HEAD,
+    name: 'review',
     status: 'completed',
     conclusion: 'success',
+    started_at: START,
     completed_at: FINISHED,
-    details_url: `https://github.com/${REPOSITORY}/actions/runs/17`,
-    app: { id: REVIEW_APP_ID, slug: REVIEW_APP_SLUG },
-    output: {
-      summary: JSON.stringify({
-        schema: 'squad-review-check/v1',
-        repository: REPOSITORY,
-        pull_request: 42,
-        base_sha: BASE,
-        head_sha: HEAD,
-        workflow_sha: BASE,
-        run_id: 17,
-        run_attempt: 1,
-        event: 'pull_request_target',
-        workflow_path: '.github/workflows/squad-review.lock.yml',
-        authority_job: 'Squad Review Authority / attest',
-        publisher_app_id: REVIEW_APP_ID,
-        publisher_app_slug: REVIEW_APP_SLUG,
-      }),
-    },
   }];
   const bootstrapRun = {
     event: 'push', path: '.github/workflows/squad-bootstrap.lock.yml',
@@ -156,7 +128,6 @@ function fixture(relay = false) {
     if (route.endsWith('/actions/runs/29')) return bootstrapRun;
     if (route.endsWith('/attempts/1')) return { ...run, run_attempt: 1, run_started_at: START };
     if (/\/attempts\/[12]\/jobs$/.test(route)) return { jobs };
-    if (route.endsWith(`/commits/${HEAD}/check-runs`)) return { check_runs: checkRuns };
     if (route.endsWith('/comments')) return state.comments;
     if (route.endsWith('/permission')) return { permission: state.permission };
     throw new Error(`Unexpected API route: ${route}`);
@@ -167,7 +138,7 @@ function fixture(relay = false) {
   };
   sync();
   return {
-    env, attribution, registry, pr, verdict, review, run, bootstrapRun, jobs, checkRuns,
+    env, attribution, registry, pr, verdict, review, run, bootstrapRun, jobs,
     override, comment,
     state, encode, get, sync,
   };
@@ -286,39 +257,11 @@ describe('independent Squad review guard', () => {
     }
   });
 
-  it('ignores an ordinary-token forged check and accepts only the dedicated App check', async () => {
-    const f = fixture(true);
-    f.checkRuns.unshift({
-      ...structuredClone(f.checkRuns[0]),
-      id: 87,
-      app: { id: 15368, slug: 'github-actions' },
-      output: {
-        summary: JSON.stringify({
-          ...JSON.parse(f.checkRuns[0].output.summary),
-          publisher_app_id: 15368,
-          publisher_app_slug: 'github-actions',
-        }),
-      },
-    });
-    await expect(assertClearingReview(f.env, f.get, { relay: true }))
-      .resolves.toEqual(f.verdict);
-    f.checkRuns.splice(1);
-    await expect(assertClearingReview(f.env, f.get, { relay: true }))
-      .rejects.toThrow('missing or duplicate exact-head authority check');
-  });
-
-  it('refuses PR-controlled shaped review, job, check, and artifact evidence', async () => {
+  it('refuses PR-controlled shaped review and job evidence from another run', async () => {
     const f = fixture(true);
     f.run.event = 'pull_request';
     f.run.head_sha = HEAD;
-    f.jobs[0].name = CHECK_NAME;
-    f.checkRuns[0].external_id =
-      `squad-review-authority/v1:${REPOSITORY}:42:${BASE}:${HEAD}`;
-    f.checkRuns[0].output.summary = JSON.stringify({
-      ...JSON.parse(f.checkRuns[0].output.summary),
-      event: 'pull_request',
-      workflow_sha: HEAD,
-    });
+    f.jobs[0].name = 'review';
     await expect(assertClearingReview(f.env, f.get, { relay: true }))
       .rejects.toThrow('not bound to this PR workflow run');
   });
@@ -378,10 +321,8 @@ describe('independent Squad review guard', () => {
     'missing', 'duplicate', 'malformed', 'native-rejected', 'dismissed', 'foreign-bot',
     'wrong-native-sha', 'future-submission', 'missing-manifest', 'bad-marker', 'fenced-marker',
     'wrong-branch', 'duplicate-marker', 'stale-head', 'foreign-head', 'foreign-base', 'head-race',
-    'not-merged', 'wrong-base', 'merge-before-review', 'merge-before-check',
-    'failed-run', 'failed-check', 'missing-check', 'duplicate-check', 'wrong-check',
-    'forged-check', 'actions-app-check', 'wrong-check-app', 'wrong-check-app-slug',
-    'wrong-check-attestation', 'wrong-attested-app-id', 'wrong-attested-app-slug',
+    'not-merged', 'wrong-base', 'merge-before-review', 'merge-before-job',
+    'failed-run', 'failed-job', 'missing-job', 'duplicate-job', 'wrong-job',
     'manual-run', 'wrong-workflow', 'wrong-run-repo', 'wrong-run-sha', 'wrong-run-pr',
     'wrong-run-attempt', 'wrong-run-title', 'verdict-before-run',
     'wrong-bot-id', 'wrong-bot-type',
@@ -408,45 +349,22 @@ describe('independent Squad review guard', () => {
       case 'not-merged': f.pr.merged = false; break;
       case 'wrong-base': f.pr.base.ref = 'other'; break;
       case 'merge-before-review': f.pr.merged_at = START; break;
-      case 'merge-before-check': f.pr.merged_at = SUBMITTED; break;
+      case 'merge-before-job': f.pr.merged_at = SUBMITTED; break;
       case 'failed-run': f.run.conclusion = 'failure'; break;
-      case 'failed-check': f.jobs[0].conclusion = 'failure'; break;
-      case 'missing-check': f.jobs.splice(0); break;
-      case 'duplicate-check': f.jobs.push(f.jobs[0]); break;
-      case 'wrong-check': f.jobs[0].name = 'Squad Review / manual'; break;
+      case 'failed-job': f.jobs[0].conclusion = 'failure'; break;
+      case 'missing-job': f.jobs.splice(0); break;
+      case 'duplicate-job': f.jobs.push(f.jobs[0]); break;
+      case 'wrong-job': f.jobs[0].name = 'manual'; break;
       case 'manual-run': f.run.event = 'workflow_dispatch'; break;
       case 'wrong-workflow': f.run.path = '.github/workflows/other.yml'; break;
       case 'wrong-run-repo': f.run.repository.full_name = 'other/repo'; break;
-      case 'wrong-run-sha': f.run.head_sha = HEAD; break;
+      case 'wrong-run-sha': f.run.head_sha = BASE; break;
       case 'wrong-run-pr': f.run.pull_requests[0].number = 43; break;
       case 'wrong-run-attempt': f.run.run_attempt = 0; break;
       case 'wrong-run-title': f.run.display_title = 'Squad review \u2014 PR #43'; break;
       case 'verdict-before-run': f.run.run_started_at = FINISHED; break;
       case 'wrong-bot-id': f.review.user.id = 1; break;
       case 'wrong-bot-type': f.review.user.type = 'User'; break;
-      case 'forged-check': f.checkRuns[0].external_id = 'forged'; break;
-      case 'actions-app-check':
-        f.checkRuns[0].app = { id: 15368, slug: 'github-actions' };
-        f.checkRuns[0].output.summary = JSON.stringify({
-          ...JSON.parse(f.checkRuns[0].output.summary),
-          publisher_app_id: 15368,
-          publisher_app_slug: 'github-actions',
-        });
-        break;
-      case 'wrong-check-app': f.checkRuns[0].app.id = 1; break;
-      case 'wrong-check-app-slug': f.checkRuns[0].app.slug = 'other-review-app'; break;
-      case 'wrong-attested-app-id': f.checkRuns[0].output.summary = JSON.stringify({
-        ...JSON.parse(f.checkRuns[0].output.summary),
-        publisher_app_id: 1,
-      }); break;
-      case 'wrong-attested-app-slug': f.checkRuns[0].output.summary = JSON.stringify({
-        ...JSON.parse(f.checkRuns[0].output.summary),
-        publisher_app_slug: 'other-review-app',
-      }); break;
-      case 'wrong-check-attestation': f.checkRuns[0].output.summary = JSON.stringify({
-        ...JSON.parse(f.checkRuns[0].output.summary),
-        event: 'pull_request',
-      }); break;
     }
     await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow();
   });
@@ -467,20 +385,15 @@ describe('independent Squad review guard', () => {
     await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow('bound');
   });
 
-  it('clears a rejection only through a human-admin SHA-scoped override, including reruns', async () => {
+  it('clears a rejection only through a human-admin SHA-scoped override bound to its run attempt', async () => {
     const f = fixture(true);
     f.verdict.result = 'REQUEST_CHANGES';
     f.sync();
     await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow('override');
     f.state.comments = [f.comment];
     f.state.comments.push({ ...f.comment, body: `${OVERRIDE_PREFIX}${JSON.stringify({ ...f.override, head_sha: BASE })}` });
-    f.run.run_attempt = 2;
-    f.checkRuns[0].output.summary = JSON.stringify({
-      ...JSON.parse(f.checkRuns[0].output.summary),
-      run_attempt: 2,
-    });
     await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
-    expect(f.state.calls.some(route => route.endsWith('/attempts/2/jobs'))).toBe(true);
+    expect(f.state.calls.some(route => route.endsWith('/attempts/1/jobs'))).toBe(true);
   });
 
   it.each([
@@ -573,25 +486,26 @@ describe('independent Squad review guard', () => {
     expect(JSON.parse(readFileSync(path, 'utf8')).items[0].body).toBe('Diagnostic.');
   });
 
-  it('deduplicates only evidence from the exact run attempt', async () => {
+  it('rejects pre-seeded exact-attempt evidence and requires fresh safe output', async () => {
     const f = fixture();
     const workspace = mkdtempSync(join(tmpdir(), 'squad-review-dedup-'));
     workspaces.push(workspace);
     const path = join(workspace, 'output.json');
     const env = { ...f.env, GH_AW_AGENT_OUTPUT: path };
     writeFileSync(path, JSON.stringify({ items: [{ type: 'noop' }] }));
-    await expect(enforceReviewOutputs(env, f.get)).resolves.toBeUndefined();
+    await expect(enforceReviewOutputs(env, f.get))
+      .rejects.toThrow('pre-existing verdict evidence');
     writeFileSync(path, JSON.stringify({ items: [{
-      type: 'submit_pull_request_review', event: 'COMMENT', body: 'Duplicate.',
+      type: 'submit_pull_request_review', event: 'COMMENT', body: 'Forged duplicate.',
     }] }));
-    await expect(enforceReviewOutputs(env, f.get)).rejects.toThrow('already has a verdict');
-    f.verdict.run_attempt = 2;
-    f.sync();
+    await expect(enforceReviewOutputs(env, f.get))
+      .rejects.toThrow('pre-existing verdict evidence');
+    env.GITHUB_RUN_ATTEMPT = '2';
     writeFileSync(path, JSON.stringify({ items: [{
       type: 'submit_pull_request_review', event: 'COMMENT', body: 'New attempt.',
     }] }));
     await expect(enforceReviewOutputs(env, f.get)).resolves.toBeUndefined();
-    expect(readFileSync(path, 'utf8')).toContain('\\"run_attempt\\":1');
+    expect(readFileSync(path, 'utf8')).toContain('\\"run_attempt\\":2');
     f.review.body = `${VERDICT_PREFIX}{broken`;
     writeFileSync(path, JSON.stringify({ items: [{ type: 'noop' }] }));
     await expect(enforceReviewOutputs(env, f.get)).rejects.toThrow();
