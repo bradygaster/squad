@@ -150,6 +150,13 @@ validated payload:
 - a draft Cast PR on `squad/bootstrap-cast`; and
 - `[Research Proposals] Agent-discovered repo opportunities`.
 
+Bootstrap submits the shared payload through one authenticated command. Runtime
+code assembles and validates its bounded chunks, then passes JSON directly to
+the existing typed safe-output tool; the agent never copies chunks into tool
+arguments. Missing, duplicate, reordered, malformed, oversized, or mismatched
+payloads fail closed before submission, and the write job independently
+revalidates the payload. A submission error is terminal, not permission to retry.
+
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
 evidence, use one of the issue's focused `/squad research ...` commands first;

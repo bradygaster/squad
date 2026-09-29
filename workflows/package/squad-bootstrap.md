@@ -30,6 +30,7 @@ network:
   allowed:
     - defaults
 tools:
+  cli-proxy: true
   edit: null
   bash: true
   github:
@@ -153,17 +154,18 @@ pre-agent-steps:
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "514e210ebeae3b355ff73ed81bfd17f37207c9a3576ca44eaf8af7bfa21fc173"
       check_hash "$cast_validator" "0988e04aeef316f4d7a0107c902bbbcf6538b8899b9fffba5f62150717967685"
-      check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      check_hash "$bootstrap_validator" "4fc1bcc79b887bb4f2f78e7eef8693d5c1eaf817d8715ce3c92169934aa225b7"
       # END GENERATED RESOURCE DIGESTS
-      node "$bootstrap_validator" \
-        --root "$PWD" \
-        --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
-        --repository "${GITHUB_REPOSITORY:?}" \
-        --default-branch "${SQUAD_BOOTSTRAP_DEFAULT_BRANCH:?}" \
-        --link-mode placeholder
       node "$bootstrap_validator" \
         --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
         > "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json"
+      node "$bootstrap_validator" \
+        --submit-envelope "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json" \
+        --root "$PWD" \
+        --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
+        --repository "${GITHUB_REPOSITORY:?}" \
+        --default-branch "${DEFAULT_BRANCH:?}" \
+        --link-mode placeholder
       SQUAD_BOOTSTRAP_VALIDATOR
       chmod 500 "$runner"
 safe-outputs:
@@ -737,33 +739,25 @@ exemplar's long audit format.
 
 ## Validation and output
 
-Run exactly:
+After generating the payload, run this command exactly once:
 
 ```bash
 "${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-bootstrap-validator"
 ```
 
-Only exit status zero with stdout exactly
-`Squad bootstrap validation passed.` authorizes reading
-`.github/workflows/squad-bootstrap-envelope.json`. That file is the only
-transport source for one `materialize_bootstrap` call.
+The authenticated command deterministically encodes the payload, reconstructs
+and checks all chunk ordinals, count, bounds, UTF-8, byte length and SHA-256,
+validates the payload schema and Cast tree, then invokes the existing typed
+`materialize_bootstrap` safe-output tool through its mounted CLI with JSON on
+stdin. Its tool invocation is bounded to 60 seconds. GitHub writes still occur
+only in the safe-output job, which independently revalidates the payload.
 
-The envelope contains:
+Exit status zero with stdout exactly
+`Squad bootstrap validation passed; materialize_bootstrap submitted.`
+means the one output has already been submitted. Stop immediately.
+Never read, print, extract, or transcribe `squad-bootstrap-envelope.json` or its
+chunks. Never invoke `materialize_bootstrap` separately, retry the command, or
+split Cast and research into separate outputs.
 
-- `payload_encoding`: exactly `base64`
-- `payload_byte_length`: canonical decimal UTF-8 byte length, maximum 96,000
-- `payload_sha256`: lowercase SHA-256 of the complete payload bytes
-- `payload_chunk_count`: canonical decimal from 1 through 16
-- `payload_chunk_00` through `payload_chunk_15`: only the populated fixed slots
-
-Each populated chunk is `NN:` followed by canonical Base64 for at most 6,000
-payload bytes, so every string is at most 8,003 bytes and stays conservatively
-below gh-aw's 10,240-byte per-string input limit. Pass every property from the
-envelope byte-for-byte to the typed safe-output call. Do not reserialize the
-payload, recompute metadata, rename slots, add unused slots, or split semantic
-generation into separate Cast and research outputs. The writer reconstructs the
-one shared payload and verifies order, count, bounds, UTF-8, total byte length,
-and SHA-256 before parsing any JSON.
-
-Any validation or envelope error is terminal: emit no materialization output,
-report the exact validator stderr, and stop.
+Any validation, envelope, or submission error is terminal: report the exact
+stderr and stop without another materialization attempt.
