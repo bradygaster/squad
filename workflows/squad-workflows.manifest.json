@@ -225,7 +225,7 @@
       "name": "gh-aw-enlistment",
       "source": "workflows/skills/gh-aw-enlistment/SKILL.md",
       "destination": ".github/skills/gh-aw-enlistment/SKILL.md",
-      "sha256": "16f32f86b0a468891819e2b669bf834db60293cc1b5e0b492c75db146c937bc9"
+      "sha256": "bf3fc780e906b6f0e3c1fc157aac7eaf38f9c0b637f5d62f31c8d3e6d6f9c994"
     }
   ],
   "bootstrap": {
