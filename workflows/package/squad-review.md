@@ -205,8 +205,9 @@ priority evidence.
 | 4 | None of the above | Unattributed |
 
 The durable marker schema from the implement worker is exactly one standalone
-body line matching
-`^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$`.
+body line. Build its exact regular expression by concatenating these three
+fragments with no added whitespace: `^<`, then
+`!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$`.
 Normalize CRLF to LF before testing lines. Marker-like text means any occurrence
 of `squad:implement` anywhere in the body.
 
