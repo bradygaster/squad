@@ -78,22 +78,54 @@ safe-outputs:
             return;
           }
           if (contract.commandRequiresAuthorization(result)) {
-            let permission = 'unresolved';
-            try {
-              permission = (await github.rest.repos.getCollaboratorPermissionLevel({
-                ...context.repo,
-                username: context.actor,
-              })).data.permission || 'unresolved';
-            } catch (error) {
-              core.warning(`Unable to resolve repository permission for ${context.actor}: ${error.message}`);
-            }
-            if (!contract.isAuthorizedPermission(permission)) {
+            const eventActor = typeof context.actor === 'string' && context.actor.trim()
+              ? context.actor.trim()
+              : null;
+            const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'
+              ? context.payload.comment?.user?.login
+              : process.env.SQUAD_EVENT_NAME === 'issues'
+                ? context.payload.issue?.user?.login
+                : null;
+            const commandAuthor = typeof commandAuthorCandidate === 'string' && commandAuthorCandidate.trim()
+              ? commandAuthorCandidate.trim()
+              : null;
+            const permissionByLogin = new Map();
+            const resolvePermission = async (login, principal) => {
+              if (!login) return 'unresolved';
+              if (permissionByLogin.has(login)) return permissionByLogin.get(login);
+              let permission = 'unresolved';
+              try {
+                permission = (await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: login,
+                })).data.permission || 'unresolved';
+              } catch (error) {
+                core.warning(`Unable to resolve repository permission for ${principal} ${login}: ${error.message}`);
+              }
+              permissionByLogin.set(login, permission);
+              return permission;
+            };
+            const actorPermission = await resolvePermission(eventActor, 'event actor');
+            const authorPermission = await resolvePermission(commandAuthor, 'command author');
+            const actorAuthorized = Boolean(eventActor) &&
+              contract.isAuthorizedPermission(actorPermission);
+            const authorAuthorized = Boolean(commandAuthor) &&
+              contract.isAuthorizedPermission(authorPermission);
+            if (!actorAuthorized || !authorAuthorized) {
+              const actorEvidence = eventActor
+                ? `@${eventActor} (${actorPermission})`
+                : 'unresolved (unresolved)';
+              const authorEvidence = commandAuthor
+                ? `@${commandAuthor} (${authorPermission})`
+                : 'unresolved (unresolved)';
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: issueNumber,
-                body: `⛔ /squad ${result.argumentText || 'cast'} was refused for @${context.actor} (repository permission: ${permission}). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`,
+                body: `⛔ /squad ${result.argumentText || 'cast'} was refused. Mutating /squad modes require write, maintain, or admin repository permission for both the event actor and the author of the classified command text. Event actor: ${actorEvidence}; command author: ${authorEvidence}. Ask a repository maintainer to author and run this command.`,
               });
-              core.setFailed(`Squad refused mutating mode ${result.mode} for ${context.actor}.`);
+              core.setFailed(
+                `Squad refused mutating mode ${result.mode}; event actor ${eventActor || 'unresolved'}=${actorPermission}, command author ${commandAuthor || 'unresolved'}=${authorPermission}.`,
+              );
               return;
             }
           }

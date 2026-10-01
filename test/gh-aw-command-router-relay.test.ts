@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { compileFunction, constants as vmConstants } from 'node:vm';
@@ -33,6 +35,7 @@ const nodeRequire = createRequire(import.meta.url);
 
 const ROOT = process.cwd();
 const ROUTER = readFileSync(join(ROOT, 'workflows/squad-command-router.md'), 'utf8');
+const PACKAGE_ROUTER = readFileSync(join(ROOT, 'workflows/package/squad-command-router.md'), 'utf8');
 const SHARED_SQUAD = readFileSync(join(ROOT, 'workflows/shared/squad.md'), 'utf8');
 
 /** Read a `script: |` literal block starting at `marker`, dedented. */
@@ -69,6 +72,121 @@ function compileScript(script: string) {
   ) as (...args: unknown[]) => Promise<unknown>;
 }
 
+function inlineCommandContract(script: string): string {
+  const importStatement =
+    'const contract = await import(pathToFileURL(nodePath.join(\n' +
+    '  trustedRoot,\n' +
+    "  '.github/workflows/shared/squad-command-contract.mjs',\n" +
+    ')).href);';
+  expect(script).toContain(importStatement);
+  return script.replace(
+    importStatement,
+    `const contract = await import(pathToFileURL(nodePath.join(process.cwd(), 'workflows/shared/squad-command-contract.mjs')).href);`,
+  );
+}
+
+interface RouterRun {
+  dispatchedInputs: Record<string, string> | null;
+  failure: string | null;
+  permissionLookups: string[];
+  postedComments: string[];
+}
+
+async function runRouter({
+  eventName,
+  action,
+  actor,
+  author,
+  body,
+  permissions,
+  scriptMutation,
+}: {
+  eventName: 'issues' | 'issue_comment';
+  action: 'opened' | 'edited' | 'reopened' | 'created';
+  actor: string;
+  author?: string;
+  body: string;
+  permissions: Record<string, string>;
+  scriptMutation?: (script: string) => string;
+}): Promise<RouterRun> {
+  const extracted = extractScript(ROUTER, 'Route or reject discovered command');
+  const inlined = inlineCommandContract(scriptMutation ? scriptMutation(extracted) : extracted);
+  const textSource = {
+    number: 4242,
+    ...(eventName === 'issues'
+      ? { body, ...(author === undefined ? {} : { user: { login: author } }) }
+      : {}),
+  };
+  const comment = eventName === 'issue_comment'
+    ? { id: 55001, body, ...(author === undefined ? {} : { user: { login: author } }) }
+    : undefined;
+  const context = {
+    repo: { owner: 'bradygaster', repo: 'squad' },
+    actor,
+    payload: {
+      action,
+      issue: textSource,
+      ...(comment ? { comment } : {}),
+      repository: { default_branch: 'dev' },
+    },
+  };
+  let dispatchedInputs: Record<string, string> | null = null;
+  let failure: string | null = null;
+  const permissionLookups: string[] = [];
+  const postedComments: string[] = [];
+  const github = {
+    rest: {
+      issues: {
+        createComment: async ({ body: commentBody }: { body: string }) => {
+          postedComments.push(commentBody);
+        },
+      },
+      repos: {
+        getCollaboratorPermissionLevel: async ({ username }: { username: string }) => {
+          permissionLookups.push(username);
+          return { data: { permission: permissions[username] ?? 'unresolved' } };
+        },
+      },
+      actions: {
+        createWorkflowDispatch: async (params: { inputs: Record<string, string> }) => {
+          dispatchedInputs = params.inputs;
+        },
+      },
+    },
+  };
+  const core = {
+    setFailed: (message: string) => {
+      failure = message;
+    },
+    info: () => undefined,
+    warning: () => undefined,
+  };
+  const previousWorkspace = process.env.GITHUB_WORKSPACE;
+  const previousEventName = process.env.SQUAD_EVENT_NAME;
+  process.env.GITHUB_WORKSPACE = ROOT;
+  process.env.SQUAD_EVENT_NAME = eventName;
+  try {
+    await compileScript(inlined)(github, context, core, process, nodeRequire);
+  } finally {
+    if (previousWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = previousWorkspace;
+    if (previousEventName === undefined) delete process.env.SQUAD_EVENT_NAME;
+    else process.env.SQUAD_EVENT_NAME = previousEventName;
+  }
+  return { dispatchedInputs, failure, permissionLookups, postedComments };
+}
+
+function assertAuthorBinding(source: string): void {
+  expect(source).toContain("process.env.SQUAD_EVENT_NAME === 'issue_comment'");
+  expect(source).toContain('context.payload.comment?.user?.login');
+  expect(source).toContain("process.env.SQUAD_EVENT_NAME === 'issues'");
+  expect(source).toContain('context.payload.issue?.user?.login');
+  expect(source).toContain('const actorAuthorized = Boolean(eventActor)');
+  expect(source).toContain('const authorAuthorized = Boolean(commandAuthor)');
+  expect(source).toContain('if (!actorAuthorized || !authorAuthorized)');
+  expect(source).toContain('both the event actor and the author of the classified command text');
+}
+
 describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', () => {
   it('declares roles: all so the activation gate does not block non-write actors (#2)', () => {
     expect(ROUTER).toMatch(/^on:\n\s+roles:\s*all\n/m);
@@ -79,8 +197,10 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
     // router's own in-script permission check for mutating modes must be the
     // thing still enforcing authorization afterward.
     expect(ROUTER).toContain('contract.commandRequiresAuthorization(result)');
-    expect(ROUTER).toContain('contract.isAuthorizedPermission(permission)');
+    expect(ROUTER).toContain('contract.isAuthorizedPermission(actorPermission)');
+    expect(ROUTER).toContain('contract.isAuthorizedPermission(authorPermission)');
     expect(ROUTER).toContain('getCollaboratorPermissionLevel');
+    assertAuthorBinding(ROUTER);
     expect(commandRequiresAuthorization({ status: 'accepted', mode: 'cast' })).toBe(true);
     expect(commandRequiresAuthorization({ status: 'accepted', mode: 'status' })).toBe(false);
     expect(isAuthorizedPermission('read')).toBe(false);
@@ -108,7 +228,7 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
         actor: 'maintainer',
         payload: {
           issue: { number: 4242 },
-          comment: { id: 55001, body: commentBody },
+          comment: { id: 55001, body: commentBody, user: { login: 'maintainer' } },
           repository: { default_branch: 'dev' },
         },
       };
@@ -141,25 +261,20 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
       // Every other line -- including the `require('node:path')` /
       // `require('node:url')` preamble -- is the real, unmodified extracted
       // script text, executed via the injected real `require`.
-      const importStatement =
-        'const contract = await import(pathToFileURL(nodePath.join(\n' +
-        '  trustedRoot,\n' +
-        "  '.github/workflows/shared/squad-command-contract.mjs',\n" +
-        ')).href);';
-      expect(routerScript).toContain(importStatement);
-      const inlined = routerScript.replace(
-        importStatement,
-        `const contract = await import(pathToFileURL(nodePath.join(process.cwd(), 'workflows/shared/squad-command-contract.mjs')).href);`,
-      );
+      const inlined = inlineCommandContract(routerScript);
       expect(inlined).not.toBe(routerScript);
 
       const previousWorkspace = process.env.GITHUB_WORKSPACE;
+      const previousEventName = process.env.SQUAD_EVENT_NAME;
       process.env.GITHUB_WORKSPACE = ROOT;
+      process.env.SQUAD_EVENT_NAME = 'issue_comment';
       try {
         await compileScript(inlined)(github, context, core, process, nodeRequire);
       } finally {
         if (previousWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
         else process.env.GITHUB_WORKSPACE = previousWorkspace;
+        if (previousEventName === undefined) delete process.env.SQUAD_EVENT_NAME;
+        else process.env.SQUAD_EVENT_NAME = previousEventName;
       }
 
       expect(dispatchedInputs).not.toBeNull();
@@ -253,5 +368,184 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
 
     expect(failedWith).toContain('A valid whole-plan activation command and issue number are required.');
     expect(paginateCalls).toHaveLength(0);
+  });
+});
+
+describe('gh-aw: mutating router authorization is bound to text provenance', () => {
+  it.each([
+    ['issues', 'opened'],
+    ['issues', 'edited'],
+    ['issues', 'reopened'],
+    ['issue_comment', 'created'],
+    ['issue_comment', 'edited'],
+  ] as const)('authorizes the classified author on %s.%s', async (eventName, action) => {
+    const result = await runRouter({
+      eventName,
+      action,
+      actor: 'maintainer-editor',
+      author: 'unprivileged-author',
+      body: 'Please run this request.\n/squad cast',
+      permissions: {
+        'maintainer-editor': 'write',
+        'unprivileged-author': 'read',
+      },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.failure).toContain('command author unprivileged-author=read');
+    expect(result.permissionLookups).toEqual(['maintainer-editor', 'unprivileged-author']);
+    expect(result.postedComments).toEqual([
+      expect.stringContaining(
+        'Event actor: @maintainer-editor (write); command author: @unprivileged-author (read).',
+      ),
+    ]);
+  });
+
+  it('allows a mutating comment command only when its privileged author and editor are authorized', async () => {
+    const result = await runRouter({
+      eventName: 'issue_comment',
+      action: 'edited',
+      actor: 'maintainer-editor',
+      author: 'maintainer-author',
+      body: 'Please run this request.\n/squad cast',
+      permissions: {
+        'maintainer-editor': 'maintain',
+        'maintainer-author': 'write',
+      },
+    });
+
+    expect(result.failure).toBeNull();
+    expect(result.postedComments).toEqual([]);
+    expect(result.dispatchedInputs).toMatchObject({ command: 'cast', issue_number: '4242' });
+  });
+
+  it('keeps event-actor authorization required when a privileged author is edited by an unprivileged actor', async () => {
+    const result = await runRouter({
+      eventName: 'issues',
+      action: 'edited',
+      actor: 'unprivileged-editor',
+      author: 'maintainer-author',
+      body: 'Please run this request.\n/squad cast',
+      permissions: {
+        'unprivileged-editor': 'read',
+        'maintainer-author': 'admin',
+      },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.failure).toContain('event actor unprivileged-editor=read');
+    expect(result.postedComments[0]).toContain(
+      'Event actor: @unprivileged-editor (read); command author: @maintainer-author (admin).',
+    );
+  });
+
+  it.each([
+    ['issues', 'opened'],
+    ['issue_comment', 'created'],
+  ] as const)('fails closed when the %s.%s command author is missing', async (eventName, action) => {
+    const result = await runRouter({
+      eventName,
+      action,
+      actor: 'maintainer',
+      body: 'Please run this request.\n/squad cast',
+      permissions: { maintainer: 'write' },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.failure).toContain('command author unresolved=unresolved');
+    expect(result.permissionLookups).toEqual(['maintainer']);
+    expect(result.postedComments[0]).toContain('command author: unresolved (unresolved)');
+  });
+
+  it('does not permission-gate non-mutating modes when author identity is absent', async () => {
+    const result = await runRouter({
+      eventName: 'issue_comment',
+      action: 'edited',
+      actor: 'reader',
+      body: 'Please report current state.\n/squad status',
+      permissions: {},
+    });
+
+    expect(result.failure).toBeNull();
+    expect(result.permissionLookups).toEqual([]);
+    expect(result.dispatchedInputs).toMatchObject({ command: 'status', issue_number: '4242' });
+  });
+
+  it.each([
+    ['issues', 'opened'],
+    ['issue_comment', 'created'],
+  ] as const)('preserves direct authorized created-event routing for %s.%s', async (eventName, action) => {
+    const result = await runRouter({
+      eventName,
+      action,
+      actor: 'maintainer',
+      author: 'maintainer',
+      body: 'Please run this request.\n/squad cast',
+      permissions: { maintainer: 'write' },
+    });
+
+    expect(result.failure).toBeNull();
+    expect(result.permissionLookups).toEqual(['maintainer']);
+    expect(result.dispatchedInputs).toMatchObject({ command: 'cast', issue_number: '4242' });
+  });
+
+  it('kills the author-binding mutation that substitutes the editor for the command author', async () => {
+    expect(() => assertAuthorBinding(
+      ROUTER.replace(
+        "const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'\n" +
+          '              ? context.payload.comment?.user?.login\n' +
+          "              : process.env.SQUAD_EVENT_NAME === 'issues'\n" +
+          '                ? context.payload.issue?.user?.login\n' +
+          '                : null;',
+        'const commandAuthorCandidate = context.actor;',
+      ),
+    )).toThrow();
+
+    const vulnerable = await runRouter({
+      eventName: 'issue_comment',
+      action: 'edited',
+      actor: 'maintainer-editor',
+      author: 'unprivileged-author',
+      body: 'Please run this request.\n/squad cast',
+      permissions: {
+        'maintainer-editor': 'write',
+        'unprivileged-author': 'read',
+      },
+      scriptMutation: script => script.replace(
+        "const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'\n" +
+          '    ? context.payload.comment?.user?.login\n' +
+          "    : process.env.SQUAD_EVENT_NAME === 'issues'\n" +
+          '      ? context.payload.issue?.user?.login\n' +
+          '      : null;',
+        'const commandAuthorCandidate = context.actor;',
+      ),
+    });
+    expect(vulnerable.dispatchedInputs).toMatchObject({ command: 'cast' });
+  });
+
+  it('preserves author binding in the generated package source and strict-compiled artifact', () => {
+    assertAuthorBinding(PACKAGE_ROUTER);
+    const workspace = mkdtempSync(join(tmpdir(), 'squad-command-router-compiled-'));
+    try {
+      const workflowDir = join(workspace, '.github', 'workflows');
+      mkdirSync(workflowDir, { recursive: true });
+      cpSync(join(ROOT, 'workflows'), workflowDir, { recursive: true });
+      writeFileSync(join(workflowDir, 'squad-command-router.md'), PACKAGE_ROUTER);
+      execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+      execFileSync(
+        'gh',
+        ['aw', 'compile', 'squad-command-router', '--strict', '--no-check-update'],
+        { cwd: workspace, stdio: 'pipe', timeout: 60000 },
+      );
+      const compiled = readFileSync(
+        join(workflowDir, 'squad-command-router.lock.yml'),
+        'utf8',
+      );
+      assertAuthorBinding(compiled);
+      expect(compiled).toContain('context.payload.comment?.user?.login');
+      expect(compiled).toContain('context.payload.issue?.user?.login');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });

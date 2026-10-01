@@ -77,9 +77,9 @@
       "source": "workflows/package/squad-command-router.md",
       "destination": ".github/workflows/squad-command-router.md",
       "lock": ".github/workflows/squad-command-router.lock.yml",
-      "source_sha256": "91b1c3b1a9e5499669f16e3f06f27470570162323376b34a8d8f3156c1e84f3a",
-      "lock_sha256": "9bdd3d177667a599f1abd4c6142327ec074c46d6593293b285ac57dbb3539053",
-      "package_lock_sha256": "ff161ff50343b849a87d27e1635986bcf9f1da6b96c37be784c06beda69c388b"
+      "source_sha256": "59bab5e3c4f27f92c22b7ad037961783d8e405a9add8d947bd11470ddbc0f118",
+      "lock_sha256": "f9471a2f1b9cccb6b5458656ad5889e71e89cbf31c6c1a126169bdf29d6393cd",
+      "package_lock_sha256": "e9d8ca44b5160bcdab4d492734af853c5029e6ac1fcf741ecf8d13011fa243de"
     }
   ],
   "shared_runtime": [
