@@ -27,12 +27,33 @@ Seven steps from zero to a validated, reviewable Squad bootstrap:
 ```bash
 set -euo pipefail
 
-# 1. Verify GitHub access, resolve this repo, and install gh-aw if needed
+# 1. Verify GitHub access and prove the exact supported gh-aw version
 gh auth status
+
+# gh-aw-exact-version-start
+required_gh_aw_version="v0.89.22"
+gh_aw_version_output="$(gh aw --version 2>&1)" || gh_aw_version_output=""
+gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+
+if [ "${gh_aw_version}" != "${required_gh_aw_version}" ]; then
+  echo "Installing exact supported gh-aw ${required_gh_aw_version}."
+  gh extension remove gh-aw >/dev/null 2>&1 || true
+  gh extension install --pin "${required_gh_aw_version}" github/gh-aw
+  gh_aw_version_output="$(gh aw --version 2>&1)" || {
+    echo "STOP: gh-aw version could not be verified after clean installation." >&2
+    exit 1
+  }
+  gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+fi
+
+test "${gh_aw_version}" = "${required_gh_aw_version}" || {
+  echo "STOP: required gh-aw v0.89.22, but found ${gh_aw_version:-unavailable} after clean installation." >&2
+  exit 1
+}
+# gh-aw-exact-version-end
+
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
-gh extension install --force --pin v0.89.22 github/gh-aw
-test "$(gh aw --version | awk '{print $NF}')" = "v0.89.22"
 
 # 2. Require GitHub Issues, then allow GitHub Actions to create pull requests
 issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"

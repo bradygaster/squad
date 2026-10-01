@@ -437,6 +437,37 @@ function compileWorkflow(source = WORKFLOW): string {
   return readFileSync(join(workflowDir, 'squad-bootstrap.lock.yml'), 'utf8');
 }
 
+function materializeCandidatePayloadFromWorkflow(
+  source: string,
+  candidate: string,
+  candidatePayload: unknown,
+): string {
+  const validateStart = source.indexOf('const validate = (candidatePayload, linkMode) => {');
+  const validationStart = source.indexOf(
+    'const errors = validatorModule.validateBootstrapPayload({',
+    validateStart,
+  );
+  expect(validateStart).toBeGreaterThan(-1);
+  expect(validationStart).toBeGreaterThan(validateStart);
+  const validatePrelude = source.slice(validateStart, validationStart);
+  const candidatePayloadPath = join(
+    candidate,
+    '.github/workflows/squad-bootstrap-payload.json',
+  );
+  const mkdirStatement =
+    'mkdirSync(dirname(candidatePayloadPath), { recursive: true });';
+  const writeStatement =
+    'writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\\n`);';
+  const mkdirIndex = validatePrelude.indexOf(mkdirStatement);
+  const writeIndex = validatePrelude.indexOf(writeStatement);
+  expect(writeIndex).toBeGreaterThan(-1);
+  if (mkdirIndex >= 0 && mkdirIndex < writeIndex) {
+    mkdirSync(dirname(candidatePayloadPath), { recursive: true });
+  }
+  writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\n`);
+  return candidatePayloadPath;
+}
+
 afterAll(() => {
   for (const workspace of workspaces) rmSync(workspace, { recursive: true, force: true });
 });
@@ -612,6 +643,7 @@ describe('automatic Squad bootstrap workflow', () => {
       recursive: true,
       filter: source => relative(fixture.root, source).split('/')[0] !== '.git',
     });
+    expect(existsSync(join(candidate, '.git'))).toBe(false);
     const options = {
       root: candidate,
       payloadPath: join(candidate, 'payload.json'),
@@ -632,6 +664,26 @@ describe('automatic Squad bootstrap workflow', () => {
     const resolvedResult = validateFixture(fixture, 'resolved');
     expect(resolvedResult.status, resolvedResult.stderr).toBe(0);
     expect(resolvedResult.stdout).toBe('Squad bootstrap validation passed.\n');
+  });
+
+  it('creates the missing candidate payload parent before materialization', () => {
+    const candidate = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-candidate-'));
+    workspaces.push(candidate);
+    expect(existsSync(join(candidate, '.github/workflows'))).toBe(false);
+
+    const payload = { schema_version: '1', repository: 'octo/example' };
+    const payloadPath = materializeCandidatePayloadFromWorkflow(WORKFLOW, candidate, payload);
+    expect(readFileSync(payloadPath, 'utf8')).toBe(`${JSON.stringify(payload)}\n`);
+
+    const mutatedCandidate = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-candidate-'));
+    workspaces.push(mutatedCandidate);
+    const mutated = WORKFLOW.replace(
+      '                mkdirSync(dirname(candidatePayloadPath), { recursive: true });\n',
+      '',
+    );
+    expect(() =>
+      materializeCandidatePayloadFromWorkflow(mutated, mutatedCandidate, payload),
+    ).toThrow(/ENOENT/);
   });
 
   it('transports a shared payload larger than the old single-string limit byte-identically', () => {
@@ -871,7 +923,19 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).not.toMatch(/"materialize-bootstrap":\{"inputs":\{"payload":/);
     expect(lock).toContain('reconstructBootstrapPayload(items[0])');
     expect(lock).toContain("mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-'))");
+    expect(lock).toContain("relative(checkout, source).split('/')[0] !== '.git'");
     expect(lock).toContain('gitRoot: checkout');
+    const candidatePayloadMkdir = lock.indexOf(
+      'mkdirSync(dirname(candidatePayloadPath), { recursive: true });',
+    );
+    const candidatePayloadWrite = lock.indexOf(
+      'writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\\n`);',
+    );
+    expect(candidatePayloadMkdir).toBeGreaterThan(-1);
+    expect(candidatePayloadWrite).toBeGreaterThan(candidatePayloadMkdir);
+    expect(lock.slice(candidatePayloadMkdir, candidatePayloadWrite).trim()).toBe(
+      'mkdirSync(dirname(candidatePayloadPath), { recursive: true });',
+    );
     expect(lock).toContain('Bootstrap payload path crosses a symbolic link');
     expect(lock.indexOf("validate(payload, 'placeholder')"))
       .toBeLessThan(lock.indexOf('safeTarget(checkout, file.path)'));
