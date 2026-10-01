@@ -388,6 +388,7 @@ safe-outputs:
         - go.mod
         - go.sum
     excluded-files:
+      - CHANGELOG.md
       - node_modules/**
       - "**/node_modules/**"
       - vendor/**
@@ -417,17 +418,9 @@ jobs:
       - detection
       - safe_outputs
     if: |-
-      ${{
-        !cancelled() &&
-        needs.agent.result == 'success' &&
-        needs.detection.result == 'success' &&
-        needs.safe_outputs.result == 'success' &&
-        !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
-        github.event_name == 'issue_comment' &&
-        (github.event.comment.body == '/squad activate' ||
-         github.event.comment.body == '/squad plan accept' ||
-         github.event.comment.body == '/squad plan activate')
-      }}
+      !cancelled() && needs.agent.result == 'success' && needs.detection.result == 'success' && needs.safe_outputs.result == 'success' && !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') && github.event_name == 'issue_comment' && (github.event.comment.body == '/squad activate' ||
+       github.event.comment.body == '/squad plan accept' ||
+       github.event.comment.body == '/squad plan activate')
     runs-on: ubuntu-slim
     permissions:
       issues: write

@@ -9,12 +9,13 @@
  *   2. Its frontmatter advertises the documented trigger phrases (discoverability).
  *   3. Its body still encodes every critical safety gate (allowlist, strict
  *      compile, never-auto-merge, read-only token, explicit staging).
- *   4. The canonical source and both template mirrors are byte-for-byte identical
+ *   4. The canonical source and all four mirrors are byte-for-byte identical
  *      (the sync invariant every canonical skill upholds).
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSkillFile } from '@bradygaster/squad-sdk/skills';
@@ -28,6 +29,7 @@ const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
 const GUIDE = 'docs/src/content/docs/guide/gh-aw.md';
 const AGENT_GUIDE = '.github/agents.md';
 const MIRRORS = [
+  `workflows/skills/${SKILL_ID}/SKILL.md`,
   `templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
   `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,
@@ -40,6 +42,121 @@ function readRaw(rel: string): string {
 function readLF(rel: string): string {
   return readRaw(rel).replace(/\r\n/g, '\n');
 }
+
+const VERSION_GATE_START = '# gh-aw-exact-version-start';
+const VERSION_GATE_END = '# gh-aw-exact-version-end';
+
+function extractVersionGate(content: string): string {
+  const start = content.indexOf(VERSION_GATE_START);
+  const end = content.indexOf(VERSION_GATE_END);
+  expect(start, `${VERSION_GATE_START} must exist`).toBeGreaterThan(-1);
+  expect(end, `${VERSION_GATE_END} must follow its start marker`).toBeGreaterThan(start);
+  return content.slice(start + VERSION_GATE_START.length, end);
+}
+
+function runVersionGate(
+  gate: string,
+  initialVersion: string,
+  installedVersion: string,
+  versionStream: 'stdout' | 'stderr' = 'stdout',
+) {
+  const script = `
+set -euo pipefail
+installed=0
+exec 3>&2
+gh() {
+  if [ "$1" = "aw" ] && [ "$2" = "--version" ]; then
+    printf 'CALL version\\n' >&3
+    version="$INITIAL_VERSION"
+    if [ "$installed" -eq 1 ]; then version="$INSTALLED_VERSION"; fi
+    if [ "$VERSION_STREAM" = "stderr" ]; then
+      printf 'gh-aw %s\\n' "$version" >&2
+    else
+      printf 'gh-aw %s\\n' "$version"
+    fi
+    return 0
+  fi
+  if [ "$1" = "extension" ] && [ "$2" = "remove" ] && [ "$3" = "gh-aw" ]; then
+    printf 'CALL remove\\n' >&3
+    return 0
+  fi
+  if [ "$1" = "extension" ] && [ "$2" = "install" ]; then
+    printf 'CALL install %s %s\\n' "$3" "$4" >&3
+    installed=1
+    return 0
+  fi
+  return 64
+}
+${gate}
+`;
+  return spawnSync('bash', ['-c', script], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      INITIAL_VERSION: initialVersion,
+      INSTALLED_VERSION: installedVersion,
+      VERSION_STREAM: versionStream,
+    },
+  });
+}
+
+const COMPILE_WARNINGS = [
+  '.github/workflows/squad-review.md: warning: pull_request_target is a very dangerous trigger.',
+  ".github/workflows/squad.md: warning: Both slash_command and bots triggers are configured. If a bot listed in bots: posts a comment that starts with the slash command text (e.g., /command-name), it will trigger the workflow and occupy the concurrency slot, potentially blocking simultaneous manual invocations. To ensure the workflow only runs on explicit user commands, remove the 'bots:' field.",
+];
+
+function assertCompileWarningContract(content: string): void {
+  const regions = [...content.matchAll(
+    /^<!-- compile-warning-allowlist-start -->\n```text\n([\s\S]*?)\n```\n<!-- compile-warning-allowlist-end -->$/gm,
+  )];
+  expect(regions).toHaveLength(1);
+  expect(regions[0][1].split('\n')).toEqual(COMPILE_WARNINGS);
+  const flat = content.replace(/\s+/g, ' ');
+  expect(flat).toContain('require exactly two warnings, one occurrence of each exact diagnostic header');
+  expect(flat).toContain('**STOP** on any error, or on **any additional warning** beyond these two exact documented diagnostics.');
+  expect(flat).toContain('Also STOP if either warning is missing, duplicated, changed, or attributed to another path');
+  expect(flat).toContain('Compiled 8 workflows: 8 succeeded, 2 warnings');
+  expect(flat).toContain('or if any required control is absent.');
+  expect(flat).toContain('Do not suppress warnings or use `--approve` to bypass this gate.');
+}
+
+describe.each([CANONICAL, ...MIRRORS, GUIDE])('%s strict compile warning contract', path => {
+  const content = readLF(path);
+
+  it('allows exactly the native review advisory and bot-trigger diagnostic with hard-stop semantics', () => {
+    assertCompileWarningContract(content);
+  });
+
+  it('conditions the native review exception on every existing control', () => {
+    const flat = content.replace(/\s+/g, ' ');
+    expect(flat).toContain('**only while all existing controls remain**');
+    for (const control of [
+      'same-repository head restriction', 'base-controlled workflow source',
+      '`checkout: false` agent path', 'API-only inspection', 'exact run/head/attempt guard',
+      'least-privilege jobs', 'advisory verdict', 'independent human approval',
+    ]) expect(flat).toContain(control);
+    expect(flat).toContain('`pull_request_target` is not generally safe');
+  });
+
+  it.each([
+    ['unknown third warning', `${COMPILE_WARNINGS.join('\n')}\n.github/workflows/squad.md: warning: unknown diagnostic`],
+    ['missing review warning', COMPILE_WARNINGS[1]],
+    ['missing bot warning', COMPILE_WARNINGS[0]],
+    ['duplicate warning', `${COMPILE_WARNINGS.join('\n')}\n${COMPILE_WARNINGS[0]}`],
+    ['different workflow path', COMPILE_WARNINGS.join('\n').replace('squad-review.md', 'untrusted.md')],
+    ['changed diagnostic', COMPILE_WARNINGS.join('\n').replace('very dangerous', 'safe')],
+  ])('rejects a contract mutation allowing %s', (_label, replacement) => {
+    const mutated = content.replace(COMPILE_WARNINGS.join('\n'), replacement);
+    expect(mutated).not.toBe(content);
+    expect(() => assertCompileWarningContract(mutated)).toThrow();
+  });
+
+  it('rejects removal of the error/additional-warning hard stop', () => {
+    const mutated = content.replace('**STOP** on any error', 'Continue on any error');
+    expect(mutated).not.toBe(content);
+    expect(() => assertCompileWarningContract(mutated)).toThrow();
+  });
+});
 
 describe('gh-aw-enlistment skill', () => {
   it('canonical SKILL.md exists', () => {
@@ -128,10 +245,11 @@ describe('gh-aw-enlistment skill', () => {
       expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
     });
 
-    it('installs one immutable native package containing all seven workflows', () => {
+    it('installs one immutable native package with the 8/17/1 topology', () => {
       expect(content).toContain('SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev');
       expect(content).toContain('^' + '[0-9a-f]{40}' + '$');
       expect(content).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+      expect(content).toContain('exactly eight workflows, seventeen runtime resources, and one');
       for (const workflow of [
         'squad.md',
         'squad-implement-worker.md',
@@ -140,6 +258,7 @@ describe('gh-aw-enlistment skill', () => {
         'squad-retro.md',
         'squad-improvement-worker.md',
         'squad-bootstrap.md',
+        'squad-command-router.md',
       ]) expect(content).toContain(workflow);
     });
 
@@ -166,24 +285,15 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toMatch(/^gh aw compile --strict(\s+#[^\n]*)?$/m);
     });
 
-    it('permits only the documented bot-trigger warning', () => {
-      expect(content).toMatch(/bot-trigger warning|bot trigger/i);
-    });
-
-    // The permission above is only safe because it is paired with a hard halt
-    // on anything else.  Asserting the allowance alone would keep passing if
-    // the STOP were deleted -- i.e. if the narrow exception silently became a
-    // blanket "warnings are fine".  Assert the gate itself, not just the
-    // carve-out.  Newlines are collapsed first because the sentence wraps.
-    it('halts on any error or any warning beyond the documented one', () => {
-      const flat = content.replace(/\s+/g, ' ');
-      expect(flat).toMatch(
-        /\*\*STOP\*\* on any error, or on \*\*any additional warning\*\* beyond that single documented one\./,
-      );
-    });
-
     it('keeps the default workflow token read-only', () => {
       expect(content).toContain('default_workflow_permissions=read');
+    });
+
+    it('uses native review authority without reviewer credentials or external services', () => {
+      expect(content).toContain('native GitHub Actions/gh-aw runtime identity');
+      expect(content).toContain('successful `review` job');
+      expect(content).toContain('context-only requirement');
+      expect(content).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
     });
 
     it('requires GitHub Issues before installation and stops when they cannot be enabled', () => {
@@ -212,6 +322,9 @@ describe('gh-aw-enlistment skill', () => {
     it('forbids blanket staging and mandates explicit paths', () => {
       expect(content).toMatch(/git add \.|git add -A|git commit -a/); // referenced as an anti-pattern
       expect(content).toContain('git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/');
+      expect(content.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
+        .toHaveLength(2);
+      expect(content).toContain('Never force-add a directory or glob');
     });
 
     it('never auto-merges and defers automatic casting until after the bootstrap PR merges', () => {
@@ -222,8 +335,11 @@ describe('gh-aw-enlistment skill', () => {
     });
 
     it('pins and verifies the package-capable gh-aw compiler', () => {
-      expect(content).toContain('gh extension install --force --pin v0.89.21 github/gh-aw');
-      expect(content).toContain('gh aw --version');
+      expect(content).toContain('gh_aw_version_output="$(gh aw --version 2>&1)"');
+      expect(content).toContain('gh extension remove gh-aw');
+      expect(content).toContain('required_gh_aw_version="v0.89.22"');
+      expect(content).toContain('gh extension install --pin "${required_gh_aw_version}" github/gh-aw');
+      expect(content).toContain('never select a newer release');
       expect(content).toContain('PowerShell');
     });
 
@@ -236,6 +352,55 @@ describe('gh-aw-enlistment skill', () => {
   describe('gh-aw bootstrap documentation', () => {
     const guide = readLF(GUIDE);
     const agentGuide = readLF(AGENT_GUIDE);
+    const versionGate = extractVersionGate(guide);
+
+    it('accepts an existing exact v0.89.22 installation without reinstalling', () => {
+      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
+      expect(result.stderr).not.toContain('CALL remove');
+      expect(result.stderr).not.toContain('CALL install');
+    });
+
+    it('captures exact v0.89.22 version output emitted on stderr', () => {
+      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22', 'stderr');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
+      expect(result.stderr).not.toContain('CALL remove');
+      expect(result.stderr).not.toContain('CALL install');
+    });
+
+    it('removes pre-existing v0.89.21 and verifies a clean v0.89.22 install', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.22');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
+      expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+    });
+
+    it('fails closed when a clean reinstall persistently reports v0.89.21', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.21');
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('required gh-aw v0.89.22, but found v0.89.21');
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
+      expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+      expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
+        guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'),
+      );
+      expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
+        guide.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+    });
+
+    it('keeps the canonical skill version gate synchronized with the guide', () => {
+      expect(extractVersionGate(readLF(CANONICAL))).toBe(versionGate);
+    });
+
+    it('checks the staged installation before every bootstrap commit', () => {
+      expect(guide.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
+        .toHaveLength(2);
+    });
 
     it('requires agents to execute the complete quick start through PR creation', () => {
       expect(guide).toContain('**Agent action required:**');
@@ -300,6 +465,17 @@ describe('gh-aw-enlistment skill', () => {
       expect(agentGuide).toContain(
         '`/squad` slash commands become active only after that merge reaches',
       );
+    });
+
+    it('documents the native required review job without a credential prerequisite', () => {
+      const flatGuide = guide.replace(/\s+/g, ' ');
+      expect(flatGuide).toContain('stable required status context `Squad Review / review`');
+      expect(guide).toContain('No custom Checks API publisher');
+      expect(flatGuide).toContain('same-name source-identity question');
+      expect(flatGuide).toContain('context-only `Squad Review / review` requirement is advisory');
+      expect(agentGuide).toContain('requires no separate PAT');
+      expect(guide).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
+      expect(agentGuide).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
     });
 
     it('makes public-guide package verification fail fast and coherent', () => {

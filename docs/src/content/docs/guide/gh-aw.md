@@ -27,12 +27,33 @@ Seven steps from zero to a validated, reviewable Squad bootstrap:
 ```bash
 set -euo pipefail
 
-# 1. Verify GitHub access, resolve this repo, and install gh-aw if needed
+# 1. Verify GitHub access and prove the exact supported gh-aw version
 gh auth status
+
+# gh-aw-exact-version-start
+required_gh_aw_version="v0.89.22"
+gh_aw_version_output="$(gh aw --version 2>&1)" || gh_aw_version_output=""
+gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+
+if [ "${gh_aw_version}" != "${required_gh_aw_version}" ]; then
+  echo "Installing exact supported gh-aw ${required_gh_aw_version}."
+  gh extension remove gh-aw >/dev/null 2>&1 || true
+  gh extension install --pin "${required_gh_aw_version}" github/gh-aw
+  gh_aw_version_output="$(gh aw --version 2>&1)" || {
+    echo "STOP: gh-aw version could not be verified after clean installation." >&2
+    exit 1
+  }
+  gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+fi
+
+test "${gh_aw_version}" = "${required_gh_aw_version}" || {
+  echo "STOP: required gh-aw v0.89.22, but found ${gh_aw_version:-unavailable} after clean installation." >&2
+  exit 1
+}
+# gh-aw-exact-version-end
+
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
-gh extension install --force --pin v0.89.21 github/gh-aw
-test "$(gh aw --version | awk '{print $NF}')" = "v0.89.21"
 
 # 2. Require GitHub Issues, then allow GitHub Actions to create pull requests
 issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
@@ -75,7 +96,7 @@ gh aw compile --strict --approve
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
 
-# 6. Verify package ownership, exact committed bytes, all seven source/lock
+# 6. Verify package ownership, exact committed bytes, all eight source/lock
 # pairs, one coherent revision, and a clean strict recompile.
 node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-install \
@@ -84,6 +105,8 @@ node .github/workflows/shared/squad-install-verifier.mjs \
 
 # 7. Commit the generated files and open the bootstrap PR
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
 test -z "$(git diff --cached --diff-filter=D --name-only)"
 git commit -m "ci: add Squad agentic workflow"
@@ -98,10 +121,30 @@ gh pr checks --watch
 
 The quick start resolves the supported `dev` channel once, then installs the
 native package at that immutable 40-character commit. The package owns the
-complete seven-workflow set, runtime guards, integrity manifest, and enlistment
+complete eight-workflow set, runtime guards, integrity manifest, and enlistment
 skill as one update unit. For an upgrade, resolve or select one reviewed commit
 and reinstall that same package as described in
 [Upgrading the workflows](#upgrading-the-workflows).
+
+The bootstrap installation PR is an explicit human trust boundary. Because its
+base branch does not yet contain the Squad review guard and manifest, no job,
+check name, review comment, or workflow code introduced by that PR is accepted
+as a trusted Squad verdict. The canonical workflow reports
+`First-install manual boundary`, emits no `Squad-Review-Verdict:` record, and
+requires a human to review the verifier/compile evidence before merging.
+
+After merge, the default-branch bootstrap workflow opens the draft Cast PR.
+That PR is the activation canary: `Squad Review / review` must succeed using the
+base-controlled `pull_request_target` workflow plus the guard and manifest
+checked out from the Cast PR's exact base commit. The guard
+also requires matching exact-head provenance in the PR body and a durable
+GitHub Actions bot comment, so editable PR prose cannot rebind an old bootstrap
+run to a changed branch head. Only after that base-controlled canary succeeds
+should the Cast/bootstrap lifecycle be treated as trusted. Do not enable the
+required check in a ruleset before this post-install canary has been observed.
+The review uses only the native GitHub Actions/gh-aw runtime identity; it does
+not require a reviewer PAT, GitHub App, private key, secret, environment, or
+external service.
 
 Step 2 deliberately checks Issues before creating the bootstrap branch or
 installing any workflow. Squad commands are issue comments, and the merged
@@ -129,6 +172,13 @@ validated payload:
 
 - a draft Cast PR on `squad/bootstrap-cast`; and
 - `[Research Proposals] Agent-discovered repo opportunities`.
+
+Bootstrap submits the shared payload through one authenticated command. Runtime
+code assembles and validates its bounded chunks, then passes JSON directly to
+the existing typed safe-output tool; the agent never copies chunks into tool
+arguments. Missing, duplicate, reordered, malformed, oversized, or mismatched
+payloads fail closed before submission, and the write job independently
+revalidates the payload. A submission error is terminal, not permission to retry.
 
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
@@ -226,7 +276,7 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 The nested `workflows/aw.yml` is the canonical package registration. Its
 package boundary prevents unrelated repository skills or agents from being
-auto-discovered. It installs exactly seven workflows, fifteen runtime
+auto-discovered. It installs exactly eight workflows, seventeen runtime
 resources, one integrity manifest, and one enlistment skill from the same
 resolved commit. The installed top-level workflow set is:
 
@@ -237,6 +287,7 @@ resolved commit. The installed top-level workflow set is:
 - `squad-retro.md` and `squad-retro.lock.yml`
 - `squad-improvement-worker.md` and `squad-improvement-worker.lock.yml`
 - `squad-bootstrap.md` and `squad-bootstrap.lock.yml`
+- `squad-command-router.md` and `squad-command-router.lock.yml`
 
 The install must also contain these executable runtime resources:
 
@@ -245,6 +296,8 @@ The install must also contain these executable runtime resources:
 - `shared/squad-improvement-gate.mjs`
 - `shared/squad-retro-evidence.mjs`
 - `shared/squad-retro-provenance.mjs`
+- `shared/squad-review-guard.mjs`
+- `shared/squad-command-contract.mjs`
 
 The package owns every runtime resource. Because native gh-aw package resources
 allow JavaScript guards under `.github/workflows/shared/` but not Markdown or
@@ -271,7 +324,7 @@ configuration and compiles the workflow definitions into deterministic
 together and the PR contains the exact generated lockfiles that passed.
 
 Strict compilation is necessary but not sufficient. The post-install verifier
-also checks package ownership metadata, exact source and runtime bytes, all seven
+also checks package ownership metadata, exact source and runtime bytes, all eight
 source/lock pairs, and one coherent 40-character revision.
 
 ### Review first-install safe updates
@@ -309,10 +362,34 @@ gh aw compile --strict
 ```
 
 Run this exact command after any required first-install approval and before
-committing. It must report all seven workflows succeeded. `squad.md` currently
-emits one known warning because both slash-command and `github-actions[bot]`
-triggers are configured; the bot trigger is required for controlled worker
-continuation dispatches. Any error or any additional warning is a stop condition.
+committing. With gh-aw v0.89.22, require exactly two warnings, one occurrence
+of each exact diagnostic header below (including its workflow path):
+
+<!-- compile-warning-allowlist-start -->
+```text
+.github/workflows/squad-review.md: warning: pull_request_target is a very dangerous trigger.
+.github/workflows/squad.md: warning: Both slash_command and bots triggers are configured. If a bot listed in bots: posts a comment that starts with the slash command text (e.g., /command-name), it will trigger the workflow and occupy the concurrency slot, potentially blocking simultaneous manual invocations. To ensure the workflow only runs on explicit user commands, remove the 'bots:' field.
+```
+<!-- compile-warning-allowlist-end -->
+
+The native review advisory includes the compiler's standard explanation and
+Security Lab link. The following guard-policy dry-run lines are informational,
+not another warning. The bot-trigger warning is expected because `squad.md`
+configures both slash-command and `github-actions[bot]` triggers for controlled
+worker-continuation dispatches.
+
+Accept the native review advisory **only while all existing controls remain**:
+same-repository head restriction, base-controlled workflow source,
+`checkout: false` agent path, API-only inspection, exact run/head/attempt guard,
+least-privilege jobs, advisory verdict, and independent human approval.
+`pull_request_target` is not generally safe; this narrow exception neither
+weakens those controls nor authorizes PR-head execution.
+
+**STOP** on any error, or on **any additional warning** beyond these two exact
+documented diagnostics. Also STOP if either warning is missing, duplicated,
+changed, or attributed to another path, if the summary is not
+`Compiled 8 workflows: 8 succeeded, 2 warnings`, or if any required control is
+absent. Do not suppress warnings or use `--approve` to bypass this gate.
 
 Verify the complete source/lock surface:
 
@@ -334,6 +411,8 @@ done
 
 ```bash
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
 test -z "$(git diff --cached --diff-filter=D --name-only)"
 git commit -m "ci: add Squad agentic workflow"
@@ -351,13 +430,23 @@ state under `.github/aw/`, the installed skills, and `.gitattributes`. Review
 the complete generated diff in the bootstrap PR, address Copilot review
 feedback, and wait for required checks. Merge only after human approval.
 
+Consumer ignore rules such as `packages/` can silently omit the required
+`.github/aw/packages/` ownership JSON from directory staging. The staged verifier
+force-adds only the exact native package ownership JSON when ignored and
+untracked, never unrelated ignored files. It checks every manifest-required
+source, lock, runtime, skill, manifest and ownership file in the Git index
+against the verified working-tree bytes. Missing metadata, failed staging,
+omitted required files or staged digest mismatches stop the install before
+commit/push. Never force-add a directory or glob; rerun the gate after edits or
+restaging, including package upgrades.
+
 `gh aw add` may also create `.vscode/settings.json` to enable Copilot for
 Markdown workflow files. The command above intentionally leaves that optional
 editor setting untracked. Delete it if you do not want the local setting, or
 stage it explicitly if your team wants to share it.
 
 > **Troubleshooting:** If the lock files are missing, rerun `gh aw compile
-> --strict`. Do not open or merge the bootstrap PR until all seven source/lock
+> --strict`. Do not open or merge the bootstrap PR until all eight source/lock
 > pairs exist and strict compilation succeeds.
 
 Downloaded workflow audit data is local diagnostic output and should not be
@@ -421,14 +510,15 @@ Use this checklist for the initial bootstrap and after any workflow update:
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
 | Repository readiness | Confirm `.has_issues` is `true`; if it is `false`, enable it before installing workflows | GitHub Issues are available for `/squad` comments and the bootstrap research/proposals issue; insufficient administration permission stops the install before a bootstrap PR is created |
-| Install | Run the seven-workflow `gh aw add` command on a bootstrap branch | All seven `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
-| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All seven workflows succeed, only documented warnings remain, and all fourteen source/lock files exist |
-| Bootstrap review | Open the PR, request `@copilot`, wait for checks, and merge only after human approval | The default branch receives the complete generated install as one human-reviewable change |
-| Automatic bootstrap | Merge the workflow-installation PR | The dedicated workflow creates one draft Cast PR and one linked research-proposals issue from the same validated payload |
+| Install | Run the eight-workflow `gh aw add` command on a bootstrap branch | All eight `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
+| Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All eight workflows succeed, only documented warnings remain, and all sixteen source/lock files exist |
+| Bootstrap review | Open the installation PR, request `@copilot`, inspect verifier/compile evidence, and merge only after human approval | The run reports the explicit first-install manual boundary; no `Squad-Review-Verdict:` record or PR-controlled check is treated as trusted |
+| Activation canary | Merge the workflow-installation PR and inspect the automatically opened draft Cast PR | `Squad Review / review` succeeds with reserved bootstrap roles only after loading the guard and manifest from the exact base commit and validating the default-branch bootstrap run |
+| Automatic bootstrap | Continue only after the Cast PR activation canary succeeds | The dedicated workflow's draft Cast PR and linked research-proposals issue share the same validated base-controlled provenance |
 | Cast persistence | Review the Cast PR before merging | The PR contains `.squad/casting/policy.json`, `registry.json`, and `history.json`, plus the team, routing, charters, Copilot agent, and `meet-the-squad.md` |
 | Research backlog | Follow the proposal issue through research, triage, plan, and activate | The journey ends with assignable implementation issues; `/squad implement` is used only on those generated tasks |
 | Cast checks | Open the linked Cast PR and inspect its checks; if application CI is `action_required`, approve that workflow run and wait for it to finish | Copilot review and the repository's normal build, test, lint, and security checks complete before merge |
-| Handoffs | Run `/squad implement` on a ready issue, then `/squad review` on its PR | The dispatcher starts the appropriate isolated worker; the reviewer posts one advisory verdict for the current head SHA |
+| Handoffs | Run `/squad implement` on a ready issue, then review its PR | The dispatcher starts the appropriate isolated worker; automatic PR review supplies the independent current-head verdict; `/squad review` explains how to rerun that exact automatic check |
 | Rerun | Repeat the same command after a cancellation or uncertain result | Existing Cast and implementation PRs are detected instead of duplicated; an unchanged reviewed head is not reviewed twice |
 | Recovery | Fix the named failing activation step, then use **Re-run failed jobs**; for an interrupted command, rerun the identical `/squad` command | Activation uploads no partial state artifact, and command-specific idempotency resumes from GitHub's committed PR, issue, comment, and review state |
 
@@ -477,7 +567,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Activation | `/squad plan activate` | Create GitHub issues from an accepted plan | Terminal step; creates real GitHub issues |
 | Activation | `/squad plan activate phase {N}` | Create GitHub issues for only Phase N | Use when accept didn't auto-activate |
 | Implementation | `/squad implement` | Implement an issue, or start the next ready wave of an epic | Dispatches an isolated implementation worker |
-| Review | `/squad review` | Independently review the current pull request | Advisory `COMMENT` or `REQUEST_CHANGES`; human approval remains mandatory |
+| Review | `/squad review` | Show how to rerun the current pull request's automatic independent review | Does not dispatch branch-selected code; human approval remains mandatory |
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
 | Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
 | Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
@@ -606,7 +696,7 @@ merge, change permissions or secrets, or upgrade Squad.
 
 ### Retrospective auto-implementation (opt-in)
 
-The standard install contains all seven workflows, including the dormant
+The standard install contains all eight workflows, including the dormant
 improvement worker. **Report/proposal-only remains the default.** The lifecycle is
 diagnosis → durable action issue → worker → **draft PR** → human review/merge →
 later measurement of closure and recurrence. Retro never edits code, creates a
@@ -1425,15 +1515,15 @@ The implementation worker performs an internal self-review before opening a PR:
 4. **Diff review** — the worker reviews its own final diff against the issue acceptance criteria before calling `create-pull-request`
 5. **Protected-file guard** — changes to protected paths trigger a review request on the PR rather than a direct commit
 
-After the PR is opened, `squad-review` provides an independent advisory review.
-You can start it in either of these ways:
-
-- **Manual:** Comment `/squad review` on a same-repository pull request. The main
-  Squad router relays the pull request number, current head SHA, and manual
-  origin to the isolated reviewer workflow.
-- **Automatic:** A same-repository pull request triggers review on
-  `ready_for_review` and `synchronize` when it has recognized Squad or Copilot
-  provenance. Fork pull requests are refused.
+After the PR is opened, `squad-review` provides an independent review.
+Every same-repository pull request triggers review on `opened`, `reopened`,
+`ready_for_review` and `synchronize`; fork pull requests are refused. The
+workflow runs as `pull_request_target` from immutable default-branch context,
+sets `checkout: false`, and has no `workflow_dispatch` trigger. It never checks
+out or executes pull request files, actions, scripts, guards, or manifests; the
+agent reads the diff through GitHub APIs. Comment `/squad review` to receive
+instructions for opening the existing base-controlled run and using GitHub's
+**Re-run all jobs** action.
 
 The reviewer classifies provenance in this priority order:
 
@@ -1445,12 +1535,40 @@ The reviewer classifies provenance in this priority order:
 4. Unattributed
 
 Malformed higher-priority evidence fails closed instead of falling through to a
-weaker classification. Automatic review refuses unattributed pull requests;
-manual review can continue as `Unattributed (manual)`. A
-`Squad-Review-Head: <SHA>` marker deduplicates review for an unchanged head, and
-per-PR concurrency cancels stale runs after a new push.
+weaker classification. Classification alone is not authorization. Every PR,
+including a human- or Copilot-authored PR, must commit `.squad-review.json`:
 
-### Advisory verdicts and reviewer independence
+```json
+{
+  "schema": "squad-review-author/v1",
+  "repository": "owner/repo",
+  "issue": 123,
+  "author_agent": "implementer",
+  "reviewer_agent": "reviewer"
+}
+```
+
+Replace those IDs with active canonical keys from the committed
+`.squad/casting/registry.json` (`squad-agent-provenance/v1`) at the PR base.
+Each entry's `persistent_name` must equal its key. The reviewer must differ
+from the accountable author. The implement worker writes this attribution;
+other authoring paths must supply it explicitly. Display names, branch names,
+labels, and GitHub logins do not establish independent logical agent identity.
+This is auditable logical attribution, not proof of a separate account or model.
+Registry migration and legitimate attribution changes require human review.
+
+The trusted guard reads attribution from the exact PR head commit through the
+GitHub API, never by checking out or executing the PR. A
+`Squad-Review-Verdict:` JSON record binds repository, PR, base SHA, head SHA,
+immutable workflow SHA, both agent IDs, verdict, UTC timestamp, and the
+`pull_request_target` workflow run/attempt.
+Exactly one current-head record is required. The legacy
+`Squad-Review-Head: <SHA>` marker remains human-readable but is not authorization.
+Per-PR concurrency cancels stale runs; both output and final gate re-fetch the
+live PR head. Missing, duplicate, malformed, stale, or equal-identity evidence
+fails closed. An unchanged head reuses its validated record, not arbitrary text.
+
+### Enforced verdicts and reviewer independence
 
 The reviewer can add a bounded summary comment, inline review comments, and
 exactly one pull request review. It returns:
@@ -1460,6 +1578,25 @@ exactly one pull request review. It returns:
   or required-but-missing changeset
 - `COMMENT` when findings are advisory or no merge blocker is established
 
+The trusted writer publishes these logical verdicts in a native `COMMENT`
+review: GitHub does not permit an account to approve or request changes on its
+own PR. The final native job is named `review`, so GitHub exposes the stable
+required status context `Squad Review / review`. It uses `if: always()` and
+fails unless the agent, safe-output processing, and deterministic current-head
+verdict gate all succeed. The relay independently binds the verdict to the exact
+automatic `pull_request_target` run, workflow path, immutable base/workflow SHA,
+PR base/head, run ID and attempt, and that run attempt's successful `review`
+job. No custom Checks API publisher, reviewer credential, environment, hosted
+attestor, or external service is involved.
+
+Each successful run attempt starts with no verdict evidence for its exact run ID
+and attempt, then publishes exactly one fresh safe-output review. Pre-existing
+exact-attempt evidence is rejected rather than accepted through a `noop` or
+deduplication path, because another PR-controlled workflow shares the
+`github-actions[bot]` identity and could otherwise pre-seed a valid-looking
+record. A rerun receives an incremented attempt and must publish a new review;
+evidence from prior attempts is neither replayed nor reused.
+
 The reviewer has no file-editing, issue-creation,
 pull-request-creation, remediation, merge, or `APPROVE` authority. Its verdict
 does not replace branch protection, required status checks, or a human
@@ -1468,17 +1605,84 @@ reviewer's approval. Human approval remains mandatory.
 The lifecycle is:
 
 ```
-/squad implement → implementation PR opened → advisory Squad review → human review + CI → merge → epic relay (next wave)
+/squad implement → implementation PR opened → independent Squad review check → human review + CI → merge → verdict-checked epic relay
 ```
 
-### Advisory fast path
+The epic relay repeats the guard before running the agent and before processing
+any outputs. It requires a clearing verdict and the successful native `review`
+job from the exact base-controlled run attempt completed **before merge** for
+the merged PR's **head SHA**, not the merge commit.
+Bypassing a missing Squad review at merge
+cannot silently advance the epic. Missing evidence stops the run with an explicit
+error; it never dispatches the next wave.
 
-Because review is advisory, it is possible to merge without waiting for an
-automatic review or manually running `/squad review`. That fast path gives up an
-independent, head-SHA-specific check of the linked issue's acceptance criteria,
-Squad routing and charter compliance, protected-file boundaries, focused tests,
-and changeset coverage. Your repository's human approval and required checks
-still decide whether the pull request can merge.
+### Required check rollout (repository administrator)
+
+The stable literal check name is **`Squad Review / review`**.
+There is no manual reviewer run. `/squad review` only explains how to rerun the
+existing automatic `pull_request_target` run, and only that exact base-controlled
+run ID, attempt, native authority job, and exact-head verdict can satisfy the
+relay.
+
+Brady (or the consumer repository administrator) must install/merge the complete
+generated bundle through the explicit human installation boundary, then observe
+a successful base-controlled `pull_request_target` check on the post-install
+draft Cast PR before
+changing rulesets. The installation PR itself is not evidence: its workflow and
+check name are controlled by that PR. Record the activation canary's exact
+automatic run ID/attempt, workflow path and base SHA, native `review` job
+conclusion, exact PR head SHA, and the job's native `Squad Review / review`
+check-run binding. Enable the required context on `dev` **only after advisory soak** has met the
+evidence gate in #1734; promote to `main` after the agreed soak. This change
+does not modify repository rulesets and does not claim live soak evidence. Keep
+native human approving-review requirements enabled independently, with stale
+approvals dismissed. The bot's `COMMENT` is not a human approval.
+Require branches to be up to date before merge (or an equivalent merge-queue
+freshness guarantee) so the required review run is always based on the current
+default-branch workflow and guard. Merge the workflow installation first,
+observe the post-merge Cast canary, and only then enable the required context.
+
+GitHub's context-only required-status-check configuration identifies the
+context by name and does not, by itself, demonstrate that another workflow
+cannot emit the same name. The relay is not vulnerable to that ambiguity
+because it reads the exact trusted run attempt's jobs. For authoritative merge enforcement, use a source-bound required-workflow or
+equivalent ruleset when the repository's GitHub plan and policy expose one. A
+context-only `Squad Review / review` requirement is advisory because a
+PR-controlled workflow may be able to emit the same workflow/job name through
+the shared GitHub Actions identity. If source-bound enforcement is unavailable,
+keep the same-name source-identity question explicit and retain independent
+human review rather than relying on that context alone; do not invent a
+credential or external attestor as a workaround.
+Because rulesets apply to all PRs, existing human/Copilot PRs must add committed
+attribution before enabling the requirement. Fork review remains unsupported;
+the workflow rejects foreign head repositories even though its base-controlled
+trigger is `pull_request_target`.
+
+### Auditable human override
+
+Only a valid logical `REQUEST_CHANGES` can be overridden. A repository
+administrator must post a **new, unedited PR conversation comment** containing
+one standalone line (substitute the actual repository, PR, reviewed head SHA,
+native review ID, and a meaningful reason):
+
+```text
+Squad-Review-Override: {"schema":"squad-review-override/v1","repository":"owner/repo","pull_request":456,"head_sha":"0123456789abcdef0123456789abcdef01234567","review_id":789,"reason":"False positive: explanation and evidence for accepting this risk."}
+```
+
+Then rerun the original base-controlled **`pull_request_target` workflow**, not
+the manual dispatcher.
+The gate checks the human account type and live administrator permission,
+record shape, exact SHA/review binding, creation time after the verdict and
+before merge, and absence of edits or duplicate override records. Do not edit
+an override or post competing overrides; ambiguous records fail closed and
+require a corrected new head. The GitHub comment, actor, time, reason, and run
+are the audit trail. An override cannot rescue missing provenance, missing or
+malformed verdicts, stale heads, equal identities, or failed workflow evidence,
+and never replaces human approval.
+
+This enforces independent review, not the broader rejected-author revision
+lockout protocol. Tracking which agent contributes to a later revision remains
+separate work in #1828.
 
 ---
 
@@ -1663,6 +1867,31 @@ then reapply them before the final compile. Never customize generated
 `.lock.yml` files. The verifier rejects a mixed revision, stale digest, missing
 ownership record, missing source/lock pair, or absent runtime resource and
 prints the exact safe recovery commands.
+
+The schema-v2 integrity manifest records two complete compiled lock digests per
+workflow: `lock_sha256` for a per-workflow source annotation and
+`package_lock_sha256` for a package-root annotation. gh-aw v0.89.22 emits
+`bradygaster/squad/workflows@SHA` for direct package includes, but can emit
+`bradygaster/squad/workflows/package/<workflow>.md@SHA` when installing dispatched
+dependencies. Fresh and forced installs can therefore contain different mixtures.
+The verifier selects one digest from the exact, ownership- and source-validated
+annotation; it never tries both until one passes. Compiled source comments,
+URLs, action pins, permissions and runtime bytes remain integrity-checked.
+No additional fields are removed during lock normalization.
+
+Manifest generation and installation test fixtures seed isolated compiler action
+locks with the immutable `setup` and `setup-cli` pins for gh-aw v0.89.22. Both
+source variants use the real strict compiler and validate its version and emitted
+action pins. This avoids a second network resolution returning a mutable version
+tag when credentials or the API are unavailable. Missing or altered pins fail
+generation; mutable-tag compiled locks still fail installation integrity.
+
+This fixes the post-merge installation failure in #2103: the old generator and
+local-consumer tests covered only per-workflow annotations, while the native
+installer also emitted package-root annotations. The difference was installation
+provenance, not the squash commit identity or a generated timestamp. Old manifests
+or manifests missing either digest are rejected; upgrade the entire package,
+including the verifier and manifest, using the block above.
 
 Use the complete upgrade block even when a failure appears limited to the
 first-run bootstrap workflow. Updating only `squad-bootstrap.md` is unsupported

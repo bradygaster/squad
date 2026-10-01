@@ -1,0 +1,75 @@
+name: Repo Health Shadow (Non-Authoritative)
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/squad-repo-health.yml'
+      - '.github/workflows/squad-repo-health-shadow.yml'
+      - 'scripts/architectural-review.mjs'
+      - 'scripts/check-squad-leakage.mjs'
+      - 'scripts/git-path-decoder.mjs'
+      - 'scripts/repo-health-comment.mjs'
+      - 'scripts/security-review.mjs'
+      - 'test/scripts/check-squad-leakage.test.ts'
+      - 'test/scripts/repo-health-comment-transport.test.ts'
+
+# This workflow intentionally runs the PR-head implementation with a read-only token.
+# Its scanner output and fake-Octokit reporter exercise are shadow evidence only.
+# The pull_request_target workflow remains the authoritative, base-controlled writer.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  shadow:
+    name: PR-head scanner/reporter shadow (non-authoritative)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Run PR-head scanners as shadow evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+          {
+            echo '# Repo Health PR-head Shadow'
+            echo
+            echo '> **NON-AUTHORITATIVE:** These scanners came from the PR head and have no write token.'
+            printf '%s\n' "> Only a post-merge canary through \`Repo Health\` is authoritative for workflow/reporter changes."
+            echo
+            echo '## Squad leakage'
+            echo '```text'
+            node scripts/check-squad-leakage.mjs "${{ github.event.pull_request.base.sha }}" HEAD
+            echo '```'
+            echo
+            echo '## Architectural review'
+            echo '```text'
+            node scripts/architectural-review.mjs "${{ github.event.pull_request.base.sha }}" HEAD
+            echo '```'
+            echo
+            echo '## Security review'
+            echo '```text'
+            node scripts/security-review.mjs "${{ github.event.pull_request.base.sha }}" HEAD
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install test dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Exercise real reporter scripts with fake Octokit
+        run: npx --no-install vitest run test/scripts/repo-health-comment-transport.test.ts

@@ -475,14 +475,47 @@ function parseCastingPair(registryRaw, historyRaw, source, errors, options = {})
 
 function committedRegistry(root, errors) {
   try {
+    execFileSync(
+      'git',
+      ['rev-parse', '--verify', 'HEAD'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  } catch (error) {
+    errors.push(`registry base: committed HEAD is unavailable (${error.message})`);
+    return null;
+  }
+
+  const registryPath = '.squad/casting/registry.json';
+  const historyPath = '.squad/casting/history.json';
+  let committedPaths;
+  try {
+    committedPaths = new Set(execFileSync(
+      'git',
+      ['ls-tree', '-r', '--name-only', 'HEAD', '--', registryPath, historyPath],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim().split('\n').filter(Boolean));
+  } catch (error) {
+    errors.push(`registry base: committed registry/history pair is unavailable (${error.message})`);
+    return null;
+  }
+  const hasRegistry = committedPaths.has(registryPath);
+  const hasHistory = committedPaths.has(historyPath);
+
+  if (!hasRegistry && !hasHistory) return null;
+  if (hasRegistry !== hasHistory) {
+    errors.push('registry base: complete committed registry/history pair is required');
+    return null;
+  }
+
+  try {
     const registryRaw = execFileSync(
       'git',
-      ['show', 'HEAD:.squad/casting/registry.json'],
+      ['show', `HEAD:${registryPath}`],
       { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
     const historyRaw = execFileSync(
       'git',
-      ['show', 'HEAD:.squad/casting/history.json'],
+      ['show', `HEAD:${historyPath}`],
       { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
     return parseCastingPair(
@@ -498,7 +531,7 @@ function committedRegistry(root, errors) {
   }
 }
 
-function parseRegistry(root, errors) {
+function parseRegistry(root, errors, gitRoot = root) {
   let registryRaw;
   let historyRaw;
   try {
@@ -510,7 +543,7 @@ function parseRegistry(root, errors) {
   }
   const registry = parseCastingPair(registryRaw, historyRaw, 'registry', errors);
   if (!registry) return [];
-  const base = committedRegistry(root, errors);
+  const base = committedRegistry(gitRoot, errors);
   if (base) {
     const baseRevision = base.schema === 'squad-agent-provenance/v1' ? base.revision : 0;
     if (registry.revision <= baseRevision) {
@@ -598,7 +631,7 @@ function validateCapabilities(coordinator, active, routingRows, errors) {
   }
 }
 
-export function validateCastTree({ root, payloadPath }) {
+export function validateCastTree({ root, payloadPath, gitRoot = root }) {
   const errors = [];
   let payloadValue;
   try {
@@ -627,7 +660,7 @@ export function validateCastTree({ root, payloadPath }) {
     if (!payload.includes(required)) errors.push(`payload: missing required path ${required}`);
   }
 
-  const active = parseRegistry(root, errors);
+  const active = parseRegistry(root, errors, gitRoot);
   const activeNames = new Set(active.map(({ name }) => name));
   const activeCharters = active.map(({ id }) => `.squad/agents/${id}/charter.md`);
   const expectedPayload = new Set([...CORE_PAYLOAD, ...activeCharters, ...REQUIRED_BUILTIN_CHARTERS]);

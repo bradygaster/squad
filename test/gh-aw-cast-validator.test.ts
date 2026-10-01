@@ -329,6 +329,18 @@ function commitRegistry(root: string): void {
   expect(spawnSync('git', ['commit', '-qm', 'versioned registry'], { cwd: root }).status).toBe(0);
 }
 
+function removeCommittedCastingFiles(root: string, ...paths: string[]): void {
+  expect(spawnSync('git', [
+    'rm',
+    '--cached',
+    '--quiet',
+    '--force',
+    '--',
+    ...paths,
+  ], { cwd: root }).status).toBe(0);
+  expect(spawnSync('git', ['commit', '-qm', 'remove committed casting files'], { cwd: root }).status).toBe(0);
+}
+
 function advanceHistory(root: string, revision: number, generatedAt: string): void {
   const historyPath = join(root, '.squad', 'casting', 'history.json');
   const history = JSON.parse(readFileSync(historyPath, 'utf8'));
@@ -489,6 +501,69 @@ describe('GH-AW Cast final-tree validator', () => {
     )?.[1];
     expect(commandDigest, 'runtime command must pin the canonical validator digest').toBeDefined();
     expect(commandDigest).toBe(sha256(canonical));
+  });
+
+  it.each([
+    {
+      name: 'no committed pair',
+      mutateBase: (root: string) => removeCommittedCastingFiles(
+        root,
+        '.squad/casting/registry.json',
+        '.squad/casting/history.json',
+      ),
+      expectedStatus: 0,
+      expectedError: undefined,
+    },
+    {
+      name: 'only a committed registry',
+      mutateBase: (root: string) => removeCommittedCastingFiles(
+        root,
+        '.squad/casting/history.json',
+      ),
+      expectedStatus: 1,
+      expectedError: /complete committed registry\/history pair is required/,
+    },
+    {
+      name: 'only a committed history',
+      mutateBase: (root: string) => removeCommittedCastingFiles(
+        root,
+        '.squad/casting/registry.json',
+      ),
+      expectedStatus: 1,
+      expectedError: /complete committed registry\/history pair is required/,
+    },
+    {
+      name: 'a valid committed pair',
+      mutateBase: (_root: string) => {},
+      expectedStatus: 0,
+      expectedError: undefined,
+    },
+    {
+      name: 'a malformed committed pair',
+      mutateBase: (root: string) => {
+        write(root, '.squad/casting/registry.json', '{');
+        expect(spawnSync('git', [
+          'add',
+          '.squad/casting/registry.json',
+          '.squad/casting/history.json',
+        ], { cwd: root }).status).toBe(0);
+        expect(spawnSync('git', ['commit', '-qm', 'malformed committed pair'], { cwd: root }).status).toBe(0);
+        writeCanonicalGenesisPair(root);
+      },
+      expectedStatus: 1,
+      expectedError: /registry base: committed registry\/history pair is unavailable or malformed/,
+    },
+  ])('handles $name at HEAD through the distributed validator', ({
+    mutateBase,
+    expectedStatus,
+    expectedError,
+  }) => {
+    const fixture = createFixture();
+    mutateBase(fixture.root);
+    const result = validateWorkflowResource(fixture.root, fixture.payload);
+    expect(result.status, result.stderr).toBe(expectedStatus);
+    if (expectedError) expect(result.stderr).toMatch(expectedError);
+    else expect(result.stderr).not.toContain('registry base:');
   });
 
   it.each([
@@ -827,9 +902,10 @@ describe('GH-AW Cast final-tree validator', () => {
     installResource(fixture.root, "console.log('Cast validation passed.');\n");
     const result = runValidatorCommand(fixture);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toMatch(
-      /Cast validator SHA-256 mismatch: expected 62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce, got [a-f0-9]{64}\./,
+    expect(result.stderr).toContain(
+      `Cast validator SHA-256 mismatch: expected ${sha256(resourceSource())}, got `,
     );
+    expect(result.stderr).toMatch(/got [a-f0-9]{64}\./);
     expect(result.stdout).not.toContain('Cast validation passed.');
     expect(authorizesPullRequest(result)).toBe(false);
   });

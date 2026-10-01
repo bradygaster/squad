@@ -244,6 +244,9 @@ safe-outputs:
         - go.mod
         - go.sum
     excluded-files:
+      # Release history remains human-controlled even though gh-aw does not
+      # currently include CHANGELOG.md in its built-in protected-file catalog.
+      - "CHANGELOG.md"
       # Never authorize vendored or generated dependency content, even once a
       # manifest basename above is excluded from protection in a later slice.
       # `excluded-files` strips these paths from the patch structurally, before

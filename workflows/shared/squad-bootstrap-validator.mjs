@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -96,6 +97,12 @@ export function reconstructBootstrapPayload(envelope) {
   }
   if (envelope.payload_encoding !== 'base64') {
     throw new Error('payload_encoding must be base64.');
+  }
+  for (const field of Object.keys(envelope)) {
+    if (field.startsWith('payload_chunk_') && field !== 'payload_chunk_count'
+      && !Array.from({ length: PAYLOAD_MAX_CHUNKS }, (_, index) => chunkField(index)).includes(field)) {
+      throw new Error(`${field} is not a valid fixed chunk slot.`);
+    }
   }
 
   const chunkCount = parseBoundedDecimal(envelope.payload_chunk_count, 'payload_chunk_count', {
@@ -525,15 +532,17 @@ export function createBootstrapResearchComment(issueBodyText, issueNumber) {
 
 export function validateBootstrapPayload({
   root,
+  gitRoot = root,
   payloadPath,
   repository,
   defaultBranch,
   linkMode,
+  payloadText,
 }) {
   const errors = [];
   let payload;
   try {
-    payload = JSON.parse(readFileSync(payloadPath, 'utf8'));
+    payload = JSON.parse(payloadText ?? readFileSync(payloadPath, 'utf8'));
   } catch (error) {
     return [`payload: invalid JSON (${error.message})`];
   }
@@ -580,7 +589,7 @@ export function validateBootstrapPayload({
   try {
     const castPayloadPath = join(tempDir, 'cast-paths.json');
     writeFileSync(castPayloadPath, `${JSON.stringify(castPaths)}\n`);
-    errors.push(...validateCastTree({ root, payloadPath: castPayloadPath }));
+    errors.push(...validateCastTree({ root, gitRoot, payloadPath: castPayloadPath }));
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -656,8 +665,46 @@ export function validateBootstrapPayload({
   return [...new Set(errors)].sort();
 }
 
+export function submitBootstrapEnvelope(envelope, options) {
+  const payloadText = reconstructBootstrapPayload(envelope);
+  if (payloadText !== readFileSync(options.payloadPath, 'utf8')) {
+    throw new Error('Bootstrap envelope does not match the generated payload bytes.');
+  }
+  const errors = validateBootstrapPayload({ ...options, payloadText });
+  if (errors.length > 0) {
+    throw new Error(`Squad bootstrap validation failed:\n${errors.map((error) => `- ${error}`).join('\n')}`);
+  }
+  // The mounted CLI invokes the same typed safe-output tool without model transcription.
+  const result = spawnSync('safeoutputs', ['materialize_bootstrap', '.'], {
+    input: JSON.stringify(envelope),
+    encoding: 'utf8',
+    timeout: 60_000,
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(`Bootstrap safe-output submission failed: ${
+      result.error?.message || result.stderr || `exit ${result.status}, signal ${result.signal}`
+    }. Do not retry: submission may already have been recorded.`);
+  }
+}
+
 function main() {
   const cliArgs = process.argv.slice(2);
+  if (cliArgs[0] === '--submit-envelope') {
+    try {
+      const envelope = JSON.parse(readFileSync(resolve(cliArgs[1]), 'utf8'));
+      const options = parseArgs(cliArgs.slice(2));
+      if (options.linkMode !== 'placeholder') {
+        throw new Error('Bootstrap submission requires --link-mode placeholder.');
+      }
+      submitBootstrapEnvelope(envelope, options);
+      console.log('Squad bootstrap validation passed; materialize_bootstrap submitted.');
+    } catch (error) {
+      console.error(`Squad bootstrap submission failed:\n- ${error.message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
   if (cliArgs.length === 2 && cliArgs[0] === '--encode-payload') {
     try {
       const payloadText = readFileSync(resolve(cliArgs[1]), 'utf8');

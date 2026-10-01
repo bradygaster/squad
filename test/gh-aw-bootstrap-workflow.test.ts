@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   cpSync,
+  chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,9 +11,10 @@ import {
 } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
 import {
   BOOTSTRAP_BRANCH,
   BOOTSTRAP_ISSUE_MARKER,
@@ -28,6 +31,7 @@ import {
   findBootstrapResearchArtifacts,
   isBootstrapResearchSeed,
   reconstructBootstrapPayload,
+  validateBootstrapPayload,
 } from '../workflows/shared/squad-bootstrap-validator.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -375,6 +379,48 @@ function validateFixture(
   );
 }
 
+function submissionFixture() {
+  const fixture = createFixture();
+  const targetBytes = 40_843;
+  const remaining = targetBytes - Buffer.byteLength(JSON.stringify(fixture.payload));
+  const rationale = ' Repository evidence informs this proposed specialist; human review is required before activation.';
+  fixture.payload.pr_body += rationale.repeat(Math.ceil(remaining / rationale.length)).slice(0, remaining);
+  const text = JSON.stringify(fixture.payload);
+  expect(Buffer.byteLength(text)).toBe(targetBytes);
+  writeFileSync(fixture.payloadPath, text);
+  const envelope = createBootstrapPayloadEnvelope(text) as Record<string, string>;
+  expect(envelope.payload_chunk_count).toBe('7');
+  const envelopePath = join(fixture.root, 'envelope.json');
+  writeFileSync(envelopePath, JSON.stringify(envelope));
+  const capture = join(fixture.root, 'calls.jsonl');
+  const proxy = join(fixture.root, 'bin/safeoutputs');
+  write(fixture.root, 'bin/safeoutputs', `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (JSON.stringify(args) !== JSON.stringify(['materialize_bootstrap', '.'])) process.exit(2);
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+if (Object.values(input).some(value => typeof value !== 'string' || Buffer.byteLength(value) > 10240)) process.exit(3);
+fs.appendFileSync(process.env.CAPTURE, JSON.stringify(input) + '\\n');
+if (process.env.PROXY_FAIL === '1') { console.error('proxy rejected request'); process.exit(4); }
+console.log('tool accepted');
+`);
+  chmodSync(proxy, 0o700);
+  const env = {
+    ...process.env,
+    PATH: `${join(fixture.root, 'bin')}:${process.env.PATH}`,
+    CAPTURE: capture,
+    GITHUB_WORKSPACE: fixture.root,
+    GITHUB_REPOSITORY: 'octo/example',
+    DEFAULT_BRANCH: 'main',
+  };
+  const submit = (overrides = {}) => spawnSync(process.execPath, [
+    VALIDATOR, '--submit-envelope', envelopePath,
+    '--root', fixture.root, '--payload', fixture.payloadPath,
+    '--repository', 'octo/example', '--default-branch', 'main', '--link-mode', 'placeholder',
+  ], { env: { ...env, ...overrides }, encoding: 'utf8' });
+  return { ...fixture, text, envelope, envelopePath, capture, proxy, env, submit };
+}
+
 function compileWorkflow(source = WORKFLOW): string {
   const root = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-compile-'));
   workspaces.push(root);
@@ -389,6 +435,37 @@ function compileWorkflow(source = WORKFLOW): string {
     { cwd: root, encoding: 'utf8', stdio: 'pipe', timeout: 120000 },
   );
   return readFileSync(join(workflowDir, 'squad-bootstrap.lock.yml'), 'utf8');
+}
+
+function materializeCandidatePayloadFromWorkflow(
+  source: string,
+  candidate: string,
+  candidatePayload: unknown,
+): string {
+  const validateStart = source.indexOf('const validate = (candidatePayload, linkMode) => {');
+  const validationStart = source.indexOf(
+    'const errors = validatorModule.validateBootstrapPayload({',
+    validateStart,
+  );
+  expect(validateStart).toBeGreaterThan(-1);
+  expect(validationStart).toBeGreaterThan(validateStart);
+  const validatePrelude = source.slice(validateStart, validationStart);
+  const candidatePayloadPath = join(
+    candidate,
+    '.github/workflows/squad-bootstrap-payload.json',
+  );
+  const mkdirStatement =
+    'mkdirSync(dirname(candidatePayloadPath), { recursive: true });';
+  const writeStatement =
+    'writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\\n`);';
+  const mkdirIndex = validatePrelude.indexOf(mkdirStatement);
+  const writeIndex = validatePrelude.indexOf(writeStatement);
+  expect(writeIndex).toBeGreaterThan(-1);
+  if (mkdirIndex >= 0 && mkdirIndex < writeIndex) {
+    mkdirSync(dirname(candidatePayloadPath), { recursive: true });
+  }
+  writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\n`);
+  return candidatePayloadPath;
 }
 
 afterAll(() => {
@@ -556,6 +633,28 @@ describe('automatic Squad bootstrap workflow', () => {
     const result = validateFixture(fixture);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe('Squad bootstrap validation passed.\n');
+  });
+
+  it('validates an isolated candidate against the trusted checkout Git history', () => {
+    const fixture = createFixture();
+    const candidate = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-candidate-'));
+    workspaces.push(candidate);
+    cpSync(fixture.root, candidate, {
+      recursive: true,
+      filter: source => relative(fixture.root, source).split('/')[0] !== '.git',
+    });
+    expect(existsSync(join(candidate, '.git'))).toBe(false);
+    const options = {
+      root: candidate,
+      payloadPath: join(candidate, 'payload.json'),
+      repository: 'octo/example',
+      defaultBranch: 'main',
+      linkMode: 'placeholder',
+    };
+    expect(validateBootstrapPayload(options)).toContainEqual(
+      expect.stringContaining('registry base: committed HEAD is unavailable'),
+    );
+    expect(validateBootstrapPayload({ ...options, gitRoot: fixture.root })).toEqual([]);
 
     const resolved = {
       ...fixture.payload,
@@ -565,6 +664,26 @@ describe('automatic Squad bootstrap workflow', () => {
     const resolvedResult = validateFixture(fixture, 'resolved');
     expect(resolvedResult.status, resolvedResult.stderr).toBe(0);
     expect(resolvedResult.stdout).toBe('Squad bootstrap validation passed.\n');
+  });
+
+  it('creates the missing candidate payload parent before materialization', () => {
+    const candidate = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-candidate-'));
+    workspaces.push(candidate);
+    expect(existsSync(join(candidate, '.github/workflows'))).toBe(false);
+
+    const payload = { schema_version: '1', repository: 'octo/example' };
+    const payloadPath = materializeCandidatePayloadFromWorkflow(WORKFLOW, candidate, payload);
+    expect(readFileSync(payloadPath, 'utf8')).toBe(`${JSON.stringify(payload)}\n`);
+
+    const mutatedCandidate = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-candidate-'));
+    workspaces.push(mutatedCandidate);
+    const mutated = WORKFLOW.replace(
+      '                mkdirSync(dirname(candidatePayloadPath), { recursive: true });\n',
+      '',
+    );
+    expect(() =>
+      materializeCandidatePayloadFromWorkflow(mutated, mutatedCandidate, payload),
+    ).toThrow(/ENOENT/);
   });
 
   it('transports a shared payload larger than the old single-string limit byte-identically', () => {
@@ -601,12 +720,8 @@ describe('automatic Squad bootstrap workflow', () => {
   });
 
   it('fails closed for every chunk transport corruption class', () => {
-    const payloadText = JSON.stringify({
-      shared: 'Cast and research stay in one validated payload.',
-      content: 'x'.repeat(PAYLOAD_CHUNK_BYTES * 2),
-    });
-    const valid = createBootstrapPayloadEnvelope(payloadText) as Record<string, string>;
-    expect(Number(valid.payload_chunk_count)).toBeGreaterThanOrEqual(3);
+    const fixture = submissionFixture();
+    const valid = fixture.envelope;
 
     const mutations: Array<[string, (envelope: Record<string, string>) => void, RegExp]> = [
       ['missing', (envelope) => delete envelope.payload_chunk_00, /payload_chunk_00 is missing/],
@@ -653,6 +768,8 @@ describe('automatic Squad bootstrap workflow', () => {
         /decoded length does not match|length mismatch/,
       ],
       ['hash mismatch', (envelope) => { envelope.payload_sha256 = '0'.repeat(64); }, /SHA-256 mismatch/],
+      ['noncanonical count', (envelope) => { envelope.payload_chunk_count = '07'; }, /canonical decimal/],
+      ['invalid slot', (envelope) => { envelope.payload_chunk_16 = '16:QQ=='; }, /not a valid fixed chunk slot/],
       [
         'trailing data',
         (envelope) => {
@@ -680,7 +797,74 @@ describe('automatic Squad bootstrap workflow', () => {
         () => reconstructBootstrapPayload(envelope),
         `${name} corruption must fail closed`,
       ).toThrow(error);
+      writeFileSync(fixture.envelopePath, JSON.stringify(envelope));
+      const result = fixture.submit();
+      expect(result.status, name).not.toBe(0);
+      expect(result.stderr, name).toMatch(error);
+      expect(existsSync(fixture.capture), `${name} must not invoke safeoutputs`).toBe(false);
     }
+  });
+
+  it('submits seven chunks through the authenticated runner without printing or transcribing them', () => {
+    const fixture = submissionFixture();
+    cpSync(resolve(ROOT, 'workflows/shared'), join(fixture.root, '.github/workflows/shared'), { recursive: true });
+    write(fixture.root, '.github/workflows/squad-bootstrap-payload.json', fixture.text);
+    const config = parse(WORKFLOW.split('---')[1]);
+    const prepare = config['pre-agent-steps'].find(
+      (step: { name: string }) => step.name === 'Prepare authenticated bootstrap validator',
+    );
+    const setup = spawnSync('bash', ['-c', prepare.run], { env: fixture.env, encoding: 'utf8' });
+    expect(setup.status, setup.stderr).toBe(0);
+    const result = spawnSync(
+      join(fixture.root, '.github/workflows/run-squad-bootstrap-validator'),
+      [],
+      { env: fixture.env, encoding: 'utf8' },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe('Squad bootstrap validation passed; materialize_bootstrap submitted.\n');
+    const calls = readFileSync(fixture.capture, 'utf8').trim().split('\n');
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0])).toEqual(fixture.envelope);
+    expect(reconstructBootstrapPayload(JSON.parse(calls[0]))).toBe(fixture.text);
+    expect(result.stdout.length).toBeLessThan(100);
+    expect(result.stderr).toBe('');
+  });
+
+  it('rejects schema, repository, Cast, and stale payload mutations before submitting', () => {
+    for (const mutate of [
+      (payload: ReturnType<typeof createFixture>['payload']) => { payload.schema_version = '2'; },
+      (payload: ReturnType<typeof createFixture>['payload']) => { payload.repository = 'other/repo'; },
+      (payload: ReturnType<typeof createFixture>['payload']) => { payload.default_branch = 'other'; },
+      (payload: ReturnType<typeof createFixture>['payload']) => { payload.files[0].content += '\nchanged'; },
+    ]) {
+      const fixture = submissionFixture();
+      mutate(fixture.payload);
+      const text = JSON.stringify(fixture.payload);
+      writeFileSync(fixture.payloadPath, text);
+      writeFileSync(fixture.envelopePath, JSON.stringify(createBootstrapPayloadEnvelope(text)));
+      const result = fixture.submit();
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('Squad bootstrap validation failed');
+      expect(existsSync(fixture.capture)).toBe(false);
+    }
+    const fixture = submissionFixture();
+    writeFileSync(fixture.payloadPath, `${fixture.text}\n`);
+    expect(fixture.submit().stderr).toContain('does not match the generated payload bytes');
+    expect(existsSync(fixture.capture)).toBe(false);
+  });
+
+  it('fails explicitly without retries when the mounted tool fails or is unavailable', () => {
+    const fixture = submissionFixture();
+    const failed = fixture.submit({ PROXY_FAIL: '1' });
+    expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain('proxy rejected request');
+    expect(failed.stderr).toContain('Do not retry');
+    expect(readFileSync(fixture.capture, 'utf8').trim().split('\n')).toHaveLength(1);
+    rmSync(fixture.proxy);
+    const unavailable = fixture.submit({ PATH: join(fixture.root, 'bin') });
+    expect(unavailable.status).not.toBe(0);
+    expect(unavailable.stderr).toContain('ENOENT');
+    expect(unavailable.stdout).toBe('');
   });
 
   it('enforces encoder total-size and fixed chunk-count bounds', () => {
@@ -738,15 +922,61 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('"payload_sha256"');
     expect(lock).not.toMatch(/"materialize-bootstrap":\{"inputs":\{"payload":/);
     expect(lock).toContain('reconstructBootstrapPayload(items[0])');
+    expect(lock).toContain("mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-'))");
+    expect(lock).toContain("relative(checkout, source).split('/')[0] !== '.git'");
+    expect(lock).toContain('gitRoot: checkout');
+    const candidatePayloadMkdir = lock.indexOf(
+      'mkdirSync(dirname(candidatePayloadPath), { recursive: true });',
+    );
+    const candidatePayloadWrite = lock.indexOf(
+      'writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\\n`);',
+    );
+    expect(candidatePayloadMkdir).toBeGreaterThan(-1);
+    expect(candidatePayloadWrite).toBeGreaterThan(candidatePayloadMkdir);
+    expect(lock.slice(candidatePayloadMkdir, candidatePayloadWrite).trim()).toBe(
+      'mkdirSync(dirname(candidatePayloadPath), { recursive: true });',
+    );
+    expect(lock).toContain('Bootstrap payload path crosses a symbolic link');
+    expect(lock.indexOf("validate(payload, 'placeholder')"))
+      .toBeLessThan(lock.indexOf('safeTarget(checkout, file.path)'));
+    expect(lock).toContain('mcp-cli');
+    expect(lock).toContain('--submit-envelope');
+    expect(parse(lock).jobs.agent.env.DEFAULT_BRANCH).toBe('${{ github.event.repository.default_branch }}');
+    expect(parse(WORKFLOW.split('---')[1]).tools['cli-proxy']).toBe(true);
     expect(lock).toContain('SQUAD_BOOTSTRAP_INSTALL_SHA: ${{ github.sha }}');
     expect(lock).toContain('SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}');
     expect(lock).toContain('SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}');
     expect(lock).toContain('squad:bootstrap-provenance');
+    expect(lock).toContain('Base-controlled bootstrap provenance. Do not edit this comment.');
+    expect(lock).toContain('github.rest.issues.createComment');
+    expect(lock).toContain('github.rest.issues.updateComment');
     expect(lock).toContain('pullRequestDetails.head.repo?.full_name !== provenance.repository');
     expect(lock).toContain('body: `${provenanceMarker}\\n${prBodyWithoutProvenance}`');
     expect(lock).toContain('body: markedIssueBody');
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
+
+  it('rejects a realistic source mutation that writes to the checkout before validation', () => {
+    const assertValidationBeforeCheckoutWrite = (source: string) => {
+      const validation = source.indexOf("validate(payload, 'placeholder')");
+      const candidateWrite = source.indexOf(
+        "const target = safeTarget(candidate, file.path)",
+      );
+      const checkoutWrite = source.indexOf(
+        "const target = safeTarget(checkout, file.path)",
+      );
+      expect(candidateWrite).toBeGreaterThan(-1);
+      expect(candidateWrite).toBeLessThan(validation);
+      expect(validation).toBeGreaterThan(-1);
+      expect(checkoutWrite).toBeGreaterThan(validation);
+    };
+    assertValidationBeforeCheckoutWrite(WORKFLOW);
+    const mutated = WORKFLOW.replace(
+      "const target = safeTarget(candidate, file.path);",
+      "const target = safeTarget(checkout, file.path);",
+    );
+    expect(() => assertValidationBeforeCheckoutWrite(mutated)).toThrow();
+  });
 
   it('detects a realistic compiled-lock mutation that removes the default-branch gate', () => {
     const mutated = WORKFLOW.replace(
@@ -757,6 +987,16 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).not.toContain(
       "needs.pre_activation.outputs.activated == 'true' && (github.ref_name == github.event.repository.default_branch)",
     );
+  }, 180000);
+
+  it('detects a compiled mutation that removes the file-backed safe-output CLI', () => {
+    const assertMounted = (lock: string) => {
+      const agent = parse(lock).jobs.agent;
+      expect(agent.steps.some((step: { id?: string }) => step.id === 'mount-mcp-clis')).toBe(true);
+      expect(lock).toContain('GH_AW_MCP_CLI_SERVERS=\'["safeoutputs"]\'');
+    };
+    assertMounted(compileWorkflow());
+    expect(() => assertMounted(compileWorkflow(WORKFLOW.replace('  cli-proxy: true\n', '')))).toThrow();
   }, 180000);
 
   it('declares deterministic output bounds and paginated recovery checks', () => {
