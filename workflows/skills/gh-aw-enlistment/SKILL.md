@@ -389,7 +389,7 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
-gh aw compile --strict           # final, no --approve; only the bot-trigger warning remains
+gh aw compile --strict           # final, no --approve; exactly the two documented warnings remain
 node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-install --source-revision "${SQUAD_SHA}" --strict-compile
 
@@ -446,8 +446,9 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
   else is a STOP.
 - ❌ **Treating `--approve` as the final compile.** Always finish with a plain
   `gh aw compile --strict` (no `--approve`).
-- ❌ **Tolerating extra warnings.** Only the `squad.md` bot-trigger warning is
-  allowed; every other warning or error halts the run.
+- ❌ **Tolerating extra warnings.** Only the documented `squad-review.md`
+  `pull_request_target` advisory and `squad.md` bot-trigger warning are allowed;
+  every other warning or error halts the run.
 - ❌ **Committing diagnostics.** Never commit `.github/aw/logs/` output; add the
   log `.gitignore` if missing.
 - ❌ **Clobbering existing workflows.** The install is additive; preserve unrelated

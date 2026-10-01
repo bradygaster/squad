@@ -27,7 +27,8 @@ afterEach(() => {
 function fixture(relay = false) {
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
   const env = {
-    GITHUB_EVENT_NAME: 'pull_request_target', GITHUB_REPOSITORY: REPOSITORY,
+    GITHUB_EVENT_NAME: relay ? 'pull_request' : 'pull_request_target',
+    GITHUB_REPOSITORY: REPOSITORY,
     GITHUB_SERVER_URL: 'https://github.com',
     GITHUB_RUN_ID: '17', GITHUB_RUN_ATTEMPT: '1',
     SQUAD_REVIEW_PR: '42', SQUAD_REVIEW_HEAD: HEAD,
@@ -65,9 +66,10 @@ function fixture(relay = false) {
     body: '',
   };
   const run = {
+    id: 17,
     event: 'pull_request_target', path: '.github/workflows/squad-review.lock.yml',
     display_title: 'Squad review \u2014 PR #42',
-    repository: { full_name: REPOSITORY }, head_sha: HEAD, run_attempt: 1,
+    repository: { full_name: REPOSITORY }, head_sha: BASE, run_attempt: 1,
     pull_requests: [{ number: 42, head: { sha: HEAD }, base: { repo: { name: 'example' } } }],
     run_started_at: START, updated_at: FINISHED, status: 'completed', conclusion: 'success',
   };
@@ -94,6 +96,9 @@ function fixture(relay = false) {
   const state = {
     reviews: [review], comments: [] as typeof comment[], permission: 'admin',
     missingManifest: false, calls: [] as string[], prReads: 0, changeAfterFirstRead: false,
+    workflowRuns: [run],
+    attempts: new Map([[1, run]]),
+    attemptJobs: new Map([[1, jobs]]),
   };
   const encode = (value: unknown) => {
     const content = Buffer.from(JSON.stringify(value));
@@ -124,10 +129,15 @@ function fixture(relay = false) {
       return encode(registry);
     }
     if (route.endsWith('/reviews')) return state.reviews;
+    if (route.endsWith('/actions/workflows/squad-review.lock.yml/runs')) {
+      return { workflow_runs: state.workflowRuns };
+    }
     if (route.endsWith('/actions/runs/17')) return run;
     if (route.endsWith('/actions/runs/29')) return bootstrapRun;
-    if (route.endsWith('/attempts/1')) return { ...run, run_attempt: 1, run_started_at: START };
-    if (/\/attempts\/[12]\/jobs$/.test(route)) return { jobs };
+    const attempt = route.match(/\/actions\/runs\/\d+\/attempts\/(\d+)$/);
+    if (attempt) return state.attempts.get(Number(attempt[1]));
+    const attemptJobs = route.match(/\/actions\/runs\/\d+\/attempts\/(\d+)\/jobs$/);
+    if (attemptJobs) return { jobs: state.attemptJobs.get(Number(attemptJobs[1])) ?? [] };
     if (route.endsWith('/comments')) return state.comments;
     if (route.endsWith('/permission')) return { permission: state.permission };
     throw new Error(`Unexpected API route: ${route}`);
@@ -168,6 +178,8 @@ function makeBootstrap(f: ReturnType<typeof fixture>) {
 }
 
 function retainFirstAttempt(f: ReturnType<typeof fixture>) {
+  const firstAttempt = structuredClone(f.run);
+  const firstJobs = structuredClone(f.jobs);
   const first = structuredClone(f.review);
   first.body = `${VERDICT_PREFIX}${JSON.stringify({ ...f.verdict, result: 'REQUEST_CHANGES' })}`;
   f.review.id = 124;
@@ -179,6 +191,10 @@ function retainFirstAttempt(f: ReturnType<typeof fixture>) {
   f.run.updated_at = '2026-09-28T12:02:30Z';
   f.jobs[0].started_at = FINISHED;
   f.jobs[0].completed_at = f.run.updated_at;
+  f.state.attempts.set(1, firstAttempt);
+  f.state.attempts.set(2, f.run);
+  f.state.attemptJobs.set(1, firstJobs);
+  f.state.attemptJobs.set(2, f.jobs);
   f.state.reviews = [first, f.review];
   f.sync();
   return first;
@@ -274,6 +290,17 @@ describe('independent Squad review guard', () => {
     }
   });
 
+  it('requires the correct event and trusted base workflow SHA on merged relays', async () => {
+    const f = fixture(true);
+    f.env.GITHUB_EVENT_NAME = 'pull_request_target';
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('only merged pull request events');
+    f.env.GITHUB_EVENT_NAME = 'pull_request';
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = '';
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('workflow source is not the exact PR base commit');
+  });
+
   it.each([false, true])('selects a successful rerun with retained attempt-1 rejection (reverse=%s)', async reverse => {
     const f = fixture(true);
     retainFirstAttempt(f);
@@ -315,10 +342,22 @@ describe('independent Squad review guard', () => {
     retainFirstAttempt(f);
     f.verdict.run_id = 18;
     f.verdict.run_attempt = f.run.run_attempt = 1;
+    f.run.id = 18;
+    f.state.attempts = new Map([[1, f.run]]);
+    f.state.attemptJobs = new Map([[1, f.jobs]]);
     f.sync();
-    const get = (route: string, fields?: Record<string, unknown>) =>
-      f.get(route.replace('/actions/runs/18', '/actions/runs/17'), fields);
-    await expect(assertClearingReview(f.env, get, { relay: true })).resolves.toEqual(f.verdict);
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
+  });
+
+  it('does not fall back when the latest trusted failed rerun emitted no review', async () => {
+    const f = fixture(true);
+    retainFirstAttempt(f);
+    f.state.reviews = [f.state.reviews[0]];
+    f.state.attempts.get(2)!.conclusion = 'failure';
+    f.state.attemptJobs.get(2)![0].conclusion = 'failure';
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('missing or duplicate verdict evidence');
+    expect(f.state.calls).not.toContain(`repos/${REPOSITORY}/actions/runs/17/attempts/1/jobs`);
   });
 
   it('rejects duplicate verdicts for the selected attempt even with distinct review IDs', async () => {
@@ -344,7 +383,7 @@ describe('independent Squad review guard', () => {
       case 'duplicate-job': f.jobs.push(f.jobs[0]); break;
       case 'wrong-workflow': f.run.path = '.github/workflows/untrusted.yml'; break;
       case 'wrong-event': f.run.event = 'workflow_dispatch'; break;
-      case 'wrong-head': f.run.head_sha = BASE; break;
+      case 'wrong-head': f.run.head_sha = HEAD; break;
       case 'replay': f.run.run_started_at = f.run.updated_at; break;
       case 'after-merge': f.jobs[0].completed_at = '2026-09-28T12:04:00Z'; break;
       case 'malformed': f.review.body = `${VERDICT_PREFIX}{broken`; break;
@@ -360,7 +399,7 @@ describe('independent Squad review guard', () => {
     f.run.head_sha = HEAD;
     f.jobs[0].name = 'review';
     await expect(assertClearingReview(f.env, f.get, { relay: true }))
-      .rejects.toThrow('not bound to this PR workflow run');
+      .rejects.toThrow('missing trusted workflow run attempt');
   });
 
   it.each([
@@ -455,7 +494,7 @@ describe('independent Squad review guard', () => {
       case 'manual-run': f.run.event = 'workflow_dispatch'; break;
       case 'wrong-workflow': f.run.path = '.github/workflows/other.yml'; break;
       case 'wrong-run-repo': f.run.repository.full_name = 'other/repo'; break;
-      case 'wrong-run-sha': f.run.head_sha = BASE; break;
+      case 'wrong-run-sha': f.run.head_sha = HEAD; break;
       case 'wrong-run-pr': f.run.pull_requests[0].number = 43; break;
       case 'wrong-run-attempt': f.run.run_attempt = 0; break;
       case 'wrong-run-title': f.run.display_title = 'Squad review \u2014 PR #43'; break;
@@ -469,7 +508,7 @@ describe('independent Squad review guard', () => {
   it('does not accept a manual gate or the merge commit as the reviewed head', async () => {
     const f = fixture(true);
     await expect(assertClearingReview({ ...f.env, GITHUB_EVENT_NAME: 'workflow_dispatch' }, f.get, { relay: true }))
-      .rejects.toThrow('only base-controlled PR target runs');
+      .rejects.toThrow('only merged pull request events');
     await expect(reviewTarget({ ...f.env, SQUAD_REVIEW_HEAD: BASE }, f.get, { relay: true }))
       .rejects.toThrow('head changed');
   });
@@ -479,7 +518,8 @@ describe('independent Squad review guard', () => {
     f.run.pull_requests = [];
     await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
     f.run.display_title = '';
-    await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow('bound');
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('missing trusted workflow run attempt');
   });
 
   it('clears a rejection only through a human-admin SHA-scoped override bound to its run attempt', async () => {

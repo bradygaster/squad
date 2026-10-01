@@ -611,7 +611,7 @@ export function waitForBaseControlledReviewCanary(
       ]);
       if (run.event !== 'pull_request_target'
         || run.path !== '.github/workflows/squad-review.lock.yml'
-        || run.head_sha !== castPr.headSha
+        || run.head_sha !== castPr.baseSha
         || run.repository?.full_name !== target
         || run.display_title !== `Squad review — PR #${castPr.number}`
         || run.run_attempt < verdict.run_attempt) {

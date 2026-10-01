@@ -4,6 +4,7 @@ import { evaluateImplementDispatchInputs } from './squad-retro-provenance.mjs';
 export const VERDICT_PREFIX = 'Squad-Review-Verdict: ';
 export const OVERRIDE_PREFIX = 'Squad-Review-Override: ';
 const WORKFLOW = '.github/workflows/squad-review.lock.yml';
+const WORKFLOW_RUNS = 'actions/workflows/squad-review.lock.yml/runs';
 const AUTHORITY_JOB = 'review';
 const BOOTSTRAP_WORKFLOW = '.github/workflows/squad-bootstrap.lock.yml';
 const SHA = /^[0-9a-f]{40}$/;
@@ -226,6 +227,10 @@ export async function reviewTarget(
   requireThat(SHA.test(env.SQUAD_REVIEW_WORKFLOW_SHA ?? '') &&
     env.SQUAD_REVIEW_WORKFLOW_SHA === pr.base.sha,
   'workflow source is not the exact PR base commit');
+  requireThat(env.GITHUB_EVENT_NAME === (relay ? 'pull_request' : 'pull_request_target'),
+    relay
+      ? 'only merged pull request events can relay review evidence'
+      : 'only base-controlled PR target runs can emit review output');
   requireThat(relay
     ? pr.merged === true && pr.state === 'closed' &&
       pr.base.ref === env.SQUAD_REVIEW_DEFAULT_BRANCH
@@ -328,64 +333,106 @@ export async function enforceReviewOutputs(env, get, options = {}) {
   writeFileSync(env.GH_AW_AGENT_OUTPUT, JSON.stringify(output));
 }
 
+function runMatchesTarget(run, target, runId) {
+  return run?.id === runId &&
+    run.event === 'pull_request_target' && run.path === WORKFLOW &&
+    run.repository?.full_name === target.repository && run.head_sha === target.base_sha &&
+    run.display_title === `Squad review \u2014 PR #${target.pull_request}` &&
+    Array.isArray(run.pull_requests) &&
+    (run.pull_requests.length === 0 || run.pull_requests.some(pr =>
+      pr.number === target.pull_request && pr.head?.sha === target.head_sha &&
+      pr.base?.repo?.name === target.pr.base.repo.name));
+}
+
+async function latestRelayAttempt(target, get, cutoff) {
+  const runs = await list(
+    get,
+    `repos/${target.repository}/${WORKFLOW_RUNS}`,
+    'workflow_runs',
+  );
+  const attempts = [];
+  for (const run of runs) {
+    if (!Number.isSafeInteger(run?.id) || run.id < 1 ||
+        !runMatchesTarget(run, target, run.id)) continue;
+    requireThat(Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0,
+      'trusted workflow run has an invalid attempt count');
+    for (let runAttempt = 1; runAttempt <= run.run_attempt; runAttempt++) {
+      const attempt = await get(
+        `repos/${target.repository}/actions/runs/${run.id}/attempts/${runAttempt}`,
+      );
+      requireThat(runMatchesTarget(attempt, target, run.id) &&
+        attempt.run_attempt === runAttempt,
+      'invalid trusted workflow run attempt');
+      const startedAt = timestamp(attempt.run_started_at);
+      if (startedAt <= cutoff) attempts.push({ run, attempt, startedAt });
+    }
+  }
+  requireThat(attempts.length > 0, 'missing trusted workflow run attempt before merge');
+  attempts.sort((left, right) =>
+    left.startedAt - right.startedAt ||
+    left.run.id - right.run.id ||
+    left.attempt.run_attempt - right.attempt.run_attempt);
+  return attempts.at(-1);
+}
+
+async function assertAuthorityJob(target, get, selected, cutoff) {
+  const jobs = await list(get,
+    `repos/${target.repository}/actions/runs/${selected.run.id}/attempts/${selected.attempt.run_attempt}/jobs`,
+    'jobs');
+  const authorityJobs = jobs.filter(job => job.name === AUTHORITY_JOB);
+  requireThat(authorityJobs.length === 1 &&
+    authorityJobs[0].status === 'completed' &&
+    authorityJobs[0].conclusion === 'success' &&
+    timestamp(authorityJobs[0].started_at) >= timestamp(selected.attempt.run_started_at) &&
+    timestamp(authorityJobs[0].completed_at) <= timestamp(selected.attempt.updated_at) &&
+    timestamp(authorityJobs[0].completed_at) <= cutoff,
+  'base-controlled review authority job did not pass before merge');
+}
+
 export async function assertClearingReview(env, get, options = {}) {
   const { relay = false } = options;
-  requireThat(env.GITHUB_EVENT_NAME === 'pull_request_target',
-    'only base-controlled PR target runs can clear review');
   const target = await reviewTarget(env, get, {
     ...options,
     requireBootstrapRunSuccess: true,
   });
+  const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();
   const candidates = (await currentEvidence(target, get)).map(review => ({
     review,
     verdict: validateVerdict(
       record(review.body, VERDICT_PREFIX),
       target,
       review,
-      relay ? timestamp(target.pr.merged_at) : Date.now(),
+      cutoff,
     ),
   }));
-  // GitHub retains reviews across reruns. Order by API metadata, never verdict prose.
-  if (relay) {
-    candidates.sort((a, b) =>
-      timestamp(b.review.submitted_at) - timestamp(a.review.submitted_at) ||
-      b.review.id - a.review.id);
-  }
-  const runId = relay ? String(candidates[0]?.verdict.run_id) : env.GITHUB_RUN_ID;
-  const runAttempt = relay ? String(candidates[0]?.verdict.run_attempt) : env.GITHUB_RUN_ATTEMPT;
+  const selected = relay ? await latestRelayAttempt(target, get, cutoff) : undefined;
+  const runId = relay ? String(selected.run.id) : env.GITHUB_RUN_ID;
+  const runAttempt = relay ? String(selected.attempt.run_attempt) : env.GITHUB_RUN_ATTEMPT;
   const bound = candidates.filter(({ verdict }) =>
     String(verdict.run_id) === runId && String(verdict.run_attempt) === runAttempt);
   requireThat(bound.length === 1, 'missing or duplicate verdict evidence for this run');
   const { review, verdict } = bound[0];
-  const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();
-  const run = await get(`repos/${target.repository}/actions/runs/${verdict.run_id}`);
-  requireThat(run.event === 'pull_request_target' && run.path === WORKFLOW &&
-    run.repository?.full_name === target.repository && run.head_sha === target.head_sha &&
-    run.run_attempt >= verdict.run_attempt &&
-    run.display_title === `Squad review \u2014 PR #${target.pull_request}` &&
-    Array.isArray(run.pull_requests) &&
-    (run.pull_requests.length === 0 || run.pull_requests.some(pr => pr.number === target.pull_request &&
-      pr.head?.sha === target.head_sha && pr.base?.repo?.name === target.pr.base.repo.name)),
-  'verdict is not bound to this PR workflow run');
-  const attempt = run.run_attempt === verdict.run_attempt ? run :
-    await get(`repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}`);
-  requireThat(attempt.event === 'pull_request_target' && attempt.path === WORKFLOW &&
-    attempt.repository?.full_name === target.repository &&
-    attempt.head_sha === target.head_sha &&
-    attempt.run_attempt === verdict.run_attempt &&
-    timestamp(attempt.run_started_at) <= timestamp(verdict.timestamp) &&
-    (attempt.status !== 'completed' ||
-      timestamp(review.submitted_at) <= timestamp(attempt.updated_at)), 'verdict outside workflow run');
   if (relay) {
-    requireThat(attempt.status === 'completed' && attempt.conclusion === 'success',
+    requireThat(selected.attempt.status === 'completed' &&
+      timestamp(selected.attempt.updated_at) <= cutoff &&
+      selected.attempt.conclusion === 'success',
       'review run attempt did not succeed');
-    const jobs = await list(get,
-      `repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}/jobs`,
-      'jobs');
-    const authorityJobs = jobs.filter(job => job.name === AUTHORITY_JOB);
-    requireThat(authorityJobs.length === 1 && authorityJobs[0].conclusion === 'success' &&
-      timestamp(authorityJobs[0].completed_at) <= cutoff,
-    'base-controlled review authority job did not pass before merge');
+    requireThat(timestamp(selected.attempt.run_started_at) <= timestamp(verdict.timestamp) &&
+      timestamp(review.submitted_at) <= timestamp(selected.attempt.updated_at),
+    'verdict outside workflow run');
+    await assertAuthorityJob(target, get, selected, cutoff);
+  } else {
+    const run = await get(`repos/${target.repository}/actions/runs/${verdict.run_id}`);
+    requireThat(runMatchesTarget(run, target, verdict.run_id) &&
+      run.run_attempt >= verdict.run_attempt,
+    'verdict is not bound to this PR workflow run');
+    const attempt = run.run_attempt === verdict.run_attempt ? run :
+      await get(`repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}`);
+    requireThat(runMatchesTarget(attempt, target, verdict.run_id) &&
+      attempt.run_attempt === verdict.run_attempt &&
+      timestamp(attempt.run_started_at) <= timestamp(verdict.timestamp) &&
+      (attempt.status !== 'completed' ||
+        timestamp(review.submitted_at) <= timestamp(attempt.updated_at)), 'verdict outside workflow run');
   }
   if (verdict.result === 'REQUEST_CHANGES') {
     const comments = await list(get, `repos/${target.repository}/issues/${target.pull_request}/comments`);

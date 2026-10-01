@@ -848,6 +848,10 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('"payload_sha256"');
     expect(lock).not.toMatch(/"materialize-bootstrap":\{"inputs":\{"payload":/);
     expect(lock).toContain('reconstructBootstrapPayload(items[0])');
+    expect(lock).toContain("mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-'))");
+    expect(lock).toContain('Bootstrap payload path crosses a symbolic link');
+    expect(lock.indexOf("validate(payload, 'placeholder')"))
+      .toBeLessThan(lock.indexOf('safeTarget(checkout, file.path)'));
     expect(lock).toContain('mcp-cli');
     expect(lock).toContain('--submit-envelope');
     expect(parse(lock).jobs.agent.env.DEFAULT_BRANCH).toBe('${{ github.event.repository.default_branch }}');
@@ -864,6 +868,28 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('body: markedIssueBody');
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
+
+  it('rejects a realistic source mutation that writes to the checkout before validation', () => {
+    const assertValidationBeforeCheckoutWrite = (source: string) => {
+      const validation = source.indexOf("validate(payload, 'placeholder')");
+      const candidateWrite = source.indexOf(
+        "const target = safeTarget(candidate, file.path)",
+      );
+      const checkoutWrite = source.indexOf(
+        "const target = safeTarget(checkout, file.path)",
+      );
+      expect(candidateWrite).toBeGreaterThan(-1);
+      expect(candidateWrite).toBeLessThan(validation);
+      expect(validation).toBeGreaterThan(-1);
+      expect(checkoutWrite).toBeGreaterThan(validation);
+    };
+    assertValidationBeforeCheckoutWrite(WORKFLOW);
+    const mutated = WORKFLOW.replace(
+      "const target = safeTarget(candidate, file.path);",
+      "const target = safeTarget(checkout, file.path);",
+    );
+    expect(() => assertValidationBeforeCheckoutWrite(mutated)).toThrow();
+  });
 
   it('detects a realistic compiled-lock mutation that removes the default-branch gate', () => {
     const mutated = WORKFLOW.replace(

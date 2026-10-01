@@ -241,8 +241,12 @@ safe-outputs:
             SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}
           with:
             script: |
-              const { mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
-              const { dirname, join } = await import('node:path');
+              const {
+                cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync,
+                readFileSync, rmSync, writeFileSync,
+              } = await import('node:fs');
+              const { tmpdir } = await import('node:os');
+              const { dirname, isAbsolute, join, relative, resolve } = await import('node:path');
               const { pathToFileURL } = await import('node:url');
 
               const checkout = join(process.env.GITHUB_WORKSPACE, 'bootstrap-repo');
@@ -271,19 +275,39 @@ safe-outputs:
                 core.setFailed(`Bootstrap payload transport is invalid: ${error.message}`);
                 return;
               }
-              const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
-              for (const file of payload.files || []) {
-                const target = join(checkout, ...String(file.path || '').split('/'));
-                mkdirSync(dirname(target), { recursive: true });
-                writeFileSync(target, String(file.content || ''));
-              }
-              writeFileSync(payloadPath, payloadText);
+              const safeTarget = (root, path) => {
+                if (typeof path !== 'string' || path.length === 0 || path.includes('\\') ||
+                    isAbsolute(path) || path.split('/').some((segment) => !segment || segment === '.' || segment === '..')) {
+                  throw new Error(`Bootstrap payload contains an unsafe path: ${JSON.stringify(path)}`);
+                }
+                const target = resolve(root, path);
+                const within = relative(root, target);
+                if (!within || within.startsWith('..') || isAbsolute(within)) {
+                  throw new Error(`Bootstrap payload path escapes the candidate tree: ${path}`);
+                }
+                let current = root;
+                for (const segment of path.split('/').slice(0, -1)) {
+                  current = join(current, segment);
+                  if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
+                    throw new Error(`Bootstrap payload path crosses a symbolic link: ${path}`);
+                  }
+                }
+                if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+                  throw new Error(`Bootstrap payload target is a symbolic link: ${path}`);
+                }
+                return target;
+              };
+              for (const file of payload.files || []) safeTarget(checkout, file?.path);
 
-              const validate = (candidate, linkMode) => {
-                writeFileSync(payloadPath, `${JSON.stringify(candidate)}\n`);
+              const candidate = mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-'));
+              const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
+              const validate = (candidatePayload, linkMode) => {
+                const candidatePayloadPath =
+                  join(candidate, '.github/workflows/squad-bootstrap-payload.json');
+                writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\n`);
                 const errors = validatorModule.validateBootstrapPayload({
-                  root: checkout,
-                  payloadPath,
+                  root: candidate,
+                  payloadPath: candidatePayloadPath,
                   repository: context.repo.owner + '/' + context.repo.repo,
                   defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
                   linkMode,
@@ -292,7 +316,26 @@ safe-outputs:
                   throw new Error(`Squad bootstrap validation failed:\n${errors.map((error) => `- ${error}`).join('\n')}`);
                 }
               };
-              validate(payload, 'placeholder');
+              try {
+                cpSync(checkout, candidate, {
+                  recursive: true,
+                  filter: (source) => relative(checkout, source).split('/')[0] !== '.git',
+                });
+                for (const file of payload.files || []) {
+                  const target = safeTarget(candidate, file.path);
+                  mkdirSync(dirname(target), { recursive: true });
+                  writeFileSync(target, file.content);
+                }
+                validate(payload, 'placeholder');
+                for (const file of payload.files) {
+                  const target = safeTarget(checkout, file.path);
+                  mkdirSync(dirname(target), { recursive: true });
+                  writeFileSync(target, file.content);
+                }
+                writeFileSync(payloadPath, payloadText);
+              } finally {
+                rmSync(candidate, { recursive: true, force: true });
+              }
 
               const listState = async () => {
                 const pullRequests = await github.paginate(github.rest.pulls.list, {

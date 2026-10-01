@@ -245,7 +245,7 @@ describe('Squad gh-aw hosted E2E controller', () => {
 
   it.each([
     'native-job-name', 'ui-context-name', 'wrong-check-id', 'wrong-head',
-    'failed-check', 'incomplete-check', 'foreign-app', 'foreign-app-id',
+    'wrong-run-head', 'failed-check', 'incomplete-check', 'foreign-app', 'foreign-app-id',
   ])('exercises the hosted canary API contract: %s', mutation => {
     const target = 'owner/consumer';
     const verdict = {
@@ -257,7 +257,8 @@ describe('Squad gh-aw hosted E2E controller', () => {
       workflow_path: '.github/workflows/squad-review.lock.yml', run_id: 31, run_attempt: 1,
     };
     const run = {
-      id: 31, event: verdict.event, path: verdict.workflow_path, head_sha: CAST_SHA,
+      id: 31, event: verdict.event, path: verdict.workflow_path,
+      head_sha: currentCastPr.baseSha,
       repository: { full_name: target }, run_attempt: 1,
       display_title: `Squad review — PR #${currentCastPr.number}`,
     };
@@ -273,6 +274,7 @@ describe('Squad gh-aw hosted E2E controller', () => {
       case 'ui-context-name': check.name = 'Squad Review / review'; break;
       case 'wrong-check-id': check.id = 124; break;
       case 'wrong-head': check.head_sha = TARGET_SHA; break;
+      case 'wrong-run-head': run.head_sha = CAST_SHA; break;
       case 'failed-check': check.conclusion = 'failure'; break;
       case 'incomplete-check': check.status = 'in_progress'; break;
       case 'foreign-app': check.app.slug = 'other'; break;
@@ -304,10 +306,14 @@ describe('Squad gh-aw hosted E2E controller', () => {
         expect(JSON.parse(readFileSync(
           resolve(evidence, 'base-controlled-review-canary.json'), 'utf8',
         )).check.name).toBe('review');
+      } else if (mutation === 'wrong-run-head') {
+        expect(execute).toThrow('not bound to the base-controlled workflow run');
       } else {
         expect(execute).toThrow('not bound to the trusted review job');
       }
-      expect(routes.at(-1)).toBe(`repos/${target}/check-runs/123`);
+      expect(routes.at(-1)).toBe(mutation === 'wrong-run-head'
+        ? `repos/${target}/actions/runs/31`
+        : `repos/${target}/check-runs/123`);
     } finally {
       rmSync(evidence, { recursive: true, force: true });
     }

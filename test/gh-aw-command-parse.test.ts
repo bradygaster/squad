@@ -4,7 +4,9 @@ import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import {
   classifySquadCommand,
+  commandRequiresAuthorization,
   enforceSquadCommandContract,
+  isAuthorizedPermission,
   rejectionComment,
 } from '../workflows/shared/squad-command-contract.mjs';
 
@@ -38,7 +40,6 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       ['/squad cast', 'cast', null],
       ['  /squad cast  ', 'cast', null],
       ['Context first.\n\n/squad status   ', 'status', null],
-      ['Please run /squad plan implementation', 'plan implementation', null],
       ['/squad research Focus only on proposal P1', 'research', null],
       ['/squad activate phase 2', 'activate', 2],
       ['/squad plan accept implementation phase 12', 'plan accept implementation', 12],
@@ -82,6 +83,18 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         });
       },
     );
+
+    it.each([
+      ['Please run /squad plan implementation', 'embedded prose'],
+      ['Use `/squad cast` after review.', 'inline code'],
+      ['```text\n/squad cast\n```', 'fenced code'],
+      ['~~~text\n/squad cast\n~~~', 'tilde-fenced code'],
+    ])('ignores %s instead of activating control-plane work', (body) => {
+      expect(classifySquadCommand(payload(body), 'issues')).toEqual({
+        status: 'none',
+        source: _name === 'issue body' ? 'issue' : 'comment',
+      });
+    });
   });
 
   describe('workflow_dispatch call site', () => {
@@ -186,12 +199,31 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(DISCOVERY_WORKFLOW).toContain("startsWith(github.event.comment.body, '/squad ')");
     expect(DISCOVERY_WORKFLOW).toContain('squad-command-contract.mjs');
     expect(DISCOVERY_WORKFLOW).toContain('classifySquadCommand');
+    expect(DISCOVERY_WORKFLOW).toContain('commandRequiresAuthorization');
+    expect(DISCOVERY_WORKFLOW).toContain('getCollaboratorPermissionLevel');
+    expect(DISCOVERY_WORKFLOW).toContain('isAuthorizedPermission');
+    expect(DISCOVERY_WORKFLOW).toContain('No standalone Squad command was found');
     expect(DISCOVERY_WORKFLOW).toContain('rejectionComment');
     expect(DISCOVERY_WORKFLOW).toContain('github.rest.issues.createComment');
     expect(DISCOVERY_WORKFLOW).toContain('core.setFailed(`Squad rejected command:');
     expect(DISCOVERY_WORKFLOW).toContain('github.rest.actions.createWorkflowDispatch');
     expect(DISCOVERY_WORKFLOW).toContain("workflow_id: 'squad.lock.yml'");
     expect(DISCOVERY_WORKFLOW).toContain("command: result.argumentText || 'cast'");
+  });
+
+  it('keeps open modes public and fails mutating modes closed on collaborator permission', () => {
+    for (const mode of ['status', 'review', 'research', 'plan', 'revoke-improvement']) {
+      expect(commandRequiresAuthorization({ status: 'accepted', mode })).toBe(false);
+    }
+    for (const mode of ['cast', 'triage', 'plan implementation', 'implement']) {
+      expect(commandRequiresAuthorization({ status: 'accepted', mode })).toBe(true);
+    }
+    expect(isAuthorizedPermission('admin')).toBe(true);
+    expect(isAuthorizedPermission('maintain')).toBe(true);
+    expect(isAuthorizedPermission('write')).toBe(true);
+    expect(isAuthorizedPermission('triage')).toBe(false);
+    expect(isAuthorizedPermission('read')).toBe(false);
+    expect(isAuthorizedPermission('unresolved')).toBe(false);
   });
 
   it('realistic source mutation is caught by the accepted-command fixtures', async () => {

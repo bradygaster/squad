@@ -70,8 +70,28 @@ safe-outputs:
             return;
           }
           if (result.status !== 'accepted') {
-            core.setFailed('Squad command discovery was activated without an invocation.');
+            core.info('No standalone Squad command was found after excluding code contexts.');
             return;
+          }
+          if (contract.commandRequiresAuthorization(result)) {
+            let permission = 'unresolved';
+            try {
+              permission = (await github.rest.repos.getCollaboratorPermissionLevel({
+                ...context.repo,
+                username: context.actor,
+              })).data.permission || 'unresolved';
+            } catch (error) {
+              core.warning(`Unable to resolve repository permission for ${context.actor}: ${error.message}`);
+            }
+            if (!contract.isAuthorizedPermission(permission)) {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issueNumber,
+                body: `⛔ /squad ${result.argumentText || 'cast'} was refused for @${context.actor} (repository permission: ${permission}). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`,
+              });
+              core.setFailed(`Squad refused mutating mode ${result.mode} for ${context.actor}.`);
+              return;
+            }
           }
           await github.rest.actions.createWorkflowDispatch({
             ...context.repo,

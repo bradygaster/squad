@@ -43,6 +43,14 @@ const PHASE_COMMANDS = new Map([
   ['plan activate', 'plan activate'],
 ]);
 
+const OPEN_MODES = new Set([
+  'status',
+  'review',
+  'research',
+  'plan',
+  'revoke-improvement',
+]);
+
 export const VALID_COMMANDS = Object.freeze([
   '/squad',
   '/squad cast',
@@ -108,16 +116,38 @@ function extractInvocation(source, text) {
     };
   }
 
-  const lower = text.toLowerCase();
-  const at = lower.indexOf('/squad');
-  if (at === -1) return null;
-  const line = text.slice(at).split('\n', 1)[0].trimEnd();
-  const slash = line.match(/^\/squad(?:\s|$)/);
-  return {
-    rejectedCommand: line,
-    argumentText: slash ? line.slice(slash[0].length).trim() : '',
-    malformedPrefix: !slash,
-  };
+  let fence = '';
+  for (const originalLine of normalizeNewlines(text).split('\n')) {
+    const fenceMatch = originalLine.match(/^\s*(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      if (!fence) fence = marker;
+      else if (fence === marker) fence = '';
+      continue;
+    }
+    if (fence) continue;
+    const line = originalLine.replace(/`+[^`]*`+/g, '').trim();
+    if (!/^\/squad/i.test(line)) continue;
+    const slash = line.match(/^\/squad(?:\s|$)/);
+    const invocation = line;
+    return {
+      rejectedCommand: invocation,
+      argumentText: slash ? invocation.slice(slash[0].length).trim() : '',
+      malformedPrefix: !slash,
+    };
+  }
+  return null;
+}
+
+export function commandRequiresAuthorization(result) {
+  if (result?.status !== 'accepted') {
+    throw new Error('An accepted command result is required.');
+  }
+  return !OPEN_MODES.has(result.mode);
+}
+
+export function isAuthorizedPermission(permission) {
+  return ['admin', 'maintain', 'write'].includes(permission);
 }
 
 function accepted(mode, argumentText, phase = null) {
