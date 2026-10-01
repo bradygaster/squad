@@ -14,9 +14,9 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "c448595b6c565b16e6945974e752773a666f3956c6a13a25ea6c1bd70e15b02f",
-      "lock_sha256": "5667e8e99ef82df5ead035c60ca2f8d7443d54c63b159eb724d97422b25bade4",
-      "package_lock_sha256": "6cad4d0709c07759c1e86bf310a7f423fbb1be6aa8c5795ff46cc29757d8f534"
+      "source_sha256": "0f292c576983ac99dace0661e34f900ddd91fcd50f28ff6726eff78704e283f2",
+      "lock_sha256": "32df53558611b35f809ea40a0de0b1b33e4f4dda955400b5387e77f96cb25277",
+      "package_lock_sha256": "a3336602334921327ca585f2321f84547ac2fde94f22178e25dcb029dd1370e6"
     },
     {
       "name": "squad-implement-worker",
@@ -105,7 +105,7 @@
       "package_destination": ".github/workflows/shared/squad-command-contract.mjs",
       "destination": ".github/workflows/shared/squad-command-contract.mjs",
       "ownership": "manifest",
-      "sha256": "5872f9098ec20e407c5115ff6f955b81be4021340d9e8f6ed744f4fcfdc23b0a"
+      "sha256": "137e30129602128cbea33fb4f113e66761fe14c9b1db906dff3b6f681f19de58"
     },
     {
       "path": "shared/squad-cast-validator.mjs",

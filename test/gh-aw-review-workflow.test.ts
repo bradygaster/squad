@@ -77,9 +77,17 @@ function provenanceRows(workflow: string): string[] {
 
 function assertRelayHeadBinding(workflow: string): void {
   const relay = workflow.match(/## skill: `squad-review-relay`([\s\S]*?)(?=\n## skill:)/)?.[1] ?? '';
-  expect(relay).toContain("`head_sha` equals the pull request's exact current head SHA");
-  expect(relay).toMatch(/review guard binds `workflow_sha` to the pull request's exact base\s+SHA/);
-  expect(relay).toContain("the run's `head_sha` is not the workflow source SHA");
+  const normalized = relay.replace(/\s+/g, ' ');
+  expect(normalized).toContain("`head_sha` equals the pull request's exact base/workflow SHA");
+  expect(normalized).toContain(
+    "`pull_requests[].head.sha` equals the pull request's exact current head SHA",
+  );
+  expect(normalized).toContain(
+    "review guard binds `workflow_sha` to the pull request's exact base SHA",
+  );
+  expect(normalized).toContain(
+    '`pull_requests[].head.sha` binds the reviewed revision to the exact pull request head',
+  );
 }
 
 function assertRelayRuntimeBinding(workflow: string): void {
@@ -338,8 +346,12 @@ describe('gh-aw enforcing Squad reviewer', () => {
 
   it('rejects dispatcher source mutations conflating API run head and workflow source', () => {
     for (const mutation of [
-      ROUTER.replace("`head_sha` equals the pull request's exact current head SHA",
-        "`head_sha` equals the pull request's exact base SHA"),
+      ROUTER.replace("`head_sha` equals the pull request's exact base/workflow SHA",
+        "`head_sha` equals the pull request's exact current head SHA"),
+      ROUTER.replace(
+        "`pull_requests[].head.sha` equals the pull request's exact current head SHA",
+        "`pull_requests[].head.sha` equals the pull request's exact base SHA",
+      ),
       ROUTER.replace("review guard binds `workflow_sha` to the pull request's exact base",
         "review guard binds `workflow_sha` to the pull request's exact head"),
     ]) {

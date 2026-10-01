@@ -1136,10 +1136,11 @@ request, then stop.
 
 List workflow runs for `.github/workflows/squad-review.lock.yml`. Keep only
 `pull_request_target` runs associated with this pull request whose API
-`head_sha` equals the pull request's exact current head SHA and whose recorded
-pull request head equals the exact current head. Keep immutable workflow source
-separate: the review guard binds `workflow_sha` to the pull request's exact base
-SHA; the run's `head_sha` is not the workflow source SHA.
+`head_sha` equals the pull request's exact base/workflow SHA and whose
+`pull_requests[].head.sha` equals the pull request's exact current head SHA.
+Keep immutable workflow source separate: the review guard binds `workflow_sha` to the pull request's exact base
+SHA, while `pull_requests[].head.sha` binds the reviewed revision to the exact
+pull request head.
 Select the newest run by creation
 time, breaking ties by numeric run ID, then fetch that run attempt's jobs and
 require exactly one job named `review`. A same-named job from any other run is

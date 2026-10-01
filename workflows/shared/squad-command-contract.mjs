@@ -116,16 +116,26 @@ function extractInvocation(source, text) {
     };
   }
 
-  let fence = '';
+  let fence = null;
   for (const originalLine of normalizeNewlines(text).split('\n')) {
-    const fenceMatch = originalLine.match(/^\s*(`{3,}|~{3,})/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1][0];
-      if (!fence) fence = marker;
-      else if (fence === marker) fence = '';
+    if (fence) {
+      const closingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (closingFence
+        && closingFence[1][0] === fence.delimiter
+        && closingFence[1].length >= fence.length) {
+        fence = null;
+      }
       continue;
     }
-    if (fence) continue;
+    const openingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (openingFence) {
+      fence = {
+        delimiter: openingFence[1][0],
+        length: openingFence[1].length,
+      };
+      continue;
+    }
+    if (/^(?: {4}|\t)/.test(originalLine)) continue;
     const line = originalLine.replace(/`+[^`]*`+/g, '').trim();
     if (!/^\/squad/i.test(line)) continue;
     const slash = line.match(/^\/squad(?:\s|$)/);

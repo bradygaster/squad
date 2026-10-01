@@ -89,6 +89,12 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       ['Use `/squad cast` after review.', 'inline code'],
       ['```text\n/squad cast\n```', 'fenced code'],
       ['~~~text\n/squad cast\n~~~', 'tilde-fenced code'],
+      ['````text\n```\n/squad cast\n````', 'code after a shorter backtick fence'],
+      ['~~~~text\n~~~\n/squad cast\n~~~~', 'code after a shorter tilde fence'],
+      ['````text\n~~~~\n/squad cast\n````', 'code after a different fence delimiter'],
+      ['````text\n```` trailing-info\n/squad cast\n````', 'code after a fence with trailing info'],
+      ['    /squad cast', 'four-space-indented code'],
+      ['\t/squad cast', 'tab-indented code'],
     ])('ignores %s instead of activating control-plane work', (body) => {
       expect(classifySquadCommand(payload(body), 'issues')).toEqual({
         status: 'none',
@@ -245,6 +251,35 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       expect(classifySquadCommand(comment('/squad status'), 'issue_comment')).toMatchObject({
         status: 'accepted',
         mode: 'status',
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('realistic fence-length mutation exposes a hidden command and is caught', async () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    const root = mkdtempSync(join(TEST_ROOT, 'command-fence-mutant-'));
+    try {
+      const source = join(process.cwd(), 'workflows', 'shared', 'squad-command-contract.mjs');
+      const mutant = join(root, 'squad-command-contract-mutant.mjs');
+      cpSync(source, mutant);
+      const original = readFileSync(mutant, 'utf8');
+      const changed = original.replace(
+        '        && closingFence[1].length >= fence.length) {',
+        '        ) {',
+      );
+      expect(changed).not.toBe(original);
+      writeFileSync(mutant, changed);
+      const module = await import(`${pathToFileURL(mutant).href}?mutation=${Date.now()}`);
+      const hidden = comment('````text\n```\n/squad cast\n````');
+      expect(module.classifySquadCommand(hidden, 'issue_comment')).toMatchObject({
+        status: 'accepted',
+        mode: 'cast',
+      });
+      expect(classifySquadCommand(hidden, 'issue_comment')).toEqual({
+        status: 'none',
+        source: 'comment',
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
