@@ -54,27 +54,50 @@ condition and wait for a human decision — do not work around it.
 # gh is authenticated
 gh auth status
 
+# Prove the exact package-capable compiler version before creating artifacts
+# gh-aw-exact-version-start
+required_gh_aw_version="v0.89.22"
+gh_aw_version_output="$(gh aw --version 2>&1)" || gh_aw_version_output=""
+gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+
+if [ "${gh_aw_version}" != "${required_gh_aw_version}" ]; then
+  echo "Installing exact supported gh-aw ${required_gh_aw_version}."
+  gh extension remove gh-aw >/dev/null 2>&1 || true
+  gh extension install --pin "${required_gh_aw_version}" github/gh-aw
+  gh_aw_version_output="$(gh aw --version 2>&1)" || {
+    echo "STOP: gh-aw version could not be verified after clean installation." >&2
+    exit 1
+  }
+  gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+fi
+
+test "${gh_aw_version}" = "${required_gh_aw_version}" || {
+  echo "STOP: required gh-aw v0.89.22, but found ${gh_aw_version:-unavailable} after clean installation." >&2
+  exit 1
+}
+# gh-aw-exact-version-end
+
 # Capture repository identity and default branch AT RUNTIME
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 echo "Repo: ${owner_repo}  Default branch: ${default_branch}"
-
-# Install the package-capable compiler version used by the distribution contract
-gh extension install --force --pin v0.89.22 github/gh-aw
-test "$(gh aw --version | awk '{print $NF}')" = "v0.89.22"
 
 # Git state must be understood and clean enough to isolate the install
 git status --short
 ```
 
 > **Portability — compiler check:** use the equivalent PowerShell commands to
-> force-install `github/gh-aw` at `v0.89.22`, then confirm `gh aw --version`
-> reports that exact version before installation.
+> capture both output streams from `gh aw --version`. On any mismatch, remove
+> `github/gh-aw`, cleanly install the exact `v0.89.22` pin, and verify both
+> streams again. Stop before branch creation or file generation unless that
+> second check proves exactly `v0.89.22`; never select a newer release.
 
 - **STOP** if `gh auth status` is not logged in, or is logged in as the wrong
   identity for this repo (see the `gh-auth-isolation` skill to operate as a
   specific account without switching the global default).
 - **STOP** if `owner_repo` or `default_branch` cannot be resolved.
+- **STOP** if exact gh-aw `v0.89.22` cannot be proven after the clean pinned
+  reinstall. Do not create a branch or generate repository files.
 - **STOP** if the working tree has unrelated uncommitted changes you cannot
   account for — the bootstrap must land as an isolated, reviewable change.
 - Confirm Copilot is enabled for the repository where checkable; the activation
@@ -166,7 +189,7 @@ full stack consistent and avoids a second bootstrap pass later.
 
 Report/proposal-only is the default. Ordinary fixes require the explicit
 `"squadRetroAutoImplement": "allow"` setting in `.squad/config.json`;
-five action issues and three dispatches per wakeup remain separate caps.
+five action issues and three dispatches per wake-up remain separate caps.
 An improvement requires `/squad approve-improvement`, `Approved-Revision:`
 and exact `Approved-Path:` lines from a human with write/maintain/admin access.
 The dispatcher sends nested issue and approval-comment IDs to the worker;

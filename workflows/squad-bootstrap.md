@@ -304,6 +304,7 @@ safe-outputs:
               const validate = (candidatePayload, linkMode) => {
                 const candidatePayloadPath =
                   join(candidate, '.github/workflows/squad-bootstrap-payload.json');
+                mkdirSync(dirname(candidatePayloadPath), { recursive: true });
                 writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\n`);
                 const errors = validatorModule.validateBootstrapPayload({
                   root: candidate,

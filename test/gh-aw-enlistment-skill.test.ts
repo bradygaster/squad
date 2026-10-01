@@ -15,6 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSkillFile } from '@bradygaster/squad-sdk/skills';
@@ -40,6 +41,63 @@ function readRaw(rel: string): string {
 /** LF-normalized read — markdown is not pinned to LF, so Windows checkouts get CRLF. */
 function readLF(rel: string): string {
   return readRaw(rel).replace(/\r\n/g, '\n');
+}
+
+const VERSION_GATE_START = '# gh-aw-exact-version-start';
+const VERSION_GATE_END = '# gh-aw-exact-version-end';
+
+function extractVersionGate(content: string): string {
+  const start = content.indexOf(VERSION_GATE_START);
+  const end = content.indexOf(VERSION_GATE_END);
+  expect(start, `${VERSION_GATE_START} must exist`).toBeGreaterThan(-1);
+  expect(end, `${VERSION_GATE_END} must follow its start marker`).toBeGreaterThan(start);
+  return content.slice(start + VERSION_GATE_START.length, end);
+}
+
+function runVersionGate(
+  gate: string,
+  initialVersion: string,
+  installedVersion: string,
+  versionStream: 'stdout' | 'stderr' = 'stdout',
+) {
+  const script = `
+set -euo pipefail
+installed=0
+exec 3>&2
+gh() {
+  if [ "$1" = "aw" ] && [ "$2" = "--version" ]; then
+    printf 'CALL version\\n' >&3
+    version="$INITIAL_VERSION"
+    if [ "$installed" -eq 1 ]; then version="$INSTALLED_VERSION"; fi
+    if [ "$VERSION_STREAM" = "stderr" ]; then
+      printf 'gh-aw %s\\n' "$version" >&2
+    else
+      printf 'gh-aw %s\\n' "$version"
+    fi
+    return 0
+  fi
+  if [ "$1" = "extension" ] && [ "$2" = "remove" ] && [ "$3" = "gh-aw" ]; then
+    printf 'CALL remove\\n' >&3
+    return 0
+  fi
+  if [ "$1" = "extension" ] && [ "$2" = "install" ]; then
+    printf 'CALL install %s %s\\n' "$3" "$4" >&3
+    installed=1
+    return 0
+  fi
+  return 64
+}
+${gate}
+`;
+  return spawnSync('bash', ['-c', script], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      INITIAL_VERSION: initialVersion,
+      INSTALLED_VERSION: installedVersion,
+      VERSION_STREAM: versionStream,
+    },
+  });
 }
 
 const COMPILE_WARNINGS = [
@@ -277,8 +335,11 @@ describe('gh-aw-enlistment skill', () => {
     });
 
     it('pins and verifies the package-capable gh-aw compiler', () => {
-      expect(content).toContain('gh extension install --force --pin v0.89.22 github/gh-aw');
-      expect(content).toContain('gh aw --version');
+      expect(content).toContain('gh_aw_version_output="$(gh aw --version 2>&1)"');
+      expect(content).toContain('gh extension remove gh-aw');
+      expect(content).toContain('required_gh_aw_version="v0.89.22"');
+      expect(content).toContain('gh extension install --pin "${required_gh_aw_version}" github/gh-aw');
+      expect(content).toContain('never select a newer release');
       expect(content).toContain('PowerShell');
     });
 
@@ -291,6 +352,50 @@ describe('gh-aw-enlistment skill', () => {
   describe('gh-aw bootstrap documentation', () => {
     const guide = readLF(GUIDE);
     const agentGuide = readLF(AGENT_GUIDE);
+    const versionGate = extractVersionGate(guide);
+
+    it('accepts an existing exact v0.89.22 installation without reinstalling', () => {
+      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
+      expect(result.stderr).not.toContain('CALL remove');
+      expect(result.stderr).not.toContain('CALL install');
+    });
+
+    it('captures exact v0.89.22 version output emitted on stderr', () => {
+      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22', 'stderr');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
+      expect(result.stderr).not.toContain('CALL remove');
+      expect(result.stderr).not.toContain('CALL install');
+    });
+
+    it('removes pre-existing v0.89.21 and verifies a clean v0.89.22 install', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.22');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
+      expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+    });
+
+    it('fails closed when a clean reinstall persistently reports v0.89.21', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.21');
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('required gh-aw v0.89.22, but found v0.89.21');
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
+      expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+      expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
+        guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'),
+      );
+      expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
+        guide.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+    });
+
+    it('keeps the canonical skill version gate synchronized with the guide', () => {
+      expect(extractVersionGate(readLF(CANONICAL))).toBe(versionGate);
+    });
 
     it('checks the staged installation before every bootstrap commit', () => {
       expect(guide.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
