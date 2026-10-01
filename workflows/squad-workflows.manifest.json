@@ -14,9 +14,9 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "b237872416c4e1357ed8136e9c3444cbcae1a97a2458bff81af9a4f7087bc40b",
-      "lock_sha256": "9d44255bcccd8cb114c57b65fe2e2ecf582a378f2ea21191d27321f2525f8886",
-      "package_lock_sha256": "3f632c603377d31c7157bbd4bde08efd37da85098c2a163e27b55ddcfae1fe72"
+      "source_sha256": "ccd6d2cf4ac9cfcae8862d1ecb1e324c1be10000ecd4eac9124707d119be3c2c",
+      "lock_sha256": "f4d27d360a96d3a83d2d2d0bdb79fc128b6e40a80cc2cb25b9cd79b9ed472016",
+      "package_lock_sha256": "a901cbeffc005693572d5910a15dd30ab28f08ee2c6bebb28a01b6eec0fe8517"
     },
     {
       "name": "squad-implement-worker",
@@ -59,9 +59,9 @@
       "source": "workflows/package/squad-improvement-worker.md",
       "destination": ".github/workflows/squad-improvement-worker.md",
       "lock": ".github/workflows/squad-improvement-worker.lock.yml",
-      "source_sha256": "01c89f8890f02c0ca884513aa10225787feaf3606ab604d5c0e85fbbccdb6c95",
-      "lock_sha256": "d5389a54f3c99f8fb01223dc04ea66bb59c32769d1d45b730a35275905c26829",
-      "package_lock_sha256": "3ea27b34eba4685735b3ff9d26175c49d1fc290ef94b947420f2c0378014cf03"
+      "source_sha256": "89896bc4321f76e791d40ee8239ba7ed6a2b8e090113a1cdb3017cb2a68e5c90",
+      "lock_sha256": "65d905f43b88b2dffaa8bf90c8fd9f4d10ac2a3db3789a439ec998a2e5ad84d1",
+      "package_lock_sha256": "caf333235528b716c1177684be94752e56a288a5dc87723b6abcf99074d388d1"
     },
     {
       "name": "squad-bootstrap",
@@ -129,7 +129,7 @@
       "package_destination": ".github/workflows/shared/squad-improvement-gate.mjs",
       "destination": ".github/workflows/shared/squad-improvement-gate.mjs",
       "ownership": "manifest",
-      "sha256": "b8e27c9311a24ce448ff34d5bae5c50947659c01acc3704dfde6dc6ca6d2a042"
+      "sha256": "306324509ef0fb31b645cd92f4085f3d3776021f149783908f48a3eb89038228"
     },
     {
       "path": "shared/squad-retro-evidence.mjs",

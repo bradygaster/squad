@@ -273,10 +273,36 @@ export async function collectImprovementContext(env = process.env, {
   if (env.SQUAD_IMPROVE_AW_CONTEXT) {
     let origin;
     try { origin = JSON.parse(env.SQUAD_IMPROVE_AW_CONTEXT); } catch { return refuse('approval-relay-context-invalid'); }
+    // `repo`/`workflow_id` are populated by gh-aw's dispatch engine from this
+    // run's own (always-accurate, regardless of triggering event) identity —
+    // they independently prove "dispatched from squad.lock.yml in this exact
+    // repo" and are required unconditionally.
     if (env.GITHUB_ACTOR !== 'github-actions[bot]' || origin.repo !== repository ||
-        origin.workflow_id !== `${repository}/.github/workflows/squad.lock.yml@refs/heads/${env.SQUAD_IMPROVE_DEFAULT_BRANCH}` ||
-        origin.event_type !== 'issue_comment' || origin.item_type !== 'issue' ||
-        origin.item_number !== number || origin.comment_id !== commentId) return refuse('approval-relay-context-invalid');
+        origin.workflow_id !== `${repository}/.github/workflows/squad.lock.yml@refs/heads/${env.SQUAD_IMPROVE_DEFAULT_BRANCH}`) {
+      return refuse('approval-relay-context-invalid');
+    }
+    if (origin.event_type === 'issue_comment') {
+      // squad.md was triggered directly by the approval comment: gh-aw's engine
+      // derives item_type/item_number/comment_id from that same real payload,
+      // so the engine-injected context is itself authoritative here.
+      if (origin.item_type !== 'issue' || origin.item_number !== number || origin.comment_id !== commentId) {
+        return refuse('approval-relay-context-invalid');
+      }
+    } else {
+      // squad.md was relayed here via workflow_dispatch (command-router path):
+      // its own run has no native issue/comment payload, so gh-aw's engine can
+      // only report this run's own (workflow_dispatch) event_type and empty
+      // item fields — never a usable item identity. The skill must instead
+      // forward its own independently re-verified item identity under a
+      // distinct input name gh-aw's engine does not auto-populate/override,
+      // with identical exact-match binding semantics.
+      let relay;
+      try { relay = JSON.parse(env.SQUAD_IMPROVE_RELAY_CONTEXT || ''); } catch { return refuse('approval-relay-context-invalid'); }
+      if (!relay || relay.event_type !== 'issue_comment' || relay.item_type !== 'issue' ||
+          relay.item_number !== number || relay.comment_id !== commentId) {
+        return refuse('approval-relay-context-invalid');
+      }
+    }
   }
   const issue = await fetchJson(`repos/${repository}/issues/${number}`, {});
   if (!issue || issue.__status || Number(issue.number) !== Number(number) || issue.pull_request) return refuse('issue-unavailable');

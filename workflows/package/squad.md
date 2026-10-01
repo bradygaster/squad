@@ -2339,14 +2339,25 @@ parsed **Dispatched aw_context** (Trigger Context) relayed by the command
 router. If neither resolves to a positive integer, refuse and STOP — never
 dispatch with a guessed, omitted, or placeholder id. Use the typed
 `dispatch_workflow` safe-output, with nested inputs (never a generic GitHub
-mutation):
+mutation). Always include `squad_approval_relay` exactly as shown — this run's
+own workflow_dispatch trigger carries no native issue/comment payload for
+gh-aw's dispatch engine to derive context from when this run was itself
+relayed, so the worker-side gate cannot rely on engine-injected `aw_context`
+for the item identity in that case and requires this explicit, separately
+re-verified echo instead:
 
 ```json
 {
   "workflow_name": "squad-improvement-worker",
   "inputs": {
     "issue_number": "{issue-number}",
-    "approval_comment_id": "{resolved-approval-comment-id}"
+    "approval_comment_id": "{resolved-approval-comment-id}",
+    "squad_approval_relay": {
+      "event_type": "issue_comment",
+      "item_type": "issue",
+      "item_number": "{issue-number}",
+      "comment_id": "{resolved-approval-comment-id}"
+    }
   }
 }
 ```
