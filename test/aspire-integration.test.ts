@@ -36,17 +36,12 @@ const SKIP_REASON = dockerSkipReason() ?? playwrightBrowserSkipReason();
 const CONTAINER_NAME = 'squad-aspire-dashboard';
 const DASHBOARD_URL = 'http://localhost:18888';
 const OTLP_GRPC_TARGET = 'http://localhost:4317';
-// Pin to a specific, verified-good patch version rather than a floating tag.
-// Confirmed in CI: `:latest` AND the floating major tag `:13` currently both
-// resolve to the SAME freshly-published `13.6.0` image (built 2026-10-01,
-// same layer digests/sha256:239e58... as `:latest`), and that image's
-// entrypoint fails immediately with "Aspire.Dashboard.dll does not exist" /
-// "No .NET SDKs were found" — the app binary is missing from the image
-// itself (confirmed via `docker inspect`/`docker logs`, not a slow/contended
-// start). `13.5.2` is a distinct, ~3-week-older build (different layer
-// digests, verified via the MCR manifest API) that predates this broken
-// release and does not exhibit the problem. Re-pin forward once a newer
-// verified-good patch tag is published upstream.
+// Pin to a verified-good patch version, not a floating tag: `:latest` and
+// the major-version tag `:13` both currently resolve to a broken same-day
+// upstream build (missing /app/Aspire.Dashboard.dll, confirmed via MCR
+// manifest digest comparison). `13.5.2` is a distinct, older build that
+// does not exhibit the problem. Re-pin forward once a newer verified-good
+// patch tag is published upstream.
 const DASHBOARD_IMAGE = 'mcr.microsoft.com/dotnet/aspire-dashboard:13.5.2';
 
 // ============================================================================
@@ -174,15 +169,9 @@ describe.skipIf(SKIP_REASON !== null)(
         { stdio: 'inherit' },
       );
 
-      // Wait for dashboard UI to respond. 120s gives generous headroom over
-      // the dashboard's typical few-second cold start, absorbing real CPU
-      // contention on CI runners where this suite runs alongside ~10k other
-      // tests in full parallelism. (The repeated timeouts originally
-      // investigated in #2123/#2132 turned out to have a separate root
-      // cause — a transiently broken `:latest` image tag, fixed above by
-      // pinning to DASHBOARD_IMAGE — but a generous timeout remains
-      // worthwhile defense-in-depth against genuine contention-induced
-      // slow starts.)
+      // 120s gives generous headroom over the dashboard's typical
+      // few-second cold start, as defense-in-depth against CI runner
+      // contention (independent of the image-pinning fix above).
       await waitForHealthy(DASHBOARD_URL, 120_000);
 
       // Initialize OTel gRPC exporters targeting the dashboard
@@ -190,7 +179,7 @@ describe.skipIf(SKIP_REASON !== null)(
 
       // Launch Playwright browser
       browser = await chromium.launch({ headless: true });
-    }, 240_000); // 4 min timeout for pull + start (120s health-check budget + overhead)
+    }, 300_000); // 5 min timeout: 120s pull + 120s health-check budget, plus ~60s margin for container startup, diagnostics, and browser launch
 
     // ------------------------------------------------------------------
     // Teardown: shutdown OTel, close browser, remove container
