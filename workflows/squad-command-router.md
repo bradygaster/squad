@@ -2,6 +2,7 @@
 name: Squad Command Router
 description: Discover /squad commands outside the start-only slash-command activation path
 on:
+  roles: all
   issues:
     types: [opened, edited, reopened]
   issue_comment:
@@ -93,6 +94,19 @@ safe-outputs:
               return;
             }
           }
+          // Forward the originating comment (when this run was triggered by
+          // one) through the typed `aw_context` relay input. The dispatched
+          // squad.md run has no native `comment` event of its own, so without
+          // this, `/squad approve-improvement` relayed here can never supply
+          // a real `approval_comment_id` (#3). `comment_id` is read back by
+          // the worker-side gate, which re-fetches and independently
+          // re-validates the live comment before trusting anything — the
+          // relay only carries a pointer, never the approval itself.
+          const awContext = JSON.stringify({
+            item_type: context.payload.issue?.pull_request ? 'pull_request' : 'issue',
+            item_number: issueNumber,
+            comment_id: context.payload.comment?.id ?? null,
+          });
           await github.rest.actions.createWorkflowDispatch({
             ...context.repo,
             workflow_id: 'squad.lock.yml',
@@ -100,6 +114,7 @@ safe-outputs:
             inputs: {
               command: result.argumentText || 'cast',
               issue_number: String(issueNumber),
+              aw_context: awContext,
             },
           });
   add-comment:

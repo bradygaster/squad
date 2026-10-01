@@ -519,3 +519,58 @@ describe('improvement: one authorized dispatcher route and installed contract', 
     expect(job).toContain('SQUAD_IMPROVE_APPROVAL_COMMENT_ID');
   }, 90000);
 });
+
+// Finding #3 (octodemo/zava-social-backend-20261001184422#1): the router
+// relayed `/squad approve-improvement` via workflow_dispatch without any
+// originating comment provenance, so `validateImprovementCommand` could never
+// supply a real `approval_comment_id` and rejected the command outright. The
+// router now forwards an `aw_context` pointer (item type/number + the
+// originating comment id) on the dispatch; these cases exercise exactly the
+// `event.inputs` shape `squad-command-router.md` now emits for that relay,
+// and confirm permission is bound to the comment's own live author -- never
+// the relaying dispatch actor -- so approval binding is not weakened.
+describe('improvement: workflow_dispatch relay carries real comment provenance (#3)', () => {
+  const dispatchVariables = { ...env(), GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTOR: 'github-actions[bot]' };
+  const relayEvent = (overrides = {}) => ({
+    inputs: {
+      command: 'approve-improvement',
+      issue_number: '77',
+      aw_context: JSON.stringify({ item_type: 'issue', item_number: 77, comment_id: 901 }),
+      ...overrides,
+    },
+  });
+  it('accepts the exact dispatch shape the router emits, checking permission against the comment author', async () => {
+    const calls: string[] = [];
+    const fetchJson = async (route: string, fields: any) => {
+      calls.push(route);
+      return api().fetchJson(route, fields);
+    };
+    expect(await gate.validateImprovementCommand(relayEvent(), dispatchVariables, fetchJson)).toMatchObject({ ok: true, violations: [] });
+    expect(calls).toContain(`repos/${REPO}/issues/comments/901`);
+    expect(calls).toContain(`repos/${REPO}/collaborators/${encodeURIComponent('maintainer')}/permission`);
+    expect(calls).not.toContain(`repos/${REPO}/collaborators/${encodeURIComponent('github-actions[bot]')}/permission`);
+  });
+  it.each([
+    ['malformed aw_context JSON', () => relayEvent({ aw_context: '{not json' }), {}],
+    ['non-issue item_type', () => relayEvent({ aw_context: JSON.stringify({ item_type: 'pull_request', item_number: 77, comment_id: 901 }) }), {}],
+    ['item_number mismatch vs issue_number', () => relayEvent({ aw_context: JSON.stringify({ item_type: 'issue', item_number: 99, comment_id: 901 }) }), {}],
+    ['non-numeric comment_id', () => relayEvent({ aw_context: JSON.stringify({ item_type: 'issue', item_number: 77, comment_id: 'abc' }) }), {}],
+    ['edited comment (created_at !== updated_at)', () => relayEvent(), { comments: [comment()], approved: comment({ updated_at: '2026-09-02T01:00:00Z' }) }],
+    ['bot-authored comment', () => relayEvent(), { approved: comment({ user: { login: 'maintainer', type: 'Bot' } }) }],
+    ['weak collaborator permission', () => relayEvent(), { permission: { permission: 'read' } }],
+    ['non-matching comment content', () => relayEvent(), { approved: comment({ body: '/squad approve-improvement\nunexpected' }) }],
+  ])('rejects %s without weakening approval binding', async (_name, input, options) => {
+    const fetchJson = api(options).fetchJson;
+    const result = await gate.validateImprovementCommand(input(), dispatchVariables, fetchJson);
+    expect(result.ok).toBe(false);
+    expect(result.violations.length).toBeGreaterThan(0);
+  });
+  it('reserves revoke-improvement over the dispatch relay the same as the native comment route', async () => {
+    const result = await gate.validateImprovementCommand(relayEvent({ command: 'revoke-improvement' }), dispatchVariables);
+    expect(result).toMatchObject({ ok: true, reserved: true, violations: [] });
+  });
+  it('ignores an unrelated relayed command instead of asserting approval', async () => {
+    const result = await gate.validateImprovementCommand(relayEvent({ command: 'status' }), dispatchVariables);
+    expect(result).toMatchObject({ ok: true, ignored: true, violations: [] });
+  });
+});

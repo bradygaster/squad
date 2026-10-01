@@ -11,6 +11,7 @@ import {
   readAgentOutputItems, evaluateRetroPullRequestItems, pullLinksIssue, findNativeLinkedPulls,
   NATIVE_LINK_MAX_PAGES,
 } from './squad-retro-provenance.mjs';
+export { isNumericId };
 
 export { ACTION_LABEL, PROPOSAL_LABEL, extractActionKey, readAgentOutputItems };
 export const APPROVE_COMMAND = '/squad approve-improvement';
@@ -373,11 +374,59 @@ export async function enforceImprovementSafeOutputs(env = process.env, {
 
 // Fail fast before the dispatcher agent; its existing mode authorization still
 // runs. The receiver checks injected aw_context against the exact relayed IDs.
-export async function validateImprovementCommand(event, env, fetchJson = (route, fields) => restJson(env, route, fields)) {
+// A relayed workflow_dispatch run has no native `comment` event of its own:
+// the command router forwards only a `comment_id` pointer through the typed
+// `aw_context` input (#3). That pointer is never trusted on its own — it is
+// used solely to re-fetch the live comment, which is then independently
+// re-validated against the exact same invariants as the direct path below
+// (issue match, human author, unedited, exact approval content). The
+// comment's own live `user.login` — never the dispatch actor, which is the
+// relaying bot identity, not the approver — is what gets the permission
+// check, so approval binding is exactly as strong as the native route.
+async function validateApprovalDispatchRelay(event, env, fetchJson, rawCommand) {
+  if (rawCommand !== 'approve-improvement') return { ok: false, violations: [{ kind: 'approval-route-invalid' }] };
+  let awContext = null;
+  try {
+    awContext = JSON.parse(event?.inputs?.aw_context || '');
+  } catch {
+    awContext = null;
+  }
+  const issueNumber = Number(event?.inputs?.issue_number);
+  const commentId = Number(awContext?.comment_id);
+  if (!awContext || awContext.item_type !== 'issue' ||
+      !isNumericId(issueNumber) || Number(awContext.item_number) !== issueNumber ||
+      !isNumericId(commentId)) {
+    return { ok: false, violations: [{ kind: 'approval-route-invalid' }] };
+  }
   const violations = [];
-  const rawCommand = /(?:^|\s)\/squad(?:\s+|$)([^\r\n]*)/.exec(normalizeText(event?.comment?.body || event?.issue?.body))?.[1]?.trim();
-  if (rawCommand === 'revoke-improvement') return { ok: true, reserved: true, violations };
-  if (!rawCommand?.startsWith('approve-improvement')) return { ok: true, ignored: true, violations };
+  const comment = await fetchJson(`repos/${env.GITHUB_REPOSITORY}/issues/comments/${commentId}`, {});
+  const apiBase = String(env.GITHUB_API_URL || 'https://api.github.com').replace(/\/+$/, '');
+  if (comment?.id !== commentId ||
+      comment.issue_url !== `${apiBase}/repos/${env.GITHUB_REPOSITORY}/issues/${issueNumber}` ||
+      comment?.user?.type !== 'User' ||
+      comment.performed_via_github_app || comment.created_at !== comment.updated_at ||
+      parseCommandComment(comment.body).command !== 'approve') {
+    violations.push({ kind: 'approval-comment-provenance-invalid' });
+  }
+  const relayedActor = comment?.user?.login;
+  const permission = relayedActor
+    ? await fetchJson(`repos/${env.GITHUB_REPOSITORY}/collaborators/${encodeURIComponent(relayedActor)}/permission`, {})
+    : null;
+  if (!relayedActor || !isTrustedApprover({ permission: permission?.permission }).trusted) {
+    violations.push({ kind: 'actor-not-trusted' });
+  }
+  return { ok: !violations.length, violations };
+}
+
+export async function validateImprovementCommand(event, env, fetchJson = (route, fields) => restJson(env, route, fields)) {
+  const isDispatchRelay = env.GITHUB_EVENT_NAME === 'workflow_dispatch';
+  const rawCommand = isDispatchRelay
+    ? String(event?.inputs?.command ?? '').trim()
+    : /(?:^|\s)\/squad(?:\s+|$)([^\r\n]*)/.exec(normalizeText(event?.comment?.body || event?.issue?.body))?.[1]?.trim();
+  if (rawCommand === 'revoke-improvement') return { ok: true, reserved: true, violations: [] };
+  if (!rawCommand?.startsWith('approve-improvement')) return { ok: true, ignored: true, violations: [] };
+  if (isDispatchRelay) return validateApprovalDispatchRelay(event, env, fetchJson, rawCommand);
+  const violations = [];
   if (env.GITHUB_EVENT_NAME !== 'issue_comment' ||
       event.action !== 'created' || event.issue?.pull_request || rawCommand !== 'approve-improvement') {
     return { ok: false, violations: [{ kind: 'approval-route-invalid' }] };
