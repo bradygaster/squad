@@ -38,7 +38,9 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
   ])('%s call site', (_name, payload) => {
     it.each([
       ['/squad cast', 'cast', null],
+      [' /squad cast ', 'cast', null],
       ['  /squad cast  ', 'cast', null],
+      ['   /squad cast   ', 'cast', null],
       ['Context first.\n\n/squad status   ', 'status', null],
       ['/squad research Focus only on proposal P1', 'research', null],
       ['/squad activate phase 2', 'activate', 2],
@@ -95,6 +97,9 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       ['````text\n```` trailing-info\n/squad cast\n````', 'code after a fence with trailing info'],
       ['    /squad cast', 'four-space-indented code'],
       ['\t/squad cast', 'tab-indented code'],
+      [' \t/squad cast', 'one-space-plus-tab-indented code'],
+      ['  \t/squad cast', 'two-spaces-plus-tab-indented code'],
+      ['   \t/squad cast', 'three-spaces-plus-tab-indented code'],
     ])('ignores %s instead of activating control-plane work', (body) => {
       expect(classifySquadCommand(payload(body), 'issues')).toEqual({
         status: 'none',
@@ -281,6 +286,36 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         status: 'none',
         source: 'comment',
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('realistic CommonMark tab-indentation mutation exposes hidden commands and is caught', async () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    const root = mkdtempSync(join(TEST_ROOT, 'command-indent-mutant-'));
+    try {
+      const source = join(process.cwd(), 'workflows', 'shared', 'squad-command-contract.mjs');
+      const mutant = join(root, 'squad-command-contract-mutant.mjs');
+      cpSync(source, mutant);
+      const original = readFileSync(mutant, 'utf8');
+      const changed = original.replace(
+        '/^(?: {4}| {0,3}\\t)/',
+        '/^(?: {4}|\\t)/',
+      );
+      expect(changed).not.toBe(original);
+      writeFileSync(mutant, changed);
+      const module = await import(`${pathToFileURL(mutant).href}?mutation=${Date.now()}`);
+      for (const body of [' \t/squad cast', '  \t/squad cast', '   \t/squad cast']) {
+        expect(module.classifySquadCommand(comment(body), 'issue_comment')).toMatchObject({
+          status: 'accepted',
+          mode: 'cast',
+        });
+        expect(classifySquadCommand(comment(body), 'issue_comment')).toEqual({
+          status: 'none',
+          source: 'comment',
+        });
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

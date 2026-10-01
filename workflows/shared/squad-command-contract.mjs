@@ -135,7 +135,7 @@ function extractInvocation(source, text) {
       };
       continue;
     }
-    if (/^(?: {4}|\t)/.test(originalLine)) continue;
+    if (/^(?: {4}| {0,3}\t)/.test(originalLine)) continue;
     const line = originalLine.replace(/`+[^`]*`+/g, '').trim();
     if (!/^\/squad/i.test(line)) continue;
     const slash = line.match(/^\/squad(?:\s|$)/);
