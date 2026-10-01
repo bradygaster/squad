@@ -15,11 +15,12 @@ import { tmpdir } from 'node:os';
 import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { minimatch } from 'minimatch';
+import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml';
 import { POSIX_SHELL, NO_POSIX_SHELL_MESSAGE, requirePosixShell } from './posix-shell';
+import { createFirstInstallFixture } from './helpers/gh-aw-install-fixture.js';
 import {
   extractRunBlocks,
   scanRunBlocks,
-  extractBodyHandlingShell,
   scanShellLines,
   formatViolations,
   type ContractToken,
@@ -27,6 +28,7 @@ import {
 import {
   CONTRACT_DESTINATION,
   CONTRACT_SOURCE,
+  MIN_GH_AW_VERSION,
   OWNERSHIP_ENTRY_COUNT,
   PACKAGE_NAME,
   RUNTIME_TUPLES,
@@ -34,10 +36,15 @@ import {
   TRIGGER_PROBE,
   TRIGGER_PROBE_DESTINATION,
   WORKFLOW_NAMES,
+  buildContract,
   checkSource,
+  compileWithPinnedActions,
   materializeRuntime,
+  normalizeCompiledLock,
   validateContract,
+  validateCompilerActionPins,
   verifyInstall,
+  verifyCanonicalManifest,
 } from '../workflows/shared/squad-install-verifier.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
@@ -341,7 +348,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data' || name === 'messages' || name === 'jobs' || name === 'allowed-domains') continue;
+      if (name === 'data' || name === 'messages' || name === 'jobs' || name === 'steps' || name === 'allowed-domains') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -645,6 +652,7 @@ describe('gh-aw: shared component imports', () => {
 
   it('declares the plaintext Cast validator resource and canonical built-in charter resources, not imported skills', () => {
     const runtimeResources = [
+      'shared/squad-command-contract.mjs',
       'shared/squad-cast-validator.mjs',
       'shared/squad-bootstrap-validator.mjs',
       'shared/squad-improvement-gate.mjs',
@@ -736,11 +744,13 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'shared/implementation-provenance-v1.schema.json',
     'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
+    'shared/squad-command-contract.mjs',
     'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-install-verifier.mjs',
     'shared/squad-retro-evidence.mjs',
     'shared/squad-retro-provenance.mjs',
+    'shared/squad-review-guard.mjs',
   ];
 
   function runtimeResourceReferences(text: string): string[] {
@@ -792,7 +802,7 @@ describe('gh-aw: clean install runtime resource closure', () => {
     return workflowDir;
   }
 
-  it('emits every shared runtime resource referenced by all seven sources and locks', () => {
+  it('emits every shared runtime resource referenced by all eight sources and locks', () => {
     const workflowDir = createCleanInstalledTarget();
     const references = new Set<string>();
     for (const workflowName of workflowNames) {
@@ -1524,14 +1534,9 @@ describe('gh-aw: inline skill extraction', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test: gh-aw compilation retains durable state, Auto-Cast contracts, AND the
-// shell input security contract over compiled output (#1834).
+// Test: gh-aw compilation retains durable state, Auto-Cast contracts, command
+// rejection, AND the shell input security contract over compiled output.
 // ---------------------------------------------------------------------------
-//
-// workflows/squad.md §"Shell input security contract [MANDATORY]" declares that
-// attacker-controlled GitHub event text may reach the shell only through named
-// env: vars read via quoted expansion, and names four greppable anti-patterns.
-// That contract was declared but unenforced. This suite is the gate.
 //
 // The gate FAILS CLOSED. It used to gate on `it.skipIf(!ghAwAvailable)`, which is
 // the exact "silently skipped while the suite reports green" defect this file's
@@ -1724,7 +1729,10 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       '--payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-cast-payload.json"',
     );
     expect(normalizedRunnerStep).not.toContain('RUNNER_TEMP');
-    expect(normalizedRunnerStep).toContain('validator_expected_sha256="62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"');
+    const validatorDigest = createHash('sha256')
+      .update(readFileSync(join(SHARED_DIR, 'squad-cast-validator.mjs')))
+      .digest('hex');
+    expect(normalizedRunnerStep).toContain(`validator_expected_sha256="${validatorDigest}"`);
     expect(normalizedRunnerStep).toContain("outcome: 'cast_failure'");
     expect(normalizedRunnerStep).toContain('chmod 500 "$validator_runner"');
     // Prepared as a pre-agent-step (see the built-in fidelity ordering test below):
@@ -1785,18 +1793,18 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(agentExecutionIndex).toBeGreaterThan(materializeIndex);
   }, 20000);
 
-  it('keeps the v0.87.10 completion hook neutral when a custom safe job fails', () => {
+  it('keeps custom safe-output failure visible in the terminal workflow state', () => {
     const compiled = lockText();
-    const completionStep = compiled.match(
-      /      - name: Update reaction comment with completion status\n[\s\S]*?(?=\n  detection:)/,
-    )?.[0] ?? '';
-    expect(completionStep).toContain('GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}');
-    expect(completionStep).toContain('GH_AW_SAFE_OUTPUTS_RESULT: ${{ needs.safe_outputs.result }}');
-    expect(completionStep).not.toContain('needs.cast_failure.result');
-    expect(completionStep).toContain(
+    const conclusionNeeds = compiled.match(
+      /^  conclusion:\n    needs:\n([\s\S]*?)(?=    if:)/m,
+    )?.[1] ?? '';
+    expect(conclusionNeeds).toContain('- safe_outputs');
+    expect(compiled).toContain(
+      "needs.safe_outputs.result == 'success'",
+    );
+    expect(compiled).toContain(
       'This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success.',
     );
-    expect(completionStep).not.toMatch(/runSuccess[^\\n]*completed successfully/i);
   }, 20000);
 
   it('preserves the standalone release selection in the compiled install step (#1884)', () => {
@@ -1837,8 +1845,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     const violations = scanRunBlocks(blocks, '.github/workflows/squad.lock.yml');
     expect(
       violations,
-      `Compiled run: blocks violate the shell input security contract ` +
-        `(workflows/squad.md §"Shell input security contract [MANDATORY]"). Actions ` +
+      `Compiled run: blocks violate the shell input security contract. Actions ` +
         `expands \${{ … }} before the shell starts, so event text in a run: block is ` +
         `unsafe even inside quotes. Each entry names the anti-pattern token, file, and ` +
         `line:\n${formatViolations(violations)}\n\n` +
@@ -1849,31 +1856,26 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     ).toEqual([]);
   }, 20000);
 
-  it('routes the /squad parser body only through contract-safe shell', () => {
-    // The printf/eval/awk hops live in the parser one-liners of workflows/squad.md,
-    // which gh-aw pulls in verbatim at runtime via {{#runtime-import … squad.md}} —
-    // never inlined into the lock. This is the only surface on which those hops can
-    // be observed, so it is scanned directly (see gh-aw-shell-contract.ts header).
-    const source = readText(SQUAD_WORKFLOW);
-    const shell = extractBodyHandlingShell(source);
-
-    expect(
-      shell.length,
-      'No body-handling shell found in workflows/squad.md. The /squad parser reads ' +
-        'SQUAD_TRIGGER_BODY through fenced bash; zero matches means the extractor lost ' +
-        'the parser code and the printf/eval/awk hops are unmeasured (#1834).'
-    ).toBeGreaterThan(0);
-
-    const violations = scanShellLines(shell, 'workflows/squad.md');
-    expect(
-      violations,
-      `The /squad parser passes attacker body text into a forbidden shell construct ` +
-        `(workflows/squad.md §"Shell input security contract [MANDATORY]"). Each entry ` +
-        `names the anti-pattern token, file, and line:\n${formatViolations(violations)}\n\n` +
-        `Reproduce: inspect the parser one-liners that read the body variable:\n` +
-        `  grep -nE 'printf +"?\\$|awk +-v|eval|bash +-c' workflows/squad.md`
-    ).toEqual([]);
-  });
+  it('compiles one shared command contract into pre-agent context and safe-output failure', () => {
+    const compiled = lockText().replace(/\\"/g, '"');
+    expect(compiled).toContain('name: Materialize deterministic Squad command context');
+    expect(compiled).toContain('squad-command-contract.mjs"');
+    expect(compiled).toContain('--materialize "$SQUAD_COMMAND_CONTEXT"');
+    expect(compiled).toContain('name: Reject unknown or malformed Squad commands');
+    expect(compiled).toContain('enforceSquadCommandContract');
+    expect(compiled).toContain('github.rest.issues.createComment');
+    expect(compiled).toContain('core.setFailed');
+    expect(compiled.indexOf('name: Materialize deterministic Squad command context')).toBeLessThan(
+      compiled.indexOf('name: Execute GitHub Copilot CLI'),
+    );
+    const commandGuard = compiled.match(
+      /      - name: Reject unknown or malformed Squad commands\n[\s\S]*?(?=\n      - (?:name:|uses:)|\n  [a-z_]+:)/,
+    )?.[0] ?? '';
+    expect(commandGuard).toContain('.squad-command-trusted-base');
+    expect(compiled).toMatch(
+      /name: Checkout executing workflow commit for command enforcement[\s\S]*?ref: \$\{\{ github\.workflow_sha \}\}/,
+    );
+  }, 20000);
 
   it('positive control: turns red on a known-violating compiled fixture, naming token, file, and line', () => {
     // RETRO's acceptance bar (#1834): "A gate that cannot turn red on a fixture
@@ -3518,6 +3520,260 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
   });
 });
 
+describe('gh-aw: CI compiler pin contract', () => {
+  const ci = readText(join(process.cwd(), '.github/workflows/squad-ci.yml'));
+  const installs = [
+    {
+      job: 'test',
+      name: 'Install gh-aw extension',
+      commands: [`gh extension install --pin ${MIN_GH_AW_VERSION} github/gh-aw`],
+    },
+    {
+      job: 'gh-aw-compile',
+      name: `Install gh-aw ${MIN_GH_AW_VERSION} (pinned)`,
+      commands: [
+        `gh extension install --force --pin ${MIN_GH_AW_VERSION} github/gh-aw`,
+        `test "$(gh aw --version 2>&1 | awk '{print $NF}')" = ${MIN_GH_AW_VERSION}`,
+      ],
+    },
+  ] as const;
+
+  // This is a deliberately bounded recognizer, not a general shell parser.
+  // Unsupported here-documents fail closed; only literal cat-to-stdout is inert.
+  function shellCommands(run: string): string[] {
+    const commands: string[] = [];
+    let command = '';
+    let quote = '';
+    let wordStart = true;
+    for (let i = 0; i < run.length; i++) {
+      const char = run[i];
+      if (char === '\\' && quote !== "'") {
+        const next = run[++i];
+        if (next === undefined) throw new Error('Dangling shell escape');
+        if (next !== '\n' || quote) {
+          command += char + next;
+          wordStart = false;
+        }
+      } else if (char === quote) {
+        quote = '';
+        command += char;
+      } else if (!quote && (char === "'" || char === '"')) {
+        quote = char;
+        command += char;
+        wordStart = false;
+      } else if (!quote && char === '#' && wordStart) {
+        while (i + 1 < run.length && run[i + 1] !== '\n') i++;
+      } else if (!quote && char === '\n') {
+        const heredoc = command.match(/^cat <<(['"])([A-Za-z_][A-Za-z0-9_]*)\1$/);
+        if (heredoc) {
+          const end = run.indexOf(`\n${heredoc[2]}\n`, i);
+          if (end === -1) throw new Error('Unterminated literal heredoc');
+          command += run.slice(i, end + heredoc[2].length + 1);
+          i = end + heredoc[2].length + 1;
+        }
+        if (command.trim()) commands.push(command.trim());
+        command = '';
+        wordStart = true;
+      } else {
+        command += char;
+        if (!quote) wordStart = /[\s;|&()<>]/.test(char);
+      }
+    }
+    if (quote) throw new Error('Unterminated shell quote');
+    if (command.trim()) commands.push(command.trim());
+    return commands;
+  }
+
+  function isInstallerOrAmbiguous(command: string): boolean {
+    if (/^cat <<(['"])([A-Za-z_][A-Za-z0-9_]*)\1\n[\s\S]*\n\2$/.test(command)) return false;
+    if (/^(?:echo|printf)(?:\s+(?:'[^']*'|"(?:\\[\s\S]|[^"\\$`])*"))+$/.test(command)) return false;
+    // Remove word-splicing quotes/escapes for detection only, never for approval.
+    // A repository operand alone is enough: dynamic command/argument construction
+    // must not evade detection merely by hiding "gh extension install".
+    const visible = command.replace(/['"\\]/g, '');
+    const syntax = command.replace(/'[^']*'|"(?:\\[\s\S]|[^"\\])*"|\\[\s\S]/g,
+      token => token.startsWith('"') && /[$`]/.test(token) ? '$' : 'literal');
+    const dynamicCommand = '(?![A-Za-z_]\\w*=)[^\\s;&|()]*[$`]';
+    return /github\/gh-aw|\bgh\s+(?:extension|ext)\b/.test(visible) ||
+      /\bgh\s+[^\s]*[$`]/.test(visible) ||
+      new RegExp(`(?:^|[;&|(){}\\n])\\s*(?:(?:if|then|else|do|!|command|exec|env|sudo|--?[\\w-]+|[A-Za-z_]\\w*=[^()\\s]+)\\s+)*${dynamicCommand}`).test(syntax) ||
+      new RegExp(`(?:\\$\\(|\`)\\s*${dynamicCommand}`).test(visible) ||
+      /\b(?:command|exec|env|sudo)\s[^;\n]*[$`]/.test(syntax) ||
+      /(?:^|[;&|()\n])\s*(?:eval|source|\.)\s/.test(syntax) ||
+      /\b(?:bash|sh|zsh|ksh)\s+.*(?:-[a-z]*c\b|[$`])/.test(visible) ||
+      /<</.test(syntax) || /\\\n/.test(command);
+  }
+
+  function assertCompilerPins(source: string): void {
+    const workflow = parseDocument(source);
+    expect(workflow.errors).toEqual([]);
+    const jobs = workflow.get('jobs');
+    if (!isMap(jobs)) throw new Error('CI must define jobs');
+    const installSteps: Array<{ job: unknown; name: unknown; commands: string[] }> = [];
+    for (const { key, value } of jobs.items) {
+      if (!isMap(value)) throw new Error('CI job must be a mapping');
+      const steps = value.get('steps');
+      if (steps === undefined) continue; // Reusable workflow jobs have no steps.
+      if (!isSeq(steps)) throw new Error('CI steps must be a sequence');
+      for (const step of steps.items) {
+        if (!isMap(step)) throw new Error('CI step must be a mapping');
+        const run = step.get('run');
+        if (run === undefined) continue;
+        if (typeof run !== 'string') throw new Error('CI run must be a string');
+        const commands = shellCommands(`${run}\n`);
+        const name = step.get('name');
+        // Include named slots even if their install was removed or replaced by output.
+        // Unexpected install-like scripts fail closed; never accept a shell wrapper
+        // merely because it contains the pinned command as a substring.
+        if (installs.some(install => install.name === name) || commands.some(isInstallerOrAmbiguous)) {
+          installSteps.push({ job: String(key), name, commands });
+        }
+      }
+    }
+    expect(installSteps).toEqual(installs);
+  }
+
+  function mutateInstall(job: string, change: (step: YAMLMap) => void): string {
+    const workflow = parseDocument(ci);
+    const steps = workflow.getIn(['jobs', job, 'steps']);
+    if (!isSeq(steps)) throw new Error(`Missing steps for ${job}`);
+    const name = installs.find(install => install.job === job)?.name;
+    const step = steps.items.find(step => isMap(step) && step.get('name') === name);
+    if (!isMap(step)) throw new Error(`Missing install step for ${job}`);
+    change(step);
+    return workflow.toString();
+  }
+
+  it('pins every CI compiler install to the package minimum gh-aw version', () => {
+    assertCompilerPins(ci);
+  });
+
+  it('ignores YAML comments, shell comment lines, and non-run strings', () => {
+    const workflow = parseDocument(ci);
+    workflow.setIn(['env', 'INSTALL_EXAMPLE'], 'gh extension install github/gh-aw');
+    workflow.addIn(['jobs', 'changes', 'steps'], {
+      name: installs[0].commands[0],
+      run: `echo '${installs[0].commands[0]}'\nprintf "%s" "gh extension install github/gh-aw"`,
+    });
+    const source = mutateInstall('test', step => {
+      step.set('run', `# gh extension install github/gh-aw\n\n${installs[0].commands[0]} # pinned\n`);
+      step.setIn(['env', 'PIN_EXAMPLE'], installs[1].commands[0]);
+    });
+    assertCompilerPins(`# gh extension install github/gh-aw\n${source}`);
+    assertCompilerPins(workflow.toString());
+  });
+
+  it.each([
+    ['continued comment', '# gh extension \\\necho "install github/gh-aw"'],
+    ['single-quoted backslash', "printf '%s' 'gh extension \\\ninstall github/gh-aw'"],
+    ['double-quoted backslash', 'echo "gh extension \\\ninstall github/gh-aw"'],
+    ['escaped backslash', String.raw`echo "gh extension \\"`],
+    ['literal heredoc', "cat <<'INSTALL'\ngh extension \\\ninstall github/gh-aw\nINSTALL"],
+    ['heredoc quote and comment text', "cat <<'INSTALL'\n' \" # \\\n$(gh extension install github/gh-aw)\nINSTALL"],
+  ])('ignores inert %s without folding literal text', (_label, run) => {
+    const workflow = parseDocument(ci);
+    workflow.addIn(['jobs', 'changes', 'steps'], { name: 'Literal example', run });
+    assertCompilerPins(workflow.toString());
+    if (!run.startsWith('#')) expect(shellCommands(`${run}\n`)).toEqual([run]);
+  });
+
+  it('accepts an unquoted continuation of the standalone approved command', () => {
+    assertCompilerPins(mutateInstall('test', step => {
+      step.set('run', installs[0].commands[0].replace('extension ', 'extension \\\n'));
+    }));
+  });
+
+  describe.each(installs)('$job install step', ({ job, commands }) => {
+    it.each([
+      ['unpinned', 'gh extension install github/gh-aw'],
+      ['wrong version', commands[0].replace(MIN_GH_AW_VERSION, 'v0.0.0')],
+      ['duplicate command', `${commands[0]}\n${commands[0]}`],
+      ['comment-only pin', `# ${commands[0]}\ngh extension install github/gh-aw`],
+      ['inline comment pin', `gh extension install github/gh-aw # ${commands[0]}`],
+      ['echoed pin', `echo "${commands[0]}"`],
+      ['shell wrapper', `bash -c '${commands[0]}'`],
+      ['conditional command', `false && ${commands[0]}`],
+      ['preceding command', `echo preparing\n${commands[0]}`],
+      ['appended command', `${commands[0]}; gh extension install github/gh-aw`],
+      ['heredoc text', `cat <<'INSTALL'\n${commands[0]}\nINSTALL`],
+      ['quoted continuation', `'${commands[0].replace('extension ', 'extension \\\n')}'`],
+      ['escaped backslash is not continuation', commands[0].replace('extension ', 'extension \\\\\n')],
+      ['comment backslash is not continuation', commands[0].replace('extension ', 'extension # comment \\\n')],
+      ['space after backslash is not continuation', commands[0].replace('extension ', 'extension \\ \n')],
+    ])('rejects %s', (_label, command) => {
+      const source = mutateInstall(job, step => {
+        step.set('run', [command, ...commands.slice(1)].join('\n'));
+      });
+      expect(() => assertCompilerPins(source)).toThrow();
+    });
+
+    it('rejects an install moved to an unexpected step', () => {
+      const source = mutateInstall(job, step => step.set('name', 'Unexpected install'));
+      expect(() => assertCompilerPins(source)).toThrow();
+    });
+
+    it('rejects an install moved to an unexpected job', () => {
+      const workflow = parseDocument(ci);
+      const original = workflow.getIn(['jobs', job]);
+      workflow.deleteIn(['jobs', job]);
+      workflow.setIn(['jobs', 'unexpected-job'], original);
+      expect(() => assertCompilerPins(workflow.toString())).toThrow();
+    });
+
+    it('rejects a missing install step', () => {
+      const source = mutateInstall(job, step => step.delete('run'));
+      expect(() => assertCompilerPins(source)).toThrow();
+    });
+
+    it.each([
+      ['duplicate step', job, commands[0]],
+      ['extra pinned install', 'changes', commands[0]],
+      ['extra unpinned install', 'changes', 'gh extension install github/gh-aw'],
+      ['extra wrapped install', 'changes', `bash -c '${commands[0]}'`],
+      ['extra install after quoted hash', 'changes', `echo "#"; ${commands[0]}`],
+      ['extra install in output substitution', 'changes', `echo "$(${commands[0]})"`],
+      ['continued installer', 'changes', 'gh extension \\\ninstall github/gh-aw'],
+      ['continued command word', 'changes', 'g\\\nh ext\\\nension install github/gh-aw'],
+      ['continued repository', 'changes', 'gh extension install github/gh-\\\naw'],
+      ['continued wrapper', 'changes', 'command gh extension \\\ninstall github/gh-aw'],
+      ['continued conditional', 'changes', 'if true; then gh extension \\\ninstall github/gh-aw; fi'],
+      ['continued substitution', 'changes', 'echo "$(gh extension \\\ninstall github/gh-aw)"'],
+      ['backtick substitution', 'changes', 'echo "`gh extension install github/gh-aw`"'],
+      ['quoted word splicing', 'changes', `g'h' exten"sion" install github/gh-"aw"`],
+      ['dynamic command', 'changes', 'cli=gh\n"$cli" extension install github/gh-aw'],
+      ['dynamic arguments', 'changes', 'gh "$verb" "$action" "$repository"'],
+      ['partly dynamic subcommand', 'changes', 'gh exten"$suffix" "$action" "$repository"'],
+      ['partly dynamic executable', 'changes', 'g"$suffix" "$verb" "$action" "$repository"'],
+      ['fully dynamic command', 'changes', '"$INSTALLER"'],
+      ['dynamic command in group', 'changes', '{ "$INSTALLER"; }'],
+      ['dynamic command in substitution', 'changes', 'echo "$("$INSTALLER")"'],
+      ['dynamic command in backticks', 'changes', 'echo "`$INSTALLER`"'],
+      ['dynamic command after assignment', 'changes', 'ENV=value "$INSTALLER"'],
+      ['dynamic env wrapper', 'changes', 'env -i "$INSTALLER"'],
+      ['dynamic wrapper with option operand', 'changes', 'env -u PATH "$INSTALLER"'],
+      ['dynamic shell wrapper', 'changes', 'bash -c "$INSTALLER"'],
+      ['eval wrapper', 'changes', 'eval "$INSTALLER"'],
+      ['unquoted heredoc substitution', 'changes', 'cat <<INSTALL\n$(gh extension \\\ninstall github/gh-aw)\nINSTALL'],
+      ['executable heredoc', 'changes', "bash <<'INSTALL'\ngh extension \\\ninstall github/gh-aw\nINSTALL"],
+      ['literal piped to shell', 'changes', `printf '%s' '${commands[0]}' | bash`],
+      ['literal heredoc piped to shell', 'changes', "cat <<'INSTALL' | bash\ngh extension \\\ninstall github/gh-aw\nINSTALL"],
+      ['installer after literal heredoc', 'changes', "cat <<'INSTALL'\nliteral \\\nINSTALL\ngh extension \\\ninstall github/gh-aw"],
+      ['installer after comment backslash', 'changes', '# example \\\ngh extension install github/gh-aw'],
+      ['installer after quoted backslash', 'changes', "echo '\\'\ngh extension install github/gh-aw"],
+      ['installer after escaped backslash', 'changes', 'echo \\\\\ngh extension install github/gh-aw'],
+      ['installer after escaped space hash', 'changes', 'echo \\ #; gh extension install github/gh-aw'],
+      ['double-quoted continuations', 'changes', '"g\\\nh" "exten\\\nsion" install "github/gh-\\\naw"'],
+    ])('rejects %s', (_label, targetJob, command) => {
+      const workflow = parseDocument(ci);
+      workflow.addIn(['jobs', targetJob, 'steps'], {
+        name: 'Extra install',
+        run: command,
+      });
+      expect(() => assertCompilerPins(workflow.toString())).toThrow();
+    });
+  });
+});
+
 describe('gh-aw: canonical package integrity contract', () => {
   const revisionA = 'a'.repeat(40);
   const revisionB = 'b'.repeat(40);
@@ -3528,15 +3784,22 @@ describe('gh-aw: canonical package integrity contract', () => {
     cpSync(join(process.cwd(), source), target);
   }
 
-  function makeConsumer(revision = revisionA, materialize = true): string {
+  function makeConsumer(
+    revision = revisionA,
+    materialize = true,
+    sourceBinding: 'workflow' | 'package' | 'mixed' = 'workflow',
+  ): string {
     const root = createTestWorkspace('gh-aw-package-contract-');
+    const install = createFirstInstallFixture(revision, sourceBinding);
     copyInto(root, CONTRACT_SOURCE, CONTRACT_DESTINATION);
     const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
     for (const workflow of contract.workflows) {
-      copyInto(root, workflow.source, workflow.destination);
+      const destination = join(root, workflow.destination);
+      mkdirSync(dirname(destination), { recursive: true });
+      writeFileSync(destination, install.consumerFiles.get(workflow.destination)!);
       const lock = join(root, workflow.lock);
       mkdirSync(dirname(lock), { recursive: true });
-      writeFileSync(lock, `# test lock for ${workflow.name}\n`);
+      writeFileSync(lock, install.consumerFiles.get(workflow.lock)!);
     }
     for (const resource of contract.shared_runtime) {
       copyInto(root, resource.source, resource.package_destination);
@@ -3566,7 +3829,7 @@ describe('gh-aw: canonical package integrity contract', () => {
       package: PACKAGE_NAME,
       source: `${PACKAGE_NAME}@${revision}`,
       resolvedCommit: revision,
-      installer: 'gh-aw v0.89.21 test',
+      installer: 'gh-aw v0.89.22 test',
       files: owned,
     }, null, 2)}\n`);
     return root;
@@ -3580,11 +3843,33 @@ describe('gh-aw: canonical package integrity contract', () => {
     return verifyInstall(root).failures;
   }
 
-  it('registers the exact nested 7/15/1 topology and safe trigger probe', () => {
+  it('registers the exact nested 8/17/1 topology and safe trigger probe', () => {
     expect(checkSource(process.cwd())).toEqual([]);
     const contract = JSON.parse(readFileSync(join(process.cwd(), CONTRACT_SOURCE), 'utf8'));
+    const ciRuntimeCount = readText(join(process.cwd(), '.github/workflows/squad-ci.yml')).match(
+      /find \.github\/workflows\/shared -type f ! -name 'squad-bootstrap-trigger-probe\.json' \| wc -l \| tr -d ' '\)" = (\d+)/,
+    );
+    const ci = readText(join(process.cwd(), '.github/workflows/squad-ci.yml'));
     expect(contract.workflows.map((entry: { name: string }) => entry.name)).toEqual(WORKFLOW_NAMES);
     expect(contract.shared_runtime).toHaveLength(RUNTIME_TUPLES.length);
+    expect(contract.shared_runtime).toHaveLength(17);
+    expect(ciRuntimeCount?.[1], 'strict compile CI runtime cardinality must match the package manifest')
+      .toBe(String(contract.shared_runtime.length));
+    const seedStart = ci.indexOf('mkdir -p .github/workflows');
+    const addStart = ci.indexOf('gh aw add --force "$GITHUB_WORKSPACE/workflows"');
+    expect(seedStart, 'clean-consumer CI must seed all dispatched peers before gh aw add compiles')
+      .toBeGreaterThan(-1);
+    expect(addStart).toBeGreaterThan(seedStart);
+    expect(ci.slice(seedStart, addStart)).toContain(
+      `for workflow in ${WORKFLOW_NAMES.join(' ')}; do`,
+    );
+    expect(ci.slice(seedStart, addStart)).toContain(
+      '"$GITHUB_WORKSPACE/workflows/package/${workflow}.md"',
+    );
+    expect(contract.shared_runtime).toContainEqual(expect.objectContaining({
+      path: 'shared/squad-review-guard.mjs',
+      destination: '.github/workflows/shared/squad-review-guard.mjs',
+    }));
     expect(contract.skills).toHaveLength(SKILL_TUPLES.length);
     expect(contract.package).toBe('bradygaster/squad/workflows');
     expect(contract.manifest).toBe('workflows/aw.yml');
@@ -3596,7 +3881,7 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(readText(join(process.cwd(), workflow.source))).not.toMatch(/^resources:/m);
     }
     expect(existsSync(join(process.cwd(), 'aw.yml'))).toBe(false);
-  });
+  }, 120_000);
 
   it('accepts a coherent consumer with the exact ownership cardinality', () => {
     const root = makeConsumer();
@@ -3606,6 +3891,251 @@ describe('gh-aw: canonical package integrity contract', () => {
       'utf8',
     ));
     expect(record.files).toHaveLength(OWNERSHIP_ENTRY_COUNT);
+  });
+
+  it.each(['workflow', 'package', 'mixed'] as const)(
+    'verifies %s source bindings at the immutable squash-merged revision',
+    sourceBinding => {
+      const revision = '6ec06cc79230cf71d55b484457e8f11190e20a49';
+      const root = makeConsumer(revision, true, sourceBinding);
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+      compileWithPinnedActions(root);
+      expect(verifyInstall(root, { expectedRevision: revision, strictCompile: true }).failures).toEqual([]);
+      const contract = JSON.parse(readFileSync(join(root, CONTRACT_DESTINATION), 'utf8'));
+      const review = contract.workflows.find((entry: { name: string }) => entry.name === 'squad-review');
+      expect(review.package_lock_sha256).not.toBe(review.lock_sha256);
+      expect(contract.schema_version).toBe(2);
+    },
+    120_000,
+  );
+
+  it('keeps both compiled digest variants stable across equivalent trees with different commit identities', () => {
+    const trees: string[] = [];
+    const commits: string[] = [];
+    for (const message of ['PR head', 'Squash merge']) {
+      const root = createTestWorkspace('gh-aw-commit-identity-');
+      cpSync(WORKFLOWS_DIR, join(root, 'workflows'), { recursive: true });
+      const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+      git(['init', '--quiet']);
+      git(['add', 'workflows']);
+      git(['-c', 'user.name=Contract Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', message]);
+      trees.push(git(['rev-parse', 'HEAD^{tree}']));
+      const revision = git(['rev-parse', 'HEAD']);
+      commits.push(revision);
+      expect(buildContract(root)).toEqual(JSON.parse(readFileSync(join(root, CONTRACT_SOURCE), 'utf8')));
+      for (const sourceBinding of ['workflow', 'package'] as const) {
+        expect(verifyInstall(makeConsumer(revision, true, sourceBinding), {
+          expectedRevision: revision,
+        }).failures).toEqual([]);
+      }
+    }
+    expect(trees[0]).toBe(trees[1]);
+    expect(commits[0]).not.toBe(commits[1]);
+  }, 120_000);
+
+  it.each(['workflow', 'package'] as const)(
+    'strict-compiles %s digests with immutable action pins and rejects altered pins',
+    sourceBinding => {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      compileWithPinnedActions(root);
+      expect(verifyInstall(root).failures).toEqual([]);
+      expect(() => compileWithPinnedActions(root, { ...process.env, SQUAD_GH_AW_BIN: process.execPath }))
+        .toThrow(/requires gh-aw/);
+
+      const pinPath = join(root, '.github/aw/actions-lock.json');
+      const pins = JSON.parse(readFileSync(pinPath, 'utf8'));
+      const setup = pins.entries[`github/gh-aw-actions/setup@${MIN_GH_AW_VERSION}`];
+      const lockPath = join(root, '.github/workflows/squad.lock.yml');
+      const original = readFileSync(lockPath, 'utf8');
+      const actionReference = `github/gh-aw-actions/setup@${setup.sha} # ${MIN_GH_AW_VERSION}`;
+      const mutableReference = `github/gh-aw-actions/setup@${MIN_GH_AW_VERSION}`;
+      const mutable = original
+        .replaceAll(actionReference, mutableReference)
+        .replace(
+          `"repo":"github/gh-aw-actions/setup","sha":"${setup.sha}","version":"${MIN_GH_AW_VERSION}"`,
+          `"repo":"github/gh-aw-actions/setup","sha":"${MIN_GH_AW_VERSION}","version":"${MIN_GH_AW_VERSION}"`,
+        );
+      expect(mutable).not.toBe(original);
+      expect(mutable).not.toContain(actionReference);
+      expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
+        .toBe(sourceBinding === 'workflow'
+          ? 'a3290dad380577fd6d64c92169b9d74a7f5248851b110d8eafc6260b34f772d9'
+          : 'fd7c735e2de5088954e8d0d647a15e5f95ed5850947f201c1a4ce17433d66632');
+      expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
+      writeFileSync(lockPath, mutable);
+      expect(verifyInstall(root).failures.join('\n'))
+        .toContain('Installed digest mismatch for .github/workflows/squad.lock.yml');
+      writeFileSync(lockPath, original);
+
+      for (const key of Object.keys(pins.entries)) {
+        for (const value of [undefined, MIN_GH_AW_VERSION, '0'.repeat(40)]) {
+          const altered = structuredClone(pins);
+          if (value === undefined) delete altered.entries[key];
+          else altered.entries[key].sha = value;
+          writeFileSync(pinPath, JSON.stringify(altered));
+          expect(() => compileWithPinnedActions(root)).toThrow(/missing or noncanonical pin/);
+        }
+      }
+
+      for (const value of [MIN_GH_AW_VERSION, '0'.repeat(40)]) {
+        const altered = original.replaceAll(setup.sha, value);
+        expect(() => validateCompilerActionPins(altered)).toThrow(/invalid immutable action pin/);
+        writeFileSync(lockPath, altered);
+        expect(verifyInstall(root).failures.join('\n'))
+          .toContain('Installed digest mismatch for .github/workflows/squad.lock.yml');
+      }
+      expect(() => validateCompilerActionPins(original.replace(/^# gh-aw-manifest: .+\n/m, '')))
+        .toThrow(/missing the gh-aw setup action pin/);
+    },
+    120_000,
+  );
+
+  it('seeds native-consumer CI pins without usable authentication and rejects tampering', () => {
+    const workflow = parseDocument(readText(join(process.cwd(), '.github/workflows/squad-ci.yml'))).toJS();
+    const step = workflow.jobs['gh-aw-compile'].steps.find(
+      (candidate: { name?: string }) => candidate.name === 'Verify a clean native package consumer',
+    );
+    const seed = step.run.match(/node --input-type=module -e '([\s\S]*?)'/)?.[1];
+    expect(seed, 'native consumer must execute the version-bound pin helper').toBeDefined();
+    expect(step.run.indexOf('compileWithPinnedActions(process.cwd())'))
+      .toBeLessThan(step.run.indexOf('gh aw compile --strict --approve'));
+    expect(step.run).toContain('--verify-install');
+    expect(step.run).toContain('--strict-compile');
+
+    const root = makeConsumer(revisionA, true, 'package');
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+    // A deliberately invalid test credential prevents fallback to local keychain authentication.
+    const env = { ...process.env, GH_TOKEN: 'invalid-test-token', GITHUB_TOKEN: '' };
+    const compile = () => execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
+      cwd: root, env, stdio: 'pipe', timeout: 120_000,
+    });
+    const lockPath = join(root, '.github/workflows/squad.lock.yml');
+    compile();
+    const unpinned = readText(lockPath);
+    expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
+      .toBe('fd7c735e2de5088954e8d0d647a15e5f95ed5850947f201c1a4ce17433d66632');
+    expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+
+    const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {
+      cwd: root, env, encoding: 'utf8', timeout: 120_000,
+    });
+    const seeded = seedPins();
+    expect(seeded.status, seeded.stderr).toBe(0);
+    compile();
+    expect(verifyInstall(root, { expectedRevision: revisionA, strictCompile: true }).failures).toEqual([]);
+    const contract = JSON.parse(readText(join(root, CONTRACT_DESTINATION)));
+    for (const entry of contract.workflows) {
+      const lock = readText(join(root, entry.lock));
+      expect(() => validateCompilerActionPins(lock)).not.toThrow();
+      expect(createHash('sha256').update(normalizeCompiledLock(lock, revisionA)).digest('hex'))
+        .toBe(entry.package_lock_sha256);
+    }
+
+    const pinPath = join(root, '.github/aw/actions-lock.json');
+    const pins = JSON.parse(readText(pinPath));
+    pins.entries[`github/gh-aw-actions/setup@${MIN_GH_AW_VERSION}`].sha = '0'.repeat(40);
+    writeFileSync(pinPath, JSON.stringify(pins));
+    const tampered = seedPins();
+    expect(tampered.status).not.toBe(0);
+    expect(tampered.stderr).toContain('missing or noncanonical pin');
+  }, 120_000);
+
+  function updateOwnedDigest(root: string, destination: string): void {
+    const path = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
+    const record = JSON.parse(readFileSync(path, 'utf8'));
+    const entry = record.files.find((file: { destination: string }) => file.destination === destination);
+    entry.sha256 = createHash('sha256').update(readFileSync(join(root, destination))).digest('hex');
+    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+  }
+
+  it.each(['workflow', 'package'] as const)('rejects %s source and compiled provenance mutations', sourceBinding => {
+    const source = `${PACKAGE_NAME}${sourceBinding === 'workflow' ? '/package/squad-review.md' : ''}@${revisionA}`;
+    const sourcePath = '.github/workflows/squad-review.md';
+    const lockPath = '.github/workflows/squad-review.lock.yml';
+    const mutations: Array<[string, (text: string) => string]> = [
+      ['wrong owner', text => text.replaceAll('bradygaster/squad', 'attacker/squad')],
+      ['wrong repo', text => text.replaceAll('bradygaster/squad', 'bradygaster/other')],
+      ['wrong package', text => text.replaceAll('/workflows', '/other')],
+      ['wrong workflow', text => text.replaceAll(source, `${PACKAGE_NAME}/package/squad.md@${revisionA}`)],
+      ['wrong revision', text => text.replaceAll(revisionA, revisionB)],
+      ['unexpected suffix', text => text.replaceAll(source, `${source}/extra`)],
+      ['missing annotation', text => text.replace(`source: ${source}\n`, '')],
+      ['duplicate annotation', text => text.replace(`source: ${source}\n`, `source: ${source}\nsource: ${source}\n`)],
+    ];
+    for (const [label, mutate] of mutations) {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      const original = readFileSync(join(root, sourcePath), 'utf8');
+      const modified = mutate(original);
+      expect(modified, label).not.toBe(original);
+      writeFileSync(join(root, sourcePath), modified);
+      updateOwnedDigest(root, sourcePath);
+      expect(verifyInstall(root).failures.join('\n'), label).toMatch(/source binding|digest mismatch/);
+    }
+
+    const lockMutations: Array<[string, (text: string) => string]> = [
+      ...mutations.slice(0, 6),
+      ['wrong URL', text => text.replace('/bradygaster/squad/blob/', '/attacker/squad/blob/')],
+      ['mixed annotation', text => text.replace(`GH_AW_WORKFLOW_SOURCE: "${source}"`, 'GH_AW_WORKFLOW_SOURCE: "unknown"')],
+      ['missing annotation', text => text.replace(`          GH_AW_INFO_FRONTMATTER_SOURCE: "${source}"\n`, '')],
+      ['duplicate annotation', text => text.replace(`GH_AW_WORKFLOW_SOURCE: "${source}"`, `GH_AW_WORKFLOW_SOURCE: "${source}"\n          GH_AW_WORKFLOW_SOURCE: "${source}"`)],
+      ['action tamper', text => text.replace('uses: actions/github-script@', 'uses: attacker/github-script@')],
+      ['permission tamper', text => text.replace('contents: read', 'contents: write')],
+      ['payload tamper', text => text.replace('await guard.assertClearingReview', 'await guard.skipClearingReview')],
+    ];
+    for (const [label, mutate] of lockMutations) {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      const original = readFileSync(join(root, lockPath), 'utf8');
+      const modified = mutate(original);
+      expect(modified, label).not.toBe(original);
+      writeFileSync(join(root, lockPath), modified);
+      expect(verifyInstall(root).failures.length, label).toBeGreaterThan(0);
+    }
+
+    const root = makeConsumer(revisionA, true, sourceBinding);
+    const other = createFirstInstallFixture(revisionA, sourceBinding === 'workflow' ? 'package' : 'workflow');
+    writeFileSync(join(root, lockPath), other.consumerFiles.get(lockPath)!);
+    expect(verifyInstall(root).failures.join('\n')).toContain(`Installed digest mismatch for ${lockPath}`);
+  }, 120_000);
+
+  it('rejects old schemas, absent variants, runtime tampering and canonical manifest drift', () => {
+    const mutations: Array<(contract: any) => void> = [
+      contract => { contract.schema_version = 1; },
+      contract => { delete contract.workflows[0].package_lock_sha256; },
+      contract => { contract.workflows[0].package_lock_sha256 = 'invalid'; },
+    ];
+    for (const mutate of mutations) {
+      expect(mutateContract(makeConsumer(), mutate).length).toBeGreaterThan(0);
+    }
+    const root = makeConsumer();
+    const runtime = '.github/workflows/shared/squad-review-guard.mjs';
+    writeFileSync(join(root, runtime), '// tampered\n');
+    updateOwnedDigest(root, runtime);
+    expect(verifyInstall(root).failures.join('\n')).toContain(`Installed digest mismatch for ${runtime}`);
+
+    const drift = makeConsumer();
+    const manifestPath = join(drift, CONTRACT_DESTINATION);
+    writeFileSync(manifestPath, `${readFileSync(manifestPath, 'utf8')}\n`);
+    expect(() => verifyCanonicalManifest(process.cwd(), drift)).toThrow(/not byte-identical/);
+  });
+
+  it('normalizes only compiler-declared repository-scattered schedules', () => {
+    const metadata = `# gh-aw-metadata: {"frontmatter_hash":"${'a'.repeat(64)}"}`;
+    const lock = [
+      metadata,
+      `source_revision: ${revisionA}`,
+      '      - cron: "17 4 * * 2" # Friendly format: weekly on Tuesday at 04:00 (scattered)',
+      '      - cron: "0 4 * * 2" # Fixed schedule',
+    ].join('\n');
+    const normalized = normalizeCompiledLock(lock, revisionA);
+
+    expect(normalized).toContain(
+      '      - cron: "<repository-scattered>" # Friendly format: weekly on Tuesday at 04:00 (scattered)',
+    );
+    expect(normalized).toContain('      - cron: "0 4 * * 2" # Fixed schedule');
+    expect(normalized).not.toContain(revisionA);
   });
 
   it('accepts only the deterministic retained bootstrap trigger sentinel', () => {

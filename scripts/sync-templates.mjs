@@ -117,6 +117,10 @@ for (const relFile of sourceFiles) {
     targets.push(join(AGENT_MD_TARGET, AGENT_MD_FILE));
   }
 
+  if (relFile === 'skills/gh-aw-enlistment/SKILL.md') {
+    targets.push(join(ROOT, 'workflows', relFile));
+  }
+
   if (targets.length === 0) continue;
 
   for (const dest of targets) {

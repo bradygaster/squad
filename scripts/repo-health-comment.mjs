@@ -2,17 +2,26 @@
 // Shared utility for posting/upserting repo health PR comments.
 // DI pattern: run({ github, context, output, job }) for testability.
 
+import { validateSquadPath } from './git-path-decoder.mjs';
+
 const JOBS = {
   leakage: {
     marker: '<!-- squad-repo-health-leakage -->',
     parse(output) {
-      try {
-        const jsonMatch = output.match(/\{[\s\S]*?\}/);
-        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { leaked: false, files: [] };
-        return parsed.leaked ? parsed : null;
-      } catch {
-        return null;
+      const parsed = JSON.parse(output);
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Object.keys(parsed).sort().join(',') !== 'files,leaked' ||
+        typeof parsed.leaked !== 'boolean' ||
+        !Array.isArray(parsed.files) ||
+        !parsed.files.every((file) => typeof file === 'string') ||
+        parsed.leaked !== (parsed.files.length > 0)
+      ) {
+        throw new Error('Invalid Squad leakage scanner output');
       }
+      parsed.files.forEach(validateSquadPath);
+      return parsed.leaked ? parsed : null;
     },
     format(parsed) {
       const fileList = parsed.files.map(f => `- \`${f}\``).join('\n');
@@ -102,6 +111,10 @@ const JOBS = {
   },
 };
 
+function hasExactMarker(comment, marker) {
+  return typeof comment.body === 'string' && comment.body.split('\n', 1)[0] === marker;
+}
+
 /**
  * Post or update a repo health comment on a PR.
  * @param {object} opts
@@ -123,7 +136,7 @@ export async function run({ github, context, output, job }) {
     issue_number: context.issue.number,
     per_page: 100,
   });
-  const existing = comments.find(c => c.body && c.body.includes(config.marker));
+  const existing = comments.find((comment) => hasExactMarker(comment, config.marker));
 
   // No findings — clean up stale marker comment if one exists
   if (!parsed) {

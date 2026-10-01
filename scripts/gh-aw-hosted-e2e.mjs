@@ -21,6 +21,7 @@ import {
   TRIGGER_PROBE_DESTINATION,
   checkSource,
   verifyInstall,
+  verifyStagedInstall,
 } from '../workflows/shared/squad-install-verifier.mjs';
 
 const TRUSTED_SOURCE = Object.freeze({
@@ -38,6 +39,7 @@ const RESEARCH_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportu
 const RESEARCH_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
 const PROVENANCE_MARKER_PATTERN = /^<!-- squad:bootstrap-provenance (\{[^\r\n]+\}) -->$/gm;
 const ACTIONS_BOT_LOGIN = 'github-actions[bot]';
+const ACTIONS_BOT_ID = 41898282;
 const SAFE_CHILD_ENV = Object.freeze([
   'CI',
   'GH_CONFIG_DIR',
@@ -303,8 +305,8 @@ function matchingPriorRunArtifacts(branches, pullRequests, issues) {
 }
 
 export function assertPristineTarget(target, defaultBranch, contract, github = githubAdapter, now = Date.now) {
-  if (contract.workflows.length !== 7 || contract.runtime.length !== 15 || contract.skills.length !== 1) {
-    throw new Error('Trusted package topology must be exactly 7 workflows, 15 runtime resources, and 1 skill.');
+  if (contract.workflows.length !== 8 || contract.runtime.length !== 17 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 8 workflows, 17 runtime resources, and 1 skill.');
   }
   const defaultBranchSha = github.getDefaultBranchSha(target, defaultBranch);
   assertSha(defaultBranchSha, 'Target default-branch SHA');
@@ -564,6 +566,105 @@ export function waitForBootstrapOutputs(
   throw new Error('Timed out waiting for the draft Cast PR and bootstrap research issue.');
 }
 
+export function waitForBaseControlledReviewCanary(
+  target,
+  castPr,
+  evidence,
+  { request = ghJson, now = Date.now, pause = sleep } = {},
+) {
+  const deadline = now() + 20 * 60 * 1000;
+  while (now() < deadline) {
+    const reviews = request([
+      'api',
+      `repos/${target}/pulls/${castPr.number}/reviews?per_page=100`,
+    ]);
+    const verdicts = reviews.filter((review) =>
+      review.user?.login === ACTIONS_BOT_LOGIN &&
+      review.user?.id === ACTIONS_BOT_ID &&
+      review.user?.type === 'Bot' &&
+      review.commit_id === castPr.headSha &&
+      String(review.body ?? '').includes('Squad-Review-Verdict:'));
+    if (verdicts.length > 1) {
+      throw new Error(`Expected one base-controlled Squad Review canary verdict; found ${verdicts.length}.`);
+    }
+    if (verdicts.length === 1) {
+      const marker = String(verdicts[0].body).match(/^Squad-Review-Verdict: (\{[^\r\n]+\})$/m);
+      if (!marker) throw new Error('Squad Review canary verdict marker is malformed.');
+      const verdict = JSON.parse(marker[1]);
+      if (verdict.schema !== 'squad-review-verdict/v1'
+        || verdict.repository !== target
+        || verdict.pull_request !== castPr.number
+        || verdict.base_sha !== castPr.baseSha
+        || verdict.head_sha !== castPr.headSha
+        || verdict.author_agent !== '@squad/base-controlled-bootstrap'
+        || verdict.reviewer_agent !== '@squad/base-controlled-review'
+        || verdict.result !== 'COMMENT'
+        || verdict.event !== 'pull_request_target'
+        || verdict.workflow_sha !== castPr.baseSha
+        || verdict.workflow_path !== '.github/workflows/squad-review.lock.yml') {
+        throw new Error('Squad Review canary verdict is not bound to the base-controlled bootstrap activation.');
+      }
+      const run = request([
+        'api', `repos/${target}/actions/runs/${verdict.run_id}`,
+        '--jq',
+        '{id,event,path,head_sha,run_attempt,status,conclusion,display_title,repository:{full_name:.repository.full_name}}',
+      ]);
+      if (run.event !== 'pull_request_target'
+        || run.path !== '.github/workflows/squad-review.lock.yml'
+        || run.head_sha !== castPr.baseSha
+        || run.repository?.full_name !== target
+        || run.display_title !== `Squad review — PR #${castPr.number}`
+        || run.run_attempt < verdict.run_attempt) {
+        throw new Error('Squad Review canary verdict is not bound to the base-controlled workflow run.');
+      }
+      const jobs = request([
+        'api', '--paginate', '--slurp',
+        `repos/${target}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}/jobs?per_page=100`,
+      ]).flat().flatMap((page) => page.jobs ?? []);
+      const authorityJobs = jobs.filter((job) => job.name === 'review');
+      if (authorityJobs.length !== 1) {
+        throw new Error(`Expected one native Squad Review authority job; found ${authorityJobs.length}.`);
+      }
+      const job = authorityJobs[0];
+      if (job.status !== 'completed' || job.conclusion !== 'success'
+        || typeof job.check_run_url !== 'string') {
+        throw new Error(`Base-controlled Squad Review canary failed for ${castPr.url}.`);
+      }
+      const checkId = Number(job.check_run_url.match(/\/check-runs\/([1-9][0-9]*)$/)?.[1]);
+      if (!Number.isSafeInteger(checkId)) {
+        throw new Error('Native Squad Review job did not expose a valid check-run binding.');
+      }
+      const check = request([
+        'api',
+        '-H', 'Accept: application/vnd.github+json',
+        `repos/${target}/check-runs/${checkId}`,
+        '--jq', '{id,name,status,conclusion,head_sha,details_url,app:{id:.app.id,slug:.app.slug}}',
+      ]);
+      // The Checks API exposes the job name, not the UI's workflow/job context.
+      if (check.id !== checkId
+        || check.name !== 'review'
+        || check.head_sha !== castPr.headSha
+        || check.status !== 'completed'
+        || check.conclusion !== 'success'
+        || check.app?.id !== 15368
+        || check.app?.slug !== 'github-actions') {
+        throw new Error('Native Squad Review required check is not bound to the trusted review job.');
+      }
+      writeJson(resolve(evidence, 'base-controlled-review-canary.json'), {
+        pull_request: castPr,
+        run,
+        job,
+        check,
+        review: verdicts[0],
+        verdict,
+      });
+      return { run, job, check, verdict };
+    }
+    pause(10_000);
+  }
+  throw new Error('Timed out waiting for the base-controlled Squad Review activation canary.');
+}
+
 function createAndMergePr({
   cwd,
   target,
@@ -643,8 +744,8 @@ function hosted(args, repositoryRoot) {
   const sourceSha = requireArg(args, 'source_sha');
   const evidence = resolve(requireArg(args, 'evidence'));
   const contract = loadBundleContract(repositoryRoot);
-  if (contract.workflows.length !== 7 || contract.runtime.length !== 15 || contract.skills.length !== 1) {
-    throw new Error('Trusted package topology must be exactly 7 workflows, 15 runtime resources, and 1 skill.');
+  if (contract.workflows.length !== 8 || contract.runtime.length !== 17 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 8 workflows, 17 runtime resources, and 1 skill.');
   }
   const targetState = authorizeTarget(args, sourceInfo, contract);
   mkdirSync(evidence, { recursive: true });
@@ -702,6 +803,10 @@ function hosted(args, repositoryRoot) {
     const installPaths = ['.gitattributes', '.github/aw', '.github/workflows', '.github/skills', '.vscode']
       .filter((path) => existsSync(resolve(checkout, path)));
     runChild('git', ['add', '--', ...installPaths], { cwd: checkout });
+    const staged = verifyStagedInstall(checkout, { expectedRevision: sourceSha, stageOwnership: true });
+    if (staged.failures.length > 0) {
+      throw new Error(`STOP: required installation files could not be staged and verified:\n${staged.failures.join('\n')}`);
+    }
     runChild('git', ['commit', '-m', 'ci: install Squad agentic workflows'], { cwd: checkout });
     const installStartedAt = Date.now();
     const installation = createAndMergePr({
@@ -731,6 +836,11 @@ function hosted(args, repositoryRoot) {
       targetState.baseline,
       installation,
       installRun,
+    );
+    const reviewCanary = waitForBaseControlledReviewCanary(
+      targetState.target,
+      outputs.castPr,
+      evidence,
     );
 
     runChild('git', ['fetch', 'origin', targetState.info.default_branch], { cwd: checkout });
@@ -785,6 +895,8 @@ function hosted(args, repositoryRoot) {
       source_sha: sourceSha,
       installation_pr: installation.number,
       installation_run: installRun.url,
+      review_canary_pr: outputs.castPr.number,
+      review_canary_check: reviewCanary.check.id,
       probe_pr: probeMerge.number,
       probe_run: probeRun.url,
       generated_cast_pr: outputs.castPr.url,

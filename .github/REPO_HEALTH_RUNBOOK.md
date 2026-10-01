@@ -62,7 +62,10 @@ const comments = JSON.parse(readFileSync('canary-comments.json', 'utf8')).flat()
 const marked = comments.filter(({ body = '' }) =>
   body.includes('<!-- squad-repo-health-leakage -->'));
 if (marked.length !== 1) throw new Error(`expected one marker comment, found ${marked.length}`);
-if (!marked[0].body.includes(expected)) throw new Error('hostile filename was not preserved exactly');
+const listed = marked[0].body.split('\n').filter((line) => line.startsWith('- `'));
+if (listed.length !== 1 || listed[0] !== `- \`${expected}\``) {
+  throw new Error(`expected exact raw semantic path, got ${JSON.stringify(listed)}`);
+}
 if (!marked[0].body.includes('Authoritative evidence')) {
   throw new Error('comment was not labeled authoritative');
 }

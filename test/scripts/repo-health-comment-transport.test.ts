@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compileFunction, constants as vmConstants } from 'node:vm';
 
@@ -204,8 +212,7 @@ const HOSTILE_MESSAGE =
   'Unsafe git operation: `git cherry-pick --no-commit` — quoting `code` here, ' +
   'plus a bare ${ opener, an apostrophe \' and a "double quote".\nSecond line of the message.';
 
-const HOSTILE_PATH =
-  '.squad/using-`git cherry-pick`-and-${-an-apostrophe-\'-and-"double quote".md';
+const HOSTILE_PATH = ".squad/canary-`paired`-${-apostrophe-'-\"double quote\".md";
 
 function securityReport() {
   const payload = {
@@ -240,6 +247,39 @@ function architecturalReport() {
 
 function leakageReport() {
   return JSON.stringify({ leaked: true, files: [HOSTILE_PATH] }, null, 2);
+}
+
+function realLeakageReport(): string {
+  const cwd = mkdtempSync(join(tmpdir(), 'squad-reporter-leakage-'));
+  const git = (args: string[]) => execFileSync(
+    'git',
+    args,
+    { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  try {
+    git(['init', '--quiet', '-b', 'dev']);
+    git(['config', 'core.quotePath', 'true']);
+    git(['config', 'user.name', 'Squad Test']);
+    git(['config', 'user.email', 'test@example.invalid']);
+    writeFileSync(join(cwd, 'README.md'), 'base\n');
+    git(['add', '--', 'README.md']);
+    git(['commit', '--quiet', '-m', 'base']);
+    git(['switch', '--quiet', '-c', 'feature']);
+    mkdirSync(join(cwd, '.squad'));
+    writeFileSync(join(cwd, HOSTILE_PATH), 'canary\n');
+    git(['add', '--', HOSTILE_PATH]);
+    git(['commit', '--quiet', '-m', 'canary']);
+
+    const result = spawnSync(
+      process.execPath,
+      [join(repoRoot, 'scripts', 'check-squad-leakage.mjs'), 'dev', 'HEAD'],
+      { cwd, encoding: 'utf8' },
+    );
+    expect(result.status).toBe(0);
+    return result.stdout;
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 }
 
 function findStep(file: string, predicate: (step: Step) => boolean): Step {
@@ -302,6 +342,50 @@ describe('repo-health reporters survive hostile finding content (#1770)', () => 
     expect(created[0].body).toContain(
       '> **Authoritative evidence:** base-controlled `pull_request_target` reporter.',
     );
+    expect(created[0].body.match(/<!-- squad-repo-health-leakage -->/g)).toHaveLength(1);
+  });
+
+  it('passes real scanner output through the workflow with the exact raw path', async () => {
+    const step = findStep(
+      'squad-repo-health.yml',
+      (s) => (stepScript(s) ?? '').includes("job: 'leakage'"),
+    );
+
+    const { created } = await runWorkflowScript(step, {
+      'steps.leakage.outputs.result': realLeakageReport(),
+    });
+
+    expect(created).toHaveLength(1);
+    expect(created[0].body).toContain(HOSTILE_PATH);
+    expect(created[0].body.match(/<!-- squad-repo-health-leakage -->/g)).toHaveLength(1);
+    expect(created[0].body).toContain(
+      '> **Authoritative evidence:** base-controlled `pull_request_target` reporter.',
+    );
+  });
+
+  it.each([
+    ['empty', ''],
+    ['malformed JSON', '{'],
+    ['wrong JSON type', '[]'],
+    ['extra property', '{"leaked":false,"files":[],"error":null}'],
+    ['inconsistent clean result', '{"leaked":false,"files":[".squad/stale.md"]}'],
+    ['inconsistent leaked result', '{"leaked":true,"files":[]}'],
+    ['empty path', '{"leaked":true,"files":[""]}'],
+    ['absolute path', '{"leaked":true,"files":["/.squad/stale.md"]}'],
+    ['outside path', '{"leaked":true,"files":["outside.md"]}'],
+    ['newline path', '{"leaked":true,"files":[".squad/line\\nbreak.md"]}'],
+  ])('rejects %s leakage output without deleting a stale marker', async (_label, output) => {
+    const step = findStep(
+      'squad-repo-health.yml',
+      (s) => (stepScript(s) ?? '').includes("job: 'leakage'"),
+    );
+    const marker = '<!-- squad-repo-health-leakage -->';
+
+    await expect(runWorkflowScript(
+      step,
+      { 'steps.leakage.outputs.result': output },
+      { comments: [{ id: 42, body: `${marker}\nold` }], fail: 'deleteComment' },
+    )).rejects.toThrow();
   });
 });
 
@@ -336,6 +420,23 @@ describe('repo-health comment lifecycle uses the real workflow/helper contract',
     expect(created).toEqual([]);
     expect(updated).toEqual([]);
     expect(deleted).toEqual([{ owner: 'bradygaster', repo: 'squad', comment_id: 42 }]);
+  });
+
+  it('does not treat a marker embedded in another reporter body as ownership', async () => {
+    const injected = [
+      '<!-- squad-repo-health-leakage -->',
+      '## leakage',
+      '- `.squad/<!-- squad-security-review -->.md`',
+    ].join('\n');
+    const { created, updated, deleted } = await runWorkflowScript(
+      step,
+      { 'steps.security.outputs.result': JSON.stringify({ findings: [], summary: 'clean' }) },
+      { comments: [{ id: 42, body: injected }] },
+    );
+
+    expect(created).toEqual([]);
+    expect(updated).toEqual([]);
+    expect(deleted).toEqual([]);
   });
 
   for (const method of ['listComments', 'createComment', 'updateComment', 'deleteComment'] as const) {

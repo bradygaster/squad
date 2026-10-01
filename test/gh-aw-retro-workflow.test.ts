@@ -1500,7 +1500,7 @@ describe('Squad retrospective workflow integration', () => {
     expect(REVIEWER).not.toContain('"request_origin": "squad-review"');
     expect(IMPLEMENTER).toContain('"request_origin": "squad-implement"');
     expect(CI).toContain(
-      'for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do',
+      'for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do',
     );
     expect(CI).toContain('test -f ".github/workflows/${workflow}.lock.yml"');
   });

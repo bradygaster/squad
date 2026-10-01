@@ -9,8 +9,10 @@ on:
       - '.github/workflows/squad-repo-health-shadow.yml'
       - 'scripts/architectural-review.mjs'
       - 'scripts/check-squad-leakage.mjs'
+      - 'scripts/git-path-decoder.mjs'
       - 'scripts/repo-health-comment.mjs'
       - 'scripts/security-review.mjs'
+      - 'test/scripts/check-squad-leakage.test.ts'
       - 'test/scripts/repo-health-comment-transport.test.ts'
 
 # This workflow intentionally runs the PR-head implementation with a read-only token.
