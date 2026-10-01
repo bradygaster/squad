@@ -13,7 +13,14 @@ import { execSync } from 'node:child_process';
  */
 export function isDockerAvailable(): boolean {
   try {
-    execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+    // 5s was too tight: under full-parallelism CI load (~10k tests running
+    // concurrently), `docker info`'s round-trip to the daemon can occasionally
+    // exceed 5s purely from CPU contention, causing this check to time out
+    // and silently SKIP the whole Docker-dependent suite instead of running
+    // it — a false "pass" that masks real failures (see Aspire dashboard CI
+    // investigation, #2123/#2132). 20s gives enough headroom to reliably
+    // detect a genuinely-available daemon under the same load.
+    execSync('docker info', { stdio: 'ignore', timeout: 20_000 });
     return true;
   } catch {
     return false;

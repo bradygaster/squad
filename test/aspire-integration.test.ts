@@ -36,13 +36,25 @@ const SKIP_REASON = dockerSkipReason() ?? playwrightBrowserSkipReason();
 const CONTAINER_NAME = 'squad-aspire-dashboard';
 const DASHBOARD_URL = 'http://localhost:18888';
 const OTLP_GRPC_TARGET = 'http://localhost:4317';
+// Pin to a specific, verified-good patch version rather than a floating tag.
+// Confirmed in CI: `:latest` AND the floating major tag `:13` currently both
+// resolve to the SAME freshly-published `13.6.0` image (built 2026-10-01,
+// same layer digests/sha256:239e58... as `:latest`), and that image's
+// entrypoint fails immediately with "Aspire.Dashboard.dll does not exist" /
+// "No .NET SDKs were found" — the app binary is missing from the image
+// itself (confirmed via `docker inspect`/`docker logs`, not a slow/contended
+// start). `13.5.2` is a distinct, ~3-week-older build (different layer
+// digests, verified via the MCR manifest API) that predates this broken
+// release and does not exhibit the problem. Re-pin forward once a newer
+// verified-good patch tag is published upstream.
+const DASHBOARD_IMAGE = 'mcr.microsoft.com/dotnet/aspire-dashboard:13.5.2';
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
 /** Poll a URL until it responds with 200 or timeout expires. */
-async function waitForHealthy(url: string, timeoutMs = 60_000): Promise<void> {
+async function waitForHealthy(url: string, timeoutMs = 120_000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -53,7 +65,24 @@ async function waitForHealthy(url: string, timeoutMs = 60_000): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 1_000));
   }
-  throw new Error(`Dashboard at ${url} did not become healthy within ${timeoutMs}ms`);
+  // Surface container diagnostics so a slow/crashed start is distinguishable
+  // from a genuinely unreachable dashboard without needing to re-run in CI.
+  let diagnostics = '';
+  try {
+    const state = execSync(
+      `docker inspect --format="{{.State.Status}} (exitCode={{.State.ExitCode}})" ${CONTAINER_NAME}`,
+      { encoding: 'utf8' },
+    ).trim();
+    // `docker logs` relays container stdout/stderr as two separate OS
+    // streams; execSync only returns stdout by default, so a crash reported
+    // via stderr (the common case for unhandled .NET exceptions) would be
+    // silently dropped. Redirect stderr into stdout so it's captured too.
+    const logs = execSync(`docker logs --tail 50 ${CONTAINER_NAME} 2>&1`, { encoding: 'utf8' });
+    diagnostics = `\nContainer state: ${state}\nLast logs:\n${logs}`;
+  } catch (err) {
+    diagnostics = `\n(failed to collect container diagnostics: ${(err as Error).message})`;
+  }
+  throw new Error(`Dashboard at ${url} did not become healthy within ${timeoutMs}ms${diagnostics}`);
 }
 
 /** Force-remove the test container (ignore errors). */
@@ -122,33 +151,46 @@ describe.skipIf(SKIP_REASON !== null)(
       // Clean up any leftover container from a prior run
       removeContainer();
 
-      // Pull latest Aspire dashboard image
+      // Pull the pinned Aspire dashboard image (see DASHBOARD_IMAGE above)
       execSync(
-        'docker pull mcr.microsoft.com/dotnet/aspire-dashboard:latest',
+        `docker pull ${DASHBOARD_IMAGE}`,
         { stdio: 'inherit', timeout: 120_000 },
       );
 
-      // Start the Aspire dashboard container
+      // Start the Aspire dashboard container.
+      // Deliberately NOT using --rm: if the container exits/crashes instead
+      // of merely starting slowly, --rm would auto-delete it before
+      // waitForHealthy's failure-path diagnostics (docker inspect/logs) can
+      // run, masking the real cause as a generic timeout. removeContainer()
+      // (called above and in afterAll) already guarantees explicit cleanup.
       execSync(
         [
-          'docker run --rm -d',
+          'docker run -d',
           `-p 18888:18888 -p 4317:18889`,
           '-e ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true',
           `--name ${CONTAINER_NAME}`,
-          'mcr.microsoft.com/dotnet/aspire-dashboard:latest',
+          DASHBOARD_IMAGE,
         ].join(' '),
         { stdio: 'inherit' },
       );
 
-      // Wait for dashboard UI to respond
-      await waitForHealthy(DASHBOARD_URL, 60_000);
+      // Wait for dashboard UI to respond. 120s gives generous headroom over
+      // the dashboard's typical few-second cold start, absorbing real CPU
+      // contention on CI runners where this suite runs alongside ~10k other
+      // tests in full parallelism. (The repeated timeouts originally
+      // investigated in #2123/#2132 turned out to have a separate root
+      // cause — a transiently broken `:latest` image tag, fixed above by
+      // pinning to DASHBOARD_IMAGE — but a generous timeout remains
+      // worthwhile defense-in-depth against genuine contention-induced
+      // slow starts.)
+      await waitForHealthy(DASHBOARD_URL, 120_000);
 
       // Initialize OTel gRPC exporters targeting the dashboard
       initOTelForAspire();
 
       // Launch Playwright browser
       browser = await chromium.launch({ headless: true });
-    }, 180_000); // 3 min timeout for pull + start
+    }, 240_000); // 4 min timeout for pull + start (120s health-check budget + overhead)
 
     // ------------------------------------------------------------------
     // Teardown: shutdown OTel, close browser, remove container
