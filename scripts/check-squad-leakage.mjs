@@ -14,43 +14,41 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { decodeGitNameOnly } from './git-path-decoder.mjs';
 
 const baseRef = process.argv[2] || 'origin/dev';
 const headRef = process.argv[3] || 'HEAD';
 
-let changedFiles = [];
 try {
   const output = execFileSync(
     'git',
     ['diff', `${baseRef}...${headRef}`, '--name-only', '--diff-filter=ACMRT', '--', '.squad/'],
-    { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    { encoding: 'buffer', stdio: ['pipe', 'pipe', 'pipe'] },
   );
-  changedFiles = output
-    .split('\n')
-    .map((f) => f.trim())
-    .filter(Boolean);
-} catch (err) {
-  // git diff can fail if base ref is missing — treat as no leakage
-  const errorMessage = err instanceof Error ? err.message : String(err);
-  console.error(`Warning: git diff failed: ${errorMessage}`);
-}
+  const changedFiles = decodeGitNameOnly(output);
+  const result = {
+    leaked: changedFiles.length > 0,
+    files: changedFiles,
+  };
 
-const result = {
-  leaked: changedFiles.length > 0,
-  files: changedFiles,
-};
+  console.log(JSON.stringify(result));
 
-console.log(JSON.stringify(result, null, 2));
-
-if (result.leaked) {
-  console.warn(`\n⚠️  Squad file leakage: ${changedFiles.length} .squad/ file(s) modified in this PR:`);
-  for (const f of changedFiles) {
-    console.warn(`  - ${f}`);
+  if (result.leaked) {
+    console.error(
+      `\n⚠️  Squad file leakage: ${changedFiles.length} .squad/ file(s) modified in this PR:`,
+    );
+    for (const file of changedFiles) {
+      console.error(`  - ${file}`);
+    }
+    console.error(
+      '\nThis is usually unintentional. If these changes are deliberate, ensure they are ' +
+      'approved by the team lead. .squad/ files affect team routing, agent charters, and decisions.',
+    );
+  } else {
+    console.error('\n✅ No .squad/ file leakage detected.');
   }
-  console.warn(
-    '\nThis is usually unintentional. If these changes are deliberate, ensure they are ' +
-    'approved by the team lead. .squad/ files affect team routing, agent charters, and decisions.',
-  );
-} else {
-  console.log('\n✅ No .squad/ file leakage detected.');
+} catch (err) {
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  console.error(`Squad leakage scan failed: ${errorMessage}`);
+  process.exitCode = 1;
 }

@@ -30,6 +30,7 @@ network:
   allowed:
     - defaults
 tools:
+  cli-proxy: true
   edit: null
   bash: true
   github:
@@ -151,19 +152,20 @@ pre-agent-steps:
         node --check "$path" >/dev/null
       }
       # BEGIN GENERATED RESOURCE DIGESTS
-      check_hash "$install_verifier" "0da2b31a80b47e428cb215a00d4655b54b7b66e4a6a2522f0f4da8f119d0346e"
-      check_hash "$cast_validator" "62fbf47b51639fd1878c143e5176ee3099e390065997411511e9d483d467bbce"
-      check_hash "$bootstrap_validator" "d449b9204f7fad133ff7133c1a30c9381c87e3c0c9d481352819ca93ea1a1dad"
+      check_hash "$install_verifier" "cf474be9b04d339f7e7a18c65e776b8a53e84bea5b4b85abfe65ed11f7b782ce"
+      check_hash "$cast_validator" "c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
+      check_hash "$bootstrap_validator" "6f2ff60104a238c7c171031e737fd8dcb57dd3eeffccbf8c0aeaad016d85ee4e"
       # END GENERATED RESOURCE DIGESTS
-      node "$bootstrap_validator" \
-        --root "$PWD" \
-        --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
-        --repository "${GITHUB_REPOSITORY:?}" \
-        --default-branch "${SQUAD_BOOTSTRAP_DEFAULT_BRANCH:?}" \
-        --link-mode placeholder
       node "$bootstrap_validator" \
         --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
         > "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json"
+      node "$bootstrap_validator" \
+        --submit-envelope "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-envelope.json" \
+        --root "$PWD" \
+        --payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
+        --repository "${GITHUB_REPOSITORY:?}" \
+        --default-branch "${DEFAULT_BRANCH:?}" \
+        --link-mode placeholder
       SQUAD_BOOTSTRAP_VALIDATOR
       chmod 500 "$runner"
 safe-outputs:
@@ -248,8 +250,12 @@ safe-outputs:
             SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}
           with:
             script: |
-              const { mkdirSync, readFileSync, writeFileSync } = await import('node:fs');
-              const { dirname, join } = await import('node:path');
+              const {
+                cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync,
+                readFileSync, rmSync, writeFileSync,
+              } = await import('node:fs');
+              const { tmpdir } = await import('node:os');
+              const { dirname, isAbsolute, join, relative, resolve } = await import('node:path');
               const { pathToFileURL } = await import('node:url');
 
               const checkout = join(process.env.GITHUB_WORKSPACE, 'bootstrap-repo');
@@ -278,19 +284,41 @@ safe-outputs:
                 core.setFailed(`Bootstrap payload transport is invalid: ${error.message}`);
                 return;
               }
-              const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
-              for (const file of payload.files || []) {
-                const target = join(checkout, ...String(file.path || '').split('/'));
-                mkdirSync(dirname(target), { recursive: true });
-                writeFileSync(target, String(file.content || ''));
-              }
-              writeFileSync(payloadPath, payloadText);
+              const safeTarget = (root, path) => {
+                if (typeof path !== 'string' || path.length === 0 || path.includes('\\') ||
+                    isAbsolute(path) || path.split('/').some((segment) => !segment || segment === '.' || segment === '..')) {
+                  throw new Error(`Bootstrap payload contains an unsafe path: ${JSON.stringify(path)}`);
+                }
+                const target = resolve(root, path);
+                const within = relative(root, target);
+                if (!within || within.startsWith('..') || isAbsolute(within)) {
+                  throw new Error(`Bootstrap payload path escapes the candidate tree: ${path}`);
+                }
+                let current = root;
+                for (const segment of path.split('/').slice(0, -1)) {
+                  current = join(current, segment);
+                  if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
+                    throw new Error(`Bootstrap payload path crosses a symbolic link: ${path}`);
+                  }
+                }
+                if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+                  throw new Error(`Bootstrap payload target is a symbolic link: ${path}`);
+                }
+                return target;
+              };
+              for (const file of payload.files || []) safeTarget(checkout, file?.path);
 
-              const validate = (candidate, linkMode) => {
-                writeFileSync(payloadPath, `${JSON.stringify(candidate)}\n`);
+              const candidate = mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-'));
+              const payloadPath = join(checkout, '.github/workflows/squad-bootstrap-payload.json');
+              const validate = (candidatePayload, linkMode) => {
+                const candidatePayloadPath =
+                  join(candidate, '.github/workflows/squad-bootstrap-payload.json');
+                mkdirSync(dirname(candidatePayloadPath), { recursive: true });
+                writeFileSync(candidatePayloadPath, `${JSON.stringify(candidatePayload)}\n`);
                 const errors = validatorModule.validateBootstrapPayload({
-                  root: checkout,
-                  payloadPath,
+                  root: candidate,
+                  gitRoot: checkout,
+                  payloadPath: candidatePayloadPath,
                   repository: context.repo.owner + '/' + context.repo.repo,
                   defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
                   linkMode,
@@ -299,7 +327,26 @@ safe-outputs:
                   throw new Error(`Squad bootstrap validation failed:\n${errors.map((error) => `- ${error}`).join('\n')}`);
                 }
               };
-              validate(payload, 'placeholder');
+              try {
+                cpSync(checkout, candidate, {
+                  recursive: true,
+                  filter: (source) => relative(checkout, source).split('/')[0] !== '.git',
+                });
+                for (const file of payload.files || []) {
+                  const target = safeTarget(candidate, file.path);
+                  mkdirSync(dirname(target), { recursive: true });
+                  writeFileSync(target, file.content);
+                }
+                validate(payload, 'placeholder');
+                for (const file of payload.files) {
+                  const target = safeTarget(checkout, file.path);
+                  mkdirSync(dirname(target), { recursive: true });
+                  writeFileSync(target, file.content);
+                }
+                writeFileSync(payloadPath, payloadText);
+              } finally {
+                rmSync(candidate, { recursive: true, force: true });
+              }
 
               const listState = async () => {
                 const pullRequests = await github.paginate(github.rest.pulls.list, {
@@ -474,14 +521,46 @@ safe-outputs:
                 || pullRequestDetails.head.repo?.full_name !== provenance.repository) {
                 throw new Error('Trusted bootstrap provenance inputs or Cast PR head identity are invalid.');
               }
-              const provenanceMarker = `<!-- squad:bootstrap-provenance ${JSON.stringify(provenance)} -->`;
+              const provenancePrefix = '<' + '!-- squad:bootstrap-provenance ';
+              const provenanceMarker = `${provenancePrefix}${JSON.stringify(provenance)} -->`;
               const prBodyWithoutProvenance = String(pullRequestDetails.body || payload.pr_body)
-                .replace(/^<!-- squad:bootstrap-provenance .* -->\r?\n?/gm, '');
+                .replace(new RegExp(`^${provenancePrefix}.* -->\\r?\\n?`, 'gm'), '');
               await github.rest.pulls.update({
                 ...context.repo,
                 pull_number: pullRequest.number,
                 body: `${provenanceMarker}\n${prBodyWithoutProvenance}`,
               });
+              const provenanceComments = (await github.paginate(
+                github.rest.issues.listComments,
+                {
+                  ...context.repo,
+                  issue_number: pullRequest.number,
+                  per_page: 100,
+                },
+              )).filter((comment) =>
+                String(comment.body || '').startsWith(provenancePrefix),
+              );
+              if (provenanceComments.length > 1) {
+                throw new Error('Ambiguous bot-authenticated bootstrap provenance comments.');
+              }
+              const provenanceCommentBody =
+                `${provenanceMarker}\nBase-controlled bootstrap provenance. Do not edit this comment.`;
+              if (provenanceComments.length === 1) {
+                if (provenanceComments[0].user?.login !== 'github-actions[bot]') {
+                  throw new Error('Bootstrap provenance comment is not owned by GitHub Actions.');
+                }
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: provenanceComments[0].id,
+                  body: provenanceCommentBody,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: pullRequest.number,
+                  body: provenanceCommentBody,
+                });
+              }
               const finalPayload = {
                 ...payload,
                 issue_body: payload.issue_body.replace('{{CAST_PR_URL}}', pullRequest.url),
@@ -705,33 +784,25 @@ exemplar's long audit format.
 
 ## Validation and output
 
-Run exactly:
+After generating the payload, run this command exactly once:
 
 ```bash
 "${GITHUB_WORKSPACE:?}/.github/workflows/run-squad-bootstrap-validator"
 ```
 
-Only exit status zero with stdout exactly
-`Squad bootstrap validation passed.` authorizes reading
-`.github/workflows/squad-bootstrap-envelope.json`. That file is the only
-transport source for one `materialize_bootstrap` call.
+The authenticated command deterministically encodes the payload, reconstructs
+and checks all chunk ordinals, count, bounds, UTF-8, byte length and SHA-256,
+validates the payload schema and Cast tree, then invokes the existing typed
+`materialize_bootstrap` safe-output tool through its mounted CLI with JSON on
+stdin. Its tool invocation is bounded to 60 seconds. GitHub writes still occur
+only in the safe-output job, which independently revalidates the payload.
 
-The envelope contains:
+Exit status zero with stdout exactly
+`Squad bootstrap validation passed; materialize_bootstrap submitted.`
+means the one output has already been submitted. Stop immediately.
+Never read, print, extract, or transcribe `squad-bootstrap-envelope.json` or its
+chunks. Never invoke `materialize_bootstrap` separately, retry the command, or
+split Cast and research into separate outputs.
 
-- `payload_encoding`: exactly `base64`
-- `payload_byte_length`: canonical decimal UTF-8 byte length, maximum 96,000
-- `payload_sha256`: lowercase SHA-256 of the complete payload bytes
-- `payload_chunk_count`: canonical decimal from 1 through 16
-- `payload_chunk_00` through `payload_chunk_15`: only the populated fixed slots
-
-Each populated chunk is `NN:` followed by canonical Base64 for at most 6,000
-payload bytes, so every string is at most 8,003 bytes and stays conservatively
-below gh-aw's 10,240-byte per-string input limit. Pass every property from the
-envelope byte-for-byte to the typed safe-output call. Do not reserialize the
-payload, recompute metadata, rename slots, add unused slots, or split semantic
-generation into separate Cast and research outputs. The writer reconstructs the
-one shared payload and verifies order, count, bounds, UTF-8, total byte length,
-and SHA-256 before parsing any JSON.
-
-Any validation or envelope error is terminal: emit no materialization output,
-report the exact validator stderr, and stop.
+Any validation, envelope, or submission error is terminal: report the exact
+stderr and stop without another materialization attempt.

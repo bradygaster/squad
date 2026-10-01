@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +9,7 @@ import {
   guardedTargetMutation,
   sanitizedEnvironment,
   selectBootstrapOutputs,
+  waitForBaseControlledReviewCanary,
   waitForBootstrapOutputs,
 } from '../scripts/gh-aw-hosted-e2e.mjs';
 import {
@@ -116,6 +118,16 @@ const currentOutputs = (
 });
 
 describe('Squad gh-aw hosted E2E controller', () => {
+  it('verifies and narrowly repairs staged ownership metadata before the installation commit', () => {
+    const gate = SCRIPT.indexOf('const staged = verifyStagedInstall(checkout,');
+    const commit = SCRIPT.indexOf("['commit', '-m', 'ci: install Squad agentic workflows']");
+    expect(gate).toBeGreaterThan(SCRIPT.indexOf("['add', '--', ...installPaths]"));
+    expect(gate).toBeLessThan(commit);
+    expect(SCRIPT.slice(gate, commit)).toContain('stageOwnership: true');
+    expect(SCRIPT.slice(gate, commit)).toContain('if (staged.failures.length > 0)');
+    expect(SCRIPT.slice(gate, commit)).toContain('throw new Error');
+  });
+
   it('uses only a default-branch repository_dispatch controller and one PAT step', () => {
     const parsed = parse(WORKFLOW);
     expect(parsed.on.repository_dispatch.types).toEqual(['squad-gh-aw-hosted-e2e']);
@@ -160,8 +172,8 @@ describe('Squad gh-aw hosted E2E controller', () => {
   it('loads only the exact canonical manifest and has no fallback contract', () => {
     const contract = loadBundleContract(ROOT);
     expect(contract.package).toBe('bradygaster/squad/workflows');
-    expect(contract.workflows).toHaveLength(7);
-    expect(contract.runtime).toHaveLength(15);
+    expect(contract.workflows).toHaveLength(8);
+    expect(contract.runtime).toHaveLength(17);
     expect(contract.skills).toHaveLength(1);
     expect(contract.triggerProbe).toBe('shared/squad-bootstrap-trigger-probe.json');
     expect(() => loadInstalledBundleContract(resolve(ROOT, 'does-not-exist'))).toThrow(/missing or invalid/);
@@ -189,9 +201,20 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(BOOTSTRAP_WORKFLOW).toContain('SQUAD_BOOTSTRAP_INSTALL_SHA: ${{ github.sha }}');
     expect(BOOTSTRAP_WORKFLOW).toContain('SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}');
     expect(BOOTSTRAP_WORKFLOW).toContain('SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}');
-    expect(BOOTSTRAP_WORKFLOW).toContain('<!-- squad:bootstrap-provenance ${JSON.stringify(provenance)} -->');
+    expect(BOOTSTRAP_WORKFLOW).toContain(
+      "const provenancePrefix = '<' + '!-- squad:bootstrap-provenance ';",
+    );
+    expect(BOOTSTRAP_WORKFLOW).toContain(
+      'const provenanceMarker = `${provenancePrefix}${JSON.stringify(provenance)} -->`;',
+    );
+    expect(BOOTSTRAP_WORKFLOW).not.toContain(
+      '<!-- squad:bootstrap-provenance ${JSON.stringify(provenance)} -->',
+    );
     expect(BOOTSTRAP_WORKFLOW).toContain('pullRequestDetails.head.repo?.full_name !== provenance.repository');
     expect(BOOTSTRAP_WORKFLOW).toContain('body: `${provenanceMarker}\\n${prBodyWithoutProvenance}`');
+    expect(BOOTSTRAP_WORKFLOW).toContain(
+      'Base-controlled bootstrap provenance. Do not edit this comment.',
+    );
     expect(BOOTSTRAP_WORKFLOW).toContain('body: markedIssueBody');
   });
 
@@ -202,6 +225,98 @@ describe('Squad gh-aw hosted E2E controller', () => {
     expect(SCRIPT).toContain("['pr', 'close'");
     expect(SCRIPT).toContain("['api', '--method', 'DELETE'");
     expect(SCRIPT).toContain('rmSync(checkout, { recursive: true, force: true })');
+  });
+
+  it('requires a base-controlled review canary after the manual installation boundary', () => {
+    expect(SCRIPT).toContain('waitForBaseControlledReviewCanary');
+    expect(SCRIPT).toContain("job.name === 'review'");
+    expect(SCRIPT).toContain('job.check_run_url');
+    expect(SCRIPT).toContain("check.name !== 'review'");
+    expect(SCRIPT).not.toContain("check.name !== 'Squad Review / review'");
+    expect(SCRIPT).toContain("check.app?.slug !== 'github-actions'");
+    expect(SCRIPT).toContain("'@squad/base-controlled-bootstrap'");
+    expect(SCRIPT).toContain("'@squad/base-controlled-review'");
+    expect(SCRIPT).toContain("verdict.result !== 'COMMENT'");
+    expect(SCRIPT.indexOf('waitForBaseControlledReviewCanary')).toBeLessThan(
+      SCRIPT.indexOf("kind: 'squad-bootstrap-trigger-probe'"),
+    );
+    expect(SCRIPT).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority|publisher_app_/);
+  });
+
+  it.each([
+    'native-job-name', 'ui-context-name', 'wrong-check-id', 'wrong-head',
+    'wrong-run-head', 'failed-check', 'incomplete-check', 'foreign-app', 'foreign-app-id',
+  ])('exercises the hosted canary API contract: %s', mutation => {
+    const target = 'owner/consumer';
+    const verdict = {
+      schema: 'squad-review-verdict/v1', repository: target,
+      pull_request: currentCastPr.number, base_sha: currentCastPr.baseSha,
+      head_sha: CAST_SHA, author_agent: '@squad/base-controlled-bootstrap',
+      reviewer_agent: '@squad/base-controlled-review', result: 'COMMENT',
+      event: 'pull_request_target', workflow_sha: currentCastPr.baseSha,
+      workflow_path: '.github/workflows/squad-review.lock.yml', run_id: 31, run_attempt: 1,
+    };
+    const run = {
+      id: 31, event: verdict.event, path: verdict.workflow_path,
+      head_sha: currentCastPr.baseSha,
+      repository: { full_name: target }, run_attempt: 1,
+      display_title: `Squad review — PR #${currentCastPr.number}`,
+    };
+    const job = {
+      name: 'review', status: 'completed', conclusion: 'success',
+      check_run_url: `https://api.github.com/repos/${target}/check-runs/123`,
+    };
+    const check = {
+      id: 123, name: 'review', head_sha: CAST_SHA, status: 'completed', conclusion: 'success',
+      app: { id: 15368, slug: 'github-actions' },
+    };
+    switch (mutation) {
+      case 'ui-context-name': check.name = 'Squad Review / review'; break;
+      case 'wrong-check-id': check.id = 124; break;
+      case 'wrong-head': check.head_sha = TARGET_SHA; break;
+      case 'wrong-run-head': run.head_sha = CAST_SHA; break;
+      case 'failed-check': check.conclusion = 'failure'; break;
+      case 'incomplete-check': check.status = 'in_progress'; break;
+      case 'foreign-app': check.app.slug = 'other'; break;
+      case 'foreign-app-id': check.app.id = 1; break;
+    }
+    const routes: string[] = [];
+    const request = (args: string[]) => {
+      const route = args.find(arg => arg.startsWith(`repos/${target}/`));
+      routes.push(route!);
+      switch (route) {
+        case `repos/${target}/pulls/${currentCastPr.number}/reviews?per_page=100`:
+          return [{
+            user: ACTIONS_BOT, commit_id: CAST_SHA,
+            body: `Squad-Review-Verdict: ${JSON.stringify(verdict)}`,
+          }];
+        case `repos/${target}/actions/runs/31`: return run;
+        case `repos/${target}/actions/runs/31/attempts/1/jobs?per_page=100`: return [{ jobs: [job] }];
+        case `repos/${target}/check-runs/123`: return check;
+        default: throw new Error(`Unexpected API route: ${route}`);
+      }
+    };
+    const evidence = mkdtempSync(resolve(tmpdir(), 'squad-review-canary-'));
+    try {
+      const execute = () => waitForBaseControlledReviewCanary(target, currentCastPr, evidence, {
+        request, now: () => 0, pause: () => { throw new Error('Unexpected polling'); },
+      });
+      if (mutation === 'native-job-name') {
+        expect(execute()).toEqual({ run, job, check, verdict });
+        expect(JSON.parse(readFileSync(
+          resolve(evidence, 'base-controlled-review-canary.json'), 'utf8',
+        )).check.name).toBe('review');
+      } else if (mutation === 'wrong-run-head') {
+        expect(execute).toThrow('not bound to the base-controlled workflow run');
+      } else {
+        expect(execute).toThrow('not bound to the trusted review job');
+      }
+      expect(routes.at(-1)).toBe(mutation === 'wrong-run-head'
+        ? `repos/${target}/actions/runs/31`
+        : `repos/${target}/check-runs/123`);
+    } finally {
+      rmSync(evidence, { recursive: true, force: true });
+    }
   });
 
   it('never executes candidate package or installed verifier with inherited credentials', () => {

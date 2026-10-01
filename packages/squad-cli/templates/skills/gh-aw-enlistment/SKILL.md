@@ -11,7 +11,7 @@ tools:
     when: "Every step: preflight identity/auth, requiring Issues, enabling Actions-created PRs, opening and watching the bootstrap PR."
   - name: "gh aw"
     description: "GitHub Agentic Workflows extension (github/gh-aw) — installs and strictly compiles the Squad workflow set."
-    when: "Installing the immutable native Squad package and compiling its seven workflows into deterministic .lock.yml files."
+    when: "Installing the immutable native Squad package and compiling its eight workflows into deterministic .lock.yml files."
 ---
 
 ## Context
@@ -54,27 +54,50 @@ condition and wait for a human decision — do not work around it.
 # gh is authenticated
 gh auth status
 
+# Prove the exact package-capable compiler version before creating artifacts
+# gh-aw-exact-version-start
+required_gh_aw_version="v0.89.22"
+gh_aw_version_output="$(gh aw --version 2>&1)" || gh_aw_version_output=""
+gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+
+if [ "${gh_aw_version}" != "${required_gh_aw_version}" ]; then
+  echo "Installing exact supported gh-aw ${required_gh_aw_version}."
+  gh extension remove gh-aw >/dev/null 2>&1 || true
+  gh extension install --pin "${required_gh_aw_version}" github/gh-aw
+  gh_aw_version_output="$(gh aw --version 2>&1)" || {
+    echo "STOP: gh-aw version could not be verified after clean installation." >&2
+    exit 1
+  }
+  gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
+fi
+
+test "${gh_aw_version}" = "${required_gh_aw_version}" || {
+  echo "STOP: required gh-aw v0.89.22, but found ${gh_aw_version:-unavailable} after clean installation." >&2
+  exit 1
+}
+# gh-aw-exact-version-end
+
 # Capture repository identity and default branch AT RUNTIME
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 echo "Repo: ${owner_repo}  Default branch: ${default_branch}"
-
-# Install the package-capable compiler version used by the distribution contract
-gh extension install --force --pin v0.89.21 github/gh-aw
-test "$(gh aw --version | awk '{print $NF}')" = "v0.89.21"
 
 # Git state must be understood and clean enough to isolate the install
 git status --short
 ```
 
 > **Portability — compiler check:** use the equivalent PowerShell commands to
-> force-install `github/gh-aw` at `v0.89.21`, then confirm `gh aw --version`
-> reports that exact version before installation.
+> capture both output streams from `gh aw --version`. On any mismatch, remove
+> `github/gh-aw`, cleanly install the exact `v0.89.22` pin, and verify both
+> streams again. Stop before branch creation or file generation unless that
+> second check proves exactly `v0.89.22`; never select a newer release.
 
 - **STOP** if `gh auth status` is not logged in, or is logged in as the wrong
   identity for this repo (see the `gh-auth-isolation` skill to operate as a
   specific account without switching the global default).
 - **STOP** if `owner_repo` or `default_branch` cannot be resolved.
+- **STOP** if exact gh-aw `v0.89.22` cannot be proven after the clean pinned
+  reinstall. Do not create a branch or generate repository files.
 - **STOP** if the working tree has unrelated uncommitted changes you cannot
   account for — the bootstrap must land as an isolated, reviewable change.
 - Confirm Copilot is enabled for the repository where checkable; the activation
@@ -146,7 +169,7 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 
 The nested `workflows/aw.yml` is the only supported distribution registration.
 It isolates package auto-discovery from unrelated repository skills and agents,
-and installs exactly seven workflows, fifteen runtime resources, and one
+and installs exactly eight workflows, seventeen runtime resources, and one
 `gh-aw-enlistment` skill at the same resolved revision:
 
 - `squad.md` + `squad.lock.yml`
@@ -156,16 +179,17 @@ and installs exactly seven workflows, fifteen runtime resources, and one
 - `squad-retro.md` + `squad-retro.lock.yml`
 - `squad-improvement-worker.md` + `squad-improvement-worker.lock.yml`
 - `squad-bootstrap.md` + `squad-bootstrap.lock.yml`
+- `squad-command-router.md` + `squad-command-router.lock.yml`
 
 `squad-improvement-worker` is part of the standard, coherent install above —
 not a separate opt-in add-on. It stays dormant until a maintainer approves a
 governance-scoped retrospective proposal (see the gh-aw guide's retrospective
-auto-implementation section); installing it alongside the other six keeps the
+auto-implementation section); installing it alongside the other seven keeps the
 full stack consistent and avoids a second bootstrap pass later.
 
 Report/proposal-only is the default. Ordinary fixes require the explicit
 `"squadRetroAutoImplement": "allow"` setting in `.squad/config.json`;
-five action issues and three dispatches per wakeup remain separate caps.
+five action issues and three dispatches per wake-up remain separate caps.
 An improvement requires `/squad approve-improvement`, `Approved-Revision:`
 and exact `Approved-Path:` lines from a human with write/maintain/admin access.
 The dispatcher sends nested issue and approval-comment IDs to the worker;
@@ -220,17 +244,39 @@ node .github/workflows/shared/squad-install-verifier.mjs \
 This must run after any first-install approval and before committing. Success
 criteria:
 
-- All seven workflows compile successfully.
-- The **only** permitted warning is the known `squad.md` bot-trigger warning: it
-  configures both slash-command and `github-actions[bot]` triggers, and the bot
-  trigger is required for controlled worker-continuation dispatches.
-- **STOP** on any error, or on **any additional warning** beyond that single
-  documented one.
+- All eight workflows compile successfully.
+- With gh-aw v0.89.22, require exactly two warnings, one occurrence of each
+  exact diagnostic header below (including its workflow path):
+
+<!-- compile-warning-allowlist-start -->
+```text
+.github/workflows/squad-review.md: warning: pull_request_target is a very dangerous trigger.
+.github/workflows/squad.md: warning: Both slash_command and bots triggers are configured. If a bot listed in bots: posts a comment that starts with the slash command text (e.g., /command-name), it will trigger the workflow and occupy the concurrency slot, potentially blocking simultaneous manual invocations. To ensure the workflow only runs on explicit user commands, remove the 'bots:' field.
+```
+<!-- compile-warning-allowlist-end -->
+
+The native review advisory includes the compiler's standard explanation and
+Security Lab link. The following guard-policy dry-run lines are informational,
+not another warning. The bot-trigger warning is expected because
+`github-actions[bot]` enables controlled worker-continuation dispatches.
+
+Accept the native review advisory **only while all existing controls remain**:
+same-repository head restriction, base-controlled workflow source,
+`checkout: false` agent path, API-only inspection, exact run/head/attempt guard,
+least-privilege jobs, advisory verdict, and independent human approval.
+`pull_request_target` is not generally safe; this narrow exception neither
+weakens those controls nor authorizes PR-head execution.
+
+**STOP** on any error, or on **any additional warning** beyond these two exact
+documented diagnostics. Also STOP if either warning is missing, duplicated,
+changed, or attributed to another path, if the summary is not
+`Compiled 8 workflows: 8 succeeded, 2 warnings`, or if any required control is
+absent. Do not suppress warnings or use `--approve` to bypass this gate.
 
 ### 6. Require the verifier to prove the complete consumer contract
 
 - **STOP** if the verifier reports a missing source/lock pair, missing package
-  ownership record, stale source/resource digest, incomplete seven-workflow
+  ownership record, stale source/resource digest, incomplete eight-workflow
   registration, or mixed revision.
 - Use only the recovery commands printed by the verifier. They reinstall the
   complete package at one immutable revision; never repair one workflow or
@@ -258,6 +304,8 @@ Stage **only** the documented generated surfaces, then verify the staged set:
 
 ```bash
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
 # No deletions should be staged:
 test -z "$(git diff --cached --diff-filter=D --name-only)" || { echo "STOP: staged deletions"; exit 1; }
@@ -266,6 +314,15 @@ test -z "$(git diff --cached --diff-filter=D --name-only)" || { echo "STOP: stag
 - **STOP** if the staged diff shows **unexpected deletions**, **unexpected secrets**,
   edits to **unrelated files**, or committed **log/diagnostic output**. Re-scope with
   explicit `git add -- <path>` — never `git add .`, `git add -A`, or `git commit -a`.
+
+Consumer rules such as `packages/` can silently ignore the required ownership
+JSON under `.github/aw/packages/`. The staged verifier force-adds only the exact
+native package ownership JSON when it is ignored and untracked. It then verifies
+every manifest-required source, lock, runtime, skill, manifest and ownership
+file against the validated working-tree bytes in a snapshot of the Git index.
+**STOP before commit/push** on missing metadata, a staging failure, an omitted
+required file or a staged digest mismatch. Never force-add a directory or glob.
+Rerun this gate after changing or restaging any installation file.
 
 ### 8. Commit, push, and open the bootstrap PR to the captured default branch
 
@@ -284,7 +341,32 @@ gh pr checks --watch
   `main`.
 - Request Copilot review, address feedback, and wait for required checks.
 
-### 9. Never auto-merge — and explain what comes next
+### 9. Verify the native review contract after merge
+
+The installation PR remains an explicit human trust boundary. After a human
+merges it, inspect the automatically opened Cast PR and require the native
+`Squad Review / review` job from the base-controlled `pull_request_target`
+workflow to succeed. Verify the exact workflow path, immutable base/workflow
+SHA, PR base/head, run ID and attempt, successful `review` job, and exact-head
+GitHub Actions check-run binding.
+
+This review path uses only the native GitHub Actions/gh-aw runtime identity.
+Never request or provision a reviewer PAT, GitHub App, private key, secret,
+environment, hosted attestor, callback, or external service. The optional
+`SQUAD_GITHUB_APP_*` and `SQUAD_GITHUB_TOKEN` activation credentials remain
+unrelated to reviewer authority.
+
+For authoritative merge enforcement, use a source-bound required-workflow or
+equivalent ruleset when available. A context-only requirement for
+`Squad Review / review` is advisory because a PR-controlled workflow may be
+able to emit the same workflow/job name through the shared GitHub Actions
+identity. If source-bound enforcement is unavailable, retain independent human
+review rather than relying on that context alone or adding a credential-based
+publisher. Require branches to be up to date before merge (or use an equivalent
+merge-queue freshness guarantee), and enable the required context only after
+the workflow installation is merged and the post-merge Cast canary succeeds.
+
+### 10. Never auto-merge — and explain what comes next
 
 - **Never** merge the bootstrap PR yourself. Merge happens **only** after human
   approval.
@@ -330,11 +412,13 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
-gh aw compile --strict           # final, no --approve; only the bot-trigger warning remains
+gh aw compile --strict           # final, no --approve; exactly the two documented warnings remain
 node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-install --source-revision "${SQUAD_SHA}" --strict-compile
 
 git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git commit -m "ci: add Squad agentic workflow"
 git push -u origin HEAD
 gh pr create --base "${default_branch}" \
@@ -385,8 +469,9 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
   else is a STOP.
 - ❌ **Treating `--approve` as the final compile.** Always finish with a plain
   `gh aw compile --strict` (no `--approve`).
-- ❌ **Tolerating extra warnings.** Only the `squad.md` bot-trigger warning is
-  allowed; every other warning or error halts the run.
+- ❌ **Tolerating extra warnings.** Only the documented `squad-review.md`
+  `pull_request_target` advisory and `squad.md` bot-trigger warning are allowed;
+  every other warning or error halts the run.
 - ❌ **Committing diagnostics.** Never commit `.github/aw/logs/` output; add the
   log `.gitignore` if missing.
 - ❌ **Clobbering existing workflows.** The install is additive; preserve unrelated
