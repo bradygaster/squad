@@ -4,7 +4,7 @@
  * Verifies the cast command correctly discovers project agents
  * by deriving the correct base path from resolveSquadPaths():
  *   - local mode:  parent of paths.projectDir (repo root)
- *   - remote mode: paths.teamDir (team repo root)
+ *   - remote mode: paths.teamSquadDir/agents (either teamRoot form, #2107)
  * Regression tests for #871 (double-nested .squad/.squad/agents path).
  */
 
@@ -149,6 +149,32 @@ describe('squad cast', () => {
     const output = logSpy.mock.calls.map(c => c.join(' ')).join('\n');
     expect(output).toContain('RemoteAgent');
     expect(output).toContain('Session Cast');
+  });
+
+  it("discovers agents in remote mode when teamRoot names the team's .squad dir (#2107)", async () => {
+    const projectRoot = join(TEST_ROOT, 'project');
+    const teamRoot = join(TEST_ROOT, 'team');
+
+    const projectSq = join(projectRoot, '.squad');
+    await mkdir(projectSq, { recursive: true });
+    await writeFile(
+      join(projectSq, 'config.json'),
+      JSON.stringify({ version: 1, teamRoot: '../team/.squad' }),
+    );
+
+    await mkdir(join(teamRoot, '.squad', 'agents', 'remote-agent'), { recursive: true });
+    await writeFile(
+      join(teamRoot, '.squad', 'agents', 'remote-agent', 'charter.md'),
+      `## Identity\n\n**Name:** RemoteAgent\n**Role:** Remote Engineer\n`,
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { runCast } = await import('@bradygaster/squad-cli/commands/cast');
+    await runCast(projectRoot);
+
+    const output = logSpy.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(output, 'teamRoot=../team/.squad').toContain('RemoteAgent');
   });
 
   it('discovers agents from the external state dir when state is externalized (#1399)', async () => {

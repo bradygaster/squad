@@ -134,6 +134,8 @@ If your project links to a remote team repository:
 
 The path should be relative to your **project root** (where `.squad/` or `squad.config.ts` lives), not to the `.squad/` directory itself.
 
+`teamRoot` can name either the team repository (`"../team-repo"`, which is what `squad link` writes) or its `.squad/` directory (`"../team-repo/.squad"`). Squad resolves both forms to the same team directory.
+
 **Verify the fix:**
 ```bash
 squad doctor

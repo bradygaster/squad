@@ -6,15 +6,15 @@
  * Doctor command inspired by @spboyer (Shayne Boyer)'s PR bradygaster/squad#131.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, rm, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { randomBytes } from 'crypto';
 import { runDoctor, getDoctorMode, checkNodeVersion, checkGitSyncHooks } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
-import { OrphanBranchBackend } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, OrphanBranchBackend } from '@bradygaster/squad-sdk';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
 
@@ -114,6 +114,101 @@ describe('squad doctor', () => {
     expect(rootCheck).toBeDefined();
     // The sibling dir doesn't exist in the test environment → should fail
     expect(rootCheck?.status).toBe('fail');
+  });
+
+  // One row per MUTABLE_STATE_PATHS entry: the state tools could write each of
+  // these to the team repo root before #2107. `scaffold()` already puts
+  // decisions.md in the team's .squad/, so that row is a merge, not a move.
+  it.each([
+    { form: 'stray decisions.md (newer copy exists)', teamRoot: '../team', stray: 'decisions.md', expected: 'merge' },
+    { form: 'stray decisions inbox entry', teamRoot: '../team', stray: 'decisions/inbox/edie-pick-db.md', expected: 'move' },
+    { form: 'stray casting policy', teamRoot: '../team', stray: 'casting/policy.json', expected: 'move' },
+    { form: 'stray agent history', teamRoot: '../team', stray: 'agents/edie/history.md', expected: 'move' },
+    { form: 'stray session log', teamRoot: '../team', stray: 'log/2026-09-30T10-00-00Z-setup.md', expected: 'move' },
+    { form: 'stray orchestration log', teamRoot: '../team', stray: 'orchestration-log/2026-09-30T10-00-00Z-edie.md', expected: 'move' },
+    { form: 'stray session file', teamRoot: '../team', stray: 'sessions/s-1.json', expected: 'move' },
+    { form: 'stray scratch file', teamRoot: '../team', stray: '.scratch/notes.md', expected: 'move' },
+    { form: 'stray identity', teamRoot: '../team', stray: 'identity/now.md', expected: 'move' },
+    { form: 'unrelated agents/ code dir', teamRoot: '../team', stray: 'agents/lib/index.ts', expected: 'none' },
+    { form: 'unrelated agents/ readme', teamRoot: '../team', stray: 'agents/lib/README.md', expected: 'none' },
+    { form: 'unrelated decisions/ dir', teamRoot: '../team', stray: 'decisions/README.md', expected: 'none' },
+    { form: 'unrelated log/ file (not .md/.json)', teamRoot: '../team', stray: 'log/development.log', expected: 'none' },
+    { form: 'empty decisions inbox', teamRoot: '../team', stray: 'decisions/inbox/', expected: 'none' },
+    { form: 'clean team repo', teamRoot: '../team', stray: undefined, expected: 'none' },
+    { form: "team's .squad dir", teamRoot: '../team/.squad', stray: 'identity/now.md', expected: 'none' },
+  ] as const)('linked team state check: $form (#2107)', async ({ teamRoot, stray, expected }) => {
+    const projectRoot = join(TEST_ROOT, 'project');
+    const teamRepo = join(TEST_ROOT, 'team');
+    await scaffold(projectRoot);
+    await scaffold(teamRepo);
+    await writeFile(join(projectRoot, '.squad', 'config.json'), JSON.stringify({ version: 1, teamRoot }));
+    const strayPath = stray ? join(teamRepo, ...stray.split('/').filter(Boolean)) : undefined;
+    if (stray?.endsWith('/')) await mkdir(strayPath!, { recursive: true });
+    else if (strayPath) {
+      await mkdir(join(strayPath, '..'), { recursive: true });
+      await writeFile(strayPath, 'x\n');
+    }
+
+    const checks = await runDoctor(projectRoot);
+    const check = checks.find((c: DoctorCheck) => c.name === 'linked team state location');
+    const ctx = `teamRoot=${teamRoot}, stray=${stray}`;
+
+    if (expected === 'none') {
+      expect(check, `${ctx}: unexpected warning`).toBeUndefined();
+      return;
+    }
+    const message = check?.message ?? '';
+    expect(check?.status, ctx).toBe('warn');
+    expect(message, ctx).toContain(teamRepo);
+    expect(message, ctx).toContain(join(teamRepo, '.squad'));
+    expect(message, `${ctx}: advice must not replace directories`).not.toMatch(/move these directories/i);
+    if (expected === 'move') {
+      expect(message, `${ctx}: must list ${stray} as a file to move`).toContain(`same relative path under it: ${stray}.`);
+      expect(message, `${ctx}: no newer copy exists, so nothing to merge`).not.toContain('merge by hand');
+    } else {
+      expect(message, `${ctx}: must list ${stray} as a file to merge`).toContain(`do not overwrite the newer state: ${stray}.`);
+      expect(message, `${ctx}: a newer copy exists, so it must not say move`).not.toContain('Move each file');
+    }
+    expect(existsSync(strayPath!), `${ctx}: doctor must not move ${strayPath}`).toBe(true);
+  });
+
+  it('linked team state check lists at most 10 files and counts the rest (#2107)', async () => {
+    const projectRoot = join(TEST_ROOT, 'project');
+    const teamRepo = join(TEST_ROOT, 'team');
+    await scaffold(projectRoot);
+    await scaffold(teamRepo);
+    await writeFile(join(projectRoot, '.squad', 'config.json'), JSON.stringify({ version: 1, teamRoot: '../team' }));
+    await mkdir(join(teamRepo, 'log'), { recursive: true });
+    for (let i = 0; i < 12; i++) await writeFile(join(teamRepo, 'log', `entry-${String(i).padStart(2, '0')}.md`), 'x\n');
+
+    const checks = await runDoctor(projectRoot);
+    const message = checks.find((c: DoctorCheck) => c.name === 'linked team state location')?.message ?? '';
+    expect(message, '12 stray log files').toContain('found 12 team state file(s)');
+    expect(message, '12 stray log files: list must stop at 10').toContain('and 2 more');
+  });
+
+  it('linked team state check does not throw when <team>/agents cannot be listed (#2107)', async () => {
+    const projectRoot = join(TEST_ROOT, 'project');
+    const teamRepo = join(TEST_ROOT, 'team');
+    await scaffold(projectRoot);
+    await scaffold(teamRepo);
+    await writeFile(join(projectRoot, '.squad', 'config.json'), JSON.stringify({ version: 1, teamRoot: '../team' }));
+    const strayAgents = join(teamRepo, 'agents');
+    await mkdir(join(strayAgents, 'edie'), { recursive: true });
+
+    const realListSync = FSStorageProvider.prototype.listSync;
+    const spy = vi.spyOn(FSStorageProvider.prototype, 'listSync').mockImplementation(function (this: FSStorageProvider, dir: string) {
+      if (resolve(dir) === strayAgents) throw Object.assign(new Error(`EACCES: permission denied, scandir '${dir}'`), { code: 'EACCES' });
+      return realListSync.call(this, dir);
+    });
+    try {
+      const checks = await runDoctor(projectRoot);
+      expect(spy.mock.calls.some(([dir]) => resolve(dir) === strayAgents), `listSync was never called on ${strayAgents}; the test does not exercise the guard`).toBe(true);
+      expect(checks.find((c: DoctorCheck) => c.name === 'linked team state location'), `unreadable ${strayAgents} must not produce a warning`).toBeUndefined();
+      expect(checks.find((c: DoctorCheck) => c.name === 'team root resolves')?.status).toBe('pass');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('detects hub mode from squad-hub.json', async () => {

@@ -25,13 +25,11 @@ export async function runCast(cwd: string): Promise<void> {
   }
   
   // Discover project agents.
-  // LocalAgentSource appends .squad/agents to its base path, so we must supply:
-  //   - local mode: parent of paths.projectDir (the repo root)
-  //   - remote mode: paths.teamDir (the team repo root, which itself contains .squad/agents)
-  const agentBase =
-    paths.mode === 'remote'
-      ? paths.teamDir
-      : path.resolve(paths.projectDir, '..');
+  // LocalAgentSource appends .squad/agents to its base path, so local mode
+  // supplies the parent of paths.projectDir (the repo root). Remote mode hands
+  // it the team's agents dir explicitly, because teamRoot may name either the
+  // team repo or its .squad/ dir (#2107).
+  const agentBase = path.resolve(paths.projectDir, '..');
   // #1399: when state is externalized, agents live at <externalStateDir>/agents
   // (no .squad nesting), so the base-path probing above can't reach them —
   // externalize sets teamRoot '.' which lands here as remote mode with a
@@ -42,7 +40,10 @@ export async function runCast(cwd: string): Promise<void> {
     paths.config?.stateLocation === 'external' && paths.config.projectKey
       ? path.join(resolveExternalStateDir(paths.config.projectKey, false), 'agents')
       : undefined;
-  const projectSource = new LocalAgentSource(agentBase, undefined, undefined, externalAgentsDir);
+  const agentsDir =
+    externalAgentsDir
+    ?? (paths.mode === 'remote' ? path.join(paths.teamSquadDir, 'agents') : undefined);
+  const projectSource = new LocalAgentSource(agentBase, undefined, undefined, agentsDir);
   const projectAgents = await projectSource.listAgents();
   
   // Discover personal agents
