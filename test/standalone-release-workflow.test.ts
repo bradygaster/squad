@@ -208,7 +208,9 @@ describe('stable promotion', () => {
     expect(Object.keys(promoteWorkflow.jobs)).toEqual(['dev-to-main']);
 
     const promotion = serialized(promoteWorkflow.jobs['dev-to-main']);
-    expect(promotion).toContain('git merge origin/dev --no-commit --no-ff -X theirs || true');
+    expect(promotion).toContain(
+      'git merge origin/dev --no-commit --no-ff -X theirs -X no-renames || true',
+    );
     expect(promotion).toContain('git diff --name-only --diff-filter=U');
     expect(promotion).toContain('git rm -rf --cached --ignore-unmatch');
     expect(promotion).toContain('.ai-team/');
