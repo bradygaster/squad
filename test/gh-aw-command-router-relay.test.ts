@@ -627,6 +627,26 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.postedComments[0]).toContain('Edited comment revocations are not durable.');
   });
 
+  it('rejects an edited existing revocation even when its canonical command is unchanged', async () => {
+    const result = await runRouter({
+      eventName: 'issue_comment',
+      action: 'edited',
+      actor: 'maintainer-editor',
+      author: 'maintainer-author',
+      previousBody: '/squad revoke-improvement',
+      body: 'Context changed.\n/squad revoke-improvement',
+      permissions: {
+        'maintainer-editor': 'maintain',
+        'maintainer-author': 'write',
+      },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.permissionLookups).toEqual([]);
+    expect(result.failure).toBe('Squad rejected command: /squad revoke-improvement');
+    expect(result.postedComments[0]).toContain('Edited comment revocations are not durable.');
+  });
+
   it('rejects an issue-body revoke-improvement without permission lookup or dispatch', async () => {
     const result = await runRouter({
       eventName: 'issues',

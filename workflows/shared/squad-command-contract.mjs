@@ -271,8 +271,8 @@ export function editedCommandShouldRoute(payload, eventName, currentResult) {
   const previousBody = payload?.changes?.body?.from;
   if (typeof previousBody !== 'string') return false;
   const previousPayload = eventName === 'issue_comment'
-    ? { ...payload, comment: { ...payload.comment, body: previousBody } }
-    : { ...payload, issue: { ...payload.issue, body: previousBody } };
+    ? { ...payload, action: 'created', comment: { ...payload.comment, body: previousBody } }
+    : { ...payload, action: 'opened', issue: { ...payload.issue, body: previousBody } };
   const previousResult = classifySquadCommand(previousPayload, eventName);
   return canonicalInvocation(previousResult) !== canonicalInvocation(currentResult);
 }

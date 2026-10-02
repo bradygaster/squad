@@ -198,6 +198,18 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         });
       });
 
+      if (eventName === 'issue_comment') {
+        it('routes an unchanged edited revocation from its accepted pre-edit state to rejection', () => {
+          const event = edited('/squad revoke-improvement', '/squad revoke-improvement');
+          const current = classifySquadCommand(event, eventName);
+          expect(current).toMatchObject({
+            status: 'rejected',
+            reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+          });
+          expect(editedCommandShouldRoute(event, eventName, current)).toBe(true);
+        });
+      }
+
       it.each([
         undefined,
         null,
