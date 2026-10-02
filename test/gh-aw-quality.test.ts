@@ -3520,6 +3520,26 @@ describe('gh-aw: activation roster guard counts only data rows (#1605)', () => {
   });
 });
 
+describe('gh-aw: CI verifier registry contract', () => {
+  it('installs verifier dependencies from the public registry without lifecycle scripts', () => {
+    const workflowPath = '.github/workflows/squad-ci.yml';
+    const workflow = parseDocument(readText(join(process.cwd(), workflowPath))).toJS();
+    const job = workflow.jobs['gh-aw-compile'];
+    const step = job.steps.find(
+      (candidate: { name?: string }) => candidate.name === 'Install verifier dependencies',
+    );
+    expect(step, `${workflowPath}: gh-aw-compile must install verifier dependencies`).toBeDefined();
+    expect(
+      step.run.trim(),
+      `${workflowPath}: Install verifier dependencies must use the public registry, not the local-development proxy`,
+    ).toBe('npm ci --ignore-scripts --registry=https://registry.npmjs.org/');
+    expect(
+      JSON.stringify(job),
+      `${workflowPath}: gh-aw-compile must not depend on the local-development npm proxy`,
+    ).not.toContain('packagefeedproxy.microsoft.io');
+  });
+});
+
 describe('gh-aw: CI compiler pin contract', () => {
   const ci = readText(join(process.cwd(), '.github/workflows/squad-ci.yml'));
   const installs = [

@@ -178,4 +178,68 @@ describe('resolveSquadPaths()', () => {
     expect(result).not.toBeNull();
     expect(result!.config!.projectKey).toBeNull();
   });
+
+  // ---- teamSquadDir: both teamRoot forms (#2107) ----
+
+  it('sets teamSquadDir to projectDir in local mode', () => {
+    scaffold('.git', '.squad');
+    const result = resolveSquadPaths(TMP);
+    expect(result!.teamSquadDir, 'local mode (no config.json)').toBe(join(TMP, '.squad'));
+  });
+
+  it.each([
+    {
+      form: 'team repo (what `squad link` writes)',
+      dirs: ['project/.squad', 'team/.squad'],
+      teamRoot: '../team',
+      expected: ['team', '.squad'],
+    },
+    {
+      form: "team's .squad dir (what the docs show)",
+      dirs: ['project/.squad', 'team/.squad'],
+      teamRoot: '../team/.squad',
+      expected: ['team', '.squad'],
+    },
+    {
+      form: 'team repo with a legacy .ai-team dir',
+      dirs: ['project/.squad', 'team/.ai-team'],
+      teamRoot: '../team',
+      expected: ['team', '.ai-team'],
+    },
+    {
+      form: 'team repo that has not been created yet',
+      dirs: ['project/.squad'],
+      teamRoot: '../team',
+      expected: ['team', '.squad'],
+    },
+    {
+      form: 'team repo holding both .squad and .ai-team (project uses .squad)',
+      dirs: ['project/.squad', 'team/.squad', 'team/.ai-team'],
+      teamRoot: '../team',
+      expected: ['team', '.squad'],
+    },
+    {
+      form: 'team repo holding both .squad and .ai-team (project uses .ai-team)',
+      dirs: ['project/.ai-team', 'team/.squad', 'team/.ai-team'],
+      teamRoot: '../team',
+      expected: ['team', '.ai-team'],
+    },
+  ])('resolves teamSquadDir when teamRoot is the $form', ({ dirs, teamRoot, expected }) => {
+    scaffold(...dirs);
+    const projectSquad = dirs[0]!;
+    writeJson(`${projectSquad}/config.json`, { version: 1, teamRoot });
+
+    const result = resolveSquadPaths(join(TMP, 'project'));
+    expect(result!.mode, `teamRoot=${teamRoot}`).toBe('remote');
+    expect(result!.teamSquadDir, `teamRoot=${teamRoot}`).toBe(join(TMP, ...expected));
+  });
+
+  it('treats a teamRoot dir that holds team.md as the team squad dir', () => {
+    scaffold('project/.squad', 'team-state');
+    writeFileSync(join(TMP, 'team-state', 'team.md'), '# Team\n', 'utf-8');
+    writeJson('project/.squad/config.json', { version: 1, teamRoot: '../team-state' });
+
+    const result = resolveSquadPaths(join(TMP, 'project'));
+    expect(result!.teamSquadDir, 'teamRoot=../team-state (holds team.md)').toBe(join(TMP, 'team-state'));
+  });
 });

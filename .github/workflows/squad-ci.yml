@@ -745,9 +745,7 @@ jobs:
           cache: npm
 
       - name: Install verifier dependencies
-        run: |
-          npm config set registry "https://packagefeedproxy.microsoft.io/npm/"
-          npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org/
 
       - name: Install gh-aw v0.89.22 (pinned)
         run: |

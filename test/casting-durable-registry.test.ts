@@ -10,6 +10,7 @@ import {
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -264,7 +265,7 @@ describe('casting registry directory lock', () => {
       'packages/squad-sdk/src/casting/durable-registry.ts',
     );
     const script = `
-      import { acquireCastingRegistryLock } from ${JSON.stringify(modulePath)};
+      import { acquireCastingRegistryLock } from ${JSON.stringify(pathToFileURL(modulePath).href)};
       import { appendFileSync } from 'node:fs';
       const castingDir = process.argv[1];
       const logPath = process.argv[2];
@@ -469,7 +470,7 @@ describe('casting registry/history roll-forward transaction', () => {
         import {
           _setCastingDurabilityHooksForTesting,
           commitCastingRegistryPair,
-        } from ${JSON.stringify(modulePath)};
+        } from ${JSON.stringify(pathToFileURL(modulePath).href)};
         import { readFileSync } from 'node:fs';
         import { join } from 'node:path';
         const failure = process.argv[1];

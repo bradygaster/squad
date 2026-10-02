@@ -462,15 +462,12 @@ describe('Integration: Charter compilation with config overrides', () => {
     expect(result.prompt).toContain('ADR-001: Use TypeScript.');
   });
 
-  it('handles empty charter content gracefully', () => {
-    const result = compileCharter({
+  it('rejects explicitly empty charter content', () => {
+    expect(() => compileCharter({
       agentName: 'empty',
       charterPath: '/fake/path',
       charterContent: '',
-    });
-
-    expect(result.name).toBe('empty');
-    expect(result.prompt).toContain('empty Charter');
+    })).toThrow(/SQC001/);
   });
 
   it('compileCharterFull returns parsed charter', () => {
@@ -895,8 +892,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
 
     expect(agent).toBeNull();
 
-    // Compilation with empty charter content is still valid
-    const compiled = compileCharter({
+    expect(() => compileCharter({
       agentName: 'phantom',
       charterPath: join(base, '.squad', 'agents', 'phantom', 'charter.md'),
       charterContent: '',
@@ -904,10 +900,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
         role: 'Ghost Agent',
         model: 'claude-haiku-4.5',
       },
-    });
-
-    expect(compiled.name).toBe('phantom');
-    expect(compiled.displayName).toContain('Ghost Agent');
+    })).toThrow(/SQC001/);
   });
 
   it('ModelRegistry validates models from compiled config', () => {
