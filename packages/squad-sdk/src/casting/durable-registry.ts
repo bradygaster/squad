@@ -190,6 +190,10 @@ function readText(filePath: string): string | undefined {
 }
 
 function flushDirectory(directoryPath: string): void {
+  // Directory fsync is a POSIX durability step for rename. Windows rejects
+  // FlushFileBuffers on a directory handle with EPERM and has no equivalent;
+  // the file-level fsync before rename is the only flush available there.
+  if (process.platform === 'win32') return;
   const descriptor = openSync(directoryPath, 'r');
   try {
     fsyncSync(descriptor);
@@ -301,6 +305,76 @@ function ownerPath(lockDirectory: string): string {
   return path.join(lockDirectory, 'owner.json');
 }
 
+const WIN32_TRANSIENT_FS_CODES = ['EPERM', 'EACCES', 'EBUSY'];
+const WIN32_RENAME_RETRY_MS = 1_000;
+
+// Windows fails a directory rename while another process (antivirus, indexer)
+// briefly holds a handle to a freshly written file inside it. Quarantine
+// targets are unique paths, so these codes cannot mean "target exists" here.
+function renameWithTransientRetry(from: string, to: string): void {
+  const deadline = now() + WIN32_RENAME_RETRY_MS;
+  while (true) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? '';
+      if (
+        process.platform !== 'win32'
+        || !WIN32_TRANSIENT_FS_CODES.includes(code)
+        || now() >= deadline
+      ) {
+        throw error;
+      }
+      wait(LOCK_RETRY_MS);
+    }
+  }
+}
+
+// The quarantine rename already moved ownership off the lock path, so this
+// delete is cleanup. On win32 a lingering handle must not fail release; the
+// uniquely named leftover is ignored by every reader of the casting dir.
+function removeQuarantine(quarantinePath: string): void {
+  if (process.platform !== 'win32') {
+    rmSync(quarantinePath, { recursive: true });
+    return;
+  }
+  try {
+    rmSync(quarantinePath, { recursive: true, maxRetries: 3 });
+  } catch (error) {
+    if (!WIN32_TRANSIENT_FS_CODES.includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+  }
+}
+
+const QUARANTINE_NAME = /^registry\.lock(\.recovery)?\.(?:released|stale)-/;
+
+// Best-effort cleanup of quarantines whose delete was abandoned, which would
+// otherwise accumulate in the committed casting directory. Call only while
+// holding the recovery guard: every lock quarantine happens under it, but a
+// guard quarantines itself after giving it up, so a guard leftover is removed
+// only once it is older than any live guard.
+function sweepAbandonedQuarantines(castingDir: string): void {
+  try {
+    const staleAge = hooks?.staleLockAgeMs ?? DEFAULT_STALE_LOCK_AGE_MS;
+    for (const name of readdirSync(castingDir)) {
+      const match = QUARANTINE_NAME.exec(name);
+      if (!match) continue;
+      const entry = path.join(castingDir, name);
+      try {
+        if (match[1]) {
+          const owner = parseOwner(readText(ownerPath(entry)));
+          if (!owner || now() - Date.parse(owner.created_at) < staleAge) continue;
+        }
+        rmSync(entry, { recursive: true, force: true });
+      } catch {
+        // Still held; a later release retries.
+      }
+    }
+  } catch {
+    // Cleanup must never fail a release that already succeeded.
+  }
+}
+
 function createOwnedDirectory(directoryPath: string, token: string): LockOwner {
   mkdirSync(directoryPath);
   const owner: LockOwner = {
@@ -341,7 +415,7 @@ function quarantineOwnedDirectory(
     directoryPath,
   );
   try {
-    renameSync(directoryPath, quarantinePath);
+    renameWithTransientRetry(directoryPath, quarantinePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
@@ -357,7 +431,7 @@ function quarantineOwnedDirectory(
     if (!existsSync(directoryPath)) renameSync(quarantinePath, directoryPath);
     throw new Error(`Casting lock ownership changed while quarantining ${directoryPath}`);
   }
-  rmSync(quarantinePath, { recursive: true });
+  removeQuarantine(quarantinePath);
   flushDirectory(path.dirname(directoryPath));
   return true;
 }
@@ -380,6 +454,25 @@ function acquireRecoveryGuard(lockPath: string): { token: string; release: () =>
       }
     },
   };
+}
+
+/**
+ * Whether publishing the candidate lock directory failed because another
+ * writer already holds the lock. POSIX reports a non-empty rename target as
+ * EEXIST/ENOTEMPTY; Windows (MoveFileEx onto an existing directory) reports
+ * EPERM.
+ */
+function isLockPublishContention(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code ?? '';
+  if (['EEXIST', 'ENOTEMPTY', 'ENOTDIR'].includes(code)) return true;
+  return process.platform === 'win32' && code === 'EPERM';
+}
+
+// Win32 EPERM is ambiguous (held lock vs. a real permission problem), so the
+// timeout names the last publish error instead of only blaming a writer.
+function lockTimeoutError(purpose: string, lockPath: string, lastPublishCode: string | undefined): Error {
+  const detail = lastPublishCode ? ` (last publish error: ${lastPublishCode})` : '';
+  return new Error(`Timed out waiting for concurrent ${purpose} lock: ${lockPath}${detail}`);
 }
 
 function tryRecoverStaleLock(lockPath: string): boolean {
@@ -415,6 +508,7 @@ export function acquireCastingRegistryLock(
   createOwnedDirectory(candidatePath, token);
   const deadline = now() + (hooks?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS);
   let published = false;
+  let lastPublishCode: string | undefined;
   try {
     while (true) {
       if (!existsSync(guardPath)) {
@@ -434,13 +528,13 @@ export function acquireCastingRegistryLock(
           }
           break;
         } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          if (!['EEXIST', 'ENOTEMPTY', 'ENOTDIR'].includes(code ?? '')) throw error;
+          if (!isLockPublishContention(error)) throw error;
+          lastPublishCode = (error as NodeJS.ErrnoException).code;
         }
       }
       if (tryRecoverStaleLock(lockPath)) continue;
       if (now() >= deadline) {
-        throw new Error(`Timed out waiting for concurrent ${purpose} lock: ${lockPath}`);
+        throw lockTimeoutError(purpose, lockPath, lastPublishCode);
       }
       wait(LOCK_RETRY_MS);
     }
@@ -463,6 +557,7 @@ export function acquireCastingRegistryLock(
       if (!quarantineOwnedDirectory(lockPath, token, 'released')) {
         throw new Error(`Casting lock ownership changed before release: ${lockPath}`);
       }
+      sweepAbandonedQuarantines(castingDir);
     } finally {
       guard.release();
     }
@@ -482,6 +577,7 @@ export async function acquireCastingRegistryLockAsync(
   createOwnedDirectory(candidatePath, token);
   const deadline = now() + (hooks?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS);
   let published = false;
+  let lastPublishCode: string | undefined;
   const waitAsync = async (): Promise<void> => {
     if (hooks?.wait) hooks.wait(LOCK_RETRY_MS);
     else await new Promise(resolve => setTimeout(resolve, LOCK_RETRY_MS));
@@ -505,13 +601,13 @@ export async function acquireCastingRegistryLockAsync(
           }
           break;
         } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          if (!['EEXIST', 'ENOTEMPTY', 'ENOTDIR'].includes(code ?? '')) throw error;
+          if (!isLockPublishContention(error)) throw error;
+          lastPublishCode = (error as NodeJS.ErrnoException).code;
         }
       }
       if (tryRecoverStaleLock(lockPath)) continue;
       if (now() >= deadline) {
-        throw new Error(`Timed out waiting for concurrent ${purpose} lock: ${lockPath}`);
+        throw lockTimeoutError(purpose, lockPath, lastPublishCode);
       }
       await waitAsync();
     }
@@ -534,6 +630,7 @@ export async function acquireCastingRegistryLockAsync(
       if (!quarantineOwnedDirectory(lockPath, token, 'released')) {
         throw new Error(`Casting lock ownership changed before release: ${lockPath}`);
       }
+      sweepAbandonedQuarantines(castingDir);
     } finally {
       guard.release();
     }
