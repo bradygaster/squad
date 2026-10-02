@@ -497,7 +497,7 @@ describe('gh-aw-enlistment skill', () => {
 
       const setupSection = guide.slice(
         guide.indexOf('### Enable GitHub Issues'),
-        guide.indexOf('### Allow workflow-created pull requests'),
+        guide.indexOf('### Set Actions pull-request permissions (Profile A, recommended)'),
       );
       expect(setupSection).toContain(
         'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
