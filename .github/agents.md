@@ -67,7 +67,7 @@ vendoring or synchronizing that mutable scaffold.
 
 This command:
 
-1. Fetches the Squad dispatcher, general and dependency workers, independent reviewer with a required-check gate, retrospective, and approval-gated improvement worker
+1. Fetches the complete workflow set declared by the pinned package manifest
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
@@ -95,6 +95,13 @@ exact `Approved-Path:` lines. `/squad revoke-improvement` reserves the human's
 durable revocation without dispatching. Both workers open drafts, never merge
 or mark ready. See the [gh-aw guide](../docs/src/content/docs/guide/gh-aw.md)
 for revision calculation, caps and manual retry.
+
+The workflow list above describes the current package. For your pinned commit,
+read `.github/aw/squad-workflows.manifest.json` and confirm every declared
+workflow has a source/lock pair, every runtime resource and skill exists with
+its declared digest, and strict compilation succeeds. The manifest at that
+commit is authoritative; do not use a workflow count from documentation as
+the completeness check.
 
 ### Try your first command
 
@@ -319,7 +326,12 @@ GitHub Agentic Workflows enforce output limits per run to prevent runaway mutati
 ### Implications
 
 - All mutations are explicitly declared — no surprise side effects
-- If a plan produces more than 20 tasks, activation will create the first 20; re-run to continue
+- The default planning policy allows 20 issues, while the enterprise profile
+  allows 50. The supported single activation maximum is 50 issues;
+  `create-issue: 75` is safe-output headroom, not a 75-task promise.
+- For a plan above the selected policy limit, revise the plan or policy. For
+  more than 50 accepted items, activate accepted phases separately with
+  `/squad plan activate phase {N}`.
 - Allowed branch patterns for PRs: `squad/*`
 - Allowed file patterns for PRs: `.squad/**`, `.github/agents/squad.agent.md`, `meet-the-squad.md`
 - Labels `[squad]` are applied automatically to all created issues and PRs
