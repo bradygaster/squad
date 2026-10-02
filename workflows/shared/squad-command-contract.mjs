@@ -48,7 +48,6 @@ const OPEN_MODES = new Set([
   'review',
   'research',
   'plan',
-  'revoke-improvement',
 ]);
 
 export const VALID_COMMANDS = Object.freeze([
@@ -221,7 +220,61 @@ export function classifySquadCommand(payload, eventName = '') {
       reason: 'Unknown command or malformed arguments.',
     };
   }
+  if (sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {
+    return {
+      status: 'rejected',
+      source: sourceData.source,
+      rejectedCommand: invocation.rejectedCommand,
+      reason: 'Issue-body revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+    };
+  }
+  if (sourceData.source === 'comment' && payload?.action === 'edited' &&
+      classification.mode === 'revoke-improvement') {
+    return {
+      status: 'rejected',
+      source: sourceData.source,
+      rejectedCommand: invocation.rejectedCommand,
+      reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+    };
+  }
   return { ...classification, source: sourceData.source };
+}
+
+function canonicalInvocation(result) {
+  if (result.status === 'none') return null;
+  if (result.status === 'accepted') {
+    const normalizedArgument = result.argumentText.replace(/\s+/g, ' ').trim();
+    const canonicalArgument = result.phase !== null
+      ? `${result.mode} phase ${result.phase}`
+      : !normalizedArgument || normalizedArgument.toLowerCase() === result.mode
+        ? result.mode
+        : `${result.mode} ${normalizedArgument.slice(result.mode.length).trim()}`;
+    return JSON.stringify([
+      'accepted',
+      result.mode,
+      canonicalArgument,
+      result.phase,
+    ]);
+  }
+  return JSON.stringify([
+    'rejected',
+    result.reason,
+    result.rejectedCommand.replace(/\s+/g, ' ').trim().toLowerCase(),
+  ]);
+}
+
+export function editedCommandShouldRoute(payload, eventName, currentResult) {
+  const action = payload?.action;
+  if (action !== 'edited' || !['issues', 'issue_comment'].includes(eventName)) {
+    return true;
+  }
+  const previousBody = payload?.changes?.body?.from;
+  if (typeof previousBody !== 'string') return false;
+  const previousPayload = eventName === 'issue_comment'
+    ? { ...payload, action: 'created', comment: { ...payload.comment, body: previousBody } }
+    : { ...payload, action: 'opened', issue: { ...payload.issue, body: previousBody } };
+  const previousResult = classifySquadCommand(previousPayload, eventName);
+  return canonicalInvocation(previousResult) !== canonicalInvocation(currentResult);
 }
 
 export function rejectionComment(result) {

@@ -59,10 +59,18 @@ safe-outputs:
             context.payload,
             process.env.SQUAD_EVENT_NAME,
           );
+          if (!contract.editedCommandShouldRoute(
+            context.payload,
+            process.env.SQUAD_EVENT_NAME,
+            result,
+          )) {
+            core.info('Ignoring an edited body whose canonical /squad invocation did not change or whose previous body is unavailable.');
+            return;
+          }
           if (result.status === 'accepted' || result.status === 'rejected') {
             // A bot-authored issue or comment body is never a trusted Squad
             // command, open mode or not: open modes (`status`, `review`,
-            // `research`, `plan`, `revoke-improvement`) intentionally skip
+            // `research`, `plan`) intentionally skip
             // the permission check below, so without this guard any bot that
             // reposts or quotes `/squad` text (for example a relay, mirror,
             // or notification bot) could replay it into a real dispatch with
