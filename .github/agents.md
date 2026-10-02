@@ -57,6 +57,13 @@ The removal is intentional: gh-aw v0.89.22 generates that generic tool-owned
 router, which loads mutable prompts from the current `github/gh-aw` repository.
 It is not Squad-owned or bound to `SQUAD_SHA`. Keep the exact
 `.github/skills/gh-aw-enlistment/SKILL.md` installed by Squad.
+This repository routes gh-aw work directly through the
+`agentic-workflows-dev` specialist in `.squad/routing.md`, with the local
+`agentic-workflow-designer` and `gh-aw-reliability` skills for design and
+contract validation. None depends on the deleted router. Retaining a rewritten
+or pinned copy would make Squad the owner of a forked generic gh-aw prompt
+router and its upstream corpus; removal preserves the package boundary without
+vendoring or synchronizing that mutable scaffold.
 
 This command:
 

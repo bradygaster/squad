@@ -3881,6 +3881,17 @@ describe('gh-aw: canonical package integrity contract', () => {
       process.cwd(),
       '.github/skills/agentic-workflows/SKILL.md',
     ))).toBe(false);
+    expect(readText(join(process.cwd(), '.squad/routing.md'))).toContain(
+      '| Agentic workflows | agentic-workflows-dev |',
+    );
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/agentic-workflow-designer/SKILL.md',
+    ))).toBe(true);
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/gh-aw-reliability/SKILL.md',
+    ))).toBe(true);
     expect(existsSync(join(
       process.cwd(),
       '.github/workflows/agentics-maintenance.yml',
