@@ -1213,4 +1213,3 @@ describe('Squad gh-aw hosted E2E manual pull request fallback outcome', () => {
     expect(hostedBody).toMatch(/gh run download[\s\S]*?--repo[\s\S]*?--name squad-gh-aw-hosted-e2e-/);
   });
 });
-

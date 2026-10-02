@@ -55,7 +55,9 @@ test "${gh_aw_version}" = "${required_gh_aw_version}" || {
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 
-# 2. Require GitHub Issues, then allow GitHub Actions to create pull requests
+# 2. Require GitHub Issues, then keep Actions PR creation/approval disabled
+# (the recommended least-privilege profile; see "Allow workflow-created pull
+# requests" below for the opt-in alternative and its tradeoff)
 issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
 if [ "${issues_enabled}" != "true" ]; then
   echo "GitHub Issues are disabled; enabling them before workflow installation."
@@ -76,8 +78,18 @@ gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow" \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=false
 
-# 3. Create a bootstrap branch
-git switch -c chore/squad-gh-aw-bootstrap
+# 3. Create a bootstrap branch. Safe to run again: require a clean,
+# understood tree, and reuse the branch if a prior run already created it
+# instead of failing on an ordinary rerun.
+git diff --quiet && git diff --cached --quiet || {
+  echo "STOP: the working tree has uncommitted changes; commit, stash, or discard them before bootstrapping." >&2
+  exit 1
+}
+if git show-ref --verify --quiet refs/heads/chore/squad-gh-aw-bootstrap; then
+  git switch chore/squad-gh-aw-bootstrap
+else
+  git switch -c chore/squad-gh-aw-bootstrap
+fi
 
 # 4. Install the complete native package at an explicit, maintainer-approved
 # revision. SQUAD_SHA is never resolved from the `dev` branch's moving tip —
@@ -92,9 +104,12 @@ SQUAD_SHA="<40-character-commit-sha>"
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 rm -f .github/skills/agentic-workflows/SKILL.md
 
-# 5. On first install, review the safe-update report.
-# If it contains only the documented Squad secrets and init action, approve it:
-gh aw compile --strict --approve
+# 5. On first install, review the safe-update report. Approve ONLY if it
+# contains exactly the two documented secrets (SQUAD_GITHUB_APP_PRIVATE_KEY,
+# SQUAD_GITHUB_TOKEN) and the one documented action
+# (bradygaster/squad/.github/actions/squad-init) and nothing else. STOP and
+# report any other entry instead of approving.
+gh aw compile --strict --approve   # first install only, when the safe-update warning appears
 
 # Materialize package-owned runtime assets, then run the final strict compile
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
@@ -123,12 +138,22 @@ gh pr create \
   --base "$default_branch" \
   --title "ci: add Squad agentic workflow" \
   --body "Installs and strictly compiles the supported Squad GH-AW workflows."
-gh pr edit --add-reviewer @copilot
+
+# Copilot's review identity is a GraphQL Bot, not a User/Team — the REST
+# `gh pr edit --add-reviewer @copilot` path silently no-ops for it.
+pr_node_id="$(gh pr view --json id --jq '.id')"
+gh api graphql -f query='
+  mutation($pr: ID!) {
+    requestReviewsByLogin(input: { pullRequestId: $pr, botLogins: ["copilot-pull-request-reviewer"] }) {
+      pullRequest { number }
+    }
+  }' -f pr="${pr_node_id}" || echo "Could not request a Copilot review via GraphQL; open the PR in the GitHub UI and add Copilot as a reviewer manually (Reviewers -> Copilot)." >&2
 gh pr checks --watch
 ```
 
-The quick start resolves the supported `dev` channel once, then installs the
-native package at that immutable 40-character commit. The package owns the
+SQUAD_SHA is an explicit, maintainer-approved commit, never resolved from the
+`dev` branch's moving tip; the quick start installs the native package at that
+one immutable 40-character commit. The package owns the
 complete eight-workflow set, runtime guards, integrity manifest, and enlistment
 skill as one update unit. For an upgrade, resolve or select one reviewed commit
 and reinstall that same package as described in
@@ -141,8 +166,15 @@ as a trusted Squad verdict. The canonical workflow reports
 `First-install manual boundary`, emits no `Squad-Review-Verdict:` record, and
 requires a human to review the verifier/compile evidence before merging.
 
-After merge, the default-branch bootstrap workflow opens the draft Cast PR.
-That PR is the activation canary: `Squad Review / review` must succeed using the
+After merge, the default-branch bootstrap workflow analyzes the repository and
+pushes the generated Cast branch. Under Profile A (recommended, the default
+this guide sets up), `GITHUB_TOKEN` cannot open the Cast PR directly, so
+`squad-bootstrap` instead opens (or reuses) a bot-authored fallback issue with
+a ready-to-click compare URL, and a human opens the Cast PR from that link —
+see [Set Actions pull-request permissions](#set-actions-pull-request-permissions-profile-a-recommended)
+for the exact signed-provenance acceptance rule. Only under Profile B does
+`squad-bootstrap` open that PR automatically. Either way, that PR is the
+activation canary: `Squad Review / review` must succeed using the
 base-controlled `pull_request_target` workflow plus the guard and manifest
 checked out from the Cast PR's exact base commit. The guard
 also requires matching exact-head provenance in the PR body and a durable
@@ -177,11 +209,20 @@ branch alone.** After a human reviews and merges that PR into the default branch
 the `/squad` command surface is live.
 
 The merged installation automatically wakes `squad-bootstrap`. It analyzes the
-repository once and creates two linked, human-reviewable artifacts from one
-validated payload:
+repository once and, from one validated payload, pushes the Cast branch and
+(under Profile A) opens or reuses the fallback issue described above — or,
+under Profile B, opens the Cast PR directly:
 
-- a draft Cast PR on `squad/bootstrap-cast`; and
-- `[Research Proposals] Agent-discovered repo opportunities`.
+- a draft Cast PR on `squad/bootstrap-cast` (opened automatically under
+  Profile B, or by you from the fallback issue's compare URL under Profile A);
+  and
+- `[Research Proposals] Agent-discovered repo opportunities` — **not**
+  created by this run under Profile A. No automatic trigger re-runs
+  `squad-bootstrap` when you open or merge the fallback-issue PR, so after you
+  open (or merge) the Cast PR you must manually dispatch **Squad Bootstrap**
+  again (**Actions → Squad Bootstrap → Run workflow**). That rerun
+  deterministically detects the Cast PR, whether still open or already merged,
+  and creates the linked research-proposals issue at that point.
 
 Bootstrap submits the shared payload through one authenticated command. Runtime
 code assembles and validates its bounded chunks, then passes JSON directly to
@@ -260,14 +301,22 @@ Changing `has_issues` requires repository administration permission. If the
 PATCH fails, do not continue to `gh aw add`: have an administrator enable Issues
 in repository settings, then rerun the supported quick start.
 
-### Allow workflow-created pull requests
+### Set Actions pull-request permissions (Profile A, recommended)
 
-Squad opens pull requests through GitHub Actions. Keep this repository setting
-**disabled** under **Settings → Actions → General → Workflow permissions →
-Allow GitHub Actions to create and approve pull requests**.
+Squad opens pull requests through GitHub Actions. This guide documents two
+mutually exclusive profiles for the single combined **Settings → Actions →
+General → Workflow permissions → Allow GitHub Actions to create and approve
+pull requests** toggle. **Profile A (recommended, least-privilege)** keeps
+that toggle **disabled**; the supported quick start and the rest of this guide
+assume Profile A. Profile A is not merely "safer defaults" — it is the only
+profile the signed fallback-issue and `Squad Review` provenance checks below
+are designed around, and it is what every command in this guide configures.
+See [Profile B (opt-in, automatic PR creation)](#profile-b-opt-in-automatic-pr-creation)
+below for the alternative and its disclosed tradeoff; do not enable it
+silently.
 
-Set it explicitly from the command line while keeping the default workflow
-token read-only:
+Set Profile A explicitly from the command line while keeping the default
+workflow token read-only:
 
 ```bash
 owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
@@ -340,15 +389,45 @@ provenance rejection. As with every Squad-opened pull request, merging still
 requires an independent human (or `@copilot`) approving review — `GITHUB_TOKEN`
 is never used to self-approve.
 
+**What remains manual under Profile A.** Only the first bootstrap Cast PR has
+the signed fallback-to-issue recovery described above; source-level review of
+the `/squad cast`-family and `/squad implement`/epic-worker workflows shows
+they have no equivalent fallback. Under Profile A, if `GITHUB_TOKEN`
+pull-request creation is permission-denied for one of those workflows, the run
+fails and a human must open that PR manually from the pushed branch — there is
+no automatic recovery path.
+
+### Profile B (opt-in, automatic PR creation)
+
+Enabling **Allow GitHub Actions to create and approve pull requests** lets
+`GITHUB_TOKEN` create *and approve* pull requests across every workflow in the
+repository — not only Squad's. GitHub's own API reference calls enabling it a
+security risk, and job-level `permissions:` cannot narrow it back down for
+just Squad's workflows. Under Profile B, ordinary Cast-family and
+`/squad implement`/epic-worker PRs can be opened automatically without the
+manual step described above. This guide does not recommend Profile B; if you
+choose it anyway, treat the repository-wide self-approval capability as the
+disclosed tradeoff you are accepting, and keep requiring an independent human
+approving review before merge regardless.
+
 ### Create a bootstrap branch
 
 ```bash
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
-git switch -c chore/squad-gh-aw-bootstrap
+git diff --quiet && git diff --cached --quiet || {
+  echo "STOP: the working tree has uncommitted changes; commit, stash, or discard them before bootstrapping." >&2
+  exit 1
+}
+if git show-ref --verify --quiet refs/heads/chore/squad-gh-aw-bootstrap; then
+  git switch chore/squad-gh-aw-bootstrap
+else
+  git switch -c chore/squad-gh-aw-bootstrap
+fi
 ```
 
 Keep the generated workflow install isolated on this branch until strict
-compilation and human review are complete.
+compilation and human review are complete. Rerunning this step reuses an
+existing bootstrap branch rather than failing.
 
 ### Install the workflows
 
@@ -380,7 +459,10 @@ resolved commit. The installed top-level workflow set is:
 - `squad-bootstrap.md` and `squad-bootstrap.lock.yml`
 - `squad-command-router.md` and `squad-command-router.lock.yml`
 
-The install must also contain these executable runtime resources:
+The install must also contain these seventeen executable, documentation, and
+schema runtime resources (manifest-backed — see
+`workflows/squad-workflows.manifest.json`'s `shared_runtime` list for the
+authoritative source of truth):
 
 - `shared/squad-cast-validator.mjs`
 - `shared/squad-bootstrap-validator.mjs`
@@ -389,6 +471,16 @@ The install must also contain these executable runtime resources:
 - `shared/squad-retro-provenance.mjs`
 - `shared/squad-review-guard.mjs`
 - `shared/squad-command-contract.mjs`
+- `shared/squad-install-verifier.mjs`
+- `shared/squad-implementation-provenance.mjs`
+- `shared/squad.md`
+- `shared/squad-planning-ontology.md`
+- `shared/squad-planning-policy.md`
+- `shared/implementation-provenance-v1.schema.json`
+- `shared/builtins/scribe-charter.md`
+- `shared/builtins/ralph-charter.md`
+- `shared/builtins/rai-charter.md`
+- `shared/builtins/fact-checker-charter.md`
 
 The package owns every runtime resource. Because native gh-aw package resources
 allow JavaScript guards under `.github/workflows/shared/` but not Markdown or
@@ -489,20 +581,16 @@ changed, or attributed to another path, if the summary is not
 `Compiled 8 workflows: 8 succeeded, 2 warnings`, or if any required control is
 absent. Do not suppress warnings or use `--approve` to bypass this gate.
 
-Verify the complete source/lock surface:
+Verify the complete source/lock surface. Prefer the manifest-backed verifier
+over a hand-maintained file list, since it checks every one of the eight
+workflows, seventeen runtime resources, the integrity manifest, and the
+enlistment skill against `workflows/squad-workflows.manifest.json`:
 
 ```bash
-for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do
-  test -f ".github/workflows/${workflow}.md" || { echo "MISSING ${workflow}.md"; exit 1; }
-  test -f ".github/workflows/${workflow}.lock.yml" || { echo "MISSING ${workflow}.lock.yml"; exit 1; }
-done
-
-for runtime_module in squad-cast-validator squad-bootstrap-validator squad-improvement-gate squad-retro-evidence squad-retro-provenance; do
-  test -f ".github/workflows/shared/${runtime_module}.mjs" || {
-    echo "MISSING shared/${runtime_module}.mjs"
-    exit 1
-  }
-done
+node .github/workflows/shared/squad-install-verifier.mjs \
+  --verify-install \
+  --source-revision "${SQUAD_SHA}" \
+  --strict-compile
 ```
 
 ### Open the bootstrap pull request
@@ -523,7 +611,13 @@ gh pr create \
   --base "$default_branch" \
   --title "ci: add Squad agentic workflow" \
   --body "Installs and strictly compiles the supported Squad GH-AW workflows."
-gh pr edit --add-reviewer @copilot
+pr_node_id="$(gh pr view --json id --jq '.id')"
+gh api graphql -f query='
+  mutation($pr: ID!) {
+    requestReviewsByLogin(input: { pullRequestId: $pr, botLogins: ["copilot-pull-request-reviewer"] }) {
+      pullRequest { number }
+    }
+  }' -f pr="${pr_node_id}" || echo "Could not request a Copilot review via GraphQL; open the PR in the GitHub UI and add Copilot as a reviewer manually (Reviewers -> Copilot)." >&2
 gh pr checks --watch
 ```
 
@@ -1562,9 +1656,16 @@ temporarily reduce the active count when no additional child is ready.
 `/squad implement` remains available as a manual recovery command if a run is
 cancelled or an external change requires the epic to be reevaluated.
 
-> **Repository setting:** Pull-request delivery requires **Settings → Actions →
-> General → Workflow permissions → Allow GitHub Actions to create and approve
-> pull requests**.
+> **Repository setting:** Under Profile A (recommended, the default this guide
+> sets up), `GITHUB_TOKEN` cannot create pull requests, so each worker's
+> implementation PR creation fails and a human must open that PR manually from
+> the pushed branch — there is no automatic fallback for this workflow. Fully
+> automatic epic-worker PR delivery requires switching to Profile B
+> (**Settings → Actions → General → Workflow permissions → Allow GitHub
+> Actions to create and approve pull requests**), which accepts the
+> repository-wide self-approval tradeoff described above. See
+> [Set Actions pull-request permissions](#set-actions-pull-request-permissions-profile-a-recommended)
+> and [Profile B](#profile-b-opt-in-automatic-pr-creation).
 
 > **Pull request CI:** Pull requests created with the default `GITHUB_TOKEN` do
 > not trigger other workflow runs. Set `GH_AW_CI_TRIGGER_TOKEN` to a suitable
@@ -2027,7 +2128,7 @@ other refs.
 | Plan activation creates fewer issues than the accepted plan declares | The run ended early, or it reached the `create-issue` (75) or `add-labels` (110) safe-output cap | Look for an `[aw] ... reported incomplete result` tracking issue — it names the shortfall and, when a cap was reached, which cap and what did not fit. Re-run the identical activation command (title matching resumes without duplicating existing issues), or activate one phase at a time with `/squad plan activate phase {N}` |
 | Activation run is green but some issues are missing or unlabeled | `report_incomplete` records truncation without failing the run | A green run is not proof of a complete activation. Check for the `[aw] ... reported incomplete result` tracking issue, then verify with `gh issue list --label squad` |
 | A Squad label has no description and an unexpected color | It was auto-created on a fresh repo by `create-if-missing` | Expected, not a failure. Edit the label if you want a description or a specific color |
-| `/squad implement` cannot create a PR | Actions is not allowed to create pull requests | Enable **Allow GitHub Actions to create and approve pull requests** in repository Actions settings |
+| `/squad implement` cannot create a PR | Expected under Profile A (recommended); Actions is not allowed to create pull requests and there is no automatic fallback for this workflow | Push the worker's branch and open the PR manually, or switch to [Profile B](#profile-b-opt-in-automatic-pr-creation) if you accept its repository-wide self-approval tradeoff |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
 | Standalone activation fails before init | `SQUAD_CLI_VERSION` is invalid or its release assets are unavailable | Correct the variable or select a published release, then use **Re-run failed jobs** |
 | Squad health fails | Initialization or committed team state is incomplete | Inspect the `Run Squad health check` JSON, correct the reported state, and rerun; no `squad-state` artifact is uploaded on failure |
