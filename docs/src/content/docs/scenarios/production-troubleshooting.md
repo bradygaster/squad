@@ -6,8 +6,6 @@ order: 27
 
 # Production Troubleshooting Runbook
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > 🔗 **Related:** [AKS Deployment Runbook](./aks-deployment) · [Production Observability](./production-observability) · [State Backend Selection](/squad/docs/reference/state-backend-selection/) · [Container Image — Env Var Contract](/squad/docs/reference/container-image/)
 
 This runbook covers failure modes for Squad running as a container or Kubernetes pod. For local CLI issues, see [Troubleshooting](./troubleshooting).

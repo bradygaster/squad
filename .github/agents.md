@@ -33,28 +33,59 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 > Stop at the bootstrap PR; the human merges it.
 > `/squad` slash commands become active only after that merge reaches
 > the repository's default branch.
+> The installation PR is a manual trust boundary: its PR-controlled workflow
+> cannot mint a trusted Squad verdict. After merge, require the Cast PR
+> (automatically opened, or manually opened from a signed fallback issue when
+> `GITHUB_TOKEN` cannot create it) to pass the deterministic relay's native
+> `Squad Review / review` job, which is authoritative only when it validates the
+> exact trusted automatic run from the base-controlled `pull_request_target`
+> workflow. Authoritative merge enforcement requires a source-bound
+> required-workflow or equivalent ruleset. Where source binding is unavailable,
+> treat the context as advisory and continue to require an independent human
+> approving review. The relay requires no separate PAT, GitHub App, private key,
+> secret, environment, or external service.
 
 The quick start installs this workflow set:
 
 ```bash
-SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+SQUAD_SHA="<40-character-commit-sha>"  # explicit, maintainer-approved; never `commits/dev`
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 ```
+
+The removal is intentional: gh-aw v0.89.22 generates that generic tool-owned
+router, which loads mutable prompts from the current `github/gh-aw` repository.
+It is not Squad-owned or bound to `SQUAD_SHA`. Keep the exact
+`.github/skills/gh-aw-enlistment/SKILL.md` installed by Squad.
+This repository routes gh-aw work directly through the
+`agentic-workflows-dev` specialist in `.squad/routing.md`, with the local
+`agentic-workflow-designer` and `gh-aw-reliability` skills for design and
+contract validation. None depends on the deleted router. Retaining a rewritten
+or pinned copy would make Squad the owner of a forked generic gh-aw prompt
+router and its upstream corpus; removal preserves the package boundary without
+vendoring or synchronizing that mutable scaffold.
 
 This command:
 
-1. Fetches the Squad dispatcher, general and dependency workers, advisory reviewer, retrospective, and approval-gated improvement worker
+1. Fetches the Squad dispatcher, general and dependency workers, independent reviewer with a required-check gate, retrospective, and approval-gated improvement worker
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
 ### Verify installation
 
-After running the command, confirm all seven source/lock pairs exist and strict
+After running the command, confirm all eight source/lock pairs exist and strict
 compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
-Improvement Worker, plus the dedicated Bootstrap workflow. The improvement
+Improvement Worker, plus the dedicated Bootstrap and Command Router workflows. The improvement
 worker is standard but dormant until an exact human approval is relayed through
 the dispatcher. Bootstrap wakes after the installation lands on the default
-branch and creates the linked draft Cast PR and research-proposals issue.
+branch and normally creates the linked draft Cast PR and research-proposals
+issue; if `can_approve_pull_request_reviews` is `false` (the recommended
+setting), `GITHUB_TOKEN` cannot open that PR, so Bootstrap instead opens a
+bot-authored fallback issue with a signed provenance record and a
+ready-to-click compare URL for a human to open the PR manually — Squad
+Review verifies that record before treating the manual PR as trusted (see the
+[gh-aw guide](../docs/src/content/docs/guide/gh-aw.md) for the exact
+conditions).
 
 Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
 `"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted

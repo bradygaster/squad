@@ -197,8 +197,8 @@ describe('gh-aw: /squad research online-documentation capability', () => {
 
   it('mirrors the Online sources disclosure into the §3.2 research template of the planning ontology', () => {
     const ontology = readText(PLANNING_ONTOLOGY);
-    const start = ontology.indexOf('### 3.2 Research Findings');
-    expect(start, '§3.2 Research Findings template must exist in the planning ontology').toBeGreaterThan(-1);
+    const start = ontology.indexOf('### 3.2 Squad Research');
+    expect(start, '§3.2 Squad Research template must exist in the planning ontology').toBeGreaterThan(-1);
     // Scope to the §3.2 template block (up to the next ### heading) so a stray
     // match elsewhere in the file can't satisfy this.
     const rest = ontology.slice(start);

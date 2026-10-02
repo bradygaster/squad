@@ -1,8 +1,5 @@
 # Adding Squad to an Existing Repo
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 This is a SaaS app with React frontend, Node.js API, and PostgreSQL — set up Squad

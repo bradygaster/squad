@@ -4,10 +4,9 @@
 
 **Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
-[![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
 
-> ⚠️ **Alpha Software** — Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
+Breaking changes are documented in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -96,9 +95,9 @@ Squad proposes a team — each member named from a persistent thematic cast. You
 
 ---
 
-## .NET package preview
+## .NET package
 
-Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a preview NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). It registers a Squad-backed `AIAgent` in DI and targets early `0.1.0-preview` consumers.
+Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). Version **1.0.0** targets .NET 8, 9, and 10 and registers a Squad-backed `AIAgent` in DI. See the package README for installation and local validation before publication.
 
 ## Upgrading
 
@@ -586,8 +585,9 @@ test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
   exit 1
 }
 
-SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+SQUAD_SHA="<40-character-commit-sha>"  # explicit, maintainer-approved; never `commits/dev`
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -600,19 +600,21 @@ git push
 `gh aw add` compiles the workflows automatically. If it reports unapproved
 safe-update changes, review them and run `gh aw compile --approve`.
 
-> `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
-
 Review the complete generated diff before you commit:
 
 | Path | What gh-aw writes | Commit? |
 |------|-------------------|---------|
 | `.github/workflows/` | The Squad workflow sources, shared imports, compiled lock files, and `agentics-maintenance.yml` | Yes |
 | `.github/aw/` | Supporting gh-aw state, including pinned action versions and SHAs | Yes |
-| `.github/skills/` | The agentic-workflows dispatcher skill | Yes |
+| `.github/skills/` | The exact Squad-owned `gh-aw-enlistment` skill; remove gh-aw's generated mutable `agentic-workflows` router before staging | Yes |
 | `.gitattributes` | Marks compiled `.lock.yml` workflows as generated | Yes |
 | `.vscode/` | Workspace settings that enable GitHub Copilot for Markdown files in VS Code | Optional — commit only if you want to share this workspace setting |
 
 `agentics-maintenance.yml` is a second installed workflow. Squad configures its created pull request safe output to expire after 14 days, so this workflow runs scheduled expiration cleanup and also exposes manual maintenance operations. To omit it, create `.github/workflows/aw.json` with `{"maintenance": false}` before installing. gh-aw then warns that expiration is disabled and removes the maintenance workflow.
+
+Unlike the mutable router skill, `agentics-maintenance.yml` is compiled runtime
+output required for the configured 14-day safe-output expiration behavior. Keep
+it unless you explicitly disable maintenance before installation.
 
 #### Retrospective auto-implementation (opt-in behavior)
 

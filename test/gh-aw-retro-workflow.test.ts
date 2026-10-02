@@ -1500,7 +1500,7 @@ describe('Squad retrospective workflow integration', () => {
     expect(REVIEWER).not.toContain('"request_origin": "squad-review"');
     expect(IMPLEMENTER).toContain('"request_origin": "squad-implement"');
     expect(CI).toContain(
-      'for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap; do',
+      'for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do',
     );
     expect(CI).toContain('test -f ".github/workflows/${workflow}.lock.yml"');
   });
@@ -1642,6 +1642,10 @@ describe('Squad retrospective workflow integration', () => {
     expect(RETRO).toContain('/squad approve-improvement');
     expect(RETRO).toContain('Approved-Path: {first proposed path}');
     expect(RETRO).toContain('/squad revoke-improvement');
+    expect(RETRO).toContain('Only a later unedited, non-app human issue comment');
+    expect(RETRO).toContain('live repository permission is');
+    expect(RETRO).toContain('Unresolved revocation permission or');
+    expect(RETRO).toContain('comment-history evidence fails closed');
     expect(RETRO).toContain('Never post that command yourself in a comment');
   });
 

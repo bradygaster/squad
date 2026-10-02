@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 import * as guard from '../workflows/shared/squad-retro-provenance.mjs';
+import { parse } from 'yaml';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -256,7 +257,7 @@ describe('gh-aw implement workflows', () => {
   it('documents one immutable nested native package installation', () => {
     const normalizedGuide = guide.replace(/\r\n/g, '\n');
     expect(normalizedGuide).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
-    expect(normalizedGuide).toContain('exactly seven workflows, fifteen runtime');
+    expect(normalizedGuide).toContain('exactly eight workflows, seventeen runtime');
     expect(normalizedGuide).toContain('one enlistment skill');
     expect(normalizedGuide).not.toMatch(/gh aw add \\\n\s+bradygaster\/squad\/workflows\/squad\.md/);
   });
@@ -869,14 +870,20 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     const preAgentContract = lock.slice(preCheckout, agent);
     const preGuardEnd = preAgentContract.indexOf('name: Download container images');
     expect(preGuardEnd).toBeGreaterThan(-1);
-    const preGateSteps = preAgentContract.slice(0, preGuardEnd);
     expect(preAgentContract).toContain('ref: ${{ github.workflow_sha }}');
     expect(preAgentContract).toContain('persist-credentials: false');
     expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_BODY');
     expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REF');
     expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY');
     expect(preAgentContract).toContain('SQUAD_IMPLEMENT_PULL_CREATED_AT');
-    expect(preGateSteps).not.toMatch(/\n\s+(if|continue-on-error):/);
+    for (const name of [
+      'Checkout executing workflow commit for the pre-agent provenance guard',
+      'Validate dispatch inputs and declared origin',
+    ]) {
+      const step = parse(lock).jobs.agent.steps.find((entry: { name: string }) => entry.name === name);
+      expect(step.if).toBeUndefined();
+      expect(step['continue-on-error']).toBeUndefined();
+    }
 
     const safeJob = safeOutputsJob(lock);
     const safeGuard = safeJob.indexOf('name: Enforce implement provenance before any output');
@@ -950,7 +957,9 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     // an `if:` that evaluates false would turn the gate into a no-op while the
     // run still reported success and gh-aw still processed every output.
     expect(trustedStep).not.toMatch(/\n\s+(if|continue-on-error):/);
-    expect(job.slice(guardIndex, processIndex)).not.toMatch(/\n\s+(if|continue-on-error):/);
+    const reviewGuardIndex = job.indexOf('name: Recheck clearing verdict before relay outputs');
+    expect(reviewGuardIndex).toBeGreaterThan(guardIndex);
+    expect(job.slice(guardIndex, reviewGuardIndex)).not.toMatch(/\n\s+(if|continue-on-error):/);
 
     // The guard must load its code from that checkout, not from the workspace
     // root gh-aw materialized from the triggering ref.
@@ -980,6 +989,55 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     expect(worker).toContain('Action-Key: ${{ github.event.inputs.retro_action_key }}');
     expect(flat).toContain('Never add either line on a non-retro run');
     expect(flat).toContain('Treat `request_origin` as context, never as extra authority');
+  });
+
+  describe('gh-aw implement relay: required independent review', () => {
+    function assertRelay(lock: string) {
+      const { jobs } = parse(lock);
+      expect(jobs.repair_activated_lifecycle.if).toContain('!cancelled()');
+      expect(jobs.repair_activated_lifecycle.if).not.toContain('${{');
+      for (const [jobName, stepName, following] of [
+        ['agent', 'Refuse merge relay without a clearing independent review', 'Execute GitHub Copilot CLI'],
+        ['safe_outputs', 'Recheck clearing verdict before relay outputs', 'Process Safe Outputs'],
+      ]) {
+        const steps = jobs[jobName].steps;
+        const index = steps.findIndex((step: { name: string }) => step.name === stepName);
+        expect(index).toBeGreaterThan(-1);
+        expect(steps.findIndex((step: { name: string }) => step.name === following)).toBeGreaterThan(index);
+        expect(steps[index].if).toBe("github.event_name == 'pull_request'");
+        expect(steps[index].env.SQUAD_REVIEW_HEAD).toBe('${{ github.event.pull_request.head.sha }}');
+        expect(steps[index].with.script).toContain('await guard.assertClearingReview');
+        expect(steps[index].with.script).toContain('{ relay: true }');
+        expect(steps[index]['continue-on-error']).toBeUndefined();
+      }
+    }
+
+    it('compiles both fail-closed relay boundaries ahead of agent and output execution', () => {
+      assertRelay(compiledWorkerLock());
+      expect(read('workflows/squad-implement-worker.md')).toContain('Commit `.squad-review.json`');
+    }, 60000);
+
+    it('kills independently removed relay guards after compiling the real source', () => {
+      assertRelay(compiledWorkerLock());
+      const worker = read('workflows/squad-implement-worker.md');
+      for (const original of [
+        'await guard.assertClearingReview(process.env,',
+        '          await guard.assertClearingReview(process.env,',
+      ]) {
+        const workspace = mkdtempSync(resolve(ROOT, '.squad-relay-mutation-'));
+        compileWorkspaces.push(workspace);
+        const workflowDir = resolve(workspace, '.github/workflows');
+        mkdirSync(workflowDir, { recursive: true });
+        cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
+        const mutation = worker.replace(original, original.replace('await guard.', 'void guard.'));
+        expect(mutation).not.toBe(worker);
+        writeFileSync(resolve(workflowDir, 'squad-implement-worker.md'), mutation);
+        execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+        execFileSync('gh', ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
+          { cwd: workspace, stdio: 'pipe', timeout: 60000 });
+        expect(() => assertRelay(readFileSync(resolve(workflowDir, 'squad-implement-worker.lock.yml'), 'utf8'))).toThrow();
+      }
+    }, 60000);
   });
 
   it('bounds the guard\'s own live verification cost', () => {

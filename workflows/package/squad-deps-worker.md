@@ -388,6 +388,7 @@ safe-outputs:
         - go.mod
         - go.sum
     excluded-files:
+      - CHANGELOG.md
       - node_modules/**
       - "**/node_modules/**"
       - vendor/**
@@ -417,17 +418,19 @@ jobs:
       - detection
       - safe_outputs
     if: |-
-      ${{
-        !cancelled() &&
-        needs.agent.result == 'success' &&
-        needs.detection.result == 'success' &&
-        needs.safe_outputs.result == 'success' &&
-        !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
-        github.event_name == 'issue_comment' &&
-        (github.event.comment.body == '/squad activate' ||
-         github.event.comment.body == '/squad plan accept' ||
-         github.event.comment.body == '/squad plan activate')
-      }}
+      !cancelled() && needs.agent.result == 'success' && needs.detection.result == 'success' && needs.safe_outputs.result == 'success' && !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') && (
+        (github.event_name == 'issue_comment' &&
+         (github.event.comment.body == '/squad activate' ||
+          github.event.comment.body == '/squad plan accept' ||
+          github.event.comment.body == '/squad plan activate')) ||
+        (github.event_name == 'workflow_dispatch' &&
+         (github.event.inputs.command == 'activate' ||
+          github.event.inputs.command == '/squad activate' ||
+          github.event.inputs.command == 'plan accept' ||
+          github.event.inputs.command == '/squad plan accept' ||
+          github.event.inputs.command == 'plan activate' ||
+          github.event.inputs.command == '/squad plan activate'))
+      )
     runs-on: ubuntu-slim
     permissions:
       issues: write
@@ -436,12 +439,27 @@ jobs:
       - name: Repair terminal lifecycle after idempotent activation
         uses: actions/github-script@v9
         env:
-          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          SQUAD_COMMAND: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number }}
+          SQUAD_EVENT_NAME: ${{ github.event_name }}
+          SQUAD_COMMAND: ${{ github.event.inputs.command || github.event.comment.body }}
         with:
           script: |
             const issueNumber = Number(process.env.ISSUE_NUMBER);
-            const command = String(process.env.SQUAD_COMMAND || "").trim();
+            const eventName = String(process.env.SQUAD_EVENT_NAME || "");
+            const CANONICAL_BY_BARE_COMMAND = {
+              "activate": "/squad activate",
+              "plan accept": "/squad plan accept",
+              "plan activate": "/squad plan activate",
+            };
+            let command = String(process.env.SQUAD_COMMAND || "").trim();
+            if (eventName === "workflow_dispatch") {
+              // The command router relays a deterministically parsed, bare
+              // command (e.g. "activate") via workflow_dispatch; normalize it
+              // to the same canonical form used by the issue_comment path so
+              // both event sources share one acceptance check below.
+              const bare = command.replace(/^\/squad\s+/i, "").trim().toLowerCase();
+              command = CANONICAL_BY_BARE_COMMAND[bare] || command;
+            }
             if (
               !Number.isInteger(issueNumber) ||
               issueNumber <= 0 ||
@@ -451,25 +469,34 @@ jobs:
               return;
             }
 
-            const actor = String(context.payload.comment?.user?.login || "").trim();
-            if (!actor) {
-              core.setFailed("Lifecycle repair requires an identifiable comment author.");
-              return;
-            }
-            let permission;
-            try {
-              const response = await github.rest.repos.getCollaboratorPermissionLevel({
-                ...context.repo,
-                username: actor,
-              });
-              permission = String(response.data?.permission || "").toLowerCase();
-            } catch (error) {
-              core.setFailed(`Unable to verify lifecycle repair permission for ${actor}: ${error.message}`);
-              return;
-            }
-            if (!["admin", "maintain", "write"].includes(permission)) {
-              core.info(`Lifecycle repair is not authorized for ${actor} with ${permission || "unresolved"} permission.`);
-              return;
+            if (eventName === "workflow_dispatch") {
+              // GitHub requires write access to trigger workflow_dispatch, and
+              // the deterministic command router already authorized this
+              // mutating mode for the triggering actor before relaying it
+              // here as a workflow_dispatch; no further permission lookup
+              // applies for this event source.
+              core.info("Lifecycle repair authorized via workflow_dispatch (write access required to trigger).");
+            } else {
+              const actor = String(context.payload.comment?.user?.login || "").trim();
+              if (!actor) {
+                core.setFailed("Lifecycle repair requires an identifiable comment author.");
+                return;
+              }
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: actor,
+                });
+                permission = String(response.data?.permission || "").toLowerCase();
+              } catch (error) {
+                core.setFailed(`Unable to verify lifecycle repair permission for ${actor}: ${error.message}`);
+                return;
+              }
+              if (!["admin", "maintain", "write"].includes(permission)) {
+                core.info(`Lifecycle repair is not authorized for ${actor} with ${permission || "unresolved"} permission.`);
+                return;
+              }
             }
 
             const comments = await github.paginate(github.rest.issues.listComments, {

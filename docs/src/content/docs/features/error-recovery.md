@@ -5,8 +5,6 @@ description: Built-in skill teaching agents to adapt when things fail — retry 
 
 # Error Recovery — Standard Failure Patterns
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 The `error-recovery` skill teaches every squad agent to **adapt** when something fails, not just report the failure. It ships as a built-in skill at `.copilot/skills/error-recovery/SKILL.md` and is available to every spawned agent.
 
 Without this skill, agents tend to encounter a failure (CI test red, API timeout, missing dependency) and stop. With it, they apply standard patterns to diagnose, retry, or escalate the right way.

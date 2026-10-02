@@ -1,8 +1,5 @@
 # Issue Templates for Squad
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this after setting up templates:**
 ```
 Ralph, show me untriaged issues

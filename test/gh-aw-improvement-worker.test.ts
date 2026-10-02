@@ -50,6 +50,7 @@ const env = (root = ROOT) => ({
 });
 function api(options: {
   proposal?: any; approved?: any; comments?: any[]; permission?: any; revision?: any; pulls?: any[];
+  permissions?: Record<string, any>;
   commentFailure?: boolean; pullFailure?: boolean; native?: any; nativeFailure?: boolean;
 } = {}) {
   const proposal = options.proposal || issue();
@@ -62,7 +63,10 @@ function api(options: {
       if (route === `repos/${REPO}/issues/77`) return proposal;
       if (route === `repos/${REPO}/issues/comments/901`) return approved;
       if (route.endsWith('/comments')) return options.commentFailure ? { __status: 503 } : fields.page === 1 ? options.comments || [approved] : [];
-      if (route.endsWith('/permission')) return options.permission || { permission: 'write' };
+      if (route.endsWith('/permission')) {
+        const login = decodeURIComponent(route.split('/').at(-2) || '');
+        return options.permissions?.[login] || options.permission || { permission: 'write' };
+      }
       if (route.endsWith('/pulls')) return options.pullFailure ? { __status: 503 } : fields.page === 1 ? options.pulls || [] : [];
       throw new Error(`Unexpected route: ${route}`);
     },
@@ -216,10 +220,97 @@ describe('improvement: live revalidation and permanent deduplication', () => {
   ])('fails closed on %s', async (_name, options) => {
     expect((await gate.collectImprovementContext(env(), api(options))).authorized).toBe(false);
   });
-  it('honors later revocation even with a newer unrelated approval, but not bot-generated revocation', async () => {
+  it('honors only an authorized, unedited human revocation after the approval', async () => {
     const revoke = comment({ id: 902, body: '/squad revoke-improvement', created_at: '2026-09-03T00:00:00Z', updated_at: '2026-09-03T00:00:00Z' });
-    expect((await gate.collectImprovementContext(env(), api({ comments: [comment(), revoke, comment({ id: 903 })] }))).reason).toBe('approval-revoked');
+    const authorized = api({ comments: [comment(), revoke, comment({ id: 903 })] });
+    expect((await gate.collectImprovementContext(env(), authorized)).reason).toBe('approval-revoked');
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [comment(), { ...revoke, body: 'Context.\n/squad REVOKE-IMPROVEMENT   ' }],
+    }))).reason).toBe('approval-revoked');
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [comment(), { ...revoke, body: '```text\n/squad revoke-improvement\n```' }],
+    }))).reason).toBe('approved');
+    expect(authorized.calls).toContain(`repos/${REPO}/collaborators/maintainer/permission`);
     expect((await gate.collectImprovementContext(env(), api({ comments: [{ ...revoke, user: { login: 'bot', type: 'Bot' } }] }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, updated_at: '2026-09-04T00:00:00Z' }],
+    }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, performed_via_github_app: { id: 1 } }],
+    }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' }],
+    }))).authorized).toBe(true);
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, created_at: 'not-a-timestamp', updated_at: 'not-a-timestamp' }],
+    }))).toMatchObject({ authorized: false, reason: 'revocation-history-incomplete' });
+  });
+  it('uses complete comment order to resolve equal-timestamp revocation boundaries', async () => {
+    const revoke = comment({
+      id: 902,
+      body: '/squad revoke-improvement',
+      created_at: AT,
+      updated_at: AT,
+    });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [revoke, comment()],
+    }))).toMatchObject({ authorized: true, reason: 'approved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+    }))).toMatchObject({ authorized: false, reason: 'approval-revoked' });
+  });
+  it('uses numeric comment IDs for equal timestamps when the approval is absent from the complete list', async () => {
+    const before = comment({
+      id: 900,
+      body: '/squad revoke-improvement',
+      created_at: AT,
+      updated_at: AT,
+    });
+    const after = comment({
+      id: 902,
+      body: '/squad revoke-improvement',
+      created_at: AT,
+      updated_at: AT,
+    });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [before],
+    }))).toMatchObject({ authorized: true, reason: 'approved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [after],
+    }))).toMatchObject({ authorized: false, reason: 'approval-revoked' });
+  });
+  it('ignores an unprivileged revocation and fails closed when revocation permission is unresolved', async () => {
+    const revoke = comment({
+      id: 902,
+      user: { login: 'reader', type: 'User' },
+      body: '/squad revoke-improvement',
+      created_at: '2026-09-03T00:00:00Z',
+      updated_at: '2026-09-03T00:00:00Z',
+    });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: { permission: 'read' }, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: true, reason: 'approved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: { __status: 403 }, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: {}, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: { permission: 'unexpected' }, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
+    const failed = api({ comments: [comment(), revoke] });
+    const fetchJson = failed.fetchJson;
+    failed.fetchJson = async (route, fields) => {
+      if (route === `repos/${REPO}/collaborators/reader/permission`) throw new Error('network failure');
+      return fetchJson(route, fields);
+    };
+    expect(await gate.collectImprovementContext(env(), failed))
+      .toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
   });
   it.each([
     ['open', null], ['closed', '2026-09-03T00:00:00Z'], ['closed', null],
@@ -327,6 +418,41 @@ describe('improvement: actual patch write set', () => {
   it.each(['100755', '120000', '160000'])('rejects transport mode %s', mode => {
     expect(gate.evaluatePatchScope(patchFor(PATH, mode), [PATH]).ok).toBe(false);
   });
+  // `diffFor` above only ever exercises a brand-new file ("new file mode" header
+  // lines). Real Git never emits those lines for a content-only edit of an
+  // ALREADY-TRACKED file: when the mode is unchanged, the mode appears solely as
+  // the trailing token on the `index <old>..<new> <mode>` line, e.g.
+  // `index aaa1111..bbb2222 100755`. An already-tracked executable Markdown
+  // skill (mode 100755) that an improvement patch only edits the body text of
+  // must still be rejected by that same `index`-line mode check -- not just by
+  // the "new file mode"/"old mode"/"new mode" header branch covered above.
+  const contentOnlyDiffFor = (path = PATH, mode = '100644') => [
+    `diff --git a/${path} b/${path}`, `index aaa1111..bbb2222 ${mode}`,
+    `--- a/${path}`, `+++ b/${path}`, '@@ -1 +1 @@', '-old content', '+new content', '',
+  ].join('\n');
+  it('rejects a content-only modification of an already-tracked executable (100755) Markdown target', () => {
+    const patch = mailboxOf(contentOnlyDiffFor(PATH, '100755'));
+    const result = gate.evaluatePatchScope(patch, [PATH]);
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContainEqual({ kind: 'forbidden-file-mode' });
+  });
+  it('allows a content-only modification of an already-tracked non-executable (100644) target', () => {
+    // Positive control: proves the rejection above is specifically about the
+    // executable mode, not an artifact of the content-only (no mode-change
+    // headers) diff shape itself.
+    const patch = mailboxOf(contentOnlyDiffFor(PATH, '100644'));
+    expect(gate.evaluatePatchScope(patch, [PATH])).toMatchObject({ ok: true });
+  });
+  it('mutation proof: parsePatchEntries must itself capture the mode carried solely by the `index` line', () => {
+    // Exercises the exact regex branch a regression could silently drop
+    // (`/^index [0-9a-f]+\.\.[0-9a-f]+ (\d+)$/`) in isolation from the rest of
+    // evaluatePatchScope's Git-backed pipeline, so a change that stops parsing
+    // index-line modes fails here even if some other check coincidentally
+    // still rejected the same fixture.
+    const entries = gate.parsePatchEntries(contentOnlyDiffFor(PATH, '100755'));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].modes).toEqual(['100755']);
+  });
   it('rejects an extra in-directory file the human never approved', () => {
     expect(gate.evaluatePatchScope(patchFor() + patchFor('.squad/skills/extra/SKILL.md'), [PATH]).ok).toBe(false);
   });
@@ -433,8 +559,8 @@ describe('improvement: final safe-output enforcement', () => {
     { body: prItem().body.replace('Scope-Digest:', 'Wrong-Digest:') },
   ])('rejects a mutated output: %o', async mutation => { expect((await enforce([prItem(mutation)])).ok).toBe(false); });
   it('checks live revocation again after implementation', async () => {
-    const revoked = comment({ body: '/squad revoke-improvement', created_at: AT, updated_at: AT });
-    expect((await enforce([prItem()], patchFor(), { comments: [revoked] })).ok).toBe(false);
+    const revoked = comment({ id: 902, body: '/squad revoke-improvement', created_at: AT, updated_at: AT });
+    expect((await enforce([prItem()], patchFor(), { comments: [comment(), revoked] })).ok).toBe(false);
   });
   it('refuses unsupported bundle transport rather than inspecting a decoy am patch', async () => {
     const root = scratch();
@@ -463,7 +589,14 @@ describe('improvement: one authorized dispatcher route and installed contract', 
     expect(ROUTER).toContain('gate.validateImprovementCommand(context.payload, process.env)');
     const skill = ROUTER.slice(ROUTER.indexOf('## skill: `squad-approve-improvement`'), ROUTER.indexOf('## skill: `squad-revoke-improvement`'));
     const payload = JSON.parse(skill.match(/```json\n([\s\S]*?)\n```/)![1]);
-    expect(Object.keys(payload.inputs).sort()).toEqual(['approval_comment_id', 'issue_number']);
+    expect(Object.keys(payload.inputs).sort()).toEqual(['approval_comment_id', 'issue_number', 'squad_approval_relay']);
+    // squad_approval_relay must be a JSON-encoded string, not a nested object: the
+    // receiving workflow declares it `type: string` and GitHub's workflow_dispatch
+    // REST input schema rejects a non-string value outright regardless of the
+    // declared type ("is not of a type(s) string"), so a nested object example
+    // would document a dispatch that can never actually be sent.
+    expect(typeof payload.inputs.squad_approval_relay).toBe('string');
+    expect(JSON.parse(payload.inputs.squad_approval_relay)).toMatchObject({ event_type: 'issue_comment', item_type: 'issue' });
     expect(payload.issue_number).toBeUndefined();
   });
   it.each([
@@ -497,6 +630,27 @@ describe('improvement: one authorized dispatcher route and installed contract', 
       expect(result.reason).toBe('approval-relay-context-invalid');
     }
   });
+  it('accepts an engine-reported item identity that is a native number rather than a decimal string (regression: canonical safe-integer identity, not strict type-sensitive equality)', async () => {
+    const origin = {
+      repo: REPO, workflow_id: `${REPO}/.github/workflows/squad.lock.yml@refs/heads/dev`,
+      event_type: 'issue_comment', item_type: 'issue', item_number: 77, comment_id: 901,
+    };
+    const routedEnv = { ...env(), GITHUB_ACTOR: 'github-actions[bot]', SQUAD_IMPROVE_AW_CONTEXT: JSON.stringify(origin) };
+    expect((await gate.collectImprovementContext(routedEnv, api())).authorized).toBe(true);
+  });
+  it.each(['77.0', '077', '-77', '77e0', '9007199254740993', '', null, true])(
+    'rejects a malformed or overflowing engine-reported item_number %s even though it would loosely compare equal to 77',
+    async malformed => {
+      const origin = {
+        repo: REPO, workflow_id: `${REPO}/.github/workflows/squad.lock.yml@refs/heads/dev`,
+        event_type: 'issue_comment', item_type: 'issue', item_number: malformed, comment_id: '901',
+      };
+      const routedEnv = { ...env(), GITHUB_ACTOR: 'github-actions[bot]', SQUAD_IMPROVE_AW_CONTEXT: JSON.stringify(origin) };
+      const result = await gate.collectImprovementContext(routedEnv, api());
+      expect(result.authorized).toBe(false);
+      expect(result.reason).toBe('approval-relay-context-invalid');
+    },
+  );
   it('strict-compiles the am transport, exact allowlist and before-handler live gate', () => {
     const root = scratch();
     cpSync(resolve(ROOT, 'workflows'), join(root, '.github', 'workflows'), { recursive: true });
@@ -510,6 +664,13 @@ describe('improvement: one authorized dispatcher route and installed contract', 
     });
     expect(config.create_pull_request.protected_files).toContain('package.json');
     expect(config).not.toHaveProperty('dispatch_workflow');
+    // The second-hop relay fix (#downstream): the compiled lock must actually
+    // declare the forwarded input and wire it into both env blocks gh-aw
+    // generates, not just the un-compiled source -- proving the compiler
+    // itself emits the mechanism collectImprovementContext's relayed branch
+    // depends on.
+    expect(lock).toContain('squad_approval_relay:');
+    expect((lock.match(/SQUAD_IMPROVE_RELAY_CONTEXT: \$\{\{ github\.event\.inputs\.squad_approval_relay \}\}/g) || []).length).toBe(2);
     expect(WORKER).toContain('patch-format: am');
     expect(WORKER).toContain('echo ".github/workflows/squad-improvement-context.json" >> "${GITHUB_WORKSPACE:?}/.git/info/exclude"');
     expect(WORKER).not.toMatch(/^\s{2}(issue_comment|pull_request|schedule):/m);
@@ -518,4 +679,169 @@ describe('improvement: one authorized dispatcher route and installed contract', 
     expect(job).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
     expect(job).toContain('SQUAD_IMPROVE_APPROVAL_COMMENT_ID');
   }, 90000);
+
+  it('documents the same live revocation trust boundary enforced by the gate', () => {
+    expect(WORKER).toContain('Only a later unedited, non-app');
+    expect(WORKER).toContain('live write, maintain, or admin repository permission');
+    expect(WORKER).toContain('Revocation permission or history that cannot be resolved');
+    expect(WORKER).toContain('fails closed');
+  });
+});
+
+// Finding #3 (octodemo/zava-social-backend-20261001184422#1): the router
+// relayed `/squad approve-improvement` via workflow_dispatch without any
+// originating comment provenance, so `validateImprovementCommand` could never
+// supply a real `approval_comment_id` and rejected the command outright. The
+// router now forwards an `aw_context` pointer (item type/number + the
+// originating comment id) on the dispatch; these cases exercise exactly the
+// `event.inputs` shape `squad-command-router.md` now emits for that relay,
+// and confirm permission is bound to the comment's own live author -- never
+// the relaying dispatch actor -- so approval binding is not weakened.
+describe('improvement: workflow_dispatch relay carries real comment provenance (#3)', () => {
+  const dispatchVariables = { ...env(), GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTOR: 'github-actions[bot]' };
+  const relayEvent = (overrides = {}) => ({
+    inputs: {
+      command: 'approve-improvement',
+      issue_number: '77',
+      aw_context: JSON.stringify({ item_type: 'issue', item_number: 77, comment_id: 901 }),
+      ...overrides,
+    },
+  });
+  it('accepts the exact dispatch shape the router emits, checking permission against the comment author', async () => {
+    const calls: string[] = [];
+    const fetchJson = async (route: string, fields: any) => {
+      calls.push(route);
+      return api().fetchJson(route, fields);
+    };
+    expect(await gate.validateImprovementCommand(relayEvent(), dispatchVariables, fetchJson)).toMatchObject({ ok: true, violations: [] });
+    expect(calls).toContain(`repos/${REPO}/issues/comments/901`);
+    expect(calls).toContain(`repos/${REPO}/collaborators/${encodeURIComponent('maintainer')}/permission`);
+    expect(calls).not.toContain(`repos/${REPO}/collaborators/${encodeURIComponent('github-actions[bot]')}/permission`);
+  });
+  it.each([
+    ['malformed aw_context JSON', () => relayEvent({ aw_context: '{not json' }), {}],
+    ['non-issue item_type', () => relayEvent({ aw_context: JSON.stringify({ item_type: 'pull_request', item_number: 77, comment_id: 901 }) }), {}],
+    ['item_number mismatch vs issue_number', () => relayEvent({ aw_context: JSON.stringify({ item_type: 'issue', item_number: 99, comment_id: 901 }) }), {}],
+    ['non-numeric comment_id', () => relayEvent({ aw_context: JSON.stringify({ item_type: 'issue', item_number: 77, comment_id: 'abc' }) }), {}],
+    ['edited comment (created_at !== updated_at)', () => relayEvent(), { comments: [comment()], approved: comment({ updated_at: '2026-09-02T01:00:00Z' }) }],
+    ['bot-authored comment', () => relayEvent(), { approved: comment({ user: { login: 'maintainer', type: 'Bot' } }) }],
+    ['weak collaborator permission', () => relayEvent(), { permission: { permission: 'read' } }],
+    ['non-matching comment content', () => relayEvent(), { approved: comment({ body: '/squad approve-improvement\nunexpected' }) }],
+  ])('rejects %s without weakening approval binding', async (_name, input, options) => {
+    const fetchJson = api(options).fetchJson;
+    const result = await gate.validateImprovementCommand(input(), dispatchVariables, fetchJson);
+    expect(result.ok).toBe(false);
+    expect(result.violations.length).toBeGreaterThan(0);
+  });
+  it('reserves revoke-improvement over the dispatch relay the same as the native comment route', async () => {
+    const result = await gate.validateImprovementCommand(relayEvent({ command: 'revoke-improvement' }), dispatchVariables);
+    expect(result).toMatchObject({ ok: true, reserved: true, violations: [] });
+  });
+  it('ignores an unrelated relayed command instead of asserting approval', async () => {
+    const result = await gate.validateImprovementCommand(relayEvent({ command: 'status' }), dispatchVariables);
+    expect(result).toMatchObject({ ok: true, ignored: true, violations: [] });
+  });
+});
+
+// Downstream of Finding #3: gh-aw's own dispatch_workflow safe-output engine
+// unconditionally overwrites any agent-supplied `aw_context` input with its
+// own buildAwContext() whenever the dispatch target declares an `aw_context`
+// workflow_dispatch input -- and that engine-built context derives item
+// identity solely from the CURRENT run's own event payload. When squad.md
+// itself is a relayed (workflow_dispatch) run forwarding `approve-improvement`
+// to squad-improvement-worker, its own payload carries no issue/comment, so
+// the engine-injected aw_context on that second hop always carries an empty
+// item_type/item_number/comment_id and event_type: 'workflow_dispatch' --
+// unusable for collectImprovementContext's exact item-identity check, no
+// matter how the event_type check is widened. squad.md now also forwards a
+// second, non-colliding input (`squad_approval_relay`, never named
+// `aw_context`, so gh-aw's engine never touches it) carrying its own
+// independently resolved item identity; collectImprovementContext validates
+// against it only when the engine's own event_type is not 'issue_comment',
+// with identical exact-match strictness to the native path.
+describe('improvement: second-hop relay context survives gh-aw engine aw_context override (#downstream)', () => {
+  const relayedOrigin = {
+    repo: REPO, workflow_id: `${REPO}/.github/workflows/squad.lock.yml@refs/heads/dev`,
+    event_type: 'workflow_dispatch', item_type: '', item_number: '', comment_id: '',
+  };
+  const relayContext = { event_type: 'issue_comment', item_type: 'issue', item_number: '77', comment_id: '901' };
+  const routedEnv = {
+    ...env(), GITHUB_ACTOR: 'github-actions[bot]',
+    SQUAD_IMPROVE_AW_CONTEXT: JSON.stringify(relayedOrigin),
+    SQUAD_IMPROVE_RELAY_CONTEXT: JSON.stringify(relayContext),
+  };
+  it('authorizes using the skill-forwarded relay context when the engine context has no usable item identity', async () => {
+    expect((await gate.collectImprovementContext(routedEnv, api())).authorized).toBe(true);
+  });
+  it('still requires the engine-derived repo/workflow_id even though item identity comes from the relay', async () => {
+    for (const mutation of [{ workflow_id: 'forged' }, { repo: 'other/repo' }]) {
+      const result = await gate.collectImprovementContext({
+        ...routedEnv, SQUAD_IMPROVE_AW_CONTEXT: JSON.stringify({ ...relayedOrigin, ...mutation }),
+      }, api());
+      expect(result.reason).toBe('approval-relay-context-invalid');
+    }
+  });
+  it.each([
+    ['tampered comment_id', { comment_id: '902' }],
+    ['tampered item_number', { item_number: '78' }],
+    ['tampered item_type', { item_type: 'pull_request' }],
+    ['tampered event_type', { event_type: 'workflow_dispatch' }],
+  ])('rejects a %s in the relay context instead of trusting it blindly', async (_name, mutation) => {
+    const result = await gate.collectImprovementContext({
+      ...routedEnv, SQUAD_IMPROVE_RELAY_CONTEXT: JSON.stringify({ ...relayContext, ...mutation }),
+    }, api());
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('approval-relay-context-invalid');
+  });
+  it('rejects malformed or missing relay context instead of falling back to the empty engine item fields', async () => {
+    for (const bad of [undefined, '', '{not json']) {
+      const bundle: Record<string, string> = { ...routedEnv };
+      if (bad === undefined) delete bundle.SQUAD_IMPROVE_RELAY_CONTEXT; else bundle.SQUAD_IMPROVE_RELAY_CONTEXT = bad;
+      const result = await gate.collectImprovementContext(bundle, api());
+      expect(result.authorized).toBe(false);
+      expect(result.reason).toBe('approval-relay-context-invalid');
+    }
+  });
+  it('accepts a relay-forwarded item identity that is a native number rather than a decimal string', async () => {
+    const result = await gate.collectImprovementContext({
+      ...routedEnv, SQUAD_IMPROVE_RELAY_CONTEXT: JSON.stringify({ ...relayContext, item_number: 77, comment_id: 901 }),
+    }, api());
+    expect(result.authorized).toBe(true);
+  });
+  it.each(['77.0', '077', '-77', '77e0', '9007199254740993', ''])(
+    'rejects a malformed or overflowing relay-forwarded item_number %s even though it would loosely compare equal to 77',
+    async malformed => {
+      const result = await gate.collectImprovementContext({
+        ...routedEnv, SQUAD_IMPROVE_RELAY_CONTEXT: JSON.stringify({ ...relayContext, item_number: malformed }),
+      }, api());
+      expect(result.authorized).toBe(false);
+      expect(result.reason).toBe('approval-relay-context-invalid');
+    },
+  );
+  it('does not regress the native direct-comment path (engine context alone remains authoritative there)', async () => {
+    const nativeOrigin = {
+      repo: REPO, workflow_id: `${REPO}/.github/workflows/squad.lock.yml@refs/heads/dev`,
+      event_type: 'issue_comment', item_type: 'issue', item_number: '77', comment_id: '901',
+    };
+    const nativeEnv = {
+      ...env(), GITHUB_ACTOR: 'github-actions[bot]', SQUAD_IMPROVE_AW_CONTEXT: JSON.stringify(nativeOrigin),
+    };
+    expect((await gate.collectImprovementContext(nativeEnv, api())).authorized).toBe(true);
+  });
+  it('declares the forwarded relay input on the worker and wires it alongside the existing aw_context at both call sites', () => {
+    expect(WORKER).toContain('squad_approval_relay:');
+    expect((WORKER.match(/SQUAD_IMPROVE_RELAY_CONTEXT: \$\{\{ github\.event\.inputs\.squad_approval_relay \}\}/g) || []).length).toBe(2);
+  });
+  it('strict-compiles squad.md and asserts the dispatch step actually emits squad_approval_relay', () => {
+    const root = scratch();
+    cpSync(resolve(ROOT, 'workflows'), join(root, '.github', 'workflows'), { recursive: true });
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    // CI compiles with --approve after review; the squad-init action here is
+    // SHA-pinned to this repository and receives no secret input.
+    execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict', '--approve'], {
+      cwd: root, encoding: 'utf8', stdio: 'pipe', timeout: 120000,
+    });
+    const lock = readFileSync(join(root, '.github', 'workflows', 'squad.lock.yml'), 'utf8');
+    expect(lock).toContain('"squad_approval_relay"');
+  }, 120000);
 });

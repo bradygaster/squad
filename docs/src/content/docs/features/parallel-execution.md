@@ -1,8 +1,5 @@
 # Parallel Execution
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to launch concurrent work streams:**
 ```
 Have three agents work on this in parallel: UI mockups, API spec, and database schema
