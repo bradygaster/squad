@@ -382,13 +382,27 @@ gh pr create \
   --base "${default_branch}" \
   --title "ci: add Squad agentic workflow" \
   --body "Installs and strictly compiles the supported Squad GH-AW workflows."
-gh pr edit --add-reviewer @copilot
+
+# Copilot's review identity is a GraphQL Bot, not a User/Team — the REST
+# `gh pr edit --add-reviewer @copilot` path silently no-ops for it. Request the
+# review through the verified GraphQL path instead:
+pr_node_id="$(gh pr view --json id --jq '.id')"
+gh api graphql -f query='
+  mutation($pr: ID!) {
+    requestReviewsByLogin(input: { pullRequestId: $pr, botLogins: ["copilot-pull-request-reviewer"] }) {
+      pullRequest { number }
+    }
+  }' -f pr="${pr_node_id}" || echo "Could not request a Copilot review via GraphQL; open the PR in the GitHub UI and add Copilot as a reviewer manually (Reviewers -> Copilot)." >&2
 gh pr checks --watch
 ```
 
 - Open the PR against the **runtime-captured** `${default_branch}`, not a hardcoded
   `main`.
-- Request Copilot review, address feedback, and wait for required checks.
+- Request Copilot review via the GraphQL `requestReviewsByLogin` mutation
+  (never the REST `--add-reviewer` shortcut, which silently no-ops for the
+  Copilot Bot reviewer), address feedback, and wait for required checks. If
+  the GraphQL call fails, add Copilot as a reviewer manually from the PR's
+  GitHub UI.
 
 ### 9. Verify the native review contract after merge
 
@@ -497,7 +511,13 @@ git push -u origin HEAD
 gh pr create --base "${default_branch}" \
   --title "ci: add Squad agentic workflow" \
   --body "Installs and strictly compiles the supported Squad GH-AW workflows."
-gh pr edit --add-reviewer @copilot   # then wait for review + checks; DO NOT merge
+pr_node_id="$(gh pr view --json id --jq '.id')"
+gh api graphql -f query='
+  mutation($pr: ID!) {
+    requestReviewsByLogin(input: { pullRequestId: $pr, botLogins: ["copilot-pull-request-reviewer"] }) {
+      pullRequest { number }
+    }
+  }' -f pr="${pr_node_id}"   # Bot-aware review request; then wait for review + checks; DO NOT merge
 ```
 
 ### ✓ Correct: STOP on an undocumented safe-update entry
