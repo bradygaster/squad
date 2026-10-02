@@ -89,7 +89,7 @@
       "package_destination": ".github/workflows/shared/squad-review-guard.mjs",
       "destination": ".github/workflows/shared/squad-review-guard.mjs",
       "ownership": "manifest",
-      "sha256": "a2aa028e16c66acc9846b6d5c98856ccf9e1e9a91c78ee7458212c315bbfbdfc"
+      "sha256": "b499ad06b33a52f55f3618ac37cfe739b7b59c45b867ea2b5f47d81598b874c6"
     },
     {
       "path": "shared/squad-install-verifier.mjs",
