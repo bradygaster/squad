@@ -343,6 +343,31 @@ substitute for either digest.
 
 ## 13. Informative TypeScript implementation details
 
+### 13.1 Portable charter and execution binding boundary
+
+The smaller portable shape is intentional: it identifies the agent and its
+guidance/preferences, not every product configuration field. As specified in
+[§3](#3-association-and-unsupported-versions), a copied charter still needs its
+profile selection supplied by an API or accompanying manifest; it is not
+self-describing. Adding an embedded version marker is a future profile-design
+question, not a v0.1 requirement.
+
+An authenticated execution principal (for example, a managed or service
+identity) belongs to trusted runtime configuration and provider binding, not
+the charter's display or path identity. Tool requests likewise belong to
+runtime/configuration integration; the runtime independently determines tool
+availability and grants under [§11](#11-runtime-validation-and-security).
+For example, the [current agent configuration](../../packages/squad-sdk/src/config/schema.ts)
+has tool declarations; these declarations are not authorization.
+
+The suite does not yet define a portable principal-binding or tool-declaration
+schema. [Interop authority requirements](interoperability-conventions-v0.1.md#3-stable-identity-and-authority)
+are related design work, not an implemented execution binding. A namespaced
+charter extension can preserve implementation metadata but cannot establish
+authenticated identity or grant access.
+
+### 13.2 Reference API example
+
 The exported TypeScript names, module paths, and example below are informative.
 They do not constrain implementations in other languages.
 

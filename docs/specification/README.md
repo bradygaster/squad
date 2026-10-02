@@ -31,7 +31,10 @@ metadata remains null.
 
 **Foundation profile:** [Squad Charter Profile v0.1](charter-v0.1.md)
 
-This directory maps all major stable or observable Squad surfaces. Publication
+This directory maps a working inventory of stable or observable Squad surfaces,
+including composition and initialization capabilities without profiles in
+the [artifact inventory](artifact-inventory.md). It does not yet specify the
+complete model for how independent Squads compose and interact. Publication
 status is independent from maturity: this suite is an unpublished working
 draft. Charter is the only profile with executable conformance evidence.
 

@@ -7,15 +7,22 @@
 **Purpose:** Repository-derived traceability, profile planning, and
 interoperability maturity evidence for issue #2069.
 
-Paths in this table are Squad-root-relative. Repository-local installations
-render them beneath `.squad/`.
+Artifact paths such as `agents/{id}/charter.md` are Squad-root-relative;
+repository-local installations render them beneath `.squad/`. Implementation
+links instead point to repository source, templates, and tests.
 
-| Surface | Repository evidence | Disposition | Specification | Maturity or promotion rationale |
+This is a working inventory, not a complete specification of Squad composition.
+The current suite focuses on artifacts and behavior within one Squad, with
+separate observations of existing composition surfaces below. SubSquads,
+upstream inheritance, peer discovery, and cross-Squad delegation have different
+semantics; none acquires a portable contract from being listed here.
+
+| Capability | Implementation / artifacts | Spec status | Spec coverage | What's missing |
 |---|---|---|---|---|
 | Discovery, negotiation, authority identity, shared evidence, secrets | Core/profile metadata, registry IDs, events, audit records | Requirements draft with a reference schema; no claim | Interoperability Conventions v0.1 | Discovery, relational invariants, and negotiation need portable manifests and cases |
 | Core rules | profile identifiers, paths, diagnostics, trust boundary | Experimental normative working draft; no standalone claim | Core v0.1 | Charter depends on and exercises Core rules, but Core has no standalone manifest |
-| Agent charter | `agents/{id}/charter.md`, compiler, validator, fixtures | Executable normative working draft | Charter v0.1 | Stable parser and round-trip evidence; publication remains `working-draft` |
-| Team roster | `team.md`, roster templates, presets | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with roster parsing, mutation, join, and diagnostic cases |
+| Agent charter | `agents/{id}/charter.md`; [compiler](../../packages/squad-sdk/src/agents/charter-compiler.ts), [validator](../../packages/squad-sdk/src/agents/charter-validator.ts), [fixture manifest](../../test-fixtures/spec/charter-v0.1/manifest.json) | Executable normative working draft | [Charter v0.1](charter-v0.1.md) | Stable parser and round-trip evidence; publication remains `working-draft` |
+| Team roster | `team.md`; [initialization and roster generation](../../packages/squad-sdk/src/config/init.ts) | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with roster parsing, mutation, join, and diagnostic cases |
 | Routing ownership | `routing.md`, routing parser, coordinator tests | Requirements draft; no claim | Team and Routing v0.1 | Promote independently with priority, fallback, ambiguity, stale-write, and resolution cases |
 | Runtime configuration | `config.json`, config schema and loaders | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with precedence and source-evidence cases |
 | Casting identity | `casting/registry.json`, `policy.json` | Requirements draft; no claim | Configuration and Casting v0.1 | Promote independently with identity, recast, join, and migration cases |
@@ -23,14 +30,20 @@ render them beneath `.squad/`.
 | Governance and review | `governance.md`, reviewer protocol, PR requirements | Requirements draft with reference checks; no claim | Governance and Review v0.1 | Add language-neutral relational invariants and a complete transition manifest |
 | Execution preferences | charters, config, model selector, lifecycle manager | Requirements draft; no claim | Execution Preferences v0.1 | Add provider-neutral resolution cases and loss reporting |
 | PRD intake and planning | `prd-intake.md`, planning ontology, gh-aw workflows | Requirements draft; no claim | Planning and Activation v0.1 | Add portable planning-record and activation manifest |
-| Ceremonies | `ceremonies.md`, ceremony reference, retro workflow | Requirements draft; no claim | Ceremony v0.1 | Normalize event vocabulary and prove cooldown with injected clocks |
+| Ceremonies | [declaration template](../../.squad-templates/ceremonies.md), [ceremony reference](../../.squad-templates/ceremony-reference.md), [SDK builder](../../packages/squad-sdk/src/builders/index.ts), [retro workflow](../../workflows/squad-retro.md) | Requirements draft; no claim | [Ceremony v0.1](ceremony-v0.1.md) | Map definition/agenda/hooks separately from shared scheduling and execution; prove cooldown with injected clocks |
 | Work lifecycle | issue lifecycle template, platform interfaces, worktree tests | Requirements draft; no claim | Work Lifecycle v0.1 | Run complete transition traces against two providers |
 | GitHub lifecycle | GitHub adapter, gh-aw workflows, issue/PR templates | Requirements binding draft; no claim | GitHub Work Lifecycle Binding v0.1 | Add deterministic sanitized provider transcripts |
 | Handoffs and sessions | spawn reference, lifecycle manager, event buses | Requirements draft; no claim | Coordination and Handoff v0.1 | Add portable envelope, ordering, expiry, and recovery cases |
 | State backends | state backend interfaces, worktree/orphan/two-layer implementations | Informative requirements now | State and Memory Requirements v0.1 | Authority and recovery vary by backend; promotion requires backend-neutral CAS fixtures |
 | Memory governance | memory classes, providers, audit records | Informative requirements now | State and Memory Requirements v0.1 | Classification is promising but provider naming and durable authority are not stable |
-| Automation | schedule manifest, scheduler, local and GitHub providers | Requirements draft; no claim | Automation v0.1 | Add portable trigger, clock, retry, drift, and result cases |
-| Portable export/import | `squad export`, `squad import`, CLI round-trip tests | Informative observed surface; no claim | `squad-portable-bundle/v1.0` coverage below | Tested implementation exists without a published schema or conformance manifest |
+| Automation | `schedule.json`; [scheduler and provider interfaces](../../packages/squad-sdk/src/runtime/scheduler.ts), [schedule CLI](../../packages/squad-cli/src/cli/commands/schedule.ts) | Requirements draft; no claim | [Automation v0.1](automation-v0.1.md) | Add portable trigger, clock, retry, drift, and result cases |
+| Portable export/import | [`squad export`](../../packages/squad-cli/src/cli/commands/export.ts), [`squad import`](../../packages/squad-cli/src/cli/commands/import.ts) | Informative observed surface; no claim | `squad-portable-bundle/v1.0` coverage below | Tested implementation exists without a published schema or conformance manifest |
+| Preset/template instantiation | [preset SDK](../../packages/squad-sdk/src/presets/index.ts), [preset CLI](../../packages/squad-cli/src/cli/commands/preset.ts), [initialization](../../packages/squad-sdk/src/config/init.ts) | Informative observed surface; no claim | No dedicated profile | Presets apply reusable agent charters; they are not full export/import snapshots. Definition versioning, initialization defaults, and conflict behavior need separate coverage |
+| SubSquads / workstreams | [partition types](../../packages/squad-sdk/src/streams/types.ts), [resolver](../../packages/squad-sdk/src/streams/resolver.ts), [CLI](../../packages/squad-cli/src/cli/commands/streams.ts) | Informative observed surface; no claim | No dedicated profile | Scoped team partitions are distinct from independent peer Squads. Config path aliases, activation precedence, issue/folder scope, and isolation need portable cases |
+| Upstream inheritance | [upstream types](../../packages/squad-sdk/src/upstream/types.ts), [resolver](../../packages/squad-sdk/src/upstream/resolver.ts), [CLI](../../packages/squad-cli/src/cli/commands/upstream.ts) | Informative observed surface; no claim | No dedicated profile | Context inheritance is distinct from discovery-only registration. Source revisions, precedence, trust, and synchronization need separate contracts |
+| Peer Squad registry and discovery | `squad-registry.json`, `manifest.json`; [SDK](../../packages/squad-sdk/src/runtime/cross-squad.ts), [CLI](../../packages/squad-cli/src/cli/commands/cross-squad.ts) | Informative observed surface; no claim | No dedicated profile; not the specification discovery model | Registry entries identify peers without inheriting context. Manifest identity, stale discovery, and capability negotiation need portable cases |
+| Cross-Squad communication and delegation | [discovery/delegation SDK](../../packages/squad-sdk/src/runtime/cross-squad.ts), [`squad delegate`](../../packages/squad-cli/src/cli/commands/cross-squad.ts) | Informative observed surface; no claim | Coordination and provider drafts are related, not a cross-Squad contract | GitHub issue-based work requests exist; delivery, acceptance, completion correlation, and delegation authority are not specified here |
+| Creation/spawning of another Squad | [initialization API](../../packages/squad-sdk/src/config/init.ts), [preset application](../../packages/squad-sdk/src/presets/index.ts) | Scope gap; no claim | No dedicated profile | Local initialization is not evidence of autonomous cross-Squad spawning. Ownership, resource provisioning, isolation, and lifecycle require independent design and evidence |
 | Skills | `skills/{name}/SKILL.md`, loader and discovery | Deferred | Future Skills Profile | Promote after metadata precedence, imports, script trust, and compatibility fixtures stabilize |
 | Coordinator prompts and UI wording | templates, generated agent prompt, shell | Informative guidance | Implementation documentation | Prompts and wording are implementation inputs, not interoperability contracts |
 | Telemetry and cost accounting | OpenTelemetry and cost modules | Deferred | Future Observability Binding | Promote after common event identity and privacy/redaction contracts stabilize |
