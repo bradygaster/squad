@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -178,6 +178,16 @@ const minimalProposal: CastProposal = {
   ],
 };
 
+async function snapshotTree(root: string, relative = ''): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {};
+  for (const entry of await readdir(join(root, relative), { withFileTypes: true })) {
+    const child = join(relative, entry.name);
+    if (entry.isDirectory()) Object.assign(snapshot, await snapshotTree(root, child));
+    else snapshot[child] = await readFile(join(root, child), 'utf8');
+  }
+  return snapshot;
+}
+
 describe('createTeam', () => {
   let tempDir: string;
 
@@ -229,19 +239,181 @@ describe('createTeam', () => {
       expect(hasRosterEntries(content)).toBe(true);
     });
 
-    it('adds built-in Scribe and Ralph when not in proposal', async () => {
+    it('materializes all four built-in support identities', async () => {
       const result = await createTeam(tempDir, minimalProposal);
       expect(result.membersCreated).toContain('Scribe');
       expect(result.membersCreated).toContain('Ralph');
+      expect(result.membersCreated).toContain('Rai');
+      expect(result.membersCreated).toContain('Fact Checker');
     });
 
-    it('creates agent charter and history files for each member', async () => {
+    it('creates charters without reintroducing retired per-agent histories', async () => {
       const result = await createTeam(tempDir, minimalProposal);
       for (const name of result.membersCreated) {
         const dirName = name === 'Fact Checker' ? 'fact-checker' : name.toLowerCase();
         const base = join(tempDir, '.squad', 'agents', dirName);
         expect(existsSync(join(base, 'charter.md'))).toBe(true);
-        expect(existsSync(join(base, 'history.md'))).toBe(true);
+        expect(existsSync(join(base, 'history.md'))).toBe(false);
+      }
+    });
+
+    it('keeps support identities out of Members, routing, and the casting registry', async () => {
+      await createTeam(tempDir, minimalProposal);
+
+      const team = await readFile(join(tempDir, '.squad', 'team.md'), 'utf-8');
+      const members = team.match(/## Members\s*\n([\s\S]*?)(?=\n## |\n*$)/)?.[1] ?? '';
+      const support = team.match(/## Built-in Support Agents\s*\n([\s\S]*?)(?=\n## |\n*$)/)?.[1] ?? '';
+      const routing = await readFile(join(tempDir, '.squad', 'routing.md'), 'utf-8');
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as { agents: Record<string, unknown> };
+
+      for (const builtin of ['Scribe', 'Ralph', 'Rai', 'Fact Checker']) {
+        expect(members).not.toContain(`| ${builtin} |`);
+        expect(support).toContain(`| ${builtin} |`);
+        expect(routing).not.toMatch(new RegExp(`\\|[^\\n]*\\| ${builtin} \\|`));
+      }
+      expect(Object.keys(registry.agents)).toEqual(['ripley', 'dallas', 'kane']);
+    });
+
+    it('emits versioned provenance and preserves ids across display-name changes', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const renamed: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.map((member) =>
+          member.role === 'Lead' ? { ...member, id: 'ripley', name: 'Commander' } : member,
+        ),
+      };
+
+      await createTeam(tempDir, renamed);
+
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as {
+        schema: string;
+        schema_version: number;
+        revision: number;
+        agents: Record<string, { display_name: string; persistent_name: string; role: string }>;
+      };
+      expect(registry).toMatchObject({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 2,
+      });
+      expect(registry.agents.ripley).toMatchObject({
+        display_name: 'Commander',
+        persistent_name: 'Commander',
+        role: 'Lead',
+      });
+      expect(registry.agents.commander).toBeUndefined();
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley', 'charter.md'))).toBe(true);
+    });
+
+    it('rejects a rename that does not carry the existing stable id', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const ambiguousRename: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.map((member) =>
+          member.role === 'Lead' ? { ...member, name: 'Commander' } : member,
+        ),
+      };
+
+      await expect(createTeam(tempDir, ambiguousRename)).rejects.toThrow(
+        /supply the existing stable id for a rename/,
+      );
+    });
+
+    it('performs zero filesystem mutations when casting history is malformed', async () => {
+      const castingDir = join(tempDir, '.squad', 'casting');
+      await mkdir(castingDir, { recursive: true });
+      await writeFile(join(castingDir, 'registry.json'), JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-09-21T00:00:00.000Z',
+        agents: {},
+      }) + '\n');
+      await writeFile(
+        join(castingDir, 'history.json'),
+        '{"assignment_cast_snapshots":[],"universe_usage_history":[]}\n',
+      );
+      await writeFile(join(castingDir, 'policy.json'), '{"universe_allowlist":["*"]}\n');
+      const before = await snapshotTree(tempDir);
+
+      await expect(createTeam(tempDir, minimalProposal)).rejects.toThrow(/history shape is invalid/);
+
+      expect(await snapshotTree(tempDir)).toEqual(before);
+    });
+
+    it('serializes concurrent recasts and increments revisions without losing agents', async () => {
+      await Promise.all([
+        createTeam(tempDir, minimalProposal),
+        createTeam(tempDir, minimalProposal),
+      ]);
+
+      const registry = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'registry.json'), 'utf-8'),
+      ) as { revision: number; agents: Record<string, { status: string }> };
+      expect(registry.revision).toBe(2);
+      expect(Object.keys(registry.agents).sort()).toEqual(['dallas', 'kane', 'ripley']);
+      expect(Object.values(registry.agents).every(agent => agent.status === 'active')).toBe(true);
+      expect(existsSync(join(tempDir, '.squad', 'casting', 'registry.lock'))).toBe(false);
+      const history = JSON.parse(
+        await readFile(join(tempDir, '.squad', 'casting', 'history.json'), 'utf-8'),
+      ) as { assignment_cast_snapshots: Record<string, unknown> };
+      expect(Object.keys(history.assignment_cast_snapshots)).toHaveLength(2);
+    });
+
+    it('cycles retire, reactivate, and retire without duplicate active/alumni directories', async () => {
+      await createTeam(tempDir, minimalProposal);
+      const withoutLead: CastProposal = {
+        ...minimalProposal,
+        members: minimalProposal.members.filter(member => member.role !== 'Lead'),
+      };
+      await createTeam(tempDir, withoutLead);
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(false);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(true);
+
+      await createTeam(tempDir, {
+        ...minimalProposal,
+        members: minimalProposal.members.map(member =>
+          member.role === 'Lead' ? { ...member, id: 'ripley' } : member),
+      });
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(true);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(false);
+
+      await createTeam(tempDir, withoutLead);
+      expect(existsSync(join(tempDir, '.squad', 'agents', 'ripley'))).toBe(false);
+      expect(existsSync(join(tempDir, '.squad', 'agents', '_alumni', 'ripley'))).toBe(true);
+    });
+
+    it('restores the disabled Coding Agent contract', async () => {
+      await createTeam(tempDir, minimalProposal);
+
+      const team = await readFile(join(tempDir, '.squad', 'team.md'), 'utf-8');
+      expect(team).toContain('## Coding Agent');
+      expect(team).toContain('<!-- copilot-auto-assign: false -->');
+      expect(team).toContain('| @copilot | Coding Agent |');
+    });
+
+    it('uses the shipped canonical charter for each built-in', async () => {
+      await createTeam(tempDir, minimalProposal);
+
+      for (const id of ['scribe', 'ralph', 'rai', 'fact-checker']) {
+        const materialized = await readFile(
+          join(tempDir, '.squad', 'agents', id, 'charter.md'),
+          'utf-8',
+        );
+        const canonical = await readFile(
+          join(process.cwd(), 'packages', 'squad-cli', 'templates', `${id}-charter.md`),
+          'utf-8',
+        );
+        const workflowCanonical = await readFile(
+          join(process.cwd(), 'workflows', 'shared', 'builtins', `${id}-charter.md`),
+          'utf-8',
+        );
+        expect(materialized).toBe(canonical);
+        expect(canonical).toBe(workflowCanonical);
       }
     });
   });
@@ -274,6 +446,9 @@ describe('createTeam', () => {
       expect(content).toContain('Pre-existing project');
       expect(content).toContain('## Project Context');
       expect(content).toContain('| Ripley |');
+      expect(content).toContain('## Built-in Support Agents');
+      expect(content).toContain('## Coding Agent');
+      expect(content).toContain('<!-- copilot-auto-assign: false -->');
     });
 
     it('team.md passes hasRosterEntries after update', async () => {

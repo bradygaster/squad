@@ -1,7 +1,5 @@
 # Choose your path
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 CLI, Copilot agent, or SDK? Pick the right mode for your workflow.
 
 ---

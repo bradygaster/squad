@@ -53,7 +53,7 @@ afterAll(() => {
 /** Every Markdown file this repo distributes through `gh aw add`. */
 function distributedWorkflowFiles(): string[] {
   const entrypoints = readdirSync(WORKFLOWS_DIR)
-    .filter((name) => name.endsWith('.md'))
+    .filter((name) => name.endsWith('.md') && name !== 'README.md')
     .map((name) => join(WORKFLOWS_DIR, name));
   const shared = readdirSync(SHARED_DIR)
     .filter((name) => name.endsWith('.md'))
@@ -140,7 +140,7 @@ describe('gh-aw: distributed workflows survive the public `gh aw add` security s
     expect(versionProbe.status, `gh aw --version failed. ${GH_AW_INSTALL_HINT}`).toBe(0);
   });
 
-  it('enumerates the six public entrypoints plus their shared imports', () => {
+  it('enumerates the seven public entrypoints plus their shared imports', () => {
     const names = distributedWorkflowFiles().map((p) => relative(WORKFLOWS_DIR, p));
     expect(names).toContain('squad.md');
     expect(names).toContain('squad-implement-worker.md');
@@ -148,7 +148,8 @@ describe('gh-aw: distributed workflows survive the public `gh aw add` security s
     expect(names).toContain('squad-review.md');
     expect(names).toContain('squad-retro.md');
     expect(names).toContain('squad-improvement-worker.md');
-    expect(names.filter(name => !name.includes('/') && !name.includes('\\'))).toHaveLength(6);
+    expect(names).toContain('squad-bootstrap.md');
+    expect(names.filter(name => !name.includes('/') && !name.includes('\\'))).toHaveLength(8);
     expect(names.some((n) => n.split(/[\\/]/)[0] === 'shared')).toBe(true);
   });
 

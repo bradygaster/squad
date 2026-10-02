@@ -2,14 +2,9 @@
 # Squad Bootstrap Component — installs and initializes Squad
 # (https://github.com/bradygaster/squad) in the activation job, then hands off
 # the generated team state to the agent job. This is the DISTRIBUTION version,
-# living under workflows/shared/ so users can pull the standard stack via:
-#   gh aw add \
-#     bradygaster/squad/workflows/squad.md@dev \
-#     bradygaster/squad/workflows/squad-implement-worker.md@dev \
-#     bradygaster/squad/workflows/squad-review.md@dev \
-#     bradygaster/squad/workflows/squad-deps-worker.md@dev \
-#     bradygaster/squad/workflows/squad-retro.md@dev \
-#     bradygaster/squad/workflows/squad-improvement-worker.md@dev
+# living under workflows/shared/ so users can pull the standard stack from one
+# immutable nested native package:
+#   gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 #
 # Adapted from Peli de Halleux's gh-aw integration:
 # https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md
@@ -195,7 +190,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields; structured data is normalized by the writer.
+          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
           required: true
           type: string
       steps:
@@ -243,18 +238,18 @@ safe-outputs:
                 (/\bsquad\b/i.test(firstLine) || /\bplanning\b/i.test(firstLine));
               const hasState = /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+\S+/im.test(body);
               const hasLastCommand = /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad\b[^`]*`/im.test(body);
-              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`[ \t]*$/im.test(body);
               const hasActivationDone =
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
-                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
                 /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
                 hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
+                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
                 /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
               const hasNextAction = hasNextCommand || hasTerminalState;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
-                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.");
+                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
               }
               if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {
@@ -306,16 +301,24 @@ jobs:
       - detection
       - safe_outputs
     if: >-
-      ${{
-        !cancelled() &&
-        needs.agent.result == 'success' &&
-        needs.detection.result == 'success' &&
-        needs.safe_outputs.result == 'success' &&
-        !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
-        github.event_name == 'issue_comment' &&
-        (github.event.comment.body == '/squad activate' ||
-         github.event.comment.body == '/squad plan accept')
-      }}
+      !cancelled() &&
+      needs.agent.result == 'success' &&
+      needs.detection.result == 'success' &&
+      needs.safe_outputs.result == 'success' &&
+      !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
+      (
+        (github.event_name == 'issue_comment' &&
+         (github.event.comment.body == '/squad activate' ||
+          github.event.comment.body == '/squad plan accept' ||
+          github.event.comment.body == '/squad plan activate')) ||
+        (github.event_name == 'workflow_dispatch' &&
+         (github.event.inputs.command == 'activate' ||
+          github.event.inputs.command == '/squad activate' ||
+          github.event.inputs.command == 'plan accept' ||
+          github.event.inputs.command == '/squad plan accept' ||
+          github.event.inputs.command == 'plan activate' ||
+          github.event.inputs.command == '/squad plan activate'))
+      )
     runs-on: ubuntu-slim
     permissions:
       issues: write
@@ -324,19 +327,64 @@ jobs:
       - name: Repair terminal lifecycle after idempotent activation
         uses: actions/github-script@v9
         env:
-          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          SQUAD_COMMAND: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number }}
+          SQUAD_EVENT_NAME: ${{ github.event_name }}
+          SQUAD_COMMAND: ${{ github.event.inputs.command || github.event.comment.body }}
         with:
           script: |
             const issueNumber = Number(process.env.ISSUE_NUMBER);
-            const command = String(process.env.SQUAD_COMMAND || "").trim();
+            const eventName = String(process.env.SQUAD_EVENT_NAME || "");
+            const CANONICAL_BY_BARE_COMMAND = {
+              "activate": "/squad activate",
+              "plan accept": "/squad plan accept",
+              "plan activate": "/squad plan activate",
+            };
+            let command = String(process.env.SQUAD_COMMAND || "").trim();
+            if (eventName === "workflow_dispatch") {
+              // The command router relays a deterministically parsed, bare
+              // command (e.g. "activate") via workflow_dispatch; normalize it
+              // to the same canonical form used by the issue_comment path so
+              // both event sources share one acceptance check below.
+              const bare = command.replace(/^\/squad\s+/i, "").trim().toLowerCase();
+              command = CANONICAL_BY_BARE_COMMAND[bare] || command;
+            }
             if (
               !Number.isInteger(issueNumber) ||
               issueNumber <= 0 ||
-              !["/squad activate", "/squad plan accept"].includes(command)
+              !["/squad activate", "/squad plan accept", "/squad plan activate"].includes(command)
             ) {
               core.setFailed("A valid whole-plan activation command and issue number are required.");
               return;
+            }
+
+            if (eventName === "workflow_dispatch") {
+              // GitHub requires write access to trigger workflow_dispatch, and
+              // the deterministic command router already authorized this
+              // mutating mode for the triggering actor before relaying it
+              // here as a workflow_dispatch; no further permission lookup
+              // applies for this event source.
+              core.info("Lifecycle repair authorized via workflow_dispatch (write access required to trigger).");
+            } else {
+              const actor = String(context.payload.comment?.user?.login || "").trim();
+              if (!actor) {
+                core.setFailed("Lifecycle repair requires an identifiable comment author.");
+                return;
+              }
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: actor,
+                });
+                permission = String(response.data?.permission || "").toLowerCase();
+              } catch (error) {
+                core.setFailed(`Unable to verify lifecycle repair permission for ${actor}: ${error.message}`);
+                return;
+              }
+              if (!["admin", "maintain", "write"].includes(permission)) {
+                core.info(`Lifecycle repair is not authorized for ${actor} with ${permission || "unresolved"} permission.`);
+                return;
+              }
             }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -365,16 +413,16 @@ jobs:
               comment,
               envelope: envelopeFor(comment),
             }));
-            const accepted = artifacts.some(
-              ({ envelope }) =>
-                envelope?.squad_artifact === "plan-accepted" &&
-                envelope?.schema_version === "1" &&
-                envelope?.origin_issue === issueNumber &&
-                Array.isArray(envelope?.phases) &&
-                envelope.phases.length === 0,
+            const ok = artifacts.some(
+              ({ envelope: e }) =>
+                ["plan-accepted", "activated"].includes(e?.squad_artifact) &&
+                e?.schema_version === "1" &&
+                e?.origin_issue === issueNumber &&
+                Array.isArray(e?.phases) &&
+                (e.squad_artifact === "activated" || e.phases.length === 0),
             );
-            if (!accepted) {
-              core.info("No trusted whole-plan acceptance artifact; lifecycle repair is not applicable.");
+            if (!ok) {
+              core.info("No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.");
               return;
             }
 
@@ -392,8 +440,9 @@ jobs:
             const lifecycleBody = String(lifecycle?.body || "");
             const terminal =
               /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Activation:\*\*\s+✅\s+Done\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)`\s*$/im.test(lifecycleBody);
+              (/^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(lifecycleBody) ||
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(lifecycleBody)) &&
+              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(lifecycleBody);
             if (terminal) {
               core.info("The newest lifecycle tracker already records terminal activation.");
               return;

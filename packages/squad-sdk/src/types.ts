@@ -17,7 +17,17 @@ export type { MarkdownMigrationResult } from './config/markdown-migration.js';
 export type { ParsedCharter } from './agents/charter-compiler.js';
 export type { CharterCompileOptions } from './agents/charter-compiler.js';
 export type { CharterConfigOverrides } from './agents/charter-compiler.js';
+export type { CharterSourceMetadata } from './agents/charter-compiler.js';
 export type { CompiledCharter } from './agents/charter-compiler.js';
+export type { CharterCapability } from './agents/charter-validator.js';
+export type { CharterConformance } from './agents/charter-validator.js';
+export type { CharterConformanceOptions } from './agents/charter-validator.js';
+export type { CharterDiagnostic } from './agents/charter-validator.js';
+export type { CharterDiagnosticCode } from './agents/charter-validator.js';
+export type { CharterDiagnosticSeverity } from './agents/charter-validator.js';
+export type { CharterValidationOptions } from './agents/charter-validator.js';
+export type { CharterValidationResult } from './agents/charter-validator.js';
+export type { CharterSerializeOptions } from './state/io/charter-io.js';
 
 // --- Routing types (config/routing.ts) ---
 export type { CompiledRouter } from './config/routing.js';

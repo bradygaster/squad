@@ -86,10 +86,10 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 3. Asks: *"Hey {user}, what are you building?"*
 4. User: *"TypeScript CLI tool with GitHub API integration"*
 5. Coordinator runs casting algorithm → selects "The Usual Suspects" universe
-6. Proposes: Keaton (Lead), Verbal (Prompt), Fenster (Backend), Hockney (Tester), Scribe, Ralph
+6. Proposes: Agent Alpha (Lead), Agent Beta (Prompt), Agent Gamma (Backend), Agent Delta (Tester), Scribe, Ralph
 7. Uses `ask_user` with choices → user selects "Yes, cast this team"
 8. Coordinator creates `.squad/` structure, initializes casting state, seeds agents
-9. Says: *"✅ Team cast. Try: 'Keaton, set up the project structure'"*
+9. Says: *"✅ Team cast. Try: 'Agent Alpha, set up the project structure'"*
 
 ## Anti-Patterns
 

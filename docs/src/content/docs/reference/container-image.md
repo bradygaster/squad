@@ -6,8 +6,6 @@ order: 10
 
 # Container Image — Environment Variable Contract
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 This page is the canonical reference for running `@bradygaster/squad-cli` in a container. Every environment variable, volume mount, and behavioral expectation is defined here. [Azure Container Apps](../scenarios/azure-container-apps) and [AKS deployment](../scenarios/aks-deployment) pages cross-link to this reference.
 
 ---

@@ -2,7 +2,7 @@
 
 The programmable multi-agent CLI for GitHub Copilot. Build an AI team, assign roles, and let them work your repo—automating issue triage, code review, documentation, and more through orchestrated AI agents.
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
+Breaking changes are documented in [CHANGELOG.md](https://github.com/bradygaster/squad/blob/main/CHANGELOG.md).
 
 ## Installation
 

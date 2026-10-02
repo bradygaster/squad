@@ -86,7 +86,7 @@ When a proposal invalidates existing wave structure:
 **Alternatives:** `blessed`, raw readline  
 **Decision rationale:** Component model enables testable UI. Battle-tested ecosystem.
 
-**Needs sign-off from:** Brady (product direction), Fortier (runtime performance)
+**Needs sign-off from:** Product Lead (product direction), Runtime Reviewer (runtime performance)
 ```
 
 ### Risk Documentation

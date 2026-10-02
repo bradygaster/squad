@@ -1,7 +1,5 @@
 # Standalone Install (no npm)
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Squad publishes self-contained bundles that vendor their own Node.js runtime.
 Installing from these touches `github.com` only — nothing is fetched from
 `registry.npmjs.org`, and neither Node.js nor npm needs to be installed first.

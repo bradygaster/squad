@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ToolRegistry, defineTool, sanitizeArgs, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
+import { ToolRegistry, defineTool, sanitizeArgs, isMutableStateKey, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
 import { SessionPool, EventBus } from '@bradygaster/squad-sdk/client';
 import type { FanOutDependencies } from '@bradygaster/squad-sdk/coordinator';
 import type { AgentCharter } from '@bradygaster/squad-sdk/agents';
@@ -240,6 +240,32 @@ describe('ToolRegistry', () => {
       );
 
       expect(result.resultType).toBe('success');
+    });
+  });
+
+  // #2107: doctor reads this allowlist to find state stranded in a linked team repo.
+  describe('isMutableStateKey (#2107)', () => {
+    it.each([
+      'decisions.md', 'decisions/inbox/a.md', 'casting/policy.json', 'agents/edie/history.md',
+      'log/a.md', 'orchestration-log/a.md', 'sessions/s.json', '.scratch/n.md', 'identity/now.md',
+    ])('accepts %s', (key) => {
+      expect(isMutableStateKey(key), `${key} must be writable by the state tools`).toBe(true);
+    });
+
+    it.each([
+      'team.md', 'routing.md', 'config.json', 'decisions', 'decisions/a.md', 'decisions.md/x',
+      'casting/registry.json', 'casting/history.json', 'agents/edie/charter.md', 'agents/edie/history.md/x',
+      'agents/a/b/history.md', 'log', 'logs/a.md', 'identity', 'skills/x/SKILL.md',
+    ])('rejects %s', (key) => {
+      expect(isMutableStateKey(key), `${key} must not be writable by the state tools`).toBe(false);
+    });
+
+    it('squad_state_write rejects a key outside the allowlist', async () => {
+      const result = await registry.getTool('squad_state_write')!.handler(
+        { key: 'casting/registry.json', content: '{}' },
+        { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_state_write', arguments: {} },
+      );
+      expect(result.resultType, 'casting/registry.json write').toBe('failure');
     });
   });
 });

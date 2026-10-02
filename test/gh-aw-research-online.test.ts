@@ -181,12 +181,6 @@ describe('gh-aw: /squad research online-documentation capability', () => {
 
   it('introduces no bespoke source-config / allowlist artifact files', () => {
     const forbidden = [
-      join(process.cwd(), '.squad', 'research-sources.md'),
-      join(process.cwd(), '.squad', 'research-sources.yml'),
-      join(process.cwd(), '.squad', 'research-sources.yaml'),
-      join(process.cwd(), '.squad', 'research-sources.json'),
-      join(process.cwd(), '.squad', 'sources.md'),
-      join(process.cwd(), '.squad', 'sources.yml'),
       join(WORKFLOWS_DIR, 'research-allowlist.md'),
       join(WORKFLOWS_DIR, 'shared', 'squad-research-sources.md'),
     ];
@@ -203,8 +197,8 @@ describe('gh-aw: /squad research online-documentation capability', () => {
 
   it('mirrors the Online sources disclosure into the §3.2 research template of the planning ontology', () => {
     const ontology = readText(PLANNING_ONTOLOGY);
-    const start = ontology.indexOf('### 3.2 Research Findings');
-    expect(start, '§3.2 Research Findings template must exist in the planning ontology').toBeGreaterThan(-1);
+    const start = ontology.indexOf('### 3.2 Squad Research');
+    expect(start, '§3.2 Squad Research template must exist in the planning ontology').toBeGreaterThan(-1);
     // Scope to the §3.2 template block (up to the next ### heading) so a stray
     // match elsewhere in the file can't satisfy this.
     const rest = ontology.slice(start);

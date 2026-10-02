@@ -1,8 +1,5 @@
 # Squad in CI/CD Pipelines
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 Enable Ralph's heartbeat workflow to triage issues automatically

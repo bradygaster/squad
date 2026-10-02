@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compileFunction, constants as vmConstants } from 'node:vm';
 
@@ -104,25 +112,43 @@ function substitute(text: string, values: Record<string, string>): string {
   });
 }
 
-function makeOctokit() {
+type ApiMethod = 'createComment' | 'updateComment' | 'deleteComment' | 'listComments';
+
+function makeOctokit(options: {
+  comments?: Array<{ id: number; body: string }>;
+  fail?: ApiMethod;
+} = {}) {
   const created: Array<{ body: string }> = [];
   const updated: Array<{ body: string }> = [];
+  const deleted: Array<{ comment_id: number }> = [];
+  const failure = new Error(`mocked ${options.fail ?? 'API'} failure`);
+  const rejectIf = (method: ApiMethod) => {
+    if (options.fail === method) throw failure;
+  };
   const github = {
-    paginate: async () => [] as Array<{ id: number; body: string }>,
+    paginate: async () => {
+      rejectIf('listComments');
+      return options.comments ?? [];
+    },
     rest: {
       issues: {
         listComments: () => undefined,
         createComment: async (params: { body: string }) => {
+          rejectIf('createComment');
           created.push(params);
         },
         updateComment: async (params: { body: string }) => {
+          rejectIf('updateComment');
           updated.push(params);
         },
-        deleteComment: async () => undefined,
+        deleteComment: async (params: { comment_id: number }) => {
+          rejectIf('deleteComment');
+          deleted.push(params);
+        },
       },
     },
   };
-  return { github, created, updated };
+  return { github, created, updated, deleted, failure };
 }
 
 const context = { repo: { owner: 'bradygaster', repo: 'squad' }, issue: { number: 1770 } };
@@ -131,9 +157,14 @@ const context = { repo: { owner: 'bradygaster', repo: 'squad' }, issue: { number
  * Execute a workflow script body exactly the way `actions/github-script` does:
  * compile the resolved text as an async function and invoke it.
  */
-async function runWorkflowScript(step: Step, values: Record<string, string>) {
+async function runWorkflowScript(
+  step: Step,
+  values: Record<string, string>,
+  octokitOptions: Parameters<typeof makeOctokit>[0] = {},
+) {
   const script = stepScript(step);
   expect(script, `step "${step.name}" has no script block`).toBeTruthy();
+  expect(script).not.toContain('${{');
 
   const env = stepEnv(step);
   const previous: Record<string, string | undefined> = {};
@@ -145,7 +176,7 @@ async function runWorkflowScript(step: Step, values: Record<string, string>) {
     process.env[key] = value;
   }
 
-  const octokit = makeOctokit();
+  const octokit = makeOctokit(octokitOptions);
   try {
     // `actions/github-script` compiles the body as an async function body. We do the
     // same, via `vm.compileFunction` so that the `await import(...)` in the body can
@@ -181,7 +212,7 @@ const HOSTILE_MESSAGE =
   'Unsafe git operation: `git cherry-pick --no-commit` — quoting `code` here, ' +
   'plus a bare ${ opener, an apostrophe \' and a "double quote".\nSecond line of the message.';
 
-const HOSTILE_PATH = 'docs/using-`git cherry-pick`-and-${-in-a-name.md';
+const HOSTILE_PATH = ".squad/canary-`paired`-${-apostrophe-'-\"double quote\".md";
 
 function securityReport() {
   const payload = {
@@ -218,6 +249,39 @@ function leakageReport() {
   return JSON.stringify({ leaked: true, files: [HOSTILE_PATH] }, null, 2);
 }
 
+function realLeakageReport(): string {
+  const cwd = mkdtempSync(join(tmpdir(), 'squad-reporter-leakage-'));
+  const git = (args: string[]) => execFileSync(
+    'git',
+    args,
+    { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  try {
+    git(['init', '--quiet', '-b', 'dev']);
+    git(['config', 'core.quotePath', 'true']);
+    git(['config', 'user.name', 'Squad Test']);
+    git(['config', 'user.email', 'test@example.invalid']);
+    writeFileSync(join(cwd, 'README.md'), 'base\n');
+    git(['add', '--', 'README.md']);
+    git(['commit', '--quiet', '-m', 'base']);
+    git(['switch', '--quiet', '-c', 'feature']);
+    mkdirSync(join(cwd, '.squad'));
+    writeFileSync(join(cwd, HOSTILE_PATH), 'canary\n');
+    git(['add', '--', HOSTILE_PATH]);
+    git(['commit', '--quiet', '-m', 'canary']);
+
+    const result = spawnSync(
+      process.execPath,
+      [join(repoRoot, 'scripts', 'check-squad-leakage.mjs'), 'dev', 'HEAD'],
+      { cwd, encoding: 'utf8' },
+    );
+    expect(result.status).toBe(0);
+    return result.stdout;
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 function findStep(file: string, predicate: (step: Step) => boolean): Step {
   const step = parseSteps(readWorkflow(file)).find(predicate);
   expect(step, `no matching step found in ${file}`).toBeTruthy();
@@ -239,6 +303,9 @@ describe('repo-health reporters survive hostile finding content (#1770)', () => 
     expect(created).toHaveLength(1);
     expect(created[0].body).toContain('<!-- squad-security-review -->');
     expect(created[0].body).toContain(HOSTILE_MESSAGE);
+    expect(created[0].body).toContain(
+      '> **Authoritative evidence:** base-controlled `pull_request_target` reporter.',
+    );
   });
 
   it('reports an architectural finding whose message contains backticks', async () => {
@@ -254,6 +321,9 @@ describe('repo-health reporters survive hostile finding content (#1770)', () => 
     expect(created).toHaveLength(1);
     expect(created[0].body).toContain('<!-- squad-architectural-review -->');
     expect(created[0].body).toContain(HOSTILE_MESSAGE);
+    expect(created[0].body).toContain(
+      '> **Authoritative evidence:** base-controlled `pull_request_target` reporter.',
+    );
   });
 
   it('reports leaked squad files whose paths contain backticks', async () => {
@@ -269,7 +339,123 @@ describe('repo-health reporters survive hostile finding content (#1770)', () => 
     expect(created).toHaveLength(1);
     expect(created[0].body).toContain('<!-- squad-repo-health-leakage -->');
     expect(created[0].body).toContain(HOSTILE_PATH);
+    expect(created[0].body).toContain(
+      '> **Authoritative evidence:** base-controlled `pull_request_target` reporter.',
+    );
+    expect(created[0].body.match(/<!-- squad-repo-health-leakage -->/g)).toHaveLength(1);
   });
+
+  it('passes real scanner output through the workflow with the exact raw path', async () => {
+    const step = findStep(
+      'squad-repo-health.yml',
+      (s) => (stepScript(s) ?? '').includes("job: 'leakage'"),
+    );
+
+    const { created } = await runWorkflowScript(step, {
+      'steps.leakage.outputs.result': realLeakageReport(),
+    });
+
+    expect(created).toHaveLength(1);
+    expect(created[0].body).toContain(HOSTILE_PATH);
+    expect(created[0].body.match(/<!-- squad-repo-health-leakage -->/g)).toHaveLength(1);
+    expect(created[0].body).toContain(
+      '> **Authoritative evidence:** base-controlled `pull_request_target` reporter.',
+    );
+  });
+
+  it.each([
+    ['empty', ''],
+    ['malformed JSON', '{'],
+    ['wrong JSON type', '[]'],
+    ['extra property', '{"leaked":false,"files":[],"error":null}'],
+    ['inconsistent clean result', '{"leaked":false,"files":[".squad/stale.md"]}'],
+    ['inconsistent leaked result', '{"leaked":true,"files":[]}'],
+    ['empty path', '{"leaked":true,"files":[""]}'],
+    ['absolute path', '{"leaked":true,"files":["/.squad/stale.md"]}'],
+    ['outside path', '{"leaked":true,"files":["outside.md"]}'],
+    ['newline path', '{"leaked":true,"files":[".squad/line\\nbreak.md"]}'],
+  ])('rejects %s leakage output without deleting a stale marker', async (_label, output) => {
+    const step = findStep(
+      'squad-repo-health.yml',
+      (s) => (stepScript(s) ?? '').includes("job: 'leakage'"),
+    );
+    const marker = '<!-- squad-repo-health-leakage -->';
+
+    await expect(runWorkflowScript(
+      step,
+      { 'steps.leakage.outputs.result': output },
+      { comments: [{ id: 42, body: `${marker}\nold` }], fail: 'deleteComment' },
+    )).rejects.toThrow();
+  });
+});
+
+describe('repo-health comment lifecycle uses the real workflow/helper contract', () => {
+  const step = findStep(
+    'squad-repo-health.yml',
+    (candidate) => (stepScript(candidate) ?? '').includes("job: 'security'"),
+  );
+  const marker = '<!-- squad-security-review -->';
+
+  it('updates the one existing marker comment and preserves hostile multiline text exactly', async () => {
+    const { created, updated, deleted } = await runWorkflowScript(
+      step,
+      { 'steps.security.outputs.result': securityReport() },
+      { comments: [{ id: 42, body: `${marker}\nold` }] },
+    );
+
+    expect(created).toEqual([]);
+    expect(deleted).toEqual([]);
+    expect(updated).toHaveLength(1);
+    expect(updated[0].body.match(/<!-- squad-security-review -->/g)).toHaveLength(1);
+    expect(updated[0].body).toContain(HOSTILE_MESSAGE);
+  });
+
+  it('deletes a stale marker comment when the scanner is clean', async () => {
+    const { created, updated, deleted } = await runWorkflowScript(
+      step,
+      { 'steps.security.outputs.result': JSON.stringify({ findings: [], summary: 'clean' }) },
+      { comments: [{ id: 42, body: `${marker}\nold` }] },
+    );
+
+    expect(created).toEqual([]);
+    expect(updated).toEqual([]);
+    expect(deleted).toEqual([{ owner: 'bradygaster', repo: 'squad', comment_id: 42 }]);
+  });
+
+  it('does not treat a marker embedded in another reporter body as ownership', async () => {
+    const injected = [
+      '<!-- squad-repo-health-leakage -->',
+      '## leakage',
+      '- `.squad/<!-- squad-security-review -->.md`',
+    ].join('\n');
+    const { created, updated, deleted } = await runWorkflowScript(
+      step,
+      { 'steps.security.outputs.result': JSON.stringify({ findings: [], summary: 'clean' }) },
+      { comments: [{ id: 42, body: injected }] },
+    );
+
+    expect(created).toEqual([]);
+    expect(updated).toEqual([]);
+    expect(deleted).toEqual([]);
+  });
+
+  for (const method of ['listComments', 'createComment', 'updateComment', 'deleteComment'] as const) {
+    it(`propagates mocked ${method} failures so the github-script step is red`, async () => {
+      const clean = method === 'deleteComment';
+      const existing = method === 'updateComment' || method === 'deleteComment'
+        ? [{ id: 42, body: `${marker}\nold` }]
+        : [];
+      const output = clean
+        ? JSON.stringify({ findings: [], summary: 'clean' })
+        : securityReport();
+
+      await expect(runWorkflowScript(
+        step,
+        { 'steps.security.outputs.result': output },
+        { comments: existing, fail: method },
+      )).rejects.toThrow(`mocked ${method} failure`);
+    });
+  }
 });
 
 describe('hand-written github-script bodies never embed workflow expressions', () => {
@@ -284,4 +470,39 @@ describe('hand-written github-script bodies never embed workflow expressions', (
       expect(offenders).toEqual([]);
     });
   }
+});
+
+describe('repo-health workflow trust boundary (#1800)', () => {
+  const production = readWorkflow('squad-repo-health.yml');
+  const shadow = readWorkflow('squad-repo-health-shadow.yml');
+
+  it('keeps the authoritative writer base-controlled and least-privileged', () => {
+    expect(production).toMatch(/^on:\n  pull_request_target:/m);
+    expect(production).toMatch(
+      /permissions:\n  contents: read\n  pull-requests: write\n  issues: write/,
+    );
+    expect(production).not.toMatch(/ref:\s*\$\{\{\s*github\.event\.pull_request\.head\.(?:ref|sha)/);
+    expect(production).not.toMatch(/git (?:checkout|switch|reset)[^\n]*pull_request\.head/);
+    expect(production).toContain('Fetch PR head (data only — not executed)');
+    const headDataLines = production
+      .split(/\r?\n/)
+      .filter((line) => line.includes('github.event.pull_request.head.sha'));
+    expect(headDataLines.length).toBeGreaterThan(0);
+    expect(headDataLines.every((line) =>
+      /git fetch origin|git diff|git rev-list|node scripts\//.test(line),
+    )).toBe(true);
+    expect(production).toContain(
+      'import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`)',
+    );
+  });
+
+  it('runs PR-head proposals only in an explicitly non-authoritative read-only workflow', () => {
+    expect(shadow).toMatch(/^name: Repo Health Shadow \(Non-Authoritative\)$/m);
+    expect(shadow).toMatch(/^on:\n  pull_request:/m);
+    expect(shadow).toMatch(/permissions:\n  contents: read\n/);
+    expect(shadow).not.toMatch(/^\s+pull-requests: write|^\s+issues: write|^\s+pull_request_target:/m);
+    expect(shadow).toContain('persist-credentials: false');
+    expect(shadow).toContain('fake Octokit');
+    expect(shadow).toContain('NON-AUTHORITATIVE');
+  });
 });

@@ -4,10 +4,9 @@
 
 **为任何项目打造的 AI 智能体团队。** 一行命令，拥有一个随代码同步成长的开发团队。
 
-[![状态](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![平台](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
 
-> ⚠️ **Alpha 预览版** — Squad 仍处于实验阶段。API 和命令行工具可能在版本更迭中发生变化。我们会在 [CHANGELOG.md](CHANGELOG.md) 中记录重大变更。
+重大变更会记录在 [CHANGELOG.md](CHANGELOG.md) 中。
 
 ---
 

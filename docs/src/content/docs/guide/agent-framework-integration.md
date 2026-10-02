@@ -3,7 +3,7 @@ title: "Microsoft Agent Framework integration"
 description: "Expose any Squad team as a MAF AIAgent for durable .NET workflows, Aspire dashboard observability, and multi-model composition."
 ---
 
-> ⚠️ **Preview** — `Squad.Agents.AI` is a preview package. APIs may change before stable release. Use `--prerelease` when installing and pin to a specific version in production builds.
+`Squad.Agents.AI` **1.0.0** is the stable package version for .NET 8, 9, and 10. Source versioning is separate from publication; until 1.0.0 is available on NuGet, follow the [local package instructions](https://github.com/bradygaster/squad/blob/dev/src/Squad.Agents.AI/README.md#install).
 
 `Squad.Agents.AI` exposes any Squad team as a Microsoft Agent Framework (MAF) `AIAgent`. Once registered, a `SquadAgent` participates in durable workflows alongside Azure OpenAI, Anthropic, and every other MAF provider — with DTS checkpointing, Aspire dashboard observability, and streaming out of the box.
 
@@ -35,14 +35,14 @@ Authentication uses the signed-in GitHub Copilot CLI user by default. No separat
 ## Install
 
 ```bash
-dotnet add package Squad.Agents.AI --prerelease
+dotnet add package Squad.Agents.AI --version 1.0.0
 ```
 
-Minimum version for Aspire dashboard observability: **0.5.1**. Current version: **0.5.6-rc1**.
+Minimum version for Aspire dashboard observability: **0.5.1**. Stable package version: **1.0.0**.
 
 ### GitHub.Copilot.SDK direct reference — active workaround
 
-`Squad.Agents.AI 0.5.6-rc1` ships a `buildTransitive/Squad.Agents.AI.props` that pins the correct `GitHub.Copilot.SDK` version for all consumers, so **most users do not need to add a direct reference**. If you are on an older version of `Squad.Agents.AI` and see:
+`Squad.Agents.AI 1.0.0` ships a `buildTransitive/Squad.Agents.AI.props` that pins `GitHub.Copilot.SDK` 1.0.14 for all consumers, so **most users do not need to add a direct reference**. If you are on an older version of `Squad.Agents.AI` and see:
 
 ```
 InvalidOperationException: Copilot runtime not found
@@ -54,7 +54,7 @@ add the direct reference that was previously required:
 <PackageReference Include="GitHub.Copilot.SDK" Version="*-*" />
 ```
 
-The root cause is that without a direct `PackageReference`, the SDK's MSBuild targets that copy `copilot.exe` into `bin/` do not fire for transitive consumers. The upstream fix is tracked in [microsoft/agent-framework#6457](https://github.com/microsoft/agent-framework/issues/6457). `Squad.Agents.AI 0.5.6-rc1` works around it independently via the generated `buildTransitive` bridge.
+The root cause is that without a direct `PackageReference`, the SDK's MSBuild targets that copy `copilot.exe` into `bin/` do not fire for transitive consumers. The upstream fix is tracked in [microsoft/agent-framework#6457](https://github.com/microsoft/agent-framework/issues/6457). Since 0.5.6-rc1, `Squad.Agents.AI` works around it independently via the generated `buildTransitive` bridge.
 
 ---
 
