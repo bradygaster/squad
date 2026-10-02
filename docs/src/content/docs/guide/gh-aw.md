@@ -190,6 +190,25 @@ arguments. Missing, duplicate, reordered, malformed, oversized, or mismatched
 payloads fail closed before submission, and the write job independently
 revalidates the payload. A submission error is terminal, not permission to retry.
 
+To focus bootstrap on part of the repository, commit
+`.squad/research-scope.json` to the default branch **before** merging the
+installation. A common case is a control repository whose real subject is
+evidence about other repositories:
+
+```json
+{
+  "schema": "squad-research-scope/v1",
+  "evidence_roots": ["farm/"],
+  "description": "Snapshots of the managed application repositories"
+}
+```
+
+Bootstrap treats the evidence roots as the primary subject when it casts roles
+and writes proposals. Every proposal must cite at least one path under a root.
+The validator reads the scope only from committed `HEAD` and fails closed on a
+malformed file. The scope only narrows focus; it never changes outputs or
+permissions.
+
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
 evidence, use one of the issue's focused `/squad research ...` commands first;
@@ -657,7 +676,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Review | `/squad review` | Show how to rerun the current pull request's automatic independent review | Does not dispatch branch-selected code; human approval remains mandatory |
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
 | Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
-| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
+| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved state-changing command requiring write, maintain, or admin authorization; emits no output of any kind — the comment itself is the record that later runs re-check |
 
 ### Implementation provenance
 
@@ -875,9 +894,11 @@ and validates its human author/provenance, permissions, issue state, revision an
 scope, both before work and before safe outputs; it never substitutes a newer
 approval or treats a relay actor as an approver.
 
-`/squad revoke-improvement` is a reserved no-dispatch route: a later human comment
-withdraws the referenced approval. Missing/edited/stale/revoked approvals require
-a fresh comment for the current content. Manual retries select
+`/squad revoke-improvement` is a reserved no-dispatch route: only a later
+unedited, non-app human issue comment from an author with live write, maintain,
+or admin permission withdraws the referenced approval. Unresolved permission,
+malformed timestamps, incomplete history, or missing/edited/stale/revoked
+approvals fail closed and require a fresh comment for the current content. Manual retries select
 **Actions → Squad Improvement Worker → Run workflow**, on the default branch,
 and supply the same `issue_number` and `approval_comment_id` (the numeric suffix
 of its `#issuecomment-N` URL). Retrying is not approval. Both workers remain
@@ -889,7 +910,7 @@ Opt-in reconciliation adds at most 48: three action pages, five all-state PR
 pages and two comment pages for each of twenty candidates. Candidates rotate
 every six hours; an incomplete history requires human inspection. Live retro
 output checks add at most 14 reads; receiving ordinary-worker checks at most
-nine. Improvement authorization is bounded to fourteen reads per check, twice
+nine. Improvement authorization is bounded to 36 reads per check, twice
 per worker run, plus two dispatcher checks. GitHub supplies no transaction
 covering a comment and a PR: revocation is checked immediately before safe
 outputs, not after publication; human review remains the final authority.

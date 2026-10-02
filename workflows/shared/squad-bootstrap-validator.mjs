@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,8 @@ export const BOOTSTRAP_PR_TITLE = '[squad] Cast your Squad';
 export const BOOTSTRAP_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
 export const BOOTSTRAP_ISSUE_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
 export const BOOTSTRAP_RESEARCH_TITLE = '## 🔬 Squad Research — Bootstrap proposals';
+export const RESEARCH_SCOPE_PATH = '.squad/research-scope.json';
+export const RESEARCH_SCOPE_SCHEMA = 'squad-research-scope/v1';
 export const CREATE_PR_PERMISSION_DENIED_TEXT =
   'GitHub Actions is not permitted to create or approve pull requests';
 export const BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE =
@@ -731,10 +733,62 @@ function parseProposalSections(issueBody, errors) {
   });
 }
 
-function validateProposalSections(issueBody, root, errors) {
+// The scope is read only from committed HEAD so generated output cannot widen or replace it.
+export function readResearchScope(gitRoot, errors) {
+  let committed;
+  try {
+    committed = execFileSync(
+      'git',
+      ['ls-tree', '--name-only', 'HEAD', '--', RESEARCH_SCOPE_PATH],
+      { cwd: gitRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim();
+  } catch {
+    return null;
+  }
+  if (committed !== RESEARCH_SCOPE_PATH) return null;
+  let value;
+  try {
+    value = JSON.parse(execFileSync(
+      'git',
+      ['show', `HEAD:${RESEARCH_SCOPE_PATH}`],
+      { cwd: gitRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ));
+  } catch (error) {
+    errors.push(`research scope: ${RESEARCH_SCOPE_PATH} is not valid JSON (${error.message})`);
+    return null;
+  }
+  const keys = value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).sort() : [];
+  const roots = Array.isArray(value?.evidence_roots) ? value.evidence_roots : [];
+  const normalized = roots.map((entry) => normalizePath(typeof entry === 'string' ? entry.replace(/\/+$/, '') : entry));
+  if (
+    value?.schema !== RESEARCH_SCOPE_SCHEMA ||
+    keys.some((key) => !['schema', 'evidence_roots', 'description'].includes(key)) ||
+    (value.description !== undefined && typeof value.description !== 'string') ||
+    roots.length === 0 ||
+    roots.length > 20 ||
+    normalized.some((entry) => !entry) ||
+    new Set(normalized).size !== normalized.length
+  ) {
+    errors.push(`research scope: ${RESEARCH_SCOPE_PATH} must be {"schema":"${RESEARCH_SCOPE_SCHEMA}","evidence_roots":[1-20 unique repository-relative paths],"description"?:string}`);
+    return null;
+  }
+  return normalized;
+}
+
+function underRoot(path, roots) {
+  return roots.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
+function validateProposalSections(issueBody, root, errors, scopeRoots = null) {
   const proposals = parseProposalSections(issueBody, errors);
   for (const proposal of proposals) {
     const { id, evidencePaths } = proposal;
+    if (scopeRoots && !evidencePaths.some((path) => {
+      const normalized = normalizePath(path);
+      return normalized && underRoot(normalized, scopeRoots);
+    })) {
+      errors.push(`issue: ${id} must cite evidence under a research scope root (${scopeRoots.join(', ')})`);
+    }
     for (const evidencePath of evidencePaths) {
       const normalized = normalizePath(evidencePath);
       if (!normalized || !existsSync(join(root, normalized))) {
@@ -950,7 +1004,7 @@ export function validateBootstrapPayload({
     }
   }
 
-  validateProposalSections(issueBody, root, errors);
+  validateProposalSections(issueBody, root, errors, readResearchScope(gitRoot, errors));
   return [...new Set(errors)].sort();
 }
 
