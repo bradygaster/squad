@@ -690,6 +690,21 @@ describe('#1758.3: validate precedes both accept steps', () => {
     expect(() => assertPlanningNextHintsMatch(taggedOntology, squad)).not.toThrow();
   });
 
+  it('documents the Validation Result template with the exact machine-parsed RESULT: PASS|FAIL marker, not a stale heading variant', () => {
+    // squad-plan-validate's own output contract (and every downstream consumer parsing it,
+    // e.g. squad-review-guard.mjs / the plan-lifecycle harness above) requires the literal
+    // uppercase `RESULT: PASS` / `RESULT: FAIL` line. An earlier revision of this template
+    // documented a `### Result: ✅ PASS` heading instead -- producer/consumer would silently
+    // disagree on the contract text even though the actual emitting code was already correct.
+    const section = ontology.slice(
+      ontology.indexOf('### 3.6 Validation Result'),
+      ontology.indexOf('### 3.7', ontology.indexOf('### 3.6 Validation Result')),
+    );
+    expect(section).toMatch(/^RESULT: <PASS \| FAIL>$/m);
+    expect(section).not.toMatch(/Result: ✅/);
+    expect(section).not.toMatch(/^### Result:/m);
+  });
+
   it('fails when ontology transitions reorder while pinned inequalities still hold', () => {
     const reordered = ontology
       .replace('triggered_by: /squad plan program', 'triggered_by: /squad plan __swap__')

@@ -247,7 +247,7 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 
 ### Directive Capture
 
-**Before routing any message, check: is this a directive?** A directive is a user statement that sets a preference, rule, or constraint the team should remember. Capture it to the decisions inbox BEFORE routing work.
+**Before routing any message, check: is this a directive?** A directive is a user statement that sets a preference, rule, or constraint the team should remember.
 
 **Directive signals** (capture these):
 - "Always…", "Never…", "From now on…", "We don't…", "Going forward…"
@@ -262,19 +262,22 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 
 **When you detect a directive:**
 
-1. Capture the directive with governed memory tools when available:
-   - Prefer `memory.write` with class `decision` to persist the directive through the governed pipeline:
+1. Capture the directive only with governed runtime memory tools when available:
+   - Prefer `memory.write` with class `DECISION` to persist the directive through the governed pipeline:
      ```
      memory.write({
-       class: "decision",
-       key: "copilot-directive-{timestamp}",
+       class: "DECISION",
+       title: "User directive - {timestamp}",
+       author: "{user name} (via Copilot)",
        content: "### {timestamp}: User directive\n**By:** {user name} (via Copilot)\n**What:** {the directive, verbatim or lightly paraphrased}\n**Why:** User request — captured for team memory"
      })
      ```
-   - If `memory.write` is not available, fall back to `squad_decide` or `squad_state_write` to `decisions/inbox/copilot-directive-{timestamp}.md`.
+   - If `memory.write` is unavailable, use another configured runtime state tool such as `squad_decide` or `squad_state_write`.
+   - Never create a local or gitignored Markdown proposal, including `.squad/decisions/inbox/*.md`, as a persistence fallback. If no runtime state tool is available, acknowledge the directive without pretending it was persisted.
    - Do **not** run `git notes`, checkout `squad-state`, or manually commit mutable `.squad/` state. The runtime owns state persistence.
 2. Acknowledge briefly: `"📌 Captured. {one-line summary of the directive}."`
-3. If the message ALSO contains a work request, route that work normally after capturing. If it's directive-only, you're done — no agent spawn needed.
+3. If the directive changes repository behavior, dispatch the accountable specialist to make the minimum tracked source change, validate it, and open a focused PR. Runtime memory records context; it is not the implementation.
+4. If the message ALSO contains a work request, route that work normally after capturing. If it is directive-only and requires no repository change, no agent spawn is needed.
 
 ### Memory Governance Tools
 
@@ -305,6 +308,15 @@ For `STATE_BACKEND ∈ {"local", "worktree"}`, file writes to `.squad/` are vali
 **External memory:** Never claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
 
 ### Routing
+
+### Scope Control
+
+The Coordinator owns preserving the scope the user requested.
+
+- Every specialist prompt must state the requested deliverable and explicit exclusions.
+- Specialists must complete only that scope. Adjacent issues, cleanup opportunities, or follow-on ideas are reported separately and must not be implemented, edited, or delegated as part of the current work.
+- Expanding scope requires explicit user approval. The Coordinator must present the adjacent discovery separately and wait for that approval before routing additional work.
+- If expansion is approved, route it as distinct focused work; do not silently fold it into the original task or PR.
 
 The routing table determines **WHO** handles work. After routing, use Response Mode Selection to determine **HOW** (Direct/Lightweight/Standard/Full).
 

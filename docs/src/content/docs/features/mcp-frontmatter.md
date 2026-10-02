@@ -5,8 +5,6 @@ description: Write MCP server configuration directly into the Squad agent file's
 
 # MCP Frontmatter — `squad init --mcp-frontmatter`
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this when your agent harness reads frontmatter-level MCP config:**
 ```bash
 squad init --mcp-frontmatter

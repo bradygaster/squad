@@ -531,7 +531,7 @@ function committedRegistry(root, errors) {
   }
 }
 
-function parseRegistry(root, errors) {
+function parseRegistry(root, errors, gitRoot = root) {
   let registryRaw;
   let historyRaw;
   try {
@@ -543,7 +543,7 @@ function parseRegistry(root, errors) {
   }
   const registry = parseCastingPair(registryRaw, historyRaw, 'registry', errors);
   if (!registry) return [];
-  const base = committedRegistry(root, errors);
+  const base = committedRegistry(gitRoot, errors);
   if (base) {
     const baseRevision = base.schema === 'squad-agent-provenance/v1' ? base.revision : 0;
     if (registry.revision <= baseRevision) {
@@ -631,7 +631,7 @@ function validateCapabilities(coordinator, active, routingRows, errors) {
   }
 }
 
-export function validateCastTree({ root, payloadPath }) {
+export function validateCastTree({ root, payloadPath, gitRoot = root }) {
   const errors = [];
   let payloadValue;
   try {
@@ -660,7 +660,7 @@ export function validateCastTree({ root, payloadPath }) {
     if (!payload.includes(required)) errors.push(`payload: missing required path ${required}`);
   }
 
-  const active = parseRegistry(root, errors);
+  const active = parseRegistry(root, errors, gitRoot);
   const activeNames = new Set(active.map(({ name }) => name));
   const activeCharters = active.map(({ id }) => `.squad/agents/${id}/charter.md`);
   const expectedPayload = new Set([...CORE_PAYLOAD, ...activeCharters, ...REQUIRED_BUILTIN_CHARTERS]);

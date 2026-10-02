@@ -1,7 +1,5 @@
 # Copilot CLI Non-Interactive MCP Trust Gate
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 When `squad watch` or another Squad automation spawns `copilot -p` (non-interactive mode), it automatically injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot sub-invocation. This page explains why that injection is mandatory and what to do if `squad_state_*` tools are silently unavailable.
 
 ---

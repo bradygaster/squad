@@ -1,9 +1,17 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { evaluateImplementDispatchInputs } from './squad-retro-provenance.mjs';
+import {
+  BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
+  bootstrapPrFallbackIssueMarker,
+  buildBootstrapPrFallbackCompareUrl,
+  findExistingBootstrapPrFallbackIssue,
+  parseBootstrapPrFallbackProvenance,
+} from './squad-bootstrap-validator.mjs';
 
 export const VERDICT_PREFIX = 'Squad-Review-Verdict: ';
 export const OVERRIDE_PREFIX = 'Squad-Review-Override: ';
 const WORKFLOW = '.github/workflows/squad-review.lock.yml';
+const WORKFLOW_RUNS = 'actions/workflows/squad-review.lock.yml/runs';
 const AUTHORITY_JOB = 'review';
 const BOOTSTRAP_WORKFLOW = '.github/workflows/squad-bootstrap.lock.yml';
 const SHA = /^[0-9a-f]{40}$/;
@@ -155,6 +163,135 @@ function bootstrapRecord(body, label = 'bootstrap provenance') {
   return value;
 }
 
+async function requireRecordedBaseAncestor(get, repository, recordedSha, liveSha, message) {
+  requireThat(SHA.test(recordedSha) && SHA.test(liveSha), message);
+  const comparison = await get(`repos/${repository}/compare/${recordedSha}...${liveSha}`);
+  requireThat(
+    (comparison?.status === 'identical' || comparison?.status === 'ahead') &&
+    comparison?.base_commit?.sha === recordedSha &&
+    comparison?.merge_base_commit?.sha === recordedSha,
+    message,
+  );
+}
+
+// The post-install bootstrap PR fallback (documented alongside `can_approve_pull_request_reviews: false`
+// in docs/src/content/docs/guide/gh-aw.md) asks a human to open the Cast PR manually from a compare-URL
+// link after `pulls.create` is permission-denied. That PR is human-authored, so it cannot satisfy the
+// bot-authorship predicate `validateBootstrapAttribution` relies on below, and bootstrap's own agent
+// registry does not exist yet to supply a committed `.squad-review.json` either. Rather than permanently
+// failing this required check (which would make the documented Quick start/E2E path structurally
+// impossible to merge), this function replaces only the PR-author bot-attribution predicate with a
+// narrowly-scoped trusted path: the human PR is eligible for review only when live GitHub data exactly
+// matches a bot-authored, unedited, open bootstrap-PR-fallback issue carrying a signed provenance record
+// binding this exact repository, base branch, its exact base commit SHA, pushed Cast branch, its exact
+// head SHA, the base-controlled bootstrap run that produced it, and the manual compare URL. Every other
+// review/provenance/content/head
+// check (SHA pinning, default-branch targeting, workflow-source binding, etc.) is enforced unchanged by
+// the surrounding `reviewTarget`. This never relies on `pulls.create`/review-approval permissions.
+async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, requireRunSuccess) {
+  requireThat(pr.head.ref === BOOTSTRAP_BRANCH && pr.user?.type === 'User',
+    'pull request does not match the documented manual Cast fallback shape');
+  // Mirrors validateBootstrapAttribution's own `pr.title === BOOTSTRAP_TITLE` requirement below:
+  // without it, a manually opened PR with an arbitrary title passes this review path (the compare
+  // URL a human is asked to open already pre-fills this exact title via its `title` query param),
+  // but classifyBootstrapState() rejects any PR on this branch with another title, so a manual
+  // bootstrap rerun — or the post-merge bootstrap run itself — would then fail before ever creating
+  // the linked research-proposals issue.
+  requireThat(pr.title === BOOTSTRAP_TITLE,
+    'pull request does not match the documented manual Cast fallback shape');
+  // Deliberately omits `baseSha` here (unlike squad-bootstrap.md's own push-triggered dedupe
+  // call): a human may open this Cast PR well after the default branch has legitimately
+  // advanced, and once the PR exists `classifyBootstrapState` never files a replacement
+  // fallback issue bound to a fresher base commit. Requiring a live `baseSha` match would make
+  // the human fallback path permanently unrecoverable the moment any further commit lands on
+  // the default branch. The recorded (immutable) `base_sha` is instead validated for live
+  // ancestry below, and the base-controlled run binding is pinned to that same immutable value.
+  const issues = await list(get, `repos/${repository}/issues`);
+  const fallbackIssue = findExistingBootstrapPrFallbackIssue(issues, BOOTSTRAP_BRANCH, {
+    repository,
+    baseBranch: pr.base.ref,
+    headSha: pr.head.sha,
+  });
+  requireThat(fallbackIssue, 'missing base-controlled bootstrap PR fallback issue');
+  requireThat(fallbackIssue.user?.login === BOT && fallbackIssue.user?.type === 'Bot',
+    'bootstrap PR fallback issue is not bot-authored');
+  requireThat(fallbackIssue.title === BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
+    'bootstrap PR fallback issue has an unexpected title');
+  requireThat(fallbackIssue.state === 'open', 'bootstrap PR fallback issue is closed');
+  requireThat(timestamp(fallbackIssue.updated_at) === timestamp(fallbackIssue.created_at),
+    'bootstrap PR fallback issue was edited after creation');
+  const body = String(fallbackIssue.body ?? '');
+  requireThat(body.includes(bootstrapPrFallbackIssueMarker(BOOTSTRAP_BRANCH)),
+    'bootstrap PR fallback issue is missing its branch marker');
+  const provenance = parseBootstrapPrFallbackProvenance(body);
+  requireThat(provenance, 'missing or malformed bootstrap PR fallback provenance record');
+  requireThat(
+    provenance.repository === repository &&
+    provenance.base_branch === pr.base.ref &&
+    provenance.head_branch === pr.head.ref &&
+    provenance.head_sha === pr.head.sha,
+    'bootstrap PR fallback provenance does not match this pull request',
+  );
+  // `provenance.base_sha` pins the exact base commit the base-controlled bootstrap run that
+  // filed this fallback issue actually observed. It deliberately is NOT required to equal the
+  // live `pr.base.sha`: GitHub reports a PR's `base.sha` as the base ref's *current* tip, which
+  // advances with every ordinary commit landing on the default branch -- and a human may not open
+  // this Cast PR until well after that has happened. Once the PR exists, `classifyBootstrapState`
+  // never files a replacement fallback issue, so requiring live equality here would make the
+  // fallback path permanently unrecoverable after the first subsequent push. Instead, only prove
+  // `provenance.base_sha` is still a valid ancestor of (or identical to) the live base tip -- i.e.
+  // the default branch has only fast-forwarded since, never been rewound or force-pushed to an
+  // incompatible history.
+  // github.rest.repos.compareCommitsWithBasehead throws on API error (404/403 rate-limit/etc.),
+  // which propagates and fails this job closed -- there is no local/offline fallback. Beyond the
+  // status check, also bind the compare response's own resolved `base_commit`/`merge_base_commit`
+  // SHAs back to `provenance.base_sha`: a `status` of 'identical'/'ahead' alone does not guarantee
+  // the API resolved *this* base against *this* provenance commit (e.g. a short-SHA or mistyped
+  // route could silently compare against the wrong ref while still reporting a plausible status).
+  await requireRecordedBaseAncestor(
+    get,
+    repository,
+    provenance.base_sha,
+    pr.base.sha,
+    'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+  );
+  const expectedCompareUrl = buildBootstrapPrFallbackCompareUrl({
+    repository,
+    baseBranch: provenance.base_branch,
+    headBranch: provenance.head_branch,
+    title: BOOTSTRAP_TITLE,
+    server: env.GITHUB_SERVER_URL,
+  });
+  requireThat(provenance.compare_url === expectedCompareUrl,
+    'bootstrap PR fallback provenance compare URL does not match the expected manual link');
+  requireThat(timestamp(fallbackIssue.created_at) <= timestamp(pr.created_at),
+    'bootstrap PR fallback issue was created after this pull request');
+  // Both bootstrap attribution paths bind the trusted run to the immutable SHA recorded in their
+  // provenance rather than the live, drifting `pr.base.sha` (see the ancestry check above for why).
+  // Without this, a fallback issue's provenance.run_id only has to name *some* historical
+  // successful bootstrap run on the same base branch, not the run that actually produced the
+  // exact base commit recorded in this provenance.
+  const run = await get(`repos/${repository}/actions/runs/${provenance.run_id}`);
+  requireThat(
+    run.event === 'push' &&
+    run.path === BOOTSTRAP_WORKFLOW &&
+    run.repository?.full_name === repository &&
+    run.head_sha === provenance.base_sha &&
+    run.head_branch === provenance.base_branch &&
+    (!requireRunSuccess || (run.status === 'completed' && run.conclusion === 'success')),
+    requireRunSuccess
+      ? 'base-controlled bootstrap run did not complete successfully'
+      : 'bootstrap PR fallback provenance is not bound to the base-controlled workflow run',
+  );
+  return {
+    schema: 'squad-review-author/v1',
+    repository,
+    issue: pr.number,
+    author_agent: BOOTSTRAP_AUTHOR,
+    reviewer_agent: BOOTSTRAP_REVIEWER,
+  };
+}
+
 async function validateBootstrapAttribution(get, repository, pr, requireRunSuccess) {
   const provenance = bootstrapRecord(pr.body, 'bootstrap PR provenance');
   const comments = await list(get, `repos/${repository}/issues/${pr.number}/comments`);
@@ -177,16 +314,23 @@ async function validateBootstrapAttribution(get, repository, pr, requireRunSucce
     pr.user?.type === 'Bot' &&
     provenance.repository === repository &&
     /^[1-9]\d*$/.test(provenance.run_id ?? '') &&
-    provenance.install_sha === pr.base.sha &&
+    SHA.test(provenance.install_sha ?? '') &&
     provenance.cast_sha === pr.head.sha,
     'invalid base-controlled bootstrap pull request',
+  );
+  await requireRecordedBaseAncestor(
+    get,
+    repository,
+    provenance.install_sha,
+    pr.base.sha,
+    'bootstrap provenance install commit is not an ancestor of the pull request base',
   );
   const run = await get(`repos/${repository}/actions/runs/${provenance.run_id}`);
   requireThat(
     run.event === 'push' &&
     run.path === BOOTSTRAP_WORKFLOW &&
     run.repository?.full_name === repository &&
-    run.head_sha === pr.base.sha &&
+    run.head_sha === provenance.install_sha &&
     run.head_branch === pr.base.ref &&
     (!requireRunSuccess || (run.status === 'completed' && run.conclusion === 'success')),
     requireRunSuccess
@@ -226,6 +370,10 @@ export async function reviewTarget(
   requireThat(SHA.test(env.SQUAD_REVIEW_WORKFLOW_SHA ?? '') &&
     env.SQUAD_REVIEW_WORKFLOW_SHA === pr.base.sha,
   'workflow source is not the exact PR base commit');
+  requireThat(env.GITHUB_EVENT_NAME === (relay ? 'pull_request' : 'pull_request_target'),
+    relay
+      ? 'only merged pull request events can relay review evidence'
+      : 'only base-controlled PR target runs can emit review output');
   requireThat(relay
     ? pr.merged === true && pr.state === 'closed' &&
       pr.base.ref === env.SQUAD_REVIEW_DEFAULT_BRANCH
@@ -250,12 +398,9 @@ export async function reviewTarget(
   if (value === undefined) {
     requireThat(relay === false && env.GITHUB_EVENT_NAME === 'pull_request_target',
       'missing committed attribution outside base-controlled bootstrap activation');
-    attribution = await validateBootstrapAttribution(
-      get,
-      repository,
-      pr,
-      requireBootstrapRunSuccess,
-    );
+    attribution = pr.head.ref === BOOTSTRAP_BRANCH && pr.user?.type !== 'Bot'
+      ? await validateBootstrapPrFallbackAttribution(env, get, repository, pr, requireBootstrapRunSuccess)
+      : await validateBootstrapAttribution(get, repository, pr, requireBootstrapRunSuccess);
   } else {
     const registry = await committedJson(
       get,
@@ -328,75 +473,138 @@ export async function enforceReviewOutputs(env, get, options = {}) {
   writeFileSync(env.GH_AW_AGENT_OUTPUT, JSON.stringify(output));
 }
 
+function runMatchesTarget(run, target, runId) {
+  return run?.id === runId &&
+    run.event === 'pull_request_target' && run.path === WORKFLOW &&
+    run.repository?.full_name === target.repository && run.head_sha === target.base_sha &&
+    run.display_title === `Squad review \u2014 PR #${target.pull_request}` &&
+    Array.isArray(run.pull_requests) &&
+    (run.pull_requests.length === 0 || run.pull_requests.some(pr =>
+      pr.number === target.pull_request && pr.head?.sha === target.head_sha &&
+      pr.base?.repo?.name === target.pr.base.repo.name));
+}
+
+async function latestRelayAttempt(target, get, cutoff) {
+  const runs = await list(
+    get,
+    `repos/${target.repository}/${WORKFLOW_RUNS}`,
+    'workflow_runs',
+  );
+  const attempts = [];
+  for (const run of runs) {
+    if (!Number.isSafeInteger(run?.id) || run.id < 1 ||
+        !runMatchesTarget(run, target, run.id)) continue;
+    requireThat(Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0,
+      'trusted workflow run has an invalid attempt count');
+    for (let runAttempt = 1; runAttempt <= run.run_attempt; runAttempt++) {
+      const attempt = await get(
+        `repos/${target.repository}/actions/runs/${run.id}/attempts/${runAttempt}`,
+      );
+      requireThat(runMatchesTarget(attempt, target, run.id) &&
+        attempt.run_attempt === runAttempt,
+      'invalid trusted workflow run attempt');
+      const startedAt = timestamp(attempt.run_started_at);
+      if (startedAt <= cutoff) attempts.push({ run, attempt, startedAt });
+    }
+  }
+  requireThat(attempts.length > 0, 'missing trusted workflow run attempt before merge');
+  attempts.sort((left, right) =>
+    left.startedAt - right.startedAt ||
+    left.run.id - right.run.id ||
+    left.attempt.run_attempt - right.attempt.run_attempt);
+  return attempts.at(-1);
+}
+
+async function assertAuthorityJob(target, get, selected, cutoff) {
+  const jobs = await list(get,
+    `repos/${target.repository}/actions/runs/${selected.run.id}/attempts/${selected.attempt.run_attempt}/jobs`,
+    'jobs');
+  const authorityJobs = jobs.filter(job => job.name === AUTHORITY_JOB);
+  requireThat(authorityJobs.length === 1 &&
+    authorityJobs[0].status === 'completed' &&
+    authorityJobs[0].conclusion === 'success' &&
+    timestamp(authorityJobs[0].started_at) >= timestamp(selected.attempt.run_started_at) &&
+    timestamp(authorityJobs[0].completed_at) <= timestamp(selected.attempt.updated_at) &&
+    timestamp(authorityJobs[0].completed_at) <= cutoff,
+  'base-controlled review authority job did not pass before merge');
+}
+
 export async function assertClearingReview(env, get, options = {}) {
   const { relay = false } = options;
-  requireThat(env.GITHUB_EVENT_NAME === 'pull_request_target',
-    'only base-controlled PR target runs can clear review');
   const target = await reviewTarget(env, get, {
     ...options,
     requireBootstrapRunSuccess: true,
   });
+  const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();
   const candidates = (await currentEvidence(target, get)).map(review => ({
     review,
     verdict: validateVerdict(
       record(review.body, VERDICT_PREFIX),
       target,
       review,
-      relay ? timestamp(target.pr.merged_at) : Date.now(),
+      cutoff,
     ),
   }));
-  // GitHub retains reviews across reruns. Order by API metadata, never verdict prose.
-  if (relay) {
-    candidates.sort((a, b) =>
-      timestamp(b.review.submitted_at) - timestamp(a.review.submitted_at) ||
-      b.review.id - a.review.id);
-  }
-  const runId = relay ? String(candidates[0]?.verdict.run_id) : env.GITHUB_RUN_ID;
-  const runAttempt = relay ? String(candidates[0]?.verdict.run_attempt) : env.GITHUB_RUN_ATTEMPT;
+  const selected = relay ? await latestRelayAttempt(target, get, cutoff) : undefined;
+  const runId = relay ? String(selected.run.id) : env.GITHUB_RUN_ID;
+  const runAttempt = relay ? String(selected.attempt.run_attempt) : env.GITHUB_RUN_ATTEMPT;
   const bound = candidates.filter(({ verdict }) =>
     String(verdict.run_id) === runId && String(verdict.run_attempt) === runAttempt);
   requireThat(bound.length === 1, 'missing or duplicate verdict evidence for this run');
   const { review, verdict } = bound[0];
-  const cutoff = relay ? timestamp(target.pr.merged_at) : Date.now();
-  const run = await get(`repos/${target.repository}/actions/runs/${verdict.run_id}`);
-  requireThat(run.event === 'pull_request_target' && run.path === WORKFLOW &&
-    run.repository?.full_name === target.repository && run.head_sha === target.head_sha &&
-    run.run_attempt >= verdict.run_attempt &&
-    run.display_title === `Squad review \u2014 PR #${target.pull_request}` &&
-    Array.isArray(run.pull_requests) &&
-    (run.pull_requests.length === 0 || run.pull_requests.some(pr => pr.number === target.pull_request &&
-      pr.head?.sha === target.head_sha && pr.base?.repo?.name === target.pr.base.repo.name)),
-  'verdict is not bound to this PR workflow run');
-  const attempt = run.run_attempt === verdict.run_attempt ? run :
-    await get(`repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}`);
-  requireThat(attempt.event === 'pull_request_target' && attempt.path === WORKFLOW &&
-    attempt.repository?.full_name === target.repository &&
-    attempt.head_sha === target.head_sha &&
-    attempt.run_attempt === verdict.run_attempt &&
-    timestamp(attempt.run_started_at) <= timestamp(verdict.timestamp) &&
-    (attempt.status !== 'completed' ||
-      timestamp(review.submitted_at) <= timestamp(attempt.updated_at)), 'verdict outside workflow run');
   if (relay) {
-    requireThat(attempt.status === 'completed' && attempt.conclusion === 'success',
+    requireThat(selected.attempt.status === 'completed' &&
+      timestamp(selected.attempt.updated_at) <= cutoff &&
+      selected.attempt.conclusion === 'success',
       'review run attempt did not succeed');
-    const jobs = await list(get,
-      `repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}/jobs`,
-      'jobs');
-    const authorityJobs = jobs.filter(job => job.name === AUTHORITY_JOB);
-    requireThat(authorityJobs.length === 1 && authorityJobs[0].conclusion === 'success' &&
-      timestamp(authorityJobs[0].completed_at) <= cutoff,
-    'base-controlled review authority job did not pass before merge');
+    requireThat(timestamp(selected.attempt.run_started_at) <= timestamp(verdict.timestamp) &&
+      timestamp(review.submitted_at) <= timestamp(selected.attempt.updated_at),
+    'verdict outside workflow run');
+    await assertAuthorityJob(target, get, selected, cutoff);
+  } else {
+    const run = await get(`repos/${target.repository}/actions/runs/${verdict.run_id}`);
+    requireThat(runMatchesTarget(run, target, verdict.run_id) &&
+      run.run_attempt >= verdict.run_attempt,
+    'verdict is not bound to this PR workflow run');
+    const attempt = run.run_attempt === verdict.run_attempt ? run :
+      await get(`repos/${target.repository}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}`);
+    requireThat(runMatchesTarget(attempt, target, verdict.run_id) &&
+      attempt.run_attempt === verdict.run_attempt &&
+      timestamp(attempt.run_started_at) <= timestamp(verdict.timestamp) &&
+      (attempt.status !== 'completed' ||
+        timestamp(review.submitted_at) <= timestamp(attempt.updated_at)), 'verdict outside workflow run');
   }
   if (verdict.result === 'REQUEST_CHANGES') {
     const comments = await list(get, `repos/${target.repository}/issues/${target.pull_request}/comments`);
-    const overrides = comments.filter(comment =>
-      String(comment.body ?? '').includes(OVERRIDE_PREFIX.trim()))
-      .filter(comment => {
-        const candidate = record(comment.body, OVERRIDE_PREFIX);
-        requireThat(typeof candidate.head_sha === 'string' && SHA.test(candidate.head_sha),
-          'override has an invalid head SHA');
-        return candidate.head_sha === target.head_sha;
-      });
+    const tagged = comments.filter(comment => String(comment.body ?? '').includes(OVERRIDE_PREFIX.trim()));
+    // Authorize the comment's AUTHOR -- human, admin permission -- before any
+    // marker content is parsed or counted. Checking identity first never
+    // requires touching the body, so an unauthorized actor (any non-admin
+    // collaborator, or a bot) cannot get their comment parsed at all, and
+    // cannot post a syntactically valid, SHA-matching lookalike purely to
+    // inflate the candidate count and veto a legitimate admin's override (the
+    // `overrides.length === 1` cardinality check below would otherwise refuse
+    // a real, authorized override whenever an unauthorized lookalike is also
+    // present). A malformed marker from an authorized admin still fails
+    // closed below -- it is never silently skipped.
+    const authorized = [];
+    const permissionCache = new Map();
+    for (const comment of tagged) {
+      if (comment.user?.type !== 'User' || !/^[\w-]+$/.test(comment.user?.login ?? '')) continue;
+      const login = comment.user.login;
+      if (!permissionCache.has(login)) {
+        permissionCache.set(login, await get(`repos/${target.repository}/collaborators/${login}/permission`));
+      }
+      const permission = permissionCache.get(login);
+      if (permission.permission !== 'admin') continue;
+      authorized.push(comment);
+    }
+    const overrides = authorized.filter(comment => {
+      const candidate = record(comment.body, OVERRIDE_PREFIX);
+      requireThat(typeof candidate.head_sha === 'string' && SHA.test(candidate.head_sha),
+        'override has an invalid head SHA');
+      return candidate.head_sha === target.head_sha;
+    });
     requireThat(overrides.length === 1, 'REQUEST_CHANGES needs exactly one explicit override');
     const comment = overrides[0];
     const override = record(comment.body, OVERRIDE_PREFIX);
@@ -406,13 +614,9 @@ export async function assertClearingReview(env, get, options = {}) {
       override.head_sha === target.head_sha && override.review_id === review.id &&
       typeof override.reason === 'string' && override.reason.trim().length >= 10,
     'invalid SHA-scoped override');
-    requireThat(comment.user?.type === 'User' && /^[\w-]+$/.test(comment.user.login) &&
-      timestamp(comment.created_at) >= timestamp(review.submitted_at) &&
+    requireThat(timestamp(comment.created_at) >= timestamp(review.submitted_at) &&
       timestamp(comment.updated_at) === timestamp(comment.created_at) &&
       timestamp(comment.created_at) <= cutoff, 'override must be a new, unedited human comment');
-    const permission = await get(
-      `repos/${target.repository}/collaborators/${comment.user.login}/permission`);
-    requireThat(permission.permission === 'admin', 'override requires repository administrator');
   }
   await reviewTarget(env, get, {
     ...options,

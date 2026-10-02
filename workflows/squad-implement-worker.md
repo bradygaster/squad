@@ -137,6 +137,7 @@ pre-agent-steps:
     env:
       SQUAD_REVIEW_PR: ${{ github.event.pull_request.number }}
       SQUAD_REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      SQUAD_REVIEW_WORKFLOW_SHA: ${{ github.event.pull_request.base.sha }}
       SQUAD_REVIEW_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     with:
       script: |
@@ -256,6 +257,7 @@ safe-outputs:
       env:
         SQUAD_REVIEW_PR: ${{ github.event.pull_request.number }}
         SQUAD_REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        SQUAD_REVIEW_WORKFLOW_SHA: ${{ github.event.pull_request.base.sha }}
         SQUAD_REVIEW_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       with:
         script: |

@@ -77,9 +77,30 @@ function provenanceRows(workflow: string): string[] {
 
 function assertRelayHeadBinding(workflow: string): void {
   const relay = workflow.match(/## skill: `squad-review-relay`([\s\S]*?)(?=\n## skill:)/)?.[1] ?? '';
-  expect(relay).toContain("`head_sha` equals the pull request's exact current head SHA");
-  expect(relay).toMatch(/review guard binds `workflow_sha` to the pull request's exact base\s+SHA/);
-  expect(relay).toContain("the run's `head_sha` is not the workflow source SHA");
+  const normalized = relay.replace(/\s+/g, ' ');
+  expect(normalized).toContain("`head_sha` equals the pull request's exact base/workflow SHA");
+  expect(normalized).toContain(
+    "`pull_requests[].head.sha` equals the pull request's exact current head SHA",
+  );
+  expect(normalized).toContain(
+    "review guard binds `workflow_sha` to the pull request's exact base SHA",
+  );
+  expect(normalized).toContain(
+    '`pull_requests[].head.sha` binds the reviewed revision to the exact pull request head',
+  );
+}
+
+function assertRelayRuntimeBinding(workflow: string): void {
+  const frontmatter = workflow.split('---')[1] ?? '';
+  const relayBindings = frontmatter.match(
+    /SQUAD_REVIEW_PR:[\s\S]*?SQUAD_REVIEW_DEFAULT_BRANCH:/g,
+  ) ?? [];
+  expect(relayBindings).toHaveLength(2);
+  for (const binding of relayBindings) {
+    expect(binding).toContain(
+      'SQUAD_REVIEW_WORKFLOW_SHA: ${{ github.event.pull_request.base.sha }}',
+    );
+  }
 }
 
 function assertReviewerContract(workflow: string): void {
@@ -319,12 +340,18 @@ describe('gh-aw enforcing Squad reviewer', () => {
     expect(relay).toMatch(/no base-controlled automatic review run exists for\s+the exact head/);
     assertRelayHeadBinding(ROUTER);
     assertRelayHeadBinding(read('workflows/package/squad.md'));
+    assertRelayRuntimeBinding(read('workflows/squad-implement-worker.md'));
+    assertRelayRuntimeBinding(read('workflows/package/squad-implement-worker.md'));
   });
 
   it('rejects dispatcher source mutations conflating API run head and workflow source', () => {
     for (const mutation of [
-      ROUTER.replace("`head_sha` equals the pull request's exact current head SHA",
-        "`head_sha` equals the pull request's exact base SHA"),
+      ROUTER.replace("`head_sha` equals the pull request's exact base/workflow SHA",
+        "`head_sha` equals the pull request's exact current head SHA"),
+      ROUTER.replace(
+        "`pull_requests[].head.sha` equals the pull request's exact current head SHA",
+        "`pull_requests[].head.sha` equals the pull request's exact base SHA",
+      ),
       ROUTER.replace("review guard binds `workflow_sha` to the pull request's exact base",
         "review guard binds `workflow_sha` to the pull request's exact head"),
     ]) {
@@ -351,12 +378,12 @@ describe('gh-aw enforcing Squad reviewer', () => {
 
   it('declares the complete native package for the pinned compiler job', () => {
     const manifest = read('workflows/aw.yml');
-    expect(manifest).toContain('min-version: v0.89.21');
+    expect(manifest).toContain('min-version: v0.89.22');
     expect(manifest.match(/destination: \.github\/workflows\/squad(?:-[\w-]+)?\.md/g)).toHaveLength(8);
     expect(manifest.match(/source: package\/squad(?:-[\w-]+)?\.md/g)).toHaveLength(8);
     expect(manifest).toContain('  - skills/gh-aw-enlistment');
     expect(read('.github/workflows/squad-ci.yml')).toContain(
-      'gh extension install --force --pin v0.89.21 github/gh-aw',
+      'gh extension install --force --pin v0.89.22 github/gh-aw',
     );
   });
 
@@ -415,9 +442,11 @@ describe('gh-aw enforcing Squad reviewer', () => {
   });
 
   it('enforces attribution priority and refuses malformed or unattributed automatic provenance', () => {
+    expect(REVIEWER).toContain('Build its exact regular expression by concatenating');
     expect(REVIEWER).toContain(
-      '^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$',
+      '`^<`, then\n`!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$`',
     );
+    expect(REVIEWER).not.toContain('^<!-- squad:implement');
     expect(REVIEWER).toContain('require exactly one marker-like occurrence');
     expect(REVIEWER).toContain('^squad/implement-{captured-issue}-');
     assertReviewerContract(REVIEWER);
@@ -469,6 +498,11 @@ describe('gh-aw enforcing Squad reviewer', () => {
   it('strict-compiles to read-only agent permissions and an always-running final gate', () => {
     const { lock, safeOutputs } = compileReviewer();
     assertCompiledGate(lock);
+    expect(lock).toContain('Build its exact regular expression by concatenating');
+    expect(lock).toContain(
+      '`^<`, then\\n`!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$`',
+    );
+    expect(lock).not.toContain('body line matching\\n`^$`');
     const agentJob = lock.match(/^  agent:\n([\s\S]*?)(?=^  [\w-]+:\n)/m)?.[1] ?? '';
     const permissionBlock = yamlBlock(agentJob, 'permissions');
     const workflow = parse(lock);

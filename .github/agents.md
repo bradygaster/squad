@@ -34,8 +34,9 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 > `/squad` slash commands become active only after that merge reaches
 > the repository's default branch.
 > The installation PR is a manual trust boundary: its PR-controlled workflow
-> cannot mint a trusted Squad verdict. After merge, require the automatically
-> opened Cast PR to pass the deterministic relay's native
+> cannot mint a trusted Squad verdict. After merge, require the Cast PR
+> (automatically opened, or manually opened from a signed fallback issue when
+> `GITHUB_TOKEN` cannot create it) to pass the deterministic relay's native
 > `Squad Review / review` job, which is authoritative only when it validates the
 > exact trusted automatic run from the base-controlled `pull_request_target`
 > workflow. Authoritative merge enforcement requires a source-bound
@@ -47,9 +48,22 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 The quick start installs this workflow set:
 
 ```bash
-SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+SQUAD_SHA="<40-character-commit-sha>"  # explicit, maintainer-approved; never `commits/dev`
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 ```
+
+The removal is intentional: gh-aw v0.89.22 generates that generic tool-owned
+router, which loads mutable prompts from the current `github/gh-aw` repository.
+It is not Squad-owned or bound to `SQUAD_SHA`. Keep the exact
+`.github/skills/gh-aw-enlistment/SKILL.md` installed by Squad.
+This repository routes gh-aw work directly through the
+`agentic-workflows-dev` specialist in `.squad/routing.md`, with the local
+`agentic-workflow-designer` and `gh-aw-reliability` skills for design and
+contract validation. None depends on the deleted router. Retaining a rewritten
+or pinned copy would make Squad the owner of a forked generic gh-aw prompt
+router and its upstream corpus; removal preserves the package boundary without
+vendoring or synchronizing that mutable scaffold.
 
 This command:
 

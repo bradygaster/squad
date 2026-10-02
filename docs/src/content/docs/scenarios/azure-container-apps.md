@@ -6,8 +6,6 @@ order: 20
 
 # Azure Container Apps Deployment
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Azure Container Apps (ACA) is the lowest-friction path to running Squad in production on Azure. ACA provides managed KEDA scaling, managed TLS/ingress, and native workload identity — so you get autoscaling and secretless authentication without managing a Kubernetes control plane.
 
 This guide takes you from zero to a running Squad agent that polls a GitHub repository and executes issues automatically.

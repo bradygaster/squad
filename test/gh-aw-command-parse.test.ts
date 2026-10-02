@@ -4,7 +4,10 @@ import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import {
   classifySquadCommand,
+  commandRequiresAuthorization,
+  editedCommandShouldRoute,
   enforceSquadCommandContract,
+  isAuthorizedPermission,
   rejectionComment,
 } from '../workflows/shared/squad-command-contract.mjs';
 
@@ -36,9 +39,10 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
   ])('%s call site', (_name, payload) => {
     it.each([
       ['/squad cast', 'cast', null],
+      [' /squad cast ', 'cast', null],
       ['  /squad cast  ', 'cast', null],
+      ['   /squad cast   ', 'cast', null],
       ['Context first.\n\n/squad status   ', 'status', null],
-      ['Please run /squad plan implementation', 'plan implementation', null],
       ['/squad research Focus only on proposal P1', 'research', null],
       ['/squad activate phase 2', 'activate', 2],
       ['/squad plan accept implementation phase 12', 'plan accept implementation', 12],
@@ -82,6 +86,27 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         });
       },
     );
+
+    it.each([
+      ['Please run /squad plan implementation', 'embedded prose'],
+      ['Use `/squad cast` after review.', 'inline code'],
+      ['```text\n/squad cast\n```', 'fenced code'],
+      ['~~~text\n/squad cast\n~~~', 'tilde-fenced code'],
+      ['````text\n```\n/squad cast\n````', 'code after a shorter backtick fence'],
+      ['~~~~text\n~~~\n/squad cast\n~~~~', 'code after a shorter tilde fence'],
+      ['````text\n~~~~\n/squad cast\n````', 'code after a different fence delimiter'],
+      ['````text\n```` trailing-info\n/squad cast\n````', 'code after a fence with trailing info'],
+      ['    /squad cast', 'four-space-indented code'],
+      ['\t/squad cast', 'tab-indented code'],
+      [' \t/squad cast', 'one-space-plus-tab-indented code'],
+      ['  \t/squad cast', 'two-spaces-plus-tab-indented code'],
+      ['   \t/squad cast', 'three-spaces-plus-tab-indented code'],
+    ])('ignores %s instead of activating control-plane work', (body) => {
+      expect(classifySquadCommand(payload(body), 'issues')).toEqual({
+        status: 'none',
+        source: _name === 'issue body' ? 'issue' : 'comment',
+      });
+    });
   });
 
   describe('workflow_dispatch call site', () => {
@@ -91,12 +116,111 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       ['\n\n/squad status\n', 'status', null],
       ['activate phase 3', 'activate', 3],
       ['research Focus only on P1', 'research', null],
+      ['revoke-improvement', 'revoke-improvement', null],
     ])('accepts bare or slash-prefixed dispatch %j', (command, mode, phase) => {
       expect(classifySquadCommand(dispatch(command), 'workflow_dispatch')).toMatchObject({
         status: 'accepted',
         source: 'workflow_dispatch',
         mode,
         phase,
+      });
+    });
+
+    describe.each([
+      ['issues', issue],
+      ['issue_comment', comment],
+    ] as const)('edited-event replay gate for %s', (eventName, payload) => {
+      function edited(previousBody: unknown, currentBody: string) {
+        return {
+          ...payload(currentBody),
+          action: 'edited',
+          changes: { body: { from: previousBody } },
+        };
+      }
+
+      it.each([
+        [
+          'Context before.\n/squad plan implementation\nContext after.',
+          'Changed context before.\n\n  /squad   plan   implementation  \nChanged context after.',
+        ],
+        [
+          'Context before.\n/squad status extra\nContext after.',
+          'Changed context before.\n\n /squad   status   extra \nChanged context after.',
+        ],
+      ])('noops when only surrounding prose or command whitespace changes', (before, after) => {
+        const event = edited(before, after);
+        const current = classifySquadCommand(event, eventName);
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(false);
+      });
+
+      it.each([
+        ['/squad DANCE', '/squad dance'],
+        ['/squad STATUS EXTRA', '/squad status extra'],
+      ])('noops a rejected invocation case-only edit while preserving its current text: %j -> %j', (before, after) => {
+        const event = edited(before, after);
+        const current = classifySquadCommand(event, eventName);
+        expect(current).toMatchObject({ status: 'rejected', rejectedCommand: after });
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(false);
+        expect(rejectionComment(current as Extract<typeof current, { status: 'rejected' }>))
+          .toContain(`\`\`\`text\n${after}\n\`\`\``);
+      });
+
+      it.each([
+        ['ordinary body', '/squad status'],
+        ['/squad status', '/squad plan'],
+        ['/squad status extra', '/squad dance'],
+        ['Use `/squad status` after review.', '/squad status'],
+        ['```text\n/squad status\n```', '/squad status'],
+      ])('routes a newly introduced or materially changed command: %j -> %j', (before, after) => {
+        const event = edited(before, after);
+        const current = classifySquadCommand(event, eventName);
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(true);
+      });
+
+      it('rejects issue-body and edited-comment revocations but accepts a new comment revocation', () => {
+        expect(classifySquadCommand(issue('/squad revoke-improvement'), 'issues')).toMatchObject({
+          status: 'rejected',
+          source: 'issue',
+          reason: 'Issue-body revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+        });
+        expect(classifySquadCommand(comment('/squad revoke-improvement'), 'issue_comment')).toMatchObject({
+          status: 'accepted',
+          source: 'comment',
+          mode: 'revoke-improvement',
+        });
+        expect(classifySquadCommand({
+          ...comment('/squad revoke-improvement'),
+          action: 'edited',
+        }, 'issue_comment')).toMatchObject({
+          status: 'rejected',
+          source: 'comment',
+          reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+        });
+      });
+
+      if (eventName === 'issue_comment') {
+        it('routes an unchanged edited revocation from its accepted pre-edit state to rejection', () => {
+          const event = edited('/squad revoke-improvement', '/squad revoke-improvement');
+          const current = classifySquadCommand(event, eventName);
+          expect(current).toMatchObject({
+            status: 'rejected',
+            reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+          });
+          expect(editedCommandShouldRoute(event, eventName, current)).toBe(true);
+        });
+      }
+
+      it.each([
+        undefined,
+        null,
+        42,
+        { unexpected: 'shape' },
+      ])('fails closed when previous-body evidence is unavailable or malformed: %j', previousBody => {
+        const event = previousBody === undefined
+          ? { ...payload('/squad status'), action: 'edited' }
+          : edited(previousBody, '/squad status');
+        const current = classifySquadCommand(event, eventName);
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(false);
       });
     });
 
@@ -136,6 +260,23 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(posted[0].body).toContain('```text\n/squad status extra\n```');
     expect(posted[0].body).toContain('Unknown command or malformed arguments.');
     expect(posted[0].body).toContain('The workflow stopped without running a Squad mode.');
+  });
+
+  it('fails the shared main-workflow contract for an issue-body revocation', async () => {
+    const posted: Array<{ issueNumber: number; body: string }> = [];
+    await expect(
+      enforceSquadCommandContract({
+        payload: issue('/squad revoke-improvement'),
+        eventName: 'issues',
+        createComment: async (issueNumber, body) => {
+          posted.push({ issueNumber, body });
+        },
+      }),
+    ).rejects.toThrow('Squad rejected command: /squad revoke-improvement');
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({ issueNumber: 1824 });
+    expect(posted[0].body).toContain('Issue-body revocations are not durable.');
   });
 
   it('does not comment or throw for valid commands and no-invocation non-events', async () => {
@@ -179,6 +320,16 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(WORKFLOW).not.toContain('### Step PC-1: Extract the command argument');
   });
 
+  it('declares roles: all so write-role gating does not block modes open to everyone (#2)', () => {
+    expect(DISCOVERY_WORKFLOW).toMatch(/^on:\n\s+roles:\s*all\n/m);
+  });
+
+  it('forwards originating comment provenance via aw_context on the relayed dispatch (#3)', () => {
+    expect(DISCOVERY_WORKFLOW).toContain('comment_id: context.payload.comment?.id ?? null');
+    expect(DISCOVERY_WORKFLOW).toContain('aw_context: awContext');
+    expect(DISCOVERY_WORKFLOW).toContain("inputs: {");
+  });
+
   it('routes commands outside gh-aw start-only activation through the same contract', () => {
     expect(DISCOVERY_WORKFLOW).toContain("contains(github.event.issue.body, '/squad')");
     expect(DISCOVERY_WORKFLOW).toContain("contains(github.event.comment.body, '/squad')");
@@ -186,12 +337,31 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(DISCOVERY_WORKFLOW).toContain("startsWith(github.event.comment.body, '/squad ')");
     expect(DISCOVERY_WORKFLOW).toContain('squad-command-contract.mjs');
     expect(DISCOVERY_WORKFLOW).toContain('classifySquadCommand');
+    expect(DISCOVERY_WORKFLOW).toContain('commandRequiresAuthorization');
+    expect(DISCOVERY_WORKFLOW).toContain('getCollaboratorPermissionLevel');
+    expect(DISCOVERY_WORKFLOW).toContain('isAuthorizedPermission');
+    expect(DISCOVERY_WORKFLOW).toContain('No standalone Squad command was found');
     expect(DISCOVERY_WORKFLOW).toContain('rejectionComment');
     expect(DISCOVERY_WORKFLOW).toContain('github.rest.issues.createComment');
     expect(DISCOVERY_WORKFLOW).toContain('core.setFailed(`Squad rejected command:');
     expect(DISCOVERY_WORKFLOW).toContain('github.rest.actions.createWorkflowDispatch');
     expect(DISCOVERY_WORKFLOW).toContain("workflow_id: 'squad.lock.yml'");
     expect(DISCOVERY_WORKFLOW).toContain("command: result.argumentText || 'cast'");
+  });
+
+  it('keeps open modes public and fails mutating modes closed on collaborator permission', () => {
+    for (const mode of ['status', 'review', 'research', 'plan']) {
+      expect(commandRequiresAuthorization({ status: 'accepted', mode })).toBe(false);
+    }
+    for (const mode of ['cast', 'triage', 'plan implementation', 'implement', 'revoke-improvement']) {
+      expect(commandRequiresAuthorization({ status: 'accepted', mode })).toBe(true);
+    }
+    expect(isAuthorizedPermission('admin')).toBe(true);
+    expect(isAuthorizedPermission('maintain')).toBe(true);
+    expect(isAuthorizedPermission('write')).toBe(true);
+    expect(isAuthorizedPermission('triage')).toBe(false);
+    expect(isAuthorizedPermission('read')).toBe(false);
+    expect(isAuthorizedPermission('unresolved')).toBe(false);
   });
 
   it('realistic source mutation is caught by the accepted-command fixtures', async () => {
@@ -214,6 +384,103 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         status: 'accepted',
         mode: 'status',
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('realistic mutations expose issue-body revocation dispatch and rejected case-only replay', async () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    const root = mkdtempSync(join(TEST_ROOT, 'command-revoke-replay-mutants-'));
+    try {
+      const source = join(process.cwd(), 'workflows', 'shared', 'squad-command-contract.mjs');
+      const original = readFileSync(source, 'utf8');
+
+      const revokeMutant = join(root, 'squad-command-contract-revoke-mutant.mjs');
+      const withoutIssueGuard = original.replace(
+        "  if (sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {",
+        "  if (false && sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {",
+      );
+      expect(withoutIssueGuard).not.toBe(original);
+      writeFileSync(revokeMutant, withoutIssueGuard);
+      const revokeModule = await import(`${pathToFileURL(revokeMutant).href}?mutation=${Date.now()}`);
+      expect(revokeModule.classifySquadCommand(issue('/squad revoke-improvement'), 'issues'))
+        .toMatchObject({ status: 'accepted', mode: 'revoke-improvement' });
+
+      const replayMutant = join(root, 'squad-command-contract-replay-mutant.mjs');
+      const withoutRejectedCaseNormalization = original.replace(
+        "result.rejectedCommand.replace(/\\s+/g, ' ').trim().toLowerCase(),",
+        "result.rejectedCommand.replace(/\\s+/g, ' ').trim(),",
+      );
+      expect(withoutRejectedCaseNormalization).not.toBe(original);
+      writeFileSync(replayMutant, withoutRejectedCaseNormalization);
+      const replayModule = await import(`${pathToFileURL(replayMutant).href}?mutation=${Date.now() + 1}`);
+      const editedEvent = {
+        ...comment('/squad status extra'),
+        action: 'edited',
+        changes: { body: { from: '/squad STATUS EXTRA' } },
+      };
+      const current = replayModule.classifySquadCommand(editedEvent, 'issue_comment');
+      expect(replayModule.editedCommandShouldRoute(editedEvent, 'issue_comment', current)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('realistic fence-length mutation exposes a hidden command and is caught', async () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    const root = mkdtempSync(join(TEST_ROOT, 'command-fence-mutant-'));
+    try {
+      const source = join(process.cwd(), 'workflows', 'shared', 'squad-command-contract.mjs');
+      const mutant = join(root, 'squad-command-contract-mutant.mjs');
+      cpSync(source, mutant);
+      const original = readFileSync(mutant, 'utf8');
+      const changed = original.replace(
+        '        && closingFence[1].length >= fence.length) {',
+        '        ) {',
+      );
+      expect(changed).not.toBe(original);
+      writeFileSync(mutant, changed);
+      const module = await import(`${pathToFileURL(mutant).href}?mutation=${Date.now()}`);
+      const hidden = comment('````text\n```\n/squad cast\n````');
+      expect(module.classifySquadCommand(hidden, 'issue_comment')).toMatchObject({
+        status: 'accepted',
+        mode: 'cast',
+      });
+      expect(classifySquadCommand(hidden, 'issue_comment')).toEqual({
+        status: 'none',
+        source: 'comment',
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('realistic CommonMark tab-indentation mutation exposes hidden commands and is caught', async () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    const root = mkdtempSync(join(TEST_ROOT, 'command-indent-mutant-'));
+    try {
+      const source = join(process.cwd(), 'workflows', 'shared', 'squad-command-contract.mjs');
+      const mutant = join(root, 'squad-command-contract-mutant.mjs');
+      cpSync(source, mutant);
+      const original = readFileSync(mutant, 'utf8');
+      const changed = original.replace(
+        '/^(?: {4}| {0,3}\\t)/',
+        '/^(?: {4}|\\t)/',
+      );
+      expect(changed).not.toBe(original);
+      writeFileSync(mutant, changed);
+      const module = await import(`${pathToFileURL(mutant).href}?mutation=${Date.now()}`);
+      for (const body of [' \t/squad cast', '  \t/squad cast', '   \t/squad cast']) {
+        expect(module.classifySquadCommand(comment(body), 'issue_comment')).toMatchObject({
+          status: 'accepted',
+          mode: 'cast',
+        });
+        expect(classifySquadCommand(comment(body), 'issue_comment')).toEqual({
+          status: 'none',
+          source: 'comment',
+        });
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

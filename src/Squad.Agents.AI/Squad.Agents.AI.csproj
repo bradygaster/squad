@@ -18,24 +18,17 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      Prerelease because Microsoft.Agents.AI.GitHub.Copilot 1.15.0-rc1 (below) is itself a
-      prerelease package. A STABLE Squad.Agents.AI depending on a prerelease package makes
-      `dotnet pack` emit NU5104 ("A stable release ... should not have a prerelease
-      dependency"). Prior releases (0.2.0 through 0.5.5) stayed stable and carried that
-      warning silently; this bump actually resolves it instead of suppressing it, and
-      matches the "-rc1" convention already used by the adapter dependency itself. Bump
-      back to a stable version only once Microsoft.Agents.AI.GitHub.Copilot ships a GA
-      release (dev->main promotions already require bumping this by hand; see
-      squad-agents-ai-release.yml, which refuses to publish a prerelease Version from main).
+      Stable package version. Publication is a separate human-triggered release step;
+      setting this version does not publish the package.
     -->
-    <Version>0.5.6-rc1</Version>
+    <Version>1.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="samples/**/*.cs" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Squad.Agents.AI.Tests" />
-    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.22.0" />
+    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.23.0" />
     <!--
       Direct reference to GitHub.Copilot.SDK so its build/ targets fire during our build.
       Without this, the SDK's MSBuild download/copy targets only flow to projects with a

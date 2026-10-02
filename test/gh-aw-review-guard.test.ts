@@ -6,6 +6,12 @@ import {
   assertClearingReview, enforceReviewOutputs, OVERRIDE_PREFIX,
   reviewTarget, validateAttribution, validateVerdict, VERDICT_PREFIX,
 } from '../workflows/shared/squad-review-guard.mjs';
+import {
+  BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
+  bootstrapPrFallbackIssueMarker,
+  buildBootstrapPrFallbackCompareUrl,
+  buildBootstrapPrFallbackProvenanceLine,
+} from '../workflows/shared/squad-bootstrap-validator.mjs';
 
 const REPOSITORY = 'squad/example';
 const HEAD = 'a'.repeat(40);
@@ -27,7 +33,8 @@ afterEach(() => {
 function fixture(relay = false) {
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
   const env = {
-    GITHUB_EVENT_NAME: 'pull_request_target', GITHUB_REPOSITORY: REPOSITORY,
+    GITHUB_EVENT_NAME: relay ? 'pull_request' : 'pull_request_target',
+    GITHUB_REPOSITORY: REPOSITORY,
     GITHUB_SERVER_URL: 'https://github.com',
     GITHUB_RUN_ID: '17', GITHUB_RUN_ATTEMPT: '1',
     SQUAD_REVIEW_PR: '42', SQUAD_REVIEW_HEAD: HEAD,
@@ -46,7 +53,7 @@ function fixture(relay = false) {
   };
   const pr = {
     number: 42, state: relay ? 'closed' : 'open', merged: relay, merged_at: MERGED,
-    title: 'Implementation',
+    title: 'Implementation', created_at: START,
     body: '<!-- squad:implement issue=9 run=7 -->',
     user: { login: 'human', type: 'User' },
     head: { sha: HEAD, ref: 'squad/implement-9-fix', repo: { full_name: REPOSITORY, name: 'example' } },
@@ -65,9 +72,10 @@ function fixture(relay = false) {
     body: '',
   };
   const run = {
+    id: 17,
     event: 'pull_request_target', path: '.github/workflows/squad-review.lock.yml',
     display_title: 'Squad review \u2014 PR #42',
-    repository: { full_name: REPOSITORY }, head_sha: HEAD, run_attempt: 1,
+    repository: { full_name: REPOSITORY }, head_sha: BASE, run_attempt: 1,
     pull_requests: [{ number: 42, head: { sha: HEAD }, base: { repo: { name: 'example' } } }],
     run_started_at: START, updated_at: FINISHED, status: 'completed', conclusion: 'success',
   };
@@ -94,6 +102,18 @@ function fixture(relay = false) {
   const state = {
     reviews: [review], comments: [] as typeof comment[], permission: 'admin',
     missingManifest: false, calls: [] as string[], prReads: 0, changeAfterFirstRead: false,
+    workflowRuns: [run],
+    attempts: new Map([[1, run]]),
+    attemptJobs: new Map([[1, jobs]]),
+    repoIssues: [] as Record<string, unknown>[],
+    extraRuns: new Map<string, Record<string, unknown>>(),
+    compareStatus: 'diverged' as 'identical' | 'ahead' | 'behind' | 'diverged',
+    compareThrows: 0 as number,
+    compareOmitStatus: false,
+    compareOmitBaseCommit: false,
+    compareOmitMergeBaseCommit: false,
+    compareBaseCommitShaOverride: undefined as string | undefined,
+    compareMergeBaseShaOverride: undefined as string | undefined,
   };
   const encode = (value: unknown) => {
     const content = Buffer.from(JSON.stringify(value));
@@ -112,6 +132,21 @@ function fixture(relay = false) {
     if (route === `repos/${REPOSITORY}`) {
       return { full_name: REPOSITORY, default_branch: 'dev' };
     }
+    if (route === `repos/${REPOSITORY}/issues`) return state.repoIssues;
+    const compare = route.match(/\/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})$/);
+    if (compare) {
+      const [, baseSha, headSha] = compare;
+      if (state.compareThrows) throw Object.assign(new Error('API error'), { status: state.compareThrows });
+      const status = baseSha === headSha ? 'identical' : state.compareStatus;
+      const resolvedBaseSha = state.compareBaseCommitShaOverride ?? baseSha;
+      const result: Record<string, unknown> = {};
+      if (!state.compareOmitStatus) result.status = status;
+      if (!state.compareOmitBaseCommit) result.base_commit = { sha: resolvedBaseSha };
+      if (!state.compareOmitMergeBaseCommit) {
+        result.merge_base_commit = { sha: state.compareMergeBaseShaOverride ?? resolvedBaseSha };
+      }
+      return result;
+    }
     if (route.endsWith('/contents/.squad-review.json')) {
       expect(fields?.ref).toBe(HEAD);
       if (state.missingManifest) {
@@ -124,10 +159,17 @@ function fixture(relay = false) {
       return encode(registry);
     }
     if (route.endsWith('/reviews')) return state.reviews;
+    if (route.endsWith('/actions/workflows/squad-review.lock.yml/runs')) {
+      return { workflow_runs: state.workflowRuns };
+    }
     if (route.endsWith('/actions/runs/17')) return run;
     if (route.endsWith('/actions/runs/29')) return bootstrapRun;
-    if (route.endsWith('/attempts/1')) return { ...run, run_attempt: 1, run_started_at: START };
-    if (/\/attempts\/[12]\/jobs$/.test(route)) return { jobs };
+    const genericRun = route.match(/\/actions\/runs\/([1-9]\d*)$/);
+    if (genericRun && state.extraRuns.has(genericRun[1])) return state.extraRuns.get(genericRun[1]);
+    const attempt = route.match(/\/actions\/runs\/\d+\/attempts\/(\d+)$/);
+    if (attempt) return state.attempts.get(Number(attempt[1]));
+    const attemptJobs = route.match(/\/actions\/runs\/\d+\/attempts\/(\d+)\/jobs$/);
+    if (attemptJobs) return { jobs: state.attemptJobs.get(Number(attemptJobs[1])) ?? [] };
     if (route.endsWith('/comments')) return state.comments;
     if (route.endsWith('/permission')) return { permission: state.permission };
     throw new Error(`Unexpected API route: ${route}`);
@@ -167,7 +209,74 @@ function makeBootstrap(f: ReturnType<typeof fixture>) {
   f.sync();
 }
 
+type BootstrapPrFallbackIssueOptions = {
+  headBranch: string;
+  baseBranch: string;
+  baseSha?: string;
+  headSha?: string;
+  runId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  author?: { login: string; type: string };
+  title?: string;
+  state?: string;
+  compareUrlOverride?: string;
+  omitProvenance?: boolean;
+  omitMarker?: boolean;
+};
+
+function makeBootstrapPrFallbackIssue(options: BootstrapPrFallbackIssueOptions) {
+  const {
+    headBranch, baseBranch, baseSha = BASE, headSha = HEAD, runId = '29', createdAt = START, updatedAt = createdAt,
+    author = { login: 'github-actions[bot]', type: 'Bot' },
+    title = BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE, state = 'open',
+    compareUrlOverride, omitProvenance = false, omitMarker = false,
+  } = options;
+  const compareUrl = buildBootstrapPrFallbackCompareUrl({
+    repository: REPOSITORY, baseBranch, headBranch, title: '[squad] Cast your Squad', server: 'https://github.com',
+  });
+  const provenanceLine = omitProvenance ? '' : `${buildBootstrapPrFallbackProvenanceLine({
+    repository: REPOSITORY, runId, baseBranch, baseSha, headBranch, headSha,
+    compareUrl: compareUrlOverride ?? compareUrl,
+  })}\n`;
+  const marker = omitMarker ? '' : `${bootstrapPrFallbackIssueMarker(headBranch)}\n`;
+  return {
+    state,
+    user: author,
+    title,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    body: `${marker}${provenanceLine}\n${compareUrl}`,
+  };
+}
+
+// A human manually opened the Cast PR from the compare-URL link in the bootstrap fallback issue,
+// after automated pull request creation was permission-denied (documented alongside item 8's mandatory
+// `can_approve_pull_request_reviews: false` policy). This PR carries no bot provenance comment; squad
+// review re-verifies it against the bot-authored, signed fallback issue's provenance record instead.
+// Its title must still be the canonical Cast title: the compare URL a human is asked to open already
+// pre-fills it, and classifyBootstrapState() rejects any PR on this branch with another title.
+function makeBootstrapPrFallback(
+  f: ReturnType<typeof fixture>,
+  issueOverrides: Partial<BootstrapPrFallbackIssueOptions> = {},
+) {
+  f.state.missingManifest = true;
+  f.pr.title = '[squad] Cast your Squad';
+  f.pr.user = { login: 'human', type: 'User' };
+  f.pr.head.ref = 'squad/bootstrap-cast';
+  f.pr.head.sha = HEAD;
+  f.pr.created_at = START;
+  f.pr.body = 'Opened manually from the fallback issue compare link.';
+  f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+    headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, baseSha: f.pr.base.sha, headSha: HEAD, runId: '29',
+    createdAt: START, ...issueOverrides,
+  })];
+  f.sync();
+}
+
 function retainFirstAttempt(f: ReturnType<typeof fixture>) {
+  const firstAttempt = structuredClone(f.run);
+  const firstJobs = structuredClone(f.jobs);
   const first = structuredClone(f.review);
   first.body = `${VERDICT_PREFIX}${JSON.stringify({ ...f.verdict, result: 'REQUEST_CHANGES' })}`;
   f.review.id = 124;
@@ -179,6 +288,10 @@ function retainFirstAttempt(f: ReturnType<typeof fixture>) {
   f.run.updated_at = '2026-09-28T12:02:30Z';
   f.jobs[0].started_at = FINISHED;
   f.jobs[0].completed_at = f.run.updated_at;
+  f.state.attempts.set(1, firstAttempt);
+  f.state.attempts.set(2, f.run);
+  f.state.attemptJobs.set(1, firstJobs);
+  f.state.attemptJobs.set(2, f.jobs);
   f.state.reviews = [first, f.review];
   f.sync();
   return first;
@@ -253,6 +366,362 @@ describe('independent Squad review guard', () => {
       .rejects.toThrow('base-controlled bootstrap run did not complete successfully');
   });
 
+  it('accepts bot-authored bootstrap provenance when the install commit is identical to the live base', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+    });
+    expect(f.state.calls).toContain(`repos/${REPOSITORY}/compare/${BASE}...${BASE}`);
+  });
+
+  it('accepts bot-authored bootstrap provenance when the default branch fast-forwarded after installation', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    const advancedBase = 'd'.repeat(40);
+    f.pr.base.sha = advancedBase;
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = advancedBase;
+    f.state.compareStatus = 'ahead';
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+    });
+    expect(f.state.calls).toContain(`repos/${REPOSITORY}/compare/${BASE}...${advancedBase}`);
+  });
+
+  it.each([
+    ['diverged', (f: ReturnType<typeof fixture>) => { f.state.compareStatus = 'diverged'; }],
+    ['behind', (f: ReturnType<typeof fixture>) => { f.state.compareStatus = 'behind'; }],
+    ['missing status', (f: ReturnType<typeof fixture>) => {
+      f.state.compareOmitStatus = true;
+    }],
+    ['missing base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareOmitBaseCommit = true;
+    }],
+    ['missing merge_base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareOmitMergeBaseCommit = true;
+    }],
+    ['mismatched base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareBaseCommitShaOverride = 'e'.repeat(40);
+    }],
+    ['mismatched merge_base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareMergeBaseShaOverride = 'f'.repeat(40);
+    }],
+  ])('rejects bot-authored bootstrap provenance when compare evidence is %s', async (_label, mutate) => {
+    const f = fixture();
+    makeBootstrap(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    mutate(f);
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap provenance install commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it.each([
+    ['404', 404],
+    ['rate limit', 403],
+    ['general API failure', 500],
+  ])('fails closed when the bot-authored bootstrap compare API returns %s', async (_label, status) => {
+    const f = fixture();
+    makeBootstrap(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareThrows = status;
+    await expect(reviewTarget(f.env, f.get)).rejects.toMatchObject({ status });
+  });
+
+  it('accepts the documented manual bootstrap pull request fallback when live data exactly matches the signed provenance record', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.state.reviews = [];
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+      reviewer_agent: '@squad/base-controlled-review',
+    });
+
+    const workspace = mkdtempSync(join(tmpdir(), 'squad-review-bootstrap-fallback-'));
+    workspaces.push(workspace);
+    const path = join(workspace, 'output.json');
+    writeFileSync(path, JSON.stringify({ items: [{
+      type: 'submit_pull_request_review', event: 'COMMENT', body: 'Manual Cast PR fallback reviewed.',
+    }] }));
+    await enforceReviewOutputs({ ...f.env, GH_AW_AGENT_OUTPUT: path }, f.get);
+    const output = JSON.parse(readFileSync(path, 'utf8'));
+    expect(output.items[0].body).toContain('"author_agent":"@squad/base-controlled-bootstrap"');
+    expect(output.items[0].body).toContain('"reviewer_agent":"@squad/base-controlled-review"');
+  });
+
+  it('requires successful base-controlled bootstrap completion at the clearing gate for the fallback path too', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.bootstrapRun.status = 'in_progress';
+    f.bootstrapRun.conclusion = null;
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+    });
+    await expect(assertClearingReview(f.env, f.get))
+      .rejects.toThrow('base-controlled bootstrap run did not complete successfully');
+  });
+
+  it('does not extend the fallback trust path to an unrelated PR on the Cast branch with no matching issue', async () => {
+    const f = fixture();
+    f.state.missingManifest = true;
+    // Canonical title so this isolates the "no matching fallback issue" rejection path from the
+    // separate (also-covered) wrong-title rejection path.
+    f.pr.title = '[squad] Cast your Squad';
+    f.pr.user = { login: 'human', type: 'User' };
+    f.pr.head.ref = 'squad/bootstrap-cast';
+    f.pr.body = 'No fallback issue exists for this branch.';
+    f.state.repoIssues = [];
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'missing base-controlled bootstrap PR fallback issue',
+    );
+  });
+
+  it('rejects a fallback-path PR with a non-canonical title even if a matching fallback issue exists', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.title = 'Manually opened Cast PR';
+    f.sync();
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'pull request does not match the documented manual Cast fallback shape',
+    );
+  });
+
+  it('rejects a fallback-path PR authored by a non-human, non-Bot account type (regression: only an actual User account qualifies)', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.user = { login: 'some-app', type: 'Organization' };
+    f.sync();
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'pull request does not match the documented manual Cast fallback shape',
+    );
+  });
+
+  it('still refuses an ordinary (non-fallback) human-authored PR with the unchanged bootstrap provenance error', async () => {
+    const f = fixture();
+    f.state.missingManifest = true;
+    f.pr.title = 'Unrelated change';
+    f.pr.user = { login: 'human', type: 'User' };
+    f.pr.head.ref = 'squad/implement-9-fix';
+    f.pr.body = 'An ordinary implementation PR, not on the Cast branch.';
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'missing or duplicate base-controlled bootstrap PR provenance',
+    );
+  });
+
+  it('refuses the fallback trust path when duplicate open fallback issues are ambiguous', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.state.repoIssues.push(makeBootstrapPrFallbackIssue({
+      headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, runId: '29',
+    }));
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('Ambiguous bootstrap PR fallback issues');
+  });
+
+  it.each([
+    ['forged (non-bot) author', (f: ReturnType<typeof fixture>) => {
+      (f.state.repoIssues[0] as { user: unknown }).user = { login: 'attacker', type: 'User' };
+    }],
+    ['edited after creation', (f: ReturnType<typeof fixture>) => {
+      (f.state.repoIssues[0] as { updated_at: string }).updated_at = SUBMITTED;
+    }],
+    ['closed', (f: ReturnType<typeof fixture>) => {
+      (f.state.repoIssues[0] as { state: string }).state = 'closed';
+    }],
+    ['titled incorrectly', (f: ReturnType<typeof fixture>) => {
+      (f.state.repoIssues[0] as { title: string }).title = 'A different issue';
+    }],
+    ['missing its branch marker', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, omitMarker: true,
+      })];
+    }],
+    ['missing its provenance record', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, omitProvenance: true,
+      })];
+    }],
+    ['bound to the wrong repository', (f: ReturnType<typeof fixture>) => {
+      const issue = f.state.repoIssues[0] as { body: string };
+      issue.body = issue.body.replace(`"repository":"${REPOSITORY}"`, '"repository":"attacker/squad"');
+    }],
+    ['bound to the wrong base branch', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: 'main', headSha: HEAD,
+      })];
+    }],
+    ['bound to a stale base commit SHA (the default branch advanced since the issue was opened)', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, baseSha: '9'.repeat(40), headSha: HEAD,
+      })];
+    }],
+    ['bound to the wrong head branch', (f: ReturnType<typeof fixture>) => {
+      const issue = f.state.repoIssues[0] as { body: string };
+      issue.body = issue.body.replace(
+        '"head_branch":"squad/bootstrap-cast"',
+        '"head_branch":"attacker/bootstrap"',
+      );
+    }],
+    ['bound to the wrong head SHA', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: BASE,
+      })];
+    }],
+    ['bound to a tampered compare URL', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD,
+        compareUrlOverride: 'https://github.com/squad/example/compare/dev...attacker?expand=1',
+      })];
+    }],
+    ['bound to a run with the wrong event', (f: ReturnType<typeof fixture>) => {
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, runId: '17',
+      })];
+    }],
+    ['bound to a run in the wrong repository', (f: ReturnType<typeof fixture>) => {
+      f.state.extraRuns.set('99', {
+        event: 'push', path: '.github/workflows/squad-bootstrap.lock.yml',
+        repository: { full_name: 'attacker/squad' }, head_branch: 'dev',
+        status: 'completed', conclusion: 'success',
+      });
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, runId: '99',
+      })];
+    }],
+    ['bound to a run on the wrong workflow path', (f: ReturnType<typeof fixture>) => {
+      f.state.extraRuns.set('98', {
+        event: 'push', path: '.github/workflows/attacker.yml',
+        repository: { full_name: REPOSITORY }, head_branch: 'dev',
+        status: 'completed', conclusion: 'success',
+      });
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, runId: '98',
+      })];
+    }],
+    ['bound to a run against the wrong branch', (f: ReturnType<typeof fixture>) => {
+      f.state.extraRuns.set('97', {
+        event: 'push', path: '.github/workflows/squad-bootstrap.lock.yml',
+        repository: { full_name: REPOSITORY }, head_branch: 'attacker-branch',
+        status: 'completed', conclusion: 'success',
+      });
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, runId: '97',
+      })];
+    }],
+    ['created after the pull request', (f: ReturnType<typeof fixture>) => {
+      f.pr.created_at = START;
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: 'squad/bootstrap-cast', baseBranch: f.pr.base.ref, headSha: HEAD, createdAt: FINISHED,
+      })];
+    }],
+  ])('refuses the manual fallback trust path when the fallback issue is %s', async (_label, mutate) => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    mutate(f);
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow();
+  });
+
+  it('recovers the manual fallback trust path when the default branch fast-forwarded past the recorded base commit (base-drift regression)', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    // Simulate ordinary activity landing on the default branch between the base-controlled
+    // bootstrap run filing the fallback issue and a human later opening the Cast PR: the live
+    // PR base.sha has moved on from the pinned provenance.base_sha, but the bootstrap run itself
+    // (id 29) still legitimately recorded the original BASE commit.
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+    });
+  });
+
+  it('refuses the manual fallback trust path when the default branch has diverged (force-pushed) past the recorded base commit', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'diverged';
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it('refuses the manual fallback trust path when the default branch moved behind the recorded base commit', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'behind';
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it('refuses the manual fallback trust path when the compare API errors (fails closed, no local ancestry assumption)', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareThrows = 404;
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('API error');
+  });
+
+  it('refuses the manual fallback trust path when the compare API omits base_commit (status alone is not binding proof)', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareOmitBaseCommit = true;
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it('refuses the manual fallback trust path when the compare API omits merge_base_commit', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareOmitMergeBaseCommit = true;
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it('refuses the manual fallback trust path when base_commit resolves to an unrelated commit despite a passing status', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareBaseCommitShaOverride = 'e'.repeat(40);
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it('refuses the manual fallback trust path when merge_base_commit resolves to an unrelated commit despite a passing status', async () => {
+    const f = fixture();
+    makeBootstrapPrFallback(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareMergeBaseShaOverride = 'f'.repeat(40);
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
+    );
+  });
+
   it('does not rescue malformed attribution or non-404 reads', async () => {
     const f = fixture();
     f.attribution.schema = 'wrong';
@@ -272,6 +741,17 @@ describe('independent Squad review guard', () => {
       expect(f.state.prReads).toBe(2);
       if (relay) expect(f.state.calls.some(route => route.endsWith('/jobs'))).toBe(true);
     }
+  });
+
+  it('requires the correct event and trusted base workflow SHA on merged relays', async () => {
+    const f = fixture(true);
+    f.env.GITHUB_EVENT_NAME = 'pull_request_target';
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('only merged pull request events');
+    f.env.GITHUB_EVENT_NAME = 'pull_request';
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = '';
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('workflow source is not the exact PR base commit');
   });
 
   it.each([false, true])('selects a successful rerun with retained attempt-1 rejection (reverse=%s)', async reverse => {
@@ -315,10 +795,22 @@ describe('independent Squad review guard', () => {
     retainFirstAttempt(f);
     f.verdict.run_id = 18;
     f.verdict.run_attempt = f.run.run_attempt = 1;
+    f.run.id = 18;
+    f.state.attempts = new Map([[1, f.run]]);
+    f.state.attemptJobs = new Map([[1, f.jobs]]);
     f.sync();
-    const get = (route: string, fields?: Record<string, unknown>) =>
-      f.get(route.replace('/actions/runs/18', '/actions/runs/17'), fields);
-    await expect(assertClearingReview(f.env, get, { relay: true })).resolves.toEqual(f.verdict);
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
+  });
+
+  it('does not fall back when the latest trusted failed rerun emitted no review', async () => {
+    const f = fixture(true);
+    retainFirstAttempt(f);
+    f.state.reviews = [f.state.reviews[0]];
+    f.state.attempts.get(2)!.conclusion = 'failure';
+    f.state.attemptJobs.get(2)![0].conclusion = 'failure';
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('missing or duplicate verdict evidence');
+    expect(f.state.calls).not.toContain(`repos/${REPOSITORY}/actions/runs/17/attempts/1/jobs`);
   });
 
   it('rejects duplicate verdicts for the selected attempt even with distinct review IDs', async () => {
@@ -344,7 +836,7 @@ describe('independent Squad review guard', () => {
       case 'duplicate-job': f.jobs.push(f.jobs[0]); break;
       case 'wrong-workflow': f.run.path = '.github/workflows/untrusted.yml'; break;
       case 'wrong-event': f.run.event = 'workflow_dispatch'; break;
-      case 'wrong-head': f.run.head_sha = BASE; break;
+      case 'wrong-head': f.run.head_sha = HEAD; break;
       case 'replay': f.run.run_started_at = f.run.updated_at; break;
       case 'after-merge': f.jobs[0].completed_at = '2026-09-28T12:04:00Z'; break;
       case 'malformed': f.review.body = `${VERDICT_PREFIX}{broken`; break;
@@ -360,7 +852,7 @@ describe('independent Squad review guard', () => {
     f.run.head_sha = HEAD;
     f.jobs[0].name = 'review';
     await expect(assertClearingReview(f.env, f.get, { relay: true }))
-      .rejects.toThrow('not bound to this PR workflow run');
+      .rejects.toThrow('missing trusted workflow run attempt');
   });
 
   it.each([
@@ -455,7 +947,7 @@ describe('independent Squad review guard', () => {
       case 'manual-run': f.run.event = 'workflow_dispatch'; break;
       case 'wrong-workflow': f.run.path = '.github/workflows/other.yml'; break;
       case 'wrong-run-repo': f.run.repository.full_name = 'other/repo'; break;
-      case 'wrong-run-sha': f.run.head_sha = BASE; break;
+      case 'wrong-run-sha': f.run.head_sha = HEAD; break;
       case 'wrong-run-pr': f.run.pull_requests[0].number = 43; break;
       case 'wrong-run-attempt': f.run.run_attempt = 0; break;
       case 'wrong-run-title': f.run.display_title = 'Squad review \u2014 PR #43'; break;
@@ -469,7 +961,7 @@ describe('independent Squad review guard', () => {
   it('does not accept a manual gate or the merge commit as the reviewed head', async () => {
     const f = fixture(true);
     await expect(assertClearingReview({ ...f.env, GITHUB_EVENT_NAME: 'workflow_dispatch' }, f.get, { relay: true }))
-      .rejects.toThrow('only base-controlled PR target runs');
+      .rejects.toThrow('only merged pull request events');
     await expect(reviewTarget({ ...f.env, SQUAD_REVIEW_HEAD: BASE }, f.get, { relay: true }))
       .rejects.toThrow('head changed');
   });
@@ -479,7 +971,8 @@ describe('independent Squad review guard', () => {
     f.run.pull_requests = [];
     await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
     f.run.display_title = '';
-    await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow('bound');
+    await expect(assertClearingReview(f.env, f.get, { relay: true }))
+      .rejects.toThrow('missing trusted workflow run attempt');
   });
 
   it('clears a rejection only through a human-admin SHA-scoped override bound to its run attempt', async () => {
@@ -510,6 +1003,62 @@ describe('independent Squad review guard', () => {
     f.sync();
     if (mutation === 'malformed') f.comment.body = `${OVERRIDE_PREFIX}{invalid`;
     await expect(assertClearingReview(f.env, f.get, { relay: true })).rejects.toThrow();
+  });
+
+  it('ignores an unauthorized override lookalike for cardinality so a legitimate admin override still clears (authorization before parsing)', async () => {
+    // Regression for the fix order: candidates must be filtered by comment-author
+    // authorization BEFORE any marker content is parsed/counted. If authorization
+    // ran after cardinality (the prior bug), this syntactically valid, SHA-matching
+    // non-admin lookalike would inflate `overrides` to length 2 and the real admin
+    // override below would be wrongly rejected as ambiguous.
+    const f = fixture(true);
+    f.verdict.result = 'REQUEST_CHANGES';
+    const attacker = {
+      user: { login: 'attacker', type: 'User' }, created_at: FINISHED, updated_at: FINISHED,
+      body: `${OVERRIDE_PREFIX}${JSON.stringify({ ...f.override, reason: 'forged override, must never count toward cardinality' })}`,
+    };
+    f.state.comments = [f.comment, attacker];
+    const baseGet = f.get;
+    const get = async (route: string, fields?: Record<string, unknown>) =>
+      route.endsWith('/collaborators/attacker/permission') ? { permission: 'write' } : baseGet(route, fields);
+    f.sync();
+    await expect(assertClearingReview(f.env, get, { relay: true })).resolves.toEqual(f.verdict);
+  });
+
+  it('still fails closed on a malformed override from an authorized admin, even alongside an unauthorized lookalike', async () => {
+    // Authorization-first must never relax validation of an authorized candidate's
+    // own record: a malformed marker body from an admin is still rejected, and the
+    // unauthorized lookalike is still excluded rather than being substituted in.
+    const f = fixture(true);
+    f.verdict.result = 'REQUEST_CHANGES';
+    const attacker = {
+      user: { login: 'attacker', type: 'User' }, created_at: FINISHED, updated_at: FINISHED,
+      body: `${OVERRIDE_PREFIX}${JSON.stringify({ ...f.override, reason: 'forged override, must never count toward cardinality' })}`,
+    };
+    f.sync();
+    f.comment.body = `${OVERRIDE_PREFIX}{invalid`;
+    f.state.comments = [f.comment, attacker];
+    const baseGet = f.get;
+    const get = async (route: string, fields?: Record<string, unknown>) =>
+      route.endsWith('/collaborators/attacker/permission') ? { permission: 'write' } : baseGet(route, fields);
+    await expect(assertClearingReview(f.env, get, { relay: true })).rejects.toThrow();
+  });
+
+  it('caches collaborator permission lookups per login (regression: repeated override comments from the same admin must not repeat the API call)', async () => {
+    const f = fixture(true);
+    f.verdict.result = 'REQUEST_CHANGES';
+    // Same admin login as f.comment, but bound to a different head SHA so it is excluded
+    // from the override cardinality -- it should still be authorization-checked (same code
+    // path as f.comment), proving the cache is keyed by login rather than skipping work.
+    const sameLoginDecoy = {
+      user: { login: 'human', type: 'User' }, created_at: FINISHED, updated_at: FINISHED,
+      body: `${OVERRIDE_PREFIX}${JSON.stringify({ ...f.override, head_sha: BASE, reason: 'same admin login, non-matching head SHA' })}`,
+    };
+    f.state.comments = [f.comment, sameLoginDecoy];
+    f.sync();
+    await expect(assertClearingReview(f.env, f.get, { relay: true })).resolves.toEqual(f.verdict);
+    const permissionCalls = f.state.calls.filter(route => route.endsWith('/collaborators/human/permission'));
+    expect(permissionCalls).toHaveLength(1);
   });
 
   it('cannot override missing, stale, or self-authored evidence', async () => {

@@ -22,10 +22,12 @@ export const PACKAGE_NAME = 'bradygaster/squad/workflows';
 export const PACKAGE_MANIFEST = 'workflows/aw.yml';
 export const CONTRACT_SOURCE = 'workflows/squad-workflows.manifest.json';
 export const CONTRACT_DESTINATION = '.github/aw/squad-workflows.manifest.json';
-export const MIN_GH_AW_VERSION = 'v0.89.21';
+export const MIN_GH_AW_VERSION = 'v0.89.22';
 export const OWNERSHIP_ENTRY_COUNT = 26;
 export const OWNERSHIP_DESTINATION =
   '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json';
+export const UNOWNED_MUTABLE_ROUTER_SKILL =
+  '.github/skills/agentic-workflows/SKILL.md';
 export const TRIGGER_PROBE = 'shared/squad-bootstrap-trigger-probe.json';
 export const TRIGGER_PROBE_DESTINATION =
   '.github/workflows/shared/squad-bootstrap-trigger-probe.json';
@@ -33,6 +35,9 @@ export const TRIGGER_PROBE_DESTINATION =
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const LOCK_REVISION_PLACEHOLDER = 'f'.repeat(40);
+const COMPILER_ACTION_VERSION = 'v0.89.22';
+const COMPILER_ACTION_SHA = '2fbab69bfca02bebd76cd0fc43f2d12acfed994f';
+const COMPILER_ACTION_REPOS = ['github/gh-aw-actions/setup', 'github/gh-aw-actions/setup-cli'];
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -147,7 +152,9 @@ function assertDigest(value, label) {
 
 export function validateContract(contract) {
   assertKeys(contract, TOP_LEVEL_KEYS, 'Integrity contract');
-  if (contract.schema_version !== 1) throw new Error('Integrity contract schema_version must be 1.');
+  if (contract.schema_version !== 2) {
+    throw new Error('Integrity contract schema_version must be 2; reinstall the complete package from one immutable revision.');
+  }
   if (contract.package !== PACKAGE_NAME) throw new Error(`Integrity contract package must be ${PACKAGE_NAME}.`);
   if (contract.manifest !== PACKAGE_MANIFEST) throw new Error(`Integrity contract manifest must be ${PACKAGE_MANIFEST}.`);
   if (contract.minimum_gh_aw_version !== MIN_GH_AW_VERSION) {
@@ -161,7 +168,7 @@ export function validateContract(contract) {
   contract.workflows.forEach((entry, index) => {
     assertKeys(
       entry,
-      ['name', 'source', 'destination', 'lock', 'source_sha256', 'lock_sha256'],
+      ['name', 'source', 'destination', 'lock', 'source_sha256', 'lock_sha256', 'package_lock_sha256'],
       `Workflow entry ${index}`,
     );
     const [name, source, destination, lock] = WORKFLOW_TUPLES[index];
@@ -171,6 +178,7 @@ export function validateContract(contract) {
     validatePathSyntax(entry.lock, lock, `Workflow ${name} lock`);
     assertDigest(entry.source_sha256, `Workflow ${name} source_sha256`);
     assertDigest(entry.lock_sha256, `Workflow ${name} lock_sha256`);
+    assertDigest(entry.package_lock_sha256, `Workflow ${name} package_lock_sha256`);
   });
 
   assertArray(contract.shared_runtime, RUNTIME_TUPLES.length, 'Integrity contract shared_runtime');
@@ -326,14 +334,15 @@ function packageWorkflowSource(_root, name) {
   return `workflows/package/${name}.md`;
 }
 
-function workflowWithSource(content, name, revision) {
+function workflowWithSource(content, name, revision, packageSource) {
   const marker = '\n---\n';
   const end = content.indexOf(marker, 4);
   if (!content.startsWith('---\n') || end < 0) {
     throw new Error(`Generated package workflow has invalid frontmatter: ${name}`);
   }
+  const source = packageSource ? PACKAGE_NAME : `${PACKAGE_NAME}/package/${name}.md`;
   return `${content.slice(0, end)}
-source: ${PACKAGE_NAME}/package/${name}.md@${revision}${content.slice(end)}`;
+source: ${source}@${revision}${content.slice(end)}`;
 }
 
 export function normalizeCompiledLock(content, revision) {
@@ -357,7 +366,69 @@ export function normalizeCompiledLock(content, revision) {
     .replaceAll(revision, LOCK_REVISION_PLACEHOLDER);
 }
 
-function buildLockDigests(root, renderedWorkflows) {
+export function validateCompilerActionPins(content) {
+  const text = String(content);
+  const metadata = text.match(/^# gh-aw-manifest: (.+)$/m);
+  const actions = metadata ? JSON.parse(metadata[1]).actions : undefined;
+  if (!Array.isArray(actions)
+    || !actions.some(action => action.repo === COMPILER_ACTION_REPOS[0])) {
+    throw new Error('Compiled workflow is missing the gh-aw setup action pin.');
+  }
+  for (const action of actions.filter(action => COMPILER_ACTION_REPOS.includes(action.repo))) {
+    if (action.sha !== COMPILER_ACTION_SHA || action.version !== COMPILER_ACTION_VERSION) {
+      throw new Error(`Compiled workflow has an invalid immutable action pin: ${action.repo}`);
+    }
+  }
+  const references = [...text.matchAll(/^\s+uses: (github\/gh-aw-actions\/setup(?:-cli)?)@(\S+)/gm)];
+  if (!references.some(([, repo]) => repo === COMPILER_ACTION_REPOS[0])
+    || references.some(([, repo, sha]) =>
+      sha !== COMPILER_ACTION_SHA || !actions.some(action => action.repo === repo))) {
+    throw new Error('Compiled workflow has missing or noncanonical gh-aw action references.');
+  }
+}
+
+export function compileWithPinnedActions(root, env = process.env) {
+  const command = env.SQUAD_GH_AW_BIN || 'gh';
+  const prefix = env.SQUAD_GH_AW_BIN ? [] : ['aw'];
+  const version = spawnSync(command, [...prefix, '--version'], {
+    cwd: root, encoding: 'utf8', env,
+  });
+  if (version.error || version.status !== 0
+    || `${version.stdout}${version.stderr}`.trim().split(/\s+/).at(-1) !== COMPILER_ACTION_VERSION
+    || MIN_GH_AW_VERSION !== COMPILER_ACTION_VERSION) {
+    throw version.error ?? new Error(`Compilation requires gh-aw ${COMPILER_ACTION_VERSION} with matching immutable action pins.`);
+  }
+  const path = resolve(root, '.github/aw/actions-lock.json');
+  const pins = {
+    entries: Object.fromEntries(COMPILER_ACTION_REPOS.map(repo => [
+      `${repo}@${COMPILER_ACTION_VERSION}`,
+      { repo, version: COMPILER_ACTION_VERSION, sha: COMPILER_ACTION_SHA },
+    ])),
+  };
+  if (existsSync(path)) {
+    const existing = JSON.parse(readFileSync(path, 'utf8'));
+    for (const [key, pin] of Object.entries(pins.entries)) {
+      const actual = existing.entries?.[key];
+      if (!actual || actual.repo !== pin.repo || actual.version !== pin.version || actual.sha !== pin.sha) {
+        throw new Error(`Compiler action lock has a missing or noncanonical pin: ${key}`);
+      }
+    }
+  } else {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, stableJson(pins), { flag: 'wx' });
+  }
+  const result = spawnSync(command, [...prefix, 'compile', '--strict', '--no-check-update'], {
+    cwd: root, encoding: 'utf8', env, timeout: 120_000,
+  });
+  if (result.error || result.status !== 0) {
+    throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
+  }
+  for (const name of WORKFLOW_NAMES) {
+    validateCompilerActionPins(readRequired(root, `.github/workflows/${name}.lock.yml`));
+  }
+}
+
+function buildLockDigests(root, renderedWorkflows, packageSource = false) {
   const scratch = mkdtempSync(join(resolve(root), '.squad-gh-aw-lock-digests-'));
   try {
     const workflowRoot = resolve(scratch, '.github/workflows');
@@ -366,23 +437,11 @@ function buildLockDigests(root, renderedWorkflows) {
     for (const [name, content] of renderedWorkflows) {
       writeFileSync(
         resolve(workflowRoot, `${name}.md`),
-        workflowWithSource(content, name, LOCK_REVISION_PLACEHOLDER),
+        workflowWithSource(content, name, LOCK_REVISION_PLACEHOLDER, packageSource),
       );
     }
     spawnChecked('git', ['init', '--quiet'], scratch);
-    const ghAwBin = process.env.SQUAD_GH_AW_BIN;
-    const command = ghAwBin || 'gh';
-    const args = ghAwBin
-      ? ['compile', '--strict', '--no-check-update']
-      : ['aw', 'compile', '--strict', '--no-check-update'];
-    const result = spawnSync(command, args, {
-      cwd: scratch,
-      encoding: 'utf8',
-      env: process.env,
-    });
-    if (result.error || result.status !== 0) {
-      throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
-    }
+    compileWithPinnedActions(scratch);
     return new Map(WORKFLOW_NAMES.map((name) => {
       const lock = readRequired(scratch, `.github/workflows/${name}.lock.yml`);
       return [name, sha256(normalizeCompiledLock(lock, LOCK_REVISION_PLACEHOLDER))];
@@ -397,8 +456,9 @@ export function buildContract(root) {
     name => [name, readFileSync(resolve(root, `workflows/package/${name}.md`), 'utf8')],
   ));
   const lockDigests = buildLockDigests(root, renderedWorkflows);
+  const packageLockDigests = buildLockDigests(root, renderedWorkflows, true);
   return validateContract({
-    schema_version: 1,
+    schema_version: 2,
     package: PACKAGE_NAME,
     manifest: PACKAGE_MANIFEST,
     minimum_gh_aw_version: MIN_GH_AW_VERSION,
@@ -413,6 +473,7 @@ export function buildContract(root) {
         lock,
         source_sha256: sha256(content),
         lock_sha256: lockDigests.get(name),
+        package_lock_sha256: packageLockDigests.get(name),
       };
     }),
     shared_runtime: RUNTIME_TUPLES.map(
@@ -621,8 +682,8 @@ function verifyOwnership(root, contract, expectedRevision) {
   if (record.source !== `${PACKAGE_NAME}@${record.resolvedCommit}`) {
     throw new Error(`Package ownership source must be ${PACKAGE_NAME}@${record.resolvedCommit}.`);
   }
-  if (typeof record.installer !== 'string' || !/^gh-aw v0\.89\.21(?:\b|$)/.test(record.installer)) {
-    throw new Error('Package ownership installer must be gh-aw v0.89.21.');
+  if (typeof record.installer !== 'string' || !/^gh-aw v0\.89\.22(?:\b|$)/.test(record.installer)) {
+    throw new Error('Package ownership installer must be gh-aw v0.89.22.');
   }
   assertArray(record.files, OWNERSHIP_ENTRY_COUNT, 'Package ownership files');
   const expected = expectedOwnership(contract);
@@ -644,22 +705,45 @@ function verifyOwnership(root, contract, expectedRevision) {
   return record.resolvedCommit;
 }
 
+function digestMatchesWithFinalNewlineTolerance(content, expectedDigest) {
+  return [content, `${content}\n`]
+    .some(candidate => sha256(Buffer.from(candidate)) === expectedDigest);
+}
+
+function verifyWorkflowSourceBinding(root, entry, revision) {
+  const installed = readRequired(root, entry.destination);
+  const text = installed.toString('utf8');
+  const lines = text.split('\n');
+  const frontmatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
+  const sourceIndexes = lines
+    .map((line, index) => line.startsWith('source:') ? index : -1)
+    .filter(index => index >= 0);
+  const sourceBindings = new Map([
+    [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
+    [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
+  ]);
+  const sourceIndex = sourceIndexes[0];
+  const sourceBinding = lines[sourceIndex];
+  if (frontmatterEnd < 0 || sourceIndexes.length !== 1
+    || sourceIndex !== frontmatterEnd - 1 || !sourceBindings.has(sourceBinding)) {
+    throw new Error(`Installed source binding is invalid for ${entry.destination}.`);
+  }
+  lines.splice(sourceIndex, 1);
+  if (!digestMatchesWithFinalNewlineTolerance(lines.join('\n'), entry.source_sha256)) {
+    throw new Error(`Installed digest mismatch for ${entry.destination}.`);
+  }
+  return {
+    digest: sha256(installed),
+    lockDigest: sourceBindings.get(sourceBinding),
+  };
+}
+
 function verifyInstalledBytes(root, contract, revision) {
+  const lockDigests = new Map();
   for (const entry of contract.workflows) {
-    const installed = readRequired(root, entry.destination);
-    const sourceBindings = [
-      `source: ${PACKAGE_NAME}@${revision}`,
-      `source: bradygaster/squad/${entry.source}@${revision}`,
-    ];
-    let canonicalText = installed.toString('utf8');
-    for (const sourceBinding of sourceBindings) {
-      canonicalText = canonicalText.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
-    }
-    const canonical = Buffer.from(canonicalText);
-    const canonicalWithFinalNewline = Buffer.from(`${canonicalText}\n`);
-    if (![sha256(canonical), sha256(canonicalWithFinalNewline)].includes(entry.source_sha256)) {
-      throw new Error(`Installed digest mismatch for ${entry.destination}.`);
-    }
+    const verified = verifyWorkflowSourceBinding(root, entry, revision);
+    // Select from the verified source, never accept whichever lock digest happens to match.
+    lockDigests.set(entry.name, verified.lockDigest);
   }
   for (const entry of contract.skills) {
     if (fileDigest(root, entry.destination) !== entry.sha256) {
@@ -677,11 +761,21 @@ function verifyInstalledBytes(root, contract, revision) {
   for (const entry of contract.workflows) {
     const normalized = normalizeCompiledLock(readRequired(root, entry.lock), revision);
     const observedDigest = sha256(normalized);
-    if (observedDigest !== entry.lock_sha256) {
+    const expectedDigest = lockDigests.get(entry.name);
+    if (observedDigest !== expectedDigest) {
       throw new Error(
-        `Installed digest mismatch for ${entry.lock}: expected ${entry.lock_sha256}, observed ${observedDigest}.`,
+        `Installed digest mismatch for ${entry.lock}: expected ${expectedDigest}, observed ${observedDigest}.`,
       );
     }
+  }
+}
+
+function verifyUnownedMutableRouterAbsent(root) {
+  const path = safePath(root, UNOWNED_MUTABLE_ROUTER_SKILL);
+  if (existsSync(path)) {
+    throw new Error(
+      `Unowned mutable gh-aw router skill must be removed: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+    );
   }
 }
 
@@ -768,7 +862,7 @@ function strictCompileMatches(root) {
   }
 }
 
-function spawnChecked(command, args, cwd) {
+function spawnChecked(command, args, cwd, options = {}) {
   const safeEnvironment = Object.fromEntries(
     ['CI', 'GH_CONFIG_DIR', 'GH_HOST', 'HOME', 'LANG', 'LC_ALL', 'NO_COLOR', 'PATH', 'SHELL', 'TERM', 'TMPDIR']
       .filter((key) => process.env[key] !== undefined)
@@ -778,6 +872,7 @@ function spawnChecked(command, args, cwd) {
     cwd,
     encoding: 'utf8',
     env: safeEnvironment,
+    ...options,
   });
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error(`${command} failed:\n${result.stdout}${result.stderr}`);
@@ -795,6 +890,7 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
     const { contract } = parseInstalledContract(root);
     revision = verifyOwnership(root, contract, expectedRevision);
     verifyInstalledBytes(root, contract, revision);
+    verifyUnownedMutableRouterAbsent(root);
     verifyTriggerNamespace(root);
     verifyTriggerProbe(root, revision);
     if (strictCompile) strictCompileMatches(root);
@@ -802,6 +898,68 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
     failures.push(error instanceof Error ? error.message : String(error));
   }
   return { failures, revision };
+}
+
+export function verifyStagedInstall(root, { expectedRevision = '', stageOwnership = false } = {}) {
+  const result = verifyInstall(root, { expectedRevision });
+  if (result.failures.length > 0) return result;
+  try {
+    const { contract } = parseInstalledContract(root);
+    // Only the native package's exact metadata path may bypass consumer ignore rules.
+    const ownership = readRequired(root, OWNERSHIP_DESTINATION);
+    if (JSON.parse(ownership).package !== PACKAGE_NAME) {
+      throw new Error(`Package ownership identity is invalid: ${OWNERSHIP_DESTINATION}`);
+    }
+    const required = new Set([
+      CONTRACT_DESTINATION,
+      OWNERSHIP_DESTINATION,
+      ...contract.workflows.flatMap(entry => [entry.destination, entry.lock]),
+      ...contract.shared_runtime.flatMap(entry => [entry.package_destination, entry.destination]),
+      ...contract.skills.map(entry => entry.destination),
+    ]);
+    const expected = new Map([...required].map(path => [path, fileDigest(root, path)]));
+    if (stageOwnership) {
+      const ignored = spawnChecked('git', [
+        'ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', OWNERSHIP_DESTINATION,
+      ], root).stdout.split('\0');
+      if (ignored.includes(OWNERSHIP_DESTINATION)) {
+        spawnChecked('git', ['add', '--force', '--', OWNERSHIP_DESTINATION], root);
+      }
+    }
+    // Snapshot the index, not HEAD or the working tree, including unchanged tracked files.
+    const tree = spawnChecked('git', ['write-tree'], root).stdout.trim();
+    // Exact allowlisted paths bound output; no recursion into unrelated or substituted trees.
+    const entries = spawnChecked(
+      'git',
+      ['ls-tree', '-z', tree, '--', ...required, UNOWNED_MUTABLE_ROUTER_SKILL],
+      root,
+    ).stdout
+      .split('\0').filter(Boolean);
+    const staged = new Map(entries.map(entry => {
+      const tab = entry.indexOf('\t');
+      return [entry.slice(tab + 1), entry.slice(0, tab).split(' ')];
+    }));
+    for (const [path, digest] of expected) {
+      const entry = staged.get(path);
+      if (!entry) throw new Error(`Required file is missing from staged tree: ${path}`);
+      const [mode, type, object] = entry;
+      if (type !== 'blob' || !['100644', '100755'].includes(mode)) {
+        throw new Error(`Required staged path is not a regular file: ${path}`);
+      }
+      const bytes = spawnChecked('git', ['cat-file', 'blob', object], root, { encoding: null }).stdout;
+      if (sha256(bytes) !== digest) {
+        throw new Error(`Staged digest mismatch for ${path}; stage the verified file before commit/push.`);
+      }
+    }
+    if (staged.has(UNOWNED_MUTABLE_ROUTER_SKILL)) {
+      throw new Error(
+        `Unowned mutable gh-aw router skill remains in staged tree: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+      );
+    }
+  } catch (error) {
+    result.failures.push(error instanceof Error ? error.message : String(error));
+  }
+  return result;
 }
 
 export function verifyCanonicalManifest(sourceRoot, installedRoot) {
@@ -819,9 +977,12 @@ export function verifyResource(root, destination) {
   const entry = [...contract.shared_runtime, ...contract.workflows, ...contract.skills]
     .find((candidate) => candidate.destination === destination);
   if (!entry) throw new Error(`Resource is not registered in the trusted Squad contract: ${destination}`);
+  if ('source_sha256' in entry) {
+    const revision = verifyOwnership(root, contract);
+    return verifyWorkflowSourceBinding(root, entry, revision).digest;
+  }
   const actual = fileDigest(root, destination);
-  const expected = entry.source_sha256 ?? entry.sha256;
-  if (actual !== expected) throw new Error(`Squad resource digest mismatch for ${destination}.`);
+  if (actual !== entry.sha256) throw new Error(`Squad resource digest mismatch for ${destination}.`);
   return actual;
 }
 
@@ -851,7 +1012,7 @@ export function writeLocalTestOwnership(root, revision) {
       throw new Error(`Installed workflow has invalid frontmatter: ${entry.destination}`);
     }
     const frontmatter = content.slice(0, end);
-    const source = `source: bradygaster/squad/${entry.source}@${revision}`;
+    const source = `source: ${PACKAGE_NAME}@${revision}`;
     const rebound = /^source:\s*.+$/m.test(frontmatter)
       ? `${frontmatter.replace(/^source:\s*.+$/m, source)}${content.slice(end)}`
       : `${frontmatter}\n${source}${content.slice(end)}`;
@@ -866,7 +1027,7 @@ export function writeLocalTestOwnership(root, revision) {
     package: PACKAGE_NAME,
     source: `${PACKAGE_NAME}@${revision}`,
     resolvedCommit: revision,
-    installer: 'gh-aw v0.89.21 local package contract test',
+    installer: 'gh-aw v0.89.22 local package contract test',
     files,
   }));
 }
@@ -876,6 +1037,7 @@ function recoveryMessage(revision) {
   return [
     'Safe recovery:',
     `  gh aw add ${PACKAGE_NAME}@${ref} --force`,
+    `  rm -f ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
     '  gh aw compile --strict',
     '  node .github/workflows/shared/squad-install-verifier.mjs --verify-install --strict-compile',
   ].join('\n');
@@ -931,11 +1093,24 @@ export function run(argv = process.argv.slice(2), cwd = process.cwd()) {
       console.log(`Squad gh-aw installation verified at ${result.revision}.`);
       return 0;
     }
+    if (argv.includes('--verify-staged-install')) {
+      const result = verifyStagedInstall(root, {
+        expectedRevision: optionValue(argv, '--source-revision'),
+        stageOwnership: argv.includes('--stage-ownership'),
+      });
+      if (result.failures.length > 0) {
+        console.error('STOP: Squad required installation files could not be staged and verified; do not commit/push:');
+        for (const failure of result.failures) console.error(`- ${failure}`);
+        return 1;
+      }
+      console.log(`Squad gh-aw staged installation verified at ${result.revision}.`);
+      return 0;
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   }
-  console.error('Usage: squad-install-verifier.mjs --check-source|--write-source|--materialize-runtime|--verify-install|--verify-resource <path>');
+  console.error('Usage: squad-install-verifier.mjs --check-source|--write-source|--materialize-runtime|--verify-install|--verify-staged-install [--stage-ownership]|--verify-resource <path>');
   return 2;
 }
 

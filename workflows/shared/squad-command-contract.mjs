@@ -43,6 +43,13 @@ const PHASE_COMMANDS = new Map([
   ['plan activate', 'plan activate'],
 ]);
 
+const OPEN_MODES = new Set([
+  'status',
+  'review',
+  'research',
+  'plan',
+]);
+
 export const VALID_COMMANDS = Object.freeze([
   '/squad',
   '/squad cast',
@@ -108,16 +115,48 @@ function extractInvocation(source, text) {
     };
   }
 
-  const lower = text.toLowerCase();
-  const at = lower.indexOf('/squad');
-  if (at === -1) return null;
-  const line = text.slice(at).split('\n', 1)[0].trimEnd();
-  const slash = line.match(/^\/squad(?:\s|$)/);
-  return {
-    rejectedCommand: line,
-    argumentText: slash ? line.slice(slash[0].length).trim() : '',
-    malformedPrefix: !slash,
-  };
+  let fence = null;
+  for (const originalLine of normalizeNewlines(text).split('\n')) {
+    if (fence) {
+      const closingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (closingFence
+        && closingFence[1][0] === fence.delimiter
+        && closingFence[1].length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    const openingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (openingFence) {
+      fence = {
+        delimiter: openingFence[1][0],
+        length: openingFence[1].length,
+      };
+      continue;
+    }
+    if (/^(?: {4}| {0,3}\t)/.test(originalLine)) continue;
+    const line = originalLine.replace(/`+[^`]*`+/g, '').trim();
+    if (!/^\/squad/i.test(line)) continue;
+    const slash = line.match(/^\/squad(?:\s|$)/);
+    const invocation = line;
+    return {
+      rejectedCommand: invocation,
+      argumentText: slash ? invocation.slice(slash[0].length).trim() : '',
+      malformedPrefix: !slash,
+    };
+  }
+  return null;
+}
+
+export function commandRequiresAuthorization(result) {
+  if (result?.status !== 'accepted') {
+    throw new Error('An accepted command result is required.');
+  }
+  return !OPEN_MODES.has(result.mode);
+}
+
+export function isAuthorizedPermission(permission) {
+  return ['admin', 'maintain', 'write'].includes(permission);
 }
 
 function accepted(mode, argumentText, phase = null) {
@@ -181,7 +220,61 @@ export function classifySquadCommand(payload, eventName = '') {
       reason: 'Unknown command or malformed arguments.',
     };
   }
+  if (sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {
+    return {
+      status: 'rejected',
+      source: sourceData.source,
+      rejectedCommand: invocation.rejectedCommand,
+      reason: 'Issue-body revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+    };
+  }
+  if (sourceData.source === 'comment' && payload?.action === 'edited' &&
+      classification.mode === 'revoke-improvement') {
+    return {
+      status: 'rejected',
+      source: sourceData.source,
+      rejectedCommand: invocation.rejectedCommand,
+      reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+    };
+  }
   return { ...classification, source: sourceData.source };
+}
+
+function canonicalInvocation(result) {
+  if (result.status === 'none') return null;
+  if (result.status === 'accepted') {
+    const normalizedArgument = result.argumentText.replace(/\s+/g, ' ').trim();
+    const canonicalArgument = result.phase !== null
+      ? `${result.mode} phase ${result.phase}`
+      : !normalizedArgument || normalizedArgument.toLowerCase() === result.mode
+        ? result.mode
+        : `${result.mode} ${normalizedArgument.slice(result.mode.length).trim()}`;
+    return JSON.stringify([
+      'accepted',
+      result.mode,
+      canonicalArgument,
+      result.phase,
+    ]);
+  }
+  return JSON.stringify([
+    'rejected',
+    result.reason,
+    result.rejectedCommand.replace(/\s+/g, ' ').trim().toLowerCase(),
+  ]);
+}
+
+export function editedCommandShouldRoute(payload, eventName, currentResult) {
+  const action = payload?.action;
+  if (action !== 'edited' || !['issues', 'issue_comment'].includes(eventName)) {
+    return true;
+  }
+  const previousBody = payload?.changes?.body?.from;
+  if (typeof previousBody !== 'string') return false;
+  const previousPayload = eventName === 'issue_comment'
+    ? { ...payload, action: 'created', comment: { ...payload.comment, body: previousBody } }
+    : { ...payload, action: 'opened', issue: { ...payload.issue, body: previousBody } };
+  const previousResult = classifySquadCommand(previousPayload, eventName);
+  return canonicalInvocation(previousResult) !== canonicalInvocation(currentResult);
 }
 
 export function rejectionComment(result) {
