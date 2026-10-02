@@ -19,7 +19,13 @@ on:
   # React to completed work or new squad work
   issues:
     types: [closed, labeled]
-  pull_request:
+  # pull_request_target (not pull_request): GITHUB_TOKEN is forced read-only
+  # for `pull_request` events triggered by a fork, so write steps below
+  # (addLabels/createComment) 403 on fork PR closes (#2080-class bug).
+  # Safe here because the checkout step below has no `ref:` override, so it
+  # always checks out the BASE ref — no fork code or fork-controlled input
+  # is ever read or executed by this job.
+  pull_request_target:
     types: [closed]
 
   # Manual trigger
