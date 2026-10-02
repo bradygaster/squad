@@ -109,6 +109,7 @@ function fixture(relay = false) {
     extraRuns: new Map<string, Record<string, unknown>>(),
     compareStatus: 'diverged' as 'identical' | 'ahead' | 'behind' | 'diverged',
     compareThrows: 0 as number,
+    compareOmitStatus: false,
     compareOmitBaseCommit: false,
     compareOmitMergeBaseCommit: false,
     compareBaseCommitShaOverride: undefined as string | undefined,
@@ -138,7 +139,8 @@ function fixture(relay = false) {
       if (state.compareThrows) throw Object.assign(new Error('API error'), { status: state.compareThrows });
       const status = baseSha === headSha ? 'identical' : state.compareStatus;
       const resolvedBaseSha = state.compareBaseCommitShaOverride ?? baseSha;
-      const result: Record<string, unknown> = { status };
+      const result: Record<string, unknown> = {};
+      if (!state.compareOmitStatus) result.status = status;
       if (!state.compareOmitBaseCommit) result.base_commit = { sha: resolvedBaseSha };
       if (!state.compareOmitMergeBaseCommit) {
         result.merge_base_commit = { sha: state.compareMergeBaseShaOverride ?? resolvedBaseSha };
@@ -362,6 +364,75 @@ describe('independent Squad review guard', () => {
     });
     await expect(assertClearingReview(f.env, f.get))
       .rejects.toThrow('base-controlled bootstrap run did not complete successfully');
+  });
+
+  it('accepts bot-authored bootstrap provenance when the install commit is identical to the live base', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+    });
+    expect(f.state.calls).toContain(`repos/${REPOSITORY}/compare/${BASE}...${BASE}`);
+  });
+
+  it('accepts bot-authored bootstrap provenance when the default branch fast-forwarded after installation', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    const advancedBase = 'd'.repeat(40);
+    f.pr.base.sha = advancedBase;
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = advancedBase;
+    f.state.compareStatus = 'ahead';
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-bootstrap',
+    });
+    expect(f.state.calls).toContain(`repos/${REPOSITORY}/compare/${BASE}...${advancedBase}`);
+  });
+
+  it.each([
+    ['diverged', (f: ReturnType<typeof fixture>) => { f.state.compareStatus = 'diverged'; }],
+    ['behind', (f: ReturnType<typeof fixture>) => { f.state.compareStatus = 'behind'; }],
+    ['missing status', (f: ReturnType<typeof fixture>) => {
+      f.state.compareOmitStatus = true;
+    }],
+    ['missing base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareOmitBaseCommit = true;
+    }],
+    ['missing merge_base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareOmitMergeBaseCommit = true;
+    }],
+    ['mismatched base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareBaseCommitShaOverride = 'e'.repeat(40);
+    }],
+    ['mismatched merge_base_commit', (f: ReturnType<typeof fixture>) => {
+      f.state.compareStatus = 'ahead';
+      f.state.compareMergeBaseShaOverride = 'f'.repeat(40);
+    }],
+  ])('rejects bot-authored bootstrap provenance when compare evidence is %s', async (_label, mutate) => {
+    const f = fixture();
+    makeBootstrap(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    mutate(f);
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow(
+      'bootstrap provenance install commit is not an ancestor of the pull request base',
+    );
+  });
+
+  it.each([
+    ['404', 404],
+    ['rate limit', 403],
+    ['general API failure', 500],
+  ])('fails closed when the bot-authored bootstrap compare API returns %s', async (_label, status) => {
+    const f = fixture();
+    makeBootstrap(f);
+    f.pr.base.sha = 'd'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.state.compareThrows = status;
+    await expect(reviewTarget(f.env, f.get)).rejects.toMatchObject({ status });
   });
 
   it('accepts the documented manual bootstrap pull request fallback when live data exactly matches the signed provenance record', async () => {

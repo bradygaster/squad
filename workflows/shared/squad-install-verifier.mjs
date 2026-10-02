@@ -26,6 +26,8 @@ export const MIN_GH_AW_VERSION = 'v0.89.22';
 export const OWNERSHIP_ENTRY_COUNT = 26;
 export const OWNERSHIP_DESTINATION =
   '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json';
+export const UNOWNED_MUTABLE_ROUTER_SKILL =
+  '.github/skills/agentic-workflows/SKILL.md';
 export const TRIGGER_PROBE = 'shared/squad-bootstrap-trigger-probe.json';
 export const TRIGGER_PROBE_DESTINATION =
   '.github/workflows/shared/squad-bootstrap-trigger-probe.json';
@@ -703,30 +705,45 @@ function verifyOwnership(root, contract, expectedRevision) {
   return record.resolvedCommit;
 }
 
+function digestMatchesWithFinalNewlineTolerance(content, expectedDigest) {
+  return [content, `${content}\n`]
+    .some(candidate => sha256(Buffer.from(candidate)) === expectedDigest);
+}
+
+function verifyWorkflowSourceBinding(root, entry, revision) {
+  const installed = readRequired(root, entry.destination);
+  const text = installed.toString('utf8');
+  const lines = text.split('\n');
+  const frontmatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
+  const sourceIndexes = lines
+    .map((line, index) => line.startsWith('source:') ? index : -1)
+    .filter(index => index >= 0);
+  const sourceBindings = new Map([
+    [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
+    [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
+  ]);
+  const sourceIndex = sourceIndexes[0];
+  const sourceBinding = lines[sourceIndex];
+  if (frontmatterEnd < 0 || sourceIndexes.length !== 1
+    || sourceIndex !== frontmatterEnd - 1 || !sourceBindings.has(sourceBinding)) {
+    throw new Error(`Installed source binding is invalid for ${entry.destination}.`);
+  }
+  lines.splice(sourceIndex, 1);
+  if (!digestMatchesWithFinalNewlineTolerance(lines.join('\n'), entry.source_sha256)) {
+    throw new Error(`Installed digest mismatch for ${entry.destination}.`);
+  }
+  return {
+    digest: sha256(installed),
+    lockDigest: sourceBindings.get(sourceBinding),
+  };
+}
+
 function verifyInstalledBytes(root, contract, revision) {
   const lockDigests = new Map();
   for (const entry of contract.workflows) {
-    const installed = readRequired(root, entry.destination);
-    const text = installed.toString('utf8');
-    const { frontmatter } = splitWorkflow(text, entry.destination);
-    const sourceLines = frontmatter.split('\n').filter(line => /^source:/.test(line));
-    const sourceBinding = sourceLines[0];
-    const sourceBindings = new Map([
-      [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
-      [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
-    ]);
-    if (sourceLines.length !== 1 || !sourceBindings.has(sourceBinding)
-      || !frontmatter.endsWith(`\n${sourceBinding}`)) {
-      throw new Error(`Installed source binding is invalid for ${entry.destination}.`);
-    }
-    const canonicalText = text.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
-    const canonical = Buffer.from(canonicalText);
-    const canonicalWithFinalNewline = Buffer.from(`${canonicalText}\n`);
-    if (![sha256(canonical), sha256(canonicalWithFinalNewline)].includes(entry.source_sha256)) {
-      throw new Error(`Installed digest mismatch for ${entry.destination}.`);
-    }
+    const verified = verifyWorkflowSourceBinding(root, entry, revision);
     // Select from the verified source, never accept whichever lock digest happens to match.
-    lockDigests.set(entry.name, sourceBindings.get(sourceBinding));
+    lockDigests.set(entry.name, verified.lockDigest);
   }
   for (const entry of contract.skills) {
     if (fileDigest(root, entry.destination) !== entry.sha256) {
@@ -750,6 +767,15 @@ function verifyInstalledBytes(root, contract, revision) {
         `Installed digest mismatch for ${entry.lock}: expected ${expectedDigest}, observed ${observedDigest}.`,
       );
     }
+  }
+}
+
+function verifyUnownedMutableRouterAbsent(root) {
+  const path = safePath(root, UNOWNED_MUTABLE_ROUTER_SKILL);
+  if (existsSync(path)) {
+    throw new Error(
+      `Unowned mutable gh-aw router skill must be removed: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+    );
   }
 }
 
@@ -864,6 +890,7 @@ export function verifyInstall(root, { expectedRevision = '', strictCompile = fal
     const { contract } = parseInstalledContract(root);
     revision = verifyOwnership(root, contract, expectedRevision);
     verifyInstalledBytes(root, contract, revision);
+    verifyUnownedMutableRouterAbsent(root);
     verifyTriggerNamespace(root);
     verifyTriggerProbe(root, revision);
     if (strictCompile) strictCompileMatches(root);
@@ -902,7 +929,11 @@ export function verifyStagedInstall(root, { expectedRevision = '', stageOwnershi
     // Snapshot the index, not HEAD or the working tree, including unchanged tracked files.
     const tree = spawnChecked('git', ['write-tree'], root).stdout.trim();
     // Exact allowlisted paths bound output; no recursion into unrelated or substituted trees.
-    const entries = spawnChecked('git', ['ls-tree', '-z', tree, '--', ...required], root).stdout
+    const entries = spawnChecked(
+      'git',
+      ['ls-tree', '-z', tree, '--', ...required, UNOWNED_MUTABLE_ROUTER_SKILL],
+      root,
+    ).stdout
       .split('\0').filter(Boolean);
     const staged = new Map(entries.map(entry => {
       const tab = entry.indexOf('\t');
@@ -919,6 +950,11 @@ export function verifyStagedInstall(root, { expectedRevision = '', stageOwnershi
       if (sha256(bytes) !== digest) {
         throw new Error(`Staged digest mismatch for ${path}; stage the verified file before commit/push.`);
       }
+    }
+    if (staged.has(UNOWNED_MUTABLE_ROUTER_SKILL)) {
+      throw new Error(
+        `Unowned mutable gh-aw router skill remains in staged tree: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+      );
     }
   } catch (error) {
     result.failures.push(error instanceof Error ? error.message : String(error));
@@ -941,9 +977,12 @@ export function verifyResource(root, destination) {
   const entry = [...contract.shared_runtime, ...contract.workflows, ...contract.skills]
     .find((candidate) => candidate.destination === destination);
   if (!entry) throw new Error(`Resource is not registered in the trusted Squad contract: ${destination}`);
+  if ('source_sha256' in entry) {
+    const revision = verifyOwnership(root, contract);
+    return verifyWorkflowSourceBinding(root, entry, revision).digest;
+  }
   const actual = fileDigest(root, destination);
-  const expected = entry.source_sha256 ?? entry.sha256;
-  if (actual !== expected) throw new Error(`Squad resource digest mismatch for ${destination}.`);
+  if (actual !== entry.sha256) throw new Error(`Squad resource digest mismatch for ${destination}.`);
   return actual;
 }
 
@@ -998,6 +1037,7 @@ function recoveryMessage(revision) {
   return [
     'Safe recovery:',
     `  gh aw add ${PACKAGE_NAME}@${ref} --force`,
+    `  rm -f ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
     '  gh aw compile --strict',
     '  node .github/workflows/shared/squad-install-verifier.mjs --verify-install --strict-compile',
   ].join('\n');

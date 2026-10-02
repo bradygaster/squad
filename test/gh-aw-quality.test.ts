@@ -3866,6 +3866,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(ci.slice(seedStart, addStart)).toContain(
       '"$GITHUB_WORKSPACE/workflows/package/${workflow}.md"',
     );
+    expect(ci.slice(addStart)).toContain('rm -f .github/skills/agentic-workflows/SKILL.md');
     expect(contract.shared_runtime).toContainEqual(expect.objectContaining({
       path: 'shared/squad-review-guard.mjs',
       destination: '.github/workflows/shared/squad-review-guard.mjs',
@@ -3876,6 +3877,25 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(contract.bootstrap.trigger_probe).toBe(TRIGGER_PROBE);
     expect(contract.shared_runtime.some((entry: { path: string }) => entry.path === TRIGGER_PROBE)).toBe(false);
     expect(readText(join(process.cwd(), 'workflows/aw.yml'))).toContain('  - skills/gh-aw-enlistment');
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/agentic-workflows/SKILL.md',
+    ))).toBe(false);
+    expect(readText(join(process.cwd(), '.squad/routing.md'))).toContain(
+      '| Agentic workflows | agentic-workflows-dev |',
+    );
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/agentic-workflow-designer/SKILL.md',
+    ))).toBe(true);
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/gh-aw-reliability/SKILL.md',
+    ))).toBe(true);
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/workflows/agentics-maintenance.yml',
+    ))).toBe(true);
     for (const workflow of contract.workflows) {
       expect(workflow.source).toBe(`workflows/package/${workflow.name}.md`);
       expect(readText(join(process.cwd(), workflow.source))).not.toMatch(/^resources:/m);

@@ -198,6 +198,9 @@ describe('Squad gh-aw hosted E2E controller', () => {
   it('verifies and narrowly repairs staged ownership metadata before the installation commit', () => {
     const gate = SCRIPT.indexOf('const staged = verifyStagedInstall(checkout,');
     const commit = SCRIPT.indexOf("['commit', '-m', 'ci: install Squad agentic workflows']");
+    const removal = SCRIPT.indexOf("'.github/skills/agentic-workflows/SKILL.md'");
+    expect(removal).toBeGreaterThan(SCRIPT.indexOf("['aw', 'add'"));
+    expect(removal).toBeLessThan(gate);
     expect(gate).toBeGreaterThan(SCRIPT.indexOf("['add', '--', ...installPaths]"));
     expect(gate).toBeLessThan(commit);
     expect(SCRIPT.slice(gate, commit)).toContain('stageOwnership: true');
@@ -1210,5 +1213,4 @@ describe('Squad gh-aw hosted E2E manual pull request fallback outcome', () => {
     expect(hostedBody).toMatch(/gh run download[\s\S]*?--repo[\s\S]*?--name squad-gh-aw-hosted-e2e-/);
   });
 });
-
 

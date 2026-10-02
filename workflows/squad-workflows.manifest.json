@@ -68,9 +68,9 @@
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "42b929f7befe6892b4f63d7531c5ee55c246a9ecbe4ec0db04041e424d07733e",
-      "lock_sha256": "dd3a391a655ed9a65ec06b2fb16a1d2cb327321631f618147b86a9bddc6c1db9",
-      "package_lock_sha256": "0037cae72c220cdd05c0d7452b11bccd15956cc1cac98a187666af583a3dd5ff"
+      "source_sha256": "387aeba6ba53e1e5fac90862a8730e49495c831dc9a33729a049d907f20008fe",
+      "lock_sha256": "dce16d010019f158a48b007afa4ef607b0cd0abec4ac8de1bef5bb0b358f3fb8",
+      "package_lock_sha256": "1988358848082ad1660d618c0bb96fb1db11de6413a86796966fc00ed081fc92"
     },
     {
       "name": "squad-command-router",
@@ -89,7 +89,7 @@
       "package_destination": ".github/workflows/shared/squad-review-guard.mjs",
       "destination": ".github/workflows/shared/squad-review-guard.mjs",
       "ownership": "manifest",
-      "sha256": "2e5e16cfca47e5c0b50744e0c3cf56c5bedebd878f7422d4ed29d090c5abae11"
+      "sha256": "b499ad06b33a52f55f3618ac37cfe739b7b59c45b867ea2b5f47d81598b874c6"
     },
     {
       "path": "shared/squad-install-verifier.mjs",
@@ -97,7 +97,7 @@
       "package_destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "destination": ".github/workflows/shared/squad-install-verifier.mjs",
       "ownership": "manifest",
-      "sha256": "cf474be9b04d339f7e7a18c65e776b8a53e84bea5b4b85abfe65ed11f7b782ce"
+      "sha256": "a279cd5c4adeb613ceb90c1bfbb9818265aeb6bc8986e2e3799e96f7c2d787e5"
     },
     {
       "path": "shared/squad-command-contract.mjs",
@@ -225,7 +225,7 @@
       "name": "gh-aw-enlistment",
       "source": "workflows/skills/gh-aw-enlistment/SKILL.md",
       "destination": ".github/skills/gh-aw-enlistment/SKILL.md",
-      "sha256": "8a3f2d22a110d73f8a89e4f0645547354a35e185d3d2f49235265a4d017464f4"
+      "sha256": "fc6b63c3156d7861d28fcf459abee9e7f041d3581516ec38a684d5a902a27ac5"
     }
   ],
   "bootstrap": {

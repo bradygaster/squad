@@ -272,6 +272,17 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('stale source/resource digest');
     });
 
+    it('removes only gh-aw\'s mutable router and preserves the exact Squad skill', () => {
+      expect(content.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(2);
+      expect(content).toContain('not part of the Squad package');
+      expect(content).toContain('Do not adopt or vendor the rest');
+      expect(content).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(content).toContain(
+        "grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true",
+      );
+    });
+
     it('requires a final strict compile without --approve', () => {
       // The standalone command must appear as its own line (start-of-line in a
       // fenced bash block), not merely as a prose/backtick mention.  The
@@ -431,6 +442,14 @@ describe('gh-aw-enlistment skill', () => {
         .toHaveLength(2);
     });
 
+    it('removes the mutable gh-aw router before verification and permits only that staged deletion', () => {
+      expect(guide.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(3);
+      expect(guide).toContain('The exact router deletion above is the only permitted staged deletion');
+      expect(guide).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(agentGuide).toContain('rm -f .github/skills/agentic-workflows/SKILL.md');
+    });
+
     it('requires agents to execute the complete quick start through PR creation', () => {
       expect(guide).toContain('**Agent action required:**');
       expect(guide).toContain('the agent must execute this entire block');
@@ -514,6 +533,15 @@ describe('gh-aw-enlistment skill', () => {
       expect(guide).toContain('--source-revision "${SQUAD_SHA}"');
       expect(guide).toContain('--strict-compile');
       expect(guide).toContain('package ownership metadata');
+      const upgrade = guide.slice(guide.indexOf('## Upgrading'));
+      const add = upgrade.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force');
+      const cleanup = upgrade.indexOf('rm -f .github/skills/agentic-workflows/SKILL.md');
+      const compile = upgrade.indexOf('gh aw compile --strict');
+      const verify = upgrade.indexOf('squad-install-verifier.mjs \\\n  --verify-install');
+      expect(add).toBeGreaterThan(-1);
+      expect(cleanup).toBeGreaterThan(add);
+      expect(compile).toBeGreaterThan(cleanup);
+      expect(verify).toBeGreaterThan(compile);
     });
   });
 
