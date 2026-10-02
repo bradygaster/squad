@@ -1,6 +1,6 @@
 # Squad.Agents.AI
 
-> **Preview package.** `Squad.Agents.AI` is a preview NuGet package for early adopters. It multi-targets `net8.0`, `net9.0`, and `net10.0`, and depends on preview Microsoft Agent Framework / GitHub Copilot SDK packages, so APIs may change before a stable release.
+> **Preview package.** `Squad.Agents.AI` is a preview NuGet package for early adopters. It multi-targets `net8.0`, `net9.0`, and `net10.0`, and uses stable Microsoft Agent Framework / GitHub Copilot SDK dependencies. Squad's own APIs may still change before its stable release.
 
 ## What it does
 
@@ -34,6 +34,16 @@ dotnet add package Squad.Agents.AI --prerelease --source ./nupkgs
 - GitHub Copilot CLI available on `PATH` (`copilot --version`).
 - Squad CLI and an initialized Squad team root; see the [Squad CLI repo](https://github.com/bradygaster/squad).
 - GitHub Copilot authentication through the signed-in user. The quickstart below does not require an app key or environment variable.
+
+For a bounded sample check without authentication, CLI startup, or model calls:
+
+```powershell
+dotnet run --project src\Squad.Agents.AI\samples\Squad.Agents.AI.Sample -- --smoke
+```
+
+This checks default and keyed DI resolution and the client configuration callback.
+The five live sample flows still require Copilot authentication and may consume credits;
+the smoke check does not validate live responses or streaming.
 
 ## Five-line quickstart
 

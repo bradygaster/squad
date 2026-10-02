@@ -19,6 +19,42 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Squad.Agents.AI;
 
+if (args.Contains("--smoke", StringComparer.OrdinalIgnoreCase))
+{
+    var builder = Host.CreateApplicationBuilder();
+    var callbackInvoked = false;
+    var unavailableCli = Path.Combine(Path.GetTempPath(), $"squad-smoke-{Guid.NewGuid():N}.exe");
+    builder.Services.AddSquadAgent(options =>
+    {
+        options.SquadFolderPath = Directory.GetCurrentDirectory();
+        options.CliPath = unavailableCli;
+        options.AgentName = "SmokeSquad";
+        options.ConfigureCopilotClient = _ => callbackInvoked = true;
+    });
+    foreach (var key in new[] { "alpha", "beta" })
+    {
+        builder.Services.AddKeyedSquadAgent(key, options =>
+        {
+            options.SquadFolderPath = Directory.GetCurrentDirectory();
+            options.CliPath = unavailableCli;
+            options.AgentName = key;
+        });
+    }
+
+    await using var services = builder.Services.BuildServiceProvider();
+    var agent = services.GetRequiredService<SquadAgent>();
+    if (agent.Name != "SmokeSquad" || !callbackInvoked ||
+        !ReferenceEquals(agent, services.GetRequiredService<AIAgent>()) ||
+        services.GetRequiredKeyedService<SquadAgent>("alpha").Name != "alpha" ||
+        services.GetRequiredKeyedService<SquadAgent>("beta").Name != "beta")
+    {
+        throw new InvalidOperationException("Sample smoke validation failed.");
+    }
+
+    Console.WriteLine("Smoke passed: default/keyed DI and client configuration. No sessions or model calls.");
+    return;
+}
+
 // ── Argument parsing ─────────────────────────────────────────────────────────
 int? selectedFlow = null;
 foreach (var arg in args)
@@ -565,7 +601,6 @@ static async ValueTask DisposeIfNeeded(SquadAgent agent)
     if (agent is IAsyncDisposable d)
         await d.DisposeAsync();
 }
-
 
 
 
