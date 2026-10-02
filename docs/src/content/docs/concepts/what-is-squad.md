@@ -35,9 +35,9 @@ Squad enforces explicit safeguards at the framework level:
 - **Reviewer lockout** blocks agents from self-approving work that requires human sign-off.
 - **Escalation points** surface unresolved decisions to the designated human owner before execution continues.
 
-### SDK-first design
+### Markdown-first design
 
-Squad configuration is written in TypeScript (`squad.config.ts`). Configuration is typed, testable, and linted. Teams that already use TypeScript get full editor support, compile-time validation, and familiar tooling.
+Squad configuration lives in portable markdown under `.squad/`, so a team works across supported Copilot surfaces without a build step. The legacy `squad.config.ts` authoring mode is deprecated and will be removed in v2.
 
 ### Extensible
 
@@ -125,5 +125,4 @@ Because `.squad/` is committed to your repository, team state is as reviewable a
 Squad is built on the principle that agentic systems must remain under human control. The framework democratizes multi-agent work by making it accessible to any developer with a repository, while enforcing human oversight at every consequential step.
 
 Agents in Squad propose, draft, and record. Humans review, approve, and are accountable for final output. The governance features built into Squad, including reviewer lockout, escalation points, and auditable decision logs, are not optional settings. They are part of the framework's design contract. Squad extends human teams at scale; it doesn't remove the human from the loop.
-
 

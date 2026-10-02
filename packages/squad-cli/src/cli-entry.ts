@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
     console.log(`             Flags: --global (init in personal squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
-    console.log(`             Flags: --sdk (SDK builder syntax)`);
+    console.log(`             Flags: --sdk (deprecated; removed in v2)`);
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
@@ -1172,4 +1172,3 @@ main().catch(err => {
   }
   process.exit(1);
 });
-

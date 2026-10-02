@@ -44,7 +44,7 @@ Squad works across multiple interfaces — GitHub Copilot CLI, VS Code, Squad CL
 - **GitHub Copilot CLI** — Day-to-day conversational work with your squad (recommended)
 - **VS Code** — Same experience, editor-integrated
 - **Squad CLI** — Setup, diagnostics, monitoring (`squad init`, `squad doctor`, `squad watch`)
-- **SDK** — Build tools on top of Squad with `squad.config.ts`
+- **SDK** — Build programmatic integrations with `@bradygaster/squad-sdk`
 - **Copilot Coding Agent** — Autonomous issue processing via `@copilot`
 
 **Multi-platform support:** Squad also works with Azure DevOps (work items, PRs via `az boards`/`az repos`), GitLab Issues, and Microsoft Planner through pluggable platform adapters. See [Enterprise Platforms](features/enterprise-platforms.md) for details.
@@ -218,46 +218,13 @@ Squad automatically picks the right response speed based on your request complex
 
 ---
 
-## SDK-first mode
+## SDK-first mode (deprecated)
 
-Define your team in TypeScript instead of maintaining markdown files manually. Write a `squad.config.ts` with type-safe builder functions, and `squad build` generates the `.squad/` governance markdown.
+`squad init --sdk` is deprecated and will be removed in v2 because its TypeScript configuration model does not represent the full Squad feature set. Use `squad init` and maintain the generated markdown directly for new teams.
 
-```typescript
-import { defineSquad, defineTeam, defineAgent, defineRouting } from '@bradygaster/squad-sdk';
+Existing `squad.config.ts` projects can continue using `squad build` and `squad build --check` during the transition.
 
-export default defineSquad({
-  team: defineTeam({
-    name: 'Core Squad',
-    description: 'The main engineering team',
-    members: ['@edie', '@mcmanus'],
-  }),
-  agents: [
-    defineAgent({
-      name: 'edie',
-      role: 'TypeScript Engineer',
-      model: 'claude-sonnet-5',
-      capabilities: [{ name: 'type-system', level: 'expert' }],
-    }),
-  ],
-  routing: defineRouting({
-    rules: [{ pattern: 'feature-*', agents: ['@edie'], tier: 'standard' }],
-    defaultAgent: '@coordinator',
-  }),
-});
-```
-
-**Get started:**
-
-```bash
-squad init --sdk          # New project with SDK config
-squad migrate --to sdk    # Convert existing .squad/ to TypeScript
-squad build               # Generate .squad/ from config
-squad build --check       # Validate in CI without writing
-```
-
-Builder functions: `defineTeam()`, `defineAgent()`, `defineRouting()`, `defineCeremony()`, `defineHooks()`, `defineCasting()`, `defineTelemetry()`, `defineSkill()`, `defineSquad()`.
-
-→ [Full guide: SDK-First Mode](sdk-first-mode.md)
+→ [Legacy SDK-First Mode compatibility guide](sdk-first-mode.md)
 
 ---
 
@@ -267,7 +234,7 @@ Squad names agents from fictional universes — Apollo 13 / NASA Mission Control
 
 Casting is **persistent** — once an agent receives a name, it keeps that name across sessions. The casting registry lives in `.squad/casting/registry.json`. You control which universes are available through a policy allowlist and can set per-universe capacity limits.
 
-In SDK-first mode, configure casting with `defineCasting()`:
+Existing SDK-first projects can configure casting with `defineCasting()`:
 
 ```typescript
 defineCasting({
@@ -287,7 +254,7 @@ Skills are reusable knowledge patterns that agents load on demand. They live in 
 
 Skills have a confidence lifecycle: `low` → `medium` → `high`, and track their source: `manual` (you wrote it), `observed` (agent saw a pattern), `earned` (validated through use), or `extracted` (imported from another project).
 
-In SDK-first mode, define skills with `defineSkill()`:
+Existing SDK-first projects can define skills with `defineSkill()`:
 
 ```typescript
 defineSkill({
@@ -314,7 +281,7 @@ Skills accumulate as you work. After a few sessions, your team has a knowledge b
 
 Ceremonies are structured team meetings. Squad ships with two default ceremonies — Design Review (triggers before multi-agent work) and Retrospective (triggers after failures). You can trigger ceremonies manually, create custom ones, or disable them. Configuration lives in `.squad/ceremonies.md`.
 
-In SDK-first mode, define ceremonies with `defineCeremony()`:
+Existing SDK-first projects can define ceremonies with `defineCeremony()`:
 
 ```typescript
 defineCeremony({
@@ -539,7 +506,7 @@ Squad maintains a clear ownership model:
 |------|-------|--------------|
 | `.github/agents/squad.agent.md` | Squad (overwritten on upgrade) | No — your changes will be lost |
 | `.squad/` | You and your team | Yes — this is your team's state |
-| `squad.config.ts` | You | Yes — your SDK-first config |
+| `squad.config.ts` | You | Legacy SDK-first projects only |
 | Everything else | You | Yes |
 
 ---
@@ -549,7 +516,7 @@ Squad maintains a clear ownership model:
 | Command | What it does |
 |---------|-------------|
 | `squad init` | Initialize Squad in the current repo |
-| `squad init --sdk` | Initialize with SDK-first TypeScript config |
+| `squad init --sdk` | Deprecated; compatibility only until v2 |
 | `squad init --global` | Initialize a personal squad (cross-project) |
 | `squad build` | Generate `.squad/` from `squad.config.ts` |
 | `squad build --check` | Validate generated files match disk (for CI) |
@@ -563,7 +530,7 @@ Squad maintains a clear ownership model:
 | `squad import <file> --force` | Import, archiving existing agents |
 | `squad plugin install <name>` | Install a plugin from the marketplace |
 | `squad plugin list` | List installed plugins |
-| `squad migrate --to sdk` | Convert existing squad to SDK-first config |
+| `squad migrate --to sdk` | Deprecated; do not start new SDK-first migrations |
 | `squad migrate --from ai-team` | Migrate from `.ai-team/` to `.squad/` |
 | `squad subsquads` | Manage SubSquads |
 | `squad status` | Show team status and global config |
