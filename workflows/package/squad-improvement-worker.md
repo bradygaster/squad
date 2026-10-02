@@ -19,6 +19,10 @@ on:
         description: Relay metadata, never approval evidence
         required: false
         type: string
+      squad_approval_relay:
+        description: Skill-forwarded origin (event_type/item_type/item_number/comment_id) for the router-relayed path, where this run's own workflow_dispatch trigger carries no native item payload for the engine to derive aw_context from. Never approval evidence; re-verified live.
+        required: false
+        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -46,6 +50,7 @@ pre-agent-steps:
       SQUAD_IMPROVE_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
       SQUAD_IMPROVE_APPROVAL_COMMENT_ID: ${{ github.event.inputs.approval_comment_id }}
       SQUAD_IMPROVE_AW_CONTEXT: ${{ github.event.inputs.aw_context }}
+      SQUAD_IMPROVE_RELAY_CONTEXT: ${{ github.event.inputs.squad_approval_relay }}
       SQUAD_IMPROVE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     run: |
       set -euo pipefail
@@ -69,6 +74,7 @@ safe-outputs:
         SQUAD_IMPROVE_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
         SQUAD_IMPROVE_APPROVAL_COMMENT_ID: ${{ github.event.inputs.approval_comment_id }}
         SQUAD_IMPROVE_AW_CONTEXT: ${{ github.event.inputs.aw_context }}
+        SQUAD_IMPROVE_RELAY_CONTEXT: ${{ github.event.inputs.squad_approval_relay }}
         SQUAD_IMPROVE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       with:
         script: |

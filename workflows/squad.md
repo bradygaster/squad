@@ -465,6 +465,7 @@ failures, not commands to reinterpret as Cast.
 - **Event name:** `${{ github.event_name }}`
 - **Dispatched command:** `${{ github.event.inputs.command }}`
 - **Dispatched issue number:** `${{ github.event.inputs.issue_number }}`
+- **Dispatched aw_context:** `${{ github.event.inputs.aw_context }}`
 
 ### Workflow-dispatch activation guard [MANDATORY — run before any skill]
 
@@ -1186,15 +1187,33 @@ description: Relay an approved retrospective governance proposal to the improvem
 After the existing mutating authorization guard, relay only an issue comment
 created by the authorized human. Other events, PR comments and missing IDs
 receive a refusal, never a dispatch. The worker re-fetches the exact comment,
-permission, content revision and scope. Use the typed `dispatch_workflow`
-safe-output, with nested inputs (never a generic GitHub mutation):
+permission, content revision and scope. Resolve `approval_comment_id` in this
+order: `github.event.comment.id` when this run was activated directly by the
+comment; otherwise, under `workflow_dispatch`, the `comment_id` field of the
+parsed **Dispatched aw_context** (Trigger Context) relayed by the command
+router. If neither resolves to a positive integer, refuse and STOP — never
+dispatch with a guessed, omitted, or placeholder id. Use the typed
+`dispatch_workflow` safe-output, with nested inputs (never a generic GitHub
+mutation). Always include `squad_approval_relay` exactly as shown — this run's
+own workflow_dispatch trigger carries no native issue/comment payload for
+gh-aw's dispatch engine to derive context from when this run was itself
+relayed, so the worker-side gate cannot rely on engine-injected `aw_context`
+for the item identity in that case and requires this explicit, separately
+re-verified echo instead. `squad_approval_relay` is declared `type: string` on
+the receiving workflow and the gate parses it with `JSON.parse`, and GitHub's
+`workflow_dispatch` REST input schema accepts only string values for every
+input regardless of its declared type — an object value is rejected outright
+("is not of a type(s) string") and the dispatch never happens. Emit
+`squad_approval_relay` as a **JSON-encoded string** (the object below,
+stringified), never as a nested JSON object:
 
 ```json
 {
   "workflow_name": "squad-improvement-worker",
   "inputs": {
     "issue_number": "{issue-number}",
-    "approval_comment_id": "{triggering-comment-id}"
+    "approval_comment_id": "{resolved-approval-comment-id}",
+    "squad_approval_relay": "{\"event_type\":\"issue_comment\",\"item_type\":\"issue\",\"item_number\":\"{issue-number}\",\"comment_id\":\"{resolved-approval-comment-id}\"}"
   }
 }
 ```

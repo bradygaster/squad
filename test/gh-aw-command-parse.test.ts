@@ -203,6 +203,16 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(WORKFLOW).not.toContain('### Step PC-1: Extract the command argument');
   });
 
+  it('declares roles: all so write-role gating does not block modes open to everyone (#2)', () => {
+    expect(DISCOVERY_WORKFLOW).toMatch(/^on:\n\s+roles:\s*all\n/m);
+  });
+
+  it('forwards originating comment provenance via aw_context on the relayed dispatch (#3)', () => {
+    expect(DISCOVERY_WORKFLOW).toContain('comment_id: context.payload.comment?.id ?? null');
+    expect(DISCOVERY_WORKFLOW).toContain('aw_context: awContext');
+    expect(DISCOVERY_WORKFLOW).toContain("inputs: {");
+  });
+
   it('routes commands outside gh-aw start-only activation through the same contract', () => {
     expect(DISCOVERY_WORKFLOW).toContain("contains(github.event.issue.body, '/squad')");
     expect(DISCOVERY_WORKFLOW).toContain("contains(github.event.comment.body, '/squad')");

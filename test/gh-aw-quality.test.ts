@@ -3866,6 +3866,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(ci.slice(seedStart, addStart)).toContain(
       '"$GITHUB_WORKSPACE/workflows/package/${workflow}.md"',
     );
+    expect(ci.slice(addStart)).toContain('rm -f .github/skills/agentic-workflows/SKILL.md');
     expect(contract.shared_runtime).toContainEqual(expect.objectContaining({
       path: 'shared/squad-review-guard.mjs',
       destination: '.github/workflows/shared/squad-review-guard.mjs',
@@ -3876,6 +3877,25 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(contract.bootstrap.trigger_probe).toBe(TRIGGER_PROBE);
     expect(contract.shared_runtime.some((entry: { path: string }) => entry.path === TRIGGER_PROBE)).toBe(false);
     expect(readText(join(process.cwd(), 'workflows/aw.yml'))).toContain('  - skills/gh-aw-enlistment');
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/agentic-workflows/SKILL.md',
+    ))).toBe(false);
+    expect(readText(join(process.cwd(), '.squad/routing.md'))).toContain(
+      '| Agentic workflows | agentic-workflows-dev |',
+    );
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/agentic-workflow-designer/SKILL.md',
+    ))).toBe(true);
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/skills/gh-aw-reliability/SKILL.md',
+    ))).toBe(true);
+    expect(existsSync(join(
+      process.cwd(),
+      '.github/workflows/agentics-maintenance.yml',
+    ))).toBe(true);
     for (const workflow of contract.workflows) {
       expect(workflow.source).toBe(`workflows/package/${workflow.name}.md`);
       expect(readText(join(process.cwd(), workflow.source))).not.toMatch(/^resources:/m);
@@ -3961,8 +3981,8 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(mutable).not.toContain(actionReference);
       expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
         .toBe(sourceBinding === 'workflow'
-          ? 'a3290dad380577fd6d64c92169b9d74a7f5248851b110d8eafc6260b34f772d9'
-          : 'fd7c735e2de5088954e8d0d647a15e5f95ed5850947f201c1a4ce17433d66632');
+          ? '9bec39a94b57b8d6c2baf92b25bf2817ff7bf389533d6462d71a1937b2154cbe'
+          : '00bb10abb90600fd03411e6036ab67741b208da1c9698f8eb1f5faea142583a9');
       expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
       writeFileSync(lockPath, mutable);
       expect(verifyInstall(root).failures.join('\n'))
@@ -4016,7 +4036,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     compile();
     const unpinned = readText(lockPath);
     expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
-      .toBe('fd7c735e2de5088954e8d0d647a15e5f95ed5850947f201c1a4ce17433d66632');
+      .toBe('00bb10abb90600fd03411e6036ab67741b208da1c9698f8eb1f5faea142583a9');
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
     const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {

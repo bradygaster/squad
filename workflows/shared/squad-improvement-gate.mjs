@@ -11,6 +11,7 @@ import {
   readAgentOutputItems, evaluateRetroPullRequestItems, pullLinksIssue, findNativeLinkedPulls,
   NATIVE_LINK_MAX_PAGES,
 } from './squad-retro-provenance.mjs';
+export { isNumericId };
 
 export { ACTION_LABEL, PROPOSAL_LABEL, extractActionKey, readAgentOutputItems };
 export const APPROVE_COMMAND = '/squad approve-improvement';
@@ -259,6 +260,24 @@ async function graphql(env, query, variables) {
   } catch { return { __status: 'request-unavailable' }; }
 }
 
+// Canonicalizes a value to a safe-integer identity only when it is already a
+// valid numeric id in either representation (native number or decimal
+// string), and compares two such values by their canonical integer form
+// rather than by strict type-sensitive equality. gh-aw's own dispatch engine
+// (`resolveItemContext` in its pinned `aw_context.cjs`, v0.90.0) always
+// stringifies `item_number`/`comment_id` before injecting them as
+// `workflow_dispatch` inputs, so in production both sides of every
+// comparison below are already decimal strings and this normalization is a
+// no-op. It exists as defense-in-depth against any future gh-aw engine
+// change, a hand-authored manual `workflow_dispatch` run, or a malformed
+// relay payload — and, unlike a loose `==` comparison, it still rejects
+// non-numeric or malformed forms outright (returns `false` whenever either
+// side fails `isNumericId`), so it never widens what is accepted.
+const sameNumericId = (a, b) => {
+  if (!isNumericId(a) || !isNumericId(b)) return false;
+  return Number(a) === Number(b);
+};
+
 export async function collectImprovementContext(env = process.env, {
   fetchJson = (route, fields) => restJson(env, route, fields),
   fetchGraphql = (query, variables) => graphql(env, query, variables),
@@ -272,10 +291,40 @@ export async function collectImprovementContext(env = process.env, {
   if (env.SQUAD_IMPROVE_AW_CONTEXT) {
     let origin;
     try { origin = JSON.parse(env.SQUAD_IMPROVE_AW_CONTEXT); } catch { return refuse('approval-relay-context-invalid'); }
+    // `repo`/`workflow_id` are populated by gh-aw's dispatch engine from this
+    // run's own (always-accurate, regardless of triggering event) identity —
+    // they independently prove "dispatched from squad.lock.yml in this exact
+    // repo" and are required unconditionally.
     if (env.GITHUB_ACTOR !== 'github-actions[bot]' || origin.repo !== repository ||
-        origin.workflow_id !== `${repository}/.github/workflows/squad.lock.yml@refs/heads/${env.SQUAD_IMPROVE_DEFAULT_BRANCH}` ||
-        origin.event_type !== 'issue_comment' || origin.item_type !== 'issue' ||
-        origin.item_number !== number || origin.comment_id !== commentId) return refuse('approval-relay-context-invalid');
+        origin.workflow_id !== `${repository}/.github/workflows/squad.lock.yml@refs/heads/${env.SQUAD_IMPROVE_DEFAULT_BRANCH}`) {
+      return refuse('approval-relay-context-invalid');
+    }
+    if (origin.event_type === 'issue_comment') {
+      // squad.md was triggered directly by the approval comment: gh-aw's engine
+      // derives item_type/item_number/comment_id from that same real payload,
+      // so the engine-injected context is itself authoritative here. Compare
+      // by canonical safe-integer identity (see `sameNumericId`) rather than
+      // strict type-sensitive equality.
+      if (origin.item_type !== 'issue' || !sameNumericId(origin.item_number, number) ||
+          !sameNumericId(origin.comment_id, commentId)) {
+        return refuse('approval-relay-context-invalid');
+      }
+    } else {
+      // squad.md was relayed here via workflow_dispatch (command-router path):
+      // its own run has no native issue/comment payload, so gh-aw's engine can
+      // only report this run's own (workflow_dispatch) event_type and empty
+      // item fields — never a usable item identity. The skill must instead
+      // forward its own independently re-verified item identity under a
+      // distinct input name gh-aw's engine does not auto-populate/override,
+      // with identical exact-match binding semantics (canonical safe-integer
+      // identity, not strict type-sensitive equality).
+      let relay;
+      try { relay = JSON.parse(env.SQUAD_IMPROVE_RELAY_CONTEXT || ''); } catch { return refuse('approval-relay-context-invalid'); }
+      if (!relay || relay.event_type !== 'issue_comment' || relay.item_type !== 'issue' ||
+          !sameNumericId(relay.item_number, number) || !sameNumericId(relay.comment_id, commentId)) {
+        return refuse('approval-relay-context-invalid');
+      }
+    }
   }
   const issue = await fetchJson(`repos/${repository}/issues/${number}`, {});
   if (!issue || issue.__status || Number(issue.number) !== Number(number) || issue.pull_request) return refuse('issue-unavailable');
@@ -373,11 +422,59 @@ export async function enforceImprovementSafeOutputs(env = process.env, {
 
 // Fail fast before the dispatcher agent; its existing mode authorization still
 // runs. The receiver checks injected aw_context against the exact relayed IDs.
-export async function validateImprovementCommand(event, env, fetchJson = (route, fields) => restJson(env, route, fields)) {
+// A relayed workflow_dispatch run has no native `comment` event of its own:
+// the command router forwards only a `comment_id` pointer through the typed
+// `aw_context` input (#3). That pointer is never trusted on its own — it is
+// used solely to re-fetch the live comment, which is then independently
+// re-validated against the exact same invariants as the direct path below
+// (issue match, human author, unedited, exact approval content). The
+// comment's own live `user.login` — never the dispatch actor, which is the
+// relaying bot identity, not the approver — is what gets the permission
+// check, so approval binding is exactly as strong as the native route.
+async function validateApprovalDispatchRelay(event, env, fetchJson, rawCommand) {
+  if (rawCommand !== 'approve-improvement') return { ok: false, violations: [{ kind: 'approval-route-invalid' }] };
+  let awContext = null;
+  try {
+    awContext = JSON.parse(event?.inputs?.aw_context || '');
+  } catch {
+    awContext = null;
+  }
+  const issueNumber = Number(event?.inputs?.issue_number);
+  const commentId = Number(awContext?.comment_id);
+  if (!awContext || awContext.item_type !== 'issue' ||
+      !isNumericId(issueNumber) || Number(awContext.item_number) !== issueNumber ||
+      !isNumericId(commentId)) {
+    return { ok: false, violations: [{ kind: 'approval-route-invalid' }] };
+  }
   const violations = [];
-  const rawCommand = /(?:^|\s)\/squad(?:\s+|$)([^\r\n]*)/.exec(normalizeText(event?.comment?.body || event?.issue?.body))?.[1]?.trim();
-  if (rawCommand === 'revoke-improvement') return { ok: true, reserved: true, violations };
-  if (!rawCommand?.startsWith('approve-improvement')) return { ok: true, ignored: true, violations };
+  const comment = await fetchJson(`repos/${env.GITHUB_REPOSITORY}/issues/comments/${commentId}`, {});
+  const apiBase = String(env.GITHUB_API_URL || 'https://api.github.com').replace(/\/+$/, '');
+  if (comment?.id !== commentId ||
+      comment.issue_url !== `${apiBase}/repos/${env.GITHUB_REPOSITORY}/issues/${issueNumber}` ||
+      comment?.user?.type !== 'User' ||
+      comment.performed_via_github_app || comment.created_at !== comment.updated_at ||
+      parseCommandComment(comment.body).command !== 'approve') {
+    violations.push({ kind: 'approval-comment-provenance-invalid' });
+  }
+  const relayedActor = comment?.user?.login;
+  const permission = relayedActor
+    ? await fetchJson(`repos/${env.GITHUB_REPOSITORY}/collaborators/${encodeURIComponent(relayedActor)}/permission`, {})
+    : null;
+  if (!relayedActor || !isTrustedApprover({ permission: permission?.permission }).trusted) {
+    violations.push({ kind: 'actor-not-trusted' });
+  }
+  return { ok: !violations.length, violations };
+}
+
+export async function validateImprovementCommand(event, env, fetchJson = (route, fields) => restJson(env, route, fields)) {
+  const isDispatchRelay = env.GITHUB_EVENT_NAME === 'workflow_dispatch';
+  const rawCommand = isDispatchRelay
+    ? String(event?.inputs?.command ?? '').trim()
+    : /(?:^|\s)\/squad(?:\s+|$)([^\r\n]*)/.exec(normalizeText(event?.comment?.body || event?.issue?.body))?.[1]?.trim();
+  if (rawCommand === 'revoke-improvement') return { ok: true, reserved: true, violations: [] };
+  if (!rawCommand?.startsWith('approve-improvement')) return { ok: true, ignored: true, violations: [] };
+  if (isDispatchRelay) return validateApprovalDispatchRelay(event, env, fetchJson, rawCommand);
+  const violations = [];
   if (env.GITHUB_EVENT_NAME !== 'issue_comment' ||
       event.action !== 'created' || event.issue?.pull_request || rawCommand !== 'approve-improvement') {
     return { ok: false, violations: [{ kind: 'approval-route-invalid' }] };

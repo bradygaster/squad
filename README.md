@@ -586,8 +586,9 @@ test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
   exit 1
 }
 
-SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev --jq '.sha')"
+SQUAD_SHA="<40-character-commit-sha>"  # explicit, maintainer-approved; never `commits/dev`
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -600,19 +601,21 @@ git push
 `gh aw add` compiles the workflows automatically. If it reports unapproved
 safe-update changes, review them and run `gh aw compile --approve`.
 
-> `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
-
 Review the complete generated diff before you commit:
 
 | Path | What gh-aw writes | Commit? |
 |------|-------------------|---------|
 | `.github/workflows/` | The Squad workflow sources, shared imports, compiled lock files, and `agentics-maintenance.yml` | Yes |
 | `.github/aw/` | Supporting gh-aw state, including pinned action versions and SHAs | Yes |
-| `.github/skills/` | The agentic-workflows dispatcher skill | Yes |
+| `.github/skills/` | The exact Squad-owned `gh-aw-enlistment` skill; remove gh-aw's generated mutable `agentic-workflows` router before staging | Yes |
 | `.gitattributes` | Marks compiled `.lock.yml` workflows as generated | Yes |
 | `.vscode/` | Workspace settings that enable GitHub Copilot for Markdown files in VS Code | Optional — commit only if you want to share this workspace setting |
 
 `agentics-maintenance.yml` is a second installed workflow. Squad configures its created pull request safe output to expire after 14 days, so this workflow runs scheduled expiration cleanup and also exposes manual maintenance operations. To omit it, create `.github/workflows/aw.json` with `{"maintenance": false}` before installing. gh-aw then warns that expiration is disabled and removes the maintenance workflow.
+
+Unlike the mutable router skill, `agentics-maintenance.yml` is compiled runtime
+output required for the configured 14-day safe-output expiration behavior. Keep
+it unless you explicitly disable maintenance before installation.
 
 #### Retrospective auto-implementation (opt-in behavior)
 
