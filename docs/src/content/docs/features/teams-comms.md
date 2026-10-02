@@ -5,8 +5,6 @@ description: Bidirectional chat integration between Squad and Microsoft Teams vi
 
 # Microsoft Teams Comms Adapter
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 The Teams adapter lets your squad post updates and read replies through Microsoft Teams, alongside the existing file-based, email, and other comm channels. It ships in `@bradygaster/squad-sdk` as a `CommunicationAdapter` implementation and uses Microsoft Graph API for both 1:1 chats and channel messaging.
 
 > **⚠️ Breaking change in v0.10:** `createCommunicationAdapter` is now async (returns `Promise<CommunicationAdapter>`). Callers must `await` the result.

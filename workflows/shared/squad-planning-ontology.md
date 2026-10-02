@@ -260,7 +260,7 @@ degradation observable: never claim `consulted` for a page not actually fetched.
 ```markdown
 ## Plan Validation
 
-### Result: <✅ PASS | ❌ FAIL>
+RESULT: <PASS | FAIL>
 
 ### Checks
 

@@ -246,7 +246,8 @@ describe('gh-aw-enlistment skill', () => {
     });
 
     it('installs one immutable native package with the 8/17/1 topology', () => {
-      expect(content).toContain('SQUAD_SHA="$(gh api repos/bradygaster/squad/commits/dev');
+      expect(content).toContain(': "${SQUAD_SHA:?STOP: set SQUAD_SHA to an explicit, maintainer-approved 40-character Squad commit SHA before installing.}"');
+      expect(content).not.toContain('commits/dev');
       expect(content).toContain('^' + '[0-9a-f]{40}' + '$');
       expect(content).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
       expect(content).toContain('exactly eight workflows, seventeen runtime resources, and one');
@@ -269,6 +270,17 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('--strict-compile');
       expect(content).toContain('missing source/lock pair');
       expect(content).toContain('stale source/resource digest');
+    });
+
+    it('removes only gh-aw\'s mutable router and preserves the exact Squad skill', () => {
+      expect(content.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(2);
+      expect(content).toContain('not part of the Squad package');
+      expect(content).toContain('Do not adopt or vendor the rest');
+      expect(content).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(content).toContain(
+        "grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true",
+      );
     });
 
     it('requires a final strict compile without --approve', () => {
@@ -347,6 +359,34 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('gh repo view --json nameWithOwner');
       expect(content).toContain('gh repo view --json defaultBranchRef');
     });
+
+    it('names the bootstrap job\'s own PR-creation fallback branch as the real Cast branch, distinct from the human-run install branch', () => {
+      // Regression for a Copilot review finding: this paragraph explains what
+      // happens when the *automated* bootstrap workflow's own
+      // github.rest.pulls.create call is refused (can_approve_pull_request_reviews
+      // false). That fallback always pushes BOOTSTRAP_BRANCH
+      // (workflows/shared/squad-bootstrap-validator.mjs), never the branch a
+      // human creates by hand in step 2 below (chore/squad-gh-aw-bootstrap).
+      // Conflating the two makes the compare URL example wrong and leaves an
+      // operator looking at the wrong branch.
+      const validatorSource = readLF('workflows/shared/squad-bootstrap-validator.mjs');
+      const bootstrapBranchMatch = validatorSource.match(/^export const BOOTSTRAP_BRANCH = '([^']+)';$/m);
+      expect(bootstrapBranchMatch, 'BOOTSTRAP_BRANCH constant must exist').not.toBeNull();
+      const bootstrapBranch = bootstrapBranchMatch![1];
+      expect(bootstrapBranch).toBe('squad/bootstrap-cast');
+
+      const paragraphStart = content.indexOf("With it `false`, the bootstrap job's own");
+      const paragraphEnd = content.indexOf('\n\n', paragraphStart);
+      expect(paragraphStart, 'fallback-explanation paragraph must exist').toBeGreaterThan(-1);
+      const paragraph = content.slice(paragraphStart, paragraphEnd);
+
+      expect(paragraph).toContain(`\`${bootstrapBranch}\` branch`);
+      expect(paragraph).toContain(`.../compare/<base>...${bootstrapBranch}?expand=1&title=...`);
+      // Mutation guard: the paragraph must not (re-)claim the automated
+      // fallback pushes the human's own manual install branch.
+      expect(paragraph).not.toContain('pushes the\n`chore/squad-gh-aw-bootstrap` branch');
+      expect(paragraph).not.toMatch(/compare\/<base>\.\.\.chore\/squad-gh-aw-bootstrap/);
+    });
   });
 
   describe('gh-aw bootstrap documentation', () => {
@@ -400,6 +440,14 @@ describe('gh-aw-enlistment skill', () => {
     it('checks the staged installation before every bootstrap commit', () => {
       expect(guide.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
         .toHaveLength(2);
+    });
+
+    it('removes the mutable gh-aw router before verification and permits only that staged deletion', () => {
+      expect(guide.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(3);
+      expect(guide).toContain('The exact router deletion above is the only permitted staged deletion');
+      expect(guide).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(agentGuide).toContain('rm -f .github/skills/agentic-workflows/SKILL.md');
     });
 
     it('requires agents to execute the complete quick start through PR creation', () => {
@@ -485,6 +533,15 @@ describe('gh-aw-enlistment skill', () => {
       expect(guide).toContain('--source-revision "${SQUAD_SHA}"');
       expect(guide).toContain('--strict-compile');
       expect(guide).toContain('package ownership metadata');
+      const upgrade = guide.slice(guide.indexOf('## Upgrading'));
+      const add = upgrade.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force');
+      const cleanup = upgrade.indexOf('rm -f .github/skills/agentic-workflows/SKILL.md');
+      const compile = upgrade.indexOf('gh aw compile --strict');
+      const verify = upgrade.indexOf('squad-install-verifier.mjs \\\n  --verify-install');
+      expect(add).toBeGreaterThan(-1);
+      expect(cleanup).toBeGreaterThan(add);
+      expect(compile).toBeGreaterThan(cleanup);
+      expect(verify).toBeGreaterThan(compile);
     });
   });
 

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-02
+
+Squad CLI and SDK (the `@bradygaster/squad-cli` and `@bradygaster/squad-sdk` npm packages) graduate to 1.0.0. This is a stabilization release: there are no breaking API or command changes from 0.13.1. It marks the npm packages as stable per the project's independent per-package versioning policy (distinct from the already-stable `Squad.Agents.AI` NuGet package, which reached 1.0.0 separately in #2143).
+
+### Changed
+
+- Removed the blanket "Experimental — Squad is alpha software" disclaimer banner from 87 documentation pages under `docs/src/content/docs/**`. Genuine preview-channel and feature-specific warnings (SDK-first mode, GitLab Issues Mode, the plugin security MVP gate, and preview/insider release channels) are unchanged and still documented.
+- `@bradygaster/squad-cli`'s declared dependency floor on `@bradygaster/squad-sdk` is now `>=1.0.0` (previously `>=0.11.0`), reflecting the SDK's own stabilization.
+
 ## [0.13.1] - 2026-08-26
 
 ### Fixed

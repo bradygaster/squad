@@ -5,8 +5,6 @@ description: Markdown-aware security scanner that catches embedded credentials, 
 
 # Skill Security Scanner
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 The skill security scanner is a markdown-aware safety check that runs as part of `scripts/security-review.mjs` to inspect every SKILL.md file in `.copilot/skills/` and `.squad/skills/`. It catches three classes of problem before a skill gets installed or merged:
 
 1. **Embedded credentials** — API keys, tokens, passwords pasted into skill text

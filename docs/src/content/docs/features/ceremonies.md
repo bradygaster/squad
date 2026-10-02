@@ -1,8 +1,5 @@
 # Ceremonies
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to schedule team ceremonies:**
 ```
 Schedule a daily standup at 9am and a sprint retro every Friday

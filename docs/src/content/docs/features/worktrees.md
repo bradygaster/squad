@@ -1,8 +1,5 @@
 # Git Worktree Awareness
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to enable branch-specific state:**
 ```
 Use worktree-local mode — I want each branch to have its own team state
