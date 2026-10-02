@@ -703,30 +703,45 @@ function verifyOwnership(root, contract, expectedRevision) {
   return record.resolvedCommit;
 }
 
+function digestMatchesWithFinalNewlineTolerance(content, expectedDigest) {
+  const alternate = content.endsWith('\n') ? content.slice(0, -1) : `${content}\n`;
+  return [content, alternate].some(candidate => sha256(Buffer.from(candidate)) === expectedDigest);
+}
+
+function verifyWorkflowSourceBinding(root, entry, revision) {
+  const installed = readRequired(root, entry.destination);
+  const text = installed.toString('utf8');
+  const lines = text.split('\n');
+  const frontmatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
+  const sourceIndexes = lines
+    .map((line, index) => line.startsWith('source:') ? index : -1)
+    .filter(index => index >= 0);
+  const sourceBindings = new Map([
+    [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
+    [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
+  ]);
+  const sourceIndex = sourceIndexes[0];
+  const sourceBinding = lines[sourceIndex];
+  if (frontmatterEnd < 0 || sourceIndexes.length !== 1
+    || sourceIndex !== frontmatterEnd - 1 || !sourceBindings.has(sourceBinding)) {
+    throw new Error(`Installed source binding is invalid for ${entry.destination}.`);
+  }
+  lines.splice(sourceIndex, 1);
+  if (!digestMatchesWithFinalNewlineTolerance(lines.join('\n'), entry.source_sha256)) {
+    throw new Error(`Installed digest mismatch for ${entry.destination}.`);
+  }
+  return {
+    digest: sha256(installed),
+    lockDigest: sourceBindings.get(sourceBinding),
+  };
+}
+
 function verifyInstalledBytes(root, contract, revision) {
   const lockDigests = new Map();
   for (const entry of contract.workflows) {
-    const installed = readRequired(root, entry.destination);
-    const text = installed.toString('utf8');
-    const { frontmatter } = splitWorkflow(text, entry.destination);
-    const sourceLines = frontmatter.split('\n').filter(line => /^source:/.test(line));
-    const sourceBinding = sourceLines[0];
-    const sourceBindings = new Map([
-      [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
-      [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
-    ]);
-    if (sourceLines.length !== 1 || !sourceBindings.has(sourceBinding)
-      || !frontmatter.endsWith(`\n${sourceBinding}`)) {
-      throw new Error(`Installed source binding is invalid for ${entry.destination}.`);
-    }
-    const canonicalText = text.replace(`\n${sourceBinding}\n---\n`, '\n---\n');
-    const canonical = Buffer.from(canonicalText);
-    const canonicalWithFinalNewline = Buffer.from(`${canonicalText}\n`);
-    if (![sha256(canonical), sha256(canonicalWithFinalNewline)].includes(entry.source_sha256)) {
-      throw new Error(`Installed digest mismatch for ${entry.destination}.`);
-    }
+    const verified = verifyWorkflowSourceBinding(root, entry, revision);
     // Select from the verified source, never accept whichever lock digest happens to match.
-    lockDigests.set(entry.name, sourceBindings.get(sourceBinding));
+    lockDigests.set(entry.name, verified.lockDigest);
   }
   for (const entry of contract.skills) {
     if (fileDigest(root, entry.destination) !== entry.sha256) {
@@ -941,9 +956,12 @@ export function verifyResource(root, destination) {
   const entry = [...contract.shared_runtime, ...contract.workflows, ...contract.skills]
     .find((candidate) => candidate.destination === destination);
   if (!entry) throw new Error(`Resource is not registered in the trusted Squad contract: ${destination}`);
+  if ('source_sha256' in entry) {
+    const revision = verifyOwnership(root, contract);
+    return verifyWorkflowSourceBinding(root, entry, revision).digest;
+  }
   const actual = fileDigest(root, destination);
-  const expected = entry.source_sha256 ?? entry.sha256;
-  if (actual !== expected) throw new Error(`Squad resource digest mismatch for ${destination}.`);
+  if (actual !== entry.sha256) throw new Error(`Squad resource digest mismatch for ${destination}.`);
   return actual;
 }
 
