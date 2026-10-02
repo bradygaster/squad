@@ -1,0 +1,468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squad.dev/spec/squad-interop/v0.1/evidence.schema.json",
+  "title": "Squad Shared Event and Evidence Envelope v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specversion",
+    "schema",
+    "id",
+    "type",
+    "source",
+    "subject",
+    "time",
+    "actor",
+    "resource",
+    "correlationId",
+    "causationId",
+    "idempotencyKey",
+    "payloadDigest",
+    "redaction",
+    "data"
+  ],
+  "properties": {
+    "specversion": { "const": "squad-interop/v0.1" },
+    "schema": {
+      "type": "string",
+      "pattern": "^squad-[a-z0-9-]+/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "id": { "type": "string", "format": "uuid" },
+    "type": {
+      "type": "string",
+      "pattern": "^squad\\.[a-z0-9-]+\\.[a-z0-9.-]+$"
+    },
+    "source": { "type": "string", "format": "uri-reference" },
+    "subject": { "type": "string", "minLength": 1 },
+    "time": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid"],
+      "properties": {
+        "uid": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "issuer",
+        "providerIdentity",
+        "basis",
+        "policyRevision"
+      ],
+      "properties": {
+        "action": { "type": "string", "minLength": 1 },
+        "issuer": { "type": "string", "minLength": 1 },
+        "providerIdentity": { "type": "string", "minLength": 1 },
+        "basis": { "type": "string", "minLength": 1 },
+        "policyRevision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" }
+          ]
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "revision"],
+      "properties": {
+        "uid": { "type": "string", "minLength": 1 },
+        "revision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" }
+          ]
+        },
+        "expectedRevision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" },
+            { "type": "null" }
+          ]
+        },
+        "resultRevision": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "integer" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "causationId": {
+      "anyOf": [
+        { "type": "string", "format": "uuid" },
+        { "type": "null" }
+      ]
+    },
+    "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "replayKey": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "payloadDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "redaction": { "enum": ["none", "metadata-only", "content-redacted"] },
+    "extensions": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9]+:[a-z0-9][a-z0-9.-]*$" }
+    },
+    "data": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema": { "const": "squad-governance-review/v0.1" }
+        },
+        "required": ["schema"]
+      },
+      "then": {
+        "required": ["authority", "replayKey"],
+        "properties": {
+          "authority": { "$ref": "#/properties/authority" },
+          "replayKey": { "$ref": "#/properties/replayKey" },
+          "resource": {
+            "type": "object",
+            "required": [
+              "uid",
+              "revision",
+              "expectedRevision",
+              "resultRevision"
+            ],
+            "properties": {
+              "uid": { "$ref": "#/properties/resource/properties/uid" },
+              "revision": { "$ref": "#/properties/resource/properties/revision" },
+              "expectedRevision": { "$ref": "#/properties/resource/properties/expectedRevision" },
+              "resultRevision": { "$ref": "#/properties/resource/properties/resultRevision" }
+            }
+          },
+          "data": { "$ref": "#/$defs/governanceTransition" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "minLength": 1 },
+    "revision": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer" }
+      ]
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "location",
+        "requirement",
+        "evidence",
+        "clearCondition",
+        "status"
+      ],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 },
+        "requirement": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 },
+        "clearCondition": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["open", "cleared", "waived"] }
+      }
+    },
+    "governanceTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transition",
+        "reviewedSubject",
+        "accountableOwnerUid",
+        "currentRevisionAuthorUid",
+        "successorRevisionAuthorUid",
+        "reviewerUid",
+        "blockers",
+        "lockoutUids",
+        "eligibleRevisionAuthorUids",
+        "escalation",
+        "replayDisposition",
+        "gateResult"
+      ],
+      "properties": {
+        "transition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["priorState", "currentState"],
+          "properties": {
+            "priorState": {
+              "enum": [
+                "draft",
+                "submitted",
+                "under-review",
+                "rejected",
+                "reassignment-required",
+                "revising",
+                "approved",
+                "completed",
+                "escalated",
+                "dispositioned"
+              ]
+            },
+            "currentState": {
+              "enum": [
+                "draft",
+                "submitted",
+                "under-review",
+                "rejected",
+                "reassignment-required",
+                "revising",
+                "approved",
+                "completed",
+                "escalated",
+                "dispositioned"
+              ]
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "priorState": { "const": "draft" },
+                "currentState": { "const": "submitted" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "submitted" },
+                "currentState": { "const": "under-review" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "under-review" },
+                "currentState": { "enum": ["approved", "rejected"] }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "rejected" },
+                "currentState": {
+                  "enum": ["reassignment-required", "escalated"]
+                }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "reassignment-required" },
+                "currentState": { "enum": ["revising", "escalated"] }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "revising" },
+                "currentState": { "const": "submitted" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "approved" },
+                "currentState": { "const": "completed" }
+              }
+            },
+            {
+              "properties": {
+                "priorState": { "const": "escalated" },
+                "currentState": { "const": "dispositioned" }
+              }
+            }
+          ]
+        },
+        "reviewedSubject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["uid", "revision"],
+          "properties": {
+            "uid": { "$ref": "#/$defs/uid" },
+            "revision": { "$ref": "#/$defs/revision" }
+          }
+        },
+        "accountableOwnerUid": { "$ref": "#/$defs/uid" },
+        "currentRevisionAuthorUid": { "$ref": "#/$defs/uid" },
+        "successorRevisionAuthorUid": {
+          "anyOf": [
+            { "$ref": "#/$defs/uid" },
+            { "type": "null" }
+          ]
+        },
+        "reviewerUid": { "$ref": "#/$defs/uid" },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/blocker" }
+        },
+        "lockoutUids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uid" },
+          "uniqueItems": true
+        },
+        "eligibleRevisionAuthorUids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uid" },
+          "uniqueItems": true
+        },
+        "escalation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "deadlocked"],
+          "properties": {
+            "status": { "enum": ["not-required", "required", "resolved"] },
+            "deadlocked": { "type": "boolean" },
+            "authorityUid": {
+              "anyOf": [
+                { "$ref": "#/$defs/uid" },
+                { "type": "null" }
+              ]
+            },
+            "reason": {
+              "anyOf": [
+                { "type": "string", "minLength": 1 },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "replayDisposition": { "enum": ["original", "duplicate-same-result"] },
+        "gateResult": { "enum": ["accepted", "rejected", "conflict", "escalated"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "rejected" }
+                },
+                "required": ["currentState"]
+              }
+            },
+            "required": ["transition"]
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/blocker" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": { "const": "open" }
+                      }
+                    }
+                  ]
+                }
+              },
+              "lockoutUids": { "type": "array", "minItems": 1 },
+              "successorRevisionAuthorUid": { "$ref": "#/$defs/uid" },
+              "gateResult": { "const": "rejected" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "approved" }
+                },
+                "required": ["currentState"]
+              }
+            },
+            "required": ["transition"]
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/blocker" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": { "enum": ["cleared", "waived"] }
+                      }
+                    }
+                  ]
+                }
+              },
+              "successorRevisionAuthorUid": { "type": "null" },
+              "gateResult": { "const": "accepted" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "escalated" }
+                },
+                "required": ["currentState"]
+              }
+            },
+            "required": ["transition"]
+          },
+          "then": {
+            "properties": {
+              "gateResult": { "const": "escalated" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "escalation": {
+                "type": "object",
+                "properties": {
+                  "deadlocked": { "const": true }
+                },
+                "required": ["deadlocked"]
+              }
+            },
+            "required": ["escalation"]
+          },
+          "then": {
+            "properties": {
+              "transition": {
+                "type": "object",
+                "properties": {
+                  "currentState": { "const": "escalated" }
+                }
+              },
+              "eligibleRevisionAuthorUids": { "type": "array", "maxItems": 0 },
+              "successorRevisionAuthorUid": { "type": "null" },
+              "escalation": {
+                "type": "object",
+                "required": ["reason"],
+                "properties": {
+                  "status": { "const": "required" },
+                  "reason": { "type": "string", "minLength": 1 }
+                }
+              },
+              "gateResult": { "const": "escalated" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

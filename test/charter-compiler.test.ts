@@ -355,15 +355,27 @@ describe('compileCharterFull', () => {
     expect(result.prompt).toContain('Fenster, Verbal, Hockney');
   });
 
-  it('handles empty charter content gracefully', () => {
-    const result = compileCharterFull({
+  it('rejects invalid charter content before applying behavior', () => {
+    expect(() => compileCharterFull({
       agentName: 'empty',
       charterPath: '/test/charter.md',
       charterContent: '',
+    })).toThrow(/SQC001/);
+  });
+
+  it('returns the validation evidence used before applying behavior', () => {
+    const result = compileCharterFull({
+      agentName: 'verbal',
+      charterPath: '/test/charter.md',
+      charterContent: FULL_CHARTER,
     });
 
-    expect(result.name).toBe('empty');
-    expect(result.prompt).toContain('empty');
+    expect(result.validation).toMatchObject({
+      profile: 'squad-charter/v0.1',
+      accepted: true,
+      conforms: false,
+      conformance: 'noncanonical-compatible',
+    });
   });
 
   it('description includes expertise when available', () => {

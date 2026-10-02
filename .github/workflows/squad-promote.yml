@@ -59,7 +59,31 @@ jobs:
           fi
 
           git checkout -B main origin/main
-          git merge origin/dev --no-commit --no-ff -X theirs || true
+          # -X no-renames: dev has many newly-added template/charter files that
+          # don't exist at the merge-base; without this, git's rename-detection
+          # heuristic falsely pairs them with unrelated files independently
+          # deleted on main, producing spurious rename/delete conflicts.
+          git merge origin/dev --no-commit --no-ff -X theirs -X no-renames || true
+
+          # Strip internal-only paths *before* checking for unresolved
+          # conflicts. These paths are always removed from the release tree
+          # regardless of merge outcome, so a delete(main)/modify(dev)
+          # conflict on them isn't a real decision — resolve it here so it
+          # doesn't block the dev-to-main promotion below.
+          git rm -rf --cached --ignore-unmatch \
+            .ai-team/ \
+            .squad/ \
+            .ai-team-templates/ \
+            team-docs/ \
+            docs/proposals/
+
+          # squad-preview.yml was intentionally removed on dev (83612744,
+          # "finalize preview and stable release channels", which consolidated
+          # preview/stable release logic into squad-release.yml) while main
+          # independently hardened it with SHA-pinned action refs before that
+          # redesign landed. Accept dev's removal; the equivalent
+          # functionality now lives in squad-release.yml.
+          git rm -f --cached --ignore-unmatch .github/workflows/squad-preview.yml
 
           unmerged="$(git diff --name-only --diff-filter=U)"
           if [ -n "$unmerged" ]; then
@@ -67,13 +91,6 @@ jobs:
             printf '%s\n' "$unmerged"
             exit 1
           fi
-
-          git rm -rf --cached --ignore-unmatch \
-            .ai-team/ \
-            .squad/ \
-            .ai-team-templates/ \
-            team-docs/ \
-            docs/proposals/
 
           forbidden="$(git ls-files | grep -E '^(\.(ai-team|squad|ai-team-templates)/|team-docs/|docs/proposals/)' || true)"
           if [ -n "$forbidden" ]; then
@@ -108,7 +125,13 @@ jobs:
             exit 1
           fi
 
-          git diff --cached --check
+          # cr-at-eol: the repo deliberately keeps ~95 .ts files CRLF-encoded
+          # (see .gitattributes) to avoid a disruptive renormalization commit.
+          # Without this, --check flags every added line in those files as
+          # "trailing whitespace" merely for ending in \r\n, which would fail
+          # every promotion that touches them. This still catches genuine
+          # trailing spaces/tabs and blank-line-at-EOF issues.
+          git -c core.whitespace=cr-at-eol diff --cached --check
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Prepared sanitized stable release v$version."
