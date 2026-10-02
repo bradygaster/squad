@@ -493,7 +493,7 @@ describe('resolveSquadState()', () => {
       expect(ctx).not.toBeNull();
 
       // Same construction as createStateMcpToolRegistry() in state-mcp.ts.
-      const registry = new ToolRegistry(ctx!.paths.teamDir, undefined, ctx!.storage);
+      const registry = new ToolRegistry(ctx!.paths.teamSquadDir, undefined, ctx!.storage);
       const decide = registry.getTool('squad_decide')!;
       const result = await decide.handler({ author: 'test-agent', summary: 'Use FSStorageProvider rootDir', body: 'Confine local-backend writes to teamDir.' });
 

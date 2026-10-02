@@ -69,7 +69,7 @@ export function createStateMcpToolRegistry(startDir: string): ToolRegistry {
   if (!context) {
     throw new Error(`No .squad directory found from ${startDir}`);
   }
-  return new ToolRegistry(context.paths.teamDir, undefined, context.storage);
+  return new ToolRegistry(context.paths.teamSquadDir, undefined, context.storage);
 }
 
 function normalizeToolResult(result: unknown): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
