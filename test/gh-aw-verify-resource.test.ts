@@ -30,6 +30,7 @@ const workflowMutations: ReadonlyArray<
   ['duplicate', (text, source) => text.replace(source, `${source}\n${source}`)],
   ['misplaced', (text, source) =>
     text.replace(`${source}\n---\n`, `---\n${source}\n`)],
+  ['extra final newline', text => `${text}\n`],
   ['content', text => text.replace('Squad Review', 'Tampered Squad Review')],
 ];
 

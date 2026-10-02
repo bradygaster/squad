@@ -704,8 +704,8 @@ function verifyOwnership(root, contract, expectedRevision) {
 }
 
 function digestMatchesWithFinalNewlineTolerance(content, expectedDigest) {
-  const alternate = content.endsWith('\n') ? content.slice(0, -1) : `${content}\n`;
-  return [content, alternate].some(candidate => sha256(Buffer.from(candidate)) === expectedDigest);
+  return [content, `${content}\n`]
+    .some(candidate => sha256(Buffer.from(candidate)) === expectedDigest);
 }
 
 function verifyWorkflowSourceBinding(root, entry, revision) {
