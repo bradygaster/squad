@@ -90,6 +90,7 @@ SQUAD_SHA="<40-character-commit-sha>"
 }
 
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 
 # 5. On first install, review the safe-update report.
 # If it contains only the documented Squad secrets and init action, approve it:
@@ -111,7 +112,11 @@ git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
 node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
-test -z "$(git diff --cached --diff-filter=D --name-only)"
+unexpected_deletions="$(
+  git diff --cached --diff-filter=D --name-only |
+    grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true
+)"
+test -z "${unexpected_deletions}"
 git commit -m "ci: add Squad agentic workflow"
 git push -u origin HEAD
 gh pr create \
@@ -158,8 +163,10 @@ PR could merge but the bootstrap journey could not complete. Reading
 that update fails, stop before installation and ask an administrator to enable
 **Settings → General → Features → Issues**, then rerun the quick start.
 
-> Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skills
-> alongside the workflows, and it deliberately does not stage `.github/aw/logs/`.
+> Step 7 stages `.github/skills/` because `gh aw add` installs the Squad skill
+> alongside the workflows and may need to stage deletion of gh-aw's unowned
+> `.github/skills/agentic-workflows/SKILL.md`. It deliberately does not stage
+> `.github/aw/logs/`.
 > Downloaded workflow logs are local diagnostic output — see [ignoring downloaded
 > logs](#open-the-bootstrap-pull-request) before you commit.
 
@@ -182,6 +189,25 @@ the existing typed safe-output tool; the agent never copies chunks into tool
 arguments. Missing, duplicate, reordered, malformed, oversized, or mismatched
 payloads fail closed before submission, and the write job independently
 revalidates the payload. A submission error is terminal, not permission to retry.
+
+To focus bootstrap on part of the repository, commit
+`.squad/research-scope.json` to the default branch **before** merging the
+installation. A common case is a control repository whose real subject is
+evidence about other repositories:
+
+```json
+{
+  "schema": "squad-research-scope/v1",
+  "evidence_roots": ["farm/"],
+  "description": "Snapshots of the managed application repositories"
+}
+```
+
+Bootstrap treats the evidence roots as the primary subject when it casts roles
+and writes proposals. Every proposal must cite at least one path under a root.
+The validator reads the scope only from committed `HEAD` and fails closed on a
+malformed file. The scope only narrows focus; it never changes outputs or
+permissions.
 
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
@@ -336,6 +362,7 @@ SQUAD_SHA="<40-character-commit-sha>"
   exit 1
 }
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 ```
 
 The nested `workflows/aw.yml` is the canonical package registration. Its
@@ -374,8 +401,14 @@ add-on — it stays dormant until a maintainer approves a governance-scoped
 retrospective proposal (see [Retrospective
 auto-implementation](#retrospective-auto-implementation-opt-in) below).
 
-`gh aw add` also installs the Squad skills under `.github/skills/`, which is why
-the bootstrap commit stages that path alongside the workflows.
+`gh aw add` also installs the Squad skill under `.github/skills/`, which is why
+the bootstrap commit stages that path alongside the workflows. gh-aw v0.89.22
+additionally generates `.github/skills/agentic-workflows/SKILL.md`. That
+tool-owned router loads mutable prompt files from the current `github/gh-aw`
+repository and is not bound to the pinned Squad revision or compiler version.
+Remove that exact file after every install. Do not vendor the generic gh-aw
+prompt corpus. The verifier rejects the router if it remains and still requires
+the exact Squad-owned `.github/skills/gh-aw-enlistment/SKILL.md`.
 
 > **Revision note:** `SQUAD_SHA` is an explicit, maintainer-approved commit —
 > never resolved from `dev`'s moving tip. The package install itself uses only
@@ -479,7 +512,11 @@ git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
 node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
-test -z "$(git diff --cached --diff-filter=D --name-only)"
+unexpected_deletions="$(
+  git diff --cached --diff-filter=D --name-only |
+    grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true
+)"
+test -z "${unexpected_deletions}"
 git commit -m "ci: add Squad agentic workflow"
 git push -u origin HEAD
 gh pr create \
@@ -494,6 +531,10 @@ This stages the workflow sources and lockfiles, the gh-aw manifest and pinned
 state under `.github/aw/`, the installed skills, and `.gitattributes`. Review
 the complete generated diff in the bootstrap PR, address Copilot review
 feedback, and wait for required checks. Merge only after human approval.
+
+The exact router deletion above is the only permitted staged deletion, for an
+upgrade from a repository that previously committed it. Any other deletion is
+a hard stop.
 
 Consumer ignore rules such as `packages/` can silently omit the required
 `.github/aw/packages/` ownership JSON from directory staging. The staged verifier
@@ -575,7 +616,7 @@ Use this checklist for the initial bootstrap and after any workflow update:
 | Stage | Action | Expected evidence |
 |-------|--------|-------------------|
 | Repository readiness | Confirm `.has_issues` is `true`; if it is `false`, enable it before installing workflows | GitHub Issues are available for `/squad` comments and the bootstrap research/proposals issue; insufficient administration permission stops the install before a bootstrap PR is created |
-| Install | Run the eight-workflow `gh aw add` command on a bootstrap branch | All eight `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, installed skills, and `.gitattributes` included in the diff |
+| Install | Run the eight-workflow `gh aw add` command on a bootstrap branch, then remove the exact tool-owned mutable router | All eight `.md`/`.lock.yml` pairs exist, with shared imports, `.github/aw/`, the exact Squad-owned `gh-aw-enlistment` skill, and `.gitattributes` included in the diff; `.github/skills/agentic-workflows/SKILL.md` is absent |
 | Compile | Review any first-install safe-update report, approve only the documented entries, then run `gh aw compile --strict` without approval | All eight workflows succeed, only documented warnings remain, and all sixteen source/lock files exist |
 | Bootstrap review | Open the installation PR, request `@copilot`, inspect verifier/compile evidence, and merge only after human approval | The run reports the explicit first-install manual boundary; no `Squad-Review-Verdict:` record or PR-controlled check is treated as trusted |
 | Activation canary | Merge the workflow-installation PR and inspect the Cast PR — automatically opened, or manually opened by a human from the bootstrap fallback issue's compare-URL link when `can_approve_pull_request_reviews=false` blocks direct creation | `Squad Review / review` succeeds with reserved bootstrap roles only after loading the guard and manifest from the exact base commit and validating the default-branch bootstrap run — including, for a manually opened PR, the signed fallback-issue provenance record |
@@ -635,7 +676,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Review | `/squad review` | Show how to rerun the current pull request's automatic independent review | Does not dispatch branch-selected code; human approval remains mandatory |
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
 | Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
-| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
+| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved state-changing command requiring write, maintain, or admin authorization; emits no output of any kind — the comment itself is the record that later runs re-check |
 
 ### Implementation provenance
 
@@ -853,9 +894,11 @@ and validates its human author/provenance, permissions, issue state, revision an
 scope, both before work and before safe outputs; it never substitutes a newer
 approval or treats a relay actor as an approver.
 
-`/squad revoke-improvement` is a reserved no-dispatch route: a later human comment
-withdraws the referenced approval. Missing/edited/stale/revoked approvals require
-a fresh comment for the current content. Manual retries select
+`/squad revoke-improvement` is a reserved no-dispatch route: only a later
+unedited, non-app human issue comment from an author with live write, maintain,
+or admin permission withdraws the referenced approval. Unresolved permission,
+malformed timestamps, incomplete history, or missing/edited/stale/revoked
+approvals fail closed and require a fresh comment for the current content. Manual retries select
 **Actions → Squad Improvement Worker → Run workflow**, on the default branch,
 and supply the same `issue_number` and `approval_comment_id` (the numeric suffix
 of its `#issuecomment-N` URL). Retrying is not approval. Both workers remain
@@ -867,7 +910,7 @@ Opt-in reconciliation adds at most 48: three action pages, five all-state PR
 pages and two comment pages for each of twenty candidates. Candidates rotate
 every six hours; an incomplete history requires human inspection. Live retro
 output checks add at most 14 reads; receiving ordinary-worker checks at most
-nine. Improvement authorization is bounded to fourteen reads per check, twice
+nine. Improvement authorization is bounded to 36 reads per check, twice
 per worker run, plus two dispatcher checks. GitHub supplies no transaction
 covering a comment and a PR: revocation is checked immediately before safe
 outputs, not after publication; human review remains the final authority.
@@ -1919,6 +1962,7 @@ same native package as one unit:
 SQUAD_SHA="<40-character-commit-sha>"
 
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force
+rm -f .github/skills/agentic-workflows/SKILL.md
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
 node .github/workflows/shared/squad-install-verifier.mjs \

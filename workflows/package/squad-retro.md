@@ -1105,8 +1105,11 @@ Approved-Path: {second proposed path}
 
 Compute the revision digest with the installed improvement gate's `--revision`
 command (see the gh-aw guide), then post this as a new human comment.
-`/squad revoke-improvement` withdraws it. The improvement worker is in the
-standard install; every other proposal stays a manual pull request.
+Only a later unedited, non-app human issue comment containing
+`/squad revoke-improvement`, from an author whose live repository permission is
+write, maintain, or admin, withdraws it. Unresolved revocation permission or
+comment-history evidence fails closed. The improvement worker is in the standard
+install; every other proposal stays a manual pull request.
 ````
 
 Never post that command yourself in a comment, and never claim a proposal is

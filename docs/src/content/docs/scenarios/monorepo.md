@@ -1,8 +1,5 @@
 # Squad in Monorepos
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 I'm building a microservices platform in a monorepo with 8 services — set up specialists for each domain

@@ -1,8 +1,5 @@
 # Tips & Tricks
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 Team, build the login feature — include UI, API endpoints, and tests

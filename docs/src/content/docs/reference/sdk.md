@@ -1,7 +1,5 @@
 # SDK Reference
 
-> **Experimental:** Squad is alpha software. APIs and behavior may change between releases.
-
 This is the curated quick reference for `@bradygaster/squad-sdk`. The SDK provides configuration builders, model selection, agent lifecycle APIs, routing, tools, storage, telemetry, and platform integrations.
 
 For every public type and export, see the [generated API reference](./api/).

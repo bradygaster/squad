@@ -163,6 +163,17 @@ function bootstrapRecord(body, label = 'bootstrap provenance') {
   return value;
 }
 
+async function requireRecordedBaseAncestor(get, repository, recordedSha, liveSha, message) {
+  requireThat(SHA.test(recordedSha) && SHA.test(liveSha), message);
+  const comparison = await get(`repos/${repository}/compare/${recordedSha}...${liveSha}`);
+  requireThat(
+    (comparison?.status === 'identical' || comparison?.status === 'ahead') &&
+    comparison?.base_commit?.sha === recordedSha &&
+    comparison?.merge_base_commit?.sha === recordedSha,
+    message,
+  );
+}
+
 // The post-install bootstrap PR fallback (documented alongside `can_approve_pull_request_reviews: false`
 // in docs/src/content/docs/guide/gh-aw.md) asks a human to open the Cast PR manually from a compare-URL
 // link after `pulls.create` is permission-denied. That PR is human-authored, so it cannot satisfy the
@@ -237,11 +248,11 @@ async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, 
   // SHAs back to `provenance.base_sha`: a `status` of 'identical'/'ahead' alone does not guarantee
   // the API resolved *this* base against *this* provenance commit (e.g. a short-SHA or mistyped
   // route could silently compare against the wrong ref while still reporting a plausible status).
-  const baseComparison = await get(`repos/${repository}/compare/${provenance.base_sha}...${pr.base.sha}`);
-  requireThat(
-    (baseComparison?.status === 'identical' || baseComparison?.status === 'ahead') &&
-    baseComparison?.base_commit?.sha === provenance.base_sha &&
-    baseComparison?.merge_base_commit?.sha === provenance.base_sha,
+  await requireRecordedBaseAncestor(
+    get,
+    repository,
+    provenance.base_sha,
+    pr.base.sha,
     'bootstrap PR fallback provenance base commit is not an ancestor of the pull request base',
   );
   const expectedCompareUrl = buildBootstrapPrFallbackCompareUrl({
@@ -255,11 +266,11 @@ async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, 
     'bootstrap PR fallback provenance compare URL does not match the expected manual link');
   requireThat(timestamp(fallbackIssue.created_at) <= timestamp(pr.created_at),
     'bootstrap PR fallback issue was created after this pull request');
-  // Mirrors validateBootstrapAttribution's run.head_sha === pr.base.sha check below, but binds to
-  // the immutable `provenance.base_sha` rather than the live, drifting `pr.base.sha` (see the
-  // ancestry check above for why): without this, a fallback issue's provenance.run_id only has to
-  // name *some* historical successful bootstrap run on the same base branch, not the run that
-  // actually produced the exact base commit recorded in this provenance.
+  // Both bootstrap attribution paths bind the trusted run to the immutable SHA recorded in their
+  // provenance rather than the live, drifting `pr.base.sha` (see the ancestry check above for why).
+  // Without this, a fallback issue's provenance.run_id only has to name *some* historical
+  // successful bootstrap run on the same base branch, not the run that actually produced the
+  // exact base commit recorded in this provenance.
   const run = await get(`repos/${repository}/actions/runs/${provenance.run_id}`);
   requireThat(
     run.event === 'push' &&
@@ -303,16 +314,23 @@ async function validateBootstrapAttribution(get, repository, pr, requireRunSucce
     pr.user?.type === 'Bot' &&
     provenance.repository === repository &&
     /^[1-9]\d*$/.test(provenance.run_id ?? '') &&
-    provenance.install_sha === pr.base.sha &&
+    SHA.test(provenance.install_sha ?? '') &&
     provenance.cast_sha === pr.head.sha,
     'invalid base-controlled bootstrap pull request',
+  );
+  await requireRecordedBaseAncestor(
+    get,
+    repository,
+    provenance.install_sha,
+    pr.base.sha,
+    'bootstrap provenance install commit is not an ancestor of the pull request base',
   );
   const run = await get(`repos/${repository}/actions/runs/${provenance.run_id}`);
   requireThat(
     run.event === 'push' &&
     run.path === BOOTSTRAP_WORKFLOW &&
     run.repository?.full_name === repository &&
-    run.head_sha === pr.base.sha &&
+    run.head_sha === provenance.install_sha &&
     run.head_branch === pr.base.ref &&
     (!requireRunSuccess || (run.status === 'completed' && run.conclusion === 'success')),
     requireRunSuccess

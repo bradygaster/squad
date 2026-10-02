@@ -46,6 +46,8 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW = readFileSync(resolve(ROOT, 'workflows/squad-bootstrap.md'), 'utf8').replace(/\r\n/g, '\n');
 const VALIDATOR = resolve(ROOT, 'workflows/shared/squad-bootstrap-validator.mjs');
+const DEFAULT_BRANCH_REF_CONDITION =
+  "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)";
 const workspaces: string[] = [];
 const active = [
   { id: 'lead', name: 'Lead', role: 'Technical Lead' },
@@ -446,6 +448,24 @@ function compileWorkflow(source = WORKFLOW): string {
   return readFileSync(join(workflowDir, 'squad-bootstrap.lock.yml'), 'utf8');
 }
 
+function evaluateDefaultBranchCondition(
+  condition: string,
+  event: {
+    event_name: 'push' | 'workflow_dispatch';
+    ref: string;
+    ref_name: string;
+    repository: { default_branch: string };
+  },
+): boolean {
+  if (condition === DEFAULT_BRANCH_REF_CONDITION) {
+    return event.ref === `refs/heads/${event.repository.default_branch}`;
+  }
+  if (condition === 'github.ref_name == github.event.repository.default_branch') {
+    return event.ref_name === event.repository.default_branch;
+  }
+  throw new Error(`Unsupported bootstrap condition: ${condition}`);
+}
+
 function materializeCandidatePayloadFromWorkflow(
   source: string,
   candidate: string,
@@ -673,6 +693,44 @@ describe('automatic Squad bootstrap workflow', () => {
     const resolvedResult = validateFixture(fixture, 'resolved');
     expect(resolvedResult.status, resolvedResult.stderr).toBe(0);
     expect(resolvedResult.stdout).toBe('Squad bootstrap validation passed.\n');
+  });
+
+  it('enforces a committed research scope and ignores an uncommitted one', () => {
+    const fixture = createFixture();
+    const options = {
+      root: fixture.root,
+      payloadPath: fixture.payloadPath,
+      repository: 'octo/example',
+      defaultBranch: 'main',
+      linkMode: 'placeholder',
+    };
+    const commitScope = (value: unknown) => {
+      write(fixture.root, '.squad/research-scope.json', `${JSON.stringify(value)}\n`);
+      execFileSync('git', ['add', '.squad/research-scope.json'], { cwd: fixture.root });
+      execFileSync('git', ['commit', '-qm', 'scope'], { cwd: fixture.root });
+    };
+
+    write(fixture.root, '.squad/research-scope.json', '{"schema":"squad-research-scope/v1","evidence_roots":["farm"]}\n');
+    expect(validateBootstrapPayload(options)).toEqual([]);
+    rmSync(join(fixture.root, '.squad/research-scope.json'));
+
+    commitScope({ schema: 'squad-research-scope/v1', evidence_roots: ['farm/'] });
+    const outOfScope = validateBootstrapPayload(options);
+    expect(outOfScope).toContain('issue: P1 must cite evidence under a research scope root (farm)');
+    expect(outOfScope).toHaveLength(3);
+
+    commitScope({ schema: 'squad-research-scope/v1', evidence_roots: ['package.json'], description: 'fleet' });
+    expect(validateBootstrapPayload(options)).toEqual([]);
+
+    for (const invalid of [
+      { schema: 'squad-research-scope/v1', evidence_roots: [] },
+      { schema: 'squad-research-scope/v1', evidence_roots: ['../outside'] },
+      { schema: 'squad-research-scope/v2', evidence_roots: ['farm'] },
+      { schema: 'squad-research-scope/v1', evidence_roots: ['farm'], extra: true },
+    ]) {
+      commitScope(invalid);
+      expect(validateBootstrapPayload(options).join('\n')).toContain('research scope: .squad/research-scope.json must be');
+    }
   });
 
   it('creates the missing candidate payload parent before materialization', () => {
@@ -920,7 +978,7 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('branches:\n      - "**"');
     expect(lock).toContain('.github/workflows/squad-bootstrap.md');
     expect(lock).toContain('.github/workflows/squad-bootstrap.lock.yml');
-    expect(lock).toContain("github.ref_name == github.event.repository.default_branch");
+    expect(lock).toContain(DEFAULT_BRANCH_REF_CONDITION);
     expect(lock).toContain('group: squad-bootstrap-${{ github.repository }}');
     expect(lock).toContain('cancel-in-progress: false');
     expect(lock).toMatch(/agent:[\s\S]*?permissions:\n\s+contents: read\n\s+copilot-requests: write\n\s+issues: read\n\s+pull-requests: read/);
@@ -965,6 +1023,24 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
 
+  it.each([
+    ['default-branch push', 'push', 'refs/heads/main', 'main', true],
+    ['default-branch workflow dispatch', 'workflow_dispatch', 'refs/heads/main', 'main', true],
+    ['same-named tag workflow dispatch', 'workflow_dispatch', 'refs/tags/main', 'main', false],
+    ['non-default branch workflow dispatch', 'workflow_dispatch', 'refs/heads/release', 'release', false],
+  ])('applies the exact default branch ref gate for %s', (_label, eventName, ref, refName, expected) => {
+    const frontmatter = parse(WORKFLOW.split('---')[1]);
+    const condition = frontmatter.if;
+    expect(Object.hasOwn(frontmatter.on, eventName)).toBe(true);
+    expect(condition).toBe(DEFAULT_BRANCH_REF_CONDITION);
+    expect(evaluateDefaultBranchCondition(condition, {
+      event_name: eventName as 'push' | 'workflow_dispatch',
+      ref,
+      ref_name: refName,
+      repository: { default_branch: 'main' },
+    })).toBe(expected);
+  });
+
   it('rejects a realistic source mutation that writes to the checkout before validation', () => {
     const assertValidationBeforeCheckoutWrite = (source: string) => {
       const validation = source.indexOf("validate(payload, 'placeholder')");
@@ -989,13 +1065,28 @@ describe('automatic Squad bootstrap workflow', () => {
 
   it('detects a realistic compiled-lock mutation that removes the default-branch gate', () => {
     const mutated = WORKFLOW.replace(
-      "if: github.ref_name == github.event.repository.default_branch\n",
+      `if: ${DEFAULT_BRANCH_REF_CONDITION}\n`,
       '',
     );
     const lock = compileWorkflow(mutated);
     expect(lock).not.toContain(
-      "needs.pre_activation.outputs.activated == 'true' && (github.ref_name == github.event.repository.default_branch)",
+      `needs.pre_activation.outputs.activated == 'true' && (${DEFAULT_BRANCH_REF_CONDITION})`,
     );
+  }, 180000);
+
+  it('kills the ref-name mutation that would accept a same-named tag', () => {
+    const unsafeCondition = 'github.ref_name == github.event.repository.default_branch';
+    const tagEvent = {
+      event_name: 'workflow_dispatch' as const,
+      ref: 'refs/tags/main',
+      ref_name: 'main',
+      repository: { default_branch: 'main' },
+    };
+    expect(evaluateDefaultBranchCondition(DEFAULT_BRANCH_REF_CONDITION, tagEvent)).toBe(false);
+    expect(evaluateDefaultBranchCondition(unsafeCondition, tagEvent)).toBe(true);
+    const mutated = WORKFLOW.replace(DEFAULT_BRANCH_REF_CONDITION, unsafeCondition);
+    expect(parse(mutated.split('---')[1]).if).toBe(unsafeCondition);
+    expect(compileWorkflow(mutated)).toContain(unsafeCondition);
   }, 180000);
 
   it('detects a compiled mutation that removes the file-backed safe-output CLI', () => {
@@ -1038,7 +1129,7 @@ describe('automatic Squad bootstrap workflow', () => {
 // `actions/github-script` runs it, not a reimplementation of it.
 describe('gh-aw: squad-bootstrap pull-request-creation permission-denied fallback', () => {
   // context.sha inside this run's source is always the default branch's current commit (the
-  // workflow's own top-level `if: github.ref_name == github.event.repository.default_branch`
+  // workflow's own exact default-branch ref gate
   // gate guarantees this). Distinct from the Cast-branch head SHAs used elsewhere in this harness.
   const BASE_SHA = 'c'.repeat(40);
 

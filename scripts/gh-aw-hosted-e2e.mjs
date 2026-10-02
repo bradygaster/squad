@@ -1006,6 +1006,7 @@ function hosted(args, repositoryRoot) {
       allowGitHubToken: true,
       env: { GH_TOKEN: sourceReadToken },
     });
+    rmSync(resolve(checkout, '.github/skills/agentic-workflows/SKILL.md'), { force: true });
     runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs', '--materialize-runtime'], {
       cwd: checkout,
       capture: false,

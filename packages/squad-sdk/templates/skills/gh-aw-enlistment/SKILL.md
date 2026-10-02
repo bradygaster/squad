@@ -194,6 +194,7 @@ published release guidance, then set it once:
   exit 1
 }
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 ```
 
 The nested `workflows/aw.yml` is the only supported distribution registration.
@@ -215,6 +216,15 @@ not a separate opt-in add-on. It stays dormant until a maintainer approves a
 governance-scoped retrospective proposal (see the gh-aw guide's retrospective
 auto-implementation section); installing it alongside the other seven keeps the
 full stack consistent and avoids a second bootstrap pass later.
+
+gh-aw v0.89.22 also materializes
+`.github/skills/agentic-workflows/SKILL.md`. That generic tool-owned router is
+not part of the Squad package and directs agents to mutable prompts from the
+current `github/gh-aw` repository rather than the pinned Squad revision. Remove
+that exact file after every `gh aw add`. Keep
+`.github/skills/gh-aw-enlistment/SKILL.md`: it is the one Squad-owned skill and
+the verifier requires its exact package bytes. Do not adopt or vendor the rest
+of gh-aw's generic scaffold.
 
 Report/proposal-only is the default. Ordinary fixes require the explicit
 `"squadRetroAutoImplement": "allow"` setting in `.squad/config.json`;
@@ -337,11 +347,20 @@ git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/
 node .github/workflows/shared/squad-install-verifier.mjs \
   --verify-staged-install --stage-ownership --source-revision "${SQUAD_SHA}" || exit 1
 git diff --cached --stat
-# No deletions should be staged:
-test -z "$(git diff --cached --diff-filter=D --name-only)" || { echo "STOP: staged deletions"; exit 1; }
+unexpected_deletions="$(
+  git diff --cached --diff-filter=D --name-only |
+    grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true
+)"
+test -z "${unexpected_deletions}" || {
+  printf 'STOP: unexpected staged deletions:\n%s\n' "${unexpected_deletions}" >&2
+  exit 1
+}
 ```
 
-- **STOP** if the staged diff shows **unexpected deletions**, **unexpected secrets**,
+- The only permitted staged deletion is
+  `.github/skills/agentic-workflows/SKILL.md`, when upgrading a repository that
+  previously committed gh-aw's mutable router.
+- **STOP** if the staged diff shows any other **unexpected deletions**, **unexpected secrets**,
   edits to **unrelated files**, or committed **log/diagnostic output**. Re-scope with
   explicit `git add -- <path>` — never `git add .`, `git add -A`, or `git commit -a`.
 
@@ -461,6 +480,7 @@ git switch -c chore/squad-gh-aw-bootstrap
   exit 1
 }
 gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 
 # Safe-update report shows ONLY the two documented secrets + squad-init → approve once
 gh aw compile --strict --approve
@@ -517,6 +537,9 @@ gh pr merge --squash                # auto-merge before human review. NEVER.
   before installation if repository administration permission is unavailable.
 - ❌ **Blanket staging** (`git add .` / `-A` / `git commit -a`). Stage only
   `.gitattributes`, `.github/aw/`, `.github/workflows/`, `.github/skills/`, by path.
+- ❌ **Committing gh-aw's mutable router.** Remove only
+  `.github/skills/agentic-workflows/SKILL.md`; keep the exact Squad-owned
+  `.github/skills/gh-aw-enlistment/SKILL.md`.
 - ❌ **Approving unknown safe updates.** Approve ONLY `SQUAD_GITHUB_APP_PRIVATE_KEY`,
   `SQUAD_GITHUB_TOKEN`, and `bradygaster/squad/.github/actions/squad-init`. Anything
   else is a STOP.

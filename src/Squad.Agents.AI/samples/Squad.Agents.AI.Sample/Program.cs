@@ -19,6 +19,42 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Squad.Agents.AI;
 
+if (args.Contains("--smoke", StringComparer.OrdinalIgnoreCase))
+{
+    var builder = Host.CreateApplicationBuilder();
+    var callbackInvoked = false;
+    var unavailableCli = Path.Combine(Path.GetTempPath(), $"squad-smoke-{Guid.NewGuid():N}.exe");
+    builder.Services.AddSquadAgent(options =>
+    {
+        options.SquadFolderPath = Directory.GetCurrentDirectory();
+        options.CliPath = unavailableCli;
+        options.AgentName = "SmokeSquad";
+        options.ConfigureCopilotClient = _ => callbackInvoked = true;
+    });
+    foreach (var key in new[] { "alpha", "beta" })
+    {
+        builder.Services.AddKeyedSquadAgent(key, options =>
+        {
+            options.SquadFolderPath = Directory.GetCurrentDirectory();
+            options.CliPath = unavailableCli;
+            options.AgentName = key;
+        });
+    }
+
+    await using var services = builder.Services.BuildServiceProvider();
+    var agent = services.GetRequiredService<SquadAgent>();
+    if (agent.Name != "SmokeSquad" || !callbackInvoked ||
+        !ReferenceEquals(agent, services.GetRequiredService<AIAgent>()) ||
+        services.GetRequiredKeyedService<SquadAgent>("alpha").Name != "alpha" ||
+        services.GetRequiredKeyedService<SquadAgent>("beta").Name != "beta")
+    {
+        throw new InvalidOperationException("Sample smoke validation failed.");
+    }
+
+    Console.WriteLine("Smoke passed: default/keyed DI and client configuration. No sessions or model calls.");
+    return;
+}
+
 // ── Argument parsing ─────────────────────────────────────────────────────────
 int? selectedFlow = null;
 foreach (var arg in args)
@@ -37,7 +73,7 @@ bool RunFlow(int flow) => selectedFlow is null || selectedFlow == flow;
 // Real-world usage: set SQUAD_TEAM_ROOT to the path of an initialized Squad team.
 var teamRoot = System.Environment.GetEnvironmentVariable("SQUAD_TEAM_ROOT")
                ?? System.IO.Directory.GetCurrentDirectory();
-PrintBanner($"Squad.Agents.AI v0.1 — sample run (team root: {teamRoot})");
+PrintBanner($"Squad.Agents.AI 1.0.0 — sample run (team root: {teamRoot})");
 Console.WriteLine();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,7 +87,7 @@ if (RunFlow(1))
     host1.Logging.SetMinimumLevel(LogLevel.Warning); // keep sample output clean
     host1.Services.AddSquadAgent(o =>
     {
-        o.SquadFolderPath = @"C:\Users\tamirdresher\source\repos\squad-squad";
+        o.SquadFolderPath = teamRoot;
         o.AgentName = "SampleSquad";
         o.EmitSubagentActivities = true;
         o.Instructions = "You are a helpful assistant. Respond concisely. and ask each subagent for their input before providing a final answer.";
@@ -189,10 +225,6 @@ if (RunFlow(3))
 {
     PrintHeader("Flow 3 — BYOK / ConfigureCopilotClient delegate");
 
-    // Simulate a token from a credential store (never hardcode real tokens).
-    // In production replace this with Key Vault, managed identity, etc.
-    const string simulatedToken = "YOUR_GITHUB_PAT_HERE";
-
     var host3 = Host.CreateApplicationBuilder(args);
     host3.Logging.SetMinimumLevel(LogLevel.Warning);
     host3.Services.AddSquadAgent(o =>
@@ -205,9 +237,6 @@ if (RunFlow(3))
         // custom token or environment variable from your own credential store.
         o.ConfigureCopilotClient = clientOpts =>
         {
-            // Inject a token from an external credential store
-            clientOpts.GitHubToken = simulatedToken;
-
             // IReadOnlyDictionary indexer is read-only; always assign a new instance.
             // ⚠️ IMPORTANT: copilot.exe inherits this dictionary verbatim. If you replace
             // it with only your custom vars (no SYSTEMROOT / PATH / TEMP), the native
@@ -231,7 +260,7 @@ if (RunFlow(3))
 
     var agent3 = app3.Services.GetRequiredService<SquadAgent>();
     Console.WriteLine($"Agent name : {agent3.Name}");
-    Console.WriteLine("BYOK delegate registered — custom token + env var will be forwarded to Copilot SDK.");
+    Console.WriteLine("Client delegate registered — custom env var forwarded; signed-in authentication unchanged.");
     Console.WriteLine("Sending   : \"Ping\"");
 
     var result3 = await RunWithErrorHandlingAsync(async () =>
@@ -565,7 +594,5 @@ static async ValueTask DisposeIfNeeded(SquadAgent agent)
     if (agent is IAsyncDisposable d)
         await d.DisposeAsync();
 }
-
-
 
 
