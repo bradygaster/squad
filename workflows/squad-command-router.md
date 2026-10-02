@@ -2,6 +2,7 @@
 name: Squad Command Router
 description: Discover /squad commands outside the start-only slash-command activation path
 on:
+  roles: all
   issues:
     types: [opened, edited, reopened]
   issue_comment:
@@ -55,6 +56,48 @@ safe-outputs:
             context.payload,
             process.env.SQUAD_EVENT_NAME,
           );
+          if (!contract.editedCommandShouldRoute(
+            context.payload,
+            process.env.SQUAD_EVENT_NAME,
+            result,
+          )) {
+            core.info('Ignoring an edited body whose canonical /squad invocation did not change or whose previous body is unavailable.');
+            return;
+          }
+          if (result.status === 'accepted' || result.status === 'rejected') {
+            // A bot-authored issue or comment body is never a trusted Squad
+            // command, open mode or not: open modes (`status`, `review`,
+            // `research`, `plan`) intentionally skip
+            // the permission check below, so without this guard any bot that
+            // reposts or quotes `/squad` text (for example a relay, mirror,
+            // or notification bot) could replay it into a real dispatch with
+            // no identity check at all. The one documented bot-authored
+            // exception -- the bootstrap-opportunities issue -- is excluded
+            // above this step's own `if:` trigger and never reaches here,
+            // and a relayed continuation always arrives through
+            // `squad.lock.yml`'s own `workflow_dispatch` input, never
+            // through this issues/issue_comment router. So any bot-authored
+            // text that does reach this point is always untrusted. Both the
+            // content author and the event sender are checked, because on
+            // `edited` events the sender (who produced the current body) can
+            // differ from the original author recorded on the issue/comment.
+            const commandAuthorTypeCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'
+              ? context.payload.comment?.user?.type
+              : process.env.SQUAD_EVENT_NAME === 'issues'
+                ? context.payload.issue?.user?.type
+                : null;
+            // `issue.user.type`/`comment.user.type` reflect the *original* author, which is
+            // unchanged by an edit. On `edited` events the actor who actually produced the
+            // current body is `context.payload.sender`, which can differ from that original
+            // author (for example, a bot or collaborator editing someone else's human-authored
+            // issue/comment to inject a command). Checking only the original-author type would
+            // let such an edit bypass this bot block entirely, so both identities are checked.
+            const commandSenderTypeCandidate = context.payload.sender?.type;
+            if (commandAuthorTypeCandidate === 'Bot' || commandSenderTypeCandidate === 'Bot') {
+              core.info('Ignoring a /squad command discovered in bot-authored issue or comment text.');
+              return;
+            }
+          }
           const issueNumber = Number(context.payload.issue?.number);
           if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
             core.setFailed('Squad command discovery requires a valid issue or pull request number.');
@@ -74,25 +117,70 @@ safe-outputs:
             return;
           }
           if (contract.commandRequiresAuthorization(result)) {
-            let permission = 'unresolved';
-            try {
-              permission = (await github.rest.repos.getCollaboratorPermissionLevel({
-                ...context.repo,
-                username: context.actor,
-              })).data.permission || 'unresolved';
-            } catch (error) {
-              core.warning(`Unable to resolve repository permission for ${context.actor}: ${error.message}`);
-            }
-            if (!contract.isAuthorizedPermission(permission)) {
+            const eventActor = typeof context.actor === 'string' && context.actor.trim()
+              ? context.actor.trim()
+              : null;
+            const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'
+              ? context.payload.comment?.user?.login
+              : process.env.SQUAD_EVENT_NAME === 'issues'
+                ? context.payload.issue?.user?.login
+                : null;
+            const commandAuthor = typeof commandAuthorCandidate === 'string' && commandAuthorCandidate.trim()
+              ? commandAuthorCandidate.trim()
+              : null;
+            const permissionByLogin = new Map();
+            const resolvePermission = async (login, principal) => {
+              if (!login) return 'unresolved';
+              if (permissionByLogin.has(login)) return permissionByLogin.get(login);
+              let permission = 'unresolved';
+              try {
+                permission = (await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: login,
+                })).data.permission || 'unresolved';
+              } catch (error) {
+                core.warning(`Unable to resolve repository permission for ${principal} ${login}: ${error.message}`);
+              }
+              permissionByLogin.set(login, permission);
+              return permission;
+            };
+            const actorPermission = await resolvePermission(eventActor, 'event actor');
+            const authorPermission = await resolvePermission(commandAuthor, 'command author');
+            const actorAuthorized = Boolean(eventActor) &&
+              contract.isAuthorizedPermission(actorPermission);
+            const authorAuthorized = Boolean(commandAuthor) &&
+              contract.isAuthorizedPermission(authorPermission);
+            if (!actorAuthorized || !authorAuthorized) {
+              const actorEvidence = eventActor
+                ? `@${eventActor} (${actorPermission})`
+                : 'unresolved (unresolved)';
+              const authorEvidence = commandAuthor
+                ? `@${commandAuthor} (${authorPermission})`
+                : 'unresolved (unresolved)';
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: issueNumber,
-                body: `⛔ /squad ${result.argumentText || 'cast'} was refused for @${context.actor} (repository permission: ${permission}). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`,
+                body: `⛔ /squad ${result.argumentText || 'cast'} was refused. Mutating /squad modes require write, maintain, or admin repository permission for both the event actor and the author of the classified command text. Event actor: ${actorEvidence}; command author: ${authorEvidence}. Ask a repository maintainer to author and run this command.`,
               });
-              core.setFailed(`Squad refused mutating mode ${result.mode} for ${context.actor}.`);
+              core.setFailed(
+                `Squad refused mutating mode ${result.mode}; event actor ${eventActor || 'unresolved'}=${actorPermission}, command author ${commandAuthor || 'unresolved'}=${authorPermission}.`,
+              );
               return;
             }
           }
+          // Forward the originating comment (when this run was triggered by
+          // one) through the typed `aw_context` relay input. The dispatched
+          // squad.md run has no native `comment` event of its own, so without
+          // this, `/squad approve-improvement` relayed here can never supply
+          // a real `approval_comment_id` (#3). `comment_id` is read back by
+          // the worker-side gate, which re-fetches and independently
+          // re-validates the live comment before trusting anything — the
+          // relay only carries a pointer, never the approval itself.
+          const awContext = JSON.stringify({
+            item_type: context.payload.issue?.pull_request ? 'pull_request' : 'issue',
+            item_number: issueNumber,
+            comment_id: context.payload.comment?.id ?? null,
+          });
           await github.rest.actions.createWorkflowDispatch({
             ...context.repo,
             workflow_id: 'squad.lock.yml',
@@ -100,6 +188,7 @@ safe-outputs:
             inputs: {
               command: result.argumentText || 'cast',
               issue_number: String(issueNumber),
+              aw_context: awContext,
             },
           });
   add-comment:
