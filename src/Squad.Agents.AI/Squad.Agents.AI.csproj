@@ -18,11 +18,10 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      Dependencies now use stable releases. Keep this package's preview version until
-      its own stable release is scheduled; dependency maintenance does not publish or
-      change the package's release status.
+      Stable package version. Publication is a separate human-triggered release step;
+      setting this version does not publish the package.
     -->
-    <Version>0.5.6-rc1</Version>
+    <Version>1.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="samples/**/*.cs" />

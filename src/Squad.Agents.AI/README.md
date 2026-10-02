@@ -1,12 +1,12 @@
 # Squad.Agents.AI
 
-> **Preview package.** `Squad.Agents.AI` is a preview NuGet package for early adopters. It multi-targets `net8.0`, `net9.0`, and `net10.0`, and uses stable Microsoft Agent Framework / GitHub Copilot SDK dependencies. Squad's own APIs may still change before its stable release.
+`Squad.Agents.AI` **1.0.0** is the stable package version and multi-targets `net8.0`, `net9.0`, and `net10.0`. It uses Microsoft Agent Framework 1.23.0 and GitHub Copilot SDK 1.0.14. Source versioning does not confirm NuGet publication; use the local package instructions below until 1.0.0 is published.
 
 ## What it does
 
 `Squad.Agents.AI` exposes a Squad team as a Microsoft Agent Framework `AIAgent`. `SquadAgent` composes the Squad CLI through the GitHub Copilot SDK, delegates MAF sessions/runs/streaming to the inner Copilot agent, and gives .NET consumers a DI-friendly wrapper instead of hand-rolling CLI process setup.
 
-Public surface in this preview:
+Public surface:
 
 - `SquadAgent` — sealed `AIAgent` wrapper over the Copilot-backed inner agent. Supports both non-streaming and streaming via `RunStreamingAsync`.
 - `SquadAgentOptions` — team root, CLI path/args, environment, token, logging, instruction settings, and a `ConfigureCopilotClient` delegate for advanced SDK customization.
@@ -18,19 +18,19 @@ Repository: <https://github.com/bradygaster/squad>
 ## Install
 
 ```bash
-dotnet add package Squad.Agents.AI --prerelease
+dotnet add package Squad.Agents.AI --version 1.0.0
 ```
 
 If you are consuming the PR before publish, pack it locally and add the generated package source:
 
 ```bash
 dotnet pack src/Squad.Agents.AI/Squad.Agents.AI.csproj -c Release -o nupkgs
-dotnet add package Squad.Agents.AI --prerelease --source ./nupkgs
+dotnet add package Squad.Agents.AI --version 1.0.0 --source ./nupkgs
 ```
 
 ## Prerequisites
 
-- .NET 10 SDK.
+- .NET 8, 9, or 10 for consumers; .NET 10 SDK to build this repository and run the sample.
 - GitHub Copilot CLI available on `PATH` (`copilot --version`).
 - Squad CLI and an initialized Squad team root; see the [Squad CLI repo](https://github.com/bradygaster/squad).
 - GitHub Copilot authentication through the signed-in user. The quickstart below does not require an app key or environment variable.
@@ -233,18 +233,18 @@ builder.Services.AddSquadAgent(o =>
 - **TraceEvents warning:** Enabling `TraceEvents` logs a startup warning because verbose SDK traces may include sensitive operational details.
 - **Avoid hardcoded tokens:** Never embed tokens in source code. Use `GitHubTokenProvider` for production token retrieval from Key Vault, managed identity, or similar secure stores.
 
-## Notes for v0.1-preview
+## Runtime notes
 
 - Default DI lifetime is scoped. An overload accepts any `ServiceLifetime`.
 - DI registers both `SquadAgent` and base `AIAgent` (non-keyed). Keyed DI registers both `SquadAgent` and `AIAgent` under the same key.
-- Multi-targeting and Aspire telemetry remain candidates for a later preview.
+- The package targets .NET 8, 9, and 10 and includes OpenTelemetry activity support.
 - The package does not validate that `SquadFolderPath` exists; consumers should validate their deployment paths.
 - `TraceEvents` can log sensitive operational details. Keep it off unless debugging.
 
 ## Package contents
 
-- `lib/net10.0/Squad.Agents.AI.dll`
-- `lib/net10.0/Squad.Agents.AI.xml` for IntelliSense / API docs
+- `lib/net8.0/`, `lib/net9.0/`, and `lib/net10.0/`, each containing `Squad.Agents.AI.dll` and XML IntelliSense / API docs
+- `buildTransitive/Squad.Agents.AI.props` for the pinned Copilot SDK native runtime bridge
 - `README.md` for NuGet.org rendering
 - `.nuspec` metadata with authors, tags, repository, and readme pointer
 - `LICENSE` copied from the repository root
@@ -252,9 +252,9 @@ builder.Services.AddSquadAgent(o =>
 ## Sample
 
 A runnable console application is included at
-`src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/`. It demonstrates the four
+`src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/`. It demonstrates the five
 core integration patterns in one place: basic DI, keyed DI with multiple agents,
-the `ConfigureCopilotClient` BYOK delegate, and streaming via `RunStreamingAsync`.
+the `ConfigureCopilotClient` delegate, streaming via `RunStreamingAsync`, and subagent OpenTelemetry observability.
 
 ### Prerequisites
 
@@ -278,19 +278,20 @@ $env:SQUAD_TEAM_ROOT = "C:\path\to\your\team-root"
 
 ### Run
 
-Run all four flows in sequence:
+Run all five flows in sequence:
 
 ```bash
 dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/
 ```
 
-Run a single flow (1–4):
+Run a single flow (1–5):
 
 ```bash
 dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/ -- --flow=1
 dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/ -- --flow=2
 dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/ -- --flow=3
 dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/ -- --flow=4
+dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/ -- --flow=5
 ```
 
 ### Flow walkthrough
@@ -304,13 +305,18 @@ under keys `"alpha"` and `"beta"`. Resolution uses
 `GetRequiredKeyedService<SquadAgent>("alpha")`.
 
 **Flow 3 — BYOK / `ConfigureCopilotClient` delegate** — the delegate receives
-`CopilotClientOptions` after Squad has applied its defaults. Inject a custom token
-or environment variable. The routing gate prevents accidental redirection of
+`CopilotClientOptions` after Squad has applied its defaults. The sample merges a custom
+environment variable without overriding authentication, model, or session configuration.
+Hosts can additionally inject a token from their credential store. The routing gate prevents accidental redirection of
 `Cwd`, `CliPath`, or `CliArgs` — configure those on `SquadAgentOptions` directly.
 
 **Flow 4 — Streaming** — `RunStreamingAsync` returns
 `IAsyncEnumerable<AgentResponseUpdate>`. Each `update.Text` fragment is written to
 `Console.Write` without a newline for live token-by-token output.
+
+**Flow 5 — Subagent observability** — requests two specialist introductions and
+prints dispatch callbacks and OpenTelemetry span counts. A response alone does
+not prove that subagents were dispatched; inspect the captured events and spans.
 
 ### Troubleshooting
 
