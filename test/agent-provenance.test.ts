@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -27,16 +27,29 @@ function fixture(
 }
 
 describe('agent identity provenance contract', () => {
-  it('keeps this repository on the complete producer contract', () => {
-    const committed = JSON.parse(
-      readFileSync(join('.squad', 'casting', 'registry.json'), 'utf8'),
-    ) as unknown;
+  // This repository's own `.squad/` is an *installed live team* audit, not product
+  // behavior: main intentionally ships with no live `.squad/` (see #2015 isolation),
+  // so this check is opportunistic. The contract itself (parsing a complete v1
+  // registry) still has full, unconditional coverage via the 'valid' fixture test
+  // below; this only additionally audits whatever live team happens to be checked out.
+  const liveRegistryPath = join('.squad', 'casting', 'registry.json');
+  const hasLiveRegistry = existsSync(liveRegistryPath);
+
+  it.runIf(hasLiveRegistry)('keeps this repository on the complete producer contract', () => {
+    const committed = JSON.parse(readFileSync(liveRegistryPath, 'utf8')) as unknown;
 
     expect(parseAgentProvenanceRegistry(committed)).toMatchObject({
       completeness: 'complete',
       registry: { schema: 'squad-agent-provenance/v1', revision: 1 },
     });
   });
+
+  it.skipIf(hasLiveRegistry)(
+    'skips the live-team producer audit: no .squad/ in this checkout (expected on main)',
+    () => {
+      expect(hasLiveRegistry).toBe(false);
+    },
+  );
 
   it('parses a complete v1 registry including an explicit avatar reference', () => {
     const result = parseAgentProvenanceRegistry(fixture('valid'));

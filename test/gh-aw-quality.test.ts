@@ -3881,9 +3881,18 @@ describe('gh-aw: canonical package integrity contract', () => {
       process.cwd(),
       '.github/skills/agentic-workflows/SKILL.md',
     ))).toBe(false);
-    expect(readText(join(process.cwd(), '.squad/routing.md'))).toContain(
-      '| Agentic workflows | agentic-workflows-dev |',
-    );
+    // This dogfoods the running repo's own live team routing config (not the package
+    // contract itself), so it only applies when a live `.squad/` is checked out (main
+    // intentionally ships without one, see #2015 isolation). The package/skill contract
+    // assertions above and below remain unconditional.
+    const liveRoutingPath = join(process.cwd(), '.squad/routing.md');
+    if (existsSync(liveRoutingPath)) {
+      expect(readText(liveRoutingPath)).toContain(
+        '| Agentic workflows | agentic-workflows-dev |',
+      );
+    } else {
+      expect(existsSync(liveRoutingPath)).toBe(false);
+    }
     expect(existsSync(join(
       process.cwd(),
       '.github/skills/agentic-workflow-designer/SKILL.md',

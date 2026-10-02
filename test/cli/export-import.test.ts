@@ -21,10 +21,6 @@ const EXT_ROOT = join(tmpdir(), `.test-cli-export-ext-${randomBytes(4).toString(
 const EXT_GLOBAL = join(tmpdir(), `.test-cli-export-ext-global-${randomBytes(4).toString('hex')}`);
 const EXT_PROJECT_KEY = `test-export-ext-${randomBytes(4).toString('hex')}`;
 
-const EXT_ROOT = join(tmpdir(), `.test-cli-export-ext-${randomBytes(4).toString('hex')}`);
-const EXT_GLOBAL = join(tmpdir(), `.test-cli-export-ext-global-${randomBytes(4).toString('hex')}`);
-const EXT_PROJECT_KEY = `test-export-ext-${randomBytes(4).toString('hex')}`;
-
 const TEST_ROOT = join(tmpdir(), `.test-cli-export-import-${randomBytes(4).toString('hex')}`);
 const IMPORT_ROOT = join(tmpdir(), `.test-cli-import-target-${randomBytes(4).toString('hex')}`);
 

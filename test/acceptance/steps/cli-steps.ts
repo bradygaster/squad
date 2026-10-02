@@ -2,6 +2,7 @@ import { expect } from 'vitest';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execSync } from 'node:child_process';
 import { TerminalHarness } from '../harness.js';
 import { StepDefinitions, registerStep } from '../support/runner.js';
 
@@ -19,13 +20,33 @@ export function registerCLISteps(registry: StepDefinitions): void {
       if (!match) throw new Error('Pattern match failed');
 
       const dirName = match[1];
-      const dirPath = join(process.cwd(), dirName);
 
+      // Hermetic sandbox: scaffold a real squad setup via `squad init` in an
+      // isolated temp dir rather than depending on a live `.squad/` checked
+      // into the repo being tested (main ships with no live `.squad/`, see
+      // #2015 isolation). Mirrors the sibling "without a .squad directory"
+      // step's use of an isolated temp dir, and downstream "I run" steps pick
+      // up context.tempDir automatically.
+      const tempDir = mkdtempSync(join(tmpdir(), 'squad-e2e-'));
+      // consult/check commands gate on "is this a git repo" before the
+      // .squad check, so the sandbox must actually be a git repo (same
+      // convention as test/cli/consult.test.ts, test/sdk/consult.test.ts).
+      execSync('git init --quiet', { cwd: tempDir, stdio: 'ignore' });
+      const initHarness = await TerminalHarness.spawnWithArgs(['init'], { cwd: tempDir });
+      try {
+        await initHarness.waitForExit(15000);
+      } catch {
+        // Timeout is okay; existence check below is authoritative.
+      }
+      await initHarness.close();
+
+      const dirPath = join(tempDir, dirName);
       if (!existsSync(dirPath)) {
-        throw new Error(`Directory ${dirPath} does not exist`);
+        throw new Error(`Directory ${dirPath} does not exist after scaffolding via squad init`);
       }
 
       context.squadDirExists = true;
+      context.tempDir = tempDir;
     },
     registry
   );
@@ -77,8 +98,9 @@ export function registerCLISteps(registry: StepDefinitions): void {
 
       const command = match[1];
       const args = command.replace(/^squad\s*/, '').split(/\s+/).filter(Boolean);
+      const cwd = context.tempDir as string | undefined;
 
-      const harness = await TerminalHarness.spawnWithArgs(args);
+      const harness = await TerminalHarness.spawnWithArgs(args, cwd ? { cwd } : undefined);
 
       try {
         await harness.waitForExit(15000);
