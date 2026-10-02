@@ -226,10 +226,16 @@ export function classifySquadCommand(payload, eventName = '') {
 function canonicalInvocation(result) {
   if (result.status === 'none') return null;
   if (result.status === 'accepted') {
+    const normalizedArgument = result.argumentText.replace(/\s+/g, ' ').trim();
+    const canonicalArgument = result.phase !== null
+      ? `${result.mode} phase ${result.phase}`
+      : !normalizedArgument || normalizedArgument.toLowerCase() === result.mode
+        ? result.mode
+        : `${result.mode} ${normalizedArgument.slice(result.mode.length).trim()}`;
     return JSON.stringify([
       'accepted',
       result.mode,
-      result.argumentText.replace(/\s+/g, ' ').trim(),
+      canonicalArgument,
       result.phase,
     ]);
   }

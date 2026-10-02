@@ -342,14 +342,19 @@ export async function collectImprovementContext(env = process.env, {
   if (comments.truncated) return refuse('comment-history-incomplete');
   const revocationPermissions = new Map();
   const approvedAt = Date.parse(comment.created_at);
+  const approvalListIndex = comments.values.findIndex(entry => sameNumericId(entry.id, comment.id));
   let revoked = false;
-  for (const entry of comments.values) {
+  for (const [entryIndex, entry] of comments.values.entries()) {
     const revokedAt = Date.parse(entry.created_at);
+    const followsApproval = revokedAt > approvedAt ||
+      (revokedAt === approvedAt && (approvalListIndex >= 0
+        ? entryIndex > approvalListIndex
+        : isNumericId(entry.id) && Number(entry.id) > Number(comment.id)));
     if (entry.user?.type !== 'User' || entry.performed_via_github_app ||
         entry.created_at !== entry.updated_at ||
         parseCommandComment(entry.body).command !== 'revoke' ||
         !Number.isFinite(approvedAt) || !Number.isFinite(revokedAt) ||
-        revokedAt < approvedAt) continue;
+        !followsApproval) continue;
     const login = typeof entry.user?.login === 'string' && entry.user.login.trim()
       ? entry.user.login.trim()
       : null;

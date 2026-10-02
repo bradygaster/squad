@@ -529,6 +529,54 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.permissionLookups).toEqual([]);
   });
 
+  it.each(['issues', 'issue_comment'] as const)(
+    'noops a %s.edited change that only recases parsed command keywords',
+    async eventName => {
+      const result = await runRouter({
+        eventName,
+        action: 'edited',
+        actor: 'maintainer-editor',
+        author: 'maintainer-author',
+        previousBody: 'Before.\n/squad PLAN REVISE Keep APIName casing',
+        body: 'After.\n/squad plan revise Keep APIName casing',
+        permissions: {
+          'maintainer-editor': 'maintain',
+          'maintainer-author': 'write',
+        },
+      });
+
+      expect(result.dispatchedInputs).toBeNull();
+      expect(result.failure).toBeNull();
+      expect(result.postedComments).toEqual([]);
+      expect(result.permissionLookups).toEqual([]);
+    },
+  );
+
+  it.each(['issues', 'issue_comment'] as const)(
+    'routes a %s.edited change to meaningful free-form argument case',
+    async eventName => {
+      const result = await runRouter({
+        eventName,
+        action: 'edited',
+        actor: 'maintainer-editor',
+        author: 'maintainer-author',
+        previousBody: 'Before.\n/squad PLAN REVISE Keep APIName casing',
+        body: 'After.\n/squad plan revise Keep ApiName casing',
+        permissions: {
+          'maintainer-editor': 'maintain',
+          'maintainer-author': 'write',
+        },
+      });
+
+      expect(result.failure).toBeNull();
+      expect(result.permissionLookups).toEqual(['maintainer-editor', 'maintainer-author']);
+      expect(result.dispatchedInputs).toMatchObject({
+        command: 'plan revise Keep ApiName casing',
+        issue_number: '4242',
+      });
+    },
+  );
+
   it.each([
     ['issues', 'ordinary issue body'],
     ['issue_comment', 'Use `/squad revoke-improvement` only after approval.'],

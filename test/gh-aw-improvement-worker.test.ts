@@ -239,6 +239,40 @@ describe('improvement: live revalidation and permanent deduplication', () => {
       comments: [{ ...revoke, created_at: 'not-a-timestamp', updated_at: 'not-a-timestamp' }],
     }))).authorized).toBe(true);
   });
+  it('uses complete comment order to resolve equal-timestamp revocation boundaries', async () => {
+    const revoke = comment({
+      id: 902,
+      body: '/squad revoke-improvement',
+      created_at: AT,
+      updated_at: AT,
+    });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [revoke, comment()],
+    }))).toMatchObject({ authorized: true, reason: 'approved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+    }))).toMatchObject({ authorized: false, reason: 'approval-revoked' });
+  });
+  it('uses numeric comment IDs for equal timestamps when the approval is absent from the complete list', async () => {
+    const before = comment({
+      id: 900,
+      body: '/squad revoke-improvement',
+      created_at: AT,
+      updated_at: AT,
+    });
+    const after = comment({
+      id: 902,
+      body: '/squad revoke-improvement',
+      created_at: AT,
+      updated_at: AT,
+    });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [before],
+    }))).toMatchObject({ authorized: true, reason: 'approved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [after],
+    }))).toMatchObject({ authorized: false, reason: 'approval-revoked' });
+  });
   it('ignores an unprivileged revocation and fails closed when revocation permission is unresolved', async () => {
     const revoke = comment({
       id: 902,
@@ -519,8 +553,8 @@ describe('improvement: final safe-output enforcement', () => {
     { body: prItem().body.replace('Scope-Digest:', 'Wrong-Digest:') },
   ])('rejects a mutated output: %o', async mutation => { expect((await enforce([prItem(mutation)])).ok).toBe(false); });
   it('checks live revocation again after implementation', async () => {
-    const revoked = comment({ body: '/squad revoke-improvement', created_at: AT, updated_at: AT });
-    expect((await enforce([prItem()], patchFor(), { comments: [revoked] })).ok).toBe(false);
+    const revoked = comment({ id: 902, body: '/squad revoke-improvement', created_at: AT, updated_at: AT });
+    expect((await enforce([prItem()], patchFor(), { comments: [comment(), revoked] })).ok).toBe(false);
   });
   it('refuses unsupported bundle transport rather than inspecting a decoy am patch', async () => {
     const root = scratch();

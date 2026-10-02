@@ -1830,7 +1830,7 @@ When **Step AG-3** returned `REFUSE`:
    `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
 3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
 
-**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `retro`, `approve-improvement`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `retro`, `approve-improvement`, `revoke-improvement`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
 
 ## Execute Mode
 
