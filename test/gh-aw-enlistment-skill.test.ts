@@ -533,6 +533,15 @@ describe('gh-aw-enlistment skill', () => {
       expect(guide).toContain('--source-revision "${SQUAD_SHA}"');
       expect(guide).toContain('--strict-compile');
       expect(guide).toContain('package ownership metadata');
+      const upgrade = guide.slice(guide.indexOf('## Upgrading'));
+      const add = upgrade.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force');
+      const cleanup = upgrade.indexOf('rm -f .github/skills/agentic-workflows/SKILL.md');
+      const compile = upgrade.indexOf('gh aw compile --strict');
+      const verify = upgrade.indexOf('squad-install-verifier.mjs \\\n  --verify-install');
+      expect(add).toBeGreaterThan(-1);
+      expect(cleanup).toBeGreaterThan(add);
+      expect(compile).toBeGreaterThan(cleanup);
+      expect(verify).toBeGreaterThan(compile);
     });
   });
 

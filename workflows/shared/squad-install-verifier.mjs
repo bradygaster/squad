@@ -1037,6 +1037,7 @@ function recoveryMessage(revision) {
   return [
     'Safe recovery:',
     `  gh aw add ${PACKAGE_NAME}@${ref} --force`,
+    `  rm -f ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
     '  gh aw compile --strict',
     '  node .github/workflows/shared/squad-install-verifier.mjs --verify-install --strict-compile',
   ].join('\n');

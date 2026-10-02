@@ -159,6 +159,13 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     expect(rejected.stderr).toContain(
       `Unowned mutable gh-aw router skill must be removed: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
     );
+    expect(rejected.stderr).toContain([
+      'Safe recovery:',
+      `  gh aw add bradygaster/squad/workflows@${revision} --force`,
+      `  rm -f ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+      '  gh aw compile --strict',
+      '  node .github/workflows/shared/squad-install-verifier.mjs --verify-install --strict-compile',
+    ].join('\n'));
 
     rmSync(join(root, UNOWNED_MUTABLE_ROUTER_SKILL));
     const accepted = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
