@@ -11,6 +11,7 @@ import {
   readAgentOutputItems, evaluateRetroPullRequestItems, pullLinksIssue, findNativeLinkedPulls,
   NATIVE_LINK_MAX_PAGES,
 } from './squad-retro-provenance.mjs';
+import { classifySquadCommand } from './squad-command-contract.mjs';
 export { isNumericId };
 
 export { ACTION_LABEL, PROPOSAL_LABEL, extractActionKey, readAgentOutputItems };
@@ -47,8 +48,11 @@ export function isSafePath(path) {
 }
 
 export function parseCommandComment(body) {
+  const routed = classifySquadCommand({ comment: { body } }, 'issue_comment');
+  if (routed.status === 'accepted' && routed.mode === 'revoke-improvement') {
+    return { command: 'revoke', paths: [] };
+  }
   const lines = normalizeText(body).split('\n').filter(line => line.trim() !== '');
-  if (lines[0] === REVOKE_COMMAND) return { command: 'revoke', paths: [] };
   if (lines[0] !== APPROVE_COMMAND) return { command: null, paths: [] };
   let revision = null;
   const paths = [];

@@ -224,6 +224,12 @@ describe('improvement: live revalidation and permanent deduplication', () => {
     const revoke = comment({ id: 902, body: '/squad revoke-improvement', created_at: '2026-09-03T00:00:00Z', updated_at: '2026-09-03T00:00:00Z' });
     const authorized = api({ comments: [comment(), revoke, comment({ id: 903 })] });
     expect((await gate.collectImprovementContext(env(), authorized)).reason).toBe('approval-revoked');
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [comment(), { ...revoke, body: 'Context.\n/squad REVOKE-IMPROVEMENT   ' }],
+    }))).reason).toBe('approval-revoked');
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [comment(), { ...revoke, body: '```text\n/squad revoke-improvement\n```' }],
+    }))).reason).toBe('approved');
     expect(authorized.calls).toContain(`repos/${REPO}/collaborators/maintainer/permission`);
     expect((await gate.collectImprovementContext(env(), api({ comments: [{ ...revoke, user: { login: 'bot', type: 'Bot' } }] }))).authorized).toBe(true);
     expect((await gate.collectImprovementContext(env(), api({

@@ -129,7 +129,7 @@
       "package_destination": ".github/workflows/shared/squad-improvement-gate.mjs",
       "destination": ".github/workflows/shared/squad-improvement-gate.mjs",
       "ownership": "manifest",
-      "sha256": "c9148e068cbd30026a176587d91bc4076a1c30a5361391016e8eebf1152e1a1d"
+      "sha256": "99b9f8e3a93d6f0bff57df927ace89f7be0ea6ba86bb99472103ff53b6f641e1"
     },
     {
       "path": "shared/squad-retro-evidence.mjs",
