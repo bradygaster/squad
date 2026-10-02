@@ -57,3 +57,6 @@ Dockerfile.* text eol=lf
 .squad/fact-checker/audit-trail.md merge=union
 
 .github/workflows/*.lock.yml linguist-generated=true
+
+# Charter conformance binds exact document bytes across platform checkouts.
+docs/specification/charter-v0.1.md text eol=lf

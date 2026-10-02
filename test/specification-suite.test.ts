@@ -518,7 +518,7 @@ describe('Squad specification suite v0.1', () => {
         expect(profile.capabilities).toEqual(manifest.capabilities);
         expect(manifest.revision.specification.artifact).toBe(profile.spec);
         expect(manifest.revision.evidence.artifact).toBe(profile.manifest);
-        expect(manifest.revision.specification.digest).toBe(
+        expect(manifest.revision.specification.digest, `${profile.spec}: exact-byte specification digest`).toBe(
           sha256(await readFile(path.join(ROOT, profile.spec))),
         );
         const { revision: _manifestRevision, ...evidencePayload } = manifest;

@@ -76,7 +76,7 @@
         "specification": {
           "artifact": "docs/specification/charter-v0.1.md",
           "algorithm": "sha256",
-          "digest": "sha256:2274102c633926cb7dd0c5fd890aec5822d78026f13d71d91d7dd336b6a274b3"
+          "digest": "sha256:9bdc6440b83fbd087d7ac01129146dda067d86501b7d3ecf2e81134d5b7ce7c2"
         },
         "evidence": {
           "artifact": "test-fixtures/spec/charter-v0.1/manifest.json",
