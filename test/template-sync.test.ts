@@ -110,20 +110,6 @@ const CASTING_REGISTRY_LOCATIONS = [
 // ---------------------------------------------------------------------------
 
 describe('dynamic template enumeration (all synced files)', () => {
-  // Re-sync immediately before byte comparisons as a second layer of defence.
-  // The original race — test/init-scaffolding.test.ts running runInit() against
-  // a sandbox under the repo root, so monorepo resolution stamped the real
-  // .github/agents/squad.agent.md — was fixed in #1796 by moving that sandbox
-  // to the OS temp dir. This describe-scoped beforeAll is retained to keep the
-  // window closed if any future suite reintroduces an in-repo sandbox.
-  beforeAll(() => {
-    execSync('node scripts/sync-templates.mjs', {
-      cwd: ROOT,
-      encoding: 'utf-8',
-      timeout: 60_000,
-    });
-  });
-
   const sourceFiles = collectFiles(SOURCE_DIR);
 
   it('.squad-templates/ contains files to sync', () => {
