@@ -19,23 +19,82 @@ GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slas
 
 ### Install the Squad workflows
 
+> **Agent action required:** If a user asks you to install or set up Squad
+> Agentic Workflows, execute the complete
+> [seven-step quick start](../docs/src/content/docs/guide/gh-aw.md#quick-start)
+> in their repository. Do not only quote or run the `gh aw add` command below.
+> The supported path verifies that GitHub Issues are enabled (and enables them
+> when the authenticated user has repository administration permission),
+> configures workflow-created pull requests, installs and validates the complete
+> generated artifact set, commits it on an isolated branch, and opens a
+> human-reviewed bootstrap PR. If disabled Issues cannot be enabled, stop before
+> installation and ask a repository administrator to enable them. `/squad`
+> commands use issue comments, and bootstrap creates a research/proposals issue.
+> Stop at the bootstrap PR; the human merges it.
+> `/squad` slash commands become active only after that merge reaches
+> the repository's default branch.
+> The installation PR is a manual trust boundary: its PR-controlled workflow
+> cannot mint a trusted Squad verdict. After merge, require the Cast PR
+> (automatically opened, or manually opened from a signed fallback issue when
+> `GITHUB_TOKEN` cannot create it) to pass the deterministic relay's native
+> `Squad Review / review` job, which is authoritative only when it validates the
+> exact trusted automatic run from the base-controlled `pull_request_target`
+> workflow. Authoritative merge enforcement requires a source-bound
+> required-workflow or equivalent ruleset. Where source binding is unavailable,
+> treat the context as advisory and continue to require an independent human
+> approving review. The relay requires no separate PAT, GitHub App, private key,
+> secret, environment, or external service.
+
+The quick start installs this workflow set:
+
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+SQUAD_SHA="<40-character-commit-sha>"  # explicit, maintainer-approved; never `commits/dev`
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 ```
+
+The removal is intentional: gh-aw v0.89.22 generates that generic tool-owned
+router, which loads mutable prompts from the current `github/gh-aw` repository.
+It is not Squad-owned or bound to `SQUAD_SHA`. Keep the exact
+`.github/skills/gh-aw-enlistment/SKILL.md` installed by Squad.
+This repository routes gh-aw work directly through the
+`agentic-workflows-dev` specialist in `.squad/routing.md`, with the local
+`agentic-workflow-designer` and `gh-aw-reliability` skills for design and
+contract validation. None depends on the deleted router. Retaining a rewritten
+or pinned copy would make Squad the owner of a forked generic gh-aw prompt
+router and its upstream corpus; removal preserves the package boundary without
+vendoring or synchronizing that mutable scaffold.
 
 This command:
 
-1. Fetches the Squad dispatcher, implementation worker, and advisory reviewer
+1. Fetches the Squad dispatcher, general and dependency workers, independent reviewer with a required-check gate, retrospective, and approval-gated improvement worker
 2. Compiles them into GitHub Actions–compatible workflows
 3. Adds the workflow sources and generated files to your repository's `.github/` directory
 
 ### Verify installation
 
-After running the command, confirm the Squad, Squad Implement Worker, and Squad
-Review workflows appear in your repository's **Actions** tab.
+After running the command, confirm all eight source/lock pairs exist and strict
+compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
+Improvement Worker, plus the dedicated Bootstrap and Command Router workflows. The improvement
+worker is standard but dormant until an exact human approval is relayed through
+the dispatcher. Bootstrap wakes after the installation lands on the default
+branch and normally creates the linked draft Cast PR and research-proposals
+issue; if `can_approve_pull_request_reviews` is `false` (the recommended
+setting), `GITHUB_TOKEN` cannot open that PR, so Bootstrap instead opens a
+bot-authored fallback issue with a signed provenance record and a
+ready-to-click compare URL for a human to open the PR manually — Squad
+Review verifies that record before treating the manual PR as trusted (see the
+[gh-aw guide](../docs/src/content/docs/guide/gh-aw.md) for the exact
+conditions).
+
+Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
+`"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted
+to eligible Markdown paths under `.squad/skills/**` or `.squad/decisions/inbox/**`
+instead needs `/squad approve-improvement`, an `Approved-Revision:` hash and
+exact `Approved-Path:` lines. `/squad revoke-improvement` reserves the human's
+durable revocation without dispatching. Both workers open drafts, never merge
+or mark ready. See the [gh-aw guide](../docs/src/content/docs/guide/gh-aw.md)
+for revision calculation, caps and manual retry.
 
 ### Try your first command
 
@@ -96,7 +155,7 @@ All commands are issued as comments on a GitHub issue. Prefix: `/squad`.
 
 | Command | Purpose | Preconditions | Repo artifacts | User sees |
 |---------|---------|---------------|----------------|-----------|
-| `/squad research` | Deep-dive analysis of the issue and repository | Issue exists with intent | Comment with `squad_artifact: research` data | Structured research findings |
+| `/squad research` | Deep-dive analysis of the issue and repository; consults current online technical documentation when the repo's gh-aw network policy permits | Issue exists with intent | Comment with `squad_artifact: research` data | Structured research findings |
 | `/squad triage` | Classify research findings into work, decisions, and exclusions | Research artifact exists | Comment with `squad_artifact: triage` data | Categorized findings table |
 | `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Triage artifact exists | Updated `triage` artifact | Revised triage |
 | `/squad plan` | Generate combined program + implementation plan (fast path) | Triage artifact exists | Comment with `squad_artifact: plan` data | Combined plan |

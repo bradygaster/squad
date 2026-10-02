@@ -33,7 +33,8 @@ jobs:
             });
             const activationComments = comments
               .filter(comment => new Date(comment.created_at) <= completed)
-              .filter(comment => /Structured data:/i.test(comment.body ?? '') && /activated/i.test(comment.body ?? ''))
+              .filter(comment => /Structured data:/i.test(comment.body ?? '')
+                && /"squad_artifact"\s*:\s*"?(?:phases-activated|activated|phases-accepted|plan-accepted)/i.test(comment.body ?? ''))
               .map(comment => ({
                 body: comment.body,
                 issue: Number(comment.issue_url.split('/').at(-1)),

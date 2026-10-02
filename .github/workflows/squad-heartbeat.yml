@@ -97,11 +97,11 @@ jobs:
       - name: Check triage script
         id: check-script
         run: |
-          if [ -f ".squad/templates/ralph-triage.js" ]; then
+          if [ -f "templates/ralph-triage.js" ]; then
             echo "has_script=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_script=false" >> "$GITHUB_OUTPUT"
-            echo "⚠️ ralph-triage.js not found — run 'squad upgrade' to install"
+            echo "⚠️ product-owned ralph-triage.js not found"
           fi
 
       - name: Ralph — Smart triage
@@ -109,7 +109,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node .squad/templates/ralph-triage.js \
+          node templates/ralph-triage.js \
             --squad-dir .squad \
             --output triage-results.json
 

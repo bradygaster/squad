@@ -5,8 +5,6 @@ description: Run Squad in either agent-per-node or squad-per-pod deployment mode
 
 # Dual-Mode Deployment — Pod-Aware Capabilities
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Dual-mode deployment extends [Capability Routing](/squad/docs/features/capability-routing/) to support both classic single-machine setups and modern containerized/Kubernetes deployments where multiple Squad pods may share an organization's workload — each with potentially different machine capabilities.
 
 It introduces two environment variables and a pod-specific manifest lookup pattern so the same Squad config can run identically in either deployment shape.

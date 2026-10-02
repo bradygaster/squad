@@ -1,8 +1,5 @@
 # MCP Setup Guide for Squad
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to discover available integrations:**
 ```
 Show me which MCP servers are available

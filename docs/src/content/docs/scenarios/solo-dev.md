@@ -1,8 +1,5 @@
 # Squad for Solo Developers
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 I'm working alone on a side project — set up a minimal squad to help with code review and testing

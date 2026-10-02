@@ -1,0 +1,556 @@
+/**
+ * gh-aw-enlistment skill — structural validity, discoverability, and safety-gate
+ * regression guard.
+ *
+ * The skill operationalizes the supported Squad gh-aw bootstrap
+ * (docs/src/content/docs/guide/gh-aw.md). Its value is entirely in the safety
+ * gates it encodes, so this suite asserts:
+ *   1. The canonical SKILL.md parses into a valid SkillDefinition.
+ *   2. Its frontmatter advertises the documented trigger phrases (discoverability).
+ *   3. Its body still encodes every critical safety gate (allowlist, strict
+ *      compile, never-auto-merge, read-only token, explicit staging).
+ *   4. The canonical source and all four mirrors are byte-for-byte identical
+ *      (the sync invariant every canonical skill upholds).
+ */
+
+import { describe, it, expect } from 'vitest';
+import { readFileSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseSkillFile } from '@bradygaster/squad-sdk/skills';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
+
+const SKILL_ID = 'gh-aw-enlistment';
+
+const CANONICAL = `.squad-templates/skills/${SKILL_ID}/SKILL.md`;
+const GUIDE = 'docs/src/content/docs/guide/gh-aw.md';
+const AGENT_GUIDE = '.github/agents.md';
+const MIRRORS = [
+  `workflows/skills/${SKILL_ID}/SKILL.md`,
+  `templates/skills/${SKILL_ID}/SKILL.md`,
+  `packages/squad-cli/templates/skills/${SKILL_ID}/SKILL.md`,
+  `packages/squad-sdk/templates/skills/${SKILL_ID}/SKILL.md`,
+] as const;
+
+function readRaw(rel: string): string {
+  return readFileSync(resolve(ROOT, rel), 'utf-8');
+}
+/** LF-normalized read — markdown is not pinned to LF, so Windows checkouts get CRLF. */
+function readLF(rel: string): string {
+  return readRaw(rel).replace(/\r\n/g, '\n');
+}
+
+const VERSION_GATE_START = '# gh-aw-exact-version-start';
+const VERSION_GATE_END = '# gh-aw-exact-version-end';
+
+function extractVersionGate(content: string): string {
+  const start = content.indexOf(VERSION_GATE_START);
+  const end = content.indexOf(VERSION_GATE_END);
+  expect(start, `${VERSION_GATE_START} must exist`).toBeGreaterThan(-1);
+  expect(end, `${VERSION_GATE_END} must follow its start marker`).toBeGreaterThan(start);
+  return content.slice(start + VERSION_GATE_START.length, end);
+}
+
+function runVersionGate(
+  gate: string,
+  initialVersion: string,
+  installedVersion: string,
+  versionStream: 'stdout' | 'stderr' = 'stdout',
+) {
+  const script = `
+set -euo pipefail
+installed=0
+exec 3>&2
+gh() {
+  if [ "$1" = "aw" ] && [ "$2" = "--version" ]; then
+    printf 'CALL version\\n' >&3
+    version="$INITIAL_VERSION"
+    if [ "$installed" -eq 1 ]; then version="$INSTALLED_VERSION"; fi
+    if [ "$VERSION_STREAM" = "stderr" ]; then
+      printf 'gh-aw %s\\n' "$version" >&2
+    else
+      printf 'gh-aw %s\\n' "$version"
+    fi
+    return 0
+  fi
+  if [ "$1" = "extension" ] && [ "$2" = "remove" ] && [ "$3" = "gh-aw" ]; then
+    printf 'CALL remove\\n' >&3
+    return 0
+  fi
+  if [ "$1" = "extension" ] && [ "$2" = "install" ]; then
+    printf 'CALL install %s %s\\n' "$3" "$4" >&3
+    installed=1
+    return 0
+  fi
+  return 64
+}
+${gate}
+`;
+  return spawnSync('bash', ['-c', script], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      INITIAL_VERSION: initialVersion,
+      INSTALLED_VERSION: installedVersion,
+      VERSION_STREAM: versionStream,
+    },
+  });
+}
+
+const COMPILE_WARNINGS = [
+  '.github/workflows/squad-review.md: warning: pull_request_target is a very dangerous trigger.',
+  ".github/workflows/squad.md: warning: Both slash_command and bots triggers are configured. If a bot listed in bots: posts a comment that starts with the slash command text (e.g., /command-name), it will trigger the workflow and occupy the concurrency slot, potentially blocking simultaneous manual invocations. To ensure the workflow only runs on explicit user commands, remove the 'bots:' field.",
+];
+
+function assertCompileWarningContract(content: string): void {
+  const regions = [...content.matchAll(
+    /^<!-- compile-warning-allowlist-start -->\n```text\n([\s\S]*?)\n```\n<!-- compile-warning-allowlist-end -->$/gm,
+  )];
+  expect(regions).toHaveLength(1);
+  expect(regions[0][1].split('\n')).toEqual(COMPILE_WARNINGS);
+  const flat = content.replace(/\s+/g, ' ');
+  expect(flat).toContain('require exactly two warnings, one occurrence of each exact diagnostic header');
+  expect(flat).toContain('**STOP** on any error, or on **any additional warning** beyond these two exact documented diagnostics.');
+  expect(flat).toContain('Also STOP if either warning is missing, duplicated, changed, or attributed to another path');
+  expect(flat).toContain('Compiled 8 workflows: 8 succeeded, 2 warnings');
+  expect(flat).toContain('or if any required control is absent.');
+  expect(flat).toContain('Do not suppress warnings or use `--approve` to bypass this gate.');
+}
+
+describe.each([CANONICAL, ...MIRRORS, GUIDE])('%s strict compile warning contract', path => {
+  const content = readLF(path);
+
+  it('allows exactly the native review advisory and bot-trigger diagnostic with hard-stop semantics', () => {
+    assertCompileWarningContract(content);
+  });
+
+  it('conditions the native review exception on every existing control', () => {
+    const flat = content.replace(/\s+/g, ' ');
+    expect(flat).toContain('**only while all existing controls remain**');
+    for (const control of [
+      'same-repository head restriction', 'base-controlled workflow source',
+      '`checkout: false` agent path', 'API-only inspection', 'exact run/head/attempt guard',
+      'least-privilege jobs', 'advisory verdict', 'independent human approval',
+    ]) expect(flat).toContain(control);
+    expect(flat).toContain('`pull_request_target` is not generally safe');
+  });
+
+  it.each([
+    ['unknown third warning', `${COMPILE_WARNINGS.join('\n')}\n.github/workflows/squad.md: warning: unknown diagnostic`],
+    ['missing review warning', COMPILE_WARNINGS[1]],
+    ['missing bot warning', COMPILE_WARNINGS[0]],
+    ['duplicate warning', `${COMPILE_WARNINGS.join('\n')}\n${COMPILE_WARNINGS[0]}`],
+    ['different workflow path', COMPILE_WARNINGS.join('\n').replace('squad-review.md', 'untrusted.md')],
+    ['changed diagnostic', COMPILE_WARNINGS.join('\n').replace('very dangerous', 'safe')],
+  ])('rejects a contract mutation allowing %s', (_label, replacement) => {
+    const mutated = content.replace(COMPILE_WARNINGS.join('\n'), replacement);
+    expect(mutated).not.toBe(content);
+    expect(() => assertCompileWarningContract(mutated)).toThrow();
+  });
+
+  it('rejects removal of the error/additional-warning hard stop', () => {
+    const mutated = content.replace('**STOP** on any error', 'Continue on any error');
+    expect(mutated).not.toBe(content);
+    expect(() => assertCompileWarningContract(mutated)).toThrow();
+  });
+});
+
+describe('gh-aw-enlistment skill', () => {
+  it('canonical SKILL.md exists', () => {
+    expect(existsSync(resolve(ROOT, CANONICAL)), `${CANONICAL} should exist`).toBe(true);
+  });
+
+  it('parses into a valid SkillDefinition', () => {
+    const skill = parseSkillFile(SKILL_ID, readLF(CANONICAL));
+    expect(skill, 'skill should parse').toBeDefined();
+    expect(skill!.id).toBe(SKILL_ID);
+    expect(skill!.name).toContain(SKILL_ID);
+    expect(skill!.content.length).toBeGreaterThan(0);
+  });
+
+  describe('discoverability — frontmatter trigger phrases', () => {
+    const content = readLF(CANONICAL);
+    // Assert against the PARSED triggers array, not raw text. `toContain` on the
+    // whole document would still pass if a phrase were deleted from the
+    // frontmatter and merely mentioned in prose — which is the exact regression
+    // this block exists to catch, since a phrase in prose is not discoverable.
+    // `skill.triggers` is the same array the runtime matcher iterates
+    // (packages/squad-sdk/src/skills/index.ts), so this tests the real path.
+    const skill = parseSkillFile(SKILL_ID, content);
+
+    it('declares a non-empty triggers block in frontmatter', () => {
+      expect(skill, 'skill should parse').toBeDefined();
+      expect(Array.isArray(skill!.triggers), 'triggers should parse to an array').toBe(true);
+      expect(skill!.triggers.length, 'triggers must not be empty').toBeGreaterThan(0);
+    });
+
+    // The three trigger phrases the skill must be discoverable by.
+    for (const phrase of [
+      'set up Squad agentic workflows',
+      'enlist this repo in Squad',
+      'install Squad gh-aw workflows',
+    ]) {
+      it(`is discoverable by "${phrase}"`, () => {
+        expect(
+          skill!.triggers,
+          `"${phrase}" must be a frontmatter trigger, not merely present somewhere in the document`,
+        ).toContain(phrase);
+      });
+    }
+  });
+
+  describe('safety gates encoded in the body', () => {
+    const content = readLF(CANONICAL);
+
+    // EXCLUSIVITY GUARD — these two tests enforce the exact set of
+    // backtick-delimited tokens in the bounded allowlist region.
+    // Using deep-equality on a sorted array (not .toContain) so that adding a
+    // 4th entry, removing an entry, or renaming one all cause an immediate
+    // failure.  The delimiters scope the extraction so identical strings that
+    // appear elsewhere in the document (Anti-Patterns section, examples) do
+    // NOT count.
+    it('allowlist region delimiters exist exactly once each', () => {
+      const startMatches = [...content.matchAll(/^<!-- allowlist-start -->$/gm)];
+      const endMatches   = [...content.matchAll(/^<!-- allowlist-end -->$/gm)];
+      expect(startMatches.length, '<!-- allowlist-start --> must appear exactly once').toBe(1);
+      expect(endMatches.length,   '<!-- allowlist-end --> must appear exactly once').toBe(1);
+    });
+
+    it('allowlist region contains EXACTLY the two documented secrets and the one documented action — no more, no fewer', () => {
+      const startTag = '<!-- allowlist-start -->';
+      const endTag   = '<!-- allowlist-end -->';
+      const startIdx = content.indexOf(startTag);
+      const endIdx   = content.indexOf(endTag);
+      expect(startIdx, 'allowlist-start delimiter must exist').toBeGreaterThan(-1);
+      expect(endIdx,   'allowlist-end delimiter must exist').toBeGreaterThan(startIdx);
+
+      // Extract strictly between the delimiter lines (exclusive).
+      const region = content.slice(startIdx + startTag.length, endIdx);
+
+      // Every backtick-delimited token in the region — order-independent exact set.
+      const tokens = [...region.matchAll(/`([^`]+)`/g)].map(m => m[1]);
+      expect(tokens.slice().sort(), 'allowlist tokens must be exactly the three documented entries').toEqual(
+        [
+          'SQUAD_GITHUB_APP_PRIVATE_KEY',
+          'SQUAD_GITHUB_TOKEN',
+          'bradygaster/squad/.github/actions/squad-init',
+        ].sort()
+      );
+
+      // Structural: exactly 2 bullet lines (one for the two secrets, one for the action).
+      const bulletLines = region.split('\n').filter(l => l.trimStart().startsWith('- '));
+      expect(bulletLines.length, 'allowlist region must contain exactly 2 bullet lines').toBe(2);
+    });
+
+    it('installs one immutable native package with the 8/17/1 topology', () => {
+      expect(content).toContain(': "${SQUAD_SHA:?STOP: set SQUAD_SHA to an explicit, maintainer-approved 40-character Squad commit SHA before installing.}"');
+      expect(content).not.toContain('commits/dev');
+      expect(content).toContain('^' + '[0-9a-f]{40}' + '$');
+      expect(content).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+      expect(content).toContain('exactly eight workflows, seventeen runtime resources, and one');
+      for (const workflow of [
+        'squad.md',
+        'squad-implement-worker.md',
+        'squad-review.md',
+        'squad-deps-worker.md',
+        'squad-retro.md',
+        'squad-improvement-worker.md',
+        'squad-bootstrap.md',
+        'squad-command-router.md',
+      ]) expect(content).toContain(workflow);
+    });
+
+    it('requires the package verifier to validate every shared runtime guard', () => {
+      expect(content).toContain('squad-install-verifier.mjs --materialize-runtime');
+      expect(content).toContain('--verify-install');
+      expect(content).toContain('--source-revision "${SQUAD_SHA}"');
+      expect(content).toContain('--strict-compile');
+      expect(content).toContain('missing source/lock pair');
+      expect(content).toContain('stale source/resource digest');
+    });
+
+    it('removes only gh-aw\'s mutable router and preserves the exact Squad skill', () => {
+      expect(content.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(2);
+      expect(content).toContain('not part of the Squad package');
+      expect(content).toContain('Do not adopt or vendor the rest');
+      expect(content).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(content).toContain(
+        "grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true",
+      );
+    });
+
+    it('requires a final strict compile without --approve', () => {
+      // The standalone command must appear as its own line (start-of-line in a
+      // fenced bash block), not merely as a prose/backtick mention.  The
+      // previous lookahead-only regex was flagged by a reviewer as a false
+      // positive: the Anti-Patterns prose "finish with a plain `gh aw compile
+      // --strict` (no `--approve`)" also matched it.
+      //
+      // Anchoring with ^, the `m` (multiline) flag, and allowing only an
+      // optional trailing # comment means only real command lines satisfy the
+      // pattern.  Lines with --approve (L140, L259, L295) do not match because
+      // --approve follows --strict before any #.
+      expect(content).toMatch(/^gh aw compile --strict(\s+#[^\n]*)?$/m);
+    });
+
+    it('keeps the default workflow token read-only', () => {
+      expect(content).toContain('default_workflow_permissions=read');
+    });
+
+    it('uses native review authority without reviewer credentials or external services', () => {
+      expect(content).toContain('native GitHub Actions/gh-aw runtime identity');
+      expect(content).toContain('successful `review` job');
+      expect(content).toContain('context-only requirement');
+      expect(content).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
+    });
+
+    it('requires GitHub Issues before installation and stops when they cannot be enabled', () => {
+      expect(content).toContain('gh api "repos/${owner_repo}" --jq \'.has_issues\'');
+      expect(content).toContain(
+        'gh api --method PATCH "repos/${owner_repo}"',
+      );
+      expect(content).toContain('-F has_issues=true --silent');
+      expect(content).toContain('requires repository administration permission');
+      expect(content).toContain('STOP before branch creation or `gh aw add`');
+      expect(content.indexOf("issues_enabled=")).toBeLessThan(content.indexOf('git switch -c'));
+      expect(content.indexOf("issues_enabled=")).toBeLessThan(
+        content.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+    });
+
+    it('keeps the standalone correct example fail-closed', () => {
+      const correctExample = content.slice(content.indexOf('### ✓ Correct:'));
+      expect(correctExample).toContain('if ! gh api --method PATCH "repos/${owner_repo}"');
+      expect(correctExample).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+      expect(correctExample).toContain('exit 1');
+    });
+
+    it('forbids blanket staging and mandates explicit paths', () => {
+      expect(content).toMatch(/git add \.|git add -A|git commit -a/); // referenced as an anti-pattern
+      expect(content).toContain('git add -- .gitattributes .github/aw/ .github/workflows/ .github/skills/');
+      expect(content.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
+        .toHaveLength(2);
+      expect(content).toContain('Never force-add a directory or glob');
+    });
+
+    it('never auto-merges and defers automatic casting until after the bootstrap PR merges', () => {
+      expect(content).toMatch(/auto-?merge/i);
+      expect(content).toMatch(/never merge|do not merge|human-reviewed|human approval/i);
+      expect(content).toContain('squad-bootstrap');
+      expect(content).toContain('[Research Proposals] Agent-discovered repo opportunities');
+    });
+
+    it('pins and verifies the package-capable gh-aw compiler', () => {
+      expect(content).toContain('gh_aw_version_output="$(gh aw --version 2>&1)"');
+      expect(content).toContain('gh extension remove gh-aw');
+      expect(content).toContain('required_gh_aw_version="v0.89.22"');
+      expect(content).toContain('gh extension install --pin "${required_gh_aw_version}" github/gh-aw');
+      expect(content).toContain('never select a newer release');
+      expect(content).toContain('PowerShell');
+    });
+
+    it('resolves repo identity at runtime (no hardcoded owner/repo placeholder)', () => {
+      expect(content).toContain('gh repo view --json nameWithOwner');
+      expect(content).toContain('gh repo view --json defaultBranchRef');
+    });
+
+    it('names the bootstrap job\'s own PR-creation fallback branch as the real Cast branch, distinct from the human-run install branch', () => {
+      // Regression for a Copilot review finding: this paragraph explains what
+      // happens when the *automated* bootstrap workflow's own
+      // github.rest.pulls.create call is refused (can_approve_pull_request_reviews
+      // false). That fallback always pushes BOOTSTRAP_BRANCH
+      // (workflows/shared/squad-bootstrap-validator.mjs), never the branch a
+      // human creates by hand in step 2 below (chore/squad-gh-aw-bootstrap).
+      // Conflating the two makes the compare URL example wrong and leaves an
+      // operator looking at the wrong branch.
+      const validatorSource = readLF('workflows/shared/squad-bootstrap-validator.mjs');
+      const bootstrapBranchMatch = validatorSource.match(/^export const BOOTSTRAP_BRANCH = '([^']+)';$/m);
+      expect(bootstrapBranchMatch, 'BOOTSTRAP_BRANCH constant must exist').not.toBeNull();
+      const bootstrapBranch = bootstrapBranchMatch![1];
+      expect(bootstrapBranch).toBe('squad/bootstrap-cast');
+
+      const paragraphStart = content.indexOf("With it `false`, the bootstrap job's own");
+      const paragraphEnd = content.indexOf('\n\n', paragraphStart);
+      expect(paragraphStart, 'fallback-explanation paragraph must exist').toBeGreaterThan(-1);
+      const paragraph = content.slice(paragraphStart, paragraphEnd);
+
+      expect(paragraph).toContain(`\`${bootstrapBranch}\` branch`);
+      expect(paragraph).toContain(`.../compare/<base>...${bootstrapBranch}?expand=1&title=...`);
+      // Mutation guard: the paragraph must not (re-)claim the automated
+      // fallback pushes the human's own manual install branch.
+      expect(paragraph).not.toContain('pushes the\n`chore/squad-gh-aw-bootstrap` branch');
+      expect(paragraph).not.toMatch(/compare\/<base>\.\.\.chore\/squad-gh-aw-bootstrap/);
+    });
+  });
+
+  describe('gh-aw bootstrap documentation', () => {
+    const guide = readLF(GUIDE);
+    const agentGuide = readLF(AGENT_GUIDE);
+    const versionGate = extractVersionGate(guide);
+
+    it('accepts an existing exact v0.89.22 installation without reinstalling', () => {
+      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
+      expect(result.stderr).not.toContain('CALL remove');
+      expect(result.stderr).not.toContain('CALL install');
+    });
+
+    it('captures exact v0.89.22 version output emitted on stderr', () => {
+      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22', 'stderr');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
+      expect(result.stderr).not.toContain('CALL remove');
+      expect(result.stderr).not.toContain('CALL install');
+    });
+
+    it('removes pre-existing v0.89.21 and verifies a clean v0.89.22 install', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.22');
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
+      expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+    });
+
+    it('fails closed when a clean reinstall persistently reports v0.89.21', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.21');
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('required gh-aw v0.89.22, but found v0.89.21');
+      expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
+      expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+      expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
+        guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'),
+      );
+      expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
+        guide.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+    });
+
+    it('keeps the canonical skill version gate synchronized with the guide', () => {
+      expect(extractVersionGate(readLF(CANONICAL))).toBe(versionGate);
+    });
+
+    it('checks the staged installation before every bootstrap commit', () => {
+      expect(guide.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
+        .toHaveLength(2);
+    });
+
+    it('removes the mutable gh-aw router before verification and permits only that staged deletion', () => {
+      expect(guide.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(3);
+      expect(guide).toContain('The exact router deletion above is the only permitted staged deletion');
+      expect(guide).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(agentGuide).toContain('rm -f .github/skills/agentic-workflows/SKILL.md');
+    });
+
+    it('requires agents to execute the complete quick start through PR creation', () => {
+      expect(guide).toContain('**Agent action required:**');
+      expect(guide).toContain('the agent must execute this entire block');
+      expect(guide).toContain('gh pr create');
+      expect(agentGuide).toContain('execute the complete');
+      expect(agentGuide).toContain('Do not only quote or run the `gh aw add` command');
+    });
+
+    it('resolves the repository dynamically before changing Actions permissions', () => {
+      expect(guide).toContain(
+        'owner_repo="$(gh repo view --json nameWithOwner --jq \'.nameWithOwner\')"',
+      );
+      expect(guide).toContain(
+        'gh api --method PUT "repos/${owner_repo}/actions/permissions/workflow"',
+      );
+      expect(guide).not.toContain('repos/{owner}/{repo}/actions/permissions/workflow');
+    });
+
+    it('requires Issues before installation and documents the admin-permission stop', () => {
+      const issuesCheck = guide.indexOf(
+        'issues_enabled="$(gh api "repos/${owner_repo}" --jq \'.has_issues\')"',
+      );
+      expect(issuesCheck).toBeGreaterThan(-1);
+      expect(guide).toContain('-F has_issues=true --silent');
+      expect(guide).toContain('requires repository administration permission');
+      expect(guide).toContain('do not continue to `gh aw add`');
+      expect(issuesCheck).toBeLessThan(guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'));
+      expect(issuesCheck).toBeLessThan(
+        guide.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+      expect(agentGuide).toContain('verifies that GitHub Issues are enabled');
+      expect(agentGuide).toContain('bootstrap creates a research/proposals issue');
+    });
+
+    it('keeps standalone public install snippets behind the Issues guard', () => {
+      const readme = readLF('README.md');
+      const readmeInstall = readme.slice(readme.indexOf('### Install'));
+      expect(readmeInstall.indexOf("issues_enabled=")).toBeGreaterThan(-1);
+      expect(readmeInstall.indexOf("issues_enabled=")).toBeLessThan(
+        readmeInstall.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"'),
+      );
+      expect(readmeInstall).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+
+      const setupSection = guide.slice(
+        guide.indexOf('### Enable GitHub Issues'),
+        guide.indexOf('### Allow workflow-created pull requests'),
+      );
+      expect(setupSection).toContain(
+        'test "$(gh api "repos/${owner_repo}" --jq \'.has_issues\')" = "true" || {',
+      );
+    });
+
+    it('activates slash commands only after the bootstrap PR reaches the default branch', () => {
+      expect(guide).toContain(
+        'Once the bootstrap PR is merged into the default branch, the `/squad` slash',
+      );
+      expect(guide).toContain('Pushing the bootstrap branch or merely opening the');
+      expect(guide).not.toContain('Once pushed, the `/squad` slash command is live');
+      expect(agentGuide).toContain(
+        '`/squad` slash commands become active only after that merge reaches',
+      );
+    });
+
+    it('documents the native required review job without a credential prerequisite', () => {
+      const flatGuide = guide.replace(/\s+/g, ' ');
+      expect(flatGuide).toContain('stable required status context `Squad Review / review`');
+      expect(guide).toContain('No custom Checks API publisher');
+      expect(flatGuide).toContain('same-name source-identity question');
+      expect(flatGuide).toContain('context-only `Squad Review / review` requirement is advisory');
+      expect(agentGuide).toContain('requires no separate PAT');
+      expect(guide).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
+      expect(agentGuide).not.toMatch(/SQUAD_REVIEW_APP_|squad-review-authority/);
+    });
+
+    it('makes public-guide package verification fail fast and coherent', () => {
+      expect(guide).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
+      expect(guide).toContain('squad-install-verifier.mjs --materialize-runtime');
+      expect(guide).toContain('--verify-install');
+      expect(guide).toContain('--source-revision "${SQUAD_SHA}"');
+      expect(guide).toContain('--strict-compile');
+      expect(guide).toContain('package ownership metadata');
+      const upgrade = guide.slice(guide.indexOf('## Upgrading'));
+      const add = upgrade.indexOf('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force');
+      const cleanup = upgrade.indexOf('rm -f .github/skills/agentic-workflows/SKILL.md');
+      const compile = upgrade.indexOf('gh aw compile --strict');
+      const verify = upgrade.indexOf('squad-install-verifier.mjs \\\n  --verify-install');
+      expect(add).toBeGreaterThan(-1);
+      expect(cleanup).toBeGreaterThan(add);
+      expect(compile).toBeGreaterThan(cleanup);
+      expect(verify).toBeGreaterThan(compile);
+    });
+  });
+
+  describe('template mirror parity', () => {
+    for (const mirror of MIRRORS) {
+      it(`${mirror} is byte-for-byte identical to the canonical source`, () => {
+        expect(existsSync(resolve(ROOT, mirror)), `${mirror} should exist`).toBe(true);
+        expect(readFileSync(resolve(ROOT, mirror)).equals(readFileSync(resolve(ROOT, CANONICAL)))).toBe(true);
+      });
+    }
+  });
+});

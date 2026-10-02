@@ -4,10 +4,9 @@
 
 **Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
-[![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
 
-> ⚠️ **Alpha Software** — Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
+Breaking changes are documented in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -36,10 +35,30 @@ git init
 
 ### 2. Install Squad
 
+Choose the install method for your platform:
+
+| Method | Command |
+|--------|---------|
+| npm (all platforms, Node.js 22.5+) | `npm install -g @bradygaster/squad-cli` |
+| Homebrew (macOS) | `brew install --cask bradygaster/squad/squad` |
+| WinGet (Windows) | `winget install --id bradygaster.Squad --exact` |
+| Install script (macOS/Linux, no npm) | See [Standalone Install](https://bradygaster.github.io/squad/docs/features/standalone-install/) |
+
+Preview and insider builds are available as `squad-preview` and
+`squad-insider` Homebrew casks, or as `bradygaster.Squad.Preview` and
+`bradygaster.Squad.Insider` WinGet packages.
+
+Direct archives for macOS, Linux, and Windows are also available from
+[GitHub Releases](https://github.com/bradygaster/squad/releases/latest).
+
 ```bash
-npm install -g @bradygaster/squad-cli
 squad init
 ```
+
+All methods install the same CLI. Standalone installs vendor Node.js, so they do
+not require Node.js or access to the npm registry. See the
+[complete installation guide](https://bradygaster.github.io/squad/docs/get-started/installation/)
+for prerequisites and platform details.
 
 > **⚡ Want to be up and running in under a second?** Use `squad init --preset default` to start with a fully-configured squad — complete with members, charters, and routing rules — ready to go immediately. The default `squad init` (without the flag) walks you through setup step by step, ideal if you prefer to build and customize your squad deliberately.
 
@@ -76,9 +95,9 @@ Squad proposes a team — each member named from a persistent thematic cast. You
 
 ---
 
-## .NET package preview
+## .NET package
 
-Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a preview NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). It registers a Squad-backed `AIAgent` in DI and targets early `0.1.0-preview` consumers.
+Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). Version **1.0.0** targets .NET 8, 9, and 10 and registers a Squad-backed `AIAgent` in DI. See the package README for installation and local validation before publication.
 
 ## Upgrading
 
@@ -86,9 +105,15 @@ Upgrading Squad is a two-step process.
 
 **Step 1: Update the CLI binary**
 
-```bash
-npm install -g @bradygaster/squad-cli@latest
-```
+Use the same channel you installed from:
+
+| Installed with | Update command |
+|----------------|----------------|
+| npm | `npm install -g @bradygaster/squad-cli@latest` |
+| Homebrew | `brew upgrade --cask squad` |
+| WinGet | `winget upgrade --id bradygaster.Squad --exact` |
+| Install script | Re-run the [install script](https://bradygaster.github.io/squad/docs/features/standalone-install/#macos-and-linux) |
+| Direct archive | Download the newer archive from [GitHub Releases](https://github.com/bradygaster/squad/releases/latest) |
 
 **Step 2: Update Squad-owned files in your project**
 
@@ -168,21 +193,21 @@ Ralph continuously polls for work and dispatches agents to handle it. Watch mode
 
 ```bash
 # Monitor for issues (triage mode — no execution)
-npx @bradygaster/squad-cli watch
+squad watch
 
 # Monitor and auto-execute against actionable issues
-npx @bradygaster/squad-cli watch --execute --interval 5
+squad watch --execute --interval 5
 
 # With a custom agent runner that uses --task instead of -p
-npx @bradygaster/squad-cli watch --execute \
+squad watch --execute \
   --agent-cmd "custom-agent run --task {prompt} --autopilot" \
   --auth-user myaccount
 
 # Run watch with diagnostics
-npx @bradygaster/squad-cli watch --execute --log-file ./watch.log --verbose
+squad watch --execute --log-file ./watch.log --verbose
 
 # Check health of running watch process
-npx @bradygaster/squad-cli watch --health
+squad watch --health
 ```
 
 ### Key Flags
@@ -535,11 +560,34 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 
 <!-- cspell:ignore agentics -->
 
+Squad requires GitHub Issues: slash commands are issue comments, and the merged
+bootstrap creates a research/proposals issue. Follow the
+[supported seven-step quick start](docs/src/content/docs/guide/gh-aw.md#quick-start),
+which checks and enables Issues before installation when the authenticated user
+has repository administration permission, and stops before creating a bootstrap
+PR when an administrator must enable them.
+
 ```bash
-gh aw add \
-  bradygaster/squad/workflows/squad.md@dev \
-  bradygaster/squad/workflows/squad-implement-worker.md@dev \
-  bradygaster/squad/workflows/squad-review.md@dev
+set -euo pipefail
+
+owner_repo="$(gh repo view --json nameWithOwner --jq '.nameWithOwner')"
+issues_enabled="$(gh api "repos/${owner_repo}" --jq '.has_issues')"
+if [ "${issues_enabled}" != "true" ]; then
+  if ! gh api --method PATCH "repos/${owner_repo}" \
+    -F has_issues=true --silent; then
+    echo "STOP: A repository administrator must enable Settings > General > Features > Issues." >&2
+    exit 1
+  fi
+fi
+
+test "$(gh api "repos/${owner_repo}" --jq '.has_issues')" = "true" || {
+  echo "STOP: GitHub Issues must be enabled before installing Squad workflows." >&2
+  exit 1
+}
+
+SQUAD_SHA="<40-character-commit-sha>"  # explicit, maintainer-approved; never `commits/dev`
+gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+rm -f .github/skills/agentic-workflows/SKILL.md
 git add -- \
   .github/aw/ \
   .github/skills/ \
@@ -552,19 +600,47 @@ git push
 `gh aw add` compiles the workflows automatically. If it reports unapproved
 safe-update changes, review them and run `gh aw compile --approve`.
 
-> `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
-
 Review the complete generated diff before you commit:
 
 | Path | What gh-aw writes | Commit? |
 |------|-------------------|---------|
 | `.github/workflows/` | The Squad workflow sources, shared imports, compiled lock files, and `agentics-maintenance.yml` | Yes |
 | `.github/aw/` | Supporting gh-aw state, including pinned action versions and SHAs | Yes |
-| `.github/skills/` | The agentic-workflows dispatcher skill | Yes |
+| `.github/skills/` | The exact Squad-owned `gh-aw-enlistment` skill; remove gh-aw's generated mutable `agentic-workflows` router before staging | Yes |
 | `.gitattributes` | Marks compiled `.lock.yml` workflows as generated | Yes |
 | `.vscode/` | Workspace settings that enable GitHub Copilot for Markdown files in VS Code | Optional — commit only if you want to share this workspace setting |
 
 `agentics-maintenance.yml` is a second installed workflow. Squad configures its created pull request safe output to expire after 14 days, so this workflow runs scheduled expiration cleanup and also exposes manual maintenance operations. To omit it, create `.github/workflows/aw.json` with `{"maintenance": false}` before installing. gh-aw then warns that expiration is disabled and removes the maintenance workflow.
+
+Unlike the mutable router skill, `agentics-maintenance.yml` is compiled runtime
+output required for the configured 14-day safe-output expiration behavior. Keep
+it unless you explicitly disable maintenance before installation.
+
+#### Retrospective auto-implementation (opt-in behavior)
+
+`squad-improvement-worker` installs as part of the standard seven-workflow
+`gh aw add` command above — it is not a separate add-on. The two activation
+policies are separate: `squad-retro` can auto-dispatch `squad-implement-worker` on its
+own ordinary (non-proposal) action issues once you set
+`"squadRetroAutoImplement": "allow"` in `.squad/config.json` (only
+bot-authored retrospective issues with a valid `Action-Key:` qualify), and a
+maintainer can approve a governance-scoped retrospective proposal (paths
+under `.squad/skills/**` or `.squad/decisions/inbox/**` only) for automated
+implementation by commenting `/squad approve-improvement`, an
+`Approved-Revision:` content hash and one `Approved-Path:` line per approved
+file. The dispatcher forwards the issue and exact comment ID; the worker
+revalidates the human's permission, revision, revocations and actual patch.
+`/squad revoke-improvement` withdraws
+that authorization at any time — it is a reserved, read-only command open to
+any actor, and it emits no output of its own.
+
+Report/proposal-only remains the default. Ordinary opt-in dispatch is capped at
+three per wake-up (five action issues per report), with one delayed retry and a
+durable human handoff after exhaustion. Both workers produce drafts only;
+open, merged and closed-unmerged linked PRs suppress automatic duplicates.
+Human review and merge are always required.
+
+See [the gh-aw guide](https://bradygaster.github.io/squad/docs/guide/gh-aw/#retrospective-auto-implementation-opt-in) for the full authority model.
 
 ### Slash commands
 
@@ -577,6 +653,9 @@ Review the complete generated diff before you commit:
 | `/squad retire <name>` | Remove a team member |
 | `/squad status` | Check current team |
 | `/squad implement` | Implement an issue or dispatch ready tasks from an epic |
+| `/squad retro` | Run the shared retrospective now; scheduled and evidence-driven wakeups use the same worker |
+| `/squad approve-improvement` | Authorize a governance-scoped retrospective proposal for `squad-improvement-worker` (write/maintain/admin only) |
+| `/squad revoke-improvement` | Withdraw a prior approval; reserved, read-only, open to anyone |
 
 ### Casting brief tip
 

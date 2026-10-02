@@ -1,27 +1,17 @@
-# Squad CLI pin drift guard (#1825)
+# Squad standalone release pin drift guard (#1825)
 #
-# `workflows/shared/squad.md` pins the Squad CLI version that new-repo activation
-# installs. That pin decays silently with every npm release: it was introduced
-# correct on 2026-08-07 referencing 0.11.0, 0.12.0 published on 2026-08-13, and the
-# pin then sat stale for 8 days with nobody touching it. `git log -S` shows the line
-# had been modified exactly once, ever — at introduction. It was caught only because
-# an agent happened to run a cold start against a throwaway repo (fixed in PR #1818).
+# `workflows/shared/squad.md` pins the GitHub Release bundle that new-repo
+# activation installs. The pin is usable only when that release carries every
+# standalone platform asset and SHA256SUMS.txt.
 #
-# The pin itself is correct and stays: activation runs on an unrestricted-network job
-# and hands state to the sandboxed agent job, so a bad point release mid-hop is
-# expensive to debug. The absence of a drift mechanism was the defect, not the pin.
-#
-# This job compares the pin against the **published** npm dist-tag. It deliberately
-# does NOT read `packages/squad-cli/package.json`: that is the next unreleased version
-# (0.13.0 at time of writing) and resolves to E404 on npm, so automating from it would
-# drive straight into the failure PR #1818 just fixed. A guard that reads the same
-# source as the thing it guards is decoration (.squad/decisions.md:604) — so the two
-# sources here are independent by construction.
+# This job compares the pin against the latest public GitHub Release and verifies
+# the exact assets consumed by scripts/install.sh. npm publication is deliberately
+# irrelevant: activation downloads the self-contained bundle from GitHub Releases.
 #
 # On drift it opens an issue rather than only failing, so the alert arrives with a fix
 # path attached instead of an unexplained red run.
 
-name: Squad CLI Pin Drift
+name: Squad Standalone Release Pin Drift
 
 on:
   schedule:
@@ -38,20 +28,20 @@ concurrency:
 
 jobs:
   check-pin:
-    name: Compare activation pin against published npm release
+    name: Compare activation pin against standalone GitHub release
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
-      - name: Compare pin against npm dist-tag
+      - name: Compare pin against latest standalone release
         id: compare
         env:
           PIN_FILE: workflows/shared/squad.md
-          NPM_PACKAGE: '@bradygaster/squad-cli'
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -65,23 +55,46 @@ jobs:
             exit 1
           fi
 
-          latest="$(npm view "$NPM_PACKAGE" dist-tags.latest 2>/dev/null || true)"
+          case "$pinned" in
+            v*) ;;
+            *) pinned="v$pinned" ;;
+          esac
+
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest")"
+          latest="$(jq -r '.tag_name // empty' <<< "$release_json")"
           if [ -z "$latest" ]; then
-            echo "::error::Could not read dist-tags.latest for $NPM_PACKAGE from npm."
+            echo "::error::Could not resolve the latest GitHub Release tag."
             exit 1
           fi
 
+          published_assets="$(jq -r '.assets[].name' <<< "$release_json")"
+          missing=""
+          for asset in \
+            "squad-linux-x64.tar.gz" \
+            "squad-linux-arm64.tar.gz" \
+            "squad-darwin-x64.tar.gz" \
+            "squad-darwin-arm64.tar.gz" \
+            "squad-win32-x64.zip" \
+            "squad-win32-arm64.zip" \
+            "SHA256SUMS.txt"; do
+            if ! grep -Fxq "$asset" <<< "$published_assets"; then
+              missing="${missing:+${missing}, }${asset}"
+            fi
+          done
+
           echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
           echo "Pinned in $PIN_FILE : $pinned"
-          echo "Published npm latest : $latest"
+          echo "Latest GitHub Release : $latest"
+          echo "Missing assets : ${missing:-<none>}"
 
-          if [ "$pinned" = "$latest" ]; then
+          if [ "$pinned" = "$latest" ] && [ -z "$missing" ]; then
             echo "drift=false" >> "$GITHUB_OUTPUT"
-            echo "✅ Activation pin matches the published release."
+            echo "✅ Activation pin matches a complete standalone release."
           else
             echo "drift=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Activation pin ($pinned) is behind the published release ($latest)."
+            echo "::warning::Activation pin ($pinned) does not match a complete latest standalone release ($latest; missing: ${missing:-none})."
           fi
 
       - name: Open drift issue
@@ -90,7 +103,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PINNED: ${{ steps.compare.outputs.pinned }}
           LATEST: ${{ steps.compare.outputs.latest }}
-          TITLE: 'Squad CLI activation pin is behind the published release'
+          MISSING: ${{ steps.compare.outputs.missing }}
+          TITLE: 'Squad standalone activation release is stale or incomplete'
         run: |
           set -euo pipefail
 
@@ -115,19 +129,20 @@ jobs:
           # `test/squad-cli-pin.test.ts` asserts no single-quoted literal here contains a
           # `$name` expansion -- so this suppression cannot mask a genuine SC2016 defect.
           {
-            printf '%s\n\n' 'The Squad CLI version pinned for new-repo activation is behind the published npm release.'
+            printf '%s\n\n' 'The standalone GitHub Release pinned for new-repo activation is stale or incomplete.'
             printf '%s\n' '| | Version |'
             printf '%s\n' '|---|---|'
             printf '| Pinned in `workflows/shared/squad.md` | `%s` |\n' "$PINNED"
-            printf '| Published npm `dist-tags.latest` | `%s` |\n\n' "$LATEST"
-            printf 'New-repo activation installs `%s`, so anything that shipped in `%s` is missing from a cold start.\n\n' "$PINNED" "$LATEST"
+            printf '| Latest GitHub Release | `%s` |\n\n' "$LATEST"
+            printf 'Missing standalone assets: `%s`.\n\n' "${MISSING:-none}"
+            printf 'New-repo activation downloads `%s` from GitHub Releases; npm publication is not part of this gate.\n\n' "$PINNED"
             printf '%s\n\n' '### Fix'
-            printf 'Update **both** literals in `workflows/shared/squad.md` to `%s`:\n\n' "$LATEST"
+            printf 'Publish the complete standalone asset set for `%s`, then update the activation pin if needed:\n\n' "$LATEST"
             printf '%s\n' '1. the `Default is <version>.` line in the header comment'
             printf '%s\n\n' '2. the `SQUAD_CLI_VERSION` fallback literal in the activation `env:` block'
             printf '%s\n\n' '`test/squad-cli-pin.test.ts` fails if those two disagree, so they cannot be updated by halves.'
-            printf '%s\n' '> Do **not** copy the version from the CLI package manifest in this repo. That is the'
-            printf '%s\n\n' '> next *unreleased* version and resolves to E404 on npm — the exact failure PR #1818 fixed.'
+            printf '%s\n' '> Do **not** use npm package metadata as the activation gate. The installer consumes'
+            printf '%s\n\n' '> GitHub Release assets, and the release must contain every platform bundle plus checksums.'
             printf '%s\n' 'Filed automatically by `.github/workflows/squad-cli-pin-drift.yml` (#1825).'
           } > "$RUNNER_TEMP/drift-body.md"
 
@@ -138,10 +153,11 @@ jobs:
         env:
           PINNED: ${{ steps.compare.outputs.pinned }}
           LATEST: ${{ steps.compare.outputs.latest }}
+          MISSING: ${{ steps.compare.outputs.missing }}
         run: |
           # Values pass through env rather than expression interpolation, per the
           # shell-input contract in workflows/squad.md: interpolation splices text into
           # the script before the shell parses it, so the quoting that would contain a
           # hostile value never gets a chance to apply.
-          echo "::error::Activation pin $PINNED != published $LATEST. See the issue filed by the previous step."
+          echo "::error::Activation pin $PINNED does not match complete release $LATEST (missing: ${MISSING:-none}). See the issue filed by the previous step."
           exit 1

@@ -5,8 +5,6 @@ description: Discover other squads across repository boundaries and delegate wor
 
 # Cross-Squad Discover & Delegate
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to see what squads you can reach:**
 ```bash
 squad discover

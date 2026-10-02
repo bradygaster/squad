@@ -39,33 +39,31 @@ Does the work type match a specialist domain? (See §3 + .squad/routing.md)
 
 ## Step 3 — Routing Table
 
-Read `.squad/routing.md` for the project-specific routing table. For generic Squad questions:
+Read `.squad/routing.md` and use its current `Work Type` and `Route To`/`Agent`
+columns. That file is the only authoritative work-to-agent mapping. Do not cache
+agent names in this instruction file or infer ownership from a previous cast.
 
-| Work type | Route to | Examples |
-|-----------|----------|---------|
-| Core runtime, adapter, spawn orchestration | **EECOM** | CopilotClient, session pool, tools module |
-| Prompt architecture, coordinator logic | **Procedures** | Agent charters, spawn templates, response tier selection |
-| Type system, TypeScript strictness | **CONTROL** | Discriminated unions, generics, tsconfig |
-| SDK integration | **CAPCOM** | @github/copilot-sdk usage, CopilotSession lifecycle |
-| Tests & quality, CI/CD | **FIDO** | Test coverage, Vitest, edge cases, CI/CD gates |
-| Docs, README, API docs | **PAO** | README, getting-started, demos, contributor recognition |
-| Architecture, product direction, review | **Flight** | Architectural decisions, code review, scope/trade-offs |
-| Session logging, decision merge, DispatchGuard audit | **Scribe** | Auto — never needs explicit routing |
-| Work queue, backlog, DispatchGuard verdict alerts | **Ralph** | GitHub issues, PR state, idle-watch, violations |
+Before routing:
 
-**Full project routing table:** `.squad/routing.md`
+1. Confirm the destination appears in the active `## Members` table in
+   `.squad/team.md`.
+2. Use the member name exactly as written there when constructing a
+   `squad:{slug}` label or spawning the agent.
+3. If no routing row matches, use the active Lead identified by role in
+   `team.md`. If no Lead exists, handle the task as generic work rather than
+   inventing an owner.
 
 ### Examples — what NOT to grab
 
 ```
 ❌ "Fix the TypeScript compilation error in src/adapter/"
-   → Core runtime → Route to EECOM
+   → Look up the current runtime owner in routing.md
 
 ❌ "Add tests for the casting module"
-   → Tests & quality → Route to FIDO
+   → Look up the current quality owner in routing.md
 
 ❌ "Update the README with the new CLI flags"
-   → Docs → Route to PAO
+   → Look up the current documentation owner in routing.md
 
 ✅ "What does .squad/routing.md say about label taxonomy?"
    → Trivial lookup question — answer directly
@@ -80,11 +78,12 @@ Read `.squad/routing.md` for the project-specific routing table. For generic Squ
 
 When you determine a task belongs to a specialist, do NOT silently attempt it. Instead:
 
-1. **State clearly** which agent owns it and why:
-   > "This task (TypeScript type error) belongs to **CONTROL**. I'll note the routing and stop here."
+1. **State clearly** which current agent owns it and why:
+   > "This task matches the type-system route and belongs to **{current member name}**."
 
 2. **Surface the routing path** to the user:
-   > To proceed: apply the `squad:control` label on issue #NNN, or spawn CONTROL directly with the task context.
+   > To proceed: apply that member's current `squad:{slug}` label on issue #NNN,
+   > or spawn the member directly with the task context.
 
 3. **Do not partially complete the task** then hand off — partial work in the wrong agent context creates merge conflicts and inconsistency.
 

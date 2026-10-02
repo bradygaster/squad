@@ -1,7 +1,5 @@
 # What is Squad?
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Squad is an AI multi-agent orchestration framework that lives inside your repository. It coordinates a team of specialist AI agents, each with a defined role, persistent memory, and a charter that governs what it can and cannot do. Squad extends your team at agentic speed while keeping a human in charge of every meaningful decision.
 
 ## What is Squad?
@@ -125,5 +123,4 @@ Because `.squad/` is committed to your repository, team state is as reviewable a
 Squad is built on the principle that agentic systems must remain under human control. The framework democratizes multi-agent work by making it accessible to any developer with a repository, while enforcing human oversight at every consequential step.
 
 Agents in Squad propose, draft, and record. Humans review, approve, and are accountable for final output. The governance features built into Squad, including reviewer lockout, escalation points, and auditable decision logs, are not optional settings. They are part of the framework's design contract. Squad extends human teams at scale; it doesn't remove the human from the loop.
-
 

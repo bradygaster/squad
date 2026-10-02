@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { dirname, matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSafeOutputsConfigJson } from './helpers/gh-aw-lock.js';
 
 // #1748 slice S2: `squad-deps-worker.md` gains Wave 1 `protected-files.exclude`
 // entries. The Wave 1 basenames (npm/yarn/pnpm + NuGet CPM + Go) are excluded
@@ -82,11 +82,17 @@ afterAll(() => {
  * `create_pull_request` safe-output config gh-aw bakes into `.lock.yml`.
  */
 function compileWorker(workflowId: string): Record<string, unknown> {
-  const workspace = mkdtempSync(resolve(tmpdir(), `${workflowId}-contract-`));
+  const workspace = mkdtempSync(resolve(ROOT, `.${workflowId}-contract-`));
   compileWorkspaces.push(workspace);
   const workflowDir = resolve(workspace, '.github', 'workflows');
   mkdirSync(workflowDir, { recursive: true });
   cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
+  if (workflowId === 'squad-deps-worker') {
+    cpSync(
+      resolve(ROOT, 'workflows/package/squad-deps-worker.md'),
+      resolve(workflowDir, 'squad-deps-worker.md'),
+    );
+  }
   execFileSync('git', ['init', '--quiet'], { cwd: workspace });
   execFileSync(
     'gh',
@@ -95,21 +101,10 @@ function compileWorker(workflowId: string): Record<string, unknown> {
   );
 
   const compiled = readFileSync(resolve(workflowDir, `${workflowId}.lock.yml`), 'utf8');
-  const lines = compiled.split(/\r?\n/);
-  const configStart = lines.findIndex(line => line.includes('/safeoutputs/config.json') && line.includes('<<'));
-  const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-  const configEnd = delimiter
-    ? lines.findIndex((line, index) => index > configStart && line.trim() === delimiter)
-    : -1;
+  const jsonText = extractSafeOutputsConfigJson(compiled);
+  expect(jsonText, `compiled ${workflowId} must write a parseable safe-output config`).toBeDefined();
 
-  expect(configStart, `compiled ${workflowId} must write the safe-output config`).toBeGreaterThanOrEqual(0);
-  expect(delimiter, 'safe-output config must use a parseable heredoc delimiter').toBeDefined();
-  expect(configEnd, 'safe-output config heredoc must be terminated').toBeGreaterThan(configStart);
-
-  const safeOutputs = JSON.parse(lines.slice(configStart + 1, configEnd).join('\n')) as Record<
-    string,
-    Record<string, unknown>
-  >;
+  const safeOutputs = JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
   return safeOutputs.create_pull_request;
 }
 
@@ -181,8 +176,8 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     expect(excludeList.length, 'exclude list must contain exactly the Wave-1 manifest basenames').toBe(WAVE_1_MANIFEST_BASENAMES.length);
   });
 
-  // ── T2: always-protected basenames absent from exclude, present in compiled ─
-  it('always-protected basenames are absent from authored exclude and present in compiled protected_files (T2)', () => {
+  // ── T2: always-protected basenames remain outside protected-files.exclude ──
+  it('always-protected basenames are absent from authored protected-files.exclude (T2)', () => {
     const protectedFiles = yamlBlock(depsWorkerFrontmatter, 'protected-files');
     const excludeList = listInBlock(protectedFiles, 'exclude');
 
@@ -225,10 +220,17 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
         ).not.toContain(basename);
       }
 
-      // T5: always-protected still in compiled protected_files
+      // T5: gh-aw catalog entries remain in compiled protected_files.
+      // CHANGELOG.md is not in gh-aw's built-in catalog, so the canonical
+      // workflow protects it structurally through compiled excluded_files.
       for (const basename of ALWAYS_PROTECTED_BASENAMES) {
+        if (basename === 'CHANGELOG.md') continue;
         expect(compiledProtectedFiles, `${basename} must remain in compiled protected_files`).toContain(basename);
       }
+      expect(
+        compiledExcludedFiles,
+        'CHANGELOG.md must remain structurally protected in compiled excluded_files',
+      ).toContain('CHANGELOG.md');
       // .npmrc and .yarnrc.yml are protected structurally by absence from
       // allowed-files -- gh-aw's built-in catalog does not include them in
       // the compiled protected_files list, so we assert only that they are
@@ -243,7 +245,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
 
       // T8: vendored/generated paths in excluded_files
       expect(compiledExcludedFiles).toEqual(
-        expect.arrayContaining(['node_modules/**', 'vendor/**', '.squad/**']),
+        expect.arrayContaining(['CHANGELOG.md', 'node_modules/**', 'vendor/**', '.squad/**']),
       );
     },
     20000,
@@ -283,6 +285,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
 
     expect(excludedFiles).toEqual(
       expect.arrayContaining([
+        'CHANGELOG.md',
         'node_modules/**',
         '**/node_modules/**',
         'vendor/**',
@@ -353,7 +356,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
   });
 
   // ── S1 guards preserved (existing behavior) ───────────────────────────────
-  it('is a standalone workflow_dispatch worker, not yet wired into the dispatcher', () => {
+  it('is a standalone workflow_dispatch worker wired only through the dispatcher', () => {
     expect(depsWorkerFrontmatter).toMatch(/^on:\r?\n\s+bots: \["github-actions\[bot\]"\]\r?\n\s+workflow_dispatch:/m);
     expect(depsWorker).not.toContain('slash_command:');
     expect(depsWorkerFrontmatter).toContain('issue_number:');
@@ -361,7 +364,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     expect(depsWorker).toMatch(/^tools:\r?\n\s+edit:/m);
 
     const dispatcherDispatch = yamlBlock(dispatcherFrontmatter, 'dispatch-workflow');
-    expect(listInBlock(dispatcherDispatch, 'workflows')).not.toContain('squad-deps-worker');
+    expect(listInBlock(dispatcherDispatch, 'workflows')).toContain('squad-deps-worker');
   });
 
   it('declares Wave 1 extensionless manifest/lockfile basenames in allowed-files', () => {
@@ -472,6 +475,51 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     });
 
     it(
+      'detects: removing CHANGELOG.md protection from the live canonical source changes compiled output',
+      () => {
+        const workspace = mkdtempSync(resolve(ROOT, '.deps-worker-changelog-mutation-'));
+        compileWorkspaces.push(workspace);
+        const workflowDir = resolve(workspace, '.github', 'workflows');
+        mkdirSync(workflowDir, { recursive: true });
+        cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
+
+        const canonicalSource = read('workflows/package/squad-deps-worker.md');
+        const mutatedSource = canonicalSource.replace(/^\s+- CHANGELOG\.md\s*$/m, '');
+        expect(mutatedSource, 'mutation must remove CHANGELOG.md from the canonical source')
+          .not.toBe(canonicalSource);
+        writeFileSync(resolve(workflowDir, 'squad-deps-worker.md'), mutatedSource, 'utf-8');
+
+        execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+        execFileSync(
+          'gh',
+          ['aw', 'compile', 'squad-deps-worker', '--strict', '--no-check-update'],
+          { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
+        );
+
+        const compiled = readFileSync(
+          resolve(workflowDir, 'squad-deps-worker.lock.yml'),
+          'utf8',
+        );
+        const jsonText = extractSafeOutputsConfigJson(compiled);
+        expect(jsonText, 'mutated dependency worker must compile a parseable safe-output config')
+          .toBeDefined();
+        const safeOutputs = JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
+        const compiledExcludedFiles = (
+          safeOutputs.create_pull_request?.excluded_files ?? []
+        ) as string[];
+
+        expect(
+          () => expect(
+            compiledExcludedFiles,
+            'CHANGELOG.md must remain structurally protected in compiled excluded_files',
+          ).toContain('CHANGELOG.md'),
+          'compiled regression assertion must fail after removing CHANGELOG.md from the canonical source',
+        ).toThrow();
+      },
+      20000,
+    );
+
+    it(
       'detects: Wave-1 exclusion leaked into general worker — compiled contract catches package.json in implement-worker exclude',
       () => {
         // Mutate the actual squad-implement-worker.md source on disk and run it
@@ -481,7 +529,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
         // protected_files will drop it and this assertion throws -- proving the
         // guard turns red on a genuine source mutation rather than a hand-built
         // local array.
-        const workspace = mkdtempSync(resolve(tmpdir(), 'implement-worker-mutation-'));
+        const workspace = mkdtempSync(resolve(ROOT, '.implement-worker-mutation-'));
         compileWorkspaces.push(workspace);
         const workflowDir = resolve(workspace, '.github', 'workflows');
         mkdirSync(workflowDir, { recursive: true });
@@ -509,17 +557,9 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
           resolve(workflowDir, 'squad-implement-worker.lock.yml'),
           'utf8',
         );
-        const lines = compiled.split(/\r?\n/);
-        const configStart = lines.findIndex(
-          line => line.includes('/safeoutputs/config.json') && line.includes('<<'),
-        );
-        const delimiter = lines[configStart]?.match(/<< '([^']+)'/)?.[1];
-        const configEnd = delimiter
-          ? lines.findIndex((line, idx) => idx > configStart && line.trim() === delimiter)
-          : -1;
-        const safeOutputs = JSON.parse(
-          lines.slice(configStart + 1, configEnd).join('\n'),
-        ) as Record<string, Record<string, unknown>>;
+        const jsonText = extractSafeOutputsConfigJson(compiled);
+        expect(jsonText, 'mutated squad-implement-worker must compile a parseable safe-output config').toBeDefined();
+        const safeOutputs = JSON.parse(jsonText!) as Record<string, Record<string, unknown>>;
         const compiledProtectedFiles = (
           safeOutputs.create_pull_request?.protected_files ?? []
         ) as string[];

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
+import { ensureCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -626,13 +627,6 @@ export function ensureDirectories(dest: string): string[] {
 export function ensureCastingDefaults(dest: string, templatesDir?: string): string[] {
   const castingDir = path.join(dest, '.squad', 'casting');
 
-  // Map destination file → template file name
-  const templateMap: Array<{ name: string; templateName: string; fallback: string }> = [
-    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ agents: {} }, null, 2) + '\n' },
-    { name: 'policy.json', templateName: 'casting-policy.json', fallback: JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n' },
-    { name: 'history.json', templateName: 'casting-history.json', fallback: JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n' },
-  ];
-
   // Use caller-provided templatesDir when available; resolve once otherwise
   let tDir = templatesDir;
   if (!tDir) {
@@ -643,31 +637,50 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
     }
   }
 
+  const templateContent = (templateName: string, fallback: string): string => {
+    if (!tDir) return fallback;
+    const templatePath = path.join(tDir, templateName);
+    return storage.existsSync(templatePath)
+      ? (storage.readSync(templatePath) ?? fallback)
+      : fallback;
+  };
+
   const created: string[] = [];
-  for (const file of templateMap) {
-    const filePath = path.join(castingDir, file.name);
-    if (!storage.existsSync(filePath)) {
-      // Prefer shipped template content; fall back to inline JSON
-      let content = file.fallback;
-      if (tDir) {
-        const tplPath = path.join(tDir, file.templateName);
-        if (storage.existsSync(tplPath)) {
-          const tplContent = storage.readSync(tplPath);
-          if (tplContent) content = tplContent;
-        }
-      }
-      try {
-        storage.mkdirSync(castingDir, { recursive: true });
-        storage.writeSync(filePath, content);
-        created.push(`.squad/casting/${file.name}`);
-      } catch (err: unknown) {
-        if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
-          warn(`Could not write ${file.name} to .squad/casting/ (read-only). Create it manually.`);
-          return created;
-        }
-        throw err;
-      }
+  try {
+    storage.mkdirSync(castingDir, { recursive: true });
+    const pair = ensureCastingRegistryPair(
+      castingDir,
+      templateContent(
+        'casting-registry.json',
+        JSON.stringify({ schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1, generated_at: '1970-01-01T00:00:00.000Z', agents: {} }, null, 2) + '\n',
+      ),
+      templateContent(
+        'casting-history.json',
+        JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n',
+      ),
+      'CLI upgrade',
+    );
+    if (pair.created) {
+      created.push('.squad/casting/registry.json', '.squad/casting/history.json');
     }
+
+    const policyPath = path.join(castingDir, 'policy.json');
+    if (!storage.existsSync(policyPath)) {
+      storage.writeSync(
+        policyPath,
+        templateContent(
+          'casting-policy.json',
+          JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n',
+        ),
+      );
+      created.push('.squad/casting/policy.json');
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
+      warn('Could not write casting defaults to .squad/casting/ (read-only). Create them manually.');
+      return created;
+    }
+    throw err;
   }
   return created;
 }
@@ -879,6 +892,15 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     filesUpdated.push(...memoryFiles);
   }
 
+  const raiMigration = migrateLegacyRaiAgent(dest);
+  if (raiMigration.migrated.length > 0) {
+    success('migrated .squad/agents/Rai/ → .squad/agents/rai/');
+    filesUpdated.push(...raiMigration.migrated);
+  }
+  if (raiMigration.tombstoned.length > 0) {
+    success('removed stale .squad/agents/Rai/ (superseded by .squad/agents/rai/)');
+  }
+
   const builtinAgents = ensureBuiltinAgents(dest, templatesDir);
   if (builtinAgents.length > 0) {
     const uniqueAgentNames = Array.from(new Set(builtinAgents.map(p => path.basename(path.dirname(p)))));
@@ -998,6 +1020,66 @@ export function ensureMemoryGovernanceUpgradeDefaults(dest: string): string[] {
 }
 
 /**
+ * Migrate the legacy case-sensitive `.squad/agents/Rai/` directory — produced
+ * by prior releases that scaffolded the built-in with a capitalized directory
+ * name — to the canonical lowercase `.squad/agents/rai/`, preserving any
+ * existing charter/history content.
+ *
+ * Detection uses `storage.listSync` (on-disk entry names) rather than
+ * `storage.existsSync('.squad/agents/rai')`, because `existsSync` can report
+ * a false positive for `rai` on case-insensitive filesystems (macOS, Windows)
+ * even when only the legacy `Rai` entry physically exists — that false
+ * positive would make the migration silently no-op on those platforms and
+ * leave the case-sensitive `.squad/agents/Rai/` behind on Linux checkouts of
+ * the same repo.
+ *
+ * Idempotent and duplicate-safe:
+ *  - Only `Rai/` exists → rename it in place to `rai/` (single `renameSync`,
+ *    same convention as `migrateDirectory`'s `.ai-team/` → `.squad/` rename).
+ *  - Both `Rai/` and `rai/` exist (possible on a case-sensitive filesystem
+ *    after a partial upgrade) → canonical `rai/` wins; the legacy `Rai/` is
+ *    removed without overwriting `rai/`, so no in-place customization at the
+ *    canonical location is ever clobbered.
+ *  - Neither exists, or only `rai/` exists → no-op.
+ *
+ * @param dest Root directory containing .squad/
+ * @returns Paths (relative to dest) affected by the migration
+ */
+export function migrateLegacyRaiAgent(dest: string): { migrated: string[]; tombstoned: string[] } {
+  const agentsDir = path.join(dest, '.squad', 'agents');
+  if (!storage.existsSync(agentsDir)) return { migrated: [], tombstoned: [] };
+
+  const entries = storage.listSync(agentsDir);
+  const legacyDir = path.join(agentsDir, 'Rai');
+  if (!entries.includes('Rai') || !storage.isDirectorySync(legacyDir)) {
+    return { migrated: [], tombstoned: [] };
+  }
+
+  const canonicalDir = path.join(agentsDir, 'rai');
+  const migrated: string[] = [];
+  const tombstoned: string[] = [];
+
+  if (entries.includes('rai')) {
+    // Both exist — canonical `rai/` wins, drop the legacy copy as-is.
+    try {
+      storage.deleteDirSync(legacyDir);
+      tombstoned.push(path.posix.join('.squad/agents', 'Rai'));
+    } catch {
+      // best-effort; leave the legacy dir if we can't remove it
+    }
+    return { migrated, tombstoned };
+  }
+
+  try {
+    storage.renameSync(legacyDir, canonicalDir);
+    migrated.push(path.posix.join('.squad/agents', 'rai'));
+  } catch {
+    // best-effort; leave the legacy dir if the rename fails (e.g. read-only fs)
+  }
+  return { migrated, tombstoned };
+}
+
+/**
  * Scaffold always-on built-in agent charters (Rai, Fact Checker) that ship
  * as templates but may be missing from older squads. Idempotent — only writes
  * when the agent directory is absent. Never overwrites existing charters or
@@ -1008,6 +1090,11 @@ export function ensureMemoryGovernanceUpgradeDefaults(dest: string): string[] {
  * exist in any squad that ran a prior init, and their charters are inlined in
  * cast.ts (no shipped template file). Adding them here would risk overwriting
  * customized versions on legacy squads.
+ *
+ * Callers should run `migrateLegacyRaiAgent(dest)` before this function so a
+ * pre-existing legacy `.squad/agents/Rai/` is renamed to `rai/` first — this
+ * function's idempotency check (`storage.existsSync(agentDir)`) would
+ * otherwise miss it on case-sensitive filesystems and scaffold a duplicate.
  *
  * @param dest Root directory containing .squad/
  * @param templatesDir Directory containing shipped charter templates
@@ -1023,8 +1110,14 @@ export function ensureBuiltinAgents(dest: string, templatesDir: string): string[
   //   - dirName: case-preserving directory name under .squad/agents/
   //   - templateFile: filename under templatesDir (charter template)
   //   - displayName: shown in history.md header
+  //
+  // dirName/templateFile use the authoritative lowercase kebab-case built-in
+  // ID (`rai`, not `Rai`) so this matches the canonical `.squad-templates/`
+  // charter filenames and the directory IDs every other built-in scaffolder
+  // (cast.ts's `memberId()`) now produces. Canonical built-in contract:
+  // scribe, ralph, rai, fact-checker.
   const builtins: Array<{ dirName: string; templateFile: string; displayName: string }> = [
-    { dirName: 'Rai', templateFile: 'Rai-charter.md', displayName: 'Rai' },
+    { dirName: 'rai', templateFile: 'rai-charter.md', displayName: 'Rai' },
     { dirName: 'fact-checker', templateFile: 'fact-checker-charter.md', displayName: 'Fact Checker' },
   ];
 

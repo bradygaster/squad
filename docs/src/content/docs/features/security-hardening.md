@@ -5,8 +5,6 @@ description: Threat model, trust boundaries, prompt-injection defense, credentia
 
 # Production Security Hardening
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 This page is the operational security reference for teams running Squad in production. It covers threat modeling, trust boundaries, prompt-injection risks unique to multi-agent architectures, credential hygiene, supply-chain pinning, and a production readiness checklist.
 
 **Relationship to other security pages:**

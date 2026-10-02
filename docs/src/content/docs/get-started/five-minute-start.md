@@ -3,17 +3,17 @@ Your first 5 minutes with Squad. Prove it works before you learn anything.
 
 ---
 ## Prerequisites
-- **Node.js 20+** — Check with `node --version`
 - **Git repository** — New or existing
+- **GitHub Copilot CLI** — Installed and authenticated
+- **Squad CLI** — Choose any method in the [Installation guide](installation.md)
 
 ---
 ## Install
+
+After installing Squad, initialize it in your repository:
+
 ```bash
-npm install --save-dev @bradygaster/squad-cli
-```
-Then initialize:
-```bash
-npx squad init
+squad init
 ```
 You'll see:
 ```
@@ -32,7 +32,7 @@ ls .squad/
 You should see: `team.md`, `routing.md`, `decisions.md`, `agents/`, and more.
 Confirm Squad is ready:
 ```bash
-npx squad status
+squad status
 ```
 
 ---

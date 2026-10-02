@@ -76,22 +76,34 @@ trap "rm -rf '$tmp'" EXIT INT TERM
 info "Downloading ${asset} (${VERSION})"
 fetch "$url" "$tmp/$asset" || err "Download failed: $url"
 
-# Verify against the release checksum file when it is published.
-if fetch "https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS.txt" "$tmp/SHA256SUMS.txt" 2>/dev/null; then
-  if command -v sha256sum >/dev/null 2>&1; then
-    expected="$(grep " ${asset}\$" "$tmp/SHA256SUMS.txt" | awk '{print $1}')"
-    actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
-  elif command -v shasum >/dev/null 2>&1; then
-    expected="$(grep " ${asset}\$" "$tmp/SHA256SUMS.txt" | awk '{print $1}')"
-    actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
-  else
-    expected=""; actual=""
-  fi
-  if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
-    err "Checksum mismatch for ${asset}. Expected ${expected}, got ${actual}."
-  fi
-  [ -n "$expected" ] && info "Checksum verified"
+# Checksum verification is mandatory: never install bytes that cannot be
+# matched to the checksum published with the release.
+checksum_url="https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS.txt"
+fetch "$checksum_url" "$tmp/SHA256SUMS.txt" \
+  || err "Checksum download failed: $checksum_url"
+
+match_count="$(awk -v asset="$asset" '$2 == asset { count++ } END { print count + 0 }' "$tmp/SHA256SUMS.txt")"
+[ "$match_count" -eq 1 ] \
+  || err "Expected exactly one checksum entry for ${asset}; found ${match_count}."
+expected="$(awk -v asset="$asset" '$2 == asset { print $1 }' "$tmp/SHA256SUMS.txt")"
+if [ "${#expected}" -ne 64 ]; then
+  err "Checksum entry for ${asset} is not a 64-character SHA-256 digest."
 fi
+case "$expected" in
+  *[!0-9A-Fa-f]*) err "Checksum entry for ${asset} contains non-hexadecimal characters." ;;
+esac
+
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
+else
+  err "'sha256sum' or 'shasum' is required to verify the downloaded archive."
+fi
+if [ "$expected" != "$actual" ]; then
+  err "Checksum mismatch for ${asset}. Expected ${expected}, got ${actual}."
+fi
+info "Checksum verified"
 
 # --------------------------------------------------------------------- install
 libdir="${PREFIX}/lib/squad"
@@ -112,7 +124,10 @@ printf '\033[32m✓\033[0m Squad %s installed to %s\n' "$VERSION" "$bindir/squad
 
 case ":${PATH}:" in
   *":${bindir}:"*) ;;
-  *) printf '\n\033[33m!\033[0m %s is not on your PATH. Add it with:\n    export PATH="%s:$PATH"\n' "$bindir" "$bindir" ;;
+  *)
+    # shellcheck disable=SC2016
+    printf '\n\033[33m!\033[0m %s is not on your PATH. Add it with:\n    export PATH="%s:$PATH"\n' "$bindir" "$bindir"
+    ;;
 esac
 
 if ! command -v copilot >/dev/null 2>&1; then

@@ -6,8 +6,6 @@ order: 26
 
 # Production Observability
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > 🔗 **Related:** [Aspire Dashboard](./aspire-dashboard) (local dev telemetry) · [Production Troubleshooting Runbook](./production-troubleshooting) · [Container Image — Env Var Contract](/squad/docs/reference/container-image/) · [#1144](https://github.com/bradygaster/squad/issues/1144) (embedded-host telemetry — tracked separately)
 
 ---

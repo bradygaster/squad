@@ -8,7 +8,7 @@
  * Prioritized by risk: execute > cleanup > decision-hygiene > self-pull > board.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WatchContext } from '../../packages/squad-cli/src/cli/commands/watch/types.js';
 
 // ── Shared mock state (hoisted alongside vi.mock) ───────────────────
@@ -695,6 +695,15 @@ describe('Watch Capabilities', () => {
   // ────────────────────────────────────────────────────────────────
 
   describe('RetroCapability', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-27T12:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     describe('execute', () => {
       it('reports not due when a recent retrospective log exists', async () => {
         const today = new Date().toISOString().slice(0, 10);
@@ -722,6 +731,18 @@ describe('Watch Capabilities', () => {
         );
         expect(seenDirs.map(d => d.replace(/\\/g, '/'))).toContain('/external/state/log');
         expect(result.summary).toBe('retro not due');
+      });
+
+      it('runs a retrospective on Friday afternoon even when one exists today', async () => {
+        vi.setSystemTime(new Date('2026-08-28T15:00:00Z'));
+        mockStorage.listSync.mockReturnValue(['2026-08-28-retrospective.md']);
+
+        const cap = new RetroCapability();
+        const result = await cap.execute(makeContext());
+
+        expect(result.success).toBe(true);
+        expect(result.summary).toBe('retrospective completed');
+        expect(mockExecFile).toHaveBeenCalledOnce();
       });
     });
   });
