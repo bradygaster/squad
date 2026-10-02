@@ -50,6 +50,7 @@ const env = (root = ROOT) => ({
 });
 function api(options: {
   proposal?: any; approved?: any; comments?: any[]; permission?: any; revision?: any; pulls?: any[];
+  permissions?: Record<string, any>;
   commentFailure?: boolean; pullFailure?: boolean; native?: any; nativeFailure?: boolean;
 } = {}) {
   const proposal = options.proposal || issue();
@@ -62,7 +63,10 @@ function api(options: {
       if (route === `repos/${REPO}/issues/77`) return proposal;
       if (route === `repos/${REPO}/issues/comments/901`) return approved;
       if (route.endsWith('/comments')) return options.commentFailure ? { __status: 503 } : fields.page === 1 ? options.comments || [approved] : [];
-      if (route.endsWith('/permission')) return options.permission || { permission: 'write' };
+      if (route.endsWith('/permission')) {
+        const login = decodeURIComponent(route.split('/').at(-2) || '');
+        return options.permissions?.[login] || options.permission || { permission: 'write' };
+      }
       if (route.endsWith('/pulls')) return options.pullFailure ? { __status: 503 } : fields.page === 1 ? options.pulls || [] : [];
       throw new Error(`Unexpected route: ${route}`);
     },
@@ -216,10 +220,57 @@ describe('improvement: live revalidation and permanent deduplication', () => {
   ])('fails closed on %s', async (_name, options) => {
     expect((await gate.collectImprovementContext(env(), api(options))).authorized).toBe(false);
   });
-  it('honors later revocation even with a newer unrelated approval, but not bot-generated revocation', async () => {
+  it('honors only an authorized, unedited human revocation after the approval', async () => {
     const revoke = comment({ id: 902, body: '/squad revoke-improvement', created_at: '2026-09-03T00:00:00Z', updated_at: '2026-09-03T00:00:00Z' });
-    expect((await gate.collectImprovementContext(env(), api({ comments: [comment(), revoke, comment({ id: 903 })] }))).reason).toBe('approval-revoked');
+    const authorized = api({ comments: [comment(), revoke, comment({ id: 903 })] });
+    expect((await gate.collectImprovementContext(env(), authorized)).reason).toBe('approval-revoked');
+    expect(authorized.calls).toContain(`repos/${REPO}/collaborators/maintainer/permission`);
     expect((await gate.collectImprovementContext(env(), api({ comments: [{ ...revoke, user: { login: 'bot', type: 'Bot' } }] }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, updated_at: '2026-09-04T00:00:00Z' }],
+    }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, performed_via_github_app: { id: 1 } }],
+    }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' }],
+    }))).authorized).toBe(true);
+    expect((await gate.collectImprovementContext(env(), api({
+      comments: [{ ...revoke, created_at: 'not-a-timestamp', updated_at: 'not-a-timestamp' }],
+    }))).authorized).toBe(true);
+  });
+  it('ignores an unprivileged revocation and fails closed when revocation permission is unresolved', async () => {
+    const revoke = comment({
+      id: 902,
+      user: { login: 'reader', type: 'User' },
+      body: '/squad revoke-improvement',
+      created_at: '2026-09-03T00:00:00Z',
+      updated_at: '2026-09-03T00:00:00Z',
+    });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: { permission: 'read' }, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: true, reason: 'approved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: { __status: 403 }, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: {}, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
+    expect(await gate.collectImprovementContext(env(), api({
+      comments: [comment(), revoke],
+      permissions: { reader: { permission: 'unexpected' }, maintainer: { permission: 'write' } },
+    }))).toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
+    const failed = api({ comments: [comment(), revoke] });
+    const fetchJson = failed.fetchJson;
+    failed.fetchJson = async (route, fields) => {
+      if (route === `repos/${REPO}/collaborators/reader/permission`) throw new Error('network failure');
+      return fetchJson(route, fields);
+    };
+    expect(await gate.collectImprovementContext(env(), failed))
+      .toMatchObject({ authorized: false, reason: 'revocation-permission-unresolved' });
   });
   it.each([
     ['open', null], ['closed', '2026-09-03T00:00:00Z'], ['closed', null],
@@ -747,4 +798,3 @@ describe('improvement: second-hop relay context survives gh-aw engine aw_context
     expect(lock).toContain('"squad_approval_relay"');
   }, 120000);
 });
-

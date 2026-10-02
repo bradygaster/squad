@@ -20,9 +20,13 @@ export const TRUSTED_PERMISSIONS = Object.freeze(['admin', 'maintain', 'write'])
 export const ALLOWED_PATH_PREFIXES = Object.freeze(['.squad/skills/', '.squad/decisions/inbox/']);
 export const ALLOWED_FILE_MODE = '100644';
 const MAX_PAGES = 5;
+const MAX_REVOCATION_PRINCIPALS = 20;
+const KNOWN_REVOCATION_PERMISSIONS = new Set([...TRUSTED_PERMISSIONS, 'triage', 'read', 'none']);
 // issue + comment + comments(<=MAX_PAGES) + permission + pulls(<=MAX_PAGES) +
-// revision (1 graphql) + native-link scan (<=NATIVE_LINK_MAX_PAGES graphql).
-export const IMPROVEMENT_API_REQUEST_CEILING = 3 + 2 * MAX_PAGES + 1 + NATIVE_LINK_MAX_PAGES;
+// revocation permissions + revision (1 graphql) +
+// native-link scan (<=NATIVE_LINK_MAX_PAGES graphql).
+export const IMPROVEMENT_API_REQUEST_CEILING =
+  3 + 2 * MAX_PAGES + MAX_REVOCATION_PRINCIPALS + 1 + NATIVE_LINK_MAX_PAGES;
 const digest = value => createHash('sha256').update(value).digest('hex');
 export const extractProposedPaths = body => [...new Set(standaloneValues(body, 'Proposed-Path'))];
 export const scopeDigest = (actionKey, paths) => digest(`${actionKey}\n${[...paths].sort().join('\n')}`).slice(0, 16);
@@ -336,9 +340,45 @@ export async function collectImprovementContext(env = process.env, {
   if (parsed.command !== 'approve') return refuse('no-approval-comment');
   const comments = await collectPages(fetchJson, `repos/${repository}/issues/${number}/comments`, {}, MAX_PAGES);
   if (comments.truncated) return refuse('comment-history-incomplete');
-  const revoked = comments.values.some(entry => entry.user?.type === 'User' &&
-    parseCommandComment(entry.body).command === 'revoke' &&
-    Date.parse(entry.updated_at || entry.created_at) >= Date.parse(comment.created_at));
+  const revocationPermissions = new Map();
+  const approvedAt = Date.parse(comment.created_at);
+  let revoked = false;
+  for (const entry of comments.values) {
+    const revokedAt = Date.parse(entry.created_at);
+    if (entry.user?.type !== 'User' || entry.performed_via_github_app ||
+        entry.created_at !== entry.updated_at ||
+        parseCommandComment(entry.body).command !== 'revoke' ||
+        !Number.isFinite(approvedAt) || !Number.isFinite(revokedAt) ||
+        revokedAt < approvedAt) continue;
+    const login = typeof entry.user?.login === 'string' && entry.user.login.trim()
+      ? entry.user.login.trim()
+      : null;
+    if (!login) return refuse('revocation-permission-unresolved');
+    if (!revocationPermissions.has(login)) {
+      if (revocationPermissions.size >= MAX_REVOCATION_PRINCIPALS) {
+        return refuse('revocation-history-incomplete');
+      }
+      let revocationPermission;
+      try {
+        revocationPermission = await fetchJson(
+          `repos/${repository}/collaborators/${encodeURIComponent(login)}/permission`,
+          {},
+        );
+      } catch {
+        return refuse('revocation-permission-unresolved');
+      }
+      if (!revocationPermission || revocationPermission.__status ||
+          typeof revocationPermission.permission !== 'string' ||
+          !KNOWN_REVOCATION_PERMISSIONS.has(revocationPermission.permission)) {
+        return refuse('revocation-permission-unresolved');
+      }
+      revocationPermissions.set(login, revocationPermission.permission);
+    }
+    if (isTrustedApprover({ permission: revocationPermissions.get(login) }).trusted) {
+      revoked = true;
+      break;
+    }
+  }
   const permission = await fetchJson(`repos/${repository}/collaborators/${encodeURIComponent(comment.user?.login || '')}/permission`, {});
   const revision = await fetchGraphql(
     'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){number title body lastEditedAt}}}',

@@ -657,7 +657,7 @@ wins: `/squad plan accept scope` is not treated as `/squad plan`.
 | Review | `/squad review` | Show how to rerun the current pull request's automatic independent review | Does not dispatch branch-selected code; human approval remains mandatory |
 | Retrospective | `/squad retro` | Run the shared retrospective immediately | Authorized manual run; weekly and evidence-driven wakeups use the same durable gate |
 | Governance | `/squad approve-improvement` | Request implementation of an exact retrospective proposal revision | Human write/maintain/admin permission, `Approved-Revision:` hash and exact `Approved-Path:` lines; dispatcher relays nested `issue_number` and `approval_comment_id`, never approval authority |
-| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved, read-only command available to any actor; emits no output of any kind — the comment itself is the record that later runs re-check |
+| Governance | `/squad revoke-improvement` | Withdraw a prior `/squad approve-improvement` | Reserved state-changing command requiring write, maintain, or admin authorization; emits no output of any kind — the comment itself is the record that later runs re-check |
 
 ### Implementation provenance
 

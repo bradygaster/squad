@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   classifySquadCommand,
   commandRequiresAuthorization,
+  editedCommandShouldRoute,
   enforceSquadCommandContract,
   isAuthorizedPermission,
   rejectionComment,
@@ -124,6 +125,59 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       });
     });
 
+    describe.each([
+      ['issues', issue],
+      ['issue_comment', comment],
+    ] as const)('edited-event replay gate for %s', (eventName, payload) => {
+      function edited(previousBody: unknown, currentBody: string) {
+        return {
+          ...payload(currentBody),
+          action: 'edited',
+          changes: { body: { from: previousBody } },
+        };
+      }
+
+      it.each([
+        [
+          'Context before.\n/squad plan implementation\nContext after.',
+          'Changed context before.\n\n  /squad   plan   implementation  \nChanged context after.',
+        ],
+        [
+          'Context before.\n/squad status extra\nContext after.',
+          'Changed context before.\n\n /squad   status   extra \nChanged context after.',
+        ],
+      ])('noops when only surrounding prose or command whitespace changes', (before, after) => {
+        const event = edited(before, after);
+        const current = classifySquadCommand(event, eventName);
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(false);
+      });
+
+      it.each([
+        ['ordinary body', '/squad status'],
+        ['/squad status', '/squad plan'],
+        ['/squad status extra', '/squad dance'],
+        ['Use `/squad status` after review.', '/squad status'],
+        ['```text\n/squad status\n```', '/squad status'],
+      ])('routes a newly introduced or materially changed command: %j -> %j', (before, after) => {
+        const event = edited(before, after);
+        const current = classifySquadCommand(event, eventName);
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(true);
+      });
+
+      it.each([
+        undefined,
+        null,
+        42,
+        { unexpected: 'shape' },
+      ])('fails closed when previous-body evidence is unavailable or malformed: %j', previousBody => {
+        const event = previousBody === undefined
+          ? { ...payload('/squad status'), action: 'edited' }
+          : edited(previousBody, '/squad status');
+        const current = classifySquadCommand(event, eventName);
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(false);
+      });
+    });
+
     it.each(['', ' ', '\n\n'])('keeps empty activation probe non-eventful: %j', command => {
       expect(classifySquadCommand(dispatch(command), 'workflow_dispatch')).toEqual({
         status: 'none',
@@ -233,10 +287,10 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
   });
 
   it('keeps open modes public and fails mutating modes closed on collaborator permission', () => {
-    for (const mode of ['status', 'review', 'research', 'plan', 'revoke-improvement']) {
+    for (const mode of ['status', 'review', 'research', 'plan']) {
       expect(commandRequiresAuthorization({ status: 'accepted', mode })).toBe(false);
     }
-    for (const mode of ['cast', 'triage', 'plan implementation', 'implement']) {
+    for (const mode of ['cast', 'triage', 'plan implementation', 'implement', 'revoke-improvement']) {
       expect(commandRequiresAuthorization({ status: 'accepted', mode })).toBe(true);
     }
     expect(isAuthorizedPermission('admin')).toBe(true);

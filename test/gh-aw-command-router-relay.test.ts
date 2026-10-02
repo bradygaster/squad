@@ -100,6 +100,7 @@ async function runRouter({
   authorType,
   senderType,
   body,
+  previousBody,
   permissions,
   scriptMutation,
 }: {
@@ -110,6 +111,7 @@ async function runRouter({
   authorType?: string;
   senderType?: string;
   body: string;
+  previousBody?: string | null | Record<string, unknown>;
   permissions: Record<string, string>;
   scriptMutation?: (script: string) => string;
 }): Promise<RouterRun> {
@@ -132,6 +134,9 @@ async function runRouter({
       action,
       issue: textSource,
       ...(comment ? { comment } : {}),
+      ...(action === 'edited' && previousBody !== undefined
+        ? { changes: { body: { from: previousBody } } }
+        : {}),
       repository: { default_branch: 'dev' },
       sender: { login: actor, type: senderType ?? 'User' },
     },
@@ -208,6 +213,7 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
     expect(ROUTER).toContain('getCollaboratorPermissionLevel');
     assertAuthorBinding(ROUTER);
     expect(commandRequiresAuthorization({ status: 'accepted', mode: 'cast' })).toBe(true);
+    expect(commandRequiresAuthorization({ status: 'accepted', mode: 'revoke-improvement' })).toBe(true);
     expect(commandRequiresAuthorization({ status: 'accepted', mode: 'status' })).toBe(false);
     expect(isAuthorizedPermission('read')).toBe(false);
     expect(isAuthorizedPermission('write')).toBe(true);
@@ -391,6 +397,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       actor: 'maintainer-editor',
       author: 'unprivileged-author',
       body: 'Please run this request.\n/squad cast',
+      ...(action === 'edited' ? { previousBody: 'Please run this request.' } : {}),
       permissions: {
         'maintainer-editor': 'write',
         'unprivileged-author': 'read',
@@ -414,6 +421,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       actor: 'maintainer-editor',
       author: 'maintainer-author',
       body: 'Please run this request.\n/squad cast',
+      previousBody: 'Please run this request.',
       permissions: {
         'maintainer-editor': 'maintain',
         'maintainer-author': 'write',
@@ -432,6 +440,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       actor: 'unprivileged-editor',
       author: 'maintainer-author',
       body: 'Please run this request.\n/squad cast',
+      previousBody: 'Please run this request.',
       permissions: {
         'unprivileged-editor': 'read',
         'maintainer-author': 'admin',
@@ -469,6 +478,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       action: 'edited',
       actor: 'reader',
       body: 'Please report current state.\n/squad status',
+      previousBody: 'Please report current state.',
       permissions: {},
     });
 
@@ -495,6 +505,179 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.dispatchedInputs).toMatchObject({ command: 'cast', issue_number: '4242' });
   });
 
+  it.each([
+    ['issues', 'Please update the title.\n/squad status', 'Updated title context.\n\n /squad   status '],
+    ['issue_comment', 'Before.\n/squad status extra', 'After.\n\n /squad   status   extra '],
+  ] as const)('noops an unrelated %s edit when the accepted or rejected invocation is unchanged', async (
+    eventName,
+    previousBody,
+    body,
+  ) => {
+    const result = await runRouter({
+      eventName,
+      action: 'edited',
+      actor: 'editor',
+      author: 'author',
+      previousBody,
+      body,
+      permissions: { editor: 'write', author: 'write' },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.failure).toBeNull();
+    expect(result.postedComments).toEqual([]);
+    expect(result.permissionLookups).toEqual([]);
+  });
+
+  it.each([
+    ['issues', 'ordinary issue body'],
+    ['issue_comment', 'Use `/squad revoke-improvement` only after approval.'],
+    ['issue_comment', '```text\n/squad revoke-improvement\n```'],
+  ] as const)('routes a newly introduced revoke command from %s after code contexts are excluded', async (
+    eventName,
+    previousBody,
+  ) => {
+    const result = await runRouter({
+      eventName,
+      action: 'edited',
+      actor: 'maintainer-editor',
+      author: 'maintainer-author',
+      previousBody,
+      body: 'Approval changed.\n/squad revoke-improvement',
+      permissions: {
+        'maintainer-editor': 'maintain',
+        'maintainer-author': 'write',
+      },
+    });
+
+    expect(result.failure).toBeNull();
+    expect(result.permissionLookups).toEqual(['maintainer-editor', 'maintainer-author']);
+    expect(result.dispatchedInputs).toMatchObject({
+      command: 'revoke-improvement',
+      issue_number: '4242',
+    });
+  });
+
+  it.each(['issues', 'issue_comment'] as const)(
+    'fails closed for %s.edited when changes.body.from is absent or malformed',
+    async eventName => {
+      for (const previousBody of [undefined, null, { invalid: true }]) {
+        const result = await runRouter({
+          eventName,
+          action: 'edited',
+          actor: 'maintainer',
+          author: 'maintainer',
+          ...(previousBody === undefined ? {} : { previousBody }),
+          body: '/squad status',
+          permissions: { maintainer: 'write' },
+        });
+        expect(result.dispatchedInputs).toBeNull();
+        expect(result.failure).toBeNull();
+        expect(result.postedComments).toEqual([]);
+        expect(result.permissionLookups).toEqual([]);
+      }
+    },
+  );
+
+  it.each([
+    ['status', 'read', 'read'],
+    ['review', 'read', 'read'],
+    ['research focused scope', 'none', 'read'],
+    ['plan', 'read', 'none'],
+  ])('keeps public read-only mode %j open without permission lookups', async (
+    command,
+    actorPermission,
+    authorPermission,
+  ) => {
+    const result = await runRouter({
+      eventName: 'issue_comment',
+      action: 'created',
+      actor: 'reader',
+      author: 'external-author',
+      body: `/squad ${command}`,
+      permissions: {
+        reader: actorPermission,
+        'external-author': authorPermission,
+      },
+    });
+
+    expect(result.failure).toBeNull();
+    expect(result.permissionLookups).toEqual([]);
+    expect(result.dispatchedInputs).not.toBeNull();
+  });
+
+  it.each([
+    ['read', 'write', 'event actor reader=read'],
+    ['write', 'read', 'command author external-author=read'],
+    ['unresolved', 'admin', 'event actor reader=unresolved'],
+    ['maintain', 'unresolved', 'command author external-author=unresolved'],
+  ])('requires both principals for revoke-improvement: actor=%s author=%s', async (
+    actorPermission,
+    authorPermission,
+    failure,
+  ) => {
+    const result = await runRouter({
+      eventName: 'issue_comment',
+      action: 'created',
+      actor: 'reader',
+      author: 'external-author',
+      body: '/squad revoke-improvement',
+      permissions: {
+        reader: actorPermission,
+        'external-author': authorPermission,
+      },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.failure).toContain(failure);
+    expect(result.permissionLookups).toEqual(['reader', 'external-author']);
+  });
+
+  it('allows revoke-improvement only when both the event actor and original author are authorized', async () => {
+    const result = await runRouter({
+      eventName: 'issues',
+      action: 'edited',
+      actor: 'maintainer-editor',
+      author: 'maintainer-author',
+      previousBody: 'Approval state changed.',
+      body: 'Approval state changed.\n/squad revoke-improvement',
+      permissions: {
+        'maintainer-editor': 'maintain',
+        'maintainer-author': 'admin',
+      },
+    });
+
+    expect(result.failure).toBeNull();
+    expect(result.permissionLookups).toEqual(['maintainer-editor', 'maintainer-author']);
+    expect(result.dispatchedInputs).toMatchObject({ command: 'revoke-improvement' });
+  });
+
+  it('kills the replay-gate mutation that redispatches an unchanged edited command', async () => {
+    const gate = [
+      'if (!contract.editedCommandShouldRoute(',
+      '  context.payload,',
+      '  process.env.SQUAD_EVENT_NAME,',
+      '  result,',
+      ')) {',
+      "  core.info('Ignoring an edited body whose canonical /squad invocation did not change or whose previous body is unavailable.');",
+      '  return;',
+      '}',
+    ].join('\n');
+    expect(extractScript(ROUTER, 'Route or reject discovered command')).toContain(gate);
+
+    const vulnerable = await runRouter({
+      eventName: 'issue_comment',
+      action: 'edited',
+      actor: 'maintainer',
+      author: 'maintainer',
+      previousBody: 'Before.\n/squad status',
+      body: 'After.\n/squad status',
+      permissions: { maintainer: 'write' },
+      scriptMutation: script => script.replace(gate, ''),
+    });
+    expect(vulnerable.dispatchedInputs).toMatchObject({ command: 'status' });
+  });
+
   it('kills the author-binding mutation that substitutes the editor for the command author', async () => {
     expect(() => assertAuthorBinding(
       ROUTER.replace(
@@ -513,6 +696,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       actor: 'maintainer-editor',
       author: 'unprivileged-author',
       body: 'Please run this request.\n/squad cast',
+      previousBody: 'Please run this request.',
       permissions: {
         'maintainer-editor': 'write',
         'unprivileged-author': 'read',
@@ -531,6 +715,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
 
   it('preserves author binding in the generated package source and strict-compiled artifact', () => {
     assertAuthorBinding(PACKAGE_ROUTER);
+    expect(PACKAGE_ROUTER).toContain('contract.editedCommandShouldRoute(');
     const workspace = mkdtempSync(join(tmpdir(), 'squad-command-router-compiled-'));
     try {
       const workflowDir = join(workspace, '.github', 'workflows');
@@ -548,6 +733,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
         'utf8',
       );
       assertAuthorBinding(compiled);
+      expect(compiled).toContain('contract.editedCommandShouldRoute(');
       expect(compiled).toContain('context.payload.comment?.user?.login');
       expect(compiled).toContain('context.payload.issue?.user?.login');
     } finally {
@@ -576,6 +762,7 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
       authorType: 'Bot',
       senderType: 'Bot',
       body: 'Please run this request.\n/squad cast',
+      ...(action === 'edited' ? { previousBody: 'Please run this request.' } : {}),
       permissions: {},
     });
 
@@ -597,6 +784,7 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
       authorType: 'User',
       senderType: 'Bot',
       body: 'Please run this request.\n/squad cast',
+      previousBody: 'Please run this request.',
       permissions: { 'human-author': 'write' },
     });
 
@@ -637,6 +825,7 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
       authorType: 'Bot',
       senderType: 'Bot',
       body: 'Please run this request.\n/squad cast',
+      previousBody: 'Please run this request.',
       permissions: { 'relay-bot': 'write' },
       scriptMutation: script => {
         expect(script).toContain(dedentedMarker);
@@ -658,6 +847,7 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
       authorType: 'User',
       senderType: 'Bot',
       body: 'Please run this request.\n/squad cast',
+      previousBody: 'Please run this request.',
       permissions: { 'human-author': 'write', 'editing-bot': 'write' },
       scriptMutation: script => {
         expect(script).toContain(marker);

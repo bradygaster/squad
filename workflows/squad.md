@@ -610,7 +610,7 @@ Assign the accepted `mode` from `squad-command-context.json` to
 ```bash
 mode="${SQUAD_PARSED_MODE-}"
 case "$mode" in
-  status|review|research|plan|revoke-improvement)
+  status|review|research|plan)
     echo READ_ONLY
     ;;
   *)
@@ -622,17 +622,12 @@ esac
 - `READ_ONLY` → skip the permission lookup entirely and continue to **Execute Mode** unchanged.
 - `AUTH_REQUIRED` → continue to **Step AG-2**.
 
-**Open-mode allow-list:** `status`, `review` (advisory relay), `research`,
-`plan` (plan preview), and `revoke-improvement`. These commands remain
-available to any actor. Every other recognized mode changes repository state,
-revises or advances a durable planning artifact, or dispatches implementation
-work, so it requires authorization.
-
-`revoke-improvement` qualifies because it emits nothing and only ever REMOVES
-authority: `squad-improvement-worker`'s gate honors a revocation from any
-author, so a red refusal here would contradict a withdrawal that is honored
-anyway. `approve-improvement` grants authority and dispatches a worker, so it
-stays authorization-required.
+**Open-mode allow-list:** `status`, `review` (advisory relay), `research`, and
+`plan` (plan preview). These read-only commands remain available to any actor.
+Every other recognized mode changes repository state, revises or advances a
+durable planning artifact, or dispatches implementation work, so it requires
+authorization. This includes `revoke-improvement`, which mutates durable
+approval state even though it emits no output.
 
 ### Step AG-2: Resolve actor permission [MANDATORY for `AUTH_REQUIRED`]
 

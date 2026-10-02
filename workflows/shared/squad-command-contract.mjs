@@ -48,7 +48,6 @@ const OPEN_MODES = new Set([
   'review',
   'research',
   'plan',
-  'revoke-improvement',
 ]);
 
 export const VALID_COMMANDS = Object.freeze([
@@ -222,6 +221,37 @@ export function classifySquadCommand(payload, eventName = '') {
     };
   }
   return { ...classification, source: sourceData.source };
+}
+
+function canonicalInvocation(result) {
+  if (result.status === 'none') return null;
+  if (result.status === 'accepted') {
+    return JSON.stringify([
+      'accepted',
+      result.mode,
+      result.argumentText.replace(/\s+/g, ' ').trim(),
+      result.phase,
+    ]);
+  }
+  return JSON.stringify([
+    'rejected',
+    result.reason,
+    result.rejectedCommand.replace(/\s+/g, ' ').trim(),
+  ]);
+}
+
+export function editedCommandShouldRoute(payload, eventName, currentResult) {
+  const action = payload?.action;
+  if (action !== 'edited' || !['issues', 'issue_comment'].includes(eventName)) {
+    return true;
+  }
+  const previousBody = payload?.changes?.body?.from;
+  if (typeof previousBody !== 'string') return false;
+  const previousPayload = eventName === 'issue_comment'
+    ? { ...payload, comment: { ...payload.comment, body: previousBody } }
+    : { ...payload, issue: { ...payload.issue, body: previousBody } };
+  const previousResult = classifySquadCommand(previousPayload, eventName);
+  return canonicalInvocation(previousResult) !== canonicalInvocation(currentResult);
 }
 
 export function rejectionComment(result) {
