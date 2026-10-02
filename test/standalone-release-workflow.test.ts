@@ -703,7 +703,8 @@ describe('automated package publication', () => {
     expect(ghAwGuide).toContain('gh aw compile --strict --approve');
     expect(ghAwGuide).toContain('gh aw compile --strict');
     expect(ghAwGuide).toContain('gh pr create');
-    expect(ghAwGuide).toContain('gh pr edit --add-reviewer @copilot');
+    expect(ghAwGuide).toContain('requestReviewsByLogin');
+    expect(ghAwGuide).toContain('copilot-pull-request-reviewer');
     expect(ghAwGuide).toContain('gh pr checks --watch');
     expect(ghAwGuide).toContain('.github/aw/');
     expect(ghAwGuide).toContain('`.vscode/settings.json`');
