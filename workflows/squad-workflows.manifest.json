@@ -50,18 +50,18 @@
       "source": "workflows/package/squad-retro.md",
       "destination": ".github/workflows/squad-retro.md",
       "lock": ".github/workflows/squad-retro.lock.yml",
-      "source_sha256": "3ee1bdd2d032f70d83f5593ff2bfc71fef6782d1cef0daf17069dfcb95adafcd",
-      "lock_sha256": "7850fb52a8ac0eb4e7f97a9846c54986607c77d3fa1fb4dce934bdc44b632994",
-      "package_lock_sha256": "cb11982ae6720f511ab73a8932773a521ec32e5afe453ac6ca6d015dd2bb5c2c"
+      "source_sha256": "8d7e1fdd5fa337da8208832b1cc7c6dbfd253dde2c1b45a7f68a805eb9025620",
+      "lock_sha256": "41fe367f5391eea781a0045adff8cb5039a689123b5b1798367a0078e19073e9",
+      "package_lock_sha256": "19933818ea4a2a89040e9e12706f80b56e6b6d6e53925f92c66f88d99676184f"
     },
     {
       "name": "squad-improvement-worker",
       "source": "workflows/package/squad-improvement-worker.md",
       "destination": ".github/workflows/squad-improvement-worker.md",
       "lock": ".github/workflows/squad-improvement-worker.lock.yml",
-      "source_sha256": "89896bc4321f76e791d40ee8239ba7ed6a2b8e090113a1cdb3017cb2a68e5c90",
-      "lock_sha256": "65d905f43b88b2dffaa8bf90c8fd9f4d10ac2a3db3789a439ec998a2e5ad84d1",
-      "package_lock_sha256": "caf333235528b716c1177684be94752e56a288a5dc87723b6abcf99074d388d1"
+      "source_sha256": "5bcc0f095b98a351c8f5fd8b31d22fee97f2cf00eeaa02519c394f5bbb5a6bad",
+      "lock_sha256": "9eb03c71348274e867be04af31526b5f303f26fe6a232869f36185b990e2b129",
+      "package_lock_sha256": "8d65224df7922b63bf85908d10912014f865a1d62c7cbfaf26a0631206405ac3"
     },
     {
       "name": "squad-bootstrap",
@@ -105,7 +105,7 @@
       "package_destination": ".github/workflows/shared/squad-command-contract.mjs",
       "destination": ".github/workflows/shared/squad-command-contract.mjs",
       "ownership": "manifest",
-      "sha256": "4d7a62767b7e85f9e29a0e946e1ec664a5a55f09fe3c40822e3558410f7c2d8d"
+      "sha256": "5ba5c0a86547e51014d7d8b724dc31f0604da0477d1cbbf74d8309525429bf57"
     },
     {
       "path": "shared/squad-cast-validator.mjs",

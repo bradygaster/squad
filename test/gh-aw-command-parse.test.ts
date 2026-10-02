@@ -116,6 +116,7 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       ['\n\n/squad status\n', 'status', null],
       ['activate phase 3', 'activate', 3],
       ['research Focus only on P1', 'research', null],
+      ['revoke-improvement', 'revoke-improvement', null],
     ])('accepts bare or slash-prefixed dispatch %j', (command, mode, phase) => {
       expect(classifySquadCommand(dispatch(command), 'workflow_dispatch')).toMatchObject({
         status: 'accepted',
@@ -153,6 +154,18 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
       });
 
       it.each([
+        ['/squad DANCE', '/squad dance'],
+        ['/squad STATUS EXTRA', '/squad status extra'],
+      ])('noops a rejected invocation case-only edit while preserving its current text: %j -> %j', (before, after) => {
+        const event = edited(before, after);
+        const current = classifySquadCommand(event, eventName);
+        expect(current).toMatchObject({ status: 'rejected', rejectedCommand: after });
+        expect(editedCommandShouldRoute(event, eventName, current)).toBe(false);
+        expect(rejectionComment(current as Extract<typeof current, { status: 'rejected' }>))
+          .toContain(`\`\`\`text\n${after}\n\`\`\``);
+      });
+
+      it.each([
         ['ordinary body', '/squad status'],
         ['/squad status', '/squad plan'],
         ['/squad status extra', '/squad dance'],
@@ -162,6 +175,19 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         const event = edited(before, after);
         const current = classifySquadCommand(event, eventName);
         expect(editedCommandShouldRoute(event, eventName, current)).toBe(true);
+      });
+
+      it('rejects issue-body revocation with a durable-record diagnostic but accepts comment revocation', () => {
+        expect(classifySquadCommand(issue('/squad revoke-improvement'), 'issues')).toMatchObject({
+          status: 'rejected',
+          source: 'issue',
+          reason: 'Issue-body revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+        });
+        expect(classifySquadCommand(comment('/squad revoke-improvement'), 'issue_comment')).toMatchObject({
+          status: 'accepted',
+          source: 'comment',
+          mode: 'revoke-improvement',
+        });
       });
 
       it.each([
@@ -214,6 +240,23 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(posted[0].body).toContain('```text\n/squad status extra\n```');
     expect(posted[0].body).toContain('Unknown command or malformed arguments.');
     expect(posted[0].body).toContain('The workflow stopped without running a Squad mode.');
+  });
+
+  it('fails the shared main-workflow contract for an issue-body revocation', async () => {
+    const posted: Array<{ issueNumber: number; body: string }> = [];
+    await expect(
+      enforceSquadCommandContract({
+        payload: issue('/squad revoke-improvement'),
+        eventName: 'issues',
+        createComment: async (issueNumber, body) => {
+          posted.push({ issueNumber, body });
+        },
+      }),
+    ).rejects.toThrow('Squad rejected command: /squad revoke-improvement');
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({ issueNumber: 1824 });
+    expect(posted[0].body).toContain('Issue-body revocations are not durable.');
   });
 
   it('does not comment or throw for valid commands and no-invocation non-events', async () => {
@@ -321,6 +364,44 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         status: 'accepted',
         mode: 'status',
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('realistic mutations expose issue-body revocation dispatch and rejected case-only replay', async () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    const root = mkdtempSync(join(TEST_ROOT, 'command-revoke-replay-mutants-'));
+    try {
+      const source = join(process.cwd(), 'workflows', 'shared', 'squad-command-contract.mjs');
+      const original = readFileSync(source, 'utf8');
+
+      const revokeMutant = join(root, 'squad-command-contract-revoke-mutant.mjs');
+      const withoutIssueGuard = original.replace(
+        "  if (sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {",
+        "  if (false && sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {",
+      );
+      expect(withoutIssueGuard).not.toBe(original);
+      writeFileSync(revokeMutant, withoutIssueGuard);
+      const revokeModule = await import(`${pathToFileURL(revokeMutant).href}?mutation=${Date.now()}`);
+      expect(revokeModule.classifySquadCommand(issue('/squad revoke-improvement'), 'issues'))
+        .toMatchObject({ status: 'accepted', mode: 'revoke-improvement' });
+
+      const replayMutant = join(root, 'squad-command-contract-replay-mutant.mjs');
+      const withoutRejectedCaseNormalization = original.replace(
+        "result.rejectedCommand.replace(/\\s+/g, ' ').trim().toLowerCase(),",
+        "result.rejectedCommand.replace(/\\s+/g, ' ').trim(),",
+      );
+      expect(withoutRejectedCaseNormalization).not.toBe(original);
+      writeFileSync(replayMutant, withoutRejectedCaseNormalization);
+      const replayModule = await import(`${pathToFileURL(replayMutant).href}?mutation=${Date.now() + 1}`);
+      const editedEvent = {
+        ...comment('/squad status extra'),
+        action: 'edited',
+        changes: { body: { from: '/squad STATUS EXTRA' } },
+      };
+      const current = replayModule.classifySquadCommand(editedEvent, 'issue_comment');
+      expect(replayModule.editedCommandShouldRoute(editedEvent, 'issue_comment', current)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

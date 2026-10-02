@@ -553,6 +553,29 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
   );
 
   it.each(['issues', 'issue_comment'] as const)(
+    'noops a rejected %s.edited invocation that only changes command casing',
+    async eventName => {
+      const result = await runRouter({
+        eventName,
+        action: 'edited',
+        actor: 'maintainer-editor',
+        author: 'maintainer-author',
+        previousBody: 'Before.\n/squad STATUS EXTRA',
+        body: 'After.\n/squad status extra',
+        permissions: {
+          'maintainer-editor': 'maintain',
+          'maintainer-author': 'write',
+        },
+      });
+
+      expect(result.dispatchedInputs).toBeNull();
+      expect(result.failure).toBeNull();
+      expect(result.postedComments).toEqual([]);
+      expect(result.permissionLookups).toEqual([]);
+    },
+  );
+
+  it.each(['issues', 'issue_comment'] as const)(
     'routes a %s.edited change to meaningful free-form argument case',
     async eventName => {
       const result = await runRouter({
@@ -578,7 +601,6 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
   );
 
   it.each([
-    ['issues', 'ordinary issue body'],
     ['issue_comment', 'Use `/squad revoke-improvement` only after approval.'],
     ['issue_comment', '```text\n/squad revoke-improvement\n```'],
   ] as const)('routes a newly introduced revoke command from %s after code contexts are excluded', async (
@@ -604,6 +626,28 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       command: 'revoke-improvement',
       issue_number: '4242',
     });
+  });
+
+  it('rejects an issue-body revoke-improvement without permission lookup or dispatch', async () => {
+    const result = await runRouter({
+      eventName: 'issues',
+      action: 'edited',
+      actor: 'maintainer-editor',
+      author: 'maintainer-author',
+      previousBody: 'Approval state changed.',
+      body: 'Approval state changed.\n/squad revoke-improvement',
+      permissions: {
+        'maintainer-editor': 'maintain',
+        'maintainer-author': 'admin',
+      },
+    });
+
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.permissionLookups).toEqual([]);
+    expect(result.failure).toBe('Squad rejected command: /squad revoke-improvement');
+    expect(result.postedComments).toHaveLength(1);
+    expect(result.postedComments[0]).toContain('Issue-body revocations are not durable.');
+    expect(result.postedComments[0]).toContain('```text\n/squad revoke-improvement\n```');
   });
 
   it.each(['issues', 'issue_comment'] as const)(
@@ -681,9 +725,9 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.permissionLookups).toEqual(['reader', 'external-author']);
   });
 
-  it('allows revoke-improvement only when both the event actor and original author are authorized', async () => {
+  it('allows comment revoke-improvement only when both the event actor and original author are authorized', async () => {
     const result = await runRouter({
-      eventName: 'issues',
+      eventName: 'issue_comment',
       action: 'edited',
       actor: 'maintainer-editor',
       author: 'maintainer-author',

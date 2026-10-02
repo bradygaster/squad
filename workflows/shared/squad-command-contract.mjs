@@ -220,6 +220,14 @@ export function classifySquadCommand(payload, eventName = '') {
       reason: 'Unknown command or malformed arguments.',
     };
   }
+  if (sourceData.source === 'issue' && classification.mode === 'revoke-improvement') {
+    return {
+      status: 'rejected',
+      source: sourceData.source,
+      rejectedCommand: invocation.rejectedCommand,
+      reason: 'Issue-body revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+    };
+  }
   return { ...classification, source: sourceData.source };
 }
 
@@ -242,7 +250,7 @@ function canonicalInvocation(result) {
   return JSON.stringify([
     'rejected',
     result.reason,
-    result.rejectedCommand.replace(/\s+/g, ' ').trim(),
+    result.rejectedCommand.replace(/\s+/g, ' ').trim().toLowerCase(),
   ]);
 }
 

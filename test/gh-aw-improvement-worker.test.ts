@@ -673,6 +673,13 @@ describe('improvement: one authorized dispatcher route and installed contract', 
     expect(job).toContain('ref: refs/heads/${{ github.event.repository.default_branch }}');
     expect(job).toContain('SQUAD_IMPROVE_APPROVAL_COMMENT_ID');
   }, 90000);
+
+  it('documents the same live revocation trust boundary enforced by the gate', () => {
+    expect(WORKER).toContain('Only a later unedited, non-app');
+    expect(WORKER).toContain('live write, maintain, or admin repository permission');
+    expect(WORKER).toContain('Revocation permission or history that cannot be resolved');
+    expect(WORKER).toContain('fails closed');
+  });
 });
 
 // Finding #3 (octodemo/zava-social-backend-20261001184422#1): the router

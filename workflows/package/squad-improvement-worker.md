@@ -140,10 +140,13 @@ Approved-Path: {exact proposed file}
 
 Compute the digest using the installed gate's `--revision` command as documented
 in the gh-aw guide. The issue's exact `Proposed-Path:` set must equal the approved
-set. An edited approval comment is invalid. Any later human
-`/squad revoke-improvement` withdraws it until a new approval is posted.
-Body edits, scope changes, missing revision/permission data and incomplete scans
-fail closed. Never post, quote, echo, or reconstruct an approval yourself.
+set. An edited approval comment is invalid. Only a later unedited, non-app
+human issue comment containing `/squad revoke-improvement`, whose author has
+live write, maintain, or admin repository permission, withdraws it until a new
+approval is posted. Revocation permission or history that cannot be resolved
+fails closed. Body edits, scope changes, missing revision/permission data and
+incomplete scans fail closed. Never post, quote, echo, or reconstruct an
+approval yourself.
 
 If `context.authorized` is false, make no edits. Post one refusal on
 `context.issue_number` when it resolves, naming `context.reason` and the manual
