@@ -105,7 +105,7 @@
       "package_destination": ".github/workflows/shared/squad-command-contract.mjs",
       "destination": ".github/workflows/shared/squad-command-contract.mjs",
       "ownership": "manifest",
-      "sha256": "5ba5c0a86547e51014d7d8b724dc31f0604da0477d1cbbf74d8309525429bf57"
+      "sha256": "39671f24e8f4a25dafdf2d227e7ffadeec27dd0ec62257c51deeb3358c270e5a"
     },
     {
       "path": "shared/squad-cast-validator.mjs",
@@ -129,7 +129,7 @@
       "package_destination": ".github/workflows/shared/squad-improvement-gate.mjs",
       "destination": ".github/workflows/shared/squad-improvement-gate.mjs",
       "ownership": "manifest",
-      "sha256": "50c757f61449a8be0e75c4d71d6efd4bbe54e4d3166af496a9f91153b978d255"
+      "sha256": "c9148e068cbd30026a176587d91bc4076a1c30a5361391016e8eebf1152e1a1d"
     },
     {
       "path": "shared/squad-retro-evidence.mjs",

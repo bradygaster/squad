@@ -177,7 +177,7 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         expect(editedCommandShouldRoute(event, eventName, current)).toBe(true);
       });
 
-      it('rejects issue-body revocation with a durable-record diagnostic but accepts comment revocation', () => {
+      it('rejects issue-body and edited-comment revocations but accepts a new comment revocation', () => {
         expect(classifySquadCommand(issue('/squad revoke-improvement'), 'issues')).toMatchObject({
           status: 'rejected',
           source: 'issue',
@@ -187,6 +187,14 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
           status: 'accepted',
           source: 'comment',
           mode: 'revoke-improvement',
+        });
+        expect(classifySquadCommand({
+          ...comment('/squad revoke-improvement'),
+          action: 'edited',
+        }, 'issue_comment')).toMatchObject({
+          status: 'rejected',
+          source: 'comment',
+          reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
         });
       });
 

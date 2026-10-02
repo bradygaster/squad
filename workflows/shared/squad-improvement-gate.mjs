@@ -345,6 +345,12 @@ export async function collectImprovementContext(env = process.env, {
   const approvalListIndex = comments.values.findIndex(entry => sameNumericId(entry.id, comment.id));
   let revoked = false;
   for (const [entryIndex, entry] of comments.values.entries()) {
+    const parsedEntry = parseCommandComment(entry.body);
+    if (entry.user?.type === 'User' && !entry.performed_via_github_app &&
+        entry.created_at === entry.updated_at && parsedEntry.command === 'revoke' &&
+        (!Number.isFinite(approvedAt) || !Number.isFinite(Date.parse(entry.created_at)))) {
+      return refuse('revocation-history-incomplete');
+    }
     const revokedAt = Date.parse(entry.created_at);
     const followsApproval = revokedAt > approvedAt ||
       (revokedAt === approvedAt && (approvalListIndex >= 0
@@ -352,8 +358,7 @@ export async function collectImprovementContext(env = process.env, {
         : isNumericId(entry.id) && Number(entry.id) > Number(comment.id)));
     if (entry.user?.type !== 'User' || entry.performed_via_github_app ||
         entry.created_at !== entry.updated_at ||
-        parseCommandComment(entry.body).command !== 'revoke' ||
-        !Number.isFinite(approvedAt) || !Number.isFinite(revokedAt) ||
+        parsedEntry.command !== 'revoke' ||
         !followsApproval) continue;
     const login = typeof entry.user?.login === 'string' && entry.user.login.trim()
       ? entry.user.login.trim()

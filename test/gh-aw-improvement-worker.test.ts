@@ -235,9 +235,9 @@ describe('improvement: live revalidation and permanent deduplication', () => {
     expect((await gate.collectImprovementContext(env(), api({
       comments: [{ ...revoke, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' }],
     }))).authorized).toBe(true);
-    expect((await gate.collectImprovementContext(env(), api({
+    expect(await gate.collectImprovementContext(env(), api({
       comments: [{ ...revoke, created_at: 'not-a-timestamp', updated_at: 'not-a-timestamp' }],
-    }))).authorized).toBe(true);
+    }))).toMatchObject({ authorized: false, reason: 'revocation-history-incomplete' });
   });
   it('uses complete comment order to resolve equal-timestamp revocation boundaries', async () => {
     const revoke = comment({

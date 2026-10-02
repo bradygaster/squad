@@ -603,7 +603,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
   it.each([
     ['issue_comment', 'Use `/squad revoke-improvement` only after approval.'],
     ['issue_comment', '```text\n/squad revoke-improvement\n```'],
-  ] as const)('routes a newly introduced revoke command from %s after code contexts are excluded', async (
+  ] as const)('rejects an edited revoke command from %s after code contexts are excluded', async (
     eventName,
     previousBody,
   ) => {
@@ -620,12 +620,11 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       },
     });
 
-    expect(result.failure).toBeNull();
-    expect(result.permissionLookups).toEqual(['maintainer-editor', 'maintainer-author']);
-    expect(result.dispatchedInputs).toMatchObject({
-      command: 'revoke-improvement',
-      issue_number: '4242',
-    });
+    expect(result.dispatchedInputs).toBeNull();
+    expect(result.permissionLookups).toEqual([]);
+    expect(result.failure).toBe('Squad rejected command: /squad revoke-improvement');
+    expect(result.postedComments).toHaveLength(1);
+    expect(result.postedComments[0]).toContain('Edited comment revocations are not durable.');
   });
 
   it('rejects an issue-body revoke-improvement without permission lookup or dispatch', async () => {
@@ -728,19 +727,17 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
   it('allows comment revoke-improvement only when both the event actor and original author are authorized', async () => {
     const result = await runRouter({
       eventName: 'issue_comment',
-      action: 'edited',
-      actor: 'maintainer-editor',
-      author: 'maintainer-author',
-      previousBody: 'Approval state changed.',
-      body: 'Approval state changed.\n/squad revoke-improvement',
+      action: 'created',
+      actor: 'maintainer',
+      author: 'maintainer',
+      body: '/squad revoke-improvement',
       permissions: {
-        'maintainer-editor': 'maintain',
-        'maintainer-author': 'admin',
+        maintainer: 'maintain',
       },
     });
 
     expect(result.failure).toBeNull();
-    expect(result.permissionLookups).toEqual(['maintainer-editor', 'maintainer-author']);
+    expect(result.permissionLookups).toEqual(['maintainer']);
     expect(result.dispatchedInputs).toMatchObject({ command: 'revoke-improvement' });
   });
 

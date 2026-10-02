@@ -228,6 +228,15 @@ export function classifySquadCommand(payload, eventName = '') {
       reason: 'Issue-body revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
     };
   }
+  if (sourceData.source === 'comment' && payload?.action === 'edited' &&
+      classification.mode === 'revoke-improvement') {
+    return {
+      status: 'rejected',
+      source: sourceData.source,
+      rejectedCommand: invocation.rejectedCommand,
+      reason: 'Edited comment revocations are not durable. Post /squad revoke-improvement as a new, unedited human issue comment.',
+    };
+  }
   return { ...classification, source: sourceData.source };
 }
 
