@@ -16,7 +16,7 @@ on:
       - ".github/aw/squad/runtime/**"
       - ".github/workflows/shared/squad-bootstrap-trigger-probe.json"
   workflow_dispatch:
-if: github.ref_name == github.event.repository.default_branch
+if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 permissions:
   contents: read
   copilot-requests: write
@@ -498,7 +498,7 @@ safe-outputs:
                     server: process.env.GITHUB_SERVER_URL,
                   });
                   // context.sha is the default branch's exact commit this run executed on (the
-                  // top-level `if: github.ref_name == github.event.repository.default_branch`
+                  // top-level exact default-branch ref gate
                   // guards both the push and workflow_dispatch trigger paths), so it is a
                   // reliable, zero-extra-API-call stand-in for "the base commit any fresh
                   // provenance record produced by this run would be bound to".
