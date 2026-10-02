@@ -59,14 +59,19 @@ This command:
 
 ### Verify installation
 
-After running the command, read `.github/aw/squad-workflows.manifest.json` and
-confirm every declared workflow has a source/lock pair, every runtime resource
-and skill exists with its declared digest, and strict compilation succeeds.
-Do not copy a workflow count from documentation: the manifest at the pinned
-commit is authoritative. The improvement worker is standard but dormant until
-an exact human approval is relayed through the dispatcher. Bootstrap wakes
-after the installation lands on the default branch and creates the linked draft
-Cast PR and research-proposals issue.
+After running the command, confirm all eight source/lock pairs exist and strict
+compilation succeeds: Squad, Implement Worker, Review, Deps Worker, Retro and
+Improvement Worker, plus the dedicated Bootstrap and Command Router workflows. The improvement
+worker is standard but dormant until an exact human approval is relayed through
+the dispatcher. Bootstrap wakes after the installation lands on the default
+branch and normally creates the linked draft Cast PR and research-proposals
+issue; if `can_approve_pull_request_reviews` is `false` (the recommended
+setting), `GITHUB_TOKEN` cannot open that PR, so Bootstrap instead opens a
+bot-authored fallback issue with a signed provenance record and a
+ready-to-click compare URL for a human to open the PR manually — Squad
+Review verifies that record before treating the manual PR as trusted (see the
+[gh-aw guide](../docs/src/content/docs/guide/gh-aw.md) for the exact
+conditions).
 
 Retrospectives remain report/proposal-only by default. Ordinary auto-fixes need
 `"squadRetroAutoImplement": "allow"` in `.squad/config.json`. A proposal restricted
@@ -76,6 +81,13 @@ exact `Approved-Path:` lines. `/squad revoke-improvement` reserves the human's
 durable revocation without dispatching. Both workers open drafts, never merge
 or mark ready. See the [gh-aw guide](../docs/src/content/docs/guide/gh-aw.md)
 for revision calculation, caps and manual retry.
+
+The workflow list above describes the current package. For your pinned commit,
+read `.github/aw/squad-workflows.manifest.json` and confirm every declared
+workflow has a source/lock pair, every runtime resource and skill exists with
+its declared digest, and strict compilation succeeds. The manifest at that
+commit is authoritative; do not use a workflow count from documentation as
+the completeness check.
 
 ### Try your first command
 
