@@ -272,6 +272,17 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toContain('stale source/resource digest');
     });
 
+    it('removes only gh-aw\'s mutable router and preserves the exact Squad skill', () => {
+      expect(content.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(2);
+      expect(content).toContain('not part of the Squad package');
+      expect(content).toContain('Do not adopt or vendor the rest');
+      expect(content).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(content).toContain(
+        "grep -vxF '.github/skills/agentic-workflows/SKILL.md' || true",
+      );
+    });
+
     it('requires a final strict compile without --approve', () => {
       // The standalone command must appear as its own line (start-of-line in a
       // fenced bash block), not merely as a prose/backtick mention.  The
@@ -429,6 +440,14 @@ describe('gh-aw-enlistment skill', () => {
     it('checks the staged installation before every bootstrap commit', () => {
       expect(guide.match(/--verify-staged-install --stage-ownership --source-revision "\$\{SQUAD_SHA\}" \|\| exit 1/g))
         .toHaveLength(2);
+    });
+
+    it('removes the mutable gh-aw router before verification and permits only that staged deletion', () => {
+      expect(guide.match(/rm -f \.github\/skills\/agentic-workflows\/SKILL\.md/g))
+        .toHaveLength(3);
+      expect(guide).toContain('The exact router deletion above is the only permitted staged deletion');
+      expect(guide).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+      expect(agentGuide).toContain('rm -f .github/skills/agentic-workflows/SKILL.md');
     });
 
     it('requires agents to execute the complete quick start through PR creation', () => {

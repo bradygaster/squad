@@ -784,6 +784,7 @@ jobs:
                 ".github/workflows/${workflow}.md"
             done
             gh aw add --force "$GITHUB_WORKSPACE/workflows"
+            rm -f .github/skills/agentic-workflows/SKILL.md
             node .github/workflows/shared/squad-install-verifier.mjs \
               --write-local-test-ownership \
               --source-revision "$SQUAD_SOURCE_REVISION"

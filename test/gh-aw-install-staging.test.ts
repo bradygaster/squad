@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import {
   CONTRACT_DESTINATION,
   OWNERSHIP_DESTINATION,
+  UNOWNED_MUTABLE_ROUTER_SKILL,
   materializeRuntime,
   verifyInstall,
   verifyStagedInstall,
@@ -53,6 +54,17 @@ function stagedPaths(root: string): string[] {
   return git(root, 'ls-files', '-z').split('\0').filter(Boolean).sort();
 }
 
+function seedUnownedMutableRouter(root: string): void {
+  write(root, UNOWNED_MUTABLE_ROUTER_SKILL, [
+    '---',
+    'name: agentic-workflows',
+    '---',
+    '',
+    'Load mutable prompts from the current github/gh-aw repository.',
+    '',
+  ].join('\n'));
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -89,7 +101,9 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     expect(verifyStagedInstall(root, { expectedRevision: revision, stageOwnership: true }).failures).toEqual([]);
     const queries = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'ls-tree');
     expect(queries).toHaveLength(1);
-    expect(queries[0][1]).toEqual(['ls-tree', '-z', expect.any(String), '--', ...new Set(required)]);
+    expect(queries[0][1]).toEqual([
+      'ls-tree', '-z', expect.any(String), '--', ...new Set(required), UNOWNED_MUTABLE_ROUTER_SKILL,
+    ]);
     const unrelatedObject = git(root, 'rev-parse', `HEAD:${unrelated}/ordinary-file-00000.txt`).trim();
     const blobReads = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'cat-file');
     expect(blobReads).toHaveLength(new Set(required).size);
@@ -134,6 +148,53 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     expect(failed.status).toBe(1);
     expect(failed.stderr).toContain('do not commit/push');
     expect(failed.stderr).toMatch(/ownership record|ownership metadata/);
+  });
+
+  it('rejects the clean-install gh-aw router until it is removed, then accepts the exact Squad skill', () => {
+    const root = consumer();
+    seedUnownedMutableRouter(root);
+    const args = [verifier, '--verify-install', '--source-revision', revision];
+    const rejected = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
+    expect(rejected.status).toBe(1);
+    expect(rejected.stderr).toContain(
+      `Unowned mutable gh-aw router skill must be removed: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+    );
+
+    rmSync(join(root, UNOWNED_MUTABLE_ROUTER_SKILL));
+    const accepted = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
+    expect(accepted.status, accepted.stderr).toBe(0);
+    expect(readFileSync(join(root, '.github/skills/gh-aw-enlistment/SKILL.md')))
+      .toEqual(readFileSync(resolve('workflows/skills/gh-aw-enlistment/SKILL.md')));
+  });
+
+  it('accepts an explicitly staged router deletion and rejects an unstaged retained index entry', () => {
+    const root = consumer();
+    seedUnownedMutableRouter(root);
+    git(root, 'add', '--', UNOWNED_MUTABLE_ROUTER_SKILL);
+    git(root, 'add', '--force', '--', OWNERSHIP_DESTINATION);
+    git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'pre-existing gh-aw scaffold');
+
+    rmSync(join(root, UNOWNED_MUTABLE_ROUTER_SKILL));
+    expect(verifyInstall(root).failures).toEqual([]);
+    expect(verifyStagedInstall(root).failures.join('\n')).toContain(
+      `Unowned mutable gh-aw router skill remains in staged tree: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
+    );
+
+    git(root, 'add', '--', UNOWNED_MUTABLE_ROUTER_SKILL);
+    expect(verifyStagedInstall(root).failures).toEqual([]);
+    expect(git(root, 'diff', '--cached', '--diff-filter=D', '--name-only').trim())
+      .toBe(UNOWNED_MUTABLE_ROUTER_SKILL);
+    expect(stagedPaths(root)).not.toContain(UNOWNED_MUTABLE_ROUTER_SKILL);
+    expect(stagedPaths(root)).toContain('.github/skills/gh-aw-enlistment/SKILL.md');
+  });
+
+  it('rejects a mutated Squad-owned enlistment skill after removing the tool-owned router', () => {
+    const root = consumer();
+    write(root, '.github/skills/gh-aw-enlistment/SKILL.md', 'mutated\n');
+    expect(verifyInstall(root).failures.join('\n')).toContain(
+      'Installed digest mismatch for .github/skills/gh-aw-enlistment/SKILL.md',
+    );
   });
 
   it('fails clearly when Git cannot force-stage the required ignored metadata', () => {
