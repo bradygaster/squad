@@ -4,10 +4,9 @@
 
 **Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
-[![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
 
-> ⚠️ **Alpha Software** — Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
+Breaking changes are documented in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -96,9 +95,9 @@ Squad proposes a team — each member named from a persistent thematic cast. You
 
 ---
 
-## .NET package preview
+## .NET package
 
-Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a preview NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). It registers a Squad-backed `AIAgent` in DI and targets early `0.1.0-preview` consumers.
+Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). Version **1.0.0** targets .NET 8, 9, and 10 and registers a Squad-backed `AIAgent` in DI. See the package README for installation and local validation before publication.
 
 ## Upgrading
 

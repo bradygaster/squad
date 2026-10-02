@@ -190,6 +190,25 @@ arguments. Missing, duplicate, reordered, malformed, oversized, or mismatched
 payloads fail closed before submission, and the write job independently
 revalidates the payload. A submission error is terminal, not permission to retry.
 
+To focus bootstrap on part of the repository, commit
+`.squad/research-scope.json` to the default branch **before** merging the
+installation. A common case is a control repository whose real subject is
+evidence about other repositories:
+
+```json
+{
+  "schema": "squad-research-scope/v1",
+  "evidence_roots": ["farm/"],
+  "description": "Snapshots of the managed application repositories"
+}
+```
+
+Bootstrap treats the evidence roots as the primary subject when it casts roles
+and writes proposals. Every proposal must cite at least one path under a root.
+The validator reads the scope only from committed `HEAD` and fails closed on a
+malformed file. The scope only narrows focus; it never changes outputs or
+permissions.
+
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
 evidence, use one of the issue's focused `/squad research ...` commands first;

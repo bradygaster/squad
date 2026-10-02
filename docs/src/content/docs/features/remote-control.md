@@ -1,8 +1,5 @@
 # Squad Remote Control
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 Control Copilot CLI from your phone via a secure WebSocket tunnel. Perfect for demos, pairing on mobile, or monitoring runs from anywhere.
 
 ```bash

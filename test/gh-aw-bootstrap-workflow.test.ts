@@ -695,6 +695,44 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(resolvedResult.stdout).toBe('Squad bootstrap validation passed.\n');
   });
 
+  it('enforces a committed research scope and ignores an uncommitted one', () => {
+    const fixture = createFixture();
+    const options = {
+      root: fixture.root,
+      payloadPath: fixture.payloadPath,
+      repository: 'octo/example',
+      defaultBranch: 'main',
+      linkMode: 'placeholder',
+    };
+    const commitScope = (value: unknown) => {
+      write(fixture.root, '.squad/research-scope.json', `${JSON.stringify(value)}\n`);
+      execFileSync('git', ['add', '.squad/research-scope.json'], { cwd: fixture.root });
+      execFileSync('git', ['commit', '-qm', 'scope'], { cwd: fixture.root });
+    };
+
+    write(fixture.root, '.squad/research-scope.json', '{"schema":"squad-research-scope/v1","evidence_roots":["farm"]}\n');
+    expect(validateBootstrapPayload(options)).toEqual([]);
+    rmSync(join(fixture.root, '.squad/research-scope.json'));
+
+    commitScope({ schema: 'squad-research-scope/v1', evidence_roots: ['farm/'] });
+    const outOfScope = validateBootstrapPayload(options);
+    expect(outOfScope).toContain('issue: P1 must cite evidence under a research scope root (farm)');
+    expect(outOfScope).toHaveLength(3);
+
+    commitScope({ schema: 'squad-research-scope/v1', evidence_roots: ['package.json'], description: 'fleet' });
+    expect(validateBootstrapPayload(options)).toEqual([]);
+
+    for (const invalid of [
+      { schema: 'squad-research-scope/v1', evidence_roots: [] },
+      { schema: 'squad-research-scope/v1', evidence_roots: ['../outside'] },
+      { schema: 'squad-research-scope/v2', evidence_roots: ['farm'] },
+      { schema: 'squad-research-scope/v1', evidence_roots: ['farm'], extra: true },
+    ]) {
+      commitScope(invalid);
+      expect(validateBootstrapPayload(options).join('\n')).toContain('research scope: .squad/research-scope.json must be');
+    }
+  });
+
   it('creates the missing candidate payload parent before materialization', () => {
     const candidate = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-candidate-'));
     workspaces.push(candidate);

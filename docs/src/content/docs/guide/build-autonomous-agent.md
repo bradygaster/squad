@@ -1,7 +1,5 @@
 # Build an autonomous agent
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Build a CLI-wrapped autonomous agent pipeline that picks up tasks, coordinates work across teammates, and runs unattended.
 
 **Try this:** Clone the [autonomous-pipeline sample](https://github.com/bradygaster/squad/tree/dev/samples/autonomous-pipeline) and run `npm run dev` to see the pattern in action.

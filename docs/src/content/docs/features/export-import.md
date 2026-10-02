@@ -1,8 +1,5 @@
 # Export & Import
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to make your team portable:**
 ```
 Export my team to a file — I want to use them on another project
