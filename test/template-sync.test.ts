@@ -151,6 +151,31 @@ describe('dynamic template enumeration (all synced files)', () => {
 // 2. Script validation — sync-templates.mjs must be explicit and parse cleanly
 // ---------------------------------------------------------------------------
 
+describe('built-in audit evidence instructions (#2084)', () => {
+  it.each([
+    ['rai', 'rai-charter.md'],
+    ['fact-checker', 'fact-checker-charter.md'],
+  ])('%s charters require append-only evidence in canonical, shipped, and installed copies', (agent, template) => {
+    const locations = [
+      `${SOURCE_DIR}/${template}`,
+      ...MIRROR_TARGETS.map(target => `${target}/${template}`),
+      `.squad/agents/${agent}/charter.md`,
+    ];
+    for (const location of locations) {
+      const content = readFile(location);
+      expect(content).toContain(`.squad/${agent}/audit-trail.md`);
+      expect(content).toContain('squad_state_append');
+      expect(content).toMatch(/Never overwrite or delete prior\s+entries/);
+      expect(content).not.toMatch(/does not create audit logs|do not create histories, audit trails/i);
+    }
+    const policy = readFile(`.squad/${agent}/policy.md`);
+    expect(policy).toContain(`.squad/${agent}/audit-trail.md`);
+    expect(policy).toContain('squad_state_append');
+    expect(policy).toContain('Never overwrite');
+    expect(policy).not.toMatch(/do not create audit trails|do not create histories, audit trails/i);
+  });
+});
+
 describe('sync-templates.mjs maintenance command', () => {
   it('parses without mutating repository files', () => {
     execSync('node --check scripts/sync-templates.mjs', {
