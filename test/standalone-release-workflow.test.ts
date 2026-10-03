@@ -682,10 +682,21 @@ describe('automated package publication', () => {
 
     const existingCheckout = stepNamed(
       winget,
-      'Check out existing WinGet version branch',
+      'Check out existing WinGet version branch (anonymous read; tamirdresher/winget-pkgs is public)',
     );
-    expect(existingCheckout.with?.repository).toBe('tamirdresher/winget-pkgs');
     expect(existingCheckout.if).toContain("branch_exists == 'true'");
+    expect(existingCheckout.run).toContain(
+      'git clone --no-checkout --depth 1 --branch "${BRANCH}" --filter=blob:none \\\n  https://github.com/tamirdresher/winget-pkgs.git winget-pkgs',
+    );
+    expect(existingCheckout.run).not.toContain('secrets.WINGET_CREATE_GITHUB_TOKEN');
+    expect(winget.steps?.some((step) => step.with?.repository === 'tamirdresher/winget-pkgs')).toBe(false);
+
+    const existingCredential = stepNamed(
+      winget,
+      'Configure existing-branch push credential (scoped locally; never passed to the read-only clone)',
+    );
+    expect(existingCredential.env?.TOKEN).toBe('${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}');
+    expect(existingCredential.run).toContain('git config --local http.https://github.com/.extraheader');
 
     const publish = stepNamed(winget, 'Push manifests and open upstream PR').run ?? '';
     expect(publish).toContain('../packaging/winget/${manifest_name}');

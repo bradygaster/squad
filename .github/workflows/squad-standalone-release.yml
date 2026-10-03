@@ -740,19 +740,19 @@ jobs:
           echo "skip=false" >> "${GITHUB_OUTPUT}"
           echo "branch_exists=${branch_exists}" >> "${GITHUB_OUTPUT}"
 
-      - name: Check out existing WinGet version branch
+      - name: Check out existing WinGet version branch (anonymous read; tamirdresher/winget-pkgs is public)
         if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-        with:
-          repository: tamirdresher/winget-pkgs
-          ref: ${{ steps.release.outputs.branch }}
-          path: winget-pkgs
-          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
-          persist-credentials: false
-          fetch-depth: 1
-          sparse-checkout: ${{ steps.release.outputs.package_root }}
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
+        run: |
+          set -euo pipefail
+          git clone --no-checkout --depth 1 --branch "${BRANCH}" --filter=blob:none \
+            https://github.com/tamirdresher/winget-pkgs.git winget-pkgs
+          git -C winget-pkgs sparse-checkout set "${PACKAGE_ROOT}"
+          git -C winget-pkgs checkout "${BRANCH}"
 
-      - name: Configure existing-branch push credential (scoped locally; checkout does not persist it)
+      - name: Configure existing-branch push credential (scoped locally; never passed to the read-only clone)
         if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'true'
         env:
           TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
