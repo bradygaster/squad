@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-03
+
+### Fixed
+
+- `squad health` now accepts casting registry persistent names as valid routing references alongside registry IDs, avoiding false unknown-agent failures (#2165).
+
+### Changed
+
+- Root, SDK, and CLI npm versions advance together to 1.0.1 to satisfy the existing release and npm publication workflows. The CLI SDK dependency floor is now `>=1.0.1`; SDK source is unchanged from v1.0.0.
+- Consumed only the CLI health persistent-routing patch changeset. Historical changesets are unchanged; this release does not promote unrelated `dev` changes or republish `Squad.Agents.AI` NuGet 1.0.0.
+
 ## [1.0.0] - 2026-10-02
 
 Squad CLI and SDK (the `@bradygaster/squad-cli` and `@bradygaster/squad-sdk` npm packages) graduate to 1.0.0. This is a stabilization release: there are no breaking API or command changes from 0.13.1. It marks the npm packages as stable per the project's independent per-package versioning policy (distinct from the already-stable `Squad.Agents.AI` NuGet package, which reached 1.0.0 separately in #2143).

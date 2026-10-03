@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -191,7 +191,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@bradygaster/squad-sdk": ">=1.0.0",
+    "@bradygaster/squad-sdk": ">=1.0.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "ink": "^7.1.1",
     "react": "^19.3.0",
