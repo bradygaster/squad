@@ -451,14 +451,22 @@ jobs:
           name: packaging-manifests
           path: packaging
 
-      - name: Clone Homebrew tap (read is anonymous; credential is scoped locally for the later push only)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          repository: bradygaster/homebrew-squad
+          ref: main
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: false
+
+      - name: Configure Homebrew tap push credential (scoped locally; checkout does not persist it)
         env:
           TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        working-directory: homebrew-tap
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch main https://github.com/bradygaster/homebrew-squad.git homebrew-tap
           auth_header="Authorization: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
-          git -C homebrew-tap config --local http.https://github.com/.extraheader "${auth_header}"
+          git config --local http.https://github.com/.extraheader "${auth_header}"
 
       - name: Publish cask to the tap
         env:
@@ -735,19 +743,27 @@ jobs:
           echo "skip=false" >> "${GITHUB_OUTPUT}"
           echo "branch_exists=${branch_exists}" >> "${GITHUB_OUTPUT}"
 
-      - name: Clone existing WinGet version branch (fork; credential scoped locally for the later push)
+      - name: Check out existing WinGet version branch
+        if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          repository: tamirdresher/winget-pkgs
+          ref: ${{ steps.release.outputs.branch }}
+          path: winget-pkgs
+          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: ${{ steps.release.outputs.package_root }}
+
+      - name: Configure existing-branch push credential (scoped locally; checkout does not persist it)
         if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'true'
         env:
           TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
-          BRANCH: ${{ steps.release.outputs.branch }}
-          PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
+        working-directory: winget-pkgs
         run: |
           set -euo pipefail
-          git clone --no-checkout --depth 1 --branch "${BRANCH}" --filter=blob:none https://github.com/tamirdresher/winget-pkgs.git winget-pkgs
-          git -C winget-pkgs sparse-checkout set "${PACKAGE_ROOT}"
-          git -C winget-pkgs checkout "${BRANCH}"
           auth_header="Authorization: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
-          git -C winget-pkgs config --local http.https://github.com/.extraheader "${auth_header}"
+          git config --local http.https://github.com/.extraheader "${auth_header}"
 
       - name: Clone WinGet master for a new version branch (credential scoped locally for the later push)
         if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'false'
