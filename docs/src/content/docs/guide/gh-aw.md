@@ -671,7 +671,7 @@ Squad from npm. Set a repository variable to select a specific standalone releas
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `SQUAD_CLI_VERSION` | Standalone GitHub Release tag to install during activation | `v0.13.1` |
+| `SQUAD_CLI_VERSION` | Standalone GitHub Release tag to install during activation | `v1.0.0` |
 
 Set it in **Settings → Secrets and variables → Actions → Variables**. A value
 without the leading `v` is accepted for compatibility with older configurations.
