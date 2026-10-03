@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
 
-      - name: Triage issue via Lead agent
+      - name: Triage issue via deterministic keyword routing
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b #v7
         with:
           script: |
@@ -33,7 +33,6 @@ jobs:
 
             // Check if @copilot is on the team
             const hasCopilot = content.includes('🤖 Coding Agent');
-            const copilotAutoAssign = content.includes('<!-- copilot-auto-assign: true -->');
 
             // Parse @copilot capability profile
             let goodFitKeywords = [];
@@ -279,19 +278,7 @@ jobs:
               labels: ['go:needs-research']
             });
 
-            // Auto-assign @copilot if enabled
-            if (isCopilot && copilotAutoAssign) {
-              try {
-                await github.rest.issues.addAssignees({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issue.number,
-                  assignees: ['copilot']
-                });
-              } catch (err) {
-                core.warning(`Could not auto-assign @copilot: ${err.message}`);
-              }
-            }
+            // Labels route work; only squad-issue-assign.yml assigns Copilot.
 
             // Build copilot evaluation note
             let copilotNote = '';
@@ -305,8 +292,9 @@ jobs:
 
             // Post triage comment
             const comment = [
-              `### 🏗️ Squad Triage — ${lead.name} (${lead.role})`,
+              `### 🏗️ Squad Triage — Automated keyword routing`,
               '',
+              `**Provenance:** Deterministic keyword matching against the capability profile in \`.squad/team.md\` and rules in \`.squad/routing.md\`; no Lead-agent analysis was performed.`,
               `**Issue:** #${issue.number} — ${issue.title}`,
               `**Assigned to:** ${assignedMember.name} (${assignedMember.role})`,
               `**Reason:** ${triageReason}`,

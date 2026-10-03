@@ -127,28 +127,37 @@ The profile is editable. The Lead can suggest updates based on experience:
 
 When the `squad:copilot` label is added to an issue:
 
-1. **Step 1** — Workflow posts a routing comment (uses `GITHUB_TOKEN`)
-2. **Step 2** — Workflow assigns `copilot-swe-agent[bot]` to the issue (uses `COPILOT_ASSIGN_TOKEN`)
-3. **Step 3** — Coding agent picks up the issue, creates a `copilot/*` branch, and opens a draft PR
+1. **Preflight** — `squad-issue-assign.yml` requires `COPILOT_ASSIGN_TOKEN`. If missing or blank, the job fails before routing comments or assignment attempts. Other member labels do not require this token.
+2. **Request** — Using that token, the workflow requests `copilot-swe-agent[bot]` with `agent_assignment` targeting the repository's default branch. API errors fail the job; there is no ordinary-bot or CLI fallback.
+3. **Acceptance** — Only an HTTP 200/201 response containing the exact `copilot-swe-agent[bot]` assignee permits an acknowledgment comment. Missing or malformed evidence fails visibly without a success comment.
+4. **Handoff** — Verify a Copilot session linked to the issue, or a linked `copilot/*` draft PR with Copilot activity. API acceptance, a bot assignee, or a green Actions job alone does **not** prove that a coding session started or completed.
 
-The workflow automatically detects the repo's default branch (`main`, `master`, etc.).
+`squad-issue-assign.yml` is the sole label-triggered Copilot assignment authority.
+Heartbeat continues monitoring and applying triage labels, and triage continues
+routing, but neither assigns Copilot directly. A failed request may have reached
+GitHub before its response was lost; inspect the issue/session before retrying.
+
+Labels added with the default `GITHUB_TOKEN` do not trigger another Actions
+workflow. If automated triage applies `squad:copilot` using that token, a human
+or suitably authorized non-`GITHUB_TOKEN` integration must remove and reapply
+the label to trigger the assignment workflow. Merely seeing the label is not
+handoff evidence.
 
 ---
 
-## Lead Triage
+## Automated Triage Provenance
 
-The Lead evaluates every issue against @copilot's capability profile during triage:
+`squad-triage.yml` uses deterministic keyword matching, not a Lead-agent or LLM
+analysis. It reads the capability profile from `.squad/team.md` and scores the
+current `.squad/routing.md` table. Its comments disclose those sources:
 
-1. **Good fit?** → Routes to @copilot with reasoning
-2. **Needs review?** → Routes to @copilot, flags for squad member PR review
-3. **Not suitable?** → Routes to the right squad member, explains why not @copilot
+1. **Good fit?** → Routes to @copilot on a capability keyword match.
+2. **Needs review?** → Routes to @copilot, flags for squad member PR review.
+3. **Not suitable?** → Uses normal routing rules instead of @copilot.
 
-The Lead can also suggest reassignment in either direction:
-
-```
-> This test coverage task could go to @copilot — want me to reassign?
-> @copilot might struggle with this — suggesting we reassign to Ripley.
-```
+No-match and tied-owner results still route to the Lead for **future** analysis;
+the Lead has not analyzed the issue simply because this workflow ran. A Lead
+can separately review or suggest reassignment in a Copilot session.
 
 ---
 
@@ -182,7 +191,7 @@ This file is **upgraded automatically** when you run `squad upgrade` and `@copil
 
 - Start conservative with the capability profile and expand as you see what @copilot handles well.
 - Use auto-assign for repos where you want fully autonomous issue processing.
-- The coding agent works great alongside [issue-driven development](../scenarios/issue-driven-dev.md) — label issues `squad` and the Lead + @copilot handle the rest.
+- The coding agent works alongside [issue-driven development](../scenarios/issue-driven-dev.md) — label issues `squad` for keyword routing, then verify the assignment trigger and Copilot handoff.
 - @copilot's PRs go through normal review — treat them like any team member's work.
 
 ## Sample Prompts
