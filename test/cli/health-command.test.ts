@@ -23,11 +23,34 @@ const { mockResolveStateBackend, mockVerifyStateBackend } = vi.hoisted(() => ({
   mockVerifyStateBackend: vi.fn(),
 }));
 
-vi.mock('@bradygaster/squad-sdk', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('@bradygaster/squad-sdk')>();
+vi.mock('@bradygaster/squad-sdk', async () => {
+  const fs = await import('node:fs');
+  const pathModule = await import('node:path');
   return {
-    ...actual,
+    FSStorageProvider: class {
+      existsSync(filePath: string): boolean {
+        return fs.existsSync(filePath);
+      }
+
+      readSync(filePath: string): string {
+        return fs.readFileSync(filePath, 'utf8');
+      }
+    },
+    loadDirConfig(squadDir: string): Record<string, unknown> | undefined {
+      try {
+        return JSON.parse(
+          fs.readFileSync(pathModule.join(squadDir, 'config.json'), 'utf8'),
+        ) as Record<string, unknown>;
+      } catch {
+        return undefined;
+      }
+    },
+    resolveExternalStateDir(projectKey: string): string {
+      if (!projectKey || projectKey.split(/[\\/]/).includes('..')) {
+        throw new Error('invalid project key');
+      }
+      return pathModule.resolve(projectKey);
+    },
     resolveStateBackend: mockResolveStateBackend,
     verifyStateBackend: mockVerifyStateBackend,
   };
@@ -246,13 +269,44 @@ describe('team readiness', () => {
     expect(result.diagnostics).toEqual(['duplicate: alpha']);
   });
 
-  it('parses multiple roster tables with their own column contracts', () => {
+  it('counts only the Members table, not the Coordinator table', () => {
     writeSquad('team.md', MULTI_TABLE_TEAM);
 
     const result = check(runSquadHealth(squadDir, repoRoot), 'team');
 
     expect(result.status).toBe('pass');
-    expect(result.message).toContain('2 members');
+    expect(result.message).toBe('team.md is valid (1 members)');
+  });
+
+  it('reports only roster members when team.md contains auxiliary tables', () => {
+    writeSquad(
+      'team.md',
+      `${TEAM}
+
+## Human Members
+
+| Name | Role | Skills |
+|------|------|--------|
+| Casey | Product Owner | Planning |
+
+## Existing Project Agents Reused
+
+| Name | Role | Skills |
+|------|------|--------|
+| Existing | Engineer | Reuse |
+
+## Project Notes
+
+| Description | Owner | Status |
+|-------------|-------|--------|
+| A project note | Alpha | Current |
+`,
+    );
+
+    const result = check(runSquadHealth(squadDir, repoRoot), 'team');
+
+    expect(result.status).toBe('pass');
+    expect(result.message).toBe('team.md is valid (1 members)');
   });
 });
 
