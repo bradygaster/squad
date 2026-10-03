@@ -1807,23 +1807,22 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     );
   }, 20000);
 
-  it('preserves the standalone release selection in the compiled install step (#1884)', () => {
+  it('preserves the latest-release default in the compiled install step', () => {
     const compiled = lockText();
-    const pin = readText(join(SHARED_DIR, 'squad.md')).match(
-      /SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'([^']+)'/,
-    )?.[1];
-
-    expect(pin, 'could not locate the source Squad CLI fallback').toBeDefined();
-    expect(compiled).toMatch(
-      new RegExp(
-        String.raw`name: Resolve Squad standalone release[\s\S]*SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'${pin}'\s*\}\}`,
-      ),
-    );
-    expect(compiled).toContain(
+    const install = compiled.match(
+      /- name: Install Squad CLI from standalone release[\s\S]*?(?=\n\s+- name:)/,
+    )?.[0];
+    expect(install, 'compiled squad.lock.yml must retain the standalone installer').toContain(
       'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
-    expect(compiled).toContain('version: ${{ steps.squad-release.outputs.tag }}');
-    expect(compiled).toContain('skip-init: "true"');
+    expect(install, 'compiled squad.lock.yml must omit version to use the pinned action latest default')
+      .not.toMatch(/^\s+version:/m);
+    expect(install).toContain('skip-init: "true"');
+    expect(compiled, 'compiled squad.lock.yml must not contain the obsolete release resolver')
+      .not.toContain('squad-release');
+    expect(compiled).not.toContain('vars.SQUAD_CLI_VERSION');
+    expect(compiled).toContain('SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}');
+    expect(compiled).toContain('squad health --json');
     expect(compiled).not.toContain('npm install --global');
     expect(compiled).not.toContain('npx --yes "@bradygaster/squad-cli@');
   }, 20000);
@@ -3397,7 +3396,8 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     expect(sharedContent).toContain(
       'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
     );
-    expect(sharedContent).toContain('version: ${{ steps.squad-release.outputs.tag }}');
+    expect(sharedContent).not.toContain('squad-release');
+    expect(sharedContent).toContain('SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}');
     expect(sharedContent).not.toContain('npm install --global');
     expect(sharedContent).not.toContain('npx --yes "@bradygaster/squad-cli@');
   });
