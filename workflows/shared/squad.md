@@ -22,7 +22,7 @@
 # SQUAD_GITHUB_TOKEN > github.token.
 #
 # Optional custom Squad CLI version: vars.SQUAD_CLI_VERSION.
-# Default is v0.13.1.
+# Default is v1.0.0.
 # This is a GitHub Release tag whose standalone assets are installed without
 # npm; values without a leading `v` are normalized for older configs.
 #
@@ -493,7 +493,7 @@ jobs:
       - name: Resolve Squad standalone release
         id: squad-release
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v0.13.1' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v1.0.0' }}
         run: |
           set -euo pipefail
           release_tag="${SQUAD_CLI_VERSION}"
