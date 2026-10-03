@@ -464,6 +464,33 @@ describe('routing readiness', () => {
     expect(result.message).toContain('registry is invalid');
   });
 
+  it('accepts persistent names and registry IDs as agent references', () => {
+    const registryPath = path.join(squadDir, 'casting', 'registry.json');
+    const registry = readFileSync(registryPath, 'utf8')
+      .replace('"display_name":"Alpha"', '"display_name":"Frontend Lead"')
+      .replace(
+        '"persistent_name":"Alpha"',
+        '"persistent_name":"Frontend Lead"',
+      );
+    writeFileSync(registryPath, registry, 'utf8');
+    writeSquad('team.md', TEAM.replace('| Alpha |', '| Frontend Lead |'));
+    writeSquad(
+      path.join('agents', 'alpha', 'charter.md'),
+      CHARTER.replace('**Name:** Alpha', '**Name:** Frontend Lead'),
+    );
+    writeSquad(
+      'routing.md',
+      ROUTING.replace(
+        '| feature | Alpha | New work |',
+        '| feature | Frontend Lead | New work |\n| maintenance | alpha | Maintenance |',
+      ),
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'routing').status).toBe(
+      'pass',
+    );
+  });
+
   it('reports unknown agents deterministically', () => {
     writeSquad(
       'routing.md',
