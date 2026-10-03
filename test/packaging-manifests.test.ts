@@ -10,10 +10,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseChecksums,
+  homebrewToken,
+  releaseChannel,
   renderHomebrewCask,
   renderWingetInstaller,
   renderWingetLocale,
   renderWingetVersion,
+  wingetPackageIdentifier,
 } from '../scripts/generate-packaging.mjs';
 
 const SHA = {
@@ -85,6 +88,17 @@ describe('renderHomebrewCask', () => {
     expect(() => renderHomebrewCask({ ...BASE, checksums: {} }))
       .toThrow(/No checksum for "squad-darwin-arm64.tar.gz"/);
   });
+
+  it('uses separate, conflicting casks for preview and insider channels', () => {
+    const preview = renderHomebrewCask({ ...BASE, version: 'v1.3.0-preview.2' });
+    const insider = renderHomebrewCask({ ...BASE, version: 'v1.4.0-insider.7' });
+
+    expect(preview).toContain('cask "squad-preview"');
+    expect(preview).toContain('conflicts_with cask:');
+    expect(preview).toContain('"squad-insider"');
+    expect(insider).toContain('cask "squad-insider"');
+    expect(insider).toContain('"squad-preview"');
+  });
 });
 
 describe('renderWingetInstaller', () => {
@@ -148,5 +162,31 @@ describe('winget version and locale manifests', () => {
 
   it('points the locale manifest at the release notes for the same tag', () => {
     expect(renderWingetLocale(BASE)).toContain('/releases/tag/v1.2.3');
+  });
+
+  it('uses separate package identifiers for preview and insider channels', () => {
+    const preview = { ...BASE, version: 'v1.3.0-preview.2' };
+    const insider = { ...BASE, version: 'v1.4.0-insider.7' };
+
+    for (const render of [renderWingetVersion, renderWingetInstaller, renderWingetLocale]) {
+      expect(render(preview)).toContain('PackageIdentifier: bradygaster.Squad.Preview');
+      expect(render(insider)).toContain('PackageIdentifier: bradygaster.Squad.Insider');
+    }
+  });
+});
+
+describe('release channel metadata', () => {
+  it('maps supported versions to package-manager channel names', () => {
+    expect(releaseChannel('v1.2.3')).toBe('stable');
+    expect(releaseChannel('1.3.0-preview.2')).toBe('preview');
+    expect(releaseChannel('v1.4.0-insider.7')).toBe('insider');
+    expect(homebrewToken('v1.3.0-preview.2')).toBe('squad-preview');
+    expect(wingetPackageIdentifier('v1.4.0-insider.7')).toBe(
+      'bradygaster.Squad.Insider',
+    );
+  });
+
+  it('rejects unsupported prerelease identifiers', () => {
+    expect(() => releaseChannel('v1.2.3-beta.1')).toThrow(/Unsupported release version/);
   });
 });

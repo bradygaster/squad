@@ -7,7 +7,6 @@
  * @module cli/core/effective-squad-dir
  */
 
-import path from 'node:path';
 import { detectSquadDir, type SquadDirInfo } from './detect-squad-dir.js';
 import {
   loadDirConfig,
@@ -52,7 +51,7 @@ export function effectiveSquadDir(dest: string): EffectiveSquadDirs {
   const paths = resolveSquadPaths(dest);
   const teamSquadDir =
     paths?.mode === 'remote'
-      ? path.join(paths.teamDir, paths.name)
+      ? paths.teamSquadDir
       : local.path;
   return {
     local,

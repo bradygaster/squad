@@ -50,6 +50,17 @@ function seed(team: string, routing: string): void {
   storage.writeSync(`${SQUAD_DIR}/team.md`, team);
   storage.writeSync(`${SQUAD_DIR}/routing.md`, routing);
   storage.writeSync(AGENT_FILE, AGENT_DOC);
+  storage.writeSync(`${SQUAD_DIR}/casting/registry.json`, JSON.stringify({
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    revision: 1,
+    generated_at: '2026-09-21T00:00:00.000Z',
+    agents: {},
+  }));
+  storage.writeSync(`${SQUAD_DIR}/casting/history.json`, JSON.stringify({
+    assignment_cast_snapshots: {},
+    universe_usage_history: [],
+  }));
 }
 
 beforeEach(() => {
@@ -57,6 +68,54 @@ beforeEach(() => {
 });
 
 describe('#1608 — cast lifecycle regenerates the agent file', () => {
+  it.each([
+    {
+      name: 'missing pair',
+      mutate: () => {
+        storage.deleteSync(`${SQUAD_DIR}/casting/registry.json`);
+        storage.deleteSync(`${SQUAD_DIR}/casting/history.json`);
+      },
+      expected: /both files are required/,
+    },
+    {
+      name: 'one-sided pair',
+      mutate: () => storage.deleteSync(`${SQUAD_DIR}/casting/history.json`),
+      expected: /both files are required/,
+    },
+    {
+      name: 'mixed generation pair',
+      mutate: () => {
+        const registry = JSON.parse(storage.readSync(`${SQUAD_DIR}/casting/registry.json`)!);
+        registry.transaction_id = 'registry-generation';
+        storage.writeSync(`${SQUAD_DIR}/casting/registry.json`, JSON.stringify(registry));
+        storage.writeSync(`${SQUAD_DIR}/casting/history.json`, JSON.stringify({
+          assignment_cast_snapshots: {},
+          universe_usage_history: [],
+          transaction_id: 'history-generation',
+          registry_revision: 1,
+        }));
+      },
+      expected: /transaction metadata exists without a commit manifest/,
+    },
+    {
+      name: 'malformed history',
+      mutate: () => storage.writeSync(`${SQUAD_DIR}/casting/history.json`, JSON.stringify({
+        assignment_cast_snapshots: [],
+        universe_usage_history: [],
+      })),
+      expected: /history shape is invalid/,
+    },
+  ])('fails closed for non-filesystem storage with a $name', ({ mutate, expected }) => {
+    seed(teamMd('| Nori | Data Engineer |'), routingMd('| Pipelines | Nori |'));
+    storage.deleteSync(AGENT_FILE);
+    mutate();
+    expect(() => syncTeamCapabilities({
+      squadDir: SQUAD_DIR,
+      agentFile: AGENT_FILE,
+      storage,
+    })).toThrow(expected);
+  });
+
   it('injects the block on first sync and reports the profile it used', () => {
     seed(
       teamMd('| Nori | Data Engineer | .squad/agents/nori/charter.md | ✅ Active |'),
@@ -130,10 +189,45 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     storage.writeSync(
       `${SQUAD_DIR}/casting/registry.json`,
       JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-09-21T00:00:00.000Z',
         agents: {
-          nori: { persistent_name: 'Nori', status: 'active' },
-          saffron: { persistent_name: 'Saffron', status: 'active' },
+          nori: {
+            display_name: 'Nori',
+            persistent_name: 'Nori',
+            role: 'Data Engineer',
+            universe: 'descriptive',
+            status: 'active',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:00:00.000Z',
+          },
+          saffron: {
+            display_name: 'Saffron',
+            persistent_name: 'Saffron',
+            role: 'Security',
+            universe: 'descriptive',
+            status: 'active',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:00:00.000Z',
+          },
         },
+      }),
+    );
+    storage.writeSync(
+      `${SQUAD_DIR}/casting/history.json`,
+      JSON.stringify({
+        assignment_cast_snapshots: {
+          'repl-cast-r1-2026-09-21T00:00:00.000Z': {
+            created_at: '2026-09-21T00:00:00.000Z',
+            agents: ['nori', 'saffron'],
+            universe: 'descriptive',
+          },
+        },
+        universe_usage_history: [
+          { universe: 'descriptive', used_at: '2026-09-21T00:00:00.000Z' },
+        ],
       }),
     );
     syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
@@ -142,10 +236,52 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     storage.writeSync(
       `${SQUAD_DIR}/casting/registry.json`,
       JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 2,
+        generated_at: '2026-09-21T00:01:00.000Z',
         agents: {
-          nori: { persistent_name: 'Nori', status: 'active' },
-          saffron: { persistent_name: 'Saffron', status: 'retired' },
+          nori: {
+            display_name: 'Nori',
+            persistent_name: 'Nori',
+            role: 'Data Engineer',
+            universe: 'descriptive',
+            status: 'active',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:01:00.000Z',
+          },
+          saffron: {
+            display_name: 'Saffron',
+            persistent_name: 'Saffron',
+            role: 'Security',
+            universe: 'descriptive',
+            status: 'retired',
+            created_at: '2026-09-21T00:00:00.000Z',
+            updated_at: '2026-09-21T00:01:00.000Z',
+            retired_at: '2026-09-21T00:01:00.000Z',
+          },
         },
+      }),
+    );
+    storage.writeSync(
+      `${SQUAD_DIR}/casting/history.json`,
+      JSON.stringify({
+        assignment_cast_snapshots: {
+          'repl-cast-r1-2026-09-21T00:00:00.000Z': {
+            created_at: '2026-09-21T00:00:00.000Z',
+            agents: ['nori', 'saffron'],
+            universe: 'descriptive',
+          },
+          'repl-cast-r2-2026-09-21T00:01:00.000Z': {
+            created_at: '2026-09-21T00:01:00.000Z',
+            agents: ['nori'],
+            universe: 'descriptive',
+          },
+        },
+        universe_usage_history: [
+          { universe: 'descriptive', used_at: '2026-09-21T00:00:00.000Z' },
+          { universe: 'descriptive', used_at: '2026-09-21T00:01:00.000Z' },
+        ],
       }),
     );
     syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
@@ -210,7 +346,8 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
   });
 
   it('skips silently when there is no agent file to update', () => {
-    storage.writeSync(`${SQUAD_DIR}/team.md`, teamMd('| Nori | Dev |'));
+    seed(teamMd('| Nori | Dev |'), routingMd('| Runtime | Nori |'));
+    storage.deleteSync(AGENT_FILE);
 
     const result = syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
 
@@ -220,6 +357,17 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
 
   it('still renders an honest empty block for an uncast squad', () => {
     storage.writeSync(AGENT_FILE, AGENT_DOC);
+    storage.writeSync(`${SQUAD_DIR}/casting/registry.json`, JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T00:00:00.000Z',
+      agents: {},
+    }));
+    storage.writeSync(`${SQUAD_DIR}/casting/history.json`, JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }));
 
     const result = syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });
 

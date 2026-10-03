@@ -10,6 +10,8 @@
  *     and preserves siblings.
  *   - Malformed `.mcp.json` is refused (throws) rather than overwritten.
  *   - Idempotency: re-writing the same spec is a no-op (written === false).
+ *   - User-supplied `env` on the squad_state entry survives re-runs
+ *     (bradygaster/squad#1893).
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -96,6 +98,75 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
 
     const second = ensureSquadStateMcpInRoot(tmpProject, '0.9.6-preview.14', PINNED_SPEC);
     expect(second.written).toBe(false);
+  });
+
+  it('preserves user-supplied env on the squad_state entry (#1893)', () => {
+    const cfgPath = getProjectMcpJsonPath(tmpProject);
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            squad_state: {
+              command: 'npx',
+              args: ['-y', '@bradygaster/squad-cli@0.0.1-old', 'state-mcp'],
+              env: {
+                npm_config_registry: 'https://internal-proxy.example/npm/',
+                npm_config_allow_remote: 'all',
+              },
+              tools: ['*'],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = ensureSquadStateMcpInRoot(tmpProject, '0.9.6-preview.14', PINNED_SPEC);
+    expect(result.written).toBe(true);
+
+    const entry = JSON.parse(fs.readFileSync(cfgPath, 'utf8')).mcpServers.squad_state;
+    // env is user territory — carried forward verbatim.
+    expect(entry.env).toEqual({
+      npm_config_registry: 'https://internal-proxy.example/npm/',
+      npm_config_allow_remote: 'all',
+    });
+    // command/args are Squad-managed — refreshed to the new pin.
+    expect(entry.args).toEqual(PINNED_SPEC.args);
+    expect(entry.tools).toEqual(['*']);
+  });
+
+  it('is idempotent when the entry carries a user env — no rewrite churn (#1893)', () => {
+    const cfgPath = getProjectMcpJsonPath(tmpProject);
+    ensureSquadStateMcpInRoot(tmpProject, '0.9.6-preview.14', PINNED_SPEC);
+
+    const withEnv = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    withEnv.mcpServers.squad_state.env = { npm_config_registry: 'https://internal-proxy.example/npm/' };
+    fs.writeFileSync(cfgPath, JSON.stringify(withEnv, null, 2) + '\n');
+
+    const second = ensureSquadStateMcpInRoot(tmpProject, '0.9.6-preview.14', PINNED_SPEC);
+    expect(second.written).toBe(false);
+
+    // Untouched on disk.
+    const entry = JSON.parse(fs.readFileSync(cfgPath, 'utf8')).mcpServers.squad_state;
+    expect(entry.env).toEqual({ npm_config_registry: 'https://internal-proxy.example/npm/' });
+  });
+
+  it('normalizes a malformed env on the squad_state entry to an empty object', () => {
+    const cfgPath = getProjectMcpJsonPath(tmpProject);
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({
+        mcpServers: {
+          squad_state: { command: 'npx', args: [...PINNED_SPEC.args], env: 'nope', tools: ['*'] },
+        },
+      }),
+    );
+
+    const result = ensureSquadStateMcpInRoot(tmpProject, '0.9.6-preview.14', PINNED_SPEC);
+    expect(result.written).toBe(true);
+    expect(JSON.parse(fs.readFileSync(cfgPath, 'utf8')).mcpServers.squad_state.env).toEqual({});
   });
 
   it('tombstone removes squad_state from .copilot/mcp-config.json while preserving siblings', () => {

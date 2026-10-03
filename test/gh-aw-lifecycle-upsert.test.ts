@@ -1,0 +1,841 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { compileFunction, constants as vmConstants } from 'node:vm';
+
+const sharedWorkflow = readFileSync('workflows/shared/squad.md', 'utf8');
+const tempDirectories: string[] = [];
+
+afterEach(() => {
+  for (const directory of tempDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function scriptForStep(stepName: string): string {
+  const lines = sharedWorkflow.split(/\r?\n/);
+  const step = lines.findIndex((line) => line.includes(`- name: ${stepName}`));
+  expect(step).toBeGreaterThan(-1);
+  const start = lines.findIndex((line, index) => index > step && /^\s+script:\s*\|$/.test(line));
+  expect(start).toBeGreaterThan(step);
+  const indent = lines[start].match(/^\s*/)![0].length;
+  const script: string[] = [];
+
+  for (let index = start + 1; index < lines.length; index++) {
+    const line = lines[index];
+    if (line.trim() && line.match(/^\s*/)![0].length <= indent) break;
+    script.push(line.trim() ? line.slice(indent + 2) : '');
+  }
+  return script.join('\n');
+}
+
+function lifecycleScript(): string {
+  return scriptForStep('Upsert Squad lifecycle state');
+}
+
+function researchScript(): string {
+  return scriptForStep('Upsert Squad research artifact');
+}
+
+function lifecycleRepairScript(): string {
+  return scriptForStep('Repair terminal lifecycle after idempotent activation');
+}
+
+interface Comment {
+  id: number;
+  body: string;
+  created_at: string;
+  user: { login: string };
+}
+
+async function runLifecycleUpsert(items: unknown[], comments: Comment[] = []) {
+  const directory = mkdtempSync(join(tmpdir(), 'squad-lifecycle-'));
+  tempDirectories.push(directory);
+  const outputPath = join(directory, 'agent-output.json');
+  writeFileSync(outputPath, JSON.stringify({ items }));
+
+  const created: Array<Record<string, unknown>> = [];
+  const updated: Array<Record<string, unknown>> = [];
+  const failures: string[] = [];
+  const github = {
+    paginate: async () => comments,
+    rest: {
+      issues: {
+        listComments: () => undefined,
+        createComment: async (params: Record<string, unknown>) => created.push(params),
+        updateComment: async (params: Record<string, unknown>) => updated.push(params),
+      },
+    },
+  };
+  const context = { repo: { owner: 'octodemo', repo: 'consumer' } };
+  const previousOutput = process.env.GH_AW_AGENT_OUTPUT;
+  const previousIssue = process.env.ISSUE_NUMBER;
+  process.env.GH_AW_AGENT_OUTPUT = outputPath;
+  process.env.ISSUE_NUMBER = '5';
+
+  try {
+    const compiled = compileFunction(
+      `return (async () => {\n${lifecycleScript()}\n})();`,
+      ['github', 'context', 'core'],
+      { importModuleDynamically: vmConstants.USE_MAIN_CONTEXT_DEFAULT_LOADER },
+    ) as (...args: unknown[]) => Promise<unknown>;
+    await compiled(github, context, { setFailed: (message: string) => failures.push(message) });
+  } finally {
+    if (previousOutput === undefined) delete process.env.GH_AW_AGENT_OUTPUT;
+    else process.env.GH_AW_AGENT_OUTPUT = previousOutput;
+    if (previousIssue === undefined) delete process.env.ISSUE_NUMBER;
+    else process.env.ISSUE_NUMBER = previousIssue;
+  }
+
+  return { created, updated, failures };
+}
+
+async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
+  const directory = mkdtempSync(join(tmpdir(), 'squad-research-'));
+  tempDirectories.push(directory);
+  const outputPath = join(directory, 'agent-output.json');
+  writeFileSync(outputPath, JSON.stringify({ items }));
+
+  const created: Array<Record<string, unknown>> = [];
+  const updated: Array<Record<string, unknown>> = [];
+  const deleted: Array<Record<string, unknown>> = [];
+  const failures: string[] = [];
+  const github = {
+    paginate: async () => comments,
+    rest: {
+      issues: {
+        listComments: () => undefined,
+        createComment: async (params: Record<string, unknown>) => created.push(params),
+        updateComment: async (params: Record<string, unknown>) => updated.push(params),
+        deleteComment: async (params: Record<string, unknown>) => deleted.push(params),
+      },
+    },
+  };
+  const context = { repo: { owner: 'octodemo', repo: 'consumer' } };
+  const previousOutput = process.env.GH_AW_AGENT_OUTPUT;
+  const previousIssue = process.env.ISSUE_NUMBER;
+  process.env.GH_AW_AGENT_OUTPUT = outputPath;
+  process.env.ISSUE_NUMBER = '5';
+
+  try {
+    const compiled = compileFunction(
+      `return (async () => {\n${researchScript()}\n})();`,
+      ['github', 'context', 'core'],
+      { importModuleDynamically: vmConstants.USE_MAIN_CONTEXT_DEFAULT_LOADER },
+    ) as (...args: unknown[]) => Promise<unknown>;
+    await compiled(github, context, { setFailed: (message: string) => failures.push(message) });
+  } finally {
+    if (previousOutput === undefined) delete process.env.GH_AW_AGENT_OUTPUT;
+    else process.env.GH_AW_AGENT_OUTPUT = previousOutput;
+    if (previousIssue === undefined) delete process.env.ISSUE_NUMBER;
+    else process.env.ISSUE_NUMBER = previousIssue;
+  }
+
+  return { created, updated, deleted, failures };
+}
+
+async function runLifecycleRepair(
+  comments: Comment[],
+  command = '/squad activate',
+  actorPermission = 'write',
+  actor = 'maintainer',
+  permissionError?: Error,
+) {
+  const created: Array<Record<string, unknown>> = [];
+  const updated: Array<Record<string, unknown>> = [];
+  const failures: string[] = [];
+  const info: string[] = [];
+  const github = {
+    paginate: async () => comments,
+    rest: {
+      repos: {
+        getCollaboratorPermissionLevel: async () => {
+          if (permissionError) throw permissionError;
+          return { data: { permission: actorPermission } };
+        },
+      },
+      issues: {
+        listComments: () => undefined,
+        createComment: async (params: Record<string, unknown>) => created.push(params),
+        updateComment: async (params: Record<string, unknown>) => updated.push(params),
+      },
+    },
+  };
+  const context = {
+    repo: { owner: 'octodemo', repo: 'consumer' },
+    payload: { comment: { user: { login: actor } } },
+  };
+  const previousIssue = process.env.ISSUE_NUMBER;
+  const previousCommand = process.env.SQUAD_COMMAND;
+  process.env.ISSUE_NUMBER = '5';
+  process.env.SQUAD_COMMAND = command;
+
+  try {
+    const compiled = compileFunction(
+      `return (async () => {\n${lifecycleRepairScript()}\n})();`,
+      ['github', 'context', 'core'],
+    ) as (...args: unknown[]) => Promise<unknown>;
+    await compiled(github, context, {
+      info: (message: string) => info.push(message),
+      setFailed: (message: string) => failures.push(message),
+    });
+  } finally {
+    if (previousIssue === undefined) delete process.env.ISSUE_NUMBER;
+    else process.env.ISSUE_NUMBER = previousIssue;
+    if (previousCommand === undefined) delete process.env.SQUAD_COMMAND;
+    else process.env.SQUAD_COMMAND = previousCommand;
+  }
+
+  return { created, updated, failures, info };
+}
+
+describe('#1935: deterministic research artifact safe output', () => {
+  const body = [
+    '## 🔬 Squad Research — Example',
+    '',
+    '### Goals',
+    '- Goal',
+    '',
+    '### Non-goals',
+    '- Non-goal',
+    '',
+    '### Evidence table',
+    '| Rn | Finding | Risk | Complexity | Citation |',
+    '| --- | --- | --- | --- | --- |',
+    '| R1 | Finding | 🟢 | S | src/example.ts:1 |',
+    '',
+    '### Load-bearing assumptions',
+    '- R1',
+    '',
+    '### Open decisions',
+    '- Decision',
+    '',
+    '### Acceptance framing',
+    '- R1',
+  ].join('\n');
+  const boldSectionBody = body.replace(/^### (.+)$/gm, '**$1**');
+
+  it('accepts bold section labels and creates the fixed structured envelope', async () => {
+    const result = await runResearchUpsert([
+      { type: 'upsert_research_artifact', body: boldSectionBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.deleted).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].issue_number).toBe(5);
+    expect(result.created[0].body).toContain(boldSectionBody);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+  });
+
+  it('updates the newest trusted research artifact and removes older duplicates', async () => {
+    const artifact = (originIssue: number) => [
+      'Research',
+      '',
+      '```json',
+      JSON.stringify({
+        squad_artifact: 'research',
+        schema_version: '1',
+        origin_issue: originIssue,
+        phases: [],
+      }),
+      '```',
+    ].join('\n');
+    const result = await runResearchUpsert(
+      [{ type: 'upsert_research_artifact', body }],
+      [
+        {
+          id: 10,
+          body: artifact(5),
+          created_at: '2026-08-27T23:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 20,
+          body: artifact(5),
+          created_at: '2026-08-28T00:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 30,
+          body: artifact(6),
+          created_at: '2026-08-28T01:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 40,
+          body: artifact(5),
+          created_at: '2026-08-28T02:00:00Z',
+          user: { login: 'untrusted-user' },
+        },
+      ],
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].comment_id).toBe(20);
+    expect(result.deleted).toEqual([
+      expect.objectContaining({ comment_id: 10 }),
+    ]);
+  });
+
+  it('replaces agent-supplied trailing metadata with the trusted envelope', async () => {
+    const result = await runResearchUpsert([
+      {
+        type: 'upsert_research_artifact',
+        body: `${body}\n\n\`\`\`json\n{"squad_artifact":"research","origin_issue":999}\n\`\`\``,
+      },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect((result.created[0].body as string).match(/Structured data:/g)).toHaveLength(1);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+    expect(result.created[0].body).not.toContain('"origin_issue":999');
+  });
+});
+
+describe('#1916: deterministic lifecycle safe output', () => {
+  const body = [
+    '## Planning Lifecycle',
+    '',
+    '**Current state:** Planned',
+    '**Last command:** `/squad plan`',
+    '**Next action:** `/squad activate`',
+  ].join('\n');
+  const legacyBody = [
+    '## 🧭 Squad Lifecycle State',
+    '',
+    '- **State:** Planned',
+    '- **Last command:** `/squad plan`',
+    '- **Next command:** `/squad activate`',
+  ].join('\n');
+  const issueHeadingBody = [
+    '## 🔄 Squad Lifecycle State — Issue #5',
+    '',
+    '| Stage | Status |',
+    '| --- | --- |',
+    '| Research | Done |',
+    '| Plan | Done |',
+    '',
+    '**Current state:** Planned',
+    '**Last command:** `/squad plan`',
+    '**Next recommended:** `/squad activate`',
+  ].join('\n');
+  const terminalBody = [
+    '## 🧭 Squad Lifecycle State',
+    '',
+    '- **State:** Activated',
+    '- **Research:** ✅ Done',
+    '- **Plan:** ✅ Done',
+    '- **Activation:** ✅ Done',
+    '- **Last command:** `/squad activate`',
+    '- **Next action:** Track progress on the 5 created task issues; no further planning action required.',
+  ].join('\n');
+  const terminalTableBody = [
+    '## Planning Lifecycle',
+    '',
+    '| Phase | Status | Artifact | Updated |',
+    '|-------|--------|----------|---------|',
+    '| Activated | ✅ Done | 5 task issues created under #5 | 2026-08-28 |',
+    '',
+    '**Current state:** Activated',
+    '**Last command:** `/squad activate` by @octocat',
+    '**Next action:** None — activation is terminal.',
+  ].join('\n');
+  const terminalProgressBody = [
+    '## Squad Planning Lifecycle',
+    '',
+    '**State:** Activated',
+    '',
+    '**Progress**',
+    '- Research: ✅ Done',
+    '- Plan: ✅ Done',
+    '- Activation: ✅ Done',
+    '',
+    '**Last command:** `/squad activate`',
+    '**Next action:** Plan is fully activated — 6 task issues created under #5.',
+  ].join('\n');
+  const terminalActivateTableBody = [
+    '## 🧭 Squad Lifecycle — Issue #32',
+    '',
+    '**State:** Activated',
+    '**Last command:** `/squad activate`',
+    '**Next action:** None — activation is complete',
+    '',
+    '| Stage | Status |',
+    '|-------|--------|',
+    '| Research | ✅ Done |',
+    '| Plan | ✅ Done |',
+    '| Activate | ✅ Done |',
+  ].join('\n');
+  const liveScopeAcceptanceBody = [
+    '## 🧭 Squad Planning Lifecycle',
+    '',
+    '**State:** Scope Accepted',
+    '',
+    '| Field | Value |',
+    '|---|---|',
+    '| Research | ✅ Done |',
+    '| Triage | ✅ Done |',
+    '| Program Plan | ✅ Done (revised) |',
+    '| Implementation Plan | ✅ Done |',
+    '| Validation | ✅ Done (PASS) |',
+    '| Scope | ✅ Done |',
+    '| Implementation Acceptance | ⬜ Pending |',
+    '',
+    '**Last command:** `/squad plan accept scope`',
+    '',
+    '**Next action:** `/squad plan accept implementation`',
+  ].join('\n');
+  const liveImplementationAcceptanceBody = [
+    '## Planning Lifecycle',
+    '',
+    '| Phase | Status | Artifact | Updated |',
+    '|-------|--------|----------|---------|',
+    '| Intent | ✅ Done | (issue body) | 2026-09-15 |',
+    '| Scope Accepted | ✅ Done | comment | 2026-09-15 |',
+    '| Impl Accepted | ✅ Done | (this run) | 2026-09-15 |',
+    '| Activated | ⬚ Pending | — | — |',
+    '',
+    '**Current state:** Implementation Accepted',
+    '**Last command:** `/squad plan accept implementation` by @bradygaster at 2026-09-15 15:16 UTC',
+    '**Next action:** `/squad plan activate`',
+    '**Guidance:** Create sub-issues and begin execution.',
+  ].join('\n');
+  const liveActivatedBody = [
+    '## 🧭 Squad Planning Lifecycle',
+    '',
+    '**State:** Activated',
+    '',
+    '| Field | Value |',
+    '|---|---|',
+    '| Scope Acceptance | ✅ Done |',
+    '| Implementation Acceptance | ✅ Done (full, 5 tasks) |',
+    '| Activation | ✅ Done — 4 epics, 5 tasks created as sub-issues of #4 |',
+    '',
+    '**Last command:** `/squad plan activate`',
+    '',
+    '**Next action:** No further planning command required — this plan is fully activated. Begin implementation execution starting with the Epic 1.1 spike task.',
+  ].join('\n');
+
+  it('creates the first tracker with the fixed structured envelope', async () => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].issue_number).toBe(5);
+    expect(result.created[0].body).toContain(body);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+  });
+
+  it('updates the newest trusted tracker in place', async () => {
+    const marker = '{"squad_artifact":"lifecycle-state"}';
+    const result = await runLifecycleUpsert(
+      [{ type: 'upsert_lifecycle_state', body: legacyBody }],
+      [
+        {
+          id: 10,
+          body: marker,
+          created_at: '2026-08-27T23:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 20,
+          body: marker,
+          created_at: '2026-08-28T00:00:00Z',
+          user: { login: 'github-actions[bot]' },
+        },
+        {
+          id: 30,
+          body: marker,
+          created_at: '2026-08-28T01:00:00Z',
+          user: { login: 'untrusted-user' },
+        },
+      ],
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].comment_id).toBe(20);
+    expect(result.updated[0].body).toContain(legacyBody);
+  });
+
+  it('replaces agent-supplied trailing metadata with the trusted envelope', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: `${legacyBody}\n\nStructured data:\n\`\`\`json\n{"squad_artifact":"lifecycle-state","origin_issue":999}\n\`\`\``,
+      },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(legacyBody);
+    expect((result.created[0].body as string).match(/Structured data:/g)).toHaveLength(1);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+    expect(result.created[0].body).not.toContain('"origin_issue":999');
+  });
+
+  it('replaces an unlabeled trailing lifecycle envelope with the trusted envelope', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: `${legacyBody}\n\n\`\`\`json\n{"squad_artifact":"lifecycle-state","origin_issue":999}\n\`\`\``,
+      },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(legacyBody);
+    expect((result.created[0].body as string).match(/Structured data:/g)).toHaveLength(1);
+    expect(result.created[0].body).toContain(
+      '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}',
+    );
+    expect(result.created[0].body).not.toContain('"origin_issue":999');
+  });
+
+  it('rejects lifecycle metadata that is not the trailing JSON fence', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: `${legacyBody}\n\n\`\`\`json\n{"squad_artifact":"lifecycle-state","origin_issue":999}\n\`\`\`\n\nUnexpected trailing text.`,
+      },
+    ]);
+
+    expect(result.failures).toEqual(['Lifecycle body must omit structured data.']);
+    expect(result.created).toEqual([]);
+  });
+
+  it('accepts issue-specific lifecycle presentation headings', async () => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: issueHeadingBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(issueHeadingBody);
+  });
+
+  it('accepts non-command guidance for the terminal Activated state', async () => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: terminalBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(terminalBody);
+  });
+
+  it.each([
+    ['progress-table activation with command attribution', terminalTableBody],
+    ['plain progress-list activation', terminalProgressBody],
+    ['activate-stage table row', terminalActivateTableBody],
+    ['scope acceptance from the E2E planning run', liveScopeAcceptanceBody],
+    ['implementation acceptance with separate guidance', liveImplementationAcceptanceBody],
+    ['terminal granular activation from run 34987615314', liveActivatedBody],
+  ])('accepts live lifecycle presentation: %s', async (_name, liveBody) => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: liveBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0].body).toContain(liveBody);
+  });
+
+  it('rejects non-command next actions for nonterminal states', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: body.replace(
+          '**Next action:** `/squad activate`',
+          '**Next action:** Wait for more information.',
+        ),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
+  it('rejects the prose-prefixed retry action emitted by failed run 34944550565', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: body
+          .replace('**Current state:** Planned', '**Current state:** Validation failed')
+          .replace('**Last command:** `/squad plan`', '**Last command:** `/squad plan validate`')
+          .replace(
+            '**Next action:** `/squad activate`',
+            '**Next action:** Re-run `/squad plan validate`. If the sub-agent fails again, track the infrastructure defect.',
+          ),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
+  it('rejects explanatory prose after a valid nonterminal next command', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: body.replace(
+          '**Next action:** `/squad activate`',
+          '**Next action:** `/squad activate` after reviewing the validation results.',
+        ),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
+  it('rejects the live implementation-acceptance mutation from run 34986842391', async () => {
+    const result = await runLifecycleUpsert([
+      {
+        type: 'upsert_lifecycle_state',
+        body: liveImplementationAcceptanceBody
+          .replace(
+            '**Next action:** `/squad plan activate`',
+            '**Next action:** `/squad plan activate` — create sub-issues and begin execution.',
+          )
+          .replace('\n**Guidance:** Create sub-issues and begin execution.', ''),
+      },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+  });
+
+  it.each([
+    ['state', body.replace('**Current state:** Planned\n', '')],
+    ['last command', body.replace('**Last command:** `/squad plan`\n', '')],
+    ['next action', body.replace('**Next action:** `/squad activate`', '')],
+  ])('rejects lifecycle output missing its %s field', async (_field, incompleteBody) => {
+    const result = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: incompleteBody },
+    ]);
+
+    expect(result.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+  });
+
+  it('rejects malformed or duplicate lifecycle output', async () => {
+    const malformed = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body: 'not a lifecycle body' },
+    ]);
+    const duplicate = await runLifecycleUpsert([
+      { type: 'upsert_lifecycle_state', body },
+      { type: 'upsert_lifecycle_state', body },
+    ]);
+
+    expect(malformed.failures).toEqual([
+      'Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.',
+    ]);
+    expect(duplicate.failures).toEqual(['Expected exactly one lifecycle update, found 2.']);
+  });
+});
+
+describe('#1928: deterministic terminal lifecycle repair', () => {
+  const accepted = {
+    id: 10,
+    body: [
+      '## Plan accepted',
+      '',
+      'Structured data:',
+      '```json',
+      '{"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":5,"phases":[]}',
+      '```',
+    ].join('\n'),
+    created_at: '2026-08-28T01:00:00Z',
+    user: { login: 'github-actions[bot]' },
+  };
+  const activated = {
+    id: 11,
+    body: [
+      '## Plan activated',
+      '',
+      'Structured data:',
+      '```json',
+      '{"squad_artifact":"activated","schema_version":"1","origin_issue":5,"phases":[1,2]}',
+      '```',
+    ].join('\n'),
+    created_at: '2026-08-28T01:30:00Z',
+    user: { login: 'github-actions[bot]' },
+  };
+  const lifecycleEnvelope =
+    '{"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":5,"phases":[]}';
+  const stale = {
+    id: 20,
+    body: [
+      '## 🧭 Squad Lifecycle State',
+      '',
+      '**State:** Planned',
+      '**Last command:** `/squad plan`',
+      '**Next action:** `/squad activate`',
+      '',
+      'Structured data:',
+      '```json',
+      lifecycleEnvelope,
+      '```',
+    ].join('\n'),
+    created_at: '2026-08-28T02:00:00Z',
+    user: { login: 'github-actions[bot]' },
+  };
+
+  it('repairs the newest stale tracker after whole-plan acceptance', async () => {
+    const result = await runLifecycleRepair([accepted, stale]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].comment_id).toBe(20);
+    expect(result.updated[0].body).toContain('- **State:** Activated');
+    expect(result.updated[0].body).toContain('- **Activation:** ✅ Done');
+    expect(result.updated[0].body).toContain('- **Last command:** `/squad activate`');
+    expect(result.updated[0].body).toContain(lifecycleEnvelope);
+  });
+
+  it('repairs granular /squad plan activate lifecycle state from a trusted phased activation', async () => {
+    const result = await runLifecycleRepair(
+      [activated, stale],
+      '/squad plan activate',
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0].body).toContain('- **State:** Activated');
+    expect(result.updated[0].body).toContain('- **Last command:** `/squad plan activate`');
+  });
+
+  it('does nothing when the newest tracker is already terminal', async () => {
+    const terminal = {
+      ...stale,
+      body: stale.body
+        .replace('**State:** Planned', '**State:** Activated\n**Activation:** ✅ Done')
+        .replace('**Last command:** `/squad plan`', '**Last command:** `/squad activate`'),
+    };
+    const result = await runLifecycleRepair([accepted, terminal]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.info).toContain(
+      'The newest lifecycle tracker already records terminal activation.',
+    );
+  });
+
+  it('preserves a live terminal tracker with detailed activation and command attribution', async () => {
+    const terminal = {
+      ...stale,
+      body: [
+        '## 🧭 Squad Lifecycle State — Issue #5',
+        '',
+        '**State:** Activated',
+        '',
+        '| Stage | Status |',
+        '| --- | --- |',
+        '| Activation | ✅ Done — created 3 task issues and milestone v1 |',
+        '',
+        '**Last command:** `/squad plan activate` by @maintainer',
+        '**Next action:** Track progress on the created task issues; no further planning action is required.',
+        '',
+        'Structured data:',
+        '```json',
+        lifecycleEnvelope,
+        '```',
+      ].join('\n'),
+    };
+    const result = await runLifecycleRepair([activated, terminal], '/squad plan activate');
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.info).toContain(
+      'The newest lifecycle tracker already records terminal activation.',
+    );
+  });
+
+  it('does not trust a user-authored acceptance artifact', async () => {
+    const result = await runLifecycleRepair([
+      { ...accepted, user: { login: 'untrusted-user' } },
+      stale,
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.info).toContain(
+      'No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.',
+    );
+  });
+
+  it.each(['read', 'triage', 'none'])(
+    'does not write lifecycle state for %s permission',
+    async permission => {
+      const result = await runLifecycleRepair([accepted, stale], '/squad activate', permission);
+
+      expect(result.failures).toEqual([]);
+      expect(result.created).toEqual([]);
+      expect(result.updated).toEqual([]);
+      expect(result.info).toContain(
+        `Lifecycle repair is not authorized for maintainer with ${permission} permission.`,
+      );
+    },
+  );
+
+  it('fails closed without writes when live permission cannot be verified', async () => {
+    const result = await runLifecycleRepair(
+      [accepted, stale],
+      '/squad activate',
+      'write',
+      'maintainer',
+      new Error('permission endpoint unavailable'),
+    );
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.failures).toEqual([
+      'Unable to verify lifecycle repair permission for maintainer: permission endpoint unavailable',
+    ]);
+  });
+
+  it('fails closed without writes when the comment author is missing', async () => {
+    const result = await runLifecycleRepair([accepted, stale], '/squad activate', 'write', '');
+
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.failures).toEqual([
+      'Lifecycle repair requires an identifiable comment author.',
+    ]);
+  });
+});

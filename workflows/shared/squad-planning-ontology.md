@@ -4,7 +4,7 @@ description: Squad planning ontology — artifact schemas, lifecycle state machi
 ---
 # Planning Ontology & Artifact Schemas
 
-> **Version:** 2.0 · **Owner:** Procedures · **Status:** Active
+> **Version:** 2.0 · **Owner:** Agent systems role · **Status:** Active
 >
 > **Decision Ratifications:**
 > - `copilot-plan-workflow-ux.md` → **Ratified Option A + Option 3**: Explicit commands (`/squad plan accept`) under the `/squad` namespace; planning logic lives in `shared/` components imported by `squad.md`. This file IS the shared component.
@@ -128,31 +128,44 @@ The issue body IS the intent. No special format required, but structured intents
 <Links, prior art, relevant decisions>
 ```
 
-### 3.2 Research Findings
+### 3.2 Squad Research
 
 ```markdown
-## Research Findings
+## 🔬 Squad Research — <Title>
 
 ### Summary
 <1-3 sentence overview of what was discovered>
 
-### Sources
-| # | Source | Type | Key Insight |
-|---|--------|------|-------------|
-| 1 | <link/file/doc> | <codebase/docs/external> | <insight> |
+### Goals
+- <What this research must establish>
 
-### Findings
-#### Finding 1: <title>
-<Evidence and analysis>
+### Non-goals
+- <What is explicitly outside this research>
 
-#### Finding 2: <title>
-<Evidence and analysis>
+### Evidence table
+| ID | Finding | Risk | Complexity | Citation |
+|----|---------|------|------------|----------|
+| R1 | <checkable finding> | <🟢/🟡/🔴> | <S/M/L/XL> | <one path, path:line, URL, or issue/PR reference> |
 
-### Open Questions
-- <Unresolved question needing human input>
+### Load-bearing assumptions
+- <Assumption referencing the Rn evidence it depends on>
+
+### Open decisions
+- <Decision requiring human judgment>
+
+### Acceptance framing
+- <Measurable evidence that would make the proposed next step acceptable>
+
+### Online sources
+<`consulted` — list the URLs fetched this run (each also cited above); or
+`unavailable — <reason>` when no external documentation was fetched. Makes
+degradation observable: never claim `consulted` for a page not actually fetched.>
 
 ### Recommendations
-- <Actionable recommendation derived from evidence>
+- <Actionable recommendation referencing its Rn evidence>
+
+### Next step
+<`/squad triage` or `/squad plan`>
 ```
 
 ### 3.3 Triage Disposition
@@ -247,7 +260,7 @@ The issue body IS the intent. No special format required, but structured intents
 ```markdown
 ## Plan Validation
 
-### Result: <✅ PASS | ❌ FAIL>
+RESULT: <PASS | FAIL>
 
 ### Checks
 
@@ -310,16 +323,37 @@ been run, and an omitted row is not a pass.
 
 The activation artifact body also carries an `Activation bindings:` fenced JSON
 block containing a non-empty array. Each entry
-maps a plan task number and raw agent assignment to its returned task issue number,
-epic identifier, returned epic issue number, and the epic's complete distinct agent
+maps a plan task number and raw agent assignment to its task issue reference,
+epic identifier, epic issue reference, and the epic's complete distinct agent
 set from the full accepted plan (including other activation phases). It records both task and derived
-epic labels actually applied, or their omission reasons (`multi-owner` or
-`non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
+epic labels reported as accepted label operations (defined below), or their omission reasons
+(`multi-owner` or `non-roster`) when policy requires bare `squad`. The special `@copilot` assignment
 records the actual `squad:copilot` label. This mapping is mandatory for
-`phases-activated` and `activated` artifacts. It remains in the body rather than
+`phases-activated`, `activated`, `phases-accepted`, and `plan-accepted` artifacts —
+every fast-path (`/squad activate`) and granular (`/squad plan activate`) artifact
+that creates or recognizes issues carries it; neither path may omit it or ship an
+empty array. It remains in the body rather than
 the safe-output `data` envelope because gh-aw expands nested data schemas beyond
 GitHub's expression-size limit. The post-activation checker can still
 fail closed without matching model-authored titles.
+
+**Issue references are quoted strings, never bare numbers.** `issue` and `epic_issue`
+carry a `#`-prefixed reference in a JSON string: an item's own gh-aw `temporary_id`
+(`"#aw_task3"`) when this run created it, or its verified real number (`"#123"`) when the
+item was reused or matched by title. The agent never learns a created issue's real number
+during its turn, so it never writes one; gh-aw rewrites `#aw_…` references in a comment body
+to `#{real number}` once the issue exists. Quoting is required for validity: that
+substitution is plain text replacement across the whole body — it does not skip fenced code
+blocks — and preserves the `#`, so bare `"issue":#aw_task3` becomes invalid `"issue":#42`
+while quoted becomes `"issue":"#42"`. A reference still matching `#aw_…` was never resolved;
+consumers MUST treat it as a failure rather than skipping or repairing it.
+
+**Reported labels mean accepted label operations.** A `label` / `epic_label` asserts that an
+`add_labels` safe output carrying that label was accepted for that same issue, targeted by
+its temporary ID or verified real number. It does not assert the label was observed on the
+issue — safe outputs are applied after the agent turn — and never means it was carried by
+`create-issue`, whose `labels:` field cannot create a missing label. Verifying bindings
+against the labels actually present is the post-activation checker's job.
 
 ---
 
@@ -369,9 +403,14 @@ This comment is created on first transition and updated on every subsequent tran
 
 **Current state:** Triaged
 **Last command:** `/squad triage` by @user at <timestamp>
-**Next action:** `/squad plan program` — create a program plan from triage dispositions
+**Next action:** `/squad plan program`
+**Guidance:** Create a program plan from triage dispositions.
 **Also available:** `/squad triage revise <feedback>` — adjust triage before planning
 ```
+
+For nonterminal states, `Next action` is only the backticked `/squad` command;
+put prose elsewhere. `Activated` is terminal and may use terminal prose there.
+Its canonical granular command is `/squad plan activate`.
 
 Status icons: `✅ Done` · `⏳ In Progress` · `⬚ Pending` · `❌ Failed` · `⏭ Skipped`
 

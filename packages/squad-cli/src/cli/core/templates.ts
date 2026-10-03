@@ -136,8 +136,8 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
-    source: 'Rai-charter.md',
-    destination: 'templates/Rai-charter.md',
+    source: 'rai-charter.md',
+    destination: 'templates/rai-charter.md',
     overwriteOnUpgrade: true,
     description: 'Rai RAI reviewer charter template',
   },
@@ -334,6 +334,17 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Session init reference — coordinator procedures run at session start',
   },
+  // Templates directory README (squad-owned) — explains which files are runtime inputs
+  // vs bootstrap templates so contributors and users don't accidentally delete load-bearing files.
+  // Source is `README.md` (not a renamed variant) because `squad init` seeds `.squad/templates/`
+  // with a verbatim recursive copy of the SDK templates directory — the file only reaches new
+  // projects if its canonical name already matches the destination name.
+  {
+    source: 'README.md',
+    destination: 'templates/README.md',
+    overwriteOnUpgrade: true,
+    description: 'Templates directory guide — runtime inputs vs bootstrap templates',
+  },
   
   // Workflows (squad-owned, overwrite on upgrade)
   {
@@ -414,7 +425,14 @@ export function getTemplatesDir(): string {
   let dir = dirname(currentFile);
   for (let i = 0; i < 6; i++) {
     const candidate = join(dir, 'templates');
-    if (storage.existsSync(candidate)) return candidate;
+    // src/cli/templates contains runtime-only fixtures, so the directory name
+    // alone is not enough to identify the distributable template root.
+    if (
+      storage.existsSync(join(candidate, 'squad.agent.md.template'))
+      && storage.existsSync(join(candidate, 'scribe-charter.md'))
+    ) {
+      return candidate;
+    }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

@@ -77,6 +77,9 @@ jobs:
     needs: [test, registry-check]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      insider_version: ${{ steps.version.outputs.insider_version }}
+      source_sha: ${{ steps.version.outputs.source_sha }}
     strategy:
       matrix:
         node-version: [22]
@@ -104,8 +107,9 @@ jobs:
         id: version
         run: |
           # Read base version from root package.json
-          BASE=$(node -p "require('./package.json').version")
-          echo "Base version: $BASE"
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          BASE="${BASE_VERSION%%-*}"
+          echo "Base version: $BASE (workspace version: $BASE_VERSION)"
 
           # Query npm for the latest insider build number for this base version
           # Fail hard if npm is unreachable — defaulting to 0 risks republishing an existing version
@@ -128,6 +132,7 @@ jobs:
           INSIDER_VERSION="${BASE}-insider.${NEXT}"
           echo "Publishing as: $INSIDER_VERSION"
           echo "insider_version=$INSIDER_VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set insider version in package.json files
         run: |
@@ -170,3 +175,63 @@ jobs:
           echo "🏜️ DRY RUN — would have published:"
           echo "  @bradygaster/squad-sdk@${{ steps.version.outputs.insider_version }}"
           echo "  @bradygaster/squad-cli@${{ steps.version.outputs.insider_version }}"
+
+  release:
+    name: Create insider GitHub prerelease
+    needs: publish
+    if: inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.create.outputs.tag }}
+    steps:
+      - name: Create immutable insider release
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSIDER_VERSION: ${{ needs.publish.outputs.insider_version }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          tag="v${INSIDER_VERSION}"
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            existing="$(
+              gh release view "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --json isPrerelease,targetCommitish
+            )"
+            existing_prerelease="$(jq -r '.isPrerelease' <<< "${existing}")"
+            existing_target="$(jq -r '.targetCommitish' <<< "${existing}")"
+            if [ "${existing_prerelease}" != "true" ] || [ "${existing_target}" != "${SOURCE_SHA}" ]; then
+              echo "::error::Existing release ${tag} does not match the insider source and prerelease state."
+              exit 1
+            fi
+            echo "Reusing existing insider release ${tag}."
+            echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          gh release create "${tag}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${SOURCE_SHA}" \
+            --title "${tag}" \
+            --generate-notes \
+            --prerelease
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+  standalone:
+    name: Publish insider standalone bundles
+    needs: [publish, release]
+    if: inputs.dry_run != 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/squad-standalone-release.yml
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+    with:
+      upload: true
+      release_tag: ${{ needs.release.outputs.tag }}
+      source_ref: ${{ needs.publish.outputs.source_sha }}
+      package_version: ${{ needs.publish.outputs.insider_version }}

@@ -1,0 +1,1330 @@
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  assertInstalledManifestIdentity,
+  loadBundleContract,
+  loadInstalledBundleContract,
+} from './gh-aw-hosted-e2e-contract.mjs';
+import {
+  CONTRACT_DESTINATION,
+  OWNERSHIP_ENTRY_COUNT,
+  OWNERSHIP_DESTINATION,
+  PACKAGE_NAME,
+  TRIGGER_PROBE_DESTINATION,
+  checkSource,
+  verifyInstall,
+  verifyStagedInstall,
+} from '../workflows/shared/squad-install-verifier.mjs';
+
+const TRUSTED_SOURCE = Object.freeze({
+  repository: 'bradygaster/squad',
+  repositoryId: 1151205052,
+  owner: 'bradygaster',
+  ownerId: 41929050,
+});
+const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const INSTALL_PR_TITLE = 'ci: install Squad agentic workflows';
+const PROBE_PR_TITLE = 'test: add Squad bootstrap trigger probe';
+const CAST_BRANCH = 'squad/bootstrap-cast';
+const CAST_PR_TITLE = '[squad] Cast your Squad';
+const RESEARCH_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
+const RESEARCH_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
+const PROVENANCE_MARKER_PATTERN = /^<!-- squad:bootstrap-provenance (\{[^\r\n]+\}) -->$/gm;
+// Every public/enlistment/setup target now requires `can_approve_pull_request_reviews=false`
+// (see docs/src/content/docs/guide/gh-aw.md), so GITHUB_TOKEN pull request creation fails
+// closed on every hosted bootstrap run and the workflow falls back to this manual-PR issue
+// instead of a Cast PR. These constants independently re-derive the expected fallback shape
+// (mirroring squad-bootstrap-validator.mjs) so the E2E does not trust the module under test.
+const BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE = '[squad] Manual pull request creation required for the Cast branch';
+const BOOTSTRAP_PR_FALLBACK_MARKER_PATTERN = /^<!-- squad:bootstrap-pr-fallback branch=(\S+) -->/;
+// Independently re-derives squad-bootstrap-validator.mjs's BOOTSTRAP_PR_FALLBACK_PROVENANCE_PREFIX
+// shape without importing it, for the same "do not trust the module under test" reason as
+// PROVENANCE_MARKER_PATTERN above.
+const BOOTSTRAP_PR_FALLBACK_PROVENANCE_MARKER_PATTERN =
+  /^<!-- squad:bootstrap-pr-fallback-provenance (\{[^\r\n]+\}) -->$/gm;
+const ACTIONS_BOT_LOGIN = 'github-actions[bot]';
+const ACTIONS_BOT_ID = 41898282;
+const SAFE_CHILD_ENV = Object.freeze([
+  'CI',
+  'GH_CONFIG_DIR',
+  'GH_HOST',
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'NO_COLOR',
+  'PATH',
+  'SHELL',
+  'TERM',
+  'TMPDIR',
+]);
+
+function parseArgs(argv) {
+  const [command, ...rest] = argv;
+  const args = { command };
+  for (let index = 0; index < rest.length; index += 1) {
+    const token = rest[index];
+    if (!token.startsWith('--')) throw new Error(`Unexpected argument: ${token}`);
+    const key = token.slice(2).replaceAll('-', '_');
+    const next = rest[index + 1];
+    if (!next || next.startsWith('--')) args[key] = true;
+    else {
+      args[key] = next;
+      index += 1;
+    }
+  }
+  return args;
+}
+
+function requireArg(args, name) {
+  const value = args[name];
+  if (!value || value === true) throw new Error(`--${name.replaceAll('_', '-')} is required`);
+  return value;
+}
+
+export function sanitizedEnvironment(extra = {}, { allowGitHubToken = false } = {}) {
+  if ('SQUAD_GH_AW_E2E_TOKEN' in extra) {
+    throw new Error('SQUAD_GH_AW_E2E_TOKEN must never be passed to a child process.');
+  }
+  if ('GH_TOKEN' in extra && !allowGitHubToken) {
+    throw new Error('GH_TOKEN requires an explicitly privileged or source-read child process.');
+  }
+  const env = Object.fromEntries(
+    SAFE_CHILD_ENV.filter((key) => process.env[key] !== undefined)
+      .map((key) => [key, process.env[key]]),
+  );
+  return { ...env, ...extra };
+}
+
+export function runChild(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd,
+    encoding: 'utf8',
+    env: sanitizedEnvironment(options.env, { allowGitHubToken: options.allowGitHubToken === true }),
+    stdio: options.capture === false ? 'inherit' : 'pipe',
+    timeout: options.timeout ?? 120_000,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${args.join(' ')} failed (${result.status})\n${result.stdout ?? ''}\n${result.stderr ?? ''}`,
+    );
+  }
+  return (result.stdout ?? '').trim();
+}
+
+function privileged(command, args, options = {}) {
+  const token = process.env.GH_TOKEN;
+  if (!token) throw new Error('GH_TOKEN is required for the trusted hosted journey.');
+  return runChild(command, args, {
+    ...options,
+    allowGitHubToken: true,
+    env: { ...options.env, GH_TOKEN: token },
+  });
+}
+
+function ghJson(args, options = {}) {
+  const output = privileged('gh', args, options);
+  return output ? JSON.parse(output) : null;
+}
+
+const githubAdapter = Object.freeze({
+  getDefaultBranchSha(target, branch) {
+    return ghJson([
+      'api', `repos/${target}/branches/${branch}`,
+      '--jq', '{sha:.commit.sha}',
+    ]).sha;
+  },
+  getTree(target, sha) {
+    return ghJson([
+      'api', `repos/${target}/git/trees/${sha}?recursive=1`,
+      '--jq', '{truncated,paths:[.tree[] | select(.type == "blob") | .path]}',
+    ]);
+  },
+  listBranches(target) {
+    return ghJson([
+      'api', '--paginate', '--slurp', `repos/${target}/branches?per_page=100`,
+    ]).flat().map((branch) => ({ name: branch.name, sha: branch.commit.sha }));
+  },
+  listPullRequests(target) {
+    return ghJson([
+      'api', '--paginate', '--slurp', `repos/${target}/pulls?state=all&per_page=100`,
+    ]).flat().map((pullRequest) => ({
+      number: pullRequest.number,
+      url: pullRequest.html_url,
+      title: pullRequest.title,
+      body: pullRequest.body,
+      createdAt: pullRequest.created_at,
+      isDraft: pullRequest.draft,
+      headRefName: pullRequest.head.ref,
+      headRepository: pullRequest.head.repo?.full_name,
+      headSha: pullRequest.head.sha,
+      baseRefName: pullRequest.base.ref,
+      baseSha: pullRequest.base.sha,
+      author: {
+        login: pullRequest.user.login,
+        id: pullRequest.user.id,
+        type: pullRequest.user.type,
+      },
+      state: pullRequest.state,
+    }));
+  },
+  listIssues(target) {
+    return ghJson([
+      'api', '--paginate', '--slurp', `repos/${target}/issues?state=all&per_page=100`,
+    ]).flat().filter((issue) => !issue.pull_request).map((issue) => ({
+      number: issue.number,
+      url: issue.html_url,
+      title: issue.title,
+      body: issue.body,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+      author: {
+        login: issue.user.login,
+        id: issue.user.id,
+        type: issue.user.type,
+      },
+      state: issue.state,
+    }));
+  },
+  getUser(login) {
+    return ghJson([
+      'api', `users/${login}`,
+      '--jq', '{login,id,type}',
+    ]);
+  },
+});
+
+function sourceGhJson(args) {
+  const token = process.env.SOURCE_READ_TOKEN ?? process.env.GH_TOKEN;
+  if (!token) throw new Error('A source repository read token is required.');
+  const output = runChild('gh', args, { allowGitHubToken: true, env: { GH_TOKEN: token } });
+  return output ? JSON.parse(output) : null;
+}
+
+function writeJson(path, value) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function sleep(milliseconds) {
+  runChild('sleep', [String(milliseconds / 1000)]);
+}
+
+function assertSha(value, label) {
+  if (!SHA_PATTERN.test(value)) throw new Error(`${label} must be a lowercase 40-character SHA.`);
+}
+
+function canonicalRemote(url) {
+  return url
+    .replace(/^git@github\.com:/, 'https://github.com/')
+    .replace(/\.git$/, '')
+    .toLowerCase();
+}
+
+export function sourcePreflight(args, repositoryRoot) {
+  const sourceRepository = requireArg(args, 'source_repository');
+  const sourceRepositoryId = Number(requireArg(args, 'source_repository_id'));
+  const sourceRef = requireArg(args, 'source_ref');
+  const sourceSha = requireArg(args, 'source_sha');
+  assertSha(sourceSha, 'Source SHA');
+  if (sourceRepository !== TRUSTED_SOURCE.repository
+    || sourceRepositoryId !== TRUSTED_SOURCE.repositoryId) {
+    throw new Error('Hosted E2E controller must run from the trusted Squad repository.');
+  }
+  const info = sourceGhJson([
+    'api', `repos/${TRUSTED_SOURCE.repository}`,
+    '--jq', '{id,full_name,default_branch,owner:{login:.owner.login,id:.owner.id}}',
+  ]);
+  if (info.id !== TRUSTED_SOURCE.repositoryId
+    || info.full_name !== TRUSTED_SOURCE.repository
+    || info.owner.login !== TRUSTED_SOURCE.owner
+    || info.owner.id !== TRUSTED_SOURCE.ownerId) {
+    throw new Error('Trusted source repository identity or state is invalid.');
+  }
+  if (sourceRef !== `refs/heads/${info.default_branch}`) {
+    throw new Error('Hosted E2E controller must run from the repository default branch ref.');
+  }
+  const branch = sourceGhJson([
+    'api', `repos/${TRUSTED_SOURCE.repository}/branches/${info.default_branch}`,
+    '--jq', '{protected,sha:.commit.sha}',
+  ]);
+  if (branch.protected !== true || branch.sha !== sourceSha) {
+    throw new Error('Trusted source must be the protected default-branch head.');
+  }
+  const checkedOut = runChild('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
+  if (checkedOut !== sourceSha) throw new Error('Checked-out HEAD does not match the trusted source SHA.');
+  const status = runChild('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repositoryRoot });
+  if (status) throw new Error('Trusted source checkout must be clean.');
+  const remote = runChild('git', ['remote', 'get-url', 'origin'], { cwd: repositoryRoot });
+  if (canonicalRemote(remote) !== `https://github.com/${TRUSTED_SOURCE.repository}`) {
+    throw new Error('Checked-out origin is not the trusted Squad repository.');
+  }
+  const integrityFailures = checkSource(repositoryRoot);
+  if (integrityFailures.length > 0) {
+    throw new Error(`Trusted source integrity failed:\n${integrityFailures.join('\n')}`);
+  }
+  return { ...info, sha: sourceSha };
+}
+
+function assertExactStagedDiff(cwd, expected) {
+  const staged = runChild('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], { cwd })
+    .split('\n').filter(Boolean).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(staged) !== JSON.stringify(wanted)) {
+    throw new Error(`Staged diff mismatch.\nExpected: ${wanted.join(', ')}\nActual: ${staged.join(', ')}`);
+  }
+  const deleted = runChild('git', ['diff', '--cached', '--name-only', '--diff-filter=D'], { cwd });
+  if (deleted) throw new Error(`Staged deletions are forbidden: ${deleted}`);
+}
+
+function packageArtifactCategories(contract) {
+  return {
+    workflowDestinations: contract.workflows.map(({ destination }) => destination),
+    workflowLocks: contract.workflows.map(({ lock }) => lock),
+    runtimePackageDestinations: contract.runtime.map(({ packageDestination }) => packageDestination),
+    runtimeDestinations: contract.runtime.map(({ destination }) => destination),
+    manifest: [CONTRACT_DESTINATION],
+    ownership: [OWNERSHIP_DESTINATION],
+    skill: contract.skills.map(({ destination }) => destination),
+    triggerSentinel: [TRIGGER_PROBE_DESTINATION],
+  };
+}
+
+function matchingPriorRunArtifacts(branches, pullRequests, issues) {
+  return {
+    branches: branches.filter(({ name }) => name.startsWith('squad-e2e/install-')
+      || name.startsWith('squad-e2e/probe-')
+      || name === CAST_BRANCH),
+    pullRequests: pullRequests.filter(({ headRefName, title }) => (
+      headRefName.startsWith('squad-e2e/install-')
+      || headRefName.startsWith('squad-e2e/probe-')
+      || headRefName === CAST_BRANCH
+      || title === INSTALL_PR_TITLE
+      || title === PROBE_PR_TITLE
+      || title === CAST_PR_TITLE
+    )),
+    issues: issues.filter(({ title, body }) => (
+      title === RESEARCH_ISSUE_TITLE || (body ?? '').includes(RESEARCH_MARKER)
+    )),
+  };
+}
+
+export function assertPristineTarget(target, defaultBranch, contract, github = githubAdapter, now = Date.now) {
+  if (contract.workflows.length !== 8 || contract.runtime.length !== 17 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 8 workflows, 17 runtime resources, and 1 skill.');
+  }
+  const defaultBranchSha = github.getDefaultBranchSha(target, defaultBranch);
+  assertSha(defaultBranchSha, 'Target default-branch SHA');
+  const tree = github.getTree(target, defaultBranchSha);
+  if (tree.truncated) throw new Error('Target default-branch tree response was truncated.');
+  const paths = new Set(tree.paths);
+  const categories = packageArtifactCategories(contract);
+  const existingPaths = Object.entries(categories).flatMap(([category, candidates]) => (
+    candidates.filter((path) => paths.has(path)).map((path) => ({ category, path }))
+  ));
+  const packageNamespace = [...paths].filter((path) => path.startsWith('.github/aw/squad/'));
+  const branches = github.listBranches(target);
+  const pullRequests = github.listPullRequests(target);
+  const issues = github.listIssues(target);
+  const prior = matchingPriorRunArtifacts(branches, pullRequests, issues);
+  if (existingPaths.length > 0 || packageNamespace.length > 0
+    || prior.branches.length > 0 || prior.pullRequests.length > 0 || prior.issues.length > 0) {
+    throw new Error(`Target is not pristine: ${JSON.stringify({
+      packagePaths: existingPaths,
+      packageNamespace,
+      priorRunBranches: prior.branches.map(({ name }) => name),
+      priorRunPullRequests: prior.pullRequests.map(({ number }) => number),
+      priorRunIssues: prior.issues.map(({ number }) => number),
+    })}`);
+  }
+  return {
+    capturedAt: new Date(now()).toISOString(),
+    defaultBranch,
+    defaultBranchSha,
+    maximumPullRequestNumber: Math.max(0, ...pullRequests.map(({ number }) => number)),
+    maximumIssueNumber: Math.max(0, ...issues.map(({ number }) => number)),
+  };
+}
+
+export function assertTargetDefaultBranch(
+  target,
+  defaultBranch,
+  expectedSha,
+  phase,
+  github = githubAdapter,
+) {
+  const actualSha = github.getDefaultBranchSha(target, defaultBranch);
+  if (actualSha !== expectedSha) {
+    throw new Error(
+      `Target default branch moved before ${phase}: expected ${expectedSha}, found ${actualSha}.`,
+    );
+  }
+}
+
+export function guardedTargetMutation({
+  target,
+  defaultBranch,
+  expectedSha,
+  phase,
+  mutate,
+  github = githubAdapter,
+}) {
+  assertTargetDefaultBranch(target, defaultBranch, expectedSha, phase, github);
+  return mutate();
+}
+
+export function authorizeTarget(args, sourceInfo, contract, github = githubAdapter) {
+  const target = requireArg(args, 'target');
+  const expectedRepositoryId = Number(requireArg(args, 'target_repository_id'));
+  const expectedOwnerId = Number(requireArg(args, 'target_owner_id'));
+  const expectedActorLogin = requireArg(args, 'pat_actor_login');
+  const expectedActorId = Number(requireArg(args, 'pat_actor_id'));
+  if (!Number.isSafeInteger(expectedRepositoryId) || !Number.isSafeInteger(expectedOwnerId)
+    || !Number.isSafeInteger(expectedActorId)) {
+    throw new Error('Configured target and actor IDs must be numeric.');
+  }
+  const actor = ghJson(['api', 'user', '--jq', '{login,id}']);
+  if (actor.login !== expectedActorLogin || actor.id !== expectedActorId) {
+    throw new Error('PAT actor identity does not match the configured login and numeric ID.');
+  }
+  const info = ghJson([
+    'api', `repos/${target}`,
+    '--jq',
+    '{id,full_name,default_branch,owner:{login:.owner.login,id:.owner.id},private,has_issues,allow_merge_commit}',
+  ]);
+  if (info.full_name !== target) throw new Error('Target repository redirected or transferred.');
+  if (info.id !== expectedRepositoryId || info.owner.id !== expectedOwnerId) {
+    throw new Error('Target repository or owner numeric identity does not match configuration.');
+  }
+  if (info.full_name === sourceInfo.full_name || info.id === sourceInfo.id) {
+    throw new Error('The hosted E2E target must not be the source repository.');
+  }
+  const [targetOwner] = target.split('/');
+  if (info.owner.login !== targetOwner) throw new Error('Target owner login is not canonical.');
+  if (info.private) throw new Error('Hosted E2E consumers must be public.');
+  if (!info.has_issues || !info.allow_merge_commit) {
+    throw new Error('Target must enable Issues and merge commits.');
+  }
+  const workflowPermissions = ghJson(['api', `repos/${target}/actions/permissions/workflow`]);
+  if (workflowPermissions.default_workflow_permissions !== 'read'
+    || workflowPermissions.can_approve_pull_request_reviews !== false) {
+    throw new Error('Target Actions permissions do not match the supported secure configuration.');
+  }
+  const baseline = assertPristineTarget(target, info.default_branch, contract, github);
+  return { target, info, workflowPermissions, actor, baseline };
+}
+
+function waitForBootstrapRun(target, headSha, startedAt, evidence) {
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const runs = ghJson([
+      'run', 'list', '--repo', target, '--workflow', 'squad-bootstrap.lock.yml',
+      '--event', 'push', '--json', 'databaseId,headSha,status,conclusion,url,createdAt',
+      '--limit', '30',
+    ]);
+    const matching = runs.filter(
+      (run) => run.headSha === headSha && Date.parse(run.createdAt) >= startedAt - 60_000,
+    );
+    if (matching.length > 1) throw new Error(`Expected exactly one bootstrap run for ${headSha}; found ${matching.length}.`);
+    if (matching.length === 1 && matching[0].status === 'completed') {
+      writeJson(resolve(evidence, `bootstrap-run-${headSha.slice(0, 12)}.json`), matching[0]);
+      if (matching[0].conclusion !== 'success') throw new Error(`Bootstrap run failed: ${matching[0].url}`);
+      return matching[0];
+    }
+    sleep(10_000);
+  }
+  throw new Error(`Timed out waiting for bootstrap run at ${headSha}.`);
+}
+
+function bootstrapOutputs(target, github = githubAdapter) {
+  const expectedAuthor = github.getUser(ACTIONS_BOT_LOGIN);
+  if (expectedAuthor.login !== ACTIONS_BOT_LOGIN
+    || expectedAuthor.type !== 'Bot'
+    || !Number.isSafeInteger(expectedAuthor.id)) {
+    throw new Error('GitHub Actions bot identity is unavailable or invalid.');
+  }
+  const castBranch = github.listBranches(target).find(({ name }) => name === CAST_BRANCH);
+  return {
+    target,
+    expectedAuthor,
+    castBranchSha: castBranch?.sha,
+    castPrs: github.listPullRequests(target),
+    issues: github.listIssues(target),
+  };
+}
+
+function parseBootstrapProvenance(body, label) {
+  const matches = [...String(body ?? '').matchAll(PROVENANCE_MARKER_PATTERN)];
+  if (matches.length !== 1) {
+    throw new Error(`${label} must contain exactly one bootstrap provenance marker.`);
+  }
+  let marker;
+  try {
+    marker = JSON.parse(matches[0][1]);
+  } catch {
+    throw new Error(`${label} bootstrap provenance marker is malformed.`);
+  }
+  const keys = Object.keys(marker).sort();
+  const expectedKeys = ['cast_sha', 'install_sha', 'repository', 'run_id', 'schema'];
+  if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)
+    || marker.schema !== 1
+    || typeof marker.repository !== 'string'
+    || typeof marker.run_id !== 'string'
+    || typeof marker.install_sha !== 'string'
+    || typeof marker.cast_sha !== 'string'
+    || !SHA_PATTERN.test(marker.install_sha)
+    || !SHA_PATTERN.test(marker.cast_sha)
+    || !/^[1-9][0-9]*$/.test(marker.run_id)) {
+    throw new Error(`${label} bootstrap provenance marker is malformed.`);
+  }
+  return marker;
+}
+
+// Independently validates the full signed fallback-provenance record (mirrors
+// parseBootstrapProvenance's role above for the Cast PR path, and squad-bootstrap-validator.mjs's
+// parseBootstrapPrFallbackProvenance in production -- re-implemented here, not imported, so this
+// E2E cannot be fooled by a bug shared with the module under test). Requires exactly one
+// well-formed record binding repository, run_id, base_branch, base_sha, head_branch, head_sha, and
+// compare_url; a fallback issue containing only the plain-text branch marker and a matching
+// compare-URL substring (but no valid signed record) must fail this check, because production's
+// own review guard would likewise refuse to trust it.
+function parseBootstrapPrFallbackProvenance(body, label) {
+  const matches = [...String(body ?? '').matchAll(BOOTSTRAP_PR_FALLBACK_PROVENANCE_MARKER_PATTERN)];
+  if (matches.length !== 1) {
+    throw new Error(`${label} must contain exactly one bootstrap pull request fallback provenance marker.`);
+  }
+  let record;
+  try {
+    record = JSON.parse(matches[0][1]);
+  } catch {
+    throw new Error(`${label} bootstrap pull request fallback provenance marker is malformed.`);
+  }
+  const keys = Object.keys(record).sort();
+  const expectedKeys = ['base_branch', 'base_sha', 'compare_url', 'head_branch', 'head_sha', 'repository', 'run_id', 'schema'];
+  if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)
+    || record.schema !== 1
+    || typeof record.repository !== 'string'
+    || typeof record.run_id !== 'string'
+    || !/^[1-9][0-9]*$/.test(record.run_id)
+    || typeof record.base_branch !== 'string' || record.base_branch.length === 0
+    || !SHA_PATTERN.test(String(record.base_sha ?? ''))
+    || typeof record.head_branch !== 'string' || record.head_branch.length === 0
+    || !SHA_PATTERN.test(String(record.head_sha ?? ''))
+    || typeof record.compare_url !== 'string' || !record.compare_url.startsWith('https://')) {
+    throw new Error(`${label} bootstrap pull request fallback provenance marker is malformed.`);
+  }
+  return record;
+}
+
+function sameAuthor(actual, expected) {
+  return actual?.login === expected.login
+    && actual?.id === expected.id
+    && actual?.type === expected.type;
+}
+
+export function selectBootstrapOutputs(outputs, baseline, installation, bootstrapRun) {
+  const cutoff = Math.max(
+    Date.parse(baseline.capturedAt),
+    Date.parse(installation.mergedAt),
+    Date.parse(bootstrapRun.createdAt),
+  );
+  const castPrs = outputs.castPrs.filter((pr) => (
+    pr.number > baseline.maximumPullRequestNumber
+    && Date.parse(pr.createdAt) >= cutoff
+    && pr.title === CAST_PR_TITLE
+  ));
+  const issues = outputs.issues.filter((issue) => (
+    issue.number > baseline.maximumIssueNumber
+    && Date.parse(issue.createdAt) >= cutoff
+    && issue.title === RESEARCH_ISSUE_TITLE
+  ));
+  if (castPrs.length > 1 || issues.length > 1) {
+    throw new Error(
+      `Ambiguous current bootstrap outputs: ${castPrs.length} Cast PRs and ${issues.length} research issues.`,
+    );
+  }
+  if (castPrs.length === 1 && issues.length === 1) {
+    const [castPr] = castPrs;
+    const [researchIssue] = issues;
+    const castMarker = parseBootstrapProvenance(castPr.body, 'Cast PR');
+    const issueMarker = parseBootstrapProvenance(researchIssue.body, 'Research issue');
+    const expectedMarker = {
+      schema: 1,
+      repository: outputs.target,
+      run_id: String(bootstrapRun.databaseId),
+      install_sha: installation.mergeCommit.oid,
+      cast_sha: castPr.headSha,
+    };
+    if (JSON.stringify(castMarker) !== JSON.stringify(expectedMarker)
+      || JSON.stringify(issueMarker) !== JSON.stringify(expectedMarker)) {
+      throw new Error('Bootstrap outputs do not share the expected current-run provenance.');
+    }
+    if (!researchIssue.body.startsWith(`${RESEARCH_MARKER}\n`)) {
+      throw new Error('Research issue is missing the canonical bootstrap marker.');
+    }
+    if (!sameAuthor(castPr.author, outputs.expectedAuthor)
+      || !sameAuthor(researchIssue.author, outputs.expectedAuthor)) {
+      throw new Error('Bootstrap outputs were not authored by the expected GitHub Actions bot.');
+    }
+    if (castPr.headRepository !== outputs.target
+      || castPr.headRefName !== CAST_BRANCH
+      || castPr.baseRefName !== baseline.defaultBranch
+      || castPr.baseSha !== installation.mergeCommit.oid
+      || castPr.headSha !== outputs.castBranchSha
+      || !SHA_PATTERN.test(castPr.headSha)
+      || castPr.isDraft !== true) {
+      throw new Error('Bootstrap Cast PR repository, branch, SHA, base, or draft state is invalid.');
+    }
+    return { castPr, researchIssue };
+  }
+  return null;
+}
+
+export function waitForBootstrapOutputs(
+  target,
+  baseline,
+  installation,
+  bootstrapRun,
+  {
+    github = githubAdapter,
+    now = Date.now,
+    pause = sleep,
+    timeoutMs = 5 * 60 * 1000,
+    pollMs = 10_000,
+  } = {},
+) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const selected = selectBootstrapOutputs(
+      bootstrapOutputs(target, github),
+      baseline,
+      installation,
+      bootstrapRun,
+    );
+    if (selected) return selected;
+    pause(pollMs);
+  }
+  throw new Error('Timed out waiting for the draft Cast PR and bootstrap research issue.');
+}
+
+// Mirrors selectBootstrapOutputs, but for the manual pull request fallback issue that bootstrap
+// opens instead of a Cast PR whenever GITHUB_TOKEN pull request creation is denied (the only
+// reachable outcome once a target enforces the required `can_approve_pull_request_reviews=false`
+// Actions permission). No research issue is created on this path: bootstrap returns immediately
+// after opening the fallback issue, before the research-issue step ever runs. The candidate filter
+// also mirrors production's lifecycle checks (open, unedited) from
+// validateBootstrapPrFallbackAttribution / findExistingBootstrapPrFallbackIssue: a closed or
+// edited issue always fails that review, so E2E must not treat it as a current, acceptable report.
+export function selectBootstrapFallback(outputs, baseline, installation, bootstrapRun) {
+  const cutoff = Math.max(
+    Date.parse(baseline.capturedAt),
+    Date.parse(installation.mergedAt),
+    Date.parse(bootstrapRun.createdAt),
+  );
+  const fallbackIssues = outputs.issues.filter((issue) => (
+    issue.number > baseline.maximumIssueNumber
+    && Date.parse(issue.createdAt) >= cutoff
+    && issue.title === BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE
+    && issue.state === 'open'
+    && typeof issue.createdAt === 'string' && issue.createdAt.length > 0
+    && issue.updatedAt === issue.createdAt
+  ));
+  if (fallbackIssues.length > 1) {
+    throw new Error(`Ambiguous current bootstrap fallback issues: found ${fallbackIssues.length}.`);
+  }
+  if (fallbackIssues.length !== 1) return null;
+  const [fallbackIssue] = fallbackIssues;
+  if (!sameAuthor(fallbackIssue.author, outputs.expectedAuthor)) {
+    throw new Error('Bootstrap fallback issue was not authored by the expected GitHub Actions bot.');
+  }
+  const marker = String(fallbackIssue.body ?? '').match(BOOTSTRAP_PR_FALLBACK_MARKER_PATTERN);
+  if (!marker || marker[1] !== CAST_BRANCH) {
+    throw new Error('Bootstrap fallback issue is missing the canonical pull request fallback marker.');
+  }
+  if (!outputs.castBranchSha || !SHA_PATTERN.test(outputs.castBranchSha)) {
+    throw new Error('Bootstrap fallback issue exists but the Cast branch was not pushed.');
+  }
+  // Independently parses and binds the full signed provenance record -- not just the plain-text
+  // branch marker and a compare-URL substring -- so a hosted E2E run cannot report success for a
+  // fallback issue that production's own validateBootstrapPrFallbackAttribution would reject.
+  const provenance = parseBootstrapPrFallbackProvenance(fallbackIssue.body, 'Bootstrap fallback issue');
+  const expectedCompareUrl =
+    `https://github.com/${outputs.target}/compare/${baseline.defaultBranch}...${CAST_BRANCH}` +
+    `?expand=1&title=${encodeURIComponent(CAST_PR_TITLE)}`;
+  const expectedProvenance = {
+    schema: 1,
+    repository: outputs.target,
+    run_id: String(bootstrapRun.databaseId),
+    base_branch: baseline.defaultBranch,
+    base_sha: bootstrapRun.headSha,
+    head_branch: CAST_BRANCH,
+    head_sha: outputs.castBranchSha,
+    compare_url: expectedCompareUrl,
+  };
+  if (JSON.stringify(provenance) !== JSON.stringify(expectedProvenance)) {
+    throw new Error('Bootstrap fallback issue provenance does not match the current bootstrap run.');
+  }
+  return { fallbackIssue, castBranchSha: outputs.castBranchSha };
+}
+
+export function waitForBootstrapFallback(
+  target,
+  baseline,
+  installation,
+  bootstrapRun,
+  {
+    github = githubAdapter,
+    now = Date.now,
+    pause = sleep,
+    timeoutMs = 5 * 60 * 1000,
+    pollMs = 10_000,
+  } = {},
+) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const selected = selectBootstrapFallback(
+      bootstrapOutputs(target, github),
+      baseline,
+      installation,
+      bootstrapRun,
+    );
+    if (selected) return selected;
+    pause(pollMs);
+  }
+  throw new Error('Timed out waiting for the bootstrap manual pull request fallback issue.');
+}
+
+// Finds the externally (human) created Cast pull request that production's own
+// validateBootstrapPrFallbackAttribution would authorize for this exact fallback issue --
+// re-implemented independently here (not imported, not invoked via any privileged token) so the
+// hosted E2E can *observe* that the human-authorization boundary was actually exercised without
+// ever being able to cross it itself. The E2E must never create this pull request: doing so with
+// any token would substitute automation for the human-in-the-loop step that
+// `can_approve_pull_request_reviews=false` exists to require, defeating the very contract being
+// verified. Only a single, unambiguous, correctly-bound candidate advances; anything else
+// (missing, ambiguous, or mismatched) fails closed and leaves the caller to keep waiting.
+export function selectManualFallbackCastPr(outputs, fallbackIssue) {
+  const provenance = parseBootstrapPrFallbackProvenance(fallbackIssue.body, 'Bootstrap fallback issue');
+  const candidates = outputs.castPrs.filter((pr) => (
+    pr.state === 'open'
+    && pr.headRefName === provenance.head_branch
+    && pr.headRepository === outputs.target
+    && pr.baseRefName === provenance.base_branch
+    && pr.title === CAST_PR_TITLE
+    && pr.author?.type === 'User'
+    && Date.parse(pr.createdAt) >= Date.parse(fallbackIssue.createdAt)
+  ));
+  if (candidates.length > 1) {
+    throw new Error(`Ambiguous manually created Cast fallback pull requests: found ${candidates.length}.`);
+  }
+  if (candidates.length !== 1) return null;
+  const [pr] = candidates;
+  if (pr.baseSha !== provenance.base_sha || pr.headSha !== provenance.head_sha) {
+    throw new Error('Manually created Cast fallback pull request does not match the fallback issue provenance.');
+  }
+  if (!outputs.castBranchSha || pr.headSha !== outputs.castBranchSha || !SHA_PATTERN.test(pr.headSha)) {
+    throw new Error('Manually created Cast fallback pull request head SHA does not match the pushed Cast branch.');
+  }
+  return pr;
+}
+
+export function waitForManualFallbackCastPr(
+  target,
+  fallbackIssue,
+  {
+    github = githubAdapter,
+    now = Date.now,
+    pause = sleep,
+    timeoutMs = 20 * 60 * 1000,
+    pollMs = 30_000,
+  } = {},
+) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const pr = selectManualFallbackCastPr(bootstrapOutputs(target, github), fallbackIssue);
+    if (pr) return pr;
+    pause(pollMs);
+  }
+  throw new Error('Timed out waiting for a human to manually create the Cast fallback pull request.');
+}
+
+// Polls for whichever bootstrap outcome is actually reachable. Under the required
+// `can_approve_pull_request_reviews=false` policy only the fallback-issue outcome is reachable
+// in practice (pull request creation fails closed every time), but both selectors are checked
+// every cycle so this also still exercises the Cast-PR + review-canary path unmodified against
+// a target where that setting was deliberately left permissive for canary-only testing.
+export function waitForBootstrapCompletion(
+  target,
+  baseline,
+  installation,
+  bootstrapRun,
+  {
+    github = githubAdapter,
+    now = Date.now,
+    pause = sleep,
+    timeoutMs = 5 * 60 * 1000,
+    pollMs = 10_000,
+  } = {},
+) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const outputs = bootstrapOutputs(target, github);
+    const prOutcome = selectBootstrapOutputs(outputs, baseline, installation, bootstrapRun);
+    if (prOutcome) return { kind: 'pr', ...prOutcome };
+    const fallbackOutcome = selectBootstrapFallback(outputs, baseline, installation, bootstrapRun);
+    if (fallbackOutcome) return { kind: 'fallback', ...fallbackOutcome };
+    pause(pollMs);
+  }
+  throw new Error(
+    'Timed out waiting for either a draft Cast PR with research issue, or a manual pull request fallback issue.',
+  );
+}
+
+export function waitForBaseControlledReviewCanary(
+  target,
+  castPr,
+  evidence,
+  { request = ghJson, now = Date.now, pause = sleep } = {},
+) {
+  const deadline = now() + 20 * 60 * 1000;
+  while (now() < deadline) {
+    const reviews = request([
+      'api',
+      `repos/${target}/pulls/${castPr.number}/reviews?per_page=100`,
+    ]);
+    const verdicts = reviews.filter((review) =>
+      review.user?.login === ACTIONS_BOT_LOGIN &&
+      review.user?.id === ACTIONS_BOT_ID &&
+      review.user?.type === 'Bot' &&
+      review.commit_id === castPr.headSha &&
+      String(review.body ?? '').includes('Squad-Review-Verdict:'));
+    if (verdicts.length > 1) {
+      throw new Error(`Expected one base-controlled Squad Review canary verdict; found ${verdicts.length}.`);
+    }
+    if (verdicts.length === 1) {
+      const marker = String(verdicts[0].body).match(/^Squad-Review-Verdict: (\{[^\r\n]+\})$/m);
+      if (!marker) throw new Error('Squad Review canary verdict marker is malformed.');
+      const verdict = JSON.parse(marker[1]);
+      if (verdict.schema !== 'squad-review-verdict/v1'
+        || verdict.repository !== target
+        || verdict.pull_request !== castPr.number
+        || verdict.base_sha !== castPr.baseSha
+        || verdict.head_sha !== castPr.headSha
+        || verdict.author_agent !== '@squad/base-controlled-bootstrap'
+        || verdict.reviewer_agent !== '@squad/base-controlled-review'
+        || verdict.result !== 'COMMENT'
+        || verdict.event !== 'pull_request_target'
+        || verdict.workflow_sha !== castPr.baseSha
+        || verdict.workflow_path !== '.github/workflows/squad-review.lock.yml') {
+        throw new Error('Squad Review canary verdict is not bound to the base-controlled bootstrap activation.');
+      }
+      const run = request([
+        'api', `repos/${target}/actions/runs/${verdict.run_id}`,
+        '--jq',
+        '{id,event,path,head_sha,run_attempt,status,conclusion,display_title,repository:{full_name:.repository.full_name}}',
+      ]);
+      if (run.event !== 'pull_request_target'
+        || run.path !== '.github/workflows/squad-review.lock.yml'
+        || run.head_sha !== castPr.baseSha
+        || run.repository?.full_name !== target
+        || run.display_title !== `Squad review — PR #${castPr.number}`
+        || run.run_attempt < verdict.run_attempt) {
+        throw new Error('Squad Review canary verdict is not bound to the base-controlled workflow run.');
+      }
+      const jobs = request([
+        'api', '--paginate', '--slurp',
+        `repos/${target}/actions/runs/${verdict.run_id}/attempts/${verdict.run_attempt}/jobs?per_page=100`,
+      ]).flat().flatMap((page) => page.jobs ?? []);
+      const authorityJobs = jobs.filter((job) => job.name === 'review');
+      if (authorityJobs.length !== 1) {
+        throw new Error(`Expected one native Squad Review authority job; found ${authorityJobs.length}.`);
+      }
+      const job = authorityJobs[0];
+      if (job.status !== 'completed' || job.conclusion !== 'success'
+        || typeof job.check_run_url !== 'string') {
+        throw new Error(`Base-controlled Squad Review canary failed for ${castPr.url}.`);
+      }
+      const checkId = Number(job.check_run_url.match(/\/check-runs\/([1-9][0-9]*)$/)?.[1]);
+      if (!Number.isSafeInteger(checkId)) {
+        throw new Error('Native Squad Review job did not expose a valid check-run binding.');
+      }
+      const check = request([
+        'api',
+        '-H', 'Accept: application/vnd.github+json',
+        `repos/${target}/check-runs/${checkId}`,
+        '--jq', '{id,name,status,conclusion,head_sha,details_url,app:{id:.app.id,slug:.app.slug}}',
+      ]);
+      // The Checks API exposes the job name, not the UI's workflow/job context.
+      if (check.id !== checkId
+        || check.name !== 'review'
+        || check.head_sha !== castPr.headSha
+        || check.status !== 'completed'
+        || check.conclusion !== 'success'
+        || check.app?.id !== 15368
+        || check.app?.slug !== 'github-actions') {
+        throw new Error('Native Squad Review required check is not bound to the trusted review job.');
+      }
+      writeJson(resolve(evidence, 'base-controlled-review-canary.json'), {
+        pull_request: castPr,
+        run,
+        job,
+        check,
+        review: verdicts[0],
+        verdict,
+      });
+      return { run, job, check, verdict };
+    }
+    pause(10_000);
+  }
+  throw new Error('Timed out waiting for the base-controlled Squad Review activation canary.');
+}
+
+function createAndMergePr({
+  cwd,
+  target,
+  defaultBranch,
+  expectedBaseSha,
+  branch,
+  title,
+  body,
+  evidence,
+  github = githubAdapter,
+}) {
+  privileged('gh', ['auth', 'setup-git']);
+  guardedTargetMutation({
+    target,
+    defaultBranch,
+    expectedSha: expectedBaseSha,
+    phase: `${title} push`,
+    github,
+    mutate: () => privileged('git', ['push', '--set-upstream', 'origin', branch], {
+      cwd,
+      capture: false,
+    }),
+  });
+  const prUrl = guardedTargetMutation({
+    target,
+    defaultBranch,
+    expectedSha: expectedBaseSha,
+    phase: `${title} PR creation`,
+    github,
+    mutate: () => privileged('gh', [
+      'pr', 'create', '--repo', target, '--base', defaultBranch, '--head', branch,
+      '--title', title, '--body', body,
+    ], { cwd }),
+  });
+  const pr = ghJson(['pr', 'view', prUrl, '--repo', target, '--json', 'number,url,state,headRefName,baseRefName']);
+  writeJson(resolve(evidence, `pr-${pr.number}-created.json`), pr);
+  guardedTargetMutation({
+    target,
+    defaultBranch,
+    expectedSha: expectedBaseSha,
+    phase: `${title} merge`,
+    github,
+    mutate: () => privileged(
+      'gh',
+      ['pr', 'merge', String(pr.number), '--repo', target, '--merge', '--delete-branch'],
+      {
+        cwd,
+        capture: false,
+        timeout: 300_000,
+      },
+    ),
+  });
+  const merged = ghJson([
+    'pr', 'view', String(pr.number), '--repo', target,
+    '--json', 'number,url,state,mergedAt,mergeCommit',
+  ]);
+  if (merged.state !== 'MERGED' || !merged.mergeCommit?.oid) throw new Error(`PR ${pr.url} did not merge.`);
+  writeJson(resolve(evidence, `pr-${pr.number}-merged.json`), merged);
+  return merged;
+}
+
+function verifyInstalledTrusted(repositoryRoot, checkout, sourceSha) {
+  assertInstalledManifestIdentity(repositoryRoot, checkout);
+  const result = verifyInstall(checkout, { expectedRevision: sourceSha });
+  if (result.failures.length > 0) throw new Error(result.failures.join('\n'));
+  const ownership = JSON.parse(readFileSync(
+    resolve(checkout, OWNERSHIP_DESTINATION),
+    'utf8',
+  ));
+  if (ownership.files.length !== OWNERSHIP_ENTRY_COUNT) {
+    throw new Error(`Expected ${OWNERSHIP_ENTRY_COUNT} owned package files; found ${ownership.files.length}.`);
+  }
+}
+
+function hosted(args, repositoryRoot) {
+  const sourceInfo = sourcePreflight(args, repositoryRoot);
+  const sourceSha = requireArg(args, 'source_sha');
+  const evidence = resolve(requireArg(args, 'evidence'));
+  const contract = loadBundleContract(repositoryRoot);
+  if (contract.workflows.length !== 8 || contract.runtime.length !== 17 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 8 workflows, 17 runtime resources, and 1 skill.');
+  }
+  const targetState = authorizeTarget(args, sourceInfo, contract);
+  mkdirSync(evidence, { recursive: true });
+  writeJson(resolve(evidence, 'preflight.json'), targetState);
+
+  const checkout = resolve(dirname(evidence), `squad-gh-aw-e2e-consumer-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`);
+  const remoteBranches = new Set();
+  const createdPrs = new Set();
+  rmSync(checkout, { recursive: true, force: true });
+  try {
+    privileged('gh', ['repo', 'clone', targetState.target, checkout], {
+      capture: false,
+      timeout: 300_000,
+    });
+    const clonedHead = runChild('git', ['rev-parse', 'HEAD'], { cwd: checkout });
+    if (clonedHead !== targetState.baseline.defaultBranchSha) {
+      throw new Error(
+        `Cloned target HEAD does not match pristine baseline: expected ${targetState.baseline.defaultBranchSha}, found ${clonedHead}.`,
+      );
+    }
+    runChild('git', ['config', 'user.name', 'Squad hosted E2E'], { cwd: checkout });
+    runChild('git', ['config', 'user.email', 'github-actions[bot]@users.noreply.github.com'], { cwd: checkout });
+    const installBranch = `squad-e2e/install-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`;
+    remoteBranches.add(installBranch);
+    runChild('git', ['switch', '-c', installBranch], { cwd: checkout });
+
+    const sourceReadToken = process.env.SOURCE_READ_TOKEN;
+    if (!sourceReadToken) throw new Error('SOURCE_READ_TOKEN is required for immutable package retrieval.');
+    if (sourceReadToken === process.env.GH_TOKEN) {
+      throw new Error('SOURCE_READ_TOKEN must not reuse the mutation-capable GH_TOKEN.');
+    }
+    runChild('gh', ['aw', 'add', `${PACKAGE_NAME}@${sourceSha}`], {
+      cwd: checkout,
+      capture: false,
+      timeout: 600_000,
+      allowGitHubToken: true,
+      env: { GH_TOKEN: sourceReadToken },
+    });
+    rmSync(resolve(checkout, '.github/skills/agentic-workflows/SKILL.md'), { force: true });
+    runChild('node', ['.github/workflows/shared/squad-install-verifier.mjs', '--materialize-runtime'], {
+      cwd: checkout,
+      capture: false,
+    });
+    runChild('gh', ['aw', 'compile', '--strict', '--approve', '--no-check-update'], {
+      cwd: checkout,
+      capture: false,
+      timeout: 600_000,
+    });
+    runChild('gh', ['aw', 'compile', '--strict', '--no-check-update'], {
+      cwd: checkout,
+      capture: false,
+      timeout: 600_000,
+    });
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
+
+    const installPaths = ['.gitattributes', '.github/aw', '.github/workflows', '.github/skills', '.vscode']
+      .filter((path) => existsSync(resolve(checkout, path)));
+    runChild('git', ['add', '--', ...installPaths], { cwd: checkout });
+    const staged = verifyStagedInstall(checkout, { expectedRevision: sourceSha, stageOwnership: true });
+    if (staged.failures.length > 0) {
+      throw new Error(`STOP: required installation files could not be staged and verified:\n${staged.failures.join('\n')}`);
+    }
+    runChild('git', ['commit', '-m', 'ci: install Squad agentic workflows'], { cwd: checkout });
+    const installStartedAt = Date.now();
+    const installation = createAndMergePr({
+      cwd: checkout,
+      target: targetState.target,
+      defaultBranch: targetState.info.default_branch,
+      expectedBaseSha: targetState.baseline.defaultBranchSha,
+      branch: installBranch,
+      title: INSTALL_PR_TITLE,
+      body: 'One-shot hosted E2E installation. Generated Squad work remains human-reviewed and is not merged.',
+      evidence,
+    });
+    createdPrs.add(installation.number);
+    const installRun = waitForBootstrapRun(
+      targetState.target,
+      installation.mergeCommit.oid,
+      installStartedAt,
+      evidence,
+    );
+    writeJson(resolve(evidence, 'installation-identity.json'), {
+      baseline: targetState.baseline,
+      installation,
+      bootstrapRun: installRun,
+    });
+    const completion = waitForBootstrapCompletion(
+      targetState.target,
+      targetState.baseline,
+      installation,
+      installRun,
+    );
+    // Only the 'pr' outcome exercises the base-controlled Squad Review canary: it requires a
+    // real pull request for squad-review's pull_request_target trigger to act on. The required
+    // `can_approve_pull_request_reviews=false` Actions permission (docs/src/content/docs/guide/
+    // gh-aw.md) makes GITHUB_TOKEN pull request creation fail closed, so the 'fallback' outcome
+    // is the only one reachable against a target configured per the published setup guidance;
+    // the 'pr' branch is retained for an explicitly permissive canary-only target.
+    //
+    // The 'fallback' outcome is deliberately *not* treated as terminal success: the fallback issue
+    // only proves bootstrap correctly detected the permission denial and asked a human to open the
+    // Cast PR. It does not prove a human-authored PR on that branch exists yet, that it would be
+    // authorized by validateBootstrapPrFallbackAttribution(), nor that the review workflow
+    // activates for it. The hosted E2E must never create that PR itself, and must never read the
+    // target repository's pull request/review state with any token to check whether a human has
+    // acted yet either -- both would require a cross-repository credential this job has no
+    // legitimate reason to hold once bootstrap has finished its own job of asking. Everything this
+    // branch needs (repository, fallback issue, exact branch/head/base/SHA binding, and the
+    // compare URL a human must use) is already fully present in the fallback issue's own signed
+    // provenance body, parsed here with zero additional API calls. The run ends immediately,
+    // non-terminal, at `awaiting_manual_pr`; validating a human-opened PR against this evidence is
+    // a separate, explicitly operator-driven step (see `resumeFallback` below), never an
+    // automatic part of this hosted Actions job.
+    const bootstrapSummary = completion.kind === 'pr'
+      ? (() => {
+          const reviewCanary = waitForBaseControlledReviewCanary(
+            targetState.target,
+            completion.castPr,
+            evidence,
+          );
+          return {
+            status: 'passed',
+            bootstrap_outcome: 'cast_pr',
+            review_canary_pr: completion.castPr.number,
+            review_canary_check: reviewCanary.check.id,
+            generated_cast_pr: completion.castPr.url,
+            generated_research_issue: completion.researchIssue.url,
+          };
+        })()
+      : (() => {
+          const provenance = parseBootstrapPrFallbackProvenance(
+            completion.fallbackIssue.body,
+            'Bootstrap fallback issue',
+          );
+          writeJson(resolve(evidence, 'fallback-awaiting-manual-pr.json'), {
+            fallback_issue: completion.fallbackIssue,
+            provenance,
+          });
+          return {
+            status: 'awaiting_manual_pr',
+            bootstrap_outcome: 'fallback_issue',
+            generated_fallback_issue: completion.fallbackIssue.url,
+            target: targetState.target,
+            head_branch: provenance.head_branch,
+            head_sha: provenance.head_sha,
+            base_branch: provenance.base_branch,
+            base_sha: provenance.base_sha,
+            compare_url: provenance.compare_url,
+            next_step:
+              'A human must open the Cast pull request at compare_url, matching this exact '
+              + 'branch/head/base/SHA provenance. The target repository\'s own installed Squad '
+              + 'Review workflow then validates it locally using that repository\'s own '
+              + 'GITHUB_TOKEN/gh-aw authority. To check on the outcome afterward: (1) download '
+              + 'this run\'s evidence artifact, e.g. `gh run download <this-run-id> --repo '
+              + `${TRUSTED_SOURCE.repository} --name squad-gh-aw-hosted-e2e-<this-run-id> --dir `
+              + '<evidence-in-dir>`; (2) run `node scripts/gh-aw-hosted-e2e.mjs resume-fallback '
+              + `--target ${targetState.target} --evidence-in <evidence-in-dir> --evidence `
+              + '<evidence-out-dir>` locally, authenticated as yourself (operator-driven; '
+              + 'never a CI job, never a repository secret).',
+          };
+        })();
+    if (bootstrapSummary.status === 'awaiting_manual_pr') {
+      writeJson(resolve(evidence, 'summary.json'), {
+        target: targetState.target,
+        source_sha: sourceSha,
+        installation_pr: installation.number,
+        installation_run: installRun.url,
+        ...bootstrapSummary,
+        generated_work_merged: false,
+      });
+      return;
+    }
+
+    runChild('git', ['fetch', 'origin', targetState.info.default_branch], { cwd: checkout });
+    const probeBranch = `squad-e2e/probe-${process.env.GITHUB_RUN_ID ?? sourceSha.slice(0, 12)}`;
+    remoteBranches.add(probeBranch);
+    runChild('git', ['switch', '-C', probeBranch, `origin/${targetState.info.default_branch}`], { cwd: checkout });
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
+    const probe = {
+      schema_version: 1,
+      kind: 'squad-bootstrap-trigger-probe',
+      trusted_source_sha: sourceSha,
+      hosted_run_id: String(process.env.GITHUB_RUN_ID ?? 'local'),
+      install_merge_sha: installation.mergeCommit.oid,
+      default_branch_sha: installation.mergeCommit.oid,
+    };
+    writeJson(resolve(checkout, TRIGGER_PROBE_DESTINATION), probe);
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
+    runChild('git', ['add', '--', TRIGGER_PROBE_DESTINATION], { cwd: checkout });
+    assertExactStagedDiff(checkout, new Set([TRIGGER_PROBE_DESTINATION]));
+    runChild('git', ['commit', '-m', 'test: add Squad bootstrap trigger probe'], { cwd: checkout });
+    const probeStartedAt = Date.now();
+    const probeMerge = createAndMergePr({
+      cwd: checkout,
+      target: targetState.target,
+      defaultBranch: targetState.info.default_branch,
+      expectedBaseSha: installation.mergeCommit.oid,
+      branch: probeBranch,
+      title: PROBE_PR_TITLE,
+      body: 'One-shot non-executable sentinel proving the bootstrap path trigger.',
+      evidence,
+    });
+    createdPrs.add(probeMerge.number);
+    const probeRun = waitForBootstrapRun(
+      targetState.target,
+      probeMerge.mergeCommit.oid,
+      probeStartedAt,
+      evidence,
+    );
+    const sentinel = ghJson([
+      'api',
+      `repos/${targetState.target}/contents/${TRIGGER_PROBE_DESTINATION}?ref=${targetState.info.default_branch}`,
+      '--jq', '.content',
+    ]);
+    const decoded = Buffer.from(sentinel.replace(/\n/g, ''), 'base64').toString('utf8');
+    if (decoded !== `${JSON.stringify(probe, null, 2)}\n`) throw new Error('Merged trigger sentinel bytes changed.');
+    runChild('git', ['fetch', 'origin', targetState.info.default_branch], { cwd: checkout });
+    runChild('git', ['reset', '--hard', `origin/${targetState.info.default_branch}`], { cwd: checkout });
+    verifyInstalledTrusted(repositoryRoot, checkout, sourceSha);
+    writeJson(resolve(evidence, 'summary.json'), {
+      status: 'passed',
+      target: targetState.target,
+      source_sha: sourceSha,
+      installation_pr: installation.number,
+      installation_run: installRun.url,
+      ...bootstrapSummary,
+      probe_pr: probeMerge.number,
+      probe_run: probeRun.url,
+      generated_work_merged: false,
+    });
+  } finally {
+    for (const prNumber of createdPrs) {
+      try {
+        const state = ghJson(['pr', 'view', String(prNumber), '--repo', targetState.target, '--json', 'state']);
+        if (state.state === 'OPEN') privileged('gh', ['pr', 'close', String(prNumber), '--repo', targetState.target]);
+      } catch (error) {
+        console.error(`Failed to close E2E PR ${prNumber}: ${error.message}`);
+      }
+    }
+    for (const branch of remoteBranches) {
+      try {
+        privileged('gh', ['api', '--method', 'DELETE', `repos/${targetState.target}/git/refs/heads/${branch}`]);
+      } catch (error) {
+        if (!/404|422/.test(error.message)) console.error(`Failed to delete E2E branch ${branch}: ${error.message}`);
+      }
+    }
+    rmSync(checkout, { recursive: true, force: true });
+  }
+}
+
+// Resumes a prior `hosted` run that ended in the non-terminal `awaiting_manual_pr` status, after
+// a human has (or has not yet) manually opened the Cast pull request the fallback issue asked
+// for. This is intentionally an operator-run LOCAL command only: it is never invoked by any GitHub
+// Actions workflow or repository_dispatch job, and must never be run with a repository secret.
+// Run it from your own workstation, authenticated as yourself (`gh auth login`); `--evidence-in`
+// is a directory you populate yourself first, e.g. via
+// `gh run download <hosted-e2e-run-id> --repo bradygaster/squad \
+//   --name squad-gh-aw-hosted-e2e-<hosted-e2e-run-id> --dir <evidence-in>`
+// against the bradygaster/squad repository you already have read access to. Whatever GH_TOKEN is
+// present in your shell when you run this (your own personal token, never a repo secret) is what
+// it uses to observe the target repository.
+//
+// Reads the identity of that prior run (its original baseline, installation, and
+// bootstrap run -- never a freshly recomputed baseline, which would already count the existing
+// fallback issue as pre-existing and break the ">" baseline comparisons every selector relies on)
+// from its persisted evidence, then only *observes* GitHub state through read-only API calls: it
+// never creates, comments on, or otherwise mutates the Cast pull request itself. It also never
+// claims to speak for the target repository's own review outcome: `waitForBaseControlledReviewCanary`
+// here is reading the verdict the target repository's own installed Squad Review workflow already
+// posted, using that repository's own GITHUB_TOKEN/gh-aw authority -- this command only observes
+// that it happened.
+function resumeFallback(args) {
+  const target = requireArg(args, 'target');
+  const evidenceIn = resolve(requireArg(args, 'evidence_in'));
+  const evidence = resolve(requireArg(args, 'evidence'));
+  mkdirSync(evidence, { recursive: true });
+  const priorPreflight = JSON.parse(readFileSync(resolve(evidenceIn, 'preflight.json'), 'utf8'));
+  const priorIdentity = JSON.parse(readFileSync(resolve(evidenceIn, 'installation-identity.json'), 'utf8'));
+  if (priorPreflight.target !== target) {
+    throw new Error('Resume target does not match the target bound to the prior hosted run evidence.');
+  }
+  const { baseline, installation, bootstrapRun } = priorIdentity;
+  const fallbackOutcome = selectBootstrapFallback(
+    bootstrapOutputs(target),
+    baseline,
+    installation,
+    bootstrapRun,
+  );
+  if (!fallbackOutcome) {
+    throw new Error(
+      'The bootstrap fallback issue from the prior hosted run is no longer current; cannot resume.',
+    );
+  }
+  writeJson(resolve(evidence, 'resume-preflight.json'), { target, baseline, installation, bootstrapRun });
+  const manualCastPr = waitForManualFallbackCastPr(target, fallbackOutcome.fallbackIssue);
+  const reviewCanary = waitForBaseControlledReviewCanary(target, manualCastPr, evidence);
+  writeJson(resolve(evidence, 'summary.json'), {
+    status: 'passed',
+    target,
+    bootstrap_outcome: 'cast_pr_via_manual_fallback',
+    generated_fallback_issue: fallbackOutcome.fallbackIssue.url,
+    review_canary_pr: manualCastPr.number,
+    review_canary_check: reviewCanary.check.id,
+    generated_cast_pr: manualCastPr.url,
+    generated_work_merged: false,
+  });
+}
+
+function diagnose(args) {
+  const root = resolve(requireArg(args, 'root'));
+  const contractRoot = resolve(requireArg(args, 'contract_root'));
+  assertInstalledManifestIdentity(contractRoot, root);
+  const contract = loadInstalledBundleContract(root);
+  const findings = [];
+  for (const entry of [
+    ...contract.workflows.flatMap((workflow) => [
+      [workflow.destination, workflow.source_sha256],
+      [workflow.lock, undefined],
+    ]),
+    ...contract.runtime.map((runtime) => [runtime.destination, runtime.sha256]),
+    ...contract.skills.map((skill) => [skill.destination, skill.sha256]),
+  ]) {
+    const [path, expected] = entry;
+    if (!existsSync(resolve(root, path))) findings.push({ code: 'missing', path });
+    else if (expected && contract.digest(path) !== expected) findings.push({ code: 'stale', path });
+  }
+  const result = { valid: findings.length === 0, findings };
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  return result.valid ? 0 : 1;
+}
+
+export function main(argv = process.argv.slice(2), repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')) {
+  const args = parseArgs(argv);
+  if (args.command === 'source-preflight') {
+    sourcePreflight(args, repositoryRoot);
+    return 0;
+  }
+  if (args.command === 'hosted') {
+    hosted(args, repositoryRoot);
+    return 0;
+  }
+  if (args.command === 'resume-fallback') {
+    resumeFallback(args);
+    return 0;
+  }
+  if (args.command === 'diagnose') return diagnose(args);
+  throw new Error(
+    'Usage: gh-aw-hosted-e2e.mjs <source-preflight|hosted|resume-fallback|diagnose> [options]',
+  );
+}
+
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}

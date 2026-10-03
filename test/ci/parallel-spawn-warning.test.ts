@@ -4,9 +4,9 @@
  * A real incident showed that parallel background agents on a shared
  * worktree can silently lose untracked files to another stream's global
  * git operations (stash/clean/restore). The coordinator template must
- * warn before launching 2+ background agents without worktree isolation,
- * and the worktree reference must not claim shared-worktree concurrency
- * is safe for untracked files.
+ * constrain parallel work to independently deliverable outcomes, warn before
+ * launching 2+ background agents without worktree isolation, and avoid
+ * claiming shared-worktree concurrency is safe for untracked files.
  *
  * Canonical source: .squad-templates/
  */
@@ -23,21 +23,25 @@ function readTemplate(relPath: string): string {
   return readFileSync(resolve(ROOT, relPath), 'utf-8');
 }
 
-describe('shared-worktree spawn warning contract (#1014)', () => {
+describe('bounded collaboration and shared-worktree warning contracts', () => {
   const squadTemplate = readTemplate('.squad-templates/squad.agent.md');
   const worktreeReference = readTemplate('.squad-templates/worktree-reference.md');
 
-  it('keeps the shared-worktree guard inside the Parallel Fan-Out section', () => {
-    const fanOut = squadTemplate.slice(
-      squadTemplate.indexOf('### Parallel Fan-Out'),
-      squadTemplate.indexOf('### Shared File Architecture'),
+  it('keeps the shared-worktree guard inside the Bounded Collaboration section', () => {
+    const collaboration = squadTemplate.slice(
+      squadTemplate.indexOf('### Bounded Collaboration'),
+      squadTemplate.indexOf('### Shared Decision Architecture'),
     );
 
-    expect(fanOut).toContain('**Shared-worktree guard.**');
-    expect(fanOut).toContain('2+ background agents');
-    expect(fanOut).toContain('Pre-Spawn: Worktree Setup');
-    expect(fanOut).toContain('untracked files');
-    expect(fanOut).toContain('a caution, not a gate');
+    expect(collaboration).toContain('exactly one accountable specialist');
+    expect(collaboration).toContain('independently deliverable outcomes');
+    expect(collaboration).toContain('concrete, bounded subproblem');
+    expect(collaboration).toContain('Do not launch speculative, anticipatory');
+    expect(collaboration).toContain('**Shared-worktree guard.**');
+    expect(collaboration).toContain('2+ background agents');
+    expect(collaboration).toContain('Pre-Spawn: Worktree Setup');
+    expect(collaboration).toContain('untracked files');
+    expect(collaboration).toContain('warning is a caution');
   });
 
   it('warns about stash/clean/restore specifically', () => {
@@ -56,9 +60,21 @@ describe('shared-worktree spawn warning contract (#1014)', () => {
       'packages/squad-sdk/templates/squad.agent.md.template',
     ];
     for (const copy of copies) {
-      expect(readTemplate(copy), `${copy} is missing the shared-worktree guard`).toContain(
+      const content = readTemplate(copy);
+      expect(content, `${copy} is missing bounded ownership`).toContain(
+        'exactly one accountable specialist',
+      );
+      expect(content, `${copy} still enables eager fan-out`).not.toContain(
+        'launch aggressively, collect results later',
+      );
+      expect(content, `${copy} is missing the shared-worktree guard`).toContain(
         '**Shared-worktree guard.**',
       );
+      for (const id of ['scribe', 'ralph', 'rai', 'fact-checker']) {
+        expect(content, `${copy} is missing the ${id} Cast source`).toContain(
+          `.squad/agents/${id}/charter.md`,
+        );
+      }
     }
   });
 });

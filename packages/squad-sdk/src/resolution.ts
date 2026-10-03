@@ -132,8 +132,19 @@ export interface ResolvedSquadPaths {
   mode: 'local' | 'remote';
   /** Project-local .squad/ (decisions, logs) */
   projectDir: string;
-  /** Team identity root (agents, casting, skills) */
+  /**
+   * Team identity root, exactly as configured. In remote mode this is the
+   * resolved `teamRoot`, which may be either the team repo (parent of
+   * `.squad/`) or the team's `.squad/` dir itself. Do not join team-state
+   * paths (`.squad`, `agents/`, `decisions/`) onto it — the result depends on
+   * which form the user wrote. Use {@link ResolvedSquadPaths.teamSquadDir}.
+   */
   teamDir: string;
+  /**
+   * The team's squad directory (team.md, agents/, casting/), whichever form
+   * `teamRoot` uses. Equals projectDir in local mode.
+   */
+  teamSquadDir: string;
   /** User's personal squad dir, null if not found or disabled */
   personalDir: string | null;
   config: SquadDirConfig | null;
@@ -345,6 +356,26 @@ export function isConsultMode(config: SquadDirConfig | null): boolean {
 }
 
 /**
+ * Resolve the team's squad directory from a remote `teamRoot` (#2107).
+ *
+ * `squad link` writes `teamRoot` as the team repo (the parent of `.squad/`),
+ * while the docs show the team's `.squad/` dir itself; the coordinator accepts
+ * both. Prefer a nested squad dir; otherwise use teamDir when it already is
+ * one. Falls back to the nested path so a missing team reports "not found".
+ */
+function resolveTeamSquadDir(teamDir: string, name: '.squad' | '.ai-team'): string {
+  const names = name === '.squad' ? ['.squad', '.ai-team'] : ['.ai-team', '.squad'];
+  for (const candidate of names) {
+    const nested = path.join(teamDir, candidate);
+    if (storage.existsSync(nested) && storage.isDirectorySync(nested)) return nested;
+  }
+  if (names.includes(path.basename(teamDir)) || storage.existsSync(path.join(teamDir, 'team.md'))) {
+    return teamDir;
+  }
+  return path.join(teamDir, name);
+}
+
+/**
  * Resolve dual-root squad paths (projectDir / teamDir).
  *
  * - Walks up from `startDir` looking for `.squad/` (or `.ai-team/` for legacy repos).
@@ -377,6 +408,7 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
       mode: 'remote',
       projectDir,
       teamDir,
+      teamSquadDir: resolveTeamSquadDir(teamDir, name),
       personalDir: resolvePersonalSquadDir(),
       config,
       name,
@@ -389,6 +421,7 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     mode: 'local',
     projectDir,
     teamDir: projectDir,
+    teamSquadDir: projectDir,
     personalDir: resolvePersonalSquadDir(),
     config,
     name,
@@ -851,12 +884,12 @@ export function resolveSquadState(startDir?: string, cliOverride?: StateBackendT
 
   // For local backend, use FSStorageProvider directly (more capable).
   // For git-notes/orphan, bridge via StateBackendStorageAdapter.
-  // rootDir is paths.teamDir (matches the squadRoot every local-backend
+  // rootDir is paths.teamSquadDir (matches the squadRoot every local-backend
   // caller — e.g. ToolRegistry in state-mcp.ts — builds its paths against),
   // so the traversal guard actually validates instead of no-op'ing on an
   // unset rootDir and letting a bad upstream path resolve silently.
   const stateStorage: StorageProvider = backend.name === 'local'
-    ? new FSStorageProvider(paths.teamDir)
+    ? new FSStorageProvider(paths.teamSquadDir)
     : new StateBackendStorageAdapter(backend, paths.projectDir);
 
   return { paths, backend, repoRoot, storage: stateStorage };

@@ -2,7 +2,7 @@ name: Squad CI
 
 on:
   pull_request:
-    branches: [dev, preview, main]
+    branches: [dev, main]
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [dev]
@@ -173,11 +173,17 @@ jobs:
         # than skipping — a skipped gate is indistinguishable from no gate. This
         # includes the shell input security contract gate (#1834) and the compile
         # contract (#1732).
-        run: gh extension install --pin v0.86.2 github/gh-aw
+        run: gh extension install --pin v0.89.22 github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Build
         run: npm run build
+      - name: Verify product/team isolation
+        run: npm run verify:team-isolation
+      - name: Type-check
+        run: npm run lint
+      - name: Lint source and tests
+        run: npm run lint:eslint
       - name: Run tests
         run: npm test
 
@@ -269,8 +275,9 @@ jobs:
           # require a changeset (or CHANGELOG update). The top-level templates/ tree is
           # the primary sync target of .squad-templates/ (see scripts/sync-templates.mjs) —
           # an append-only superset whose entire tree is governed squad scaffolding, not
-          # unrelated content. Agent charters under .squad/agents/ are likewise governed.
-          SDK_CLI_PATH_REGEX='^packages/squad-(sdk|cli)/src/|^packages/squad-(sdk|cli)/templates/|^\.squad-templates/|^templates/|^\.squad/agents/.+/charter\.md$'
+          # unrelated content. Live .squad/ team state is deliberately excluded:
+          # re-casting a team must not require a product package changeset.
+          SDK_CLI_PATH_REGEX='^packages/squad-(sdk|cli)/src/|^packages/squad-(sdk|cli)/templates/|^\.squad-templates/|^templates/'
           SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E "$SDK_CLI_PATH_REGEX" || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
             echo "✅ Not applicable (no SDK/CLI source or template changes)" >> "$GITHUB_STEP_SUMMARY"
@@ -339,6 +346,29 @@ jobs:
               console.error('Fix: ensure workspace versions match, then npm install at repo root.');
               process.exit(1);
             }
+            const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const sdk = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
+            const cli = JSON.parse(fs.readFileSync('packages/squad-cli/package.json', 'utf8'));
+            const versions = new Set([root.version, sdk.version, cli.version]);
+            if (versions.size !== 1) {
+              console.error('::error::Root, SDK, and CLI versions must match.');
+              process.exit(1);
+            }
+            const dependency = cli.dependencies?.['@bradygaster/squad-sdk'];
+            const lockDependency =
+              lock.packages?.['packages/squad-cli']?.dependencies?.['@bradygaster/squad-sdk'];
+            if (sdk.version.includes('-')) {
+              const expected = '>=' + sdk.version;
+              if (dependency !== expected || lockDependency !== expected) {
+                console.error(
+                  '::error::Preview versions require the CLI SDK dependency and lockfile entry to be ' + expected,
+                );
+                process.exit(1);
+              }
+            } else if (dependency?.includes('-') || lockDependency?.includes('-')) {
+              console.error('::error::Stable versions cannot retain a prerelease SDK dependency floor.');
+              process.exit(1);
+            }
             console.log('✅ All workspace packages resolve to local file: links');
           "
           echo "✅ All workspace packages resolve to local links" >> "$GITHUB_STEP_SUMMARY"
@@ -390,7 +420,17 @@ jobs:
         run: |
           VIOLATIONS=0
           for wf in .github/workflows/*.yml; do
-            BARE=$(grep -n 'npm.*publish' "$wf" | grep -v '#' | grep -v '\-w ' | grep -v '\-\-workspace' | grep -v 'echo ' | grep -v 'grep ' | grep -v 'name:' || true)
+            BARE=$(awk '
+              /^[[:space:]]*#/ { next }
+              {
+                command = $0
+                sub(/^[[:space:]]*-[[:space:]]*/, "", command)
+                sub(/^run:[[:space:]]*/, "", command)
+                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/) {
+                  print NR ":" $0
+                }
+              }
+            ' "$wf")
             if [ -n "$BARE" ]; then
               echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
               echo "$BARE"
@@ -672,8 +712,13 @@ jobs:
           fi
 
   # ── gh-aw strict compile gate ────────────────────────────────────────────
-  # Compiles all four Squad-authored workflow sources with --strict against a
-  # pinned compiler so the delivered stack is always proven compilable.
+  # Compiles all eight Squad-authored workflow sources with --strict against a
+  # pinned compiler so the delivered stack is always proven compilable. All
+  # eight workflows, including squad-improvement-worker, squad-bootstrap, and squad-command-router, are distributed by the
+  # gh-aw-enlistment bootstrap skill/docs as part of the standard install --
+  # squad-improvement-worker stays dormant (approval-gated) until a maintainer
+  # authorizes a governance-scoped retrospective proposal, but it is not a
+  # separate opt-in add-on.
   # Runs unconditionally on every PR / push so it can be used as a required
   # status check (check name: "Squad CI / gh-aw strict compile").
   #
@@ -694,8 +739,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
-      - name: Install gh-aw v0.86.2 (pinned)
-        run: gh extension install --pin v0.86.2 github/gh-aw
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org/
+
+      - name: Install gh-aw v0.89.22 (pinned)
+        run: |
+          gh extension install --force --pin v0.89.22 github/gh-aw
+          test "$(gh aw --version 2>&1 | awk '{print $NF}')" = v0.89.22
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -705,52 +760,48 @@ jobs:
           gh aw --version | tee -a "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Set up deploy layout
-        # Mirror workflows/ → <tmpdir>/.github/workflows/ then git init so
-        # gh aw compile sees the directory structure it expects in a consumer
-        # repo after `gh aw add`.
-        run: |
-          COMPILE_DIR=$(mktemp -d)
-          echo "COMPILE_DIR=$COMPILE_DIR" >> "$GITHUB_ENV"
-          mkdir -p "$COMPILE_DIR/.github/workflows"
-          cp -r workflows/. "$COMPILE_DIR/.github/workflows/"
-          git -C "$COMPILE_DIR" init --quiet
+      - name: Verify canonical package manifest and generated digests
+        run: npm run gh-aw:integrity:check
 
-      - name: Compile all four workflows (--strict) and verify lock files
-        # Failures accumulate rather than short-circuit so every result is
-        # visible in one run.  A compiler that exits 0 without emitting a lock
-        # file is treated as failure — silent-success is a gate gap.
+      - name: Verify a clean native package consumer
+        env:
+          SQUAD_SOURCE_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
-          FAILED=0
-          echo "### Compile results" >> "$GITHUB_STEP_SUMMARY"
-          for WF in squad squad-implement-worker squad-review squad-deps-worker; do
-            printf -- '--- Compiling %s ---\n' "$WF"
-            if (cd "$COMPILE_DIR" && gh aw compile "$WF" --strict --approve --no-check-update 2>&1); then
-              printf '  => OK\n'
-              echo "✅ \`$WF\`" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::error::gh aw compile $WF --strict failed"
-              echo "❌ \`$WF\` compile failed" >> "$GITHUB_STEP_SUMMARY"
-              FAILED=$((FAILED + 1))
-            fi
-          done
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Lock files" >> "$GITHUB_STEP_SUMMARY"
-          for LOCK in squad.lock.yml squad-implement-worker.lock.yml squad-review.lock.yml squad-deps-worker.lock.yml; do
-            if [ ! -f "$COMPILE_DIR/.github/workflows/$LOCK" ]; then
-              echo "::error::$LOCK not emitted — compiler exited 0 without writing output"
-              echo "❌ missing: \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
-              FAILED=$((FAILED + 1))
-            else
-              echo "✅ \`$LOCK\`" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
-          if [ "$FAILED" -gt 0 ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "**❌ $FAILED failure(s) — gate fails closed**" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::$FAILED failure(s) — gate fails closed"
-            exit 1
-          fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**✅ All four workflows compiled, all four lock files emitted**" >> "$GITHUB_STEP_SUMMARY"
+          CONSUMER_DIR="$GITHUB_WORKSPACE/.gh-aw-consumer"
+          rm -rf "$CONSUMER_DIR"
+          trap 'rm -rf "$CONSUMER_DIR"' EXIT
+          mkdir -p "$CONSUMER_DIR"
+          git -C "$CONSUMER_DIR" init --quiet
+          git -C "$CONSUMER_DIR" remote add origin https://github.com/example/squad-consumer.git
+          (
+            cd "$CONSUMER_DIR"
+            mkdir -p .github/workflows
+            for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do
+              cp "$GITHUB_WORKSPACE/workflows/package/${workflow}.md" \
+                ".github/workflows/${workflow}.md"
+            done
+            gh aw add --force "$GITHUB_WORKSPACE/workflows"
+            rm -f .github/skills/agentic-workflows/SKILL.md
+            node .github/workflows/shared/squad-install-verifier.mjs \
+              --write-local-test-ownership \
+              --source-revision "$SQUAD_SOURCE_REVISION"
+            node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
+            test "$(find .github/workflows -maxdepth 1 -name 'squad*.md' | wc -l | tr -d ' ')" = 8
+            test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 17
+            test "$(find .github/skills/gh-aw-enlistment -type f | wc -l | tr -d ' ')" = 1
+            node --input-type=module -e '
+              import { compileWithPinnedActions } from "./.github/workflows/shared/squad-install-verifier.mjs";
+              compileWithPinnedActions(process.cwd());
+            '
+            gh aw compile --strict --approve --no-check-update
+            for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do
+              gh aw compile "$workflow" --strict --no-check-update
+              test -f ".github/workflows/${workflow}.lock.yml"
+            done
+            gh aw compile --strict --no-check-update
+            node .github/workflows/shared/squad-install-verifier.mjs \
+              --verify-install \
+              --source-revision "$SQUAD_SOURCE_REVISION" \
+              --strict-compile
+          )

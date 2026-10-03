@@ -1,0 +1,50 @@
+[
+  {
+    "name": "explicit npm dependency addition",
+    "title": "Add lodash as a runtime dependency",
+    "body": "Add lodash 4.17.21 and regenerate the npm lockfile.",
+    "requiredFiles": ["package.json", "package-lock.json"],
+    "config": "{\"version\":1}",
+    "expectedWorkflow": "squad-deps-worker"
+  },
+  {
+    "name": "ordinary source task with dependency relationship",
+    "title": "Fix login validation",
+    "body": "Depends on: #41. Correct the validator without changing packages.",
+    "requiredFiles": ["src/login.ts", "test/login.test.ts"],
+    "config": "{\"version\":1}",
+    "expectedWorkflow": "squad-implement-worker"
+  },
+  {
+    "name": "mixed dependency and source task",
+    "title": "Add Serilog and wire request logging",
+    "body": "Add the package, configure the request pipeline, and add tests.",
+    "requiredFiles": ["Directory.Packages.props", "src/App/Program.cs", "test/App.Tests.cs"],
+    "config": "{\"squadDeps\":\"allow\"}",
+    "expectedWorkflow": "squad-implement-worker"
+  },
+  {
+    "name": "unsupported dependency ecosystem",
+    "title": "Add pytest",
+    "body": "Add pytest to the Python development dependencies.",
+    "requiredFiles": ["pyproject.toml"],
+    "config": "{\"squadDeps\":\"allow\"}",
+    "expectedWorkflow": "squad-implement-worker"
+  },
+  {
+    "name": "dependency addition denied by repository policy",
+    "title": "Add zod",
+    "body": "Add zod and regenerate package-lock.json.",
+    "requiredFiles": ["package.json", "package-lock.json"],
+    "config": "{\"squadDeps\":\"deny\"}",
+    "expectedWorkflow": "denied"
+  },
+  {
+    "name": "dependency addition denied by malformed config",
+    "title": "Add testify",
+    "body": "Add testify to the Go module.",
+    "requiredFiles": ["go.mod", "go.sum"],
+    "config": "{\"squadDeps\":",
+    "expectedWorkflow": "denied"
+  }
+]

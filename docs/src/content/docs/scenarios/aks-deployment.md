@@ -6,8 +6,6 @@ order: 21
 
 # AKS Deployment Runbook
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 This runbook walks you from a bare AKS cluster to a running, autoscaling Squad agent fleet with secretless authentication, Key Vault-backed secrets, and KEDA-driven GitHub issue queue scaling.
 
 **Prerequisites:**

@@ -16,8 +16,15 @@
 | {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
 | {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
 | {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
-| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
-| Ralph | Work Monitor | — | 🔄 Monitor |
+
+## Built-in Support Agents
+
+| Name | Role | Charter | Status |
+|------|------|---------|--------|
+| Scribe | Decision Merger | `.squad/agents/scribe/charter.md` | 📋 Silent |
+| Ralph | Work Monitor | `.squad/agents/ralph/charter.md` | 🔄 Monitor |
+| Rai | RAI Reviewer | `.squad/agents/rai/charter.md` | 🛡️ RAI |
+| Fact Checker | Devil's Advocate & Verification Agent | `.squad/agents/fact-checker/charter.md` | 🔍 Verifier |
 
 ## Coding Agent
 

@@ -493,7 +493,7 @@ describe('resolveSquadState()', () => {
       expect(ctx).not.toBeNull();
 
       // Same construction as createStateMcpToolRegistry() in state-mcp.ts.
-      const registry = new ToolRegistry(ctx!.paths.teamDir, undefined, ctx!.storage);
+      const registry = new ToolRegistry(ctx!.paths.teamSquadDir, undefined, ctx!.storage);
       const decide = registry.getTool('squad_decide')!;
       const result = await decide.handler({ author: 'test-agent', summary: 'Use FSStorageProvider rootDir', body: 'Confine local-backend writes to teamDir.' });
 
@@ -755,6 +755,36 @@ describe('ToolRegistry state tools with git-native backend', () => {
     expect(backend.read('.scratch/notes.md')).toBe('ok\n');
     expect(backend.read('agents/data/history.md')).toBe('Learned via state tools.\n');
     expect(backend.read('sessions/session-1/state.md')).toBeUndefined();
+  });
+
+  it('allows casting policy but rejects individual registry/history mutations', { timeout: 30_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const write = registry.getTool('squad_state_write')!;
+    const append = registry.getTool('squad_state_append')!;
+    const del = registry.getTool('squad_state_delete')!;
+
+    await expect(write.handler({ key: 'casting/policy.json', content: '{}\n' }))
+      .resolves.toMatchObject({ resultType: 'success' });
+    expect(backend.read('casting/policy.json')).toBe('{}\n');
+
+    for (const key of ['casting/registry.json', 'casting/history.json']) {
+      await expect(write.handler({ key, content: '{}\n' }))
+        .resolves.toMatchObject({ resultType: 'failure' });
+      await expect(append.handler({ key, content: '{}\n' }))
+        .resolves.toMatchObject({ resultType: 'failure' });
+      await expect(del.handler({ key }))
+        .resolves.toMatchObject({ resultType: 'failure' });
+      expect(backend.read(key)).toBeUndefined();
+      expect(existsSync(join(squadDir(), key))).toBe(false);
+    }
+
+    await expect(write.handler({ key: 'casting/agents.json', content: '{}\n' })).resolves.toMatchObject({ resultType: 'failure' });
+    await expect(write.handler({ key: 'casting/archive/history.json', content: '{}\n' })).resolves.toMatchObject({ resultType: 'failure' });
+    expect(backend.read('casting/agents.json')).toBeUndefined();
+    expect(backend.read('casting/archive/history.json')).toBeUndefined();
+    expect(git('status --porcelain')).toBe('');
   });
 
   it('routes existing squad_decide writes through configured backend storage', { timeout: 20_000 }, async () => {

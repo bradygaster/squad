@@ -8,10 +8,7 @@
  * Legacy API:     CastingRegistry (filesystem-backed, stub)
  */
 
-import { FSStorageProvider } from '../storage/fs-storage-provider.js';
-import * as path from 'node:path';
-
-const storage = new FSStorageProvider();
+import { readCastingRegistryPair } from './durable-registry.js';
 
 export {
   CastingEngine,
@@ -28,6 +25,48 @@ export {
   type CastingRecordMember,
   type SerializedCastingHistory,
 } from './casting-history.js';
+
+export {
+  AGENT_PROVENANCE_SCHEMA,
+  AGENT_PROVENANCE_VERSION,
+  WORK_AGENT_BINDING_SCHEMA,
+  WORK_AGENT_BINDING_VERSION,
+  AgentProvenanceError,
+  parseAgentProvenanceRegistry,
+  parseWorkAgentBindings,
+  reconcileAgentProvenanceRegistry,
+  type AgentAvatarReference,
+  type AgentProvenanceCandidate,
+  type AgentProvenanceDiagnostic,
+  type AgentProvenanceParseResult,
+  type AgentProvenanceRecord,
+  type AgentProvenanceRegistry,
+  type AgentProvenanceStatus,
+  type ReconcileAgentProvenanceOptions,
+  type WorkAgentBinding,
+  type WorkAgentBindingContext,
+} from './agent-provenance.js';
+
+export {
+  CastingCommitInDoubtError,
+  acquireCastingRegistryLock,
+  acquireCastingRegistryLockAsync,
+  commitCastingRegistryPair,
+  ensureCastingRegistryPair,
+  ensureCastingRegistryPairLocked,
+  prepareCastingRegistryPairLocked,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
+  validateCastingRegistryPairForCommit,
+  validateCastingRegistryPairRaw,
+  _setCastingDurabilityHooksForTesting,
+  type CastingDurabilityBoundary,
+  type CastingDurabilityHooks,
+  type EnsureCastingPairResult,
+  type CastingPairSnapshot,
+  type CastingRecoveryMetadata,
+  type CastingRecoveryPathState,
+} from './durable-registry.js';
 
 // --- Legacy Types (kept for backward compat) ---
 
@@ -69,13 +108,18 @@ export class CastingRegistry {
   }
 
   async load(): Promise<void> {
-    const registryPath = path.join(this.config.castingDir, 'registry.json');
-    if (!storage.existsSync(registryPath)) return;
-
-    const raw = storage.readSync(registryPath) ?? '';
-    const entries = JSON.parse(raw) as CastingEntry[];
-    for (const entry of entries) {
-      this.entries.set(entry.role, entry);
+    const registry = readCastingRegistryPair(this.config.castingDir).registry;
+    const agents = registry?.['agents'] as Record<string, Record<string, unknown>>;
+    for (const record of Object.values(agents)) {
+      if (record['status'] !== 'active') continue;
+      const role = record['role'] as string;
+      const characterName = record['display_name'] as string;
+      this.entries.set(role, {
+        role,
+        characterName,
+        universe: record['universe'] as string,
+        displayName: `${characterName} — ${role}`,
+      });
     }
   }
 

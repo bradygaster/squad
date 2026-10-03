@@ -6,12 +6,13 @@ A step-by-step tour of your first time using Squad. Follow along in your termina
 
 ## 1. Install Squad
 
-Start with a git repo (new or existing):
+First, [install Squad](get-started/installation.md) with npm, Homebrew, WinGet,
+the verified install script, or a direct download. Then start with a git repo
+(new or existing):
 
 ```bash
 mkdir my-app && cd my-app
 git init
-npm install -g @bradygaster/squad-cli
 squad init
 ```
 
@@ -247,7 +248,6 @@ This snapshot contains everything — charters, histories, casting state, skills
 
 ```bash
 cd ../other-project
-npm install -g @bradygaster/squad-cli
 squad init
 squad import ../my-app/squad-export.json
 ```

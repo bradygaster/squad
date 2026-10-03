@@ -19,7 +19,13 @@ on:
   # React to completed work or new squad work
   issues:
     types: [closed, labeled]
-  pull_request:
+  # pull_request_target (not pull_request): GITHUB_TOKEN is forced read-only
+  # for `pull_request` events triggered by a fork, so write steps below
+  # (addLabels/createComment) 403 on fork PR closes (#2080-class bug).
+  # Safe here because the checkout step below has no `ref:` override, so it
+  # always checks out the BASE ref — no fork code or fork-controlled input
+  # is ever read or executed by this job.
+  pull_request_target:
     types: [closed]
 
   # Manual trigger
@@ -97,11 +103,11 @@ jobs:
       - name: Check triage script
         id: check-script
         run: |
-          if [ -f ".squad/templates/ralph-triage.js" ]; then
+          if [ -f "templates/ralph-triage.js" ]; then
             echo "has_script=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_script=false" >> "$GITHUB_OUTPUT"
-            echo "⚠️ ralph-triage.js not found — run 'squad upgrade' to install"
+            echo "⚠️ product-owned ralph-triage.js not found"
           fi
 
       - name: Ralph — Smart triage
@@ -109,7 +115,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node .squad/templates/ralph-triage.js \
+          node templates/ralph-triage.js \
             --squad-dir .squad \
             --output triage-results.json
 

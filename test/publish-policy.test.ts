@@ -14,22 +14,23 @@ import { join } from 'node:path';
 
 // ─── Core lint function (mirrors CI shell logic) ────────────────────────
 
+const NPM_PUBLISH_COMMAND =
+  /(?:^|&&|\|\||;)\s*(?:(?:if|then)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*npm\s+[^#;&|]*\bpublish\b[^#;&|]*/;
+const WORKSPACE_FLAG = /(?:^|\s)(?:-w|--workspace)(?:=|\s|$)/;
+
 /**
  * Returns true if the line contains a workspace-scoped npm publish
  * or is not a publish command at all. Returns false for bare publishes.
  */
 function isCompliant(line: string): boolean {
-  const trimmed = line.trim();
-  // Skip comment lines
-  if (trimmed.startsWith('#')) return true;
-  // If no npm publish pattern, line is fine
-  if (!/npm.*publish/.test(trimmed)) return true;
-  // Skip meta-references: echo output, grep patterns, YAML name keys
-  if (/echo\s/.test(trimmed)) return true;
-  if (/grep\s/.test(trimmed)) return true;
-  if (/^\s*-?\s*name:/.test(line)) return true;
-  // Must have -w or --workspace flag
-  return /\s-w[\s]/.test(trimmed) || /\s-w$/.test(trimmed) || /\s--workspace[\s]/.test(trimmed) || /\s--workspace$/.test(trimmed);
+  const command = line
+    .trimStart()
+    .replace(/^-\s*/, '')
+    .replace(/^run:\s*/, '');
+  if (command.startsWith('#')) return true;
+
+  const publishCommand = command.match(NPM_PUBLISH_COMMAND)?.[0];
+  return publishCommand === undefined || WORKSPACE_FLAG.test(publishCommand);
 }
 
 /**
@@ -57,6 +58,8 @@ describe('publish-policy lint logic', () => {
       'run: npm -w packages/squad-cli publish --tag insider --access public',
       'npm --workspace packages/squad-sdk publish --access public',
       'npm --workspace packages/squad-cli publish --tag insider',
+      'cd packages/sdk && npm --workspace=packages/squad-sdk publish',
+      'run: npm publish --workspace packages/squad-cli',
     ];
 
     for (const line of goodLines) {
@@ -73,6 +76,8 @@ describe('publish-policy lint logic', () => {
       'run: npm publish --tag insider',
       'run: npm publish --access public --provenance',
       'npm publish --tag insider --access public',
+      'cd packages/sdk && npm publish --access public',
+      'run: if NODE_AUTH_TOKEN=token npm publish; then echo done; fi',
     ];
 
     for (const line of badLines) {
@@ -91,6 +96,8 @@ describe('publish-policy lint logic', () => {
       'echo "npm publish is dangerous"',
       'npm ci',
       '      - name: Enforce workspace-scoped npm publish',
+      "description: 'npm automation token used to publish both Squad packages'",
+      'uses: ./.github/workflows/squad-npm-publish.yml',
       'BARE=$(grep -n \'npm.*publish\' "$wf" || true)',
     ];
 

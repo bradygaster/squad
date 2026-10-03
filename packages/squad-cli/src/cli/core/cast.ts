@@ -13,9 +13,17 @@ import {
 } from '@bradygaster/squad-sdk';
 import {
   CastingEngine,
+  acquireCastingRegistryLockAsync,
+  commitCastingRegistryPair,
+  prepareCastingRegistryPairLocked,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
+  reconcileAgentProvenanceRegistry,
   type CastMember as EngineCastMember,
   type AgentRole as EngineAgentRole,
 } from '@bradygaster/squad-sdk/casting';
+import { getTemplatesDir } from './templates.js';
+import { hasCopilot, insertCopilotSection } from './team-md.js';
 
 // ── RAI Policy Template ────────────────────────────────────────────
 
@@ -58,6 +66,8 @@ const RAI_POLICY_TEMPLATE = `# RAI Policy
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface CastMember {
+  /** Immutable producer-owned id. Required when renaming an existing agent. */
+  id?: string;
   name: string;
   role: string;
   scope: string;
@@ -404,7 +414,7 @@ function generateCharter(member: CastMember & { _personality?: string; _backstor
   if (catalogCharter) return catalogCharter;
 
   const personality = personalityForRole(member.role, { personality: member._personality });
-  const nameLower = member.name.toLowerCase();
+  const nameLower = memberId(member.name);
 
   // If CastingEngine provided a backstory, use it in the charter preamble
   const preamble = member._backstory || personality;
@@ -460,39 +470,38 @@ ${personalityForRole(member.role)}
 `;
 }
 
-function generateHistory(member: CastMember, projectDescription: string): string {
-  return `# ${member.name} — History
-
-## Core Context
-
-- **Project:** ${projectDescription}
-- **Role:** ${member.role}
-- **Joined:** ${new Date().toISOString()}
-
-## Learnings
-
-<!-- Append learnings below -->
-`;
-}
-
 // ── Built-in agents ────────────────────────────────────────────────
 
-function scribeMember(): CastMember {
-  return { name: 'Scribe', role: 'Session Logger', scope: 'Maintaining decisions.md, cross-agent context sharing, orchestration logging, session logging, git commits', emoji: '📋' };
+// The four built-in support agents always materialize under these exact
+// lowercase kebab-case directory/registry IDs, regardless of display-name
+// casing or spacing (`member.name.toLowerCase()` alone turns "Fact Checker"
+// into "fact checker" — a space, not a hyphen — and leaves "Rai" ambiguous
+// against other built-in scaffolders). Canonical built-in contract: scribe,
+// ralph, rai, fact-checker.
+const BUILTIN_IDS: Record<string, string> = {
+  'Scribe': 'scribe',
+  'Ralph': 'ralph',
+  'Rai': 'rai',
+  'Fact Checker': 'fact-checker',
+};
+
+function builtinId(name: string): string | undefined {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return Object.entries(BUILTIN_IDS)
+    .find(([displayName]) => displayName.toLowerCase().replace(/[^a-z0-9]+/g, '') === normalized)?.[1];
 }
 
-function scribeCharter(): string {
-  const m = scribeMember();
-  return generateCharter(m);
+/** Resolve a member's directory/registry ID: the authoritative built-in ID when the name is one of the four built-ins, otherwise the existing lowercased-name behavior for specialists. */
+function memberId(name: string): string {
+  return builtinId(name) ?? name.toLowerCase();
+}
+
+function scribeMember(): CastMember {
+  return { name: 'Scribe', role: 'Decision Merger', scope: 'Durable decision merging and deduplication', emoji: '📋' };
 }
 
 function ralphMember(): CastMember {
   return { name: 'Ralph', role: 'Work Monitor', scope: 'Work queue tracking, backlog management, keep-alive', emoji: '🔄' };
-}
-
-function ralphCharter(): string {
-  const m = ralphMember();
-  return generateCharter(m);
 }
 
 function RaiMember(): CastMember {
@@ -503,160 +512,55 @@ function factCheckerMember(): CastMember {
   return { name: 'Fact Checker', role: 'Fact Checker', scope: 'Claim verification, hallucination detection, counter-hypothesis analysis, source validation', emoji: '🔍' };
 }
 
-function factCheckerCharter(): string {
-  return `# Fact Checker
-
-> Trust, but verify. Every claim gets a source check.
-
-## Identity
-
-- **Name:** Fact Checker
-- **Role:** Devil's Advocate & Verification Agent
-- **Emoji:** 🔍
-- **Style:** Rigorous but constructive. Flags issues clearly without being abrasive.
-
-## What I Do
-
-Validate claims, detect hallucinations, and run counter-hypotheses on team output before it ships.
-
-## Verification Methodology
-
-For every claim or assertion I review:
-
-1. **Source Check:** What evidence supports this? Can I verify it?
-2. **Counter-Hypothesis:** What would disprove this? Is there an alternative explanation?
-3. **Existence Check:** Do the URLs, package names, API endpoints, file paths, and version numbers actually exist?
-4. **Consistency Check:** Does this contradict anything in \`.squad/decisions.md\` or prior team output?
-
-## Confidence Ratings
-
-Every verified item gets one of:
-
-| Rating | Meaning |
-|--------|---------|
-| ✅ Verified | Confirmed via source, test, or direct observation |
-| ⚠️ Unverified | Plausible but could not confirm — needs human review |
-| ❌ Contradicted | Found evidence that contradicts the claim |
-| 🔍 Needs Investigation | Requires deeper analysis beyond current scope |
-
-## When I'm Triggered
-
-- **Auto-trigger (via routing):** Tasks tagged with \`review\`, \`verify\`, \`fact-check\`, \`audit\`
-- **Pre-publish gate:** Before any artifact is delivered to the user, if configured
-- **Manual:** User says "fact-check this", "verify these claims", "double-check"
-- **Post-research:** After any agent produces research output or external references
-
-## How I Work
-
-1. **Read the artifact** — understand what's being claimed
-2. **Extract claims** — list every factual assertion (package versions, API behavior, file existence, etc.)
-3. **Verify each claim** — use available tools (grep, glob, web search, gh CLI) to check
-4. **Run counter-hypotheses** — for key assumptions, ask "what if this is wrong?"
-5. **Produce a verification report**
-6. **Write decision** if I found issues: \`.squad/decisions/inbox/fact-checker-{slug}.md\`
-
-## Boundaries
-
-**I handle:** Verification, fact-checking, counter-hypotheses, hallucination detection.
-
-**I don't handle:** Implementation, design, testing, or docs. I review, not create.
-
-**I am not a blocker by default.** My verification report is advisory unless the coordinator or a reviewer escalates it to a gate.
-
-## Collaboration
-
-Before starting work, run \`git rev-parse --show-toplevel\` to find the repo root, or use the \`TEAM ROOT\` provided in the spawn prompt. All \`.squad/\` paths must be resolved relative to this root.
-
-After making a decision others should know, write it to \`.squad/decisions/inbox/fact-checker-{brief-slug}.md\`.
-
-## Learnings
-
-Initial setup complete. Ready for verification work.
-`;
-}
-
-function RaiCharter(): string {
-  return `# Rai — RAI Reviewer
-
-> The team's shield. Quiet until it matters — then unmistakably clear.
-
-## Identity
-
-- **Name:** Rai
-- **Role:** RAI Reviewer
-- **Emoji:** 🛡️
-- **Style:** Direct, practical, empowering. Never moralizing, never bureaucratic.
-- **Mode:** Background by default. Only escalates to blocking on 🔴 Critical findings.
-
-## What I Own
-
-- \`.squad/rai/policy.md\` — Canonical RAI policy (terms, anti-patterns, taxonomy)
-- \`.squad/rai/audit-trail.md\` — Evidence log (append-only, redacted)
-- \`.squad/agents/Rai/history.md\` — Learnings across sessions
-
-## Traffic Light Verdicts
-
-| Verdict | Meaning | Effect |
-|---------|---------|--------|
-| 🟢 **Green** | No issues detected | Work proceeds |
-| 🟡 **Yellow** | Minor concerns, recommendations provided | Advisory — work proceeds with suggestions |
-| 🔴 **Red** | Critical RAI violation | Work CANNOT ship until fixed — triggers Reviewer Rejection Protocol |
-
-## How I Work
-
-**Philosophy: "Guardrail, not wall."** Every finding includes:
-- **WHAT** is wrong
-- **WHY** it matters
-- **HOW** to fix it
-
-### Check Categories (Phase 1 — High-Signal Only)
-
-**Code:** Credentials, injection vulnerabilities, PII exposure, bias indicators, rate limiting.
-**Content:** Harmful patterns, deceptive content, exclusionary language.
-**Prompts/Charters:** Safety bypass instructions, insufficient grounding, privacy risks.
-**Decisions:** Unintended consequences, stakeholder exclusion.
-
-### Performance Budget
-
-- 5-second cap per review pass
-- Timeout = 🟡 Unknown (not green)
-- Fast-path bypass: docs-only, test files, dependency bumps
-
-### Opt-Out Model
-
-- Cannot disable 🔴 Critical checks
-- Can disable 🟡 Advisory checks with justification
-- Temporary opt-down supported (auto re-enables)
-
-## Boundaries
-
-**I handle:** RAI review, content safety, bias detection, credential scanning, ethical review.
-
-**I don't handle:** General code review, testing, architecture, performance. I am an ethics specialist, NOT general QA.
-
-## Collaboration
-
-Before starting work, run \`git rev-parse --show-toplevel\` to find the repo root, or use the \`TEAM ROOT\` provided in the spawn prompt. All \`.squad/\` paths must be resolved relative to this root.
-
-Read \`.squad/rai/policy.md\` for the canonical check definitions.
-Append findings to \`.squad/rai/audit-trail.md\` (redacted — never raw secrets or harmful text).
-After making a decision others should know, write it to \`.squad/decisions/inbox/Rai-{brief-slug}.md\`.
-`;
+function readBuiltinCharter(
+  storage: FSStorageProvider,
+  templatesDir: string,
+  member: CastMember,
+): string {
+  const id = builtinId(member.name);
+  if (!id) throw new Error(`Unknown built-in support identity: ${member.name}`);
+  const templatePath = join(templatesDir, `${id}-charter.md`);
+  const charter = storage.readSync(templatePath);
+  if (charter === undefined) {
+    throw new Error(`Built-in charter template not found: ${templatePath}`);
+  }
+  return charter;
 }
 
 // ── Team file updaters ─────────────────────────────────────────────
 
-function buildMembersTable(allMembers: CastMember[]): string {
+function buildMembersTable(members: CastMember[], memberIds?: ReadonlyMap<string, string>): string {
   let table = `## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n`;
-  for (const m of allMembers) {
-    const nameLower = m.name.toLowerCase();
-    let status = '✅ Active';
-    if (m.role === 'Session Logger') status = '📋 Silent';
-    if (m.role === 'Work Monitor') status = '🔄 Monitor';
-    if (m.role === 'RAI Reviewer') status = '🛡️ RAI';
-    table += `| ${m.name} | ${m.role} | \`.squad/agents/${nameLower}/charter.md\` | ${status} |\n`;
+  for (const m of members) {
+    const nameLower = memberIds?.get(m.name) ?? memberId(m.name);
+    table += `| ${m.name} | ${m.role} | \`.squad/agents/${nameLower}/charter.md\` | ✅ Active |\n`;
   }
   return table;
+}
+
+function buildSupportTable(): string {
+  return `## Built-in Support Agents
+
+| Name | Role | Charter | Status |
+|------|------|---------|--------|
+| Scribe | Decision Merger | \`.squad/agents/scribe/charter.md\` | 📋 Silent |
+| Ralph | Work Monitor | \`.squad/agents/ralph/charter.md\` | 🔄 Monitor |
+| Rai | RAI Reviewer | \`.squad/agents/rai/charter.md\` | 🛡️ RAI |
+| Fact Checker | Devil's Advocate & Verification Agent | \`.squad/agents/fact-checker/charter.md\` | 🔍 Verifier |
+`;
+}
+
+function replaceSection(content: string, headings: string[], replacement: string): string {
+  for (const heading of headings) {
+    const headingIndex = content.indexOf(heading);
+    if (headingIndex === -1) continue;
+    const afterHeading = content.slice(headingIndex + heading.length);
+    const nextHeaderMatch = afterHeading.match(/\n(## [^\n]+)/);
+    const nextHeaderIndex = nextHeaderMatch?.index;
+    const suffix = nextHeaderIndex === undefined ? '' : afterHeading.slice(nextHeaderIndex);
+    return content.slice(0, headingIndex) + replacement.trimEnd() + '\n' + suffix;
+  }
+  return content;
 }
 
 function buildRoutingTable(members: CastMember[]): string {
@@ -666,6 +570,76 @@ function buildRoutingTable(members: CastMember[]): string {
     table += `| ${m.scope} | ${m.name} | — |\n`;
   }
   return table;
+}
+
+function validateCastProposal(proposal: CastProposal): void {
+  if (!proposal || typeof proposal !== 'object') throw new Error('Cast proposal is required');
+  if (typeof proposal.universe !== 'string' || proposal.universe.trim().length === 0) {
+    throw new Error('Cast proposal universe is required');
+  }
+  if (typeof proposal.projectDescription !== 'string') {
+    throw new Error('Cast proposal project description must be a string');
+  }
+  if (!Array.isArray(proposal.members)) throw new Error('Cast proposal members must be an array');
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const member of proposal.members) {
+    if (
+      !member
+      || typeof member.name !== 'string'
+      || member.name.trim().length === 0
+      || typeof member.role !== 'string'
+      || member.role.trim().length === 0
+      || typeof member.scope !== 'string'
+      || member.scope.trim().length === 0
+      || typeof member.emoji !== 'string'
+    ) {
+      throw new Error('Every cast member requires a name, role, scope, and emoji');
+    }
+    const id = member.id ?? memberId(member.name);
+    if (ids.has(id) || names.has(member.name)) {
+      throw new Error(`Duplicate cast member identity: ${member.name}`);
+    }
+    ids.add(id);
+    names.add(member.name);
+  }
+}
+
+function validateExistingCastingInputs(
+  storage: FSStorageProvider,
+  castingDir: string,
+): void {
+  if (!storage.existsSync(castingDir)) return;
+  const registryPath = join(castingDir, 'registry.json');
+  const historyPath = join(castingDir, 'history.json');
+  const registryExists = storage.existsSync(registryPath);
+  const historyExists = storage.existsSync(historyPath);
+  if (registryExists !== historyExists) {
+    throw new Error('Cannot cast with only one of casting/registry.json and casting/history.json');
+  }
+  if (
+    registryExists
+    || storage.existsSync(join(castingDir, 'registry-history.transaction.json'))
+    || storage.existsSync(join(castingDir, 'registry-history.commit.json'))
+  ) {
+    readCastingRegistryPair(castingDir);
+  }
+  const policyRaw = storage.readSync(join(castingDir, 'policy.json'));
+  if (policyRaw !== undefined) {
+    let policy: unknown;
+    try {
+      policy = JSON.parse(policyRaw) as unknown;
+    } catch (error) {
+      throw new Error(
+        `Cannot cast with malformed casting/policy.json: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+      throw new Error('Cannot cast with malformed casting/policy.json');
+    }
+  }
 }
 
 // ── Main cast function ─────────────────────────────────────────────
@@ -681,50 +655,74 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const castingDir = join(squadDir, 'casting');
   const filesCreated: string[] = [];
   const membersCreated: string[] = [];
-  const now = new Date().toISOString();
+  const templatesDir = getTemplatesDir();
+  validateCastProposal(proposal);
+  validateExistingCastingInputs(storage, castingDir);
+  await storage.mkdir(castingDir, { recursive: true });
+  const releaseCastLock = await acquireCastingRegistryLockAsync(castingDir, 'CLI cast');
 
-  // Collect all members (proposal + built-ins)
-  const allMembers = [...proposal.members];
-
-  const hasScribe = proposal.members.some(m => /scribe/i.test(m.name));
-  if (!hasScribe) allMembers.push(scribeMember());
-
-  const hasRalph = proposal.members.some(m => /ralph/i.test(m.name));
-  if (!hasRalph) allMembers.push(ralphMember());
-
-  const hasRai = proposal.members.some(m => /Rai/i.test(m.name));
-  if (!hasRai) allMembers.push(RaiMember());
-
-  const hasFactChecker = proposal.members.some(m => /fact.?checker/i.test(m.name));
-  if (!hasFactChecker) allMembers.push(factCheckerMember());
-
-  // Create agent directories and files
-  for (const member of allMembers) {
-    const nameLower = member.name.toLowerCase();
-    const agentDir = join(agentsDir, nameLower);
-
-    const charterPath = join(agentDir, 'charter.md');
-    let charter: string;
-    if (member.name === 'Scribe' && !hasScribe) {
-      charter = scribeCharter();
-    } else if (member.name === 'Ralph' && !hasRalph) {
-      charter = ralphCharter();
-    } else if (member.name === 'Rai' && !hasRai) {
-      charter = RaiCharter();
-    } else if (member.name === 'Fact Checker' && !hasFactChecker) {
-      charter = factCheckerCharter();
-    } else {
-      charter = generateCharter(member);
+  try {
+    recoverCastingRegistryTransaction(castingDir);
+    const existingPair = prepareCastingRegistryPairLocked(castingDir);
+    const now = new Date().toISOString();
+    // Built-ins are fixed support identities, not routable Cast specialists.
+    const specialistMembers = proposal.members.filter(member => !builtinId(member.name));
+    const supportMembers = [scribeMember(), ralphMember(), RaiMember(), factCheckerMember()];
+    const registryPath = join(castingDir, 'registry.json');
+    const existingRegistry = existingPair.registry;
+    const registry = reconcileAgentProvenanceRegistry(
+      existingRegistry,
+      specialistMembers.map((member) => ({
+        id: member.id ?? memberId(member.name),
+        displayName: member.name,
+        role: member.role,
+        universe: proposal.universe,
+      })),
+      { generatedAt: now, retireMissing: true },
+    );
+    const specialistIds = new Map<string, string>();
+    for (const [id, record] of Object.entries(registry.agents)) {
+      if (record.status === 'active') specialistIds.set(record.display_name, id);
     }
-    await storage.write(charterPath, charter);
-    filesCreated.push(charterPath);
+    const allMembers = [
+      ...specialistMembers.map(member => ({
+        member,
+        id: specialistIds.get(member.name) ?? member.id ?? memberId(member.name),
+      })),
+      ...supportMembers.map(member => ({ member, id: memberId(member.name) })),
+    ];
 
-    const historyPath = join(agentDir, 'history.md');
-    await storage.write(historyPath, generateHistory(member, proposal.projectDescription));
-    filesCreated.push(historyPath);
+    // Create agent directories and files
+    for (const { member, id } of allMembers) {
+      const agentDir = join(agentsDir, id);
+      const alumniDir = join(agentsDir, '_alumni', id);
+      if (!builtinId(member.name) && storage.existsSync(alumniDir)) {
+        if (storage.existsSync(agentDir)) {
+          throw new Error(`Cannot reactivate agent "${id}": active and alumni directories both exist`);
+        }
+        storage.renameSync(alumniDir, agentDir);
+      }
 
-    membersCreated.push(member.name);
-  }
+      const charterPath = join(agentDir, 'charter.md');
+      const charter = builtinId(member.name)
+        ? readBuiltinCharter(storage, templatesDir, member)
+        : generateCharter(member);
+      await storage.write(charterPath, charter);
+      filesCreated.push(charterPath);
+
+      membersCreated.push(member.name);
+    }
+    for (const [id, record] of Object.entries(registry.agents)) {
+      if (record.status !== 'retired') continue;
+      const activeDir = join(agentsDir, id);
+      const alumniDir = join(agentsDir, '_alumni', id);
+      if (storage.existsSync(activeDir) && storage.existsSync(alumniDir)) {
+        throw new Error(`Cannot retire agent "${id}": active and alumni directories both exist`);
+      }
+      if (storage.existsSync(activeDir)) {
+      storage.renameSync(activeDir, alumniDir);
+      }
+    }
 
   // Create or update team.md
   const teamPath = join(squadDir, 'team.md');
@@ -733,15 +731,32 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     const content = await storage.read(teamPath) ?? '';
     const membersIdx = content.indexOf('## Members');
     if (membersIdx !== -1) {
-      const before = content.slice(0, membersIdx);
-      // Find next ## header after Members
-      const afterMembers = content.slice(membersIdx + '## Members'.length);
-      const nextHeaderMatch = afterMembers.match(/\n(## [^\n]+)/);
-      const nextHeader = nextHeaderMatch?.[1];
-      const after = nextHeader
-        ? afterMembers.slice(afterMembers.indexOf(nextHeader))
-        : '';
-      const newContent = before + buildMembersTable(allMembers) + '\n' + after;
+      let newContent = replaceSection(
+        content,
+        ['## Members'],
+        buildMembersTable(specialistMembers, specialistIds),
+      );
+      if (
+        newContent.includes('## Built-in Support Agents')
+        || newContent.includes('## Support Identities')
+      ) {
+        newContent = replaceSection(
+          newContent,
+          ['## Built-in Support Agents', '## Support Identities'],
+          buildSupportTable(),
+        );
+      } else {
+        const insertionPoint = newContent.includes('## Coding Agent')
+          ? '## Coding Agent'
+          : '## Project Context';
+        newContent = newContent.replace(
+          insertionPoint,
+          `${buildSupportTable()}\n${insertionPoint}`,
+        );
+      }
+      if (!hasCopilot(newContent)) {
+        newContent = insertCopilotSection(newContent, false);
+      }
       await storage.write(teamPath, newContent);
       filesCreated.push(teamPath);
     }
@@ -761,20 +776,21 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       '|------|------|-------|',
       '| Squad | Coordinator | Routes work, enforces handoffs and reviewer gates. |',
       '',
-      buildMembersTable(allMembers),
+      buildMembersTable(specialistMembers, specialistIds),
+      buildSupportTable(),
       '## Project Context',
       '',
       `- **Project:** ${projectName}`,
       `- **Created:** ${new Date().toISOString().split('T')[0]}`,
       '',
     ].join('\n');
-    await storage.write(teamPath, freshContent);
+    await storage.write(teamPath, insertCopilotSection(freshContent, false));
     filesCreated.push(teamPath);
   }
 
   // Create or update routing.md
   const routingPath = join(squadDir, 'routing.md');
-  const routingTable = buildRoutingTable(allMembers);
+  const routingTable = buildRoutingTable(specialistMembers);
   if (storage.existsSync(routingPath)) {
     // Update existing — append routing table
     const content = await storage.read(routingPath) ?? '';
@@ -802,37 +818,41 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   }
 
   // Create casting state files
-  const registryAgents: Record<string, object> = {};
   const snapshotAgents: string[] = [];
-  for (const member of allMembers) {
-    const nameLower = member.name.toLowerCase();
-    registryAgents[nameLower] = {
-      created_at: now,
-      persistent_name: member.name,
-      universe: proposal.universe,
-      status: 'active',
-    };
-    snapshotAgents.push(nameLower);
+  for (const member of specialistMembers) {
+    snapshotAgents.push(specialistIds.get(member.name) ?? memberId(member.name));
   }
 
-  const registry = { agents: registryAgents };
-  await storage.write(join(castingDir, 'registry.json'), JSON.stringify(registry, null, 2) + '\n');
-  filesCreated.push(join(castingDir, 'registry.json'));
-
-  const history = {
-    assignment_cast_snapshots: {
-      [`repl-cast-${now}`]: {
-        created_at: now,
-        agents: snapshotAgents,
-        universe: proposal.universe,
+    const historyPath = join(castingDir, 'history.json');
+    let priorHistory: {
+      assignment_cast_snapshots?: Record<string, unknown>;
+      universe_usage_history?: unknown[];
+    } = {};
+    priorHistory = (existingPair.history ?? {}) as typeof priorHistory;
+    const history = {
+      assignment_cast_snapshots: {
+        ...(priorHistory.assignment_cast_snapshots ?? {}),
+        [`repl-cast-r${registry.revision}-${now}`]: {
+          created_at: now,
+          agents: snapshotAgents,
+          universe: proposal.universe,
+        },
       },
-    },
-    universe_usage_history: [
-      { universe: proposal.universe, used_at: now },
-    ],
-  };
-  await storage.write(join(castingDir, 'history.json'), JSON.stringify(history, null, 2) + '\n');
-  filesCreated.push(join(castingDir, 'history.json'));
+      universe_usage_history: [
+        ...(priorHistory.universe_usage_history ?? []),
+        { universe: proposal.universe, used_at: now },
+      ],
+    };
+    commitCastingRegistryPair(
+      castingDir,
+      existingPair.registryRaw,
+      registry as unknown as Record<string, unknown>,
+      existingPair.historyRaw,
+      history,
+      registry.revision,
+    );
+    filesCreated.push(registryPath);
+    filesCreated.push(historyPath);
 
   const policy = { universe_allowlist: ['*'], max_capacity: 25 };
   await storage.write(join(castingDir, 'policy.json'), JSON.stringify(policy, null, 2) + '\n');
@@ -852,8 +872,12 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   }
 
   // Sync new agents into squad.config.ts (if present)
-  for (const member of allMembers) {
-    await addAgentToConfig(teamRoot, member.name.toLowerCase(), member.role);
+  for (const member of specialistMembers) {
+    await addAgentToConfig(
+      teamRoot,
+      specialistIds.get(member.name) ?? memberId(member.name),
+      member.role,
+    );
   }
 
   // Re-advertise the cast in .github/agents/squad.agent.md (#1608). Cast
@@ -873,7 +897,10 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     );
   }
 
-  return { teamRoot, membersCreated, filesCreated };
+    return { teamRoot, membersCreated, filesCreated };
+  } finally {
+    releaseCastLock();
+  }
 }
 
 // ── Display helpers ────────────────────────────────────────────────
@@ -888,10 +915,10 @@ export function formatCastSummary(proposal: CastProposal): string {
     lines.push(`${m.emoji}  ${nameCol} — ${roleCol} ${m.scope}`);
   }
 
-  // Always show Scribe and Ralph in the summary
+  // Always show the four built-in support identities in the summary.
   const hasScribe = proposal.members.some(m => /scribe/i.test(m.name));
   if (!hasScribe) {
-    lines.push(`📋  ${'Scribe'.padEnd(10)} — ${'(silent)'.padEnd(15)} Memory, decisions, session logs`);
+    lines.push(`📋  ${'Scribe'.padEnd(10)} — ${'(silent)'.padEnd(15)} Durable decision merging`);
   }
 
   const hasRalph = proposal.members.some(m => /ralph/i.test(m.name));
@@ -901,7 +928,7 @@ export function formatCastSummary(proposal: CastProposal): string {
 
   const hasRai = proposal.members.some(m => /Rai/i.test(m.name));
   if (!hasRai) {
-    lines.push(`🛡️  ${'Rai'.padEnd(10)} — ${'(background)'.padEnd(15)} RAI awareness, content safety`);
+    lines.push(`🛡️  ${'Rai'.padEnd(10)} — ${'(on-demand)'.padEnd(15)} RAI awareness, content safety`);
   }
 
   const hasFactChecker = proposal.members.some(m => /fact.?checker/i.test(m.name));
