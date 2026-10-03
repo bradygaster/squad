@@ -68,9 +68,9 @@
       "source": "workflows/package/squad-bootstrap.md",
       "destination": ".github/workflows/squad-bootstrap.md",
       "lock": ".github/workflows/squad-bootstrap.lock.yml",
-      "source_sha256": "b609e809707bce01cddafed44cab90f70fe4a269f843eda4ee3979f2b6d8f117",
-      "lock_sha256": "d6fb3b52f7aa880bf4b5d93cb7cd95085ff340e09e900596a2802a003fdf5457",
-      "package_lock_sha256": "3f77f39d1c9fa72c8ea5f65af8dc978dbfd47cea7dbb7065415b168a06adb35d"
+      "source_sha256": "10f85600b3e4a8617bbdc70afc95ea975f8d98c1b9e673ca7c15abb293aed7ee",
+      "lock_sha256": "faf0b03fa9ddceefe1cbcc653edb123dc733b484f1a6d0ada8ce7cb08993081f",
+      "package_lock_sha256": "8857134b8a6551b19c4271f814b2cde348eca02efead2d5713eecdcdd45d895c"
     },
     {
       "name": "squad-command-router",

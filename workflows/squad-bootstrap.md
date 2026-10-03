@@ -335,389 +335,389 @@ safe-outputs:
                   writeFileSync(target, file.content);
                 }
                 writeFileSync(payloadPath, payloadText);
-              } finally {
-                rmSync(candidate, { recursive: true, force: true });
-              }
 
-              const listState = async () => {
-                const pullRequests = await github.paginate(github.rest.pulls.list, {
-                  ...context.repo,
-                  state: 'all',
-                  per_page: 100,
-                });
-                const issues = (await github.paginate(github.rest.issues.listForRepo, {
-                  ...context.repo,
-                  state: 'all',
-                  per_page: 100,
-                })).filter((issue) => !issue.pull_request);
-                const preliminary = stateModule.classifyBootstrapState({
-                  pullRequests,
-                  issues,
-                  defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                });
-                const comments = preliminary.issue
-                  ? await github.paginate(github.rest.issues.listComments, {
-                      ...context.repo,
-                      issue_number: preliminary.issue.number,
-                      per_page: 100,
-                    })
-                  : [];
-                return {
-                  pullRequests,
-                  issues,
-                  comments,
-                  state: stateModule.classifyBootstrapState({
+                const listState = async () => {
+                  const pullRequests = await github.paginate(github.rest.pulls.list, {
+                    ...context.repo,
+                    state: 'all',
+                    per_page: 100,
+                  });
+                  const issues = (await github.paginate(github.rest.issues.listForRepo, {
+                    ...context.repo,
+                    state: 'all',
+                    per_page: 100,
+                  })).filter((issue) => !issue.pull_request);
+                  const preliminary = stateModule.classifyBootstrapState({
+                    pullRequests,
+                    issues,
+                    defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                  });
+                  const comments = preliminary.issue
+                    ? await github.paginate(github.rest.issues.listComments, {
+                        ...context.repo,
+                        issue_number: preliminary.issue.number,
+                        per_page: 100,
+                      })
+                    : [];
+                  return {
                     pullRequests,
                     issues,
                     comments,
-                    defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                  }),
+                    state: stateModule.classifyBootstrapState({
+                      pullRequests,
+                      issues,
+                      comments,
+                      defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                    }),
+                  };
                 };
-              };
 
-              let snapshot = await listState();
-              if (snapshot.state.action === 'opt_out') {
-                core.info('A closed-unmerged bootstrap Cast PR records human opt-out; no replacement was created.');
-                return;
-              }
-              if (snapshot.state.action === 'noop') {
-                core.info('The deterministic Cast PR, research-proposals issue, and research artifact already exist.');
-                return;
-              }
-
-              const getRef = async (ref) => {
-                try {
-                  return (await github.rest.git.getRef({ ...context.repo, ref })).data;
-                } catch (error) {
-                  if (error.status === 404) return null;
-                  throw error;
-                }
-              };
-              const assertRemotePayload = async (ref) => {
-                for (const file of payload.files) {
-                  const response = await github.rest.repos.getContent({
-                    ...context.repo,
-                    path: file.path,
-                    ref,
-                  });
-                  if (Array.isArray(response.data) || response.data.type !== 'file') {
-                    throw new Error(`Bootstrap branch path is not a file: ${file.path}`);
-                  }
-                  const remote = Buffer.from(response.data.content, 'base64').toString('utf8').replace(/\r\n/g, '\n');
-                  if (remote !== String(file.content).replace(/\r\n/g, '\n')) {
-                    throw new Error(`Existing bootstrap branch diverges at ${file.path}; refusing replacement.`);
-                  }
-                }
-                if (ref !== process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH) {
-                  const comparison = await github.rest.repos.compareCommitsWithBasehead({
-                    ...context.repo,
-                    basehead: `${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}...${ref}`,
-                    per_page: 100,
-                  });
-                  const changed = (comparison.data.files || []).map((file) => file.filename).sort();
-                  const allowed = payload.files.map((file) => file.path).sort();
-                  if (JSON.stringify(changed) !== JSON.stringify(allowed)) {
-                    throw new Error(`Existing bootstrap branch changed files outside the validated payload: ${changed.join(', ')}`);
-                  }
-                }
-              };
-
-              let pullRequest = snapshot.state.pull_request;
-              if (!pullRequest) {
-                const branchRefName = `heads/${stateModule.BOOTSTRAP_BRANCH}`;
-                const existingRef = await getRef(branchRefName);
-                if (existingRef) {
-                  await assertRemotePayload(stateModule.BOOTSTRAP_BRANCH);
-                } else {
-                  const baseRef = await github.rest.git.getRef({
-                    ...context.repo,
-                    ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
-                  });
-                  const baseCommit = await github.rest.git.getCommit({
-                    ...context.repo,
-                    commit_sha: baseRef.data.object.sha,
-                  });
-                  const tree = [];
-                  for (const file of payload.files) {
-                    const blob = await github.rest.git.createBlob({
-                      ...context.repo,
-                      content: Buffer.from(file.content, 'utf8').toString('base64'),
-                      encoding: 'base64',
-                    });
-                    tree.push({
-                      path: file.path,
-                      mode: '100644',
-                      type: 'blob',
-                      sha: blob.data.sha,
-                    });
-                  }
-                  const createdTree = await github.rest.git.createTree({
-                    ...context.repo,
-                    base_tree: baseCommit.data.tree.sha,
-                    tree,
-                  });
-                  const commit = await github.rest.git.createCommit({
-                    ...context.repo,
-                    message: 'chore(squad): add repository-derived Squad',
-                    tree: createdTree.data.sha,
-                    parents: [baseRef.data.object.sha],
-                  });
-                  await github.rest.git.createRef({
-                    ...context.repo,
-                    ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`,
-                    sha: commit.data.sha,
-                  });
-                }
-                let created;
-                try {
-                  created = await github.rest.pulls.create({
-                    ...context.repo,
-                    title: stateModule.BOOTSTRAP_PR_TITLE,
-                    head: stateModule.BOOTSTRAP_BRANCH,
-                    base: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                    body: payload.pr_body,
-                    draft: true,
-                  });
-                } catch (prError) {
-                  if (!stateModule.isCreatePullRequestPermissionDenied(prError)) {
-                    throw prError;
-                  }
-                  core.warning(`Squad bootstrap could not create the Cast pull request: ${prError.message}`);
-                  const pushedRef = await getRef(`heads/${stateModule.BOOTSTRAP_BRANCH}`);
-                  if (!pushedRef) {
-                    throw new Error(
-                      'Squad bootstrap cannot fall back to a manual pull request link because the candidate branch was not pushed.',
-                    );
-                  }
-                  const repository = `${context.repo.owner}/${context.repo.repo}`;
-                  const compareUrl = stateModule.buildBootstrapPrFallbackCompareUrl({
-                    repository,
-                    baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                    headBranch: stateModule.BOOTSTRAP_BRANCH,
-                    title: stateModule.BOOTSTRAP_PR_TITLE,
-                    server: process.env.GITHUB_SERVER_URL,
-                  });
-                  // context.sha is the default branch's exact commit this run executed on (the
-                  // top-level exact default-branch ref gate
-                  // guards both the push and workflow_dispatch trigger paths), so it is a
-                  // reliable, zero-extra-API-call stand-in for "the base commit any fresh
-                  // provenance record produced by this run would be bound to".
-                  const baseSha = context.sha;
-                  const existingFallback = stateModule.findExistingBootstrapPrFallbackIssue(
-                    snapshot.issues,
-                    stateModule.BOOTSTRAP_BRANCH,
-                    {
-                      repository,
-                      baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                      baseSha,
-                      headSha: pushedRef.object.sha,
-                    },
-                  );
-                  if (existingFallback) {
-                    core.info(
-                      `A fallback issue already requests manual Cast pull request creation: ${existingFallback.html_url}`,
-                    );
-                    return;
-                  }
-                  // squad-review-guard's validateBootstrapPrFallbackAttribution() only authorizes a
-                  // fallback provenance record whose referenced run has event === 'push' (mirroring
-                  // the bot-authored path's own push-only trust model). A workflow_dispatch run that
-                  // reaches this branch would mint a fallback issue no Cast PR could ever satisfy,
-                  // and future reruns would dedupe against that permanently-unusable issue forever
-                  // (findExistingBootstrapPrFallbackIssue does not consider triggering event). Fail
-                  // closed instead of minting a dead-end issue.
-                  if (context.eventName !== 'push') {
-                    throw new Error(
-                      'Squad bootstrap cannot open a trusted fallback issue because this run was triggered by ' +
-                        `'${context.eventName}', not 'push'. The Squad review workflow only authorizes a Cast ` +
-                        "pull request against a push-triggered bootstrap run's provenance. Re-run this workflow " +
-                        'via a push to a squad-related path on the default branch (for example, merging the ' +
-                        'pending installation changes) so a push-triggered run can open an authorizable fallback issue.',
-                    );
-                  }
-                  const runUrl = `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/actions/runs/${process.env.SQUAD_BOOTSTRAP_RUN_ID}`;
-                  const provenanceLine = stateModule.buildBootstrapPrFallbackProvenanceLine({
-                    repository,
-                    runId: process.env.SQUAD_BOOTSTRAP_RUN_ID,
-                    baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                    baseSha,
-                    headBranch: stateModule.BOOTSTRAP_BRANCH,
-                    headSha: pushedRef.object.sha,
-                    compareUrl,
-                  });
-                  const fallbackBody = stateModule.buildBootstrapPrFallbackIssueBody({
-                    repository,
-                    baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
-                    headBranch: stateModule.BOOTSTRAP_BRANCH,
-                    compareUrl,
-                    runUrl,
-                    provenanceLine,
-                  });
-                  try {
-                    const fallbackIssue = await github.rest.issues.create({
-                      ...context.repo,
-                      title: stateModule.BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
-                      body: fallbackBody,
-                    });
-                    core.warning(
-                      `Opened a fallback issue for manual Cast pull request creation: ${fallbackIssue.data.html_url}`,
-                    );
-                    return;
-                  } catch (issueError) {
-                    throw new Error(
-                      `Failed to create the Cast pull request (${prError.message}) and failed to create the ` +
-                        `fallback issue (${issueError.message}).`,
-                    );
-                  }
-                }
-                pullRequest = {
-                  number: created.data.number,
-                  state: created.data.state,
-                  merged: false,
-                  url: created.data.html_url,
-                };
-              } else {
-                const ref = pullRequest.merged
-                  ? process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH
-                  : stateModule.BOOTSTRAP_BRANCH;
-                await assertRemotePayload(ref);
-              }
-
-              if (!pullRequest?.url) {
-                throw new Error('The deterministic Cast PR URL is unavailable after materialization.');
-              }
-              const pullRequestDetails = (await github.rest.pulls.get({
-                ...context.repo,
-                pull_number: pullRequest.number,
-              })).data;
-              const provenance = {
-                schema: 1,
-                repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
-                run_id: process.env.SQUAD_BOOTSTRAP_RUN_ID,
-                install_sha: process.env.SQUAD_BOOTSTRAP_INSTALL_SHA,
-                cast_sha: pullRequestDetails.head.sha,
-              };
-              if (provenance.repository !== `${context.repo.owner}/${context.repo.repo}`
-                || provenance.run_id !== String(context.runId)
-                || provenance.install_sha !== context.sha
-                || !/^[0-9a-f]{40}$/.test(provenance.install_sha)
-                || !/^[0-9a-f]{40}$/.test(provenance.cast_sha)
-                || pullRequestDetails.head.ref !== stateModule.BOOTSTRAP_BRANCH
-                || pullRequestDetails.head.repo?.full_name !== provenance.repository) {
-                throw new Error('Trusted bootstrap provenance inputs or Cast PR head identity are invalid.');
-              }
-              const provenancePrefix = '<' + '!-- squad:bootstrap-provenance ';
-              const provenanceMarker = `${provenancePrefix}${JSON.stringify(provenance)} -->`;
-              const prBodyWithoutProvenance = String(pullRequestDetails.body || payload.pr_body)
-                .replace(new RegExp(`^${provenancePrefix}.* -->\\r?\\n?`, 'gm'), '');
-              await github.rest.pulls.update({
-                ...context.repo,
-                pull_number: pullRequest.number,
-                body: `${provenanceMarker}\n${prBodyWithoutProvenance}`,
-              });
-              const provenanceComments = (await github.paginate(
-                github.rest.issues.listComments,
-                {
-                  ...context.repo,
-                  issue_number: pullRequest.number,
-                  per_page: 100,
-                },
-              )).filter((comment) =>
-                String(comment.body || '').startsWith(provenancePrefix),
-              );
-              if (provenanceComments.length > 1) {
-                throw new Error('Ambiguous bot-authenticated bootstrap provenance comments.');
-              }
-              const provenanceCommentBody =
-                `${provenanceMarker}\nBase-controlled bootstrap provenance. Do not edit this comment.`;
-              if (provenanceComments.length === 1) {
-                if (provenanceComments[0].user?.login !== 'github-actions[bot]') {
-                  throw new Error('Bootstrap provenance comment is not owned by GitHub Actions.');
-                }
-                await github.rest.issues.updateComment({
-                  ...context.repo,
-                  comment_id: provenanceComments[0].id,
-                  body: provenanceCommentBody,
-                });
-              } else {
-                await github.rest.issues.createComment({
-                  ...context.repo,
-                  issue_number: pullRequest.number,
-                  body: provenanceCommentBody,
-                });
-              }
-              const finalPayload = {
-                ...payload,
-                issue_body: payload.issue_body.replace('{{CAST_PR_URL}}', pullRequest.url),
-              };
-              validate(finalPayload, 'resolved');
-              const issueBodyNewline = finalPayload.issue_body.indexOf('\n');
-              if (issueBodyNewline < 0) {
-                throw new Error('Validated bootstrap issue body has no marker delimiter.');
-              }
-              const markedIssueBody = `${finalPayload.issue_body.slice(0, issueBodyNewline)}\n${provenanceMarker}${finalPayload.issue_body.slice(issueBodyNewline)}`;
-
-              snapshot = await listState();
-              let issueNumber;
-              if (snapshot.state.issue) {
-                if (snapshot.state.issue.state !== 'open') {
-                  core.info(`Bootstrap issue #${snapshot.state.issue.number} is closed; preserving human state.`);
+                let snapshot = await listState();
+                if (snapshot.state.action === 'opt_out') {
+                  core.info('A closed-unmerged bootstrap Cast PR records human opt-out; no replacement was created.');
                   return;
                 }
-                issueNumber = snapshot.state.issue.number;
-                await github.rest.issues.update({
-                  ...context.repo,
-                  issue_number: issueNumber,
-                  title: stateModule.BOOTSTRAP_ISSUE_TITLE,
-                  body: markedIssueBody,
-                });
-              } else {
-                const createdIssue = await github.rest.issues.create({
-                  ...context.repo,
-                  title: stateModule.BOOTSTRAP_ISSUE_TITLE,
-                  body: markedIssueBody,
-                });
-                issueNumber = createdIssue.data.number;
-              }
+                if (snapshot.state.action === 'noop') {
+                  core.info('The deterministic Cast PR, research-proposals issue, and research artifact already exist.');
+                  return;
+                }
 
-              const researchBody = validatorModule.createBootstrapResearchComment(
-                finalPayload.issue_body,
-                issueNumber,
-              );
-              const comments = await github.paginate(github.rest.issues.listComments, {
-                ...context.repo,
-                issue_number: issueNumber,
-                per_page: 100,
-              });
-              const researchArtifacts = validatorModule.findBootstrapResearchArtifacts(
-                comments,
-                issueNumber,
-              );
-              const currentResearch = researchArtifacts.at(-1);
-              if (currentResearch) {
-                if (validatorModule.isBootstrapResearchSeed(currentResearch)) {
+                const getRef = async (ref) => {
+                  try {
+                    return (await github.rest.git.getRef({ ...context.repo, ref })).data;
+                  } catch (error) {
+                    if (error.status === 404) return null;
+                    throw error;
+                  }
+                };
+                const assertRemotePayload = async (ref) => {
+                  for (const file of payload.files) {
+                    const response = await github.rest.repos.getContent({
+                      ...context.repo,
+                      path: file.path,
+                      ref,
+                    });
+                    if (Array.isArray(response.data) || response.data.type !== 'file') {
+                      throw new Error(`Bootstrap branch path is not a file: ${file.path}`);
+                    }
+                    const remote = Buffer.from(response.data.content, 'base64').toString('utf8').replace(/\r\n/g, '\n');
+                    if (remote !== String(file.content).replace(/\r\n/g, '\n')) {
+                      throw new Error(`Existing bootstrap branch diverges at ${file.path}; refusing replacement.`);
+                    }
+                  }
+                  if (ref !== process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH) {
+                    const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                      ...context.repo,
+                      basehead: `${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}...${ref}`,
+                      per_page: 100,
+                    });
+                    const changed = (comparison.data.files || []).map((file) => file.filename).sort();
+                    const allowed = payload.files.map((file) => file.path).sort();
+                    if (JSON.stringify(changed) !== JSON.stringify(allowed)) {
+                      throw new Error(`Existing bootstrap branch changed files outside the validated payload: ${changed.join(', ')}`);
+                    }
+                  }
+                };
+
+                let pullRequest = snapshot.state.pull_request;
+                if (!pullRequest) {
+                  const branchRefName = `heads/${stateModule.BOOTSTRAP_BRANCH}`;
+                  const existingRef = await getRef(branchRefName);
+                  if (existingRef) {
+                    await assertRemotePayload(stateModule.BOOTSTRAP_BRANCH);
+                  } else {
+                    const baseRef = await github.rest.git.getRef({
+                      ...context.repo,
+                      ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
+                    });
+                    const baseCommit = await github.rest.git.getCommit({
+                      ...context.repo,
+                      commit_sha: baseRef.data.object.sha,
+                    });
+                    const tree = [];
+                    for (const file of payload.files) {
+                      const blob = await github.rest.git.createBlob({
+                        ...context.repo,
+                        content: Buffer.from(file.content, 'utf8').toString('base64'),
+                        encoding: 'base64',
+                      });
+                      tree.push({
+                        path: file.path,
+                        mode: '100644',
+                        type: 'blob',
+                        sha: blob.data.sha,
+                      });
+                    }
+                    const createdTree = await github.rest.git.createTree({
+                      ...context.repo,
+                      base_tree: baseCommit.data.tree.sha,
+                      tree,
+                    });
+                    const commit = await github.rest.git.createCommit({
+                      ...context.repo,
+                      message: 'chore(squad): add repository-derived Squad',
+                      tree: createdTree.data.sha,
+                      parents: [baseRef.data.object.sha],
+                    });
+                    await github.rest.git.createRef({
+                      ...context.repo,
+                      ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`,
+                      sha: commit.data.sha,
+                    });
+                  }
+                  let created;
+                  try {
+                    created = await github.rest.pulls.create({
+                      ...context.repo,
+                      title: stateModule.BOOTSTRAP_PR_TITLE,
+                      head: stateModule.BOOTSTRAP_BRANCH,
+                      base: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                      body: payload.pr_body,
+                      draft: true,
+                    });
+                  } catch (prError) {
+                    if (!stateModule.isCreatePullRequestPermissionDenied(prError)) {
+                      throw prError;
+                    }
+                    core.warning(`Squad bootstrap could not create the Cast pull request: ${prError.message}`);
+                    const pushedRef = await getRef(`heads/${stateModule.BOOTSTRAP_BRANCH}`);
+                    if (!pushedRef) {
+                      throw new Error(
+                        'Squad bootstrap cannot fall back to a manual pull request link because the candidate branch was not pushed.',
+                      );
+                    }
+                    const repository = `${context.repo.owner}/${context.repo.repo}`;
+                    const compareUrl = stateModule.buildBootstrapPrFallbackCompareUrl({
+                      repository,
+                      baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                      headBranch: stateModule.BOOTSTRAP_BRANCH,
+                      title: stateModule.BOOTSTRAP_PR_TITLE,
+                      server: process.env.GITHUB_SERVER_URL,
+                    });
+                    // context.sha is the default branch's exact commit this run executed on (the
+                    // top-level exact default-branch ref gate
+                    // guards both the push and workflow_dispatch trigger paths), so it is a
+                    // reliable, zero-extra-API-call stand-in for "the base commit any fresh
+                    // provenance record produced by this run would be bound to".
+                    const baseSha = context.sha;
+                    const existingFallback = stateModule.findExistingBootstrapPrFallbackIssue(
+                      snapshot.issues,
+                      stateModule.BOOTSTRAP_BRANCH,
+                      {
+                        repository,
+                        baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                        baseSha,
+                        headSha: pushedRef.object.sha,
+                      },
+                    );
+                    if (existingFallback) {
+                      core.info(
+                        `A fallback issue already requests manual Cast pull request creation: ${existingFallback.html_url}`,
+                      );
+                      return;
+                    }
+                    // squad-review-guard's validateBootstrapPrFallbackAttribution() only authorizes a
+                    // fallback provenance record whose referenced run has event === 'push' (mirroring
+                    // the bot-authored path's own push-only trust model). A workflow_dispatch run that
+                    // reaches this branch would mint a fallback issue no Cast PR could ever satisfy,
+                    // and future reruns would dedupe against that permanently-unusable issue forever
+                    // (findExistingBootstrapPrFallbackIssue does not consider triggering event). Fail
+                    // closed instead of minting a dead-end issue.
+                    if (context.eventName !== 'push') {
+                      throw new Error(
+                        'Squad bootstrap cannot open a trusted fallback issue because this run was triggered by ' +
+                          `'${context.eventName}', not 'push'. The Squad review workflow only authorizes a Cast ` +
+                          "pull request against a push-triggered bootstrap run's provenance. Re-run this workflow " +
+                          'via a push to a squad-related path on the default branch (for example, merging the ' +
+                          'pending installation changes) so a push-triggered run can open an authorizable fallback issue.',
+                      );
+                    }
+                    const runUrl = `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/actions/runs/${process.env.SQUAD_BOOTSTRAP_RUN_ID}`;
+                    const provenanceLine = stateModule.buildBootstrapPrFallbackProvenanceLine({
+                      repository,
+                      runId: process.env.SQUAD_BOOTSTRAP_RUN_ID,
+                      baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                      baseSha,
+                      headBranch: stateModule.BOOTSTRAP_BRANCH,
+                      headSha: pushedRef.object.sha,
+                      compareUrl,
+                    });
+                    const fallbackBody = stateModule.buildBootstrapPrFallbackIssueBody({
+                      repository,
+                      baseBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                      headBranch: stateModule.BOOTSTRAP_BRANCH,
+                      compareUrl,
+                      runUrl,
+                      provenanceLine,
+                    });
+                    try {
+                      const fallbackIssue = await github.rest.issues.create({
+                        ...context.repo,
+                        title: stateModule.BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
+                        body: fallbackBody,
+                      });
+                      core.warning(
+                        `Opened a fallback issue for manual Cast pull request creation: ${fallbackIssue.data.html_url}`,
+                      );
+                      return;
+                    } catch (issueError) {
+                      throw new Error(
+                        `Failed to create the Cast pull request (${prError.message}) and failed to create the ` +
+                          `fallback issue (${issueError.message}).`,
+                      );
+                    }
+                  }
+                  pullRequest = {
+                    number: created.data.number,
+                    state: created.data.state,
+                    merged: false,
+                    url: created.data.html_url,
+                  };
+                } else {
+                  const ref = pullRequest.merged
+                    ? process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH
+                    : stateModule.BOOTSTRAP_BRANCH;
+                  await assertRemotePayload(ref);
+                }
+
+                if (!pullRequest?.url) {
+                  throw new Error('The deterministic Cast PR URL is unavailable after materialization.');
+                }
+                const pullRequestDetails = (await github.rest.pulls.get({
+                  ...context.repo,
+                  pull_number: pullRequest.number,
+                })).data;
+                const provenance = {
+                  schema: 1,
+                  repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
+                  run_id: process.env.SQUAD_BOOTSTRAP_RUN_ID,
+                  install_sha: process.env.SQUAD_BOOTSTRAP_INSTALL_SHA,
+                  cast_sha: pullRequestDetails.head.sha,
+                };
+                if (provenance.repository !== `${context.repo.owner}/${context.repo.repo}`
+                  || provenance.run_id !== String(context.runId)
+                  || provenance.install_sha !== context.sha
+                  || !/^[0-9a-f]{40}$/.test(provenance.install_sha)
+                  || !/^[0-9a-f]{40}$/.test(provenance.cast_sha)
+                  || pullRequestDetails.head.ref !== stateModule.BOOTSTRAP_BRANCH
+                  || pullRequestDetails.head.repo?.full_name !== provenance.repository) {
+                  throw new Error('Trusted bootstrap provenance inputs or Cast PR head identity are invalid.');
+                }
+                const provenancePrefix = '<' + '!-- squad:bootstrap-provenance ';
+                const provenanceMarker = `${provenancePrefix}${JSON.stringify(provenance)} -->`;
+                const prBodyWithoutProvenance = String(pullRequestDetails.body || payload.pr_body)
+                  .replace(new RegExp(`^${provenancePrefix}.* -->\\r?\\n?`, 'gm'), '');
+                await github.rest.pulls.update({
+                  ...context.repo,
+                  pull_number: pullRequest.number,
+                  body: `${provenanceMarker}\n${prBodyWithoutProvenance}`,
+                });
+                const provenanceComments = (await github.paginate(
+                  github.rest.issues.listComments,
+                  {
+                    ...context.repo,
+                    issue_number: pullRequest.number,
+                    per_page: 100,
+                  },
+                )).filter((comment) =>
+                  String(comment.body || '').startsWith(provenancePrefix),
+                );
+                if (provenanceComments.length > 1) {
+                  throw new Error('Ambiguous bot-authenticated bootstrap provenance comments.');
+                }
+                const provenanceCommentBody =
+                  `${provenanceMarker}\nBase-controlled bootstrap provenance. Do not edit this comment.`;
+                if (provenanceComments.length === 1) {
+                  if (provenanceComments[0].user?.login !== 'github-actions[bot]') {
+                    throw new Error('Bootstrap provenance comment is not owned by GitHub Actions.');
+                  }
                   await github.rest.issues.updateComment({
                     ...context.repo,
-                    comment_id: currentResearch.id,
-                    body: researchBody,
+                    comment_id: provenanceComments[0].id,
+                    body: provenanceCommentBody,
                   });
                 } else {
-                  core.info(
-                    `Preserving focused research artifact comment #${currentResearch.id}.`,
-                  );
-                }
-                for (const duplicate of researchArtifacts.slice(0, -1)) {
-                  await github.rest.issues.deleteComment({
+                  await github.rest.issues.createComment({
                     ...context.repo,
-                    comment_id: duplicate.id,
+                    issue_number: pullRequest.number,
+                    body: provenanceCommentBody,
                   });
                 }
-              } else {
-                await github.rest.issues.createComment({
+                const finalPayload = {
+                  ...payload,
+                  issue_body: payload.issue_body.replace('{{CAST_PR_URL}}', pullRequest.url),
+                };
+                validate(finalPayload, 'resolved');
+                const issueBodyNewline = finalPayload.issue_body.indexOf('\n');
+                if (issueBodyNewline < 0) {
+                  throw new Error('Validated bootstrap issue body has no marker delimiter.');
+                }
+                const markedIssueBody = `${finalPayload.issue_body.slice(0, issueBodyNewline)}\n${provenanceMarker}${finalPayload.issue_body.slice(issueBodyNewline)}`;
+
+                snapshot = await listState();
+                let issueNumber;
+                if (snapshot.state.issue) {
+                  if (snapshot.state.issue.state !== 'open') {
+                    core.info(`Bootstrap issue #${snapshot.state.issue.number} is closed; preserving human state.`);
+                    return;
+                  }
+                  issueNumber = snapshot.state.issue.number;
+                  await github.rest.issues.update({
+                    ...context.repo,
+                    issue_number: issueNumber,
+                    title: stateModule.BOOTSTRAP_ISSUE_TITLE,
+                    body: markedIssueBody,
+                  });
+                } else {
+                  const createdIssue = await github.rest.issues.create({
+                    ...context.repo,
+                    title: stateModule.BOOTSTRAP_ISSUE_TITLE,
+                    body: markedIssueBody,
+                  });
+                  issueNumber = createdIssue.data.number;
+                }
+
+                const researchBody = validatorModule.createBootstrapResearchComment(
+                  finalPayload.issue_body,
+                  issueNumber,
+                );
+                const comments = await github.paginate(github.rest.issues.listComments, {
                   ...context.repo,
                   issue_number: issueNumber,
-                  body: researchBody,
+                  per_page: 100,
                 });
+                const researchArtifacts = validatorModule.findBootstrapResearchArtifacts(
+                  comments,
+                  issueNumber,
+                );
+                const currentResearch = researchArtifacts.at(-1);
+                if (currentResearch) {
+                  if (validatorModule.isBootstrapResearchSeed(currentResearch)) {
+                    await github.rest.issues.updateComment({
+                      ...context.repo,
+                      comment_id: currentResearch.id,
+                      body: researchBody,
+                    });
+                  } else {
+                    core.info(
+                      `Preserving focused research artifact comment #${currentResearch.id}.`,
+                    );
+                  }
+                  for (const duplicate of researchArtifacts.slice(0, -1)) {
+                    await github.rest.issues.deleteComment({
+                      ...context.repo,
+                      comment_id: duplicate.id,
+                    });
+                  }
+                } else {
+                  await github.rest.issues.createComment({
+                    ...context.repo,
+                    issue_number: issueNumber,
+                    body: researchBody,
+                  });
+                }
+              } finally {
+                rmSync(candidate, { recursive: true, force: true });
               }
 ---
 
