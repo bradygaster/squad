@@ -613,16 +613,32 @@ describe('automated package publication', () => {
     expect(wingetGate.run).toMatch(/classic PAT.*public_repo/);
   });
 
-  it('updates only the tap cask and skips an identical manifest', () => {
-    const checkout = homebrew.steps?.find(
-      (step) => step.with?.repository === 'bradygaster/homebrew-squad',
+  it('clones the tap anonymously and scopes the push credential locally', () => {
+    const clone = stepNamed(
+      homebrew,
+      'Clone Homebrew tap (anonymous read; bradygaster/homebrew-squad is public)',
     );
-    expect(checkout?.uses).toMatch(/^actions\/checkout@[0-9a-f]{40}$/);
-    expect(checkout?.with).toMatchObject({
-      ref: 'main',
-      path: 'homebrew-tap',
-      token: '${{ secrets.HOMEBREW_TAP_TOKEN }}',
-    });
+    expect(clone.run).toContain(
+      'git clone --depth 1 --branch main https://github.com/bradygaster/homebrew-squad.git homebrew-tap',
+    );
+    // The read-only clone must never receive the publish token: if it did, the
+    // same auth-setup path that failed in production (actions/checkout
+    // configuring credentials for the initial fetch of an external repo)
+    // would be reintroduced.
+    expect(clone.run).not.toContain('secrets.HOMEBREW_TAP_TOKEN');
+    expect(clone.env ?? {}).not.toHaveProperty('HOMEBREW_TAP_TOKEN');
+    expect(homebrew.steps?.some((step) => step.with?.repository === 'bradygaster/homebrew-squad')).toBe(false);
+
+    const credential = stepNamed(
+      homebrew,
+      'Configure Homebrew tap push credential (scoped locally; never passed to the read-only clone)',
+    );
+    expect(credential['working-directory']).toBe('homebrew-tap');
+    expect(credential.env?.TOKEN).toBe('${{ secrets.HOMEBREW_TAP_TOKEN }}');
+    expect(credential.run).toContain('git config --local http.https://github.com/.extraheader');
+    expect(credential.run).not.toContain('--global');
+    // The token must not be echoed/logged anywhere in the credential step.
+    expect(credential.run).not.toMatch(/echo.*TOKEN/);
 
     const publish = stepNamed(homebrew, 'Publish cask to the tap').run ?? '';
     expect(publish).toContain('../packaging/homebrew/${CASK}.rb');

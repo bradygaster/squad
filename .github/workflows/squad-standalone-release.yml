@@ -451,15 +451,12 @@ jobs:
           name: packaging-manifests
           path: packaging
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-        with:
-          repository: bradygaster/homebrew-squad
-          ref: main
-          path: homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          persist-credentials: false
+      - name: Clone Homebrew tap (anonymous read; bradygaster/homebrew-squad is public)
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch main https://github.com/bradygaster/homebrew-squad.git homebrew-tap
 
-      - name: Configure Homebrew tap push credential (scoped locally; checkout does not persist it)
+      - name: Configure Homebrew tap push credential (scoped locally; never passed to the read-only clone)
         env:
           TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         working-directory: homebrew-tap
