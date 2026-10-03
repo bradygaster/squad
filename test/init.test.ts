@@ -256,11 +256,10 @@ describe('Squad Initialization', () => {
       expect(existsSync(charterPath)).toBe(true);
       const charter = await readFile(charterPath, 'utf-8');
       expect(charter.length).toBeGreaterThan(1000);
-      // The bounded support charter keeps the policy source but must not
-      // recreate the retired audit-log contract.
       expect(charter).toMatch(/\.squad\/rai\/policy\.md/);
-      expect(charter).toMatch(/does not create audit logs/i);
-      expect(charter).not.toMatch(/\.squad\/rai\/audit-trail\.md/);
+      expect(charter).toMatch(/\.squad\/rai\/audit-trail\.md/);
+      expect(charter).toContain('squad_state_append');
+      expect(charter).toContain('Never overwrite or delete prior entries');
     });
 
     it('should install every manifest-curated skill (regression: bradygaster/squad#1289, #1264)', async () => {
