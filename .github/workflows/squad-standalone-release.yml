@@ -429,6 +429,23 @@ jobs:
             exit 1
           fi
 
+      - name: Preflight - verify Homebrew tap token
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          login="$(gh api user --jq '.login')" || {
+            echo "::error::HOMEBREW_TAP_TOKEN failed to authenticate against the GitHub API. The token is likely invalid, expired, or revoked and must be rotated by a maintainer with write access to bradygaster/homebrew-squad."
+            exit 1
+          }
+          echo "Authenticated as: ${login}"
+          push_access="$(gh api repos/bradygaster/homebrew-squad --jq '.permissions.push // false')"
+          echo "Push access to bradygaster/homebrew-squad: ${push_access}"
+          if [ "${push_access}" != "true" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN authenticates as '${login}', but that account/token does not have push access to bradygaster/homebrew-squad."
+            exit 1
+          fi
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
         with:
           name: packaging-manifests
@@ -439,9 +456,17 @@ jobs:
           repository: bradygaster/homebrew-squad
           ref: main
           path: homebrew-tap
-          fetch-depth: 1
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          persist-credentials: true
+          persist-credentials: false
+
+      - name: Configure Homebrew tap push credential (scoped locally; checkout does not persist it)
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          auth_header="Authorization: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
+          git config --local http.https://github.com/.extraheader "${auth_header}"
 
       - name: Publish cask to the tap
         env:
@@ -571,6 +596,23 @@ jobs:
             exit 1
           fi
 
+      - name: Preflight - verify WinGet publish token
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          login="$(gh api user --jq '.login')" || {
+            echo "::error::WINGET_CREATE_GITHUB_TOKEN failed to authenticate against the GitHub API. The token is likely invalid, expired, or revoked and must be rotated by a maintainer with push access to tamirdresher/winget-pkgs."
+            exit 1
+          }
+          echo "Authenticated as: ${login}"
+          push_access="$(gh api repos/tamirdresher/winget-pkgs --jq '.permissions.push // false')"
+          echo "Push access to tamirdresher/winget-pkgs: ${push_access}"
+          if [ "${push_access}" != "true" ]; then
+            echo "::error::WINGET_CREATE_GITHUB_TOKEN authenticates as '${login}', but that account/token does not have push access to tamirdresher/winget-pkgs."
+            exit 1
+          fi
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
         with:
           name: packaging-manifests
@@ -609,15 +651,14 @@ jobs:
           echo "package_identifier=${PACKAGE_IDENTIFIER}" >> "${GITHUB_OUTPUT}"
           echo "package_root=${package_root}" >> "${GITHUB_OUTPUT}"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-        with:
-          repository: microsoft/winget-pkgs
-          ref: master
-          path: winget-base
-          fetch-depth: 1
-          sparse-checkout: ${{ steps.release.outputs.package_root }}
-          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
-          persist-credentials: false
+      - name: Clone WinGet manifests directory (read-only, public repo; no credential needed)
+        env:
+          PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
+        run: |
+          set -euo pipefail
+          git clone --no-checkout --depth 1 --branch master --filter=blob:none https://github.com/microsoft/winget-pkgs.git winget-base
+          git -C winget-base sparse-checkout set "${PACKAGE_ROOT}"
+          git -C winget-base checkout master
 
       - name: Check WinGet publication state
         id: guard
@@ -709,22 +750,33 @@ jobs:
           repository: tamirdresher/winget-pkgs
           ref: ${{ steps.release.outputs.branch }}
           path: winget-pkgs
+          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          persist-credentials: false
           fetch-depth: 1
           sparse-checkout: ${{ steps.release.outputs.package_root }}
-          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
-          persist-credentials: true
 
-      - name: Check out WinGet master for a new version branch
+      - name: Configure existing-branch push credential (scoped locally; checkout does not persist it)
+        if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'true'
+        env:
+          TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        working-directory: winget-pkgs
+        run: |
+          set -euo pipefail
+          auth_header="Authorization: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
+          git config --local http.https://github.com/.extraheader "${auth_header}"
+
+      - name: Clone WinGet master for a new version branch (credential scoped locally for the later push)
         if: steps.guard.outputs.skip == 'false' && steps.guard.outputs.branch_exists == 'false'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-        with:
-          repository: microsoft/winget-pkgs
-          ref: master
-          path: winget-pkgs
-          fetch-depth: 1
-          sparse-checkout: ${{ steps.release.outputs.package_root }}
-          token: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
-          persist-credentials: true
+        env:
+          TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          PACKAGE_ROOT: ${{ steps.release.outputs.package_root }}
+        run: |
+          set -euo pipefail
+          git clone --no-checkout --depth 1 --branch master --filter=blob:none https://github.com/microsoft/winget-pkgs.git winget-pkgs
+          git -C winget-pkgs sparse-checkout set "${PACKAGE_ROOT}"
+          git -C winget-pkgs checkout master
+          auth_header="Authorization: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
+          git -C winget-pkgs config --local http.https://github.com/.extraheader "${auth_header}"
 
       - name: Push manifests and open upstream PR
         if: steps.guard.outputs.skip == 'false'

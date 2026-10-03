@@ -1118,6 +1118,187 @@ describe('automatic Squad bootstrap workflow', () => {
   });
 });
 
+describe('gh-aw: squad-bootstrap candidate lifetime', () => {
+  const baseSha = 'c'.repeat(40);
+  const castSha = 'b'.repeat(40);
+  const prUrl = 'https://github.com/octo/example/pull/3';
+
+  function writerScript(source: string): string {
+    const frontmatter = source.split('\n---\n')[0].replace(/^---\n/, '');
+    const steps = parse(frontmatter)['safe-outputs'].jobs['materialize-bootstrap'].steps;
+    const script = steps.find((step: { with?: { script?: string } }) => step.with?.script)?.with.script;
+    expect(script, 'live materialize-bootstrap writer script must exist').toBeTypeOf('string');
+    return script;
+  }
+
+  function writerFixture(
+    scenario: 'success' | 'opt-out' | 'permission-denied' | 'api-error' = 'success',
+    source = WORKFLOW,
+  ) {
+    const fixture = createFixture();
+    const workspace = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-writer-'));
+    workspaces.push(workspace);
+    const checkout = join(workspace, 'bootstrap-repo');
+    cpSync(fixture.root, checkout, { recursive: true });
+    cpSync(resolve(ROOT, 'workflows/shared'), join(checkout, '.github/workflows/shared'), { recursive: true });
+    const outputPath = join(workspace, 'output.json');
+    writeFileSync(outputPath, JSON.stringify({
+      items: [{ type: 'materialize_bootstrap', ...createBootstrapPayloadEnvelope(JSON.stringify(fixture.payload)) }],
+    }));
+    let candidate = '';
+    const captureCandidate = (path: string) => {
+      candidate = path;
+      workspaces.push(path);
+    };
+    const script = writerScript(source).replace(
+      "const candidate = mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-'));",
+      "const candidate = mkdtempSync(join(tmpdir(), 'squad-bootstrap-candidate-')); captureCandidate(candidate);",
+    );
+    const runScript = compileFunction(
+      `return (async () => {\n${script}\n})();`,
+      ['github', 'context', 'core', 'process', 'captureCandidate'],
+      { importModuleDynamically: vmConstants.USE_MAIN_CONTEXT_DEFAULT_LOADER },
+    );
+    const issueCalls: Array<{ title: string; body: string }> = [];
+    const commentCalls: Array<{ issue_number: number; body: string }> = [];
+    const updates: Array<{ body: string }> = [];
+    const writesWithCandidate: boolean[] = [];
+    const recordWrite = () => writesWithCandidate.push(
+      existsSync(join(candidate, '.squad/team.md')) &&
+      existsSync(join(candidate, 'package.json')) &&
+      existsSync(join(candidate, '.github/workflows/shared/builtins/scribe-charter.md')),
+    );
+    const pull = {
+      number: 3,
+      state: scenario === 'opt-out' ? 'closed' : 'open',
+      title: BOOTSTRAP_PR_TITLE,
+      head: { ref: BOOTSTRAP_BRANCH, sha: castSha, repo: { full_name: 'octo/example' } },
+      base: { ref: 'main' },
+      html_url: prUrl,
+      body: fixture.payload.pr_body,
+      merged_at: null,
+    };
+    let branchCreated = false;
+    let pullCreated = false;
+    const github = {
+      paginate: async (method: () => Promise<unknown>) => method(),
+      rest: {
+        git: {
+          getRef: async ({ ref }: { ref: string }) => {
+            if (ref === `heads/${BOOTSTRAP_BRANCH}` && !branchCreated) {
+              throw Object.assign(new Error('Not Found'), { status: 404 });
+            }
+            return { data: { object: { sha: ref === 'heads/main' ? baseSha : castSha } } };
+          },
+          getCommit: async () => ({ data: { tree: { sha: 'base-tree' } } }),
+          createBlob: async () => { recordWrite(); return { data: { sha: 'blob' } }; },
+          createTree: async () => ({ data: { sha: 'tree' } }),
+          createCommit: async () => ({ data: { sha: castSha } }),
+          createRef: async () => { branchCreated = true; },
+        },
+        pulls: {
+          list: async () => scenario === 'opt-out' || pullCreated ? [pull] : [],
+          create: async () => {
+            recordWrite();
+            if (scenario === 'permission-denied') throw new Error(CREATE_PR_PERMISSION_DENIED_TEXT);
+            pullCreated = true;
+            return { data: pull };
+          },
+          get: async () => ({ data: pull }),
+          update: async (args: { body: string }) => { recordWrite(); updates.push(args); },
+        },
+        issues: {
+          listForRepo: async () => [],
+          listComments: async () => [],
+          create: async (args: { title: string; body: string }) => {
+            recordWrite();
+            issueCalls.push(args);
+            if (scenario === 'api-error') throw new Error('research issue API outage');
+            return { data: { number: 6, html_url: 'https://github.com/octo/example/issues/6' } };
+          },
+          createComment: async (args: { issue_number: number; body: string }) => {
+            recordWrite();
+            commentCalls.push(args);
+          },
+        },
+      },
+    };
+    const failures: string[] = [];
+    const run = () => runScript(
+      github,
+      { repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123, eventName: 'push' },
+      { info: () => {}, warning: () => {}, setFailed: (message: string) => failures.push(message) },
+      { env: {
+        GITHUB_WORKSPACE: workspace,
+        GH_AW_AGENT_OUTPUT: outputPath,
+        GITHUB_SERVER_URL: 'https://github.com',
+        SQUAD_BOOTSTRAP_DEFAULT_BRANCH: 'main',
+        SQUAD_BOOTSTRAP_REPOSITORY: 'octo/example',
+        SQUAD_BOOTSTRAP_INSTALL_SHA: baseSha,
+        SQUAD_BOOTSTRAP_RUN_ID: '123',
+      } },
+      captureCandidate,
+    );
+    return {
+      run, issueCalls, commentCalls, updates, writesWithCandidate, failures,
+      candidate: () => candidate,
+    };
+  }
+
+  it('keeps the real candidate through resolved validation, issue and research creation, then removes it', async () => {
+    const fixture = writerFixture();
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.issueCalls[0].title).toBe(BOOTSTRAP_ISSUE_TITLE);
+    expect(fixture.issueCalls[0].body).toContain(`[draft Cast PR](${prUrl})`);
+    expect(fixture.issueCalls[0].body).not.toContain('{{CAST_PR_URL}}');
+    expect(fixture.updates[0].body).toContain('"cast_sha":"' + castSha + '"');
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3, 6]);
+    expect(fixture.commentCalls[1].body).toBe(createBootstrapResearchComment(issueBody(prUrl), 6));
+    expect(fixture.writesWithCandidate.length).toBeGreaterThan(0);
+    expect(fixture.writesWithCandidate.every(Boolean), 'candidate files must survive all GitHub writes').toBe(true);
+    expect(existsSync(fixture.candidate()), 'success must remove the entire candidate tree').toBe(false);
+  });
+
+  it.each(['opt-out', 'permission-denied'] as const)('removes the candidate on the %s early return', async (scenario) => {
+    const fixture = writerFixture(scenario);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.commentCalls).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(scenario === 'permission-denied' ? 1 : 0);
+    expect(existsSync(fixture.candidate()), 'early return must remove the entire candidate tree').toBe(false);
+  });
+
+  it('removes the candidate while propagating a post-validation API error', async () => {
+    const fixture = writerFixture('api-error');
+    await expect(fixture.run()).rejects.toThrow('research issue API outage');
+    expect(fixture.commentCalls).toHaveLength(1);
+    expect(fixture.writesWithCandidate.every(Boolean)).toBe(true);
+    expect(existsSync(fixture.candidate()), 'API error must remove the entire candidate tree').toBe(false);
+  });
+
+  it('rejects a realistic mutation restoring premature cleanup with missing-path diagnostics', async () => {
+    const prematureCleanup = WORKFLOW
+      .replace(
+        '                writeFileSync(payloadPath, payloadText);\n',
+        '                writeFileSync(payloadPath, payloadText);\n' +
+        '              } finally {\n' +
+        '                rmSync(candidate, { recursive: true, force: true });\n' +
+        '              }\n',
+      )
+      .replace(
+        '              } finally {\n                rmSync(candidate, { recursive: true, force: true });\n              }\n---',
+        '---',
+      );
+    expect(prematureCleanup).not.toBe(WORKFLOW);
+    const fixture = writerFixture('success', prematureCleanup);
+    await expect(fixture.run()).rejects.toThrow(/Squad bootstrap validation failed:[\s\S]*\.squad\/team\.md/);
+    expect(fixture.issueCalls).toEqual([]);
+    expect(fixture.commentCalls).toHaveLength(1);
+  });
+});
+
 // Regression coverage for the `can_approve_pull_request_reviews=false` policy
 // finding: GITHUB_TOKEN pull request creation and review approval cannot be
 // separated (proven against gh-aw's own create_pull_request.cjs /
@@ -1137,9 +1318,11 @@ describe('gh-aw: squad-bootstrap pull-request-creation permission-denied fallbac
   function extractConstArrow(source: string, declaration: string): string {
     const startIndex = source.indexOf(declaration);
     expect(startIndex, `declaration not found: ${declaration}`).toBeGreaterThanOrEqual(0);
-    const endIndex = source.indexOf('\n              };', startIndex);
+    const indent = source.slice(source.lastIndexOf('\n', startIndex) + 1, startIndex);
+    const endMarker = `\n${indent}};`;
+    const endIndex = source.indexOf(endMarker, startIndex);
     expect(endIndex, `no closing '};' for: ${declaration}`).toBeGreaterThanOrEqual(0);
-    return source.slice(startIndex, endIndex + '\n              };'.length);
+    return source.slice(startIndex, endIndex + endMarker.length);
   }
 
   /** Read the `if (!pullRequest) { ... } else { ... }` statement verbatim from source. */
@@ -1147,7 +1330,8 @@ describe('gh-aw: squad-bootstrap pull-request-creation permission-denied fallbac
     const startMarker = 'let pullRequest = snapshot.state.pull_request;';
     const startIndex = source.indexOf(startMarker);
     expect(startIndex, 'pullRequest block start not found').toBeGreaterThanOrEqual(0);
-    const elseCloseMarker = 'await assertRemotePayload(ref);\n              }';
+    const indent = source.slice(source.lastIndexOf('\n', startIndex) + 1, startIndex);
+    const elseCloseMarker = `await assertRemotePayload(ref);\n${indent}}`;
     const elseCloseIndex = source.indexOf(elseCloseMarker, startIndex);
     expect(elseCloseIndex, 'pullRequest block end not found').toBeGreaterThanOrEqual(0);
     return source.slice(startIndex, elseCloseIndex + elseCloseMarker.length);
