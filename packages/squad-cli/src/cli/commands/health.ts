@@ -286,6 +286,12 @@ function loadKnownRoutingAgentKeys(squadDir: string): Set<string> {
       throw new Error(`registry entry ${agentId} must be an object`);
     }
     keys.add(normalizeAgentRef(agentId));
+    if (
+      typeof entry.persistent_name === 'string' &&
+      entry.persistent_name.trim()
+    ) {
+      keys.add(normalizeAgentRef(entry.persistent_name));
+    }
   }
 
   const team = parseTeamMarkdown(
