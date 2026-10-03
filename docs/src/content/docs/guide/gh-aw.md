@@ -2029,7 +2029,7 @@ Understanding the two-job architecture helps when debugging.
 The activation job runs with full network access:
 
 1. Optionally mints a GitHub App installation token
-2. Resolves `SQUAD_CLI_VERSION` (default `v0.13.1`) and downloads the matching
+2. Resolves `SQUAD_CLI_VERSION` (default `v1.0.0`) and downloads the matching
    standalone GitHub Release bundle with checksum verification — no npm install
 3. Preserves a committed team with roster entries, or runs
    `squad init --preset default --state-backend local` when no usable team exists
