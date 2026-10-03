@@ -7,6 +7,7 @@ on:
 permissions:
   issues: write
   contents: read
+  actions: write
 
 jobs:
   triage:
@@ -30,6 +31,11 @@ jobs:
 
             const content = fs.readFileSync(teamFile, 'utf8');
             const lines = content.split('\n');
+            if (issue.labels.some(label => /^squad:.+/.test(label.name))) {
+              core.info(`Issue #${issue.number} already has a squad member label — skipping conflicting triage.`);
+              return;
+            }
+            const autoAssign = /<!--\s*copilot-auto-assign:\s*true\s*-->/i.test(content);
 
             // Check if @copilot is on the team
             const hasCopilot = content.includes('🤖 Coding Agent');
@@ -318,3 +324,13 @@ jobs:
             });
 
             core.info(`Triaged issue #${issue.number} → ${assignedMember.name} (${assignLabel})`);
+            if (isCopilot && autoAssign) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'squad-issue-assign.yml',
+                ref: context.payload.repository.default_branch,
+                inputs: { issue_number: String(issue.number) }
+              });
+              core.info(`Dispatched squad-issue-assign.yml for auto-assigned issue #${issue.number}`);
+            }

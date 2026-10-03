@@ -278,6 +278,25 @@ describe('team readiness', () => {
     expect(result.message).toBe('team.md is valid (1 members)');
   });
 
+  it('accepts the legacy Team Roster table heading', () => {
+    writeSquad(
+      'team.md',
+      `# Test Team
+
+## Team Roster
+
+| Name | Role |
+|------|------|
+| Alpha | Developer |
+`,
+    );
+
+    const result = check(runSquadHealth(squadDir, repoRoot), 'team');
+
+    expect(result.status).toBe('pass');
+    expect(result.message).toBe('team.md is valid (1 members)');
+  });
+
   it('reports only roster members when team.md contains auxiliary tables', () => {
     writeSquad(
       'team.md',

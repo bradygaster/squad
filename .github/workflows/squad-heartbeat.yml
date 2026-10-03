@@ -32,6 +32,7 @@ permissions:
   issues: write
   contents: read
   pull-requests: read
+  actions: write
 
 # CI Hardening Phase 3 item A1: Prevent parallel runs from competing for resources
 concurrency:
@@ -133,6 +134,8 @@ jobs:
               core.info('📋 Board is clear — Ralph found no untriaged issues');
               return;
             }
+            const autoAssign = /<!--\s*copilot-auto-assign:\s*true\s*-->/i
+              .test(fs.readFileSync('.squad/team.md', 'utf8'));
             
             for (const decision of results) {
               try {
@@ -158,10 +161,24 @@ jobs:
                     '> To reassign, swap the `squad:*` label.'
                   ].join('\n')
                 });
+
+                if (decision.label === 'squad:copilot' && autoAssign) {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id: 'squad-issue-assign.yml',
+                    ref: context.payload.repository.default_branch,
+                    inputs: { issue_number: String(decision.issueNumber) }
+                  });
+                  core.info(`Dispatched squad-issue-assign.yml for auto-assigned issue #${decision.issueNumber}`);
+                }
                 
                 core.info(`Triaged #${decision.issueNumber} → ${decision.assignTo} (${decision.source})`);
               } catch (e) {
                 core.warning(`Failed to triage #${decision.issueNumber}: ${e.message}`);
+                if (decision.label === 'squad:copilot' && autoAssign) {
+                  core.setFailed(`Failed to dispatch Copilot assignment for #${decision.issueNumber}: ${e.message}`);
+                }
               }
             }
             

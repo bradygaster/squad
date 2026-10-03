@@ -309,6 +309,21 @@ describe('MarkdownMigration', () => {
       expect(warnings).toHaveLength(0);
     });
 
+    it('should parse the legacy Team Roster table heading', () => {
+      const md = `
+## Team Roster
+
+| Name | Role |
+|------|------|
+| Alpha | Developer |
+`;
+      const { agents } = parseTeamMarkdown(md);
+
+      expect(agents).toEqual([
+        expect.objectContaining({ name: 'alpha', role: 'Developer' }),
+      ]);
+    });
+
     it('should ignore tables outside supported roster sections', () => {
       const md = `
 ## Members

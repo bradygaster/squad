@@ -132,16 +132,19 @@ When the `squad:copilot` label is added to an issue:
 3. **Acceptance** — Only an HTTP 200/201 response containing the exact `copilot-swe-agent[bot]` assignee permits an acknowledgment comment. Missing or malformed evidence fails visibly without a success comment.
 4. **Handoff** — Verify a Copilot session linked to the issue, or a linked `copilot/*` draft PR with Copilot activity. API acceptance, a bot assignee, or a green Actions job alone does **not** prove that a coding session started or completed.
 
-`squad-issue-assign.yml` is the sole label-triggered Copilot assignment authority.
+`squad-issue-assign.yml` is the sole Copilot assignment authority, whether
+triggered by a label or an explicit dispatch.
 Heartbeat continues monitoring and applying triage labels, and triage continues
-routing, but neither assigns Copilot directly. A failed request may have reached
-GitHub before its response was lost; inspect the issue/session before retrying.
-
-Labels added with the default `GITHUB_TOKEN` do not trigger another Actions
-workflow. If automated triage applies `squad:copilot` using that token, a human
-or suitably authorized non-`GITHUB_TOKEN` integration must remove and reapply
-the label to trigger the assignment workflow. Merely seeing the label is not
-handoff evidence.
+routing, but neither assigns Copilot directly. When auto-assign is enabled in
+`team.md`, both workflows explicitly dispatch `squad-issue-assign.yml` after
+automatically applying `squad:copilot`; that workflow alone performs the
+PAT-backed assignment. The dispatch uses the default `GITHUB_TOKEN`, which
+requires the workflows' narrowly scoped `actions: write` permission because
+labels added with that token do not trigger another workflow. When auto-assign
+is disabled, automated routing only applies labels and does not dispatch an
+assignment. Manually adding `squad:copilot` still triggers the assignment
+workflow. A failed request may have reached GitHub before its response was
+lost; inspect the issue/session before retrying.
 
 ---
 

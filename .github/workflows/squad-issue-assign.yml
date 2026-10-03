@@ -3,6 +3,12 @@ name: Squad Issue Assign
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to assign to Copilot
+        required: true
+        type: string
 
 permissions:
   issues: write
@@ -10,17 +16,17 @@ permissions:
 
 # CI Hardening Phase 3 item A1: Prevent parallel runs from competing for resources
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.issue.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.inputs.issue_number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   assign-work:
     # Only trigger on squad:{member} labels (not the base "squad" label)
-    if: startsWith(github.event.label.name, 'squad:')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.label.name, 'squad:')
     runs-on: ubuntu-latest
     steps:
       - name: Require Copilot assignment token
-        if: github.event.label.name == 'squad:copilot'
+        if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'squad:copilot'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
         env:
           COPILOT_ASSIGN_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
@@ -57,8 +63,12 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const issue = context.payload.issue;
-            const label = context.payload.label.name;
+            const label = context.payload.label?.name || 'squad:copilot';
+            const issue = context.payload.issue || (await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(context.payload.inputs.issue_number)
+            })).data;
             const slugify = value => value
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, '-')
@@ -163,14 +173,22 @@ jobs:
 
       # Separate step: assign @copilot using PAT (required for coding agent)
       - name: Assign @copilot coding agent
-        if: github.event.label.name == 'squad:copilot'
+        if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'squad:copilot'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
         with:
           github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const issue_number = context.payload.issue.number;
+            const issue_number = Number(context.payload.issue?.number || context.payload.inputs.issue_number);
+            if (!Number.isSafeInteger(issue_number) || issue_number < 1) {
+              throw new Error('A valid issue_number is required for Copilot assignment.');
+            }
+            const label = context.payload.label?.name || 'squad:copilot';
+            const { data: issue } = await github.rest.issues.get({ owner, repo, issue_number });
+            if (!issue.labels.some(existing => existing.name === label)) {
+              throw new Error(`Issue #${issue_number} no longer has ${label}; refusing stale Copilot handoff.`);
+            }
 
             // Get the default branch name (main, master, etc.)
             const { data: repoData } = await github.rest.repos.get({ owner, repo });
@@ -198,18 +216,33 @@ jobs:
               throw new Error(`Copilot assignment API did not confirm copilot-swe-agent[bot] for issue #${issue_number}; handoff is unverified.`);
             }
             core.info(`Copilot assignment API accepted issue #${issue_number} (base: ${baseBranch}); session creation is not verified.`);
-            // Preserve the active workflow's parent-label repair after acceptance.
-            if (!context.payload.issue.labels.some(label => label.name === 'squad')) {
-              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['squad'] });
-            }
             await github.rest.issues.createComment({
               owner, repo, issue_number,
               body: [
                 `### 🤖 Copilot assignment API accepted`,
                 '',
-                `**Issue:** #${issue_number} — ${context.payload.issue.title}`,
+                `**Issue:** #${issue_number} — ${issue.title}`,
                 `The API accepted the coding-agent request and returned \`copilot-swe-agent[bot]\` as an assignee (base: \`${baseBranch}\`).`,
                 '',
                 `This is not proof of a running session. Verify a Copilot session linked to this issue or a linked \`copilot/*\` draft PR before treating the handoff as started.`,
               ].join('\n')
             });
+
+      # Repair the parent label only after the PAT-backed assignment and its acknowledgment succeed.
+      # The default GITHUB_TOKEN does not create another issues:labeled workflow run.
+      - name: Ensure parent squad label
+        if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'squad:copilot'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = Number(context.payload.issue?.number || context.payload.inputs.issue_number);
+            if (!Number.isSafeInteger(issue_number) || issue_number < 1) {
+              throw new Error('A valid issue_number is required to repair the parent squad label.');
+            }
+            const { data: issue } = await github.rest.issues.get({ owner, repo, issue_number });
+            if (!issue.labels.some(label => label.name === 'squad')) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['squad'] });
+              core.info(`Added parent "squad" label to #${issue_number}`);
+            }

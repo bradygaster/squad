@@ -241,7 +241,7 @@ function parseTeamTable(lines: string[]): ParsedAgent[] {
       const heading = headingMatch[2]!.trim();
       inRosterSection =
         headingMatch[1] === '##' &&
-        /^(?:roster|members?|team\s+members?|agents?)$/i.test(heading);
+        /^(?:roster|team\s+roster|members?|team\s+members?|agents?)$/i.test(heading);
       headerCols = null;
       continue;
     }

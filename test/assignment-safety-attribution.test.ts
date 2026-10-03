@@ -12,6 +12,7 @@ type Step = {
 };
 type Workflow = {
   on: Record<string, unknown>;
+  permissions?: Record<string, string>;
   jobs: Record<string, { if?: string; steps: Step[] }>;
 };
 
@@ -52,19 +53,29 @@ async function execute(workflow: Workflow, {
   title = 'bug fix',
   response = accepted,
   requestError = '',
+  dispatchError = '',
+  eventName = 'issues',
+  issueLabels,
+  autoAssign = true,
 }: {
   label?: string; token?: string; title?: string;
-  response?: unknown; requestError?: string;
+  response?: unknown; requestError?: string; dispatchError?: string;
+  eventName?: string; issueLabels?: string[]; autoAssign?: boolean;
 } = {}) {
   const calls: string[] = [];
   const comments: string[] = [];
   const labels: string[][] = [];
+  const dispatches: unknown[] = [];
   const failures: string[] = [];
   const infos: string[] = [];
-  const issue = { number: 42, title, body: '', labels: [{ name: 'squad' }], assignees: [] };
+  const currentLabels = issueLabels ?? (label === 'squad' ? ['squad'] : ['squad', label]);
+  const issue = { number: 42, title, body: '', labels: currentLabels.map(name => ({ name })), assignees: [] };
   const context = {
     repo: { owner: 'example', repo: 'project' },
-    payload: { issue, label: { name: label } },
+    eventName,
+    payload: eventName === 'workflow_dispatch'
+      ? { inputs: { issue_number: '42' }, repository: { default_branch: 'dev' } }
+      : { issue, label: { name: label }, repository: { default_branch: 'dev' } },
   };
   const core = {
     info: (message: string) => infos.push(message),
@@ -84,11 +95,18 @@ async function execute(workflow: Workflow, {
         calls.push('repo-read');
         return { data: { default_branch: 'dev' } };
       } },
+      actions: {
+        createWorkflowDispatch: async (input: unknown) => {
+          calls.push('dispatch');
+          dispatches.push(input);
+          if (dispatchError) throw new Error(dispatchError);
+        },
+      },
       issues: {
         listForRepo: async () => ({ data: [issue] }),
         get: async () => {
           calls.push('issue-read');
-          return response;
+          return { data: issue };
         },
         addAssignees: async () => {
           calls.push('ordinary-assignment');
@@ -106,7 +124,7 @@ async function execute(workflow: Workflow, {
     },
   };
   const files: Record<string, string> = {
-    '.squad/team.md': team,
+    '.squad/team.md': autoAssign ? team : team.replace('copilot-auto-assign: true', 'copilot-auto-assign: false'),
     '.squad/routing.md': routing,
     'triage-results.json': JSON.stringify([
       { issueNumber: 42, label: 'squad:copilot', assignTo: '@copilot', reason: 'keyword', source: 'routing' },
@@ -123,10 +141,12 @@ async function execute(workflow: Workflow, {
     if (!expression) return true;
     return Boolean(runInNewContext(
       expression
+        .replace(/github\.event_name/g, 'eventName')
         .replace(/github\.event\.label\.name/g, 'label')
+        .replace(/github\.event\.inputs\.issue_number/g, "'42'")
         .replace(/steps\.check-script\.outputs\.has_script/g, "'true'"),
       {
-        label, startsWith: (value: string, prefix: string) => value.startsWith(prefix),
+        eventName, label, startsWith: (value: string, prefix: string) => value.startsWith(prefix),
         success: () => failures.length === 0, hashFiles: () => 'fixture',
       },
     ));
@@ -154,12 +174,18 @@ async function execute(workflow: Workflow, {
       }
     }
   }
-  return { calls, comments, labels, failures, infos, github };
+  return { calls, comments, labels, dispatches, failures, infos, github };
 }
 
 for (const root of roots) {
   describe(`${root}: executable assignment and attribution contract`, () => {
     const assignment = () => load(root, 'squad-issue-assign.yml');
+
+    it('supports an issue-scoped workflow-dispatch handoff', () => {
+      expect(assignment().on.workflow_dispatch, root).toMatchObject({
+        inputs: { issue_number: { required: true, type: 'string' } },
+      });
+    });
 
     it('missing COPILOT_ASSIGN_TOKEN fails before any routing comment or API mutation', async () => {
       const result = await execute(assignment(), { token: '' });
@@ -180,6 +206,7 @@ for (const root of roots) {
       expect(result.failures.length, `${root}: ${input} must fail visibly`).toBeGreaterThan(0);
       expect(result.calls, `${root}: ${input} must never use ordinary bot assignment`).not.toContain('ordinary-assignment');
       expect(result.comments, `${root}: ${input} must not announce successful routing`).toEqual([]);
+      expect(result.labels, `${root}: ${input} must not repair the parent label after failure`).toEqual([]);
     });
 
     it('acknowledges only the verified API acceptance, after assignment, without promising a session', async () => {
@@ -203,6 +230,32 @@ for (const root of roots) {
         .toBe('${{ secrets.COPILOT_ASSIGN_TOKEN }}');
     });
 
+    it('repairs a missing parent label only after assignment acknowledgment using the default token', async () => {
+      const result = await execute(assignment(), { issueLabels: ['squad:copilot'] });
+      expect(result.failures, root).toEqual([]);
+      expect(result.labels, root).toContainEqual(['squad']);
+      expect(result.calls.indexOf('label'), `${root}: parent repair must follow the acknowledgment`)
+        .toBeGreaterThan(result.calls.indexOf('comment'));
+      const step = Object.values(assignment().jobs).flatMap(job => job.steps)
+        .find(step => step.name === 'Ensure parent squad label');
+      expect(step?.with?.['github-token'], `${root}: parent repair must use GITHUB_TOKEN`).toBeUndefined();
+    });
+
+    it('accepts explicit workflow-dispatch handoffs only while the Copilot label remains', async () => {
+      const result = await execute(assignment(), { eventName: 'workflow_dispatch' });
+      expect(result.failures, root).toEqual([]);
+      expect(result.calls).toContain('agent-assignment');
+      expect(result.comments.join('\n'), root).toContain('API accepted');
+      expect(result.dispatches, root).toEqual([]);
+
+      const stale = await execute(assignment(), {
+        eventName: 'workflow_dispatch',
+        issueLabels: ['squad'],
+      });
+      expect(stale.failures.join('\n'), root).toContain('refusing stale Copilot handoff');
+      expect(stale.calls).not.toContain('agent-assignment');
+    });
+
     it('preserves named member routing without requiring a Copilot token', async () => {
       const result = await execute(assignment(), { label: 'squad:moss', token: '' });
       expect(result.failures, root).toEqual([]);
@@ -210,7 +263,13 @@ for (const root of roots) {
       expect(result.calls, root).not.toContain('agent-assignment');
     });
 
-    it('heartbeat monitors and labels but never assigns Copilot', async () => {
+    it('manual Copilot label assignment remains available when auto-assign is disabled', async () => {
+      const result = await execute(assignment(), { autoAssign: false });
+      expect(result.failures, root).toEqual([]);
+      expect(result.calls, root).toContain('agent-assignment');
+    });
+
+    it('heartbeat explicitly hands enabled Copilot auto-routing to issue-assign', async () => {
       const workflow = load(root, 'squad-heartbeat.yml');
       expect(workflow.on, `${root}: monitoring triggers must remain`).toMatchObject({
         issues: { types: ['closed', 'labeled'] },
@@ -220,8 +279,24 @@ for (const root of roots) {
       const result = await execute(workflow);
       expect(result.failures, root).toEqual([]);
       expect(result.labels, `${root}: heartbeat must still apply triage decisions`).toContainEqual(['squad:copilot']);
-      expect(result.calls, `${root}: heartbeat cannot compete with issue-assign`).not.toContain('agent-assignment');
+      expect(result.dispatches, `${root}: heartbeat must explicitly dispatch issue-assign`).toHaveLength(1);
+      expect(workflow.permissions?.actions, `${root}: handoff requires workflow dispatch permission`).toBe('write');
+      expect(result.dispatches, root).toContainEqual({
+        owner: 'example',
+        repo: 'project',
+        workflow_id: 'squad-issue-assign.yml',
+        ref: 'dev',
+        inputs: { issue_number: '42' },
+      });
+      expect(result.calls, `${root}: heartbeat delegates assignment to issue-assign`).not.toContain('agent-assignment');
       expect(result.calls, root).not.toContain('ordinary-assignment');
+
+      const disabled = await execute(workflow, { autoAssign: false });
+      expect(disabled.dispatches, `${root}: disabled auto-assign must not dispatch`).toEqual([]);
+
+      const failedDispatch = await execute(workflow, { dispatchError: 'workflow dispatch denied' });
+      expect(failedDispatch.failures.join('\n'), `${root}: dispatch failure must be visible`)
+        .toContain('workflow dispatch denied');
     });
 
     it.each([
@@ -232,8 +307,10 @@ for (const root of roots) {
       ['unknown subject', 'squad:river', 'No specific domain match'],
       ['runtime quality', 'squad:river', 'No specific domain match'],
     ])('triage "%s" preserves routing and reports deterministic provenance, not Lead analysis', async (title, label, reason) => {
-      const result = await execute(load(root, 'squad-triage.yml'), { label: 'squad', title });
+      const workflow = load(root, 'squad-triage.yml');
+      const result = await execute(workflow, { label: 'squad', title });
       expect(result.failures, `${root}: ${title}`).toEqual([]);
+      expect(workflow.permissions?.actions, `${root}: handoff requires workflow dispatch permission`).toBe('write');
       expect(result.labels, `${root}: ${title} routing changed`).toEqual([[label], ['go:needs-research']]);
       expect(result.comments.join('\n'), `${root}: ${title}`).toContain(reason);
       expect(result.comments.join('\n'), `${root}: ${title} must disclose keyword provenance`)
@@ -244,6 +321,42 @@ for (const root of roots) {
       expect(result.calls, `${root}: ${title} labels delegate to sole assignment authority`)
         .not.toContain('ordinary-assignment');
       expect(result.calls, root).not.toContain('agent-assignment');
+      expect(result.dispatches, `${root}: only auto-routed Copilot cases dispatch`).toHaveLength(
+        label === 'squad:copilot' ? 1 : 0,
+      );
+      if (label === 'squad:copilot') {
+        expect(result.dispatches, `${root}: triage must dispatch the issue-specific handoff`).toContainEqual({
+          owner: 'example',
+          repo: 'project',
+          workflow_id: 'squad-issue-assign.yml',
+          ref: 'dev',
+          inputs: { issue_number: '42' },
+        });
+      }
+    });
+
+    it('triage preserves the disabled auto-assign mode and skips pre-owned issues', async () => {
+      const workflow = load(root, 'squad-triage.yml');
+      const disabled = await execute(workflow, { label: 'squad', autoAssign: false });
+      expect(disabled.labels[0], root).toEqual(['squad:copilot']);
+      expect(disabled.dispatches, root).toEqual([]);
+
+      const alreadyOwned = await execute(workflow, {
+        label: 'squad',
+        issueLabels: ['squad', 'squad:copilot'],
+      });
+      expect(alreadyOwned.labels, root).toEqual([]);
+      expect(alreadyOwned.comments, root).toEqual([]);
+      expect(alreadyOwned.dispatches, root).toEqual([]);
+    });
+
+    it('triage fails visibly when its authorized assignment handoff is rejected', async () => {
+      const result = await execute(load(root, 'squad-triage.yml'), {
+        label: 'squad',
+        title: 'bug fix',
+        dispatchError: 'workflow dispatch denied',
+      });
+      expect(result.failures.join('\n'), root).toContain('workflow dispatch denied');
     });
   });
 }
