@@ -720,27 +720,10 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
-      - name: Resolve Squad standalone release
-        id: squad-release
-        env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v1.0.0' }}
-        run: |
-          set -euo pipefail
-          release_tag="${SQUAD_CLI_VERSION}"
-          case "${release_tag}" in
-            v*) ;;
-            *) release_tag="v${release_tag}" ;;
-          esac
-          if ! echo "${release_tag}" | LC_ALL=C grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::SQUAD_CLI_VERSION must be a semver release tag (for example v0.13.1)."
-            exit 1
-          fi
-          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
       - name: Install Squad CLI from standalone release
         id: squad-cli
         uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377
         with:
-          version: ${{ steps.squad-release.outputs.tag }}
           skip-init: "true"
       - name: Initialize Squad team
         env:
@@ -778,7 +761,7 @@ jobs:
           if squad help | grep -Fq 'Validate team state for CI'; then
             squad health --json
           else
-            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI pin."
+            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI release."
           fi
       - name: Upload Squad state artifact
         if: success()
