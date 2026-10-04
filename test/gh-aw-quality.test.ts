@@ -3317,12 +3317,15 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     expect(sharedContent).toMatch(/health --json/);
   });
 
-  it('gates health on command capability until the published pin includes it (#1884)', () => {
+  it('gates health on installed CLI capability and reports missing support (#1884)', () => {
     expect(sharedContent).toContain(
       "squad help | grep -Fq 'Validate team state for CI'",
     );
+    expect(sharedContent).toMatch(
+      /if squad help \| grep -Fq 'Validate team state for CI'; then\s+squad health --json\s+else/,
+    );
     expect(sharedContent).toContain(
-      'predates the health command; the readiness gate will activate after the next published CLI pin',
+      '::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI release.',
     );
   });
 
@@ -4001,8 +4004,8 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(mutable).not.toContain(actionReference);
       expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
         .toBe(sourceBinding === 'workflow'
-          ? 'e59431b2a2fa9872287449df5cb779c11ce4361206397c181047051446fb9a95'
-          : '919f1c77ee340bda1ca79d3e1c513fc2ddb2f3d89428133691e2b62699ce71de');
+          ? '9de7abefceba5b5ea06d181ae5194cd508559a1706b110a74727a1afc41f74ee'
+          : '77365f1024ff173dfe61c42d30902deedbf532edd599d5d3b18885e5cfed045c');
       expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
       writeFileSync(lockPath, mutable);
       expect(verifyInstall(root).failures.join('\n'))
@@ -4056,7 +4059,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     compile();
     const unpinned = readText(lockPath);
     expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
-      .toBe('919f1c77ee340bda1ca79d3e1c513fc2ddb2f3d89428133691e2b62699ce71de');
+      .toBe('77365f1024ff173dfe61c42d30902deedbf532edd599d5d3b18885e5cfed045c');
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
     const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {
