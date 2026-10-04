@@ -1807,23 +1807,22 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     );
   }, 20000);
 
-  it('preserves the standalone release selection in the compiled install step (#1884)', () => {
+  it('preserves the latest-release default in the compiled install step', () => {
     const compiled = lockText();
-    const pin = readText(join(SHARED_DIR, 'squad.md')).match(
-      /SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'([^']+)'/,
-    )?.[1];
-
-    expect(pin, 'could not locate the source Squad CLI fallback').toBeDefined();
-    expect(compiled).toMatch(
-      new RegExp(
-        String.raw`name: Resolve Squad standalone release[\s\S]*SQUAD_CLI_VERSION:\s*\$\{\{\s*vars\.SQUAD_CLI_VERSION\s*\|\|\s*'${pin}'\s*\}\}`,
-      ),
+    const install = compiled.match(
+      /- name: Install Squad CLI from standalone release[\s\S]*?(?=\n\s+- name:)/,
+    )?.[0];
+    expect(install, 'compiled squad.lock.yml must retain the standalone installer').toContain(
+      'uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f',
     );
-    expect(compiled).toContain(
-      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
-    );
-    expect(compiled).toContain('version: ${{ steps.squad-release.outputs.tag }}');
-    expect(compiled).toContain('skip-init: "true"');
+    expect(install, 'compiled squad.lock.yml must omit version to use the pinned action latest default')
+      .not.toMatch(/^\s+version:/m);
+    expect(install).toContain('skip-init: "true"');
+    expect(compiled, 'compiled squad.lock.yml must not contain the obsolete release resolver')
+      .not.toContain('squad-release');
+    expect(compiled).not.toContain('vars.SQUAD_CLI_VERSION');
+    expect(compiled).toContain('SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}');
+    expect(compiled).toContain('squad health --json');
     expect(compiled).not.toContain('npm install --global');
     expect(compiled).not.toContain('npx --yes "@bradygaster/squad-cli@');
   }, 20000);
@@ -3318,12 +3317,15 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     expect(sharedContent).toMatch(/health --json/);
   });
 
-  it('gates health on command capability until the published pin includes it (#1884)', () => {
+  it('gates health on installed CLI capability and reports missing support (#1884)', () => {
     expect(sharedContent).toContain(
       "squad help | grep -Fq 'Validate team state for CI'",
     );
+    expect(sharedContent).toMatch(
+      /if squad help \| grep -Fq 'Validate team state for CI'; then\s+squad health --json\s+else/,
+    );
     expect(sharedContent).toContain(
-      'predates the health command; the readiness gate will activate after the next published CLI pin',
+      '::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI release.',
     );
   });
 
@@ -3395,9 +3397,10 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     const healthLine = lines[healthLineIdx];
     expect(healthLine, 'health must invoke the installed squad binary').toMatch(/\bsquad health --json/);
     expect(sharedContent).toContain(
-      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
+      'uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f',
     );
-    expect(sharedContent).toContain('version: ${{ steps.squad-release.outputs.tag }}');
+    expect(sharedContent).not.toContain('squad-release');
+    expect(sharedContent).toContain('SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}');
     expect(sharedContent).not.toContain('npm install --global');
     expect(sharedContent).not.toContain('npx --yes "@bradygaster/squad-cli@');
   });
@@ -4010,8 +4013,8 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(mutable).not.toContain(actionReference);
       expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
         .toBe(sourceBinding === 'workflow'
-          ? 'c86cd65d09ee74d8da4dfec27f64ccba818d22f282c5a4acf33f04e04f5d6bd6'
-          : '206fcc936e5c03e81928565104bc7b2fef9c492f9e8152b17df563bd07e5065a');
+          ? 'e28d35cd3ae0b920479279c777b26c68a339163a6886794ba82c1c04e28e75d6'
+          : '7077085c3f31824fbea10ad7e963e10e5cb67819523a1815b9795839fe97fb02');
       expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
       writeFileSync(lockPath, mutable);
       expect(verifyInstall(root).failures.join('\n'))
@@ -4065,7 +4068,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     compile();
     const unpinned = readText(lockPath);
     expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
-      .toBe('206fcc936e5c03e81928565104bc7b2fef9c492f9e8152b17df563bd07e5065a');
+      .toBe('7077085c3f31824fbea10ad7e963e10e5cb67819523a1815b9795839fe97fb02');
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
     const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {

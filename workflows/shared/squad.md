@@ -21,10 +21,9 @@
 # the App ID is not set. Auth precedence: GitHub App installation token >
 # SQUAD_GITHUB_TOKEN > github.token.
 #
-# Optional custom Squad CLI version: vars.SQUAD_CLI_VERSION.
-# Default is v0.13.1.
-# This is a GitHub Release tag whose standalone assets are installed without
-# npm; values without a leading `v` are normalized for older configs.
+# The SHA-pinned squad-init action installs the latest stable GitHub Release
+# using its built-in default and mandatory checksum verification, without npm.
+# CLI release selection is independent of the immutable workflow/action pins.
 #
 # Optional model: vars.SQUAD_MODEL; omit or use 'auto' for the engine default.
 # gh-aw resolves aliases with availability fallback.
@@ -490,28 +489,10 @@ jobs:
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
 
-      - name: Resolve Squad standalone release
-        id: squad-release
-        env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v0.13.1' }}
-        run: |
-          set -euo pipefail
-          release_tag="${SQUAD_CLI_VERSION}"
-          case "${release_tag}" in
-            v*) ;;
-            *) release_tag="v${release_tag}" ;;
-          esac
-          if ! echo "${release_tag}" | LC_ALL=C grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::SQUAD_CLI_VERSION must be a semver release tag (for example v0.13.1)."
-            exit 1
-          fi
-          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
-
       - name: Install Squad CLI from standalone release
         id: squad-cli
-        uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377
+        uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f
         with:
-          version: ${{ steps.squad-release.outputs.tag }}
           skip-init: 'true'
 
       - name: Initialize Squad team
@@ -552,7 +533,7 @@ jobs:
           if squad help | grep -Fq 'Validate team state for CI'; then
             squad health --json
           else
-            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI pin."
+            echo "::warning::Squad CLI ${SQUAD_CLI_VERSION} predates the health command; the readiness gate will activate after the next published CLI release."
           fi
 
       - name: Upload Squad state artifact

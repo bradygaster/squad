@@ -664,17 +664,22 @@ Once the bootstrap PR is merged into the default branch, the `/squad` slash
 command is live on your repo. Pushing the bootstrap branch or merely opening the
 PR does not activate the workflow.
 
-### Optional: pin a CLI version
+### CLI release selection
 
 Activation downloads a self-contained GitHub Release bundle; it does not install
-Squad from npm. Set a repository variable to select a specific standalone release:
+Squad from npm. The SHA-pinned `squad-init` composite action uses its built-in
+default to install the latest stable GitHub Release with mandatory checksum
+verification. No repository version variable is required; existing CLI version
+variables are no longer read by the shared workflow.
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `SQUAD_CLI_VERSION` | Standalone GitHub Release tag to install during activation | `v0.13.1` |
+The action runs the installer shipped at its own pinned revision. A failed
+checksum download, missing or invalid checksum entry, or checksum mismatch stops
+activation before extracting the archive or changing an existing CLI installation.
 
-Set it in **Settings → Secrets and variables → Actions → Variables**. A value
-without the leading `v` is accepted for compatibility with older configurations.
+The CLI release is independent of `SQUAD_SHA`: workflow and action source remain
+immutable, while each activation installs the current stable CLI. Direct consumers
+can still select a release through the installer's `VERSION` environment variable
+or the composite action's optional `version` input; the shared workflow uses neither.
 
 ### Optional: enhanced permissions with a GitHub App
 
@@ -2029,7 +2034,7 @@ Understanding the two-job architecture helps when debugging.
 The activation job runs with full network access:
 
 1. Optionally mints a GitHub App installation token
-2. Resolves `SQUAD_CLI_VERSION` (default `v0.13.1`) and downloads the matching
+2. Uses the pinned action's latest-release default and downloads the current stable
    standalone GitHub Release bundle with checksum verification — no npm install
 3. Preserves a committed team with roster entries, or runs
    `squad init --preset default --state-backend local` when no usable team exists
@@ -2130,7 +2135,7 @@ other refs.
 | A Squad label has no description and an unexpected color | It was auto-created on a fresh repo by `create-if-missing` | Expected, not a failure. Edit the label if you want a description or a specific color |
 | `/squad implement` cannot create a PR | Expected under Profile A (recommended); Actions is not allowed to create pull requests and there is no automatic fallback for this workflow | Push the worker's branch and open the PR manually, or switch to [Profile B](#profile-b-opt-in-automatic-pr-creation) if you accept its repository-wide self-approval tradeoff |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
-| Standalone activation fails before init | `SQUAD_CLI_VERSION` is invalid or its release assets are unavailable | Correct the variable or select a published release, then use **Re-run failed jobs** |
+| Standalone activation fails before init | Latest stable release lookup, bundle download, or mandatory checksum verification failed | Inspect installer diagnostics and restore complete, valid release assets, then use **Re-run failed jobs** |
 | Squad health fails | Initialization or committed team state is incomplete | Inspect the `Run Squad health check` JSON, correct the reported state, and rerun; no `squad-state` artifact is uploaded on failure |
 | A command run was cancelled or its result is uncertain | The run stopped before a durable output was confirmed | Rerun the identical `/squad` command; Cast, implementation, activation, and review paths check existing GitHub state before creating output |
 
