@@ -602,7 +602,7 @@ jobs:
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
       - name: Install Squad CLI from standalone release
         id: squad-cli
-        uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377
+        uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f
         with:
           skip-init: "true"
       - name: Initialize Squad team

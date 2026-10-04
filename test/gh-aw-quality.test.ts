@@ -1813,7 +1813,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
       /- name: Install Squad CLI from standalone release[\s\S]*?(?=\n\s+- name:)/,
     )?.[0];
     expect(install, 'compiled squad.lock.yml must retain the standalone installer').toContain(
-      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
+      'uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f',
     );
     expect(install, 'compiled squad.lock.yml must omit version to use the pinned action latest default')
       .not.toMatch(/^\s+version:/m);
@@ -3397,7 +3397,7 @@ describe('gh-aw: shared bootstrap health-before-dispatch contract (#1605)', () =
     const healthLine = lines[healthLineIdx];
     expect(healthLine, 'health must invoke the installed squad binary').toMatch(/\bsquad health --json/);
     expect(sharedContent).toContain(
-      'uses: bradygaster/squad/.github/actions/squad-init@d8d7ef2d6da93460fecbfd56f8de20f9d10fd377',
+      'uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f',
     );
     expect(sharedContent).not.toContain('squad-release');
     expect(sharedContent).toContain('SQUAD_CLI_VERSION: ${{ steps.squad-cli.outputs.version }}');
@@ -4004,8 +4004,8 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(mutable).not.toContain(actionReference);
       expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
         .toBe(sourceBinding === 'workflow'
-          ? '9de7abefceba5b5ea06d181ae5194cd508559a1706b110a74727a1afc41f74ee'
-          : '77365f1024ff173dfe61c42d30902deedbf532edd599d5d3b18885e5cfed045c');
+          ? 'e28d35cd3ae0b920479279c777b26c68a339163a6886794ba82c1c04e28e75d6'
+          : '7077085c3f31824fbea10ad7e963e10e5cb67819523a1815b9795839fe97fb02');
       expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
       writeFileSync(lockPath, mutable);
       expect(verifyInstall(root).failures.join('\n'))
@@ -4059,7 +4059,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     compile();
     const unpinned = readText(lockPath);
     expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
-      .toBe('77365f1024ff173dfe61c42d30902deedbf532edd599d5d3b18885e5cfed045c');
+      .toBe('7077085c3f31824fbea10ad7e963e10e5cb67819523a1815b9795839fe97fb02');
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
     const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {

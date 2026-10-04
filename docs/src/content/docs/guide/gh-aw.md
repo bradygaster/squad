@@ -672,6 +672,10 @@ default to install the latest stable GitHub Release with mandatory checksum
 verification. No repository version variable is required; existing CLI version
 variables are no longer read by the shared workflow.
 
+The action runs the installer shipped at its own pinned revision. A failed
+checksum download, missing or invalid checksum entry, or checksum mismatch stops
+activation before extracting the archive or changing an existing CLI installation.
+
 The CLI release is independent of `SQUAD_SHA`: workflow and action source remain
 immutable, while each activation installs the current stable CLI. Direct consumers
 can still select a release through the installer's `VERSION` environment variable
