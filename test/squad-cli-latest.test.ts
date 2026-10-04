@@ -17,6 +17,13 @@ const actionPath = '.github/actions/squad-init/action.yml';
 const installerPath = 'scripts/install.sh';
 const action = parse(approved.files[actionPath].content);
 
+function pinnedInstallShell(platform: NodeJS.Platform = process.platform): string {
+  const install = action.runs.steps.find((step: { id?: string }) => step.id === 'install');
+  expect(install).toBeDefined();
+  expect(install.shell).toBe('bash');
+  return platform === 'win32' ? requirePosixShell() : install.shell;
+}
+
 function runPinnedInstall(mode: string) {
   const scratch = mkdtempSync(join(process.cwd(), '.squad-pinned-install-'));
   try {
@@ -62,7 +69,7 @@ chmod +x "$4/squad-linux-x64/squad"
 `);
     const install = action.runs.steps.find((step: { id?: string }) => step.id === 'install');
     expect(install).toBeDefined();
-    const result = spawnSync(requirePosixShell(), ['-c', `
+    const result = spawnSync(pinnedInstallShell(), ['--noprofile', '--norc', '-c', `
 export PATH="$PWD/mock-bin:$PATH"
 export TMPDIR="$PWD/downloads"
 export ACTION_PATH="$PWD/action/.github/actions/squad-init"
@@ -82,6 +89,12 @@ ${install.run}
       timeout: 60_000,
     });
     if (result.error) throw result.error;
+    if (!existsSync(join(scratch, 'fetches'))) {
+      throw new Error(
+        `Pinned action harness stopped before its first download (status=${result.status}, signal=${result.signal}).\n`
+        + `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+      );
+    }
     return {
       status: result.status,
       output: result.stdout + result.stderr,
@@ -134,6 +147,8 @@ describe('Squad standalone activation latest-release default', () => {
     }
 
     expect(action.inputs.version.default).toBe('latest');
+    expect(pinnedInstallShell('linux')).toBe('bash');
+    expect(pinnedInstallShell('darwin')).toBe('bash');
     expect(action.outputs.version.value).toBe('${{ steps.install.outputs.version }}');
     expect(action.runs.steps.find((step: { id?: string }) => step.id === 'install').run)
       .toContain('installer="${repo_root}/scripts/install.sh"');
@@ -150,6 +165,19 @@ describe('Squad standalone activation latest-release default', () => {
       'https://github.com/bradygaster/squad/releases/download/v1.0.0/squad-linux-x64.tar.gz',
       'https://github.com/bradygaster/squad/releases/download/v1.0.0/SHA256SUMS.txt',
     ]);
+  }, 65_000);
+
+  it('reports premature action failure before reading the download trace', () => {
+    const install = action.runs.steps.find((step: { id?: string }) => step.id === 'install');
+    const original = install.run;
+    try {
+      install.run = 'printf "harness setup failed\\n" >&2\nexit 2';
+      expect(() => runPinnedInstall('valid')).toThrow(
+        /before its first download \(status=2, signal=null\)[\s\S]*stderr:\nharness setup failed/,
+      );
+    } finally {
+      install.run = original;
+    }
   }, 65_000);
 
   it.each([
