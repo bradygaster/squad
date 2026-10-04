@@ -67,8 +67,8 @@ gh run watch
 The release workflow rejects stable versions on manual dispatch, creates a
 GitHub prerelease, publishes npm `preview`, and uploads standalone bundles.
 It also updates the `squad-preview` Homebrew cask and
-`bradygaster.Squad.Preview` WinGet package. The activation pin and insider-tag
-promotion remain stable-only.
+`bradygaster.Squad.Preview` WinGet package. Activation installs the latest stable
+GitHub Release; insider-tag promotion also remains stable-only.
 
 ## Insider
 

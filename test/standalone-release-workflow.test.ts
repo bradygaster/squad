@@ -258,7 +258,7 @@ describe('reusable npm publication', () => {
     });
   });
 
-  it('uses the requested source ref except for the dev activation pin', () => {
+  it('uses the requested source ref for publication and promotion', () => {
     for (const jobName of [
       'preflight',
       'smoke-test',
@@ -273,10 +273,7 @@ describe('reusable npm publication', () => {
       expect(checkout?.with?.ref, jobName).toBe('${{ inputs.source_ref || github.ref }}');
     }
 
-    const activationCheckout = npmPublishWorkflow.jobs['bump-activation-pin'].steps?.find(
-      (step) => step.uses?.startsWith('actions/checkout@'),
-    );
-    expect(activationCheckout?.with?.ref).toBe('dev');
+    expect(npmPublishWorkflow.jobs).not.toHaveProperty('bump-activation-pin');
   });
 
   it('builds release-tag workspaces without contributor-only prebuild inputs', () => {
@@ -360,9 +357,6 @@ describe('reusable npm publication', () => {
       expect(verify.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
     }
 
-    expect(npmPublishWorkflow.jobs['bump-activation-pin'].if).toBe(
-      "needs.publish-cli.outputs.stable_release == 'true'",
-    );
     expect(npmPublishWorkflow.jobs['promote-insider-tag-sdk'].if).toBe(
       "needs.publish-sdk.outputs.stable_release == 'true'",
     );
@@ -371,7 +365,7 @@ describe('reusable npm publication', () => {
     );
   });
 
-  it('uses least privilege for provenance and the activation pin PR', () => {
+  it('uses least privilege for publication provenance', () => {
     for (const jobName of [
       'publish-sdk',
       'publish-cli',
@@ -384,10 +378,6 @@ describe('reusable npm publication', () => {
     for (const jobName of ['promote-insider-tag-sdk', 'promote-insider-tag-cli']) {
       expect(npmPublishWorkflow.jobs[jobName].permissions).toBeUndefined();
     }
-    expect(npmPublishWorkflow.jobs['bump-activation-pin'].permissions).toEqual({
-      contents: 'write',
-      'pull-requests': 'write',
-    });
   });
 });
 

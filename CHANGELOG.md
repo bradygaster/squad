@@ -9,10 +9,12 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - `squad health` now accepts casting registry persistent names as valid routing references alongside registry IDs, avoiding false unknown-agent failures (#2165).
+- The immutable activation action now binds to an approved installer that fails closed on checksum-download failure, invalid checksum entries, or archive tampering, with offline pinned-installer regression coverage (#2167).
 
 ### Changed
 
 - Root, SDK, and CLI npm versions advance together to 1.0.1 to satisfy the existing release and npm publication workflows. The CLI SDK dependency floor is now `>=1.0.1`; SDK source is unchanged from v1.0.0.
+- Agentic Workflow activation installs the latest stable standalone GitHub Release by default, independently of immutable workflow/action source pins, and no longer rewrites a CLI version pin after publication (#2167).
 - Consumed only the CLI health persistent-routing patch changeset. Historical changesets are unchanged; this release does not promote unrelated `dev` changes or republish `Squad.Agents.AI` NuGet 1.0.0.
 
 ## [1.0.0] - 2026-10-02
