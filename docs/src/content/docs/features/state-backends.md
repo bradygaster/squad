@@ -207,7 +207,6 @@ git-native backends (orphan, two-layer) operate in the correct repository contex
 - All backends implement the same interface — agents don't know or care which backend is active
 - Empty directories are automatically pruned after the last file is deleted (orphan backend)
 - The `external` backend type exists as a stub for future external storage (see [External State](./external-state))
-- State backends are available in the **insider** release channel (`@bradygaster/squad-cli@insider`)
 - 63 unit tests + 46 E2E tests cover all backends including security hardening, content fidelity, and directory pruning
 
 ---

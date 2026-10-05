@@ -4,7 +4,19 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ---
 
-## v0.9.1 — Current Release
+## v1.0.1 — Current Release
+
+- **Routing health fix** — `squad health` now accepts persistent casting names as valid routing references
+- **Activation integrity** — Stable standalone installs fail closed when checksums are missing, invalid, or tampered with
+- **Aligned packages** — CLI and SDK npm packages now publish together at `1.0.1`
+
+## v1.0.0 — Stable Release
+
+- **Stable npm packages** — `@bradygaster/squad-cli` and `@bradygaster/squad-sdk` graduated to 1.0
+- **No breaking migration** — v1.0.0 stabilized the existing 0.13.1 API and command surface
+- **Stable documentation** — Removed the blanket alpha disclaimer while preserving genuine preview and feature-specific warnings
+
+## v0.9.1
 
 - **Shell agent name extraction** — Robust multi-pattern fallback for extracting agent names from shell transcripts (#577)
 - **Init scaffolding** — `squad init --sdk` now scaffolds typed casting files; silences remote-lookup warnings (#579)

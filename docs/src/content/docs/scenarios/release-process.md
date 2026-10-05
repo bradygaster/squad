@@ -36,6 +36,7 @@ Before merging, verify:
 node -p "require('semver').valid('$VERSION')"
 grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
 grep -F "## [$VERSION]" CHANGELOG.md
+grep -F "## v$VERSION" docs/src/content/docs/whatsnew.md
 npm run build
 npx vitest run
 ```

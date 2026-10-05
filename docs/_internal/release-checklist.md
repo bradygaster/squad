@@ -10,6 +10,8 @@ releases from `main`. Channel names identify release streams, not branches.
 - [ ] The CLI SDK dependency and lockfile entry are `>=VERSION`.
 - [ ] The version is valid SemVer and has never been published.
 - [ ] `CHANGELOG.md` contains `## [VERSION]`.
+- [ ] `docs/src/content/docs/whatsnew.md` contains `## vVERSION` and identifies
+      the newest stable version as the current release.
 - [ ] The release-preparation PR is merged to `dev`.
 - [ ] `dev` CI is green.
 - [ ] `NPM_TOKEN` is configured for non-interactive publishing.

@@ -48,10 +48,10 @@ squad upgrade --self
    Detected package manager: npm
    Running: npm install -g @bradygaster/squad@latest
 
-✅ Squad CLI upgraded to v0.8.0
+✅ Squad CLI upgraded to v1.0.1
    Running: squad upgrade (to refresh repo templates)
 
-✅ Repo templates upgraded to v0.8.0
+✅ Repo templates upgraded to v1.0.1
 ```
 
 ---
@@ -63,7 +63,7 @@ squad upgrade --self --insider
 ```
 
 **What's different:**
-- Installs latest **prerelease** version (e.g., `v0.9.0-insider.3`)
+- Installs latest **prerelease** version (e.g., `v1.1.0-insider.3`)
 - May include experimental features
 - Used for testing bleeding-edge changes
 
@@ -73,10 +73,10 @@ squad upgrade --self --insider
    Detected package manager: pnpm
    Running: pnpm add -g @bradygaster/squad@insider
 
-✅ Squad CLI upgraded to v0.9.0-insider.3
+✅ Squad CLI upgraded to v1.1.0-insider.3
    Running: squad upgrade (to refresh repo templates)
 
-✅ Repo templates upgraded to v0.9.0-insider.3
+✅ Repo templates upgraded to v1.1.0-insider.3
 ```
 
 ---
@@ -187,7 +187,7 @@ squad --version
 
 **Output:**
 ```
-@bradygaster/squad v0.8.0
+@bradygaster/squad v1.0.1
 ```
 
 Check if a newer version is available:
@@ -199,7 +199,7 @@ npm outdated -g @bradygaster/squad
 **Output:**
 ```
 Package             Current  Wanted  Latest  Location
-@bradygaster/squad  0.7.5    0.8.0   0.8.0   global
+@bradygaster/squad  1.0.0    1.0.1   1.0.1   global
 ```
 
 ---
@@ -214,9 +214,9 @@ Reads the same cache the background startup check maintains and prints it as str
 
 ```json
 {
-  "current": "0.9.6-insider.2",
+  "current": "1.1.0-insider.2",
   "channel": "insider",
-  "latest": "0.9.7-insider.1",
+  "latest": "1.1.0-insider.3",
   "updateAvailable": true,
   "cacheAge": "PT2H15M",
   "checkedAt": "2026-05-26T12:00:00.000Z"
@@ -234,8 +234,8 @@ This gives editor extensions, coordinator instructions, and CI scripts a stable 
 **Default (non-JSON) output:**
 
 ```
-Current: 0.9.6-insider.2 (insider channel)
-Latest:  0.9.7-insider.1
+Current: 1.1.0-insider.2 (insider channel)
+Latest:  1.1.0-insider.3
 Update available. Run `squad upgrade --self` to install.
 ```
 
@@ -247,8 +247,8 @@ Honors `SQUAD_NO_UPDATE_CHECK=1` — exits `0` with no output (or `{}` with `--j
 
 | Channel | Tag | Description |
 |---------|-----|-------------|
-| **Stable** | `@latest` | Production-ready releases (e.g., `v0.8.0`) |
-| **Insider** | `@insider` | Prerelease builds for testing (e.g., `v0.9.0-insider.3`) |
+| **Stable** | `@latest` | Production-ready releases (e.g., `v1.0.1`) |
+| **Insider** | `@insider` | Prerelease builds for testing (e.g., `v1.1.0-insider.3`) |
 
 **When to use insider:**
 - You want to test upcoming features
