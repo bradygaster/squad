@@ -154,6 +154,9 @@ function fixture(relay = false) {
       }
       return encode(attribution);
     }
+    if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+      throw Object.assign(new Error('Not Found'), { status: 404 });
+    }
     if (route.endsWith('/contents/.squad/casting/registry.json')) {
       expect(fields?.ref).toBe(BASE);
       return encode(registry);
@@ -367,6 +370,19 @@ describe('generation-bound fresh bootstrap review', () => {
     f.state.compareStatus = 'ahead';
     f.resetState.recordedReset = { ...reset, archived_pull_requests: [99] };
     await expect(reviewTarget(f.env, f.get)).rejects.toThrow('reset changed');
+  });
+
+  it.each([false, true])('refuses reopened archived legacy Cast authorization (fallback=%s)', async manual => {
+    const f = fixture();
+    if (manual) makeBootstrapPrFallback(f);
+    else makeBootstrap(f);
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+        return f.encode({ ...reset, archived_pull_requests: [42] });
+      }
+      return f.get(route, fields);
+    };
+    await expect(reviewTarget(f.env, get)).rejects.toThrow('archived bootstrap pull requests');
   });
 });
 

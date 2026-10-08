@@ -70,6 +70,9 @@ export async function authorizeBootstrapReset({ reset, input, context, github })
       throw new Error('Fresh bootstrap requires an authenticated human maintainer.');
     }
     const result = await github.rest.repos.getCollaboratorPermissionLevel({ ...context.repo, username: actor });
+    if (result.data.user?.type !== 'User' || result.data.user?.login !== actor) {
+      throw new Error('Fresh bootstrap requires each actor to be a verified human collaborator.');
+    }
     if (!['write', 'maintain', 'admin'].includes(result.data.permission)) {
       throw new Error('Fresh bootstrap requires write, maintain, or admin repository permission.');
     }

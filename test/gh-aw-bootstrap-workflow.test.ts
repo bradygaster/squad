@@ -146,7 +146,8 @@ describe('explicit committed bootstrap reset', () => {
       payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
     };
     let permission = 'write';
-    const github = { rest: { repos: { getCollaboratorPermissionLevel: async () => ({ data: { permission } }) } } };
+    const github = { rest: { repos: { getCollaboratorPermissionLevel: async ({ username }: { username: string }) =>
+      ({ data: { permission, user: { login: username, type: 'User' } } }) } } };
     const args = { reset: RESET, input: 'retry-1', context, github };
     expect(await authorizeBootstrapReset(args)).toBe(true);
     expect(await authorizeBootstrapReset({ ...args, input: '' })).toBe(false);
@@ -1292,6 +1293,8 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     const issueCalls: Array<{ title: string; body: string }> = [];
     const commentCalls: Array<{ issue_number: number; body: string }> = [];
     const updates: Array<{ body: string }> = [];
+    const commitParents: string[][] = [];
+    const publishedRefs: string[] = [];
     const writesWithCandidate: boolean[] = [];
     const recordWrite = () => writesWithCandidate.push(
       existsSync(join(candidate, '.squad/team.md')) &&
@@ -1325,8 +1328,11 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
           getCommit: async () => ({ data: { tree: { sha: 'base-tree' } } }),
           createBlob: async () => { recordWrite(); return { data: { sha: 'blob' } }; },
           createTree: async () => ({ data: { sha: 'tree' } }),
-          createCommit: async () => ({ data: { sha: castSha } }),
-          createRef: async () => { branchCreated = true; },
+          createCommit: async ({ parents }: { parents: string[] }) => {
+            commitParents.push(parents);
+            return { data: { sha: castSha } };
+          },
+          createRef: async ({ ref }: { ref: string }) => { branchCreated = true; publishedRefs.push(ref); },
         },
         pulls: {
           list: async () => [
@@ -1343,7 +1349,8 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
           update: async (args: { body: string }) => { recordWrite(); updates.push(args); },
         },
         repos: {
-          getCollaboratorPermissionLevel: async () => ({ data: { permission: 'write' } }),
+          getCollaboratorPermissionLevel: async ({ username }: { username: string }) =>
+            ({ data: { permission: 'write', user: { login: username, type: 'User' } } }),
           getContent: async ({ path }: { path: string }) => ({
             data: { type: 'file', content: Buffer.from(
               fixture.payload.files.find(file => file.path === path)!.content,
@@ -1397,7 +1404,7 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
       captureCandidate,
     );
     return {
-      run, github, issueCalls, commentCalls, updates, writesWithCandidate, failures,
+      run, github, issueCalls, commentCalls, updates, writesWithCandidate, failures, commitParents, publishedRefs,
       candidate: () => candidate,
     };
   }
@@ -1442,10 +1449,45 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     expect(fixture.commentCalls).toEqual([]);
   });
 
+  it('rejects a bot rerun actor in the executable writer before publishing anything', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    const original = process.env.GITHUB_TRIGGERING_ACTOR;
+    process.env.GITHUB_TRIGGERING_ACTOR = 'automation[bot]';
+    fixture.github.rest.repos.getCollaboratorPermissionLevel = async ({ username }) => ({
+      data: { permission: 'write', user: { login: username, type: username === 'automation[bot]' ? 'Bot' : 'User' } },
+    });
+    try {
+      await expect(fixture.run()).rejects.toThrow('verified human collaborator');
+      expect(fixture.publishedRefs).toEqual([]);
+      expect(fixture.issueCalls).toEqual([]);
+    } finally {
+      if (original === undefined) delete process.env.GITHUB_TRIGGERING_ACTOR;
+      else process.env.GITHUB_TRIGGERING_ACTOR = original;
+    }
+  });
+
+  it('pins the reset parent and refuses publication if the default branch advances mid-write', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    const getRef = fixture.github.rest.git.getRef;
+    let baseReads = 0;
+    fixture.github.rest.git.getRef = async args => {
+      if (args.ref === 'heads/main' && ++baseReads > 1) {
+        return { data: { object: { sha: 'd'.repeat(40) } } };
+      }
+      return getRef(args);
+    };
+    await expect(fixture.run()).rejects.toThrow('advanced before fresh bootstrap publication');
+    expect(fixture.commitParents).toEqual([[baseSha]]);
+    expect(fixture.publishedRefs).toEqual([]);
+    expect(fixture.updates).toEqual([]);
+    expect(fixture.issueCalls).toEqual([]);
+  });
+
   it('fails the compiled authorization contract when the writer permission gate is removed', async () => {
     const assertDenied = async (source: string) => {
       const fixture = writerFixture('success', compileWorkflow(source), true);
-      fixture.github.rest.repos.getCollaboratorPermissionLevel = async () => ({ data: { permission: 'read' } });
+      fixture.github.rest.repos.getCollaboratorPermissionLevel = async ({ username }) =>
+        ({ data: { permission: 'read', user: { login: username, type: 'User' } } });
       await expect(fixture.run()).rejects.toThrow('permission');
       expect(fixture.issueCalls).toEqual([]);
       expect(fixture.updates).toEqual([]);

@@ -177,12 +177,14 @@ async function requireRecordedBaseAncestor(get, repository, recordedSha, liveSha
 }
 
 async function bootstrapReviewIdentity(get, repository, pr) {
+  const reset = parseBootstrapReset(await committedJson(
+    get, repository, BOOTSTRAP_RESET_PATH, pr.base.sha, { allowMissing: true },
+  ));
+  requireThat(!reset?.archived_pull_requests.includes(pr.number),
+    'archived bootstrap pull requests cannot regain review authorization');
   if (pr.head.ref === BOOTSTRAP_BRANCH) return { reset: null, ...bootstrapIdentity() };
   requireThat(/^squad\/bootstrap-cast-[a-z][a-z0-9-]{0,31}$/.test(pr.head.ref),
     'invalid base-controlled bootstrap pull request branch');
-  const reset = parseBootstrapReset(await committedJson(
-    get, repository, BOOTSTRAP_RESET_PATH, pr.base.sha,
-  ));
   requireThat(reset && bootstrapIdentity(reset).BOOTSTRAP_BRANCH === pr.head.ref,
     'bootstrap generation does not match the committed reset');
   return { reset, ...bootstrapIdentity(reset) };

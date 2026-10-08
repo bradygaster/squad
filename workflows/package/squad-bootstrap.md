@@ -171,7 +171,7 @@ pre-agent-steps:
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "a279cd5c4adeb613ceb90c1bfbb9818265aeb6bc8986e2e3799e96f7c2d787e5"
       check_hash "$cast_validator" "c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
-      check_hash "$bootstrap_validator" "fe69af2871d7fb331f64d537a7d54618c189866187bfe914cd624bc01b15c628"
+      check_hash "$bootstrap_validator" "21a4f8d5a05fea0d058de6a020cd2844795172e48694de1bab1ef86019141dd0"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
@@ -477,13 +477,13 @@ safe-outputs:
                   if (existingRef) {
                     await assertRemotePayload(stateModule.BOOTSTRAP_BRANCH);
                   } else {
-                    const baseRef = await github.rest.git.getRef({
+                    const baseSha = reset ? context.sha : (await github.rest.git.getRef({
                       ...context.repo,
                       ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
-                    });
+                    })).data.object.sha;
                     const baseCommit = await github.rest.git.getCommit({
                       ...context.repo,
-                      commit_sha: baseRef.data.object.sha,
+                      commit_sha: baseSha,
                     });
                     const tree = [];
                     for (const file of payload.files) {
@@ -508,8 +508,16 @@ safe-outputs:
                       ...context.repo,
                       message: 'chore(squad): add repository-derived Squad',
                       tree: createdTree.data.sha,
-                      parents: [baseRef.data.object.sha],
+                      parents: [baseSha],
                     });
+                    if (reset) {
+                      const liveBase = await github.rest.git.getRef({
+                        ...context.repo, ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
+                      });
+                      if (liveBase.data.object.sha !== baseSha) {
+                        throw new Error('Default branch advanced before fresh bootstrap publication; dispatch again.');
+                      }
+                    }
                     await github.rest.git.createRef({
                       ...context.repo,
                       ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`,
