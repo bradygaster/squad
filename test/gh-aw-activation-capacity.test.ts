@@ -14,16 +14,15 @@
  *    that believed the label reading would conclude a 50-issue activation (up to 100 label
  *    names) had overrun its budget, and could stop labeling early or batch issues together.
  *    This is agent self-truncation, and it was reachable at 80.
- * 2. **Neither enforcement layer fails the run.** Even when a cap is genuinely hit, the
- *    workflow run still concludes successfully, so nothing forces the truncation to
- *    surface. See below.
+ * 2. **Neither cap-enforcement layer fails the run by itself.** Even when a cap is
+ *    genuinely hit, truncation needs an explicit incomplete report to surface. See below.
  *
  * Note what is *not* claimed: at `max: 80`, 50 `add_labels` calls did **not** overflow the
  * operation cap. Runtime truncation was not reachable at the documented maximum. The cap
  * moves to 110 to defeat the misleading injected wording and to hold a bounded margin —
  * not to fix a proven 80-item overflow.
  *
- * ## Runtime semantics this suite is written against (gh-aw v0.87.10, the CI pin)
+ * ## Runtime semantics this suite is written against (gh-aw v0.89.22, the CI pin)
  *
  * **Cap enforcement is dual (Safe Outputs Specification MCE4) and neither half is fatal.**
  * Invocation time — `safe_outputs_handlers.cjs`, `enforcePerTypeMax` via
@@ -38,20 +37,17 @@
  * That is a JSON-RPC error the agent **does** observe. Collection time —
  * `collect_ndjson_output.cjs` — is the second half: a surplus item is dropped with
  * `continue` and reported via `core.warning`. Neither path calls `core.setFailed`, so the
- * run concludes successfully with label operations missing.
+ * run can conclude successfully with label operations missing unless incompletion is reported.
  *
  * `max` therefore caps **operations of that type**, not label names inside one call. One
  * `add_labels` call carrying two labels costs one unit of budget, not two.
  *
- * **`report_incomplete` does not turn the run red.** gh-aw's own tool description claims it
- * is "treated as a failure signal even when the agent exits successfully" — misleading in
- * precisely the way this issue is about. In the pinned runtime,
- * `report_incomplete_handler.cjs` emits `core.warning` only, and `handle_agent_failure.cjs`
- * contains no `core.setFailed` or `process.exit`: its "failure handling" opens or updates an
- * `[aw] {workflow} reported incomplete result` tracking issue/comment. That is a durable,
- * human-actionable record — it satisfies #1961's "explicit incomplete result" — but the run
- * conclusion stays green. No narrower supported mechanism in v0.87.10 makes it red, so the
- * workflow states that limitation rather than implying a failure it cannot produce.
+ * **`report_incomplete` fails the conclusion step.** In v0.89.22,
+ * `report_incomplete_handler.cjs` logs a warning, then `handle_agent_failure.cjs` calls
+ * `core.setFailed` even when the agent succeeded. #2185 disables that conclusion handler's
+ * independent tracking-issue writes, not its failure status or logged evidence. The guarded
+ * activation summary must also report the shortfall on the originating issue. The real pinned
+ * handler and zero-write boundary are exercised by gh-aw-command-authorization.test.ts.
  *
  * ## The capacity calculation this suite locks in
  *
@@ -412,33 +408,24 @@ describe('gh-aw: self-validation reconciles activated items with label operation
     ).toBe(true);
   });
 
-  it('states report_incomplete semantics accurately — a tracking record, not a red run', () => {
-    // Verified against pinned gh-aw v0.87.10 rather than gh-aw's own tool description
-    // (which says "treated as a failure signal even when the agent exits successfully"
-    // — misleading in exactly the way this issue is about):
-    //   report_incomplete_handler.cjs   -> core.warning only.
-    //   handle_agent_failure.cjs        -> contains no core.setFailed / process.exit;
-    //                                      "failure handling" opens/updates an
-    //                                      "[aw] ... reported incomplete result" issue.
-    // The run still concludes successfully. The workflow must say so, so the agent does
-    // not assume a red run is carrying the signal for it.
+  it('describes pinned report_incomplete failure status without tracking-issue writes', () => {
+    // v0.89.22 fails conclusion for report_incomplete. #2185 disables its independent
+    // issue-writing path; the real-handler regression lives in command-authorization.
     expect(
-      /reported incomplete result/i.test(activateProse),
-      'The workflow must name the durable artifact report_incomplete actually produces.',
+      /`report_incomplete` records the reason in Actions logs and fails the conclusion step/i.test(activateProse),
+      'The workflow must describe the failure status and logged evidence from the pinned runtime.',
+    ).toBe(true);
+    expect(
+      /automatic tracking-issue reporting is disabled/i.test(activateProse),
+      'The workflow must not promise an issue from the disabled conclusion reporting path.',
+    ).toBe(true);
+    expect(
+      /Include the shortfall in the guarded activation summary as well, so the originating issue retains an actionable signal/i.test(activateProse),
+      'The authorized originating-issue summary must still identify incomplete activation.',
     ).toBe(true);
     expect(
       /does \*\*not\*\* change the run's conclusion/i.test(activateProse),
-      'The workflow must state that report_incomplete does not change the run conclusion.',
-    ).toBe(true);
-    expect(
-      /never rely on a red run/i.test(activateProse),
-      'The workflow must forbid relying on a failed run to carry the incompletion signal.',
-    ).toBe(true);
-    // Guard against reintroducing the overclaim this test previously asserted.
-    expect(
-      /failure signal even when the agent exits successfully/i.test(activateProse),
-      'The workflow must not repeat gh-aw\'s misleading "failure signal" phrasing: the ' +
-        'pinned runtime emits a warning and a tracking issue, and never fails the run.',
+      'The obsolete v0.87.10 success-conclusion claim must not return.',
     ).toBe(false);
   });
 

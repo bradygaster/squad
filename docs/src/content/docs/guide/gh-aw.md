@@ -741,6 +741,25 @@ PR conversation comment. On a pull request, post the command in the
 Commands are matched longest-prefix-first, so the most specific command string
 wins: `/squad plan accept scope` is not treated as `/squad plan`.
 
+### Command diagnostics
+
+The dispatcher and command router disable automatic failure, failed-job,
+detection and no-op tracking-issue reporting, plus generic activation/completion
+comments. Those framework paths run outside the deterministic safe-output guard;
+completion comments can also append raw agent no-op text even when that guard
+rejects the output. This restriction applies to maintainer runs as well as open
+modes. Guarded command replies, research/planning artifacts and Cast failure
+comments remain supported.
+
+Use the Actions run's logs and summaries for framework diagnostics. No-op messages
+remain visible there, `report_incomplete` fails the conclusion step, and
+`missing_data` remains logged (it does not by itself guarantee a red run).
+Threat detection still runs and retains its enforcement behavior; only its
+tracking-issue reporting is disabled. No diagnostic is permission to bypass
+command authorization or the open-mode artifact restrictions.
+
+### Command reference
+
 | Category | Command | Purpose | Notes |
 |----------|---------|---------|-------|
 | Team | `/squad` | Cast a new team | Same as `/squad cast` |
@@ -844,6 +863,41 @@ worker, dependency worker, retrospective, shared validator, and schema
 together. Direct manual dispatches of either worker fail closed; use
 `/squad implement` or the retrospective relay so the dispatcher can create the
 authoritative receipt and bound session inputs.
+
+### Deterministic command authorization
+
+Direct slash commands and discovered commands share a trusted runtime check,
+independent of agent instructions. Mutating commands require live **write,
+maintain, or admin** repository permission for both the event actor and the
+original issue/comment author. Missing identities, bot-authored text, failed
+permission lookups, and edited events without changed-command evidence fail
+closed. Editing a maintainer's old comment does not inherit their authority.
+
+`status`, `review`, `research`, and `plan` remain open to identifiable human
+contributors without write permission. Their safe outputs are restricted to
+comments on the originating issue and mode-specific draft artifacts. They
+cannot create issues or PRs, change labels, dispatch workers, or write acceptance
+or activation artifacts, even when the caller is a maintainer. Research and
+plan can update only their own nonterminal lifecycle state. Put structured data
+in the tool's `data` field, not JSON fences or `Structured data:` blocks in the
+comment body. This restriction includes HTML comments and quoted/code regions:
+gh-aw preserves HTML comments inside code fences, and lifecycle readers inspect
+the complete posted text rather than its rendered visibility.
+
+The guard validates the entire emitted batch before the built-in handlers run.
+Research/lifecycle custom jobs and terminal lifecycle repair require a successful
+safe-output job. The command router permits no agent-authored mutations; only
+its deterministic handler can forward a validated command.
+
+Authenticated `workflow_dispatch` events retain GitHub's platform Actions-write
+authorization, including the router and implementation worker's `GITHUB_TOKEN`
+continuations. This exception is bound to the actual event and matching platform
+actor/sender, never an `aw_context` claim, issue text, or a blanket bot exemption.
+Open-mode output restrictions still apply to dispatched commands. Empty activation
+probes cannot produce safe outputs.
+
+Install this protection as a complete immutable package update using
+[Upgrading](#upgrading), not by editing an integrity-pinned runtime file.
 
 ### Where you can use slash commands
 
@@ -1447,14 +1501,13 @@ interchangeable — the trigger, the wording, and the remedy differ:
 | Issues not created | Created count is below the plan's declared total | `N of M issues created so far — rerun the identical activation command to continue.` |
 | Labels not applied | An activated issue had no `add_labels` call accepted | `{labeled} of {activated} activated issues had a label operation accepted` |
 
-Either one calls `report_incomplete`. **This does not fail the run.** The workflow
-run still concludes `success`, so `gh run view --json conclusion` is not a way to
-detect a truncated activation. The durable, user-visible signal is a tracking
-issue in your repository titled `[aw] ... reported incomplete result`, which
-gh-aw opens or updates:
+Either one calls `report_incomplete`. With pinned gh-aw v0.89.22, **this fails the
+conclusion step** and records the reason in the Actions logs. The dispatcher
+does not create or update a separate tracking issue. Inspect the run and the
+guarded activation summary on the originating issue:
 
 ```bash
-gh issue list --search '"reported incomplete result" in:title' --state all
+gh run view <run-id> --log-failed
 ```
 
 If a cap was actually reached, the report names which cap and lists the work
@@ -1469,7 +1522,9 @@ IDs the run minted — `#aw_epic{K}` and `#aw_task{N}` on the hierarchical path,
 — rather than by issue number, because at that point creation is still deferred
 and no real number exists yet.
 
-Do not read a green run as a complete activation. Check for that tracking issue.
+Do not read a green run as proof of complete activation: an omitted
+`report_incomplete` signal cannot be detected by that handler. Check the
+activation summary and verify the resulting issues and labels.
 
 #### Verifying an activation: the bindings block
 
@@ -2130,8 +2185,8 @@ other refs.
 | `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile --strict`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
-| Plan activation creates fewer issues than the accepted plan declares | The run ended early, or it reached the `create-issue` (75) or `add-labels` (110) safe-output cap | Look for an `[aw] ... reported incomplete result` tracking issue — it names the shortfall and, when a cap was reached, which cap and what did not fit. Re-run the identical activation command (title matching resumes without duplicating existing issues), or activate one phase at a time with `/squad plan activate phase {N}` |
-| Activation run is green but some issues are missing or unlabeled | `report_incomplete` records truncation without failing the run | A green run is not proof of a complete activation. Check for the `[aw] ... reported incomplete result` tracking issue, then verify with `gh issue list --label squad` |
+| Plan activation creates fewer issues than the accepted plan declares | The run ended early, or it reached the `create-issue` (75) or `add-labels` (110) safe-output cap | Inspect the Actions logs and originating issue's activation summary for the shortfall and any cap reached. Re-run the identical activation command (title matching resumes without duplicating existing issues), or activate one phase at a time with `/squad plan activate phase {N}` |
+| Activation run is green but some issues are missing or unlabeled | The agent may have omitted `report_incomplete`, which would fail the conclusion step if emitted | A green run is not proof of a complete activation. Check the activation summary and Actions logs, then verify with `gh issue list --label squad`; automatic tracking-issue reporting is disabled |
 | A Squad label has no description and an unexpected color | It was auto-created on a fresh repo by `create-if-missing` | Expected, not a failure. Edit the label if you want a description or a specific color |
 | `/squad implement` cannot create a PR | Expected under Profile A (recommended); Actions is not allowed to create pull requests and there is no automatic fallback for this workflow | Push the worker's branch and open the PR manually, or switch to [Profile B](#profile-b-opt-in-automatic-pr-creation) if you accept its repository-wide self-approval tradeoff |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |

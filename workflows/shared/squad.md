@@ -46,6 +46,7 @@ safe-outputs:
       description: Create or replace the single Squad research artifact for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -182,6 +183,7 @@ safe-outputs:
       description: Update the single Squad planning lifecycle comment for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write

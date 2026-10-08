@@ -12,6 +12,7 @@ safe-outputs:
       description: Create or replace the single Squad research artifact for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -147,6 +148,7 @@ safe-outputs:
       description: Update the single Squad planning lifecycle comment for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -353,10 +355,17 @@ safe-outputs:
                 'Stderr:',
                 failure.stderr,
               ].join('\n'));
+  report-failure-as-issue: false
+  report-failed-jobs: false
+  threat-detection:
+    report-as-issue: false
+  noop:
+    max: 1
+    report-as-issue: false
   allowed-domains:
     - learn.microsoft.com
     - aspire.dev
-  activation-comments: ${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}
+  activation-comments: false
   steps:
     - name: Checkout executing workflow commit for command enforcement
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -369,6 +378,7 @@ safe-outputs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
         SQUAD_EVENT_NAME: ${{ github.event_name }}
+        GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
       with:
         script: |
           const nodePath = require('node:path');
@@ -382,6 +392,12 @@ safe-outputs:
             await contract.enforceSquadCommandContract({
               payload: context.payload,
               eventName: process.env.SQUAD_EVENT_NAME,
+              actor: context.actor,
+              agentOutputPath: process.env.GH_AW_AGENT_OUTPUT,
+              resolvePermission: async (login) => (await github.rest.repos.getCollaboratorPermissionLevel({
+                ...context.repo,
+                username: login,
+              })).data.permission,
               createComment: async (issueNumber, body) => {
                 await github.rest.issues.createComment({
                   ...context.repo,
@@ -2228,14 +2244,14 @@ gate `create-pull-request`. It diagnoses a `cast_failure` and
 outputs run separately after the agent; this diagnosis cannot prevent a pull
 request that is materialized concurrently.
 
-Built-in `report_incomplete` only warns and creates or updates a durable tracking
-issue; it does not fail the run. The factual failure comment and, when emitted,
-the red `cast_failure` job are the Cast failure signals. The generic completion
-hook is deliberately neutral because pinned gh-aw chooses `run-success` from
-the agent and consolidated `safe_outputs` results without considering the
-custom job result. A red `cast_failure` job can therefore still select this
-neutral hook; it does not select `run-failure`. Processing completion does not
-indicate Cast success. Only a linked Cast PR is the success signal.
+Pinned gh-aw v0.89.22 makes `report_incomplete` fail the conclusion step.
+Automatic failure, failed-job, detection, no-op tracking issues and generic
+activation/completion comments are disabled in the dispatcher and router:
+conclusion runs independently of safe-output authorization and completion
+comments otherwise append unvalidated no-op text. Diagnostics remain in Actions
+logs and summaries; detection still runs. The factual, guarded failure comment
+and, when emitted, the red `cast_failure` job remain the Cast failure signals.
+Only a linked Cast PR is the success signal.
 
 ##### Step 8: Open PR
 
@@ -3566,7 +3582,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 While Steps 2b/2c run, keep two counts: `activated` (issues created or recognized this run) and `labeled` (issues whose `add_labels` call was accepted). An `add_labels` call that was never made, was rejected, or returned an error counts as **unlabeled**. These counts track *label operations*, not labels present on GitHub: acceptance means the call was queued for a specific target this turn, and gh-aw applies it in the post-agent job. Never state or imply that a counted label was applied, landed, or was confirmed on the issue — nothing here reads labels back. At the end of Step 2:
 
 1. `labeled == activated` → the activation is complete; proceed to Step 3.
-2. `labeled < activated` → **this is an incomplete activation, not a successful one.** Call `report_incomplete` with a `reason` naming the shortfall (`{labeled} of {activated} activated issues had a label operation accepted`) and `details` listing **every affected work item — the identifier you used to target its `add_labels` call, its title, and the label set that missing operation targeted**. For an item created this run that identifier is the `temporary_id` you minted under the Temporary-ID Contract (`#aw_epic{K}` / `#aw_task{N}`) — not a GitHub issue number, because creation is deferred to the safe-output job and no real number exists yet. Quote a real number only where one is independently verified: an epic or task matched by dedup-by-title, or an issue recognized by Step 1's idempotent-rerun path. Never predict, infer, or invent a number. `report_incomplete` logs a warning and opens or updates a durable `[aw] ... reported incomplete result` tracking issue; it does **not** change the run's conclusion — the run still reports success. That record and the rule below keep a truncated activation from passing as clean, so never rely on a red run to carry the signal.
+2. `labeled < activated` → **this is an incomplete activation, not a successful one.** Call `report_incomplete` with a `reason` naming the shortfall (`{labeled} of {activated} activated issues had a label operation accepted`) and `details` listing **every affected work item — the identifier you used to target its `add_labels` call, its title, and the label set that missing operation targeted**. For an item created this run that identifier is the `temporary_id` you minted under the Temporary-ID Contract (`#aw_epic{K}` / `#aw_task{N}`) — not a GitHub issue number, because creation is deferred to the safe-output job and no real number exists yet. Quote a real number only where one is independently verified: an epic or task matched by dedup-by-title, or an issue recognized by Step 1's idempotent-rerun path. Never predict, infer, or invent a number. `report_incomplete` records the reason in Actions logs and fails the conclusion step; automatic tracking-issue reporting is disabled. Include the shortfall in the guarded activation summary as well, so the originating issue retains an actionable signal.
 
 **Cap exhaustion is a reportable, nameable cause.** If the shortfall is because a cap was reached, say so in the `reason`, name which cap (`create-issue` 75 or `add_labels` 110) and list the work items that did not fit, and recommend `/squad plan activate phase {N}`. This is the one case where a cap may be named as the cause: it was observed, not guessed. Do not infer a cap from a rejection you never received, and do not treat the absence of an `E002` error as proof that every label operation was accepted: the count comparison, not the error stream, is the authority.
 

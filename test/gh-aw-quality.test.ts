@@ -348,7 +348,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
-      if (name === 'data' || name === 'messages' || name === 'jobs' || name === 'steps' || name === 'allowed-domains') continue;
+      if (['data', 'messages', 'jobs', 'steps', 'allowed-domains', 'threat-detection'].includes(name)) continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -1636,15 +1636,13 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
         'GitHub rejects the emitted lockfile before any job starts.',
     ).toEqual([]);
     expect(compiled).toContain(
-      "activationComments\\\":\\\"${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}",
+      'activationComments\\\":\\\"false',
     );
   }, 20000);
 
   it('detects the previous activation-comments serialization mutation', () => {
     const source = readText(SQUAD_WORKFLOW);
-    const safeExpression =
-      "${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || " +
-      "startsWith(github.event.comment.body, '/squad revoke-improvement')) }}";
+    const safeExpression = 'activation-comments: false';
     const unsafeExpression =
       "${{ !startsWith(github.event.comment.body, '/squad approve-improvement') && " +
       "!startsWith(github.event.comment.body, '/squad revoke-improvement') }}";
@@ -1654,7 +1652,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
     cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
     const mutantPath = join(workspace, '.github', 'workflows', 'squad.md');
-    writeFileSync(mutantPath, readText(mutantPath).replace(safeExpression, unsafeExpression));
+    writeFileSync(mutantPath, readText(mutantPath).replace(safeExpression, `activation-comments: ${unsafeExpression}`));
 
     execFileSync('gh', ['aw', 'compile', mutantPath, '--strict', '--approve'], {
       cwd: workspace,
@@ -3160,10 +3158,10 @@ describe('gh-aw: Cast replaces disposable bootstrap state (#1909)', () => {
     expect(frontmatter).toContain(
       'run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."',
     );
-    expect(cast).toContain('Built-in `report_incomplete` only warns');
-    expect(cast).toContain('it does not fail the run');
+    expect(frontmatter).toContain('activation-comments: false');
+    expect(cast).toContain('makes `report_incomplete` fail the conclusion step');
+    expect(cast).toContain('Diagnostics remain in Actions\nlogs and summaries');
     expect(cast).toContain('Only a linked Cast PR is the success signal');
-    expect(cast).toContain('A red `cast_failure` job can therefore still select this\nneutral hook; it does not select `run-failure`');
   });
 
   it('kills claims that the post-agent job independently enforces failure or PR authorization', () => {
@@ -4004,8 +4002,8 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(mutable).not.toContain(actionReference);
       expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
         .toBe(sourceBinding === 'workflow'
-          ? 'e28d35cd3ae0b920479279c777b26c68a339163a6886794ba82c1c04e28e75d6'
-          : '7077085c3f31824fbea10ad7e963e10e5cb67819523a1815b9795839fe97fb02');
+          ? '8bf36b5dcef66c5983d35962b4da32140ca7a4942bf579a03cb43a04114b98b3'
+          : '205d84067db90e20a2753b60c329d258f27a9e4ba2b10a971bf8c31df4504048');
       expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
       writeFileSync(lockPath, mutable);
       expect(verifyInstall(root).failures.join('\n'))
@@ -4059,7 +4057,7 @@ describe('gh-aw: canonical package integrity contract', () => {
     compile();
     const unpinned = readText(lockPath);
     expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
-      .toBe('7077085c3f31824fbea10ad7e963e10e5cb67819523a1815b9795839fe97fb02');
+      .toBe('205d84067db90e20a2753b60c329d258f27a9e4ba2b10a971bf8c31df4504048');
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
     const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {

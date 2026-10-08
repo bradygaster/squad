@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -37,6 +37,10 @@ const ROOT = process.cwd();
 const ROUTER = readFileSync(join(ROOT, 'workflows/squad-command-router.md'), 'utf8');
 const PACKAGE_ROUTER = readFileSync(join(ROOT, 'workflows/package/squad-command-router.md'), 'utf8');
 const SHARED_SQUAD = readFileSync(join(ROOT, 'workflows/shared/squad.md'), 'utf8');
+const OUTPUT_DIR = mkdtempSync(join(tmpdir(), 'squad-router-output-'));
+const OUTPUT_PATH = join(OUTPUT_DIR, 'output.json');
+writeFileSync(OUTPUT_PATH, JSON.stringify({ items: [{ type: 'noop', message: 'Routing complete' }] }));
+afterAll(() => rmSync(OUTPUT_DIR, { recursive: true, force: true }));
 
 /** Read a `script: |` literal block starting at `marker`, dedented. */
 function extractScript(source: string, marker: string): string {
@@ -177,7 +181,10 @@ async function runRouter({
   process.env.GITHUB_WORKSPACE = ROOT;
   process.env.SQUAD_EVENT_NAME = eventName;
   try {
-    await compileScript(inlined)(github, context, core, process, nodeRequire);
+    await compileScript(inlined)(github, context, core, {
+      cwd: () => ROOT,
+      env: { ...process.env, GH_AW_AGENT_OUTPUT: OUTPUT_PATH },
+    }, nodeRequire);
   } finally {
     if (previousWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
     else process.env.GITHUB_WORKSPACE = previousWorkspace;
@@ -188,14 +195,10 @@ async function runRouter({
 }
 
 function assertAuthorBinding(source: string): void {
-  expect(source).toContain("process.env.SQUAD_EVENT_NAME === 'issue_comment'");
-  expect(source).toContain('context.payload.comment?.user?.login');
-  expect(source).toContain("process.env.SQUAD_EVENT_NAME === 'issues'");
-  expect(source).toContain('context.payload.issue?.user?.login');
-  expect(source).toContain('const actorAuthorized = Boolean(eventActor)');
-  expect(source).toContain('const authorAuthorized = Boolean(commandAuthor)');
-  expect(source).toContain('if (!actorAuthorized || !authorAuthorized)');
-  expect(source).toContain('both the event actor and the author of the classified command text');
+  expect(source).toContain('contract.authorizeSquadCommand({');
+  expect(source).toContain('payload: context.payload,');
+  expect(source).toContain('actor: context.actor,');
+  expect(source).toContain('getCollaboratorPermissionLevel');
 }
 
 describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', () => {
@@ -207,9 +210,7 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
     // roles: all only removes gh-aw's blanket write-role activation gate; the
     // router's own in-script permission check for mutating modes must be the
     // thing still enforcing authorization afterward.
-    expect(ROUTER).toContain('contract.commandRequiresAuthorization(result)');
-    expect(ROUTER).toContain('contract.isAuthorizedPermission(actorPermission)');
-    expect(ROUTER).toContain('contract.isAuthorizedPermission(authorPermission)');
+    expect(ROUTER).toContain('contract.authorizeSquadCommand({');
     expect(ROUTER).toContain('getCollaboratorPermissionLevel');
     assertAuthorBinding(ROUTER);
     expect(commandRequiresAuthorization({ status: 'accepted', mode: 'cast' })).toBe(true);
@@ -240,7 +241,8 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
         actor: 'maintainer',
         payload: {
           issue: { number: 4242 },
-          comment: { id: 55001, body: commentBody, user: { login: 'maintainer' } },
+          comment: { id: 55001, body: commentBody, user: { login: 'maintainer', type: 'User' } },
+          sender: { login: 'maintainer', type: 'User' },
           repository: { default_branch: 'dev' },
         },
       };
@@ -281,7 +283,10 @@ describe('gh-aw: router-to-repair workflow_dispatch relay (#2, #3 findings)', ()
       process.env.GITHUB_WORKSPACE = ROOT;
       process.env.SQUAD_EVENT_NAME = 'issue_comment';
       try {
-        await compileScript(inlined)(github, context, core, process, nodeRequire);
+        await compileScript(inlined)(github, context, core, {
+          cwd: () => ROOT,
+          env: { ...process.env, GH_AW_AGENT_OUTPUT: OUTPUT_PATH },
+        }, nodeRequire);
       } finally {
         if (previousWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
         else process.env.GITHUB_WORKSPACE = previousWorkspace;
@@ -409,7 +414,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.permissionLookups).toEqual(['maintainer-editor', 'unprivileged-author']);
     expect(result.postedComments).toEqual([
       expect.stringContaining(
-        'Event actor: @maintainer-editor (write); command author: @unprivileged-author (read).',
+        'command author unprivileged-author=read',
       ),
     ]);
   });
@@ -450,7 +455,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.dispatchedInputs).toBeNull();
     expect(result.failure).toContain('event actor unprivileged-editor=read');
     expect(result.postedComments[0]).toContain(
-      'Event actor: @unprivileged-editor (read); command author: @maintainer-author (admin).',
+      'event actor unprivileged-editor=read',
     );
   });
 
@@ -467,12 +472,12 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     });
 
     expect(result.dispatchedInputs).toBeNull();
-    expect(result.failure).toContain('command author unresolved=unresolved');
-    expect(result.permissionLookups).toEqual(['maintainer']);
-    expect(result.postedComments[0]).toContain('command author: unresolved (unresolved)');
+    expect(result.failure).toContain('identifiable human actor and command author');
+    expect(result.permissionLookups).toEqual([]);
+    expect(result.postedComments[0]).toContain('identifiable human actor and command author');
   });
 
-  it('does not permission-gate non-mutating modes when author identity is absent', async () => {
+  it('fails closed on missing author identity even for open modes', async () => {
     const result = await runRouter({
       eventName: 'issue_comment',
       action: 'edited',
@@ -482,9 +487,9 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       permissions: {},
     });
 
-    expect(result.failure).toBeNull();
+    expect(result.failure).toContain('identifiable human actor and command author');
     expect(result.permissionLookups).toEqual([]);
-    expect(result.dispatchedInputs).toMatchObject({ command: 'status', issue_number: '4242' });
+    expect(result.dispatchedInputs).toBeNull();
   });
 
   it.each([
@@ -741,7 +746,9 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
 
     expect(result.dispatchedInputs).toBeNull();
     expect(result.failure).toContain(failure);
-    expect(result.permissionLookups).toEqual(['reader', 'external-author']);
+    expect(result.permissionLookups).toEqual(
+      isAuthorizedPermission(actorPermission) ? ['reader', 'external-author'] : ['reader'],
+    );
   });
 
   it('allows comment revoke-improvement only when both the event actor and original author are authorized', async () => {
@@ -761,7 +768,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
     expect(result.dispatchedInputs).toMatchObject({ command: 'revoke-improvement' });
   });
 
-  it('kills the replay-gate mutation that redispatches an unchanged edited command', async () => {
+  it('retains replay protection in the shared authorization gate when the router check is removed', async () => {
     const gate = [
       'if (!contract.editedCommandShouldRoute(',
       '  context.payload,',
@@ -784,18 +791,15 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       permissions: { maintainer: 'write' },
       scriptMutation: script => script.replace(gate, ''),
     });
-    expect(vulnerable.dispatchedInputs).toMatchObject({ command: 'status' });
+    expect(vulnerable.dispatchedInputs).toBeNull();
+    expect(vulnerable.failure).toContain('unchanged');
   });
 
   it('kills the author-binding mutation that substitutes the editor for the command author', async () => {
     expect(() => assertAuthorBinding(
       ROUTER.replace(
-        "const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'\n" +
-          '              ? context.payload.comment?.user?.login\n' +
-          "              : process.env.SQUAD_EVENT_NAME === 'issues'\n" +
-          '                ? context.payload.issue?.user?.login\n' +
-          '                : null;',
-        'const commandAuthorCandidate = context.actor;',
+        'payload: context.payload,',
+        'payload: untrustedPayload,',
       ),
     )).toThrow();
 
@@ -811,12 +815,8 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
         'unprivileged-author': 'read',
       },
       scriptMutation: script => script.replace(
-        "const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'\n" +
-          '    ? context.payload.comment?.user?.login\n' +
-          "    : process.env.SQUAD_EVENT_NAME === 'issues'\n" +
-          '      ? context.payload.issue?.user?.login\n' +
-          '      : null;',
-        'const commandAuthorCandidate = context.actor;',
+        'payload: context.payload,',
+        'payload: { ...context.payload, comment: { ...context.payload.comment, user: context.payload.sender } },',
       ),
     });
     expect(vulnerable.dispatchedInputs).toMatchObject({ command: 'cast' });
@@ -843,8 +843,7 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
       );
       assertAuthorBinding(compiled);
       expect(compiled).toContain('contract.editedCommandShouldRoute(');
-      expect(compiled).toContain('context.payload.comment?.user?.login');
-      expect(compiled).toContain('context.payload.issue?.user?.login');
+      expect(compiled).toContain('contract.authorizeSquadCommand({');
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
@@ -919,7 +918,7 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
     expect(result.dispatchedInputs).toMatchObject({ command: 'cast', issue_number: '4242' });
   });
 
-  it('kills the mutation that drops the bot-authorship block entirely', async () => {
+  it('retains shared bot-authorship enforcement if the router early return is removed', async () => {
     const dedentedMarker = "if (commandAuthorTypeCandidate === 'Bot' || commandSenderTypeCandidate === 'Bot') {\n"
       + "    core.info('Ignoring a /squad command discovered in bot-authored issue or comment text.');\n"
       + '    return;\n'
@@ -941,10 +940,11 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
         return script.replace(dedentedMarker, '');
       },
     });
-    expect(vulnerable.dispatchedInputs).toMatchObject({ command: 'cast' });
+    expect(vulnerable.dispatchedInputs).toBeNull();
+    expect(vulnerable.failure).toContain('identifiable human');
   });
 
-  it('kills the mutation that checks only the original author type and ignores the current sender', async () => {
+  it('retains shared sender enforcement if the router checks only the original author', async () => {
     const marker = "commandAuthorTypeCandidate === 'Bot' || commandSenderTypeCandidate === 'Bot'";
     expect(extractScript(ROUTER, 'Route or reject discovered command')).toContain(marker);
 
@@ -963,6 +963,7 @@ describe('gh-aw: bot-authored /squad command text is never replayed as a trusted
         return script.replace(marker, "commandAuthorTypeCandidate === 'Bot'");
       },
     });
-    expect(vulnerable.dispatchedInputs).toMatchObject({ command: 'cast' });
+    expect(vulnerable.dispatchedInputs).toBeNull();
+    expect(vulnerable.failure).toContain('identifiable human');
   });
 });
