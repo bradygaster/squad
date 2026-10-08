@@ -866,8 +866,62 @@ export class OrphanBranchBackend implements StateBackend {
   }
 
   append(relativePath: string, content: string): void {
-    const existing = this.read(relativePath) ?? '';
-    this.write(relativePath, existing + content);
+    this.breaker.execute(() => {
+      this.ensureBranch();
+      const key = normalizeKey(relativePath);
+
+      let lastStderr = '';
+      for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+        const parentCommit = gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd);
+        const existing = parentCommit
+          ? gitExecMaybeMissing(['show', `${parentCommit}:${key}`], this.cwd, false) ?? ''
+          : '';
+
+        let blobHash: string;
+        try {
+          blobHash = gitExecWithInputAndRetry(['hash-object', '-w', '--stdin'], this.cwd, existing + content);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new Error(`orphan backend: failed to hash appended content for ${key} — ${msg}`);
+        }
+
+        const treeResult = parentCommit
+          ? gitExecMaybeMissing(['rev-parse', `${parentCommit}^{tree}`], this.cwd)
+          : null;
+        let currentTree: string;
+        if (treeResult) {
+          currentTree = treeResult;
+        } else {
+          try {
+            currentTree = gitExecWithInputAndRetry(['mktree'], this.cwd, '');
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`orphan backend: failed to create empty tree — ${msg}`);
+          }
+        }
+
+        const newTree = this.updateTree(currentTree, key.split('/'), blobHash);
+        let newCommit: string;
+        try {
+          const parentArgs = parentCommit ? ['-p', parentCommit] : [];
+          newCommit = gitExecWithRetry(
+            ['commit-tree', newTree, ...parentArgs, '-m', `Append ${key}`],
+            this.cwd,
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new Error(`orphan backend: failed to commit appended content for ${key} — ${msg}`);
+        }
+
+        const writeResult = tryUpdateRef(`refs/heads/${this.branch}`, newCommit, parentCommit, this.cwd);
+        if (writeResult.ok) return;
+        lastStderr = writeResult.stderr;
+        if (attempt < CAS_MAX_ATTEMPTS - 1) {
+          sleepSync(jitteredBackoffMs(attempt));
+        }
+      }
+      throw new StateBackendConcurrencyError(`orphan:append(${relativePath})`, CAS_MAX_ATTEMPTS, lastStderr);
+    }, `orphan:append(${relativePath})`);
   }
 
   createIfAbsent(relativePath: string, content: string): void {

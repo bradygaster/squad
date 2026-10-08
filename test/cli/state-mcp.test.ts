@@ -160,6 +160,32 @@ describe('state-mcp bridge', () => {
     expect(readFileSync(join(TMP, '.squad', 'config.json'), 'utf8')).toContain('two-layer');
   });
 
+  it.each(['rai/audit-trail.md', 'fact-checker/audit-trail.md'])(
+    'appends local audit evidence through MCP but rejects replacement and deletion: %s',
+    async (key) => {
+      mkdirSync(join(TMP, '.squad'), { recursive: true });
+      writeFileSync(join(TMP, '.squad', 'config.json'), JSON.stringify({ stateBackend: 'local' }));
+      const messages: JsonRpcMessage[] = [];
+      const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+
+      for (const [name, content, rejected] of [
+        ['squad_state_append', 'first\n', false],
+        ['squad_state_append', 'second\n', false],
+        ['squad_state_write', 'replacement\n', true],
+        ['squad_state_delete', '', true],
+      ] as const) {
+        await session.handleRequest({
+          jsonrpc: '2.0',
+          id: messages.length,
+          method: 'tools/call',
+          params: { name, arguments: { key, content } },
+        });
+        expect(resultAsRecord(messages[messages.length - 1]!)['isError']).toBe(rejected);
+      }
+      expect(readFileSync(join(TMP, '.squad', key), 'utf8')).toBe('first\nsecond\n');
+    },
+  );
+
   it.each(['orphan', 'two-layer'] as const)(
     'writes casting policy but rejects individual casting pair writes through the %s backend',
     async (stateBackend) => {

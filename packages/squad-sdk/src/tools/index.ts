@@ -284,7 +284,16 @@ export function isMutableStateKey(key: string): boolean {
     kind === 'file' ? key === root : key.startsWith(`${root}/`) && (!pattern || pattern.test(key)));
 }
 
-function validateMutableStateToolKey(key: string): void {
+const BUILT_IN_AUDIT_TRAIL_KEYS = new Set([
+  'rai/audit-trail.md',
+  'fact-checker/audit-trail.md',
+]);
+
+function validateMutableStateToolKey(key: string, operation: 'write' | 'append' | 'delete'): void {
+  if (BUILT_IN_AUDIT_TRAIL_KEYS.has(key)) {
+    if (operation === 'append') return;
+    throw new Error('Built-in audit trails are append-only. Use squad_state_append; existing evidence must not be overwritten or deleted.');
+  }
   if (!isMutableStateKey(key)) {
     throw new Error(
       'State mutations are limited to mutable runtime state (decisions, inbox, casting policy, logs, sessions, scratch files, agent history, and identity). The casting registry/history pair must only be changed through the atomic casting protocol. Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
@@ -714,7 +723,7 @@ export class ToolRegistry {
         }
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'write');
           this.storage.writeSync(path.join(this.squadRoot, key), args.content);
           return {
             textResultForLlm: `State written: ${key}`,
@@ -733,7 +742,7 @@ export class ToolRegistry {
 
     const stateAppend = defineTool<StateAppendRequest>({
       name: 'squad_state_append',
-      description: 'Append to mutable Squad state through the configured state backend. Always use this tool for mutable state when available. Keys are relative to .squad/; static config cannot be mutated through this tool.',
+      description: 'Append to mutable Squad state through the configured state backend, including the append-only rai/audit-trail.md and fact-checker/audit-trail.md evidence logs. Always use this tool for mutable state when available. Keys are relative to .squad/; static config cannot be mutated through this tool.',
       parameters: {
         type: 'object',
         properties: {
@@ -753,7 +762,7 @@ export class ToolRegistry {
         }
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'append');
           this.storage.appendSync(path.join(this.squadRoot, key), args.content);
           return {
             textResultForLlm: `State appended: ${key}`,
@@ -783,7 +792,7 @@ export class ToolRegistry {
       handler: async (args) => {
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'delete');
           this.storage.deleteSync(path.join(this.squadRoot, key));
           return {
             textResultForLlm: `State deleted: ${key}`,
