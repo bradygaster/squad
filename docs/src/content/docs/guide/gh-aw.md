@@ -301,6 +301,12 @@ that new Cast again opts out, even with the same `fresh_start` input. Another
 fresh attempt requires a new reviewed ID and an archive list that also names
 that closed generation. Do not remove or edit the record while its Cast is under
 review; its exact committed contents are part of review authorization.
+Recovery preserves the original authenticated dispatch provenance, including
+the signed fallback origin for a manually opened PR. A push is never a reset
+trust root. An existing generation without that authenticated origin fails
+closed. If the originating dispatch failed after publishing provenance, use
+**Re-run all jobs** on that same run with its original inputs; another run
+cannot promote a failed origin into successful provenance.
 
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer

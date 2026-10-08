@@ -352,6 +352,7 @@ describe('generation-bound fresh bootstrap review', () => {
       (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.head_sha = HEAD; },
       (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.conclusion = 'failure'; },
       (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.path = '.github/workflows/other.yml'; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.event = 'push'; },
     ]) {
       const f = freshFixture(manual);
       mutate(f);

@@ -58,14 +58,16 @@ export function hasCommittedBootstrapTeam(root) {
   { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim().length > 0;
 }
 
-export async function authorizeBootstrapReset({ reset, input, context, github }) {
+export async function authorizeBootstrapReset({
+  reset, input, context, github, triggeringActor = process.env.GITHUB_TRIGGERING_ACTOR || context.actor,
+}) {
   if (!input && (!reset || context.eventName !== 'workflow_dispatch')) return false;
   if (!reset || (input && input !== reset.id) || context.eventName !== 'workflow_dispatch' ||
       context.ref !== `refs/heads/${context.payload.repository.default_branch}`) {
     throw new Error('Fresh bootstrap requires the committed reset ID and a default-branch manual dispatch.');
   }
   for (const actor of new Set([context.actor, context.payload.sender?.login,
-    process.env.GITHUB_TRIGGERING_ACTOR || context.actor])) {
+    triggeringActor])) {
     if (!actor || context.payload.sender?.type !== 'User') {
       throw new Error('Fresh bootstrap requires an authenticated human maintainer.');
     }
@@ -78,6 +80,84 @@ export async function authorizeBootstrapReset({ reset, input, context, github })
     }
   }
   return Boolean(input);
+}
+
+export async function recoverBootstrapResetProvenance({
+  reset, github, repository, defaultBranch, currentSha, currentRunId, resetAuthorized,
+  pullRequest, issues, comments,
+}) {
+  const identity = bootstrapIdentity(reset);
+  const prefix = '<' + '!-- squad:bootstrap-provenance ';
+  let provenance;
+  if (pullRequest.user?.login === 'github-actions[bot]' && pullRequest.user?.type === 'Bot') {
+    const records = String(pullRequest.body || '').split('\n').filter(line => line.startsWith(prefix));
+    const authenticated = comments.filter(comment => comment.user?.login === 'github-actions[bot]' &&
+      comment.user?.type === 'Bot' && String(comment.body || '').startsWith(prefix));
+    if (records.length !== 1 || !records[0].endsWith(' -->') || authenticated.length !== 1 ||
+        authenticated[0].body.split('\n')[0] !== records[0]) {
+      throw new Error('Reset recovery requires the original bot-authenticated dispatch provenance.');
+    }
+    provenance = JSON.parse(records[0].slice(prefix.length, -4));
+  } else if (pullRequest.user?.type === 'User') {
+    const fallback = findExistingBootstrapPrFallbackIssue(issues, identity.BOOTSTRAP_BRANCH, {
+      repository, baseBranch: defaultBranch, headSha: pullRequest.head?.sha,
+    });
+    const record = fallback && parseBootstrapPrFallbackProvenance(fallback.body);
+    if (!record || record.compare_url !== buildBootstrapPrFallbackCompareUrl({
+      repository, baseBranch: defaultBranch, headBranch: identity.BOOTSTRAP_BRANCH,
+      title: identity.BOOTSTRAP_PR_TITLE, server: process.env.GITHUB_SERVER_URL,
+    }) || !(Date.parse(fallback.created_at) <= Date.parse(pullRequest.created_at))) {
+      throw new Error('Reset recovery requires the original authenticated manual-fallback provenance.');
+    }
+    provenance = {
+      schema: 1, repository, run_id: record.run_id, install_sha: record.base_sha, cast_sha: record.head_sha,
+    };
+  }
+  if (!provenance || provenance.schema !== 1 ||
+      Object.keys(provenance).sort().join() !== ['schema', 'repository', 'run_id', 'install_sha', 'cast_sha'].sort().join() ||
+      provenance.repository !== repository || !/^[1-9]\d*$/.test(provenance.run_id) ||
+      !Number.isSafeInteger(Number(provenance.run_id)) ||
+      !/^[0-9a-f]{40}$/.test(provenance.install_sha) || provenance.cast_sha !== pullRequest.head?.sha ||
+      pullRequest.head?.repo?.full_name !== repository || pullRequest.base?.ref !== defaultBranch ||
+      pullRequest.head?.ref !== identity.BOOTSTRAP_BRANCH || pullRequest.title !== identity.BOOTSTRAP_PR_TITLE) {
+    throw new Error('Reset recovery provenance does not match the exact generation and Cast head.');
+  }
+  const [owner, repo] = repository.split('/');
+  const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: Number(provenance.run_id) });
+  const authorizedOriginRerun = resetAuthorized && String(currentRunId) === provenance.run_id &&
+    run.status === 'in_progress';
+  if (run.event !== 'workflow_dispatch' || run.path !== '.github/workflows/squad-bootstrap.lock.yml' ||
+      run.repository?.full_name !== repository || run.head_sha !== provenance.install_sha ||
+      run.head_branch !== defaultBranch ||
+      (!authorizedOriginRerun && (run.status !== 'completed' || run.conclusion !== 'success')) ||
+      run.actor?.type !== 'User' || run.triggering_actor?.type !== 'User') {
+    throw new Error('Reset recovery must retain a successful authenticated fresh-start dispatch as its trust root.');
+  }
+  const { data: file } = await github.rest.repos.getContent({
+    owner, repo, path: BOOTSTRAP_RESET_PATH, ref: provenance.install_sha,
+  });
+  if (file?.type !== 'file' || file.encoding !== 'base64' || !Number.isSafeInteger(file.size) ||
+      file.size > 16000 || typeof file.content !== 'string' ||
+      Buffer.from(file.content, 'base64').length !== file.size ||
+      JSON.stringify(parseBootstrapReset(JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')))) !== JSON.stringify(reset)) {
+    throw new Error('Reset recovery record changed since its original dispatch.');
+  }
+  const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+    owner, repo, basehead: `${provenance.install_sha}...${currentSha}`,
+  });
+  if (!['identical', 'ahead'].includes(comparison.status) ||
+      comparison.base_commit?.sha !== provenance.install_sha ||
+      comparison.merge_base_commit?.sha !== provenance.install_sha) {
+    throw new Error('Reset recovery origin is not an ancestor of the current default branch.');
+  }
+  await authorizeBootstrapReset({
+    reset, input: reset.id, github, triggeringActor: run.triggering_actor.login,
+    context: {
+      repo: { owner, repo }, actor: run.actor.login, ref: `refs/heads/${defaultBranch}`,
+      eventName: run.event, payload: { repository: { default_branch: defaultBranch }, sender: run.actor },
+    },
+  });
+  return provenance;
 }
 export const BOOTSTRAP_RESEARCH_TITLE = '## 🔬 Squad Research — Bootstrap proposals';
 export const RESEARCH_SCOPE_PATH = '.squad/research-scope.json';

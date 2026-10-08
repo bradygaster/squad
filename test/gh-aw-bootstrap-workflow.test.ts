@@ -1098,7 +1098,9 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('group: squad-bootstrap-${{ github.repository }}');
     expect(lock).toContain('cancel-in-progress: false');
     expect(lock).toMatch(/agent:[\s\S]*?permissions:\n\s+contents: read\n\s+copilot-requests: write\n\s+issues: read\n\s+pull-requests: read/);
-    expect(lock).toMatch(/materialize_bootstrap:[\s\S]*?permissions:\n\s+contents: write\n\s+issues: write\n\s+pull-requests: write/);
+    expect(parse(lock).jobs.materialize_bootstrap.permissions).toEqual({
+      actions: 'read', contents: 'write', issues: 'write', 'pull-requests': 'write',
+    });
     expect(lock).toContain('"payload_chunk_00"');
     expect(lock).toContain('"payload_chunk_15"');
     expect(lock).toContain('"payload_byte_length"');
@@ -1310,6 +1312,7 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
       html_url: prUrl,
       body: fixture.payload.pr_body,
       merged_at: null,
+      user: { login: 'github-actions[bot]', type: 'Bot' },
     };
     let branchCreated = false;
     let pullCreated = false;
@@ -1346,19 +1349,32 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
             return { data: pull };
           },
           get: async () => ({ data: pull }),
-          update: async (args: { body: string }) => { recordWrite(); updates.push(args); },
+          update: async (args: { body: string }) => { recordWrite(); updates.push(args); pull.body = args.body; },
         },
         repos: {
           getCollaboratorPermissionLevel: async ({ username }: { username: string }) =>
             ({ data: { permission: 'write', user: { login: username, type: 'User' } } }),
-          getContent: async ({ path }: { path: string }) => ({
-            data: { type: 'file', content: Buffer.from(
-              fixture.payload.files.find(file => file.path === path)!.content,
-            ).toString('base64') },
-          }),
+          getContent: async ({ path }: { path: string }) => {
+            const content = path === '.squad/bootstrap-reset.json'
+              ? JSON.stringify(RESET) : fixture.payload.files.find(file => file.path === path)!.content;
+            return { data: { type: 'file', encoding: 'base64', size: Buffer.byteLength(content),
+              content: Buffer.from(content).toString('base64') } };
+          },
           compareCommitsWithBasehead: async () => ({
-            data: { files: fixture.payload.files.map(file => ({ filename: file.path })) },
+            data: {
+              files: fixture.payload.files.map(file => ({ filename: file.path })),
+              status: 'identical', base_commit: { sha: baseSha }, merge_base_commit: { sha: baseSha },
+            },
           }),
+        },
+        actions: {
+          getWorkflowRun: async () => ({ data: {
+            event: 'workflow_dispatch', path: '.github/workflows/squad-bootstrap.lock.yml',
+            repository: { full_name: 'octo/example' }, head_sha: baseSha, head_branch: 'main',
+            status: 'completed', conclusion: 'success',
+            actor: { login: 'maintainer', type: 'User' },
+            triggering_actor: { login: 'maintainer', type: 'User' },
+          } }),
         },
         issues: {
           listForRepo: async () => persistedIssues,
@@ -1383,15 +1399,12 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
       },
     };
     const failures: string[] = [];
-    const run = () => runScript(
-      github,
-      {
-        repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123,
-        eventName: fresh ? 'workflow_dispatch' : 'push', ref: 'refs/heads/main', actor: 'maintainer',
-        payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
-      },
-      { info: () => {}, warning: () => {}, setFailed: (message: string) => failures.push(message) },
-      { env: {
+    const context = {
+      repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123,
+      eventName: fresh ? 'workflow_dispatch' : 'push', ref: 'refs/heads/main', actor: 'maintainer',
+      payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
+    };
+    const runtimeEnv = {
         GITHUB_WORKSPACE: workspace,
         GH_AW_AGENT_OUTPUT: outputPath,
         GITHUB_SERVER_URL: 'https://github.com',
@@ -1400,11 +1413,16 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
         SQUAD_BOOTSTRAP_INSTALL_SHA: baseSha,
         SQUAD_BOOTSTRAP_RUN_ID: '123',
         SQUAD_BOOTSTRAP_FRESH_START: fresh ? RESET.id : '',
-      } },
+    };
+    const run = () => runScript(
+      github, context,
+      { info: () => {}, warning: () => {}, setFailed: (message: string) => failures.push(message) },
+      { env: runtimeEnv },
       captureCandidate,
     );
     return {
       run, github, issueCalls, commentCalls, updates, writesWithCandidate, failures, commitParents, publishedRefs,
+      context, runtimeEnv, persistedIssues, persistedComments, pull,
       candidate: () => candidate,
     };
   }
@@ -1447,6 +1465,80 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     expect(fixture.issueCalls).toHaveLength(1);
     expect(fixture.issueCalls[0].body).toContain('squad/bootstrap-cast-retry-1');
     expect(fixture.commentCalls).toEqual([]);
+  });
+
+  it('preserves the original authenticated dispatch through compiled push recovery', async () => {
+    const fixture = writerFixture('success', compileWorkflow(), true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    fixture.context.eventName = 'push';
+    fixture.context.runId = 456;
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_RUN_ID = '456';
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_FRESH_START = '';
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.updates.at(-1)!.body).toContain('"run_id":"123"');
+    expect(fixture.issueCalls.at(-1)!.body).toContain('"run_id":"123"');
+    expect(fixture.updates.at(-1)!.body).not.toContain('"run_id":"456"');
+  }, 180000);
+
+  it('refuses ordinary recovery of a generation PR without authenticated dispatch provenance', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    fixture.persistedComments.length = 0;
+    fixture.context.eventName = 'push';
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_FRESH_START = '';
+    await expect(fixture.run()).rejects.toThrow('original bot-authenticated dispatch provenance');
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.issueCalls).toHaveLength(1);
+  });
+
+  it('recovers a manually opened generation from its signed dispatch fallback without rebinding the origin', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    fixture.persistedComments.length = 0;
+    fixture.pull.user = { login: 'maintainer', type: 'User' };
+    const date = '2026-10-08T00:00:00Z';
+    Object.assign(fixture.pull, { created_at: date });
+    const compareUrl = buildBootstrapPrFallbackCompareUrl({
+      repository: 'octo/example', baseBranch: 'main', headBranch: fixture.pull.head.ref,
+      title: fixture.pull.title,
+    });
+    fixture.persistedIssues.push(Object.assign({
+      number: 7, state: 'open', title: BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
+      body: bootstrapPrFallbackIssueMarker(fixture.pull.head.ref) + '\n' + buildBootstrapPrFallbackProvenanceLine({
+        repository: 'octo/example', runId: '123', baseBranch: 'main', baseSha,
+        headBranch: fixture.pull.head.ref, headSha: castSha, compareUrl,
+      }),
+    }, { user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: date, updated_at: date }));
+    fixture.context.eventName = 'push';
+    fixture.context.runId = 456;
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_RUN_ID = '456';
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_FRESH_START = '';
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls.at(-1)!.body).toContain('"run_id":"123"');
+  });
+
+  it('permits an authenticated rerun of the origin but refuses another run promoting a failed origin', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    const getRun = fixture.github.rest.actions.getWorkflowRun;
+    fixture.github.rest.actions.getWorkflowRun = async () => {
+      const result = await getRun();
+      result.data.status = 'in_progress';
+      result.data.conclusion = '';
+      return result;
+    };
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    fixture.persistedIssues.length = 0;
+    fixture.context.runId = 456;
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_RUN_ID = '456';
+    await expect(fixture.run()).rejects.toThrow('trust root');
   });
 
   it('rejects a bot rerun actor in the executable writer before publishing anything', async () => {

@@ -178,7 +178,7 @@ pre-agent-steps:
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "a279cd5c4adeb613ceb90c1bfbb9818265aeb6bc8986e2e3799e96f7c2d787e5"
       check_hash "$cast_validator" "c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
-      check_hash "$bootstrap_validator" "21a4f8d5a05fea0d058de6a020cd2844795172e48694de1bab1ef86019141dd0"
+      check_hash "$bootstrap_validator" "ac969d1cc92353219ba312d0d9af8702b1a7a569b4e8d5c79ae71e4aa020aad6"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
@@ -209,6 +209,7 @@ safe-outputs:
         contents: write
         issues: write
         pull-requests: write
+        actions: read
       inputs:
         payload_encoding:
           description: Fixed bootstrap payload encoding; must be base64.
@@ -454,6 +455,7 @@ safe-outputs:
                 };
 
                 let pullRequest = snapshot.state.pull_request;
+                const recoveringReset = reset && Boolean(pullRequest);
                 if (!pullRequest) {
                   if (reset) {
                     const liveBase = await github.rest.git.getRef({
@@ -632,7 +634,18 @@ safe-outputs:
                   ...context.repo,
                   pull_number: pullRequest.number,
                 })).data;
-                const provenance = {
+                const provenance = recoveringReset
+                  ? await stateModule.recoverBootstrapResetProvenance({
+                      reset, github,
+                      repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
+                      defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                      currentSha: context.sha, currentRunId: context.runId, resetAuthorized,
+                      pullRequest: pullRequestDetails, issues: snapshot.issues,
+                      comments: await github.paginate(github.rest.issues.listComments, {
+                        ...context.repo, issue_number: pullRequest.number, per_page: 100,
+                      }),
+                    })
+                  : {
                   schema: 1,
                   repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
                   run_id: process.env.SQUAD_BOOTSTRAP_RUN_ID,
@@ -640,8 +653,8 @@ safe-outputs:
                   cast_sha: pullRequestDetails.head.sha,
                 };
                 if (provenance.repository !== `${context.repo.owner}/${context.repo.repo}`
-                  || provenance.run_id !== String(context.runId)
-                  || provenance.install_sha !== context.sha
+                  || (!recoveringReset && (provenance.run_id !== String(context.runId)
+                    || provenance.install_sha !== context.sha))
                   || !/^[0-9a-f]{40}$/.test(provenance.install_sha)
                   || !/^[0-9a-f]{40}$/.test(provenance.cast_sha)
                   || pullRequestDetails.head.ref !== stateModule.BOOTSTRAP_BRANCH

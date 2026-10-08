@@ -197,7 +197,6 @@ async function trustedBootstrapEvent(get, repository, run, identity) {
   ));
   requireThat(JSON.stringify(recordedReset) === JSON.stringify(identity.reset),
     'bootstrap reset changed since the provenance run');
-  if (run.event === 'push') return true;
   if (run.event !== 'workflow_dispatch') return false;
   for (const actor of [run.actor, run.triggering_actor]) {
     requireThat(actor?.type === 'User' && typeof actor.login === 'string',
