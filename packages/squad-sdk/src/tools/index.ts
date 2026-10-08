@@ -16,6 +16,7 @@ import type { SquadTool, SquadToolResult } from '../adapter/types.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import { StateKeyConflictError, StateBackendUncertaintyError } from '../storage/storage-error.js';
 import type { SquadState } from '../state/squad-state.js';
 import { validateStateKey } from '../state-backend.js';
 import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
@@ -110,6 +111,11 @@ export interface StateDeleteRequest {
 
 export interface StateListRequest {
   dir?: string;
+}
+
+export interface StateCreateIfAbsentRequest {
+  key: string;
+  content: string;
 }
 
 export interface StatusQuery {
@@ -278,7 +284,16 @@ export function isMutableStateKey(key: string): boolean {
     kind === 'file' ? key === root : key.startsWith(`${root}/`) && (!pattern || pattern.test(key)));
 }
 
-function validateMutableStateToolKey(key: string): void {
+const BUILT_IN_AUDIT_TRAIL_KEYS = new Set([
+  'rai/audit-trail.md',
+  'fact-checker/audit-trail.md',
+]);
+
+function validateMutableStateToolKey(key: string, operation: 'write' | 'append' | 'delete' | 'create'): void {
+  if (BUILT_IN_AUDIT_TRAIL_KEYS.has(key)) {
+    if (operation === 'append') return;
+    throw new Error('Built-in audit trails are append-only. Use squad_state_append; existing evidence must not be overwritten or deleted.');
+  }
   if (!isMutableStateKey(key)) {
     throw new Error(
       'State mutations are limited to mutable runtime state (decisions, inbox, casting policy, logs, sessions, scratch files, agent history, and identity). The casting registry/history pair must only be changed through the atomic casting protocol. Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
@@ -708,7 +723,7 @@ export class ToolRegistry {
         }
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'write');
           this.storage.writeSync(path.join(this.squadRoot, key), args.content);
           return {
             textResultForLlm: `State written: ${key}`,
@@ -727,7 +742,7 @@ export class ToolRegistry {
 
     const stateAppend = defineTool<StateAppendRequest>({
       name: 'squad_state_append',
-      description: 'Append to mutable Squad state through the configured state backend. Always use this tool for mutable state when available. Keys are relative to .squad/; static config cannot be mutated through this tool.',
+      description: 'Append to mutable Squad state through the configured state backend, including the append-only rai/audit-trail.md and fact-checker/audit-trail.md evidence logs. Always use this tool for mutable state when available. Keys are relative to .squad/; static config cannot be mutated through this tool.',
       parameters: {
         type: 'object',
         properties: {
@@ -747,7 +762,7 @@ export class ToolRegistry {
         }
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'append');
           this.storage.appendSync(path.join(this.squadRoot, key), args.content);
           return {
             textResultForLlm: `State appended: ${key}`,
@@ -777,7 +792,7 @@ export class ToolRegistry {
       handler: async (args) => {
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'delete');
           this.storage.deleteSync(path.join(this.squadRoot, key));
           return {
             textResultForLlm: `State deleted: ${key}`,
@@ -1209,6 +1224,67 @@ export class ToolRegistry {
       },
     });
 
+    // squad_state_create_if_absent: Atomic create-if-absent
+    const stateCreateIfAbsent = defineTool<StateCreateIfAbsentRequest>({
+      name: 'squad_state_create_if_absent',
+      description: [
+        'Atomically create a mutable Squad state key only when it does not already exist.',
+        'Returns success to exactly one concurrent creator; all others receive a conflict error.',
+        'Never overwrites existing content.',
+        'Throws a typed conflict when the key already exists and a typed uncertainty error when the',
+        'outcome cannot be determined. Use squad_state_write for unconditional writes.',
+        'Keys are relative to .squad/; only mutable state keys are permitted.',
+      ].join(' '),
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'State key relative to .squad/' },
+          content: { type: 'string', description: 'Content to store if the key is absent' },
+        },
+        required: ['key', 'content'],
+      },
+      handler: async (args) => {
+        if ((args as unknown as Record<string, unknown>)['content'] == null ||
+            typeof (args as unknown as Record<string, unknown>)['content'] !== 'string') {
+          return {
+            textResultForLlm: 'Failed to create state: content is required and must be a string',
+            resultType: 'failure' as const,
+            error: 'content is required',
+          };
+        }
+        try {
+          const key = normalizeStateToolKey(args.key);
+          validateMutableStateToolKey(key, 'create');
+          await this.storage.createIfAbsent(path.join(this.squadRoot, key), args.content);
+          return {
+            textResultForLlm: `State created: ${key}`,
+            resultType: 'success',
+            toolTelemetry: { key },
+          };
+        } catch (error) {
+          if (error instanceof StateKeyConflictError) {
+            return {
+              textResultForLlm: `State key already exists (conflict): ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+              resultType: 'failure',
+              error: 'conflict',
+            };
+          }
+          if (error instanceof StateBackendUncertaintyError) {
+            return {
+              textResultForLlm: `State create outcome uncertain: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+              resultType: 'failure',
+              error: 'uncertainty',
+            };
+          }
+          return {
+            textResultForLlm: `Failed to create state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
     // Register all tools
     this.tools.set('squad_route', squadRoute);
     this.tools.set('squad_decide', squadDecide);
@@ -1218,6 +1294,7 @@ export class ToolRegistry {
     this.tools.set('squad_state_append', stateAppend);
     this.tools.set('squad_state_delete', stateDelete);
     this.tools.set('squad_state_list', stateList);
+    this.tools.set('squad_state_create_if_absent', stateCreateIfAbsent);
     this.tools.set('squad_state_health', stateHealth);
     this.tools.set('memory.classify', memoryClassify);
     this.tools.set('memory.write', memoryWrite);

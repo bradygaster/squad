@@ -193,7 +193,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/builtins/scribe-charter.md",
       "destination": ".github/workflows/shared/builtins/scribe-charter.md",
       "ownership": "manifest",
-      "sha256": "05a4f91b8bf0f573027f5d854939f014de63fd9ace72bd247a8551e5cc4a3619"
+      "sha256": "01ab375efa4d03b48ddfc51b43374b24646b521c24ac1b881113789f89926044"
     },
     {
       "path": "shared/builtins/ralph-charter.md",
@@ -209,7 +209,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/builtins/rai-charter.md",
       "destination": ".github/workflows/shared/builtins/rai-charter.md",
       "ownership": "manifest",
-      "sha256": "f5b6ee85d699d5051b8ee0421d19b5f89343d5efeecfe65330f126ad529add0f"
+      "sha256": "6d40c73cb6e797955358e29a804c18733991fa95fc0b8301cf0cdf80f3f19f58"
     },
     {
       "path": "shared/builtins/fact-checker-charter.md",
@@ -217,7 +217,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/builtins/fact-checker-charter.md",
       "destination": ".github/workflows/shared/builtins/fact-checker-charter.md",
       "ownership": "manifest",
-      "sha256": "ac627e305787c1c131fae6d86a95118095ee0a3507a813d83e847105fa1bd921"
+      "sha256": "66c38688ea60bb4808d4ae66eda3cbda5e54fb1e351d1be87985751e1fe849fa"
     }
   ],
   "skills": [

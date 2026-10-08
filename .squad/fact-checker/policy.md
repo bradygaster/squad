@@ -67,9 +67,12 @@ high-risk work has at most a primary gate plus one orthogonal specialist gate.
 
 ## State
 
-Return findings in the current review response. Do not create histories, audit trails, verification
-logs, proposals, or decision-inbox entries. The coordinator records an accepted durable decision
-only when required by the current state contract.
+Return findings in the current review response and append verification verdicts and DA brief
+evidence to `.squad/fact-checker/audit-trail.md` with `squad_state_append` when available. Keep
+entries succinct: verdict + citation, never raw source material. Never overwrite or delete prior
+entries; corrections go in a new entry referencing the original. Do not create histories, other
+verification logs, proposals, or decision-inbox entries. The coordinator records an accepted durable
+decision only when required by the current state contract.
 
 ## Integration with Reviewer Rejection Protocol
 
