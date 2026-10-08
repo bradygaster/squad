@@ -289,7 +289,7 @@ const BUILT_IN_AUDIT_TRAIL_KEYS = new Set([
   'fact-checker/audit-trail.md',
 ]);
 
-function validateMutableStateToolKey(key: string, operation: 'write' | 'append' | 'delete'): void {
+function validateMutableStateToolKey(key: string, operation: 'write' | 'append' | 'delete' | 'create'): void {
   if (BUILT_IN_AUDIT_TRAIL_KEYS.has(key)) {
     if (operation === 'append') return;
     throw new Error('Built-in audit trails are append-only. Use squad_state_append; existing evidence must not be overwritten or deleted.');
@@ -1254,7 +1254,7 @@ export class ToolRegistry {
         }
         try {
           const key = normalizeStateToolKey(args.key);
-          validateMutableStateToolKey(key);
+          validateMutableStateToolKey(key, 'create');
           await this.storage.createIfAbsent(path.join(this.squadRoot, key), args.content);
           return {
             textResultForLlm: `State created: ${key}`,
