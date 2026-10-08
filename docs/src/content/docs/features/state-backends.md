@@ -291,11 +291,11 @@ The check-then-write pattern above has a TOCTOU race; `createIfAbsent` closes it
 
 ### Version
 
-`createIfAbsent` and the `squad_state_create_if_absent` MCP tool first ship in
-`@bradygaster/squad-sdk` and `@bradygaster/squad-cli` **0.14.0** (the next minor
-release after 0.13.1). Consumers pinned to `0.12.0` or `0.13.x` must upgrade the
-pin to `0.14.0`, add `squad_state_create_if_absent` to their MCP tool allowlist,
-and restart the state MCP server before the tool appears in `tools/list`.
+`createIfAbsent` and the `squad_state_create_if_absent` MCP tool ship in the
+first release containing this changeset. Consumers must upgrade both
+`@bradygaster/squad-sdk` and `@bradygaster/squad-cli` to that release, add
+`squad_state_create_if_absent` to their MCP tool allowlist, and restart the
+state MCP server before the tool appears in `tools/list`.
 
 ---
 ## Security
@@ -489,7 +489,7 @@ SQUAD_SYNC_ACTIVE=1 git commit -m "manual state repair"
 git checkout --orphan squad-state
 git rm -rf .
 mkdir .squad && echo "# Squad State" > .squad/README.md
-git add .squad/ && git commit -m "init: squad-state orphan branch"
+git add .squad/README.md && git commit -m "init: squad-state orphan branch"
 git checkout main
 ```
 Scribe will auto-create it on the next session if it doesn't exist (via git plumbing: `mktree`, `commit-tree`, `update-ref`).

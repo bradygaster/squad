@@ -422,7 +422,14 @@ export class WorktreeBackend implements StateBackend {
     }
     try {
       const buf = Buffer.from(content, 'utf-8');
-      fsWriteSync(fd, buf);
+      let offset = 0;
+      while (offset < buf.length) {
+        const written = fsWriteSync(fd, buf, offset, buf.length - offset);
+        if (written === 0) {
+          throw new Error('write returned zero bytes before the buffer was complete');
+        }
+        offset += written;
+      }
     } catch (writeErr: unknown) {
       // Write failed after exclusive open: clean up the empty file so the key
       // does not appear to exist with partial/empty content.

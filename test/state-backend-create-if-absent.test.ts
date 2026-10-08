@@ -12,10 +12,11 @@
  *   - FSStorageProvider and InMemoryStorageProvider behave correctly.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   WorktreeBackend,
@@ -36,24 +37,94 @@ import { clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js'
 const TMP = join(process.cwd(), `.test-cia-${randomBytes(4).toString('hex')}`);
 const TMP2 = join(process.cwd(), `.test-cia2-${randomBytes(4).toString('hex')}`);
 
-function git(args: string, cwd: string): string {
-  return execSync(`git ${args}`, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+function git(args: string[], cwd: string): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
 function initRepo(dir: string): void {
   mkdirSync(dir, { recursive: true });
-  git('init', dir);
-  git('config user.email "test@test.com"', dir);
-  git('config user.name "Test"', dir);
+  git(['init'], dir);
   writeFileSync(join(dir, 'README.md'), '# test\n');
-  git('add .', dir);
-  git('commit -m "init"', dir);
+  git(['add', 'README.md'], dir);
+  git(['-c', 'user.name=Test', '-c', 'user.email=test', 'commit', '-m', 'init'], dir);
 }
 
 function cleanup(...dirs: string[]): void {
   for (const d of dirs) {
     if (existsSync(d)) rmSync(d, { recursive: true, force: true });
   }
+}
+
+type GitBackendName = 'git-notes' | 'orphan' | 'two-layer';
+
+async function runConcurrentGitCreators(
+  repoRoot: string,
+  backendName: GitBackendName,
+  key: string,
+): Promise<string[]> {
+  const modulePath = join(process.cwd(), 'packages/squad-sdk/src/state-backend.ts');
+  const moduleUrl = pathToFileURL(modulePath).href;
+  const loaderPath = join(process.cwd(), 'test/helpers/typescript-source-loader.mjs');
+  const barrierPrefix = join(repoRoot, `.create-barrier-${randomBytes(4).toString('hex')}`);
+  const script = `
+      import { GitNotesBackend, OrphanBranchBackend, TwoLayerBackend } from ${JSON.stringify(moduleUrl)};
+      import { existsSync, writeFileSync } from 'node:fs';
+      const [repoRoot, backendName, key, content, readyPath, peerReadyPath] = process.argv.slice(1);
+      const backends = {
+        'git-notes': GitNotesBackend,
+        orphan: OrphanBranchBackend,
+        'two-layer': TwoLayerBackend,
+      };
+      const Backend = backends[backendName];
+      writeFileSync(readyPath, '');
+      const deadline = Date.now() + 10_000;
+      while (!existsSync(peerReadyPath)) {
+        if (Date.now() >= deadline) throw new Error('concurrency barrier timed out');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      }
+      try {
+        new Backend(repoRoot).createIfAbsent(key, content);
+        process.stdout.write('success');
+      } catch (error) {
+        process.stdout.write(error instanceof Error ? error.name : 'unknown');
+      }
+    `;
+
+  const runChild = (id: string, peerId: string): Promise<string> => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      '--experimental-loader',
+      loaderPath,
+      '--input-type=module',
+      '-e',
+      script,
+      repoRoot,
+      backendName,
+      key,
+      `writer-${id}\n`,
+      `${barrierPrefix}-${id}`,
+      `${barrierPrefix}-${peerId}`,
+    ], {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test',
+        GIT_AUTHOR_EMAIL: 'test',
+        GIT_COMMITTER_NAME: 'Test',
+        GIT_COMMITTER_EMAIL: 'test',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += String(chunk); });
+    child.stderr.on('data', chunk => { stderr += String(chunk); });
+    child.once('error', reject);
+    child.once('exit', code => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${backendName} child exited ${code}: ${stderr}`));
+    });
+  });
+
+  return Promise.all([runChild('1', '2'), runChild('2', '1')]);
 }
 
 // ── WorktreeBackend ──────────────────────────────────────────────────────────
@@ -80,6 +151,13 @@ describe('WorktreeBackend.createIfAbsent', () => {
       .toThrow(StateKeyConflictError);
     // original content preserved
     expect(b.read('sessions/alpha.md')).toBe('# Original\n');
+  });
+
+  it('persists large payloads without truncation', () => {
+    const b = new WorktreeBackend(squadDir());
+    const content = `${'atomic-state-content\n'.repeat(250_000)}done\n`;
+    b.createIfAbsent('sessions/large.md', content);
+    expect(b.read('sessions/large.md')).toBe(content);
   });
 
   it('exactly one of two independent instances succeeds (concurrent create)', () => {
@@ -137,24 +215,10 @@ describe('GitNotesBackend.createIfAbsent', { timeout: 30_000 }, () => {
     expect(b.read('sessions/beta.md')).toBe('# Original\n');
   });
 
-  it('exactly one of two sequential instances succeeds (concurrent create)', () => {
-    const b1 = new GitNotesBackend(TMP);
-    const b2 = new GitNotesBackend(TMP);
-    let successes = 0;
-    let conflicts = 0;
-    for (const b of [b1, b2]) {
-      try {
-        b.createIfAbsent('sessions/notes-race.md', `writer-${successes + conflicts}\n`);
-        successes++;
-      } catch (e) {
-        if (e instanceof StateKeyConflictError) conflicts++;
-        else throw e;
-      }
-    }
-    expect(successes).toBe(1);
-    expect(conflicts).toBe(1);
-    const content = b1.read('sessions/notes-race.md');
-    expect(typeof content).toBe('string');
+  it('exactly one of two concurrent processes succeeds', async () => {
+    const outcomes = await runConcurrentGitCreators(TMP, 'git-notes', 'sessions/notes-race.md');
+    expect(outcomes.sort()).toEqual(['StateKeyConflictError', 'success']);
+    expect(new GitNotesBackend(TMP).read('sessions/notes-race.md')).toMatch(/^writer-/);
   });
 
   it('repository isolation: different repos do not conflict', () => {
@@ -190,24 +254,10 @@ describe('OrphanBranchBackend.createIfAbsent', { timeout: 30_000 }, () => {
     expect(b.read('sessions/gamma.md')).toBe('# Original\n');
   });
 
-  it('exactly one of two sequential instances succeeds (concurrent create)', () => {
-    const b1 = new OrphanBranchBackend(TMP);
-    const b2 = new OrphanBranchBackend(TMP);
-    let successes = 0;
-    let conflicts = 0;
-    for (const b of [b1, b2]) {
-      try {
-        b.createIfAbsent('sessions/orphan-race.md', `writer-${successes + conflicts}\n`);
-        successes++;
-      } catch (e) {
-        if (e instanceof StateKeyConflictError) conflicts++;
-        else throw e;
-      }
-    }
-    expect(successes).toBe(1);
-    expect(conflicts).toBe(1);
-    const content = b1.read('sessions/orphan-race.md');
-    expect(typeof content).toBe('string');
+  it('exactly one of two concurrent processes succeeds', async () => {
+    const outcomes = await runConcurrentGitCreators(TMP, 'orphan', 'sessions/orphan-race.md');
+    expect(outcomes.sort()).toEqual(['StateKeyConflictError', 'success']);
+    expect(new OrphanBranchBackend(TMP).read('sessions/orphan-race.md')).toMatch(/^writer-/);
   });
 
   it('repository isolation: different repos do not conflict', () => {
@@ -257,22 +307,10 @@ describe('TwoLayerBackend.createIfAbsent', { timeout: 30_000 }, () => {
     expect(b.read('sessions/delta.md')).toBe('# Original\n');
   });
 
-  it('exactly one of two sequential instances succeeds (concurrent create)', () => {
-    const b1 = new TwoLayerBackend(TMP);
-    const b2 = new TwoLayerBackend(TMP);
-    let successes = 0;
-    let conflicts = 0;
-    for (const b of [b1, b2]) {
-      try {
-        b.createIfAbsent('sessions/two-layer-race.md', `writer-${successes + conflicts}\n`);
-        successes++;
-      } catch (e) {
-        if (e instanceof StateKeyConflictError) conflicts++;
-        else throw e;
-      }
-    }
-    expect(successes).toBe(1);
-    expect(conflicts).toBe(1);
+  it('exactly one of two concurrent processes succeeds', async () => {
+    const outcomes = await runConcurrentGitCreators(TMP, 'two-layer', 'sessions/two-layer-race.md');
+    expect(outcomes.sort()).toEqual(['StateKeyConflictError', 'success']);
+    expect(new TwoLayerBackend(TMP).read('sessions/two-layer-race.md')).toMatch(/^writer-/);
   });
 
   it('fail-closed: throws StateBackendUncertaintyError when notes already has the key but orphan does not', () => {
@@ -463,6 +501,23 @@ describe('SQLiteStorageProvider.createIfAbsent', { timeout: 30_000 }, () => {
       r => r.status === 'rejected' && r.reason instanceof StateKeyConflictError,
     )).toHaveLength(1);
     expect(['writer-1\n', 'writer-2\n']).toContain(await db.read('sessions/race.md'));
+  });
+
+  it('surfaces persistence failures as typed uncertainty', async () => {
+    const db = new SQLiteStorageProvider(join(TMP, 'uncertain.db'));
+    await db.init();
+    const persist = vi.spyOn(
+      db as unknown as { persist(): void },
+      'persist',
+    ).mockImplementationOnce(() => {
+      const error = new Error('disk full') as NodeJS.ErrnoException;
+      error.code = 'ENOSPC';
+      throw error;
+    });
+
+    await expect(db.createIfAbsent('sessions/uncertain.md', '# Payload\n'))
+      .rejects.toThrow(StateBackendUncertaintyError);
+    persist.mockRestore();
   });
 });
 

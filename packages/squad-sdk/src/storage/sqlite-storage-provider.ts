@@ -2,7 +2,7 @@ import { posix } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync as fsMkdirSync, renameSync } from 'fs';
 import { dirname } from 'path';
 import type { StorageProvider, StorageStats } from './storage-provider.js';
-import { StateKeyConflictError } from './storage-error.js';
+import { StateBackendUncertaintyError, StateKeyConflictError } from './storage-error.js';
 
 // sql.js types — loaded dynamically
 type SqlJsStatic = typeof import('sql.js');
@@ -149,7 +149,15 @@ export class SQLiteStorageProvider implements StorageProvider {
     if (db.getRowsModified() === 0) {
       throw new StateKeyConflictError(filePath);
     }
-    this.persist();
+    try {
+      this.persist();
+    } catch (persistErr: unknown) {
+      const code = (persistErr as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      throw new StateBackendUncertaintyError(
+        'sqlite:createIfAbsent',
+        `insert succeeded in memory but persistence failed for "${filePath}" (${code})`,
+      );
+    }
   }
 
   async read(filePath: string): Promise<string | undefined> {

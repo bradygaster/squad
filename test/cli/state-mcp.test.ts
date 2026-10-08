@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -15,19 +15,17 @@ type JsonRpcMessage = {
   error?: { code: number; message: string };
 };
 
-function git(args: string): string {
-  return execSync(`git ${args}`, { cwd: TMP, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+function git(args: string[]): string {
+  return execFileSync('git', args, { cwd: TMP, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
 function initSquad(stateBackend: 'orphan' | 'two-layer'): void {
   mkdirSync(join(TMP, '.squad'), { recursive: true });
   writeFileSync(join(TMP, '.squad', 'config.json'), JSON.stringify({ stateBackend }, null, 2));
   writeFileSync(join(TMP, 'README.md'), '# state mcp test\n');
-  git('init');
-  git('config user.email "test@test.com"');
-  git('config user.name "Test"');
-  git('add README.md .squad/config.json');
-  git('commit -m "init"');
+  git(['init']);
+  git(['add', 'README.md', '.squad/config.json']);
+  git(['-c', 'user.name=Test', '-c', 'user.email=test', 'commit', '-m', 'init']);
 }
 
 function resultAsRecord(message: JsonRpcMessage): Record<string, unknown> {
@@ -45,6 +43,23 @@ describe('state-mcp bridge', () => {
   afterEach(() => {
     clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it('reports the installed CLI package version during initialization', async () => {
+    initSquad('two-layer');
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+    const cliPackage = JSON.parse(
+      readFileSync(join(process.cwd(), 'packages/squad-cli/package.json'), 'utf8'),
+    ) as { version: string };
+
+    await session.handleRequest({ jsonrpc: '2.0', id: 'initialize', method: 'initialize' });
+
+    const result = resultAsRecord(messages[0]!);
+    expect(result['serverInfo']).toEqual({
+      name: 'squad-state',
+      version: cliPackage.version,
+    });
   });
 
   it('lists Squad state tools for MCP clients', async () => {
@@ -184,7 +199,7 @@ describe('state-mcp bridge', () => {
         expect(existsSync(join(TMP, '.squad', ...key.split('/')))).toBe(false);
       }
 
-      expect(git('status --porcelain')).toBe('');
+      expect(git(['status', '--porcelain'])).toBe('');
     },
     30_000,
   );

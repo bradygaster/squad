@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { resolveSquadState } from '@bradygaster/squad-sdk';
 import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
+import { getPackageVersion } from '../core/version.js';
 
 export type JsonRpcRequest = {
   jsonrpc?: string;
@@ -21,7 +22,7 @@ type JsonRpcResponse = {
 
 const SERVER_INFO = {
   name: 'squad-state',
-  version: '0.1.0',
+  version: getPackageVersion(),
 };
 
 const MCP_TOOL_ALIASES: Record<string, string> = {
