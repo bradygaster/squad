@@ -63,9 +63,11 @@ describe('fact-checker charter template', () => {
     expect(content).toContain('❌ Contradicted');
   });
 
-  it('defines when the agent is triggered', () => {
+  it('defines bounded activation instead of automatic review fan-out', () => {
     const content = readFileSync(templatePath, 'utf-8');
-    expect(content).toContain('## When I\'m Triggered');
-    expect(content).toContain('fact-check');
+    expect(content).toContain('## Activation');
+    expect(content).toContain('Explicit user request');
+    expect(content).toContain('There is no automatic pre-publish, post-research, or routing-triggered review.');
+    expect(content).toContain('at most two high-risk gates');
   });
 });

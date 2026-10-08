@@ -30,7 +30,8 @@ export type SquadOperationalEvent =
   | 'session:tool_call'
   | 'agent:milestone'
   | 'coordinator:routing'
-  | 'pool:health';
+  | 'pool:health'
+  | 'context:utilization';
 
 /**
  * All event types supported by the event bus.

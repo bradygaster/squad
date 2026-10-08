@@ -261,27 +261,33 @@ function normalizeStateToolDir(dir?: string): string {
   return normalized;
 }
 
-const MUTABLE_CASTING_STATE_KEYS = new Set([
-  'casting/policy.json',
-  'casting/registry.json',
-  'casting/history.json',
-]);
+/**
+ * State paths, relative to the squad dir, that the state tools may write.
+ * `root` is a file or the directory to search; `pattern`, when set, is the
+ * only key shape allowed under that directory.
+ */
+export const MUTABLE_STATE_PATHS: ReadonlyArray<{ readonly root: string; readonly kind: 'file' | 'dir'; readonly pattern?: RegExp }> = [
+  { root: 'decisions.md', kind: 'file' },
+  { root: 'decisions/inbox', kind: 'dir' },
+  { root: 'casting/policy.json', kind: 'file' },
+  { root: 'agents', kind: 'dir', pattern: /^agents\/[a-zA-Z0-9_-]+\/history\.md$/ },
+  { root: 'log', kind: 'dir' },
+  { root: 'orchestration-log', kind: 'dir' },
+  { root: 'sessions', kind: 'dir' },
+  { root: '.scratch', kind: 'dir' },
+  { root: 'identity', kind: 'dir' },
+];
+
+/** True when the state tools may write `key` (a normalized, `/`-separated state key). */
+export function isMutableStateKey(key: string): boolean {
+  return MUTABLE_STATE_PATHS.some(({ root, kind, pattern }) =>
+    kind === 'file' ? key === root : key.startsWith(`${root}/`) && (!pattern || pattern.test(key)));
+}
 
 function validateMutableStateToolKey(key: string): void {
-  const isMutable =
-    key === 'decisions.md' ||
-    key.startsWith('decisions/inbox/') ||
-    MUTABLE_CASTING_STATE_KEYS.has(key) ||
-    /^agents\/[a-zA-Z0-9_-]+\/history\.md$/.test(key) ||
-    key.startsWith('log/') ||
-    key.startsWith('orchestration-log/') ||
-    key.startsWith('sessions/') ||
-    key.startsWith('.scratch/') ||
-    key.startsWith('identity/');
-
-  if (!isMutable) {
+  if (!isMutableStateKey(key)) {
     throw new Error(
-      'State mutations are limited to mutable runtime state (decisions, inbox, casting policy/registry/history, logs, sessions, scratch files, agent history, and identity). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
+      'State mutations are limited to mutable runtime state (decisions, inbox, casting policy, logs, sessions, scratch files, agent history, and identity). The casting registry/history pair must only be changed through the atomic casting protocol. Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
     );
   }
 }

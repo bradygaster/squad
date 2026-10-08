@@ -94,7 +94,7 @@ jobs:
         id: leakage
         run: |
           git fetch origin dev --quiet
-          OUTPUT=$(node scripts/check-squad-leakage.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
+          OUTPUT=$(node scripts/check-squad-leakage.mjs origin/dev ${{ github.event.pull_request.head.sha }})
           echo "$OUTPUT"
           echo "result<<EOF" >> "$GITHUB_OUTPUT"
           echo "$OUTPUT" >> "$GITHUB_OUTPUT"

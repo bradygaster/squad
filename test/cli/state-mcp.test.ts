@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createStateMcpSession } from '../../packages/squad-cli/src/cli/commands/state-mcp.js';
@@ -142,18 +142,18 @@ describe('state-mcp bridge', () => {
   });
 
   it.each(['orphan', 'two-layer'] as const)(
-    'writes all casting runtime state keys through the %s backend',
+    'writes casting policy but rejects individual casting pair writes through the %s backend',
     async (stateBackend) => {
       initSquad(stateBackend);
       const messages: JsonRpcMessage[] = [];
       const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
       const castingState = [
-        ['casting/policy.json', '{"mode":"auto"}\n'],
-        ['casting/registry.json', '{"agents":{}}\n'],
-        ['casting/history.json', '{"events":[]}\n'],
+        ['casting/policy.json', '{"mode":"auto"}\n', false],
+        ['casting/registry.json', '{"agents":{}}\n', true],
+        ['casting/history.json', '{"events":[]}\n', true],
       ] as const;
 
-      for (const [key, content] of castingState) {
+      for (const [key, content, rejected] of castingState) {
         const writeIndex = messages.length;
         await session.handleRequest({
           jsonrpc: '2.0',
@@ -164,7 +164,7 @@ describe('state-mcp bridge', () => {
             arguments: { key, content },
           },
         });
-        expect(resultAsRecord(messages[writeIndex]!)['isError']).not.toBe(true);
+        expect(resultAsRecord(messages[writeIndex]!)['isError']).toBe(rejected);
 
         const readIndex = messages.length;
         await session.handleRequest({
@@ -176,7 +176,11 @@ describe('state-mcp bridge', () => {
             arguments: { key },
           },
         });
-        expect(resultAsRecord(messages[readIndex]!)['content']).toEqual([{ type: 'text', text: content }]);
+        if (rejected) {
+          expect(resultAsRecord(messages[readIndex]!)['isError']).toBe(true);
+        } else {
+          expect(resultAsRecord(messages[readIndex]!)['content']).toEqual([{ type: 'text', text: content }]);
+        }
         expect(existsSync(join(TMP, '.squad', ...key.split('/')))).toBe(false);
       }
 
@@ -184,4 +188,30 @@ describe('state-mcp bridge', () => {
     },
     30_000,
   );
+
+  it("writes linked-team decisions inside the team's .squad dir when teamRoot names the team repo (#2107)", async () => {
+    const projectSquad = join(TMP, 'project', '.squad');
+    const teamSquad = join(TMP, 'team', '.squad');
+    mkdirSync(projectSquad, { recursive: true });
+    mkdirSync(teamSquad, { recursive: true });
+    writeFileSync(join(projectSquad, 'config.json'), JSON.stringify({ version: 1, teamRoot: '../team' }));
+    writeFileSync(join(teamSquad, 'team.md'), '# Team\n');
+
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(join(TMP, 'project'), message => messages.push(message as JsonRpcMessage));
+    await session.handleRequest({
+      jsonrpc: '2.0',
+      id: 'decide',
+      method: 'tools/call',
+      params: {
+        name: 'squad_decide',
+        arguments: { author: 'test-agent', summary: 'Linked team decision', body: 'Written through state-mcp.' },
+      },
+    });
+
+    expect(resultAsRecord(messages[0]!)['isError'], 'teamRoot=../team').not.toBe(true);
+    const inbox = join(teamSquad, 'decisions', 'inbox');
+    expect(existsSync(inbox) ? readdirSync(inbox).length : 0, `teamRoot=../team: no decision in ${inbox}`).toBeGreaterThan(0);
+    expect(existsSync(join(TMP, 'team', 'decisions')), 'teamRoot=../team: decision written outside .squad').toBe(false);
+  });
 });

@@ -5,8 +5,6 @@ description: Three-tier agent memory model that cuts spawn context cost by 20-55
 
 # Tiered Memory — Hot / Cold / Wiki
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Problem:** Squad agents load their full `history.md` on every spawn. Production measurements show 34–74KB payloads per agent (8.8K–18.5K tokens), with 82–96% of that being "old noise" — context the current task doesn't need.
 
 **Solution:** A three-tier memory model that loads only what each task actually requires, achieving 20–55% context reduction per spawn.

@@ -113,8 +113,8 @@ describe('Next/Prev page navigation', () => {
 
 // 9. richer frontmatter
 describe('Richer frontmatter schema', () => {
-  it('config.ts adds optional tags, author, updatedAt, status fields', () => {
-    const config = fs.readFileSync(path.join(SRC, 'content', 'config.ts'), 'utf-8');
+  it('content.config.ts adds optional tags, author, updatedAt, status fields', () => {
+    const config = fs.readFileSync(path.join(SRC, 'content.config.ts'), 'utf-8');
     assert.ok(config.includes('tags'), 'docs schema should include tags');
     assert.ok(config.includes('author'), 'docs schema should include author');
     assert.ok(config.includes('updatedAt'), 'docs schema should include updatedAt');
@@ -128,12 +128,12 @@ describe('Richer frontmatter schema', () => {
 
 // 10. view transitions
 describe('View Transitions', () => {
-  it('BaseLayout.astro imports ViewTransitions from astro:transitions', () => {
+  it('BaseLayout.astro imports ClientRouter from astro:transitions', () => {
     const layout = fs.readFileSync(path.join(SRC, 'layouts', 'BaseLayout.astro'), 'utf-8');
-    assert.ok(layout.includes('ViewTransitions') && layout.includes('astro:transitions'), 'BaseLayout should import ViewTransitions from astro:transitions');
+    assert.ok(layout.includes('ClientRouter') && layout.includes('astro:transitions'), 'BaseLayout should import ClientRouter from astro:transitions');
   });
-  it('BaseLayout.astro renders <ViewTransitions /> in the <head>', () => {
+  it('BaseLayout.astro renders <ClientRouter /> in the <head>', () => {
     const layout = fs.readFileSync(path.join(SRC, 'layouts', 'BaseLayout.astro'), 'utf-8');
-    assert.ok(layout.includes('<ViewTransitions />') || layout.includes('<ViewTransitions/>'), 'BaseLayout should render <ViewTransitions />');
+    assert.ok(layout.includes('<ClientRouter />') || layout.includes('<ClientRouter/>'), 'BaseLayout should render <ClientRouter />');
   });
 });

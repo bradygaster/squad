@@ -545,20 +545,41 @@ describe('CLI: upgrade command', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('ensureCastingDefaults does not overwrite existing files', () => {
+  it('ensureCastingDefaults fails closed on a registry without its history pair', () => {
     const dir = join(TEST_ROOT, 'casting-defaults-existing');
     const castingDir = join(dir, '.squad', 'casting');
     mkdirSync(castingDir, { recursive: true });
     writeFileSync(join(castingDir, 'registry.json'), '{"agents":{"custom":true}}');
-    const created = ensureCastingDefaults(dir);
-    // registry.json should NOT be in created (already exists)
-    expect(created).not.toContain('.squad/casting/registry.json');
-    // policy.json and history.json should be created
-    expect(created).toContain('.squad/casting/policy.json');
-    expect(created).toContain('.squad/casting/history.json');
-    // Existing file should be preserved
+    expect(() => ensureCastingDefaults(dir)).toThrow(/exactly one authoritative file exists/);
+    expect(readFileSync(join(castingDir, 'registry.json'), 'utf8'))
+      .toBe('{"agents":{"custom":true}}');
+    expect(existsSync(join(castingDir, 'history.json'))).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureCastingDefaults migrates a valid generationless legacy pair', () => {
+    const dir = join(TEST_ROOT, 'casting-defaults-legacy');
+    const castingDir = join(dir, '.squad', 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(join(castingDir, 'registry.json'), JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-09-21T00:00:00.000Z',
+      agents: {},
+    }) + '\n');
+    writeFileSync(join(castingDir, 'history.json'), JSON.stringify({
+      assignment_cast_snapshots: {},
+      universe_usage_history: [],
+    }) + '\n');
+
+    ensureCastingDefaults(dir);
+
     const registry = JSON.parse(readFileSync(join(castingDir, 'registry.json'), 'utf8'));
-    expect(registry.agents.custom).toBe(true);
+    const history = JSON.parse(readFileSync(join(castingDir, 'history.json'), 'utf8'));
+    expect(registry.transaction_id).toBe(history.transaction_id);
+    expect(history.registry_revision).toBe(registry.revision);
+    expect(existsSync(join(castingDir, 'registry-history.commit.json'))).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });
 

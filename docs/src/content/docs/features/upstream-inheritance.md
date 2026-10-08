@@ -1,7 +1,5 @@
 # Upstream Inheritance
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Upstream inheritance lets you declare external Squad sources (from repositories, local directories, or exports) and automatically inherit their context at session start. Share practices across teams, organizations, and projects without duplicating configuration.
 
 ## How it works

@@ -1,8 +1,5 @@
 # Work Routing
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to set domain-specific routing:**
 ```
 Route all database-related work to Basher

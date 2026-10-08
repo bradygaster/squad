@@ -1,0 +1,34 @@
+{
+  "schema": "https://bradygaster.github.io/squad/schemas/implementation-provenance/v1",
+  "schema_version": "1",
+  "producer": "squad",
+  "repository": "octo/example",
+  "origin_issue": 42,
+  "implementation_session_id": "squad-implementation-session/v1/12345/67890",
+  "session_origin": {
+    "repository": "octo/example",
+    "workflow": ".github/workflows/squad.lock.yml",
+    "run_id": 67890,
+    "run_attempt": 1
+  },
+  "workflow_run": {
+    "repository": "octo/example",
+    "workflow": ".github/workflows/squad-implement-worker.lock.yml",
+    "run_id": 70001,
+    "run_attempt": 1,
+    "event": "workflow_dispatch"
+  },
+  "pull_request": {
+    "repository": "octo/example",
+    "number": 101,
+    "head_ref": "squad/implement-42-example"
+  },
+  "goals": [
+    {
+      "repository": "octo/example",
+      "issue": 42,
+      "relationship": "closes"
+    }
+  ],
+  "replaces": []
+}

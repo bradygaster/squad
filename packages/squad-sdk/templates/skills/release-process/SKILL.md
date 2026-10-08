@@ -44,6 +44,22 @@ Configure these GitHub Actions secrets:
 - `WINGET_CREATE_GITHUB_TOKEN`: a classic GitHub PAT with `public_repo`, owned
   by the account that maintains `tamirdresher/winget-pkgs`.
 
+## Human release-trigger boundary
+
+Agents may prepare versions, run validation, and recommend exact commands, but
+agents must never execute or dispatch live publication, promotion, or recovery
+workflows. Only a human executes the real trigger for these live workflows:
+`squad-release.yml`, `squad-agents-ai-release.yml`, `squad-insider-publish.yml`,
+`squad-promote.yml` with `dry_run=false`, `squad-version-promote.yml`,
+`squad-npm-publish.yml`, or `squad-standalone-release.yml`.
+Treat `squad-promote.yml --ref dev -f dry_run=true` as human-only too: the
+workflow still has `actions: write` and `contents: write`, checks out `dev`
+with the workflow token, installs dependencies, and runs the release build and
+tests. Do not describe any GitHub Actions release workflow as agent-safe once
+it has write-capable credentials or a dispatch path. Stop with verified
+commands and evidence for a human to run; human approval alone does not
+authorize an agent to fire the trigger.
+
 ## Prepare a release
 
 Verify `dev` and `main` share ancestry before changing versions:
@@ -71,9 +87,13 @@ This updates the root package, both workspaces, and the lockfile. Confirm:
 node -p "require('semver').valid('$VERSION')"
 grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
 grep -F "## [$VERSION]" CHANGELOG.md
-npm run build
+SKIP_BUILD_BUMP=1 npm run build
 npx vitest run
 ```
+
+The validation build must not mutate package versions or the lockfile; check
+`git diff -- package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+package-lock.json` afterward and stop if any version-only change appears.
 
 Release preparation lands through a normal PR to `dev`. Do not push directly to
 `main`.
@@ -84,6 +104,8 @@ Preview versions must contain a prerelease suffix, for example
 `0.14.0-preview.1`.
 
 After the release-preparation PR is merged and `dev` CI is green:
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 VERSION=0.14.0-preview.1
@@ -116,6 +138,8 @@ The same preview is available through `brew install --cask squad-preview` and
 
 Start an on-demand snapshot from `dev`:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 gh workflow run squad-insider-publish.yml --ref dev -f dry_run=false
 gh run watch
@@ -129,7 +153,7 @@ the `squad-insider` Homebrew cask, and opens or reuses the
 ## Publish a stable release
 
 Stable versions must be exactly `X.Y.Z`. Prepare and merge the stable version
-to `dev`, then optionally validate the sanitized merge without changing
+to `dev`, then human-only validate the sanitized merge without changing
 `main`:
 
 ```bash
@@ -137,7 +161,11 @@ gh workflow run squad-promote.yml --ref dev -f dry_run=true
 gh run watch
 ```
 
-Start the real promotion:
+Do not treat this as an agent-safe command. It still checks out `dev` with
+workflow credentials and runs repository build/test logic. Only a human should
+fire it. Start the real promotion:
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=false
@@ -198,6 +226,8 @@ immutable tag.
 
 Stable recovery:
 
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
+
 ```bash
 VERSION=0.14.0
 gh workflow run squad-npm-publish.yml --ref main \
@@ -207,6 +237,8 @@ gh workflow run squad-standalone-release.yml --ref main \
 ```
 
 Preview recovery:
+
+Human-only reference command: this live publish workflow must be run by a human. Agents must stop, hand off, and not execute it directly.
 
 ```bash
 VERSION=0.14.0-preview.1
