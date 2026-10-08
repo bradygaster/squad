@@ -14,16 +14,15 @@
  *    that believed the label reading would conclude a 50-issue activation (up to 100 label
  *    names) had overrun its budget, and could stop labeling early or batch issues together.
  *    This is agent self-truncation, and it was reachable at 80.
- * 2. **Neither enforcement layer fails the run.** Even when a cap is genuinely hit, the
- *    workflow run still concludes successfully, so nothing forces the truncation to
- *    surface. See below.
+ * 2. **Neither cap-enforcement layer fails the run by itself.** Even when a cap is
+ *    genuinely hit, truncation needs an explicit incomplete report to surface. See below.
  *
  * Note what is *not* claimed: at `max: 80`, 50 `add_labels` calls did **not** overflow the
  * operation cap. Runtime truncation was not reachable at the documented maximum. The cap
  * moves to 110 to defeat the misleading injected wording and to hold a bounded margin —
  * not to fix a proven 80-item overflow.
  *
- * ## Runtime semantics this suite is written against (gh-aw v0.87.10, the CI pin)
+ * ## Runtime semantics this suite is written against (gh-aw v0.89.22, the CI pin)
  *
  * **Cap enforcement is dual (Safe Outputs Specification MCE4) and neither half is fatal.**
  * Invocation time — `safe_outputs_handlers.cjs`, `enforcePerTypeMax` via
@@ -38,20 +37,17 @@
  * That is a JSON-RPC error the agent **does** observe. Collection time —
  * `collect_ndjson_output.cjs` — is the second half: a surplus item is dropped with
  * `continue` and reported via `core.warning`. Neither path calls `core.setFailed`, so the
- * run concludes successfully with label operations missing.
+ * run can conclude successfully with label operations missing unless incompletion is reported.
  *
  * `max` therefore caps **operations of that type**, not label names inside one call. One
  * `add_labels` call carrying two labels costs one unit of budget, not two.
  *
- * **`report_incomplete` does not turn the run red.** gh-aw's own tool description claims it
- * is "treated as a failure signal even when the agent exits successfully" — misleading in
- * precisely the way this issue is about. In the pinned runtime,
- * `report_incomplete_handler.cjs` emits `core.warning` only, and `handle_agent_failure.cjs`
- * contains no `core.setFailed` or `process.exit`: its "failure handling" opens or updates an
- * `[aw] {workflow} reported incomplete result` tracking issue/comment. That is a durable,
- * human-actionable record — it satisfies #1961's "explicit incomplete result" — but the run
- * conclusion stays green. No narrower supported mechanism in v0.87.10 makes it red, so the
- * workflow states that limitation rather than implying a failure it cannot produce.
+ * **`report_incomplete` fails the conclusion step.** In v0.89.22,
+ * `report_incomplete_handler.cjs` logs a warning, then `handle_agent_failure.cjs` calls
+ * `core.setFailed` even when the agent succeeded. #2185 disables that conclusion handler's
+ * independent tracking-issue writes, not its failure status or logged evidence. The guarded
+ * activation summary must also report the shortfall on the originating issue. The real pinned
+ * handler and zero-write boundary are exercised by gh-aw-command-authorization.test.ts.
  *
  * ## The capacity calculation this suite locks in
  *

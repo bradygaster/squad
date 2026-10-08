@@ -8,7 +8,7 @@ import { parse } from 'yaml';
 import { createFirstInstallFixture } from './helpers/gh-aw-install-fixture.js';
 import { authorizeSquadCommand, classifySquadCommand } from '../workflows/shared/squad-command-contract.mjs';
 import { compileWithPinnedActions } from '../workflows/shared/squad-install-verifier.mjs';
-import { diagnosticRuntime, fetchDiagnosticRuntime } from './helpers/gh-aw-diagnostic-runtime.js';
+import { DIAGNOSTIC_RUNTIME_SHA, diagnosticRuntime, fetchDiagnosticRuntime } from './helpers/gh-aw-diagnostic-runtime.js';
 
 interface Step {
   name?: string;
@@ -50,7 +50,7 @@ beforeAll(async () => {
   router = parse(fixture.consumerFiles.get('.github/workflows/squad-command-router.lock.yml')!.toString());
   // Execute the actual sanitizer dependency closure at the compiled action pin,
   // in memory, with no GitHub clients or writes and no approximate sanitizer stubs.
-  const runtimeSha = '2fbab69bfca02bebd76cd0fc43f2d12acfed994f';
+  const runtimeSha = DIAGNOSTIC_RUNTIME_SHA;
   expect(fixture.consumerFiles.get('.github/workflows/squad.lock.yml')!.toString())
     .toContain(`github/gh-aw-actions/setup@${runtimeSha} # v0.89.22`);
   const sources = new Map(await Promise.all([
