@@ -11,6 +11,71 @@ export const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
 export const BOOTSTRAP_PR_TITLE = '[squad] Cast your Squad';
 export const BOOTSTRAP_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
 export const BOOTSTRAP_ISSUE_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
+export const BOOTSTRAP_RESET_PATH = '.squad/bootstrap-reset.json';
+
+export function parseBootstrapReset(value) {
+  if (value === undefined) return null;
+  const fields = ['schema', 'id', 'archived_pull_requests', 'archived_issues'];
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).sort().join() !== fields.sort().join() ||
+      value.schema !== 'squad-bootstrap-reset/v1' ||
+      typeof value.id !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(value.id)) {
+    throw new Error('Invalid committed bootstrap reset record.');
+  }
+  for (const key of ['archived_pull_requests', 'archived_issues']) {
+    const numbers = value[key];
+    if (!Array.isArray(numbers) || numbers.length > 100 ||
+        numbers.some(number => !Number.isSafeInteger(number) || number < 1) ||
+        new Set(numbers).size !== numbers.length) {
+      throw new Error(`Invalid bootstrap reset ${key}; expected unique positive artifact numbers.`);
+    }
+  }
+  if (!value.archived_pull_requests.length) {
+    throw new Error('A bootstrap reset must name at least one closed-unmerged Cast pull request.');
+  }
+  return value;
+}
+
+export function readBootstrapReset(root) {
+  const path = execFileSync('git', ['ls-tree', '--name-only', 'HEAD', '--', BOOTSTRAP_RESET_PATH],
+    { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return path ? parseBootstrapReset(JSON.parse(execFileSync('git', ['show', `HEAD:${BOOTSTRAP_RESET_PATH}`],
+    { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))) : null;
+}
+
+export function bootstrapIdentity(reset = null) {
+  const suffix = reset ? ` [reset:${parseBootstrapReset(reset).id}]` : '';
+  return {
+    BOOTSTRAP_BRANCH: BOOTSTRAP_BRANCH + (reset ? `-${reset.id}` : ''),
+    BOOTSTRAP_PR_TITLE: BOOTSTRAP_PR_TITLE + suffix,
+    BOOTSTRAP_ISSUE_TITLE: BOOTSTRAP_ISSUE_TITLE + suffix,
+  };
+}
+
+export function hasCommittedBootstrapTeam(root) {
+  return execFileSync('git', ['ls-tree', '--name-only', 'HEAD', '--',
+    '.squad/team.md', '.squad/casting/registry.json'],
+  { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim().length > 0;
+}
+
+export async function authorizeBootstrapReset({ reset, input, context, github }) {
+  if (!input && (!reset || context.eventName !== 'workflow_dispatch')) return false;
+  if (!reset || (input && input !== reset.id) || context.eventName !== 'workflow_dispatch' ||
+      context.ref !== `refs/heads/${context.payload.repository.default_branch}`) {
+    throw new Error('Fresh bootstrap requires the committed reset ID and a default-branch manual dispatch.');
+  }
+  for (const actor of new Set([context.actor, context.payload.sender?.login,
+    process.env.GITHUB_TRIGGERING_ACTOR || context.actor])) {
+    if (!actor || context.payload.sender?.type !== 'User') {
+      throw new Error('Fresh bootstrap requires an authenticated human maintainer.');
+    }
+    const result = await github.rest.repos.getCollaboratorPermissionLevel({ ...context.repo, username: actor });
+    if (!['write', 'maintain', 'admin'].includes(result.data.permission)) {
+      throw new Error('Fresh bootstrap requires write, maintain, or admin repository permission.');
+    }
+  }
+  return Boolean(input);
+}
 export const BOOTSTRAP_RESEARCH_TITLE = '## 🔬 Squad Research — Bootstrap proposals';
 export const RESEARCH_SCOPE_PATH = '.squad/research-scope.json';
 export const RESEARCH_SCOPE_SCHEMA = 'squad-research-scope/v1';
@@ -534,20 +599,58 @@ export function buildBootstrapPrFallbackIssueBody({
   );
 }
 
-export function classifyBootstrapState({ pullRequests, issues, comments, defaultBranch }) {
+export function classifyBootstrapState({
+  pullRequests, issues, comments, defaultBranch, reset = null, repository,
+  resetAuthorized = false, installedTeam = false,
+}) {
   if (!Array.isArray(pullRequests) || !Array.isArray(issues) || !defaultBranch) {
     throw new Error('Bootstrap state requires pullRequests, issues, and defaultBranch.');
   }
 
+  const identity = bootstrapIdentity(reset);
+  const canonicalPull = pull => {
+    const head = pullHead(pull);
+    const suffix = head?.slice(BOOTSTRAP_BRANCH.length);
+    return (head === BOOTSTRAP_BRANCH || /^-[a-z][a-z0-9-]{0,31}$/.test(suffix)) &&
+      pull.title === BOOTSTRAP_PR_TITLE + (suffix ? ` [reset:${suffix.slice(1)}]` : '') &&
+      pullBase(pull) === defaultBranch;
+  };
+  if (reset) {
+    parseBootstrapReset(reset);
+    for (const number of reset.archived_pull_requests) {
+      const matches = pullRequests.filter(pull => pull.number === number);
+      const pull = matches[0];
+      if (matches.length !== 1 || !canonicalPull(pull) || pull.state !== 'closed' ||
+          pull.merged_at || pull.merged === true || !repository ||
+          pull.head?.repo?.full_name !== repository || pull.base?.repo?.full_name !== repository ||
+          pullHead(pull) === identity.BOOTSTRAP_BRANCH) {
+        throw new Error(`Unsafe bootstrap reset archive pull request #${number}.`);
+      }
+    }
+    for (const number of reset.archived_issues) {
+      const matches = issues.filter(issue => issue.number === number);
+      const issue = matches[0];
+      const research = issue && (issue.title === BOOTSTRAP_ISSUE_TITLE ||
+        /^\[Research Proposals\] Agent-discovered repo opportunities \[reset:[a-z][a-z0-9-]{0,31}\]$/.test(issue.title)) &&
+        occurrences(issueBody(issue), BOOTSTRAP_ISSUE_MARKER) === 1;
+      const fallback = issue?.title === BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE &&
+        parseBootstrapPrFallbackProvenance(issueBody(issue))?.repository === repository;
+      if (matches.length !== 1 || issue.state !== 'closed' || (!research && !fallback) ||
+          issue.title === identity.BOOTSTRAP_ISSUE_TITLE) {
+        throw new Error(`Unsafe bootstrap reset archive issue #${number}.`);
+      }
+    }
+  }
   const relevantPullRequests = pullRequests.filter(
     (pullRequest) =>
-      pullHead(pullRequest) === BOOTSTRAP_BRANCH ||
-      pullRequest?.title === BOOTSTRAP_PR_TITLE,
+      !reset?.archived_pull_requests.includes(pullRequest.number) &&
+      (pullHead(pullRequest)?.startsWith(BOOTSTRAP_BRANCH) ||
+      pullRequest?.title?.startsWith(BOOTSTRAP_PR_TITLE)),
   );
   const malformedPullRequest = relevantPullRequests.find(
     (pullRequest) =>
-      pullHead(pullRequest) !== BOOTSTRAP_BRANCH ||
-      pullRequest?.title !== BOOTSTRAP_PR_TITLE ||
+      pullHead(pullRequest) !== identity.BOOTSTRAP_BRANCH ||
+      pullRequest?.title !== identity.BOOTSTRAP_PR_TITLE ||
       pullBase(pullRequest) !== defaultBranch,
   );
   if (malformedPullRequest) {
@@ -563,12 +666,13 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
 
   const relevantIssues = issues.filter(
     (issue) =>
-      issue?.title === BOOTSTRAP_ISSUE_TITLE ||
-      issueBody(issue).includes(BOOTSTRAP_ISSUE_MARKER),
+      !reset?.archived_issues.includes(issue.number) &&
+      (issue?.title?.startsWith(BOOTSTRAP_ISSUE_TITLE) ||
+      issueBody(issue).includes(BOOTSTRAP_ISSUE_MARKER)),
   );
   const malformedIssue = relevantIssues.find(
     (issue) =>
-      issue?.title !== BOOTSTRAP_ISSUE_TITLE ||
+      issue?.title !== identity.BOOTSTRAP_ISSUE_TITLE ||
       occurrences(issueBody(issue), BOOTSTRAP_ISSUE_MARKER) !== 1,
   );
   if (malformedIssue) {
@@ -584,6 +688,9 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
 
   const pullRequest = relevantPullRequests[0] ?? null;
   const issue = relevantIssues[0] ?? null;
+  if (reset && installedTeam && !pullRequest?.merged_at && pullRequest?.merged !== true) {
+    throw new Error('Fresh bootstrap cannot replace a committed team or registry.');
+  }
   const researchArtifacts =
     issue && comments !== undefined
       ? findBootstrapResearchArtifacts(comments, issue.number)
@@ -601,9 +708,11 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
   else if (pullRequest) action = 'create_issue';
   else if (issue) action = 'create_pr';
   else action = 'create_both';
+  if (reset && !pullRequest && !resetAuthorized) action = 'reset_armed';
 
   return {
     action,
+    identity,
     pull_request: pullRequest
       ? {
           number: pullRequest.number,
@@ -893,13 +1002,19 @@ export function validateBootstrapPayload({
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return ['payload: expected a JSON object'];
   }
+  let identity;
+  try {
+    identity = bootstrapIdentity(readBootstrapReset(gitRoot));
+  } catch (error) {
+    return [`payload: committed bootstrap identity unavailable (${error.message})`];
+  }
   if (payload.schema_version !== '1') errors.push('payload: schema_version must be "1"');
   if (payload.repository !== repository) errors.push('payload: repository does not match the runtime repository');
   if (payload.default_branch !== defaultBranch) errors.push('payload: default_branch does not match the runtime default');
-  if (payload.branch !== BOOTSTRAP_BRANCH) errors.push(`payload: branch must be ${BOOTSTRAP_BRANCH}`);
-  if (payload.pr_title !== BOOTSTRAP_PR_TITLE) errors.push(`payload: pr_title must be ${BOOTSTRAP_PR_TITLE}`);
-  if (payload.issue_title !== BOOTSTRAP_ISSUE_TITLE) {
-    errors.push(`payload: issue_title must be ${BOOTSTRAP_ISSUE_TITLE}`);
+  if (payload.branch !== identity.BOOTSTRAP_BRANCH) errors.push(`payload: branch must be ${identity.BOOTSTRAP_BRANCH}`);
+  if (payload.pr_title !== identity.BOOTSTRAP_PR_TITLE) errors.push(`payload: pr_title must be ${identity.BOOTSTRAP_PR_TITLE}`);
+  if (payload.issue_title !== identity.BOOTSTRAP_ISSUE_TITLE) {
+    errors.push(`payload: issue_title must be ${identity.BOOTSTRAP_ISSUE_TITLE}`);
   }
   if (!Array.isArray(payload.files) || payload.files.length === 0) {
     errors.push('payload: files must be a non-empty array');

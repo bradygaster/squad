@@ -3,6 +3,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parse } from 'yaml';
 import {
   CONTRACT_DESTINATION,
   OWNERSHIP_DESTINATION,
@@ -71,6 +73,42 @@ afterEach(() => {
 });
 
 describe('gh-aw: verified ownership staging under consumer ignore rules', () => {
+  it('installs a coherent reset-capable package and excludes only the named historical Cast', async () => {
+    const root = consumer();
+    const reset = {
+      schema: 'squad-bootstrap-reset/v1', id: 'retry-1',
+      archived_pull_requests: [3], archived_issues: [],
+    };
+    write(root, '.squad/bootstrap-reset.json', JSON.stringify(reset));
+    git(root, 'add', '--', '.squad/bootstrap-reset.json');
+    git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'reviewed reset preparation');
+    expect(verifyInstall(root, { expectedRevision: revision }).failures).toEqual([]);
+    const installed = await import(pathToFileURL(join(root,
+      '.github/workflows/shared/squad-bootstrap-validator.mjs')).href);
+    const lock = parse(readFileSync(join(root, '.github/workflows/squad-bootstrap.lock.yml'), 'utf8'));
+    expect(lock.on.workflow_dispatch.inputs.fresh_start.type).toBe('string');
+    const writer = lock.jobs.materialize_bootstrap.steps.find(
+      (step: { name?: string }) => step.name === 'Validate and materialize both artifacts',
+    );
+    expect(writer.env.SQUAD_BOOTSTRAP_FRESH_START).toBe('${{ inputs.fresh_start }}');
+    expect(writer.with.script).toContain('stateModule.authorizeBootstrapReset');
+    expect(writer.with.script).toContain('...resetState');
+    expect(installed.readBootstrapReset(root)).toEqual(reset);
+    expect(installed.hasCommittedBootstrapTeam(root)).toBe(false);
+    const state = {
+      reset, repository: 'octo/example', defaultBranch: 'main', issues: [],
+      pullRequests: [{
+        number: 3, title: '[squad] Cast your Squad', state: 'closed', merged_at: null,
+        head: { ref: 'squad/bootstrap-cast', repo: { full_name: 'octo/example' } },
+        base: { ref: 'main', repo: { full_name: 'octo/example' } },
+      }],
+    };
+    expect(installed.classifyBootstrapState(state).action).toBe('reset_armed');
+    expect(installed.classifyBootstrapState({ ...state, resetAuthorized: true }).action).toBe('create_both');
+    expect(installed.classifyBootstrapState({ ...state, reset: null }).action).toBe('opt_out');
+  });
+
   it('bounds staged reads to required paths in a large unrelated consumer tree', () => {
     const root = consumer();
     const unrelated = 'consumer-data';

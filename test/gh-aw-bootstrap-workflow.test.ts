@@ -29,6 +29,10 @@ import {
   PAYLOAD_MAX_BYTES,
   PAYLOAD_MAX_CHUNKS,
   bootstrapPrFallbackIssueMarker,
+  authorizeBootstrapReset,
+  bootstrapIdentity,
+  parseBootstrapReset,
+  readBootstrapReset,
   buildBootstrapPrFallbackCompareUrl,
   buildBootstrapPrFallbackIssueBody,
   buildBootstrapPrFallbackProvenanceLine,
@@ -61,6 +65,117 @@ const builtins = [
   { id: 'rai', name: 'Rai' },
   { id: 'fact-checker', name: 'Fact Checker' },
 ];
+const RESET = {
+  schema: 'squad-bootstrap-reset/v1', id: 'retry-1',
+  archived_pull_requests: [3], archived_issues: [],
+};
+
+function archivedCast() {
+  return {
+    number: 3, state: 'closed', merged: false, merged_at: null,
+    title: BOOTSTRAP_PR_TITLE,
+    user: { login: 'github-actions[bot]', type: 'Bot' },
+    head: { ref: BOOTSTRAP_BRANCH, sha: 'a'.repeat(40), repo: { full_name: 'octo/example' } },
+    base: { ref: 'main', repo: { full_name: 'octo/example' } },
+  };
+}
+
+describe('explicit committed bootstrap reset', () => {
+  const classify = (extra = {}) => classifyBootstrapState({
+    pullRequests: [archivedCast()], issues: [], defaultBranch: 'main',
+    repository: 'octo/example', reset: RESET, ...extra,
+  });
+
+  it('preserves legacy opt-out and arms a reset without creating it on ordinary runs', () => {
+    expect(classify({ reset: null }).action).toBe('opt_out');
+    expect(classify().action).toBe('reset_armed');
+    expect(classify({ resetAuthorized: true }).action).toBe('create_both');
+    expect(classify().identity.BOOTSTRAP_BRANCH).toBe('squad/bootstrap-cast-retry-1');
+  });
+
+  it.each([
+    ['open', { state: 'open' }],
+    ['merged', { merged_at: '2026-10-08T00:00:00Z' }],
+    ['foreign', { head: { ...archivedCast().head, repo: { full_name: 'other/repo' } } }],
+    ['wrong base', { base: { ...archivedCast().base, ref: 'release' } }],
+    ['wrong title', { title: 'Human work' }],
+  ])('refuses %s archived history', (_label, change) => {
+    expect(() => classify({ pullRequests: [{ ...archivedCast(), ...change }] })).toThrow('Unsafe bootstrap reset');
+  });
+
+  it('rejects installed teams, missing history, duplicate numbers and unarchived ambiguous history', () => {
+    expect(() => classify({ installedTeam: true, resetAuthorized: true })).toThrow('committed team');
+    expect(() => classify({ pullRequests: [] })).toThrow('Unsafe bootstrap reset');
+    expect(() => classify({ pullRequests: [archivedCast(), { ...archivedCast(), number: 4 }] })).toThrow('Ambiguous');
+    expect(() => parseBootstrapReset({ ...RESET, archived_pull_requests: [3, 3] })).toThrow('unique');
+    expect(() => parseBootstrapReset({ ...RESET, id: '../../branch' })).toThrow('Invalid');
+    expect(() => parseBootstrapReset({ ...RESET, extra: true })).toThrow('Invalid');
+  });
+
+  it('resumes the stable generation and preserves its new opt-out on repeated reset', () => {
+    const identity = bootstrapIdentity(RESET);
+    const current = {
+      ...archivedCast(), number: 5, state: 'open', title: identity.BOOTSTRAP_PR_TITLE,
+      head: { ...archivedCast().head, ref: identity.BOOTSTRAP_BRANCH },
+    };
+    expect(classify({ pullRequests: [archivedCast(), current] }).action).toBe('create_issue');
+    expect(classify({
+      pullRequests: [archivedCast(), { ...current, state: 'closed' }], resetAuthorized: true,
+    }).action).toBe('opt_out');
+    expect(classify({
+      pullRequests: [archivedCast(), { ...current, state: 'closed', merged: true }], installedTeam: true,
+    }).action).toBe('create_issue');
+    expect(() => classify({
+      pullRequests: [archivedCast(), current, { ...current, number: 6 }],
+    })).toThrow('Ambiguous');
+  });
+
+  it('archives only exact closed research issues and keeps new research identity separate', () => {
+    const oldIssue = { number: 4, state: 'closed', title: BOOTSTRAP_ISSUE_TITLE, body: BOOTSTRAP_ISSUE_MARKER };
+    const reset = { ...RESET, archived_issues: [4] };
+    expect(classify({ reset, issues: [oldIssue], resetAuthorized: true }).action).toBe('create_both');
+    expect(() => classify({ reset, issues: [{ ...oldIssue, state: 'open' }] })).toThrow('Unsafe');
+    expect(() => classify({ reset, issues: [{ ...oldIssue, title: 'Unrelated retrospective' }] })).toThrow('Unsafe');
+    expect(() => classify({ issues: [oldIssue] })).toThrow('Ambiguous');
+  });
+
+  it('requires default-branch dispatch, exact committed ID and every human actor permission', async () => {
+    const context = {
+      eventName: 'workflow_dispatch', ref: 'refs/heads/main', actor: 'maintainer',
+      repo: { owner: 'octo', repo: 'example' },
+      payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
+    };
+    let permission = 'write';
+    const github = { rest: { repos: { getCollaboratorPermissionLevel: async () => ({ data: { permission } }) } } };
+    const args = { reset: RESET, input: 'retry-1', context, github };
+    expect(await authorizeBootstrapReset(args)).toBe(true);
+    expect(await authorizeBootstrapReset({ ...args, input: '' })).toBe(false);
+    for (const change of [{ input: 'other' }, { reset: null },
+      { context: { ...context, eventName: 'push' } }, { context: { ...context, ref: 'refs/tags/main' } }]) {
+      await expect(authorizeBootstrapReset({ ...args, ...change })).rejects.toThrow('Fresh bootstrap');
+    }
+    permission = 'read';
+    await expect(authorizeBootstrapReset(args)).rejects.toThrow('permission');
+    await expect(authorizeBootstrapReset({
+      ...args, context: { ...context, payload: { ...context.payload, sender: { login: 'bot', type: 'Bot' } } },
+    })).rejects.toThrow('human');
+  });
+
+  it('uses committed reset identity, never an agent-written working-tree record', () => {
+    const fixture = createFixture();
+    write(fixture.root, '.squad/bootstrap-reset.json', JSON.stringify(RESET));
+    expect(readBootstrapReset(fixture.root)).toBeNull();
+    execFileSync('git', ['add', '.squad/bootstrap-reset.json'], { cwd: fixture.root });
+    execFileSync('git', ['commit', '-qm', 'authorize reset'], { cwd: fixture.root });
+    expect(readBootstrapReset(fixture.root)).toEqual(RESET);
+    write(fixture.root, '.squad/bootstrap-reset.json', JSON.stringify({ ...RESET, id: 'attacker' }));
+    expect(readBootstrapReset(fixture.root)).toEqual(RESET);
+    expect(validateBootstrapPayload({
+      root: fixture.root, payloadText: JSON.stringify(fixture.payload),
+      repository: 'octo/example', defaultBranch: 'main', linkMode: 'placeholder',
+    })).toContain('payload: branch must be squad/bootstrap-cast-retry-1');
+  });
+});
 
 function write(root: string, path: string, content: string | Buffer): void {
   const target = join(root, ...path.split('/'));
@@ -681,7 +796,7 @@ describe('automatic Squad bootstrap workflow', () => {
       linkMode: 'placeholder',
     };
     expect(validateBootstrapPayload(options)).toContainEqual(
-      expect.stringContaining('registry base: committed HEAD is unavailable'),
+      expect.stringContaining('committed bootstrap identity unavailable'),
     );
     expect(validateBootstrapPayload({ ...options, gitRoot: fixture.root })).toEqual([]);
 
@@ -1124,6 +1239,10 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
   const prUrl = 'https://github.com/octo/example/pull/3';
 
   function writerScript(source: string): string {
+    if (!source.startsWith('---')) {
+      return parse(source).jobs.materialize_bootstrap.steps
+        .find((step: { name?: string }) => step.name === 'Validate and materialize both artifacts').with.script;
+    }
     const frontmatter = source.split('\n---\n')[0].replace(/^---\n/, '');
     const steps = parse(frontmatter)['safe-outputs'].jobs['materialize-bootstrap'].steps;
     const script = steps.find((step: { with?: { script?: string } }) => step.with?.script)?.with.script;
@@ -1134,8 +1253,19 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
   function writerFixture(
     scenario: 'success' | 'opt-out' | 'permission-denied' | 'api-error' = 'success',
     source = WORKFLOW,
+    fresh = false,
   ) {
     const fixture = createFixture();
+    if (fresh) {
+      execFileSync('git', ['rm', '--cached', '--', ...fixture.payload.files.map(file => file.path)], { cwd: fixture.root });
+      write(fixture.root, '.squad/bootstrap-reset.json', JSON.stringify(RESET));
+      execFileSync('git', ['add', '.squad/bootstrap-reset.json'], { cwd: fixture.root });
+      execFileSync('git', ['commit', '-qm', 'authorize fresh bootstrap without installed team'], { cwd: fixture.root });
+      const identity = bootstrapIdentity(RESET);
+      fixture.payload.branch = identity.BOOTSTRAP_BRANCH;
+      fixture.payload.pr_title = identity.BOOTSTRAP_PR_TITLE;
+      fixture.payload.issue_title = identity.BOOTSTRAP_ISSUE_TITLE;
+    }
     const workspace = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-writer-'));
     workspaces.push(workspace);
     const checkout = join(workspace, 'bootstrap-repo');
@@ -1169,10 +1299,10 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
       existsSync(join(candidate, '.github/workflows/shared/builtins/scribe-charter.md')),
     );
     const pull = {
-      number: 3,
+      number: fresh ? 5 : 3,
       state: scenario === 'opt-out' ? 'closed' : 'open',
-      title: BOOTSTRAP_PR_TITLE,
-      head: { ref: BOOTSTRAP_BRANCH, sha: castSha, repo: { full_name: 'octo/example' } },
+      title: fixture.payload.pr_title,
+      head: { ref: fixture.payload.branch, sha: castSha, repo: { full_name: 'octo/example' } },
       base: { ref: 'main' },
       html_url: prUrl,
       body: fixture.payload.pr_body,
@@ -1180,12 +1310,14 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     };
     let branchCreated = false;
     let pullCreated = false;
+    const persistedIssues: Array<{ number: number; state: string; title: string; body: string }> = [];
+    const persistedComments: Array<{ id: number; issue_number: number; body: string; user: { login: string; type: string } }> = [];
     const github = {
-      paginate: async (method: () => Promise<unknown>) => method(),
+      paginate: async (method: (args: unknown) => Promise<unknown>, args: unknown) => method(args),
       rest: {
         git: {
           getRef: async ({ ref }: { ref: string }) => {
-            if (ref === `heads/${BOOTSTRAP_BRANCH}` && !branchCreated) {
+            if (ref === `heads/${fixture.payload.branch}` && !branchCreated) {
               throw Object.assign(new Error('Not Found'), { status: 404 });
             }
             return { data: { object: { sha: ref === 'heads/main' ? baseSha : castSha } } };
@@ -1197,7 +1329,10 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
           createRef: async () => { branchCreated = true; },
         },
         pulls: {
-          list: async () => scenario === 'opt-out' || pullCreated ? [pull] : [],
+          list: async () => [
+            ...(fresh ? [archivedCast()] : []),
+            ...(scenario === 'opt-out' || pullCreated ? [pull] : []),
+          ],
           create: async () => {
             recordWrite();
             if (scenario === 'permission-denied') throw new Error(CREATE_PR_PERMISSION_DENIED_TEXT);
@@ -1207,26 +1342,47 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
           get: async () => ({ data: pull }),
           update: async (args: { body: string }) => { recordWrite(); updates.push(args); },
         },
+        repos: {
+          getCollaboratorPermissionLevel: async () => ({ data: { permission: 'write' } }),
+          getContent: async ({ path }: { path: string }) => ({
+            data: { type: 'file', content: Buffer.from(
+              fixture.payload.files.find(file => file.path === path)!.content,
+            ).toString('base64') },
+          }),
+          compareCommitsWithBasehead: async () => ({
+            data: { files: fixture.payload.files.map(file => ({ filename: file.path })) },
+          }),
+        },
         issues: {
-          listForRepo: async () => [],
-          listComments: async () => [],
+          listForRepo: async () => persistedIssues,
+          listComments: async ({ issue_number }: { issue_number: number }) =>
+            persistedComments.filter(comment => comment.issue_number === issue_number),
           create: async (args: { title: string; body: string }) => {
             recordWrite();
             issueCalls.push(args);
             if (scenario === 'api-error') throw new Error('research issue API outage');
+            persistedIssues.push({ ...args, number: 6, state: 'open' });
             return { data: { number: 6, html_url: 'https://github.com/octo/example/issues/6' } };
           },
           createComment: async (args: { issue_number: number; body: string }) => {
             recordWrite();
             commentCalls.push(args);
+            persistedComments.push({
+              ...args, id: persistedComments.length + 1, user: { login: 'github-actions[bot]', type: 'Bot' },
+            });
           },
+          updateComment: async () => {},
         },
       },
     };
     const failures: string[] = [];
     const run = () => runScript(
       github,
-      { repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123, eventName: 'push' },
+      {
+        repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123,
+        eventName: fresh ? 'workflow_dispatch' : 'push', ref: 'refs/heads/main', actor: 'maintainer',
+        payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
+      },
       { info: () => {}, warning: () => {}, setFailed: (message: string) => failures.push(message) },
       { env: {
         GITHUB_WORKSPACE: workspace,
@@ -1236,11 +1392,12 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
         SQUAD_BOOTSTRAP_REPOSITORY: 'octo/example',
         SQUAD_BOOTSTRAP_INSTALL_SHA: baseSha,
         SQUAD_BOOTSTRAP_RUN_ID: '123',
+        SQUAD_BOOTSTRAP_FRESH_START: fresh ? RESET.id : '',
       } },
       captureCandidate,
     );
     return {
-      run, issueCalls, commentCalls, updates, writesWithCandidate, failures,
+      run, github, issueCalls, commentCalls, updates, writesWithCandidate, failures,
       candidate: () => candidate,
     };
   }
@@ -1260,6 +1417,47 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     expect(fixture.writesWithCandidate.every(Boolean), 'candidate files must survive all GitHub writes').toBe(true);
     expect(existsSync(fixture.candidate()), 'success must remove the entire candidate tree').toBe(false);
   });
+
+  it('executes the compiled writer against historical Cast #3, creates a separate generation and reuses its PR', async () => {
+    const lock = compileWorkflow();
+    const fixture = writerFixture('success', lock, true);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.issueCalls[0].title).toBe(bootstrapIdentity(RESET).BOOTSTRAP_ISSUE_TITLE);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([5, 6]);
+    expect(fixture.updates).toHaveLength(1);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.issueCalls).toHaveLength(1);
+  }, 180000);
+
+  it('allows a signed manual fallback for an authenticated reset generation', async () => {
+    const fixture = writerFixture('permission-denied', WORKFLOW, true);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.issueCalls[0].body).toContain('squad/bootstrap-cast-retry-1');
+    expect(fixture.commentCalls).toEqual([]);
+  });
+
+  it('fails the compiled authorization contract when the writer permission gate is removed', async () => {
+    const assertDenied = async (source: string) => {
+      const fixture = writerFixture('success', compileWorkflow(source), true);
+      fixture.github.rest.repos.getCollaboratorPermissionLevel = async () => ({ data: { permission: 'read' } });
+      await expect(fixture.run()).rejects.toThrow('permission');
+      expect(fixture.issueCalls).toEqual([]);
+      expect(fixture.updates).toEqual([]);
+    };
+    await assertDenied(WORKFLOW);
+    const mutated = WORKFLOW.replace(
+      /const resetAuthorized = await stateModule\.authorizeBootstrapReset\(\{\n {16}reset, input: process\.env\.SQUAD_BOOTSTRAP_FRESH_START, context, github,\n {14}\}\);/,
+      'const resetAuthorized = true;',
+    );
+    expect(mutated).not.toBe(WORKFLOW);
+    await expect(assertDenied(mutated)).rejects.toThrow();
+  }, 180000);
 
   it.each(['opt-out', 'permission-denied'] as const)('removes the candidate on the %s early return', async (scenario) => {
     const fixture = writerFixture(scenario);
@@ -1342,7 +1540,7 @@ describe('gh-aw: squad-bootstrap pull-request-creation permission-denied fallbac
 
   function compileScript(script: string) {
     return compileFunction(
-      `return (async () => {\n${script}\n return pullRequest;\n})();`,
+      `return (async () => {\nconst reset = null; const resetAuthorized = false;\n${script}\n return pullRequest;\n})();`,
       ['snapshot', 'payload', 'stateModule', 'context', 'process', 'github', 'core', 'assertRemotePayload'],
       { importModuleDynamically: vmConstants.USE_MAIN_CONTEXT_DEFAULT_LOADER },
     ) as (...args: unknown[]) => Promise<unknown>;
