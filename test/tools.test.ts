@@ -124,6 +124,7 @@ describe('ToolRegistry', () => {
     'squad_state_read',
     'squad_state_write',
     'squad_state_append',
+    'squad_state_create_if_absent',
     'squad_state_delete',
     'squad_state_list',
     'squad_state_health',
@@ -265,20 +266,21 @@ describe('ToolRegistry', () => {
       expect((await mutate('squad_state_append', prefixedKey, 'evidence\n')).resultType).toBe('success');
       expect(fs.readFileSync(path.join(testRoot, key), 'utf-8')).toBe('evidence\n');
       expect((await mutate('squad_state_write', prefixedKey)).resultType).toBe('failure');
+      expect((await mutate('squad_state_create_if_absent', prefixedKey)).resultType).toBe('failure');
       expect((await mutate('squad_state_delete', prefixedKey)).resultType).toBe('failure');
       expect(fs.readFileSync(path.join(testRoot, key), 'utf-8')).toBe('evidence\n');
     });
 
-    it.each(auditKeys)('rejects writes and deletes before creation and after append: %s', async (key) => {
+    it.each(auditKeys)('rejects writes, creates, and deletes before creation and after append: %s', async (key) => {
       const filename = path.join(testRoot, key);
-      for (const toolName of ['squad_state_write', 'squad_state_delete']) {
+      for (const toolName of ['squad_state_write', 'squad_state_create_if_absent', 'squad_state_delete']) {
         const result = await mutate(toolName, key);
         expect(result.resultType).toBe('failure');
         expect(result.textResultForLlm).toContain('append-only');
         expect(fs.existsSync(filename)).toBe(false);
       }
       await mutate('squad_state_append', key, 'original\n');
-      for (const toolName of ['squad_state_write', 'squad_state_delete']) {
+      for (const toolName of ['squad_state_write', 'squad_state_create_if_absent', 'squad_state_delete']) {
         const result = await mutate(toolName, key, '');
         expect(result.resultType).toBe('failure');
         expect(result.textResultForLlm).toContain('append-only');

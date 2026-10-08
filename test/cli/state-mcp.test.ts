@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -15,19 +15,21 @@ type JsonRpcMessage = {
   error?: { code: number; message: string };
 };
 
-function git(args: string): string {
-  return execSync(`git ${args}`, { cwd: TMP, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+function git(args: string[]): string {
+  return execFileSync('git', args, { cwd: TMP, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
 function initSquad(stateBackend: 'orphan' | 'two-layer'): void {
+  process.env['GIT_AUTHOR_NAME'] = 'Test';
+  process.env['GIT_AUTHOR_EMAIL'] = 'test';
+  process.env['GIT_COMMITTER_NAME'] = 'Test';
+  process.env['GIT_COMMITTER_EMAIL'] = 'test';
   mkdirSync(join(TMP, '.squad'), { recursive: true });
   writeFileSync(join(TMP, '.squad', 'config.json'), JSON.stringify({ stateBackend }, null, 2));
   writeFileSync(join(TMP, 'README.md'), '# state mcp test\n');
-  git('init');
-  git('config user.email "test@test.com"');
-  git('config user.name "Test"');
-  git('add README.md .squad/config.json');
-  git('commit -m "init"');
+  git(['init']);
+  git(['add', 'README.md', '.squad/config.json']);
+  git(['-c', 'user.name=Test', '-c', 'user.email=test', 'commit', '-m', 'init']);
 }
 
 function resultAsRecord(message: JsonRpcMessage): Record<string, unknown> {
@@ -47,6 +49,23 @@ describe('state-mcp bridge', () => {
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
   });
 
+  it('reports the installed CLI package version during initialization', async () => {
+    initSquad('two-layer');
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+    const cliPackage = JSON.parse(
+      readFileSync(join(process.cwd(), 'packages/squad-cli/package.json'), 'utf8'),
+    ) as { version: string };
+
+    await session.handleRequest({ jsonrpc: '2.0', id: 'initialize', method: 'initialize' });
+
+    const result = resultAsRecord(messages[0]!);
+    expect(result['serverInfo']).toEqual({
+      name: 'squad-state',
+      version: cliPackage.version,
+    });
+  });
+
   it('lists Squad state tools for MCP clients', async () => {
     initSquad('two-layer');
     const messages: JsonRpcMessage[] = [];
@@ -59,8 +78,55 @@ describe('state-mcp bridge', () => {
     expect(names).toContain('squad_decide');
     expect(names).toContain('squad_state_write');
     expect(names).toContain('squad_state_append');
+    expect(names).toContain('squad_state_create_if_absent');
     expect(tools.find(tool => tool.name === 'squad_state_write')?.inputSchema.required).toEqual(['key', 'content']);
+    expect(tools.find(tool => tool.name === 'squad_state_create_if_absent')?.inputSchema.required)
+      .toEqual(['key', 'content']);
   });
+
+  it.each(['orphan', 'two-layer'] as const)(
+    'exposes squad_state_create_if_absent so exactly one caller creates a canonical key through the %s backend',
+    async (stateBackend) => {
+      initSquad(stateBackend);
+      const messages: JsonRpcMessage[] = [];
+      const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+      const key = 'log/2026-08-29T00-00-00Z-retrospective.md';
+
+      async function createIfAbsent(id: string, content: string): Promise<Record<string, unknown>> {
+        const index = messages.length;
+        await session.handleRequest({
+          jsonrpc: '2.0',
+          id,
+          method: 'tools/call',
+          params: { name: 'squad_state_create_if_absent', arguments: { key, content } },
+        });
+        return resultAsRecord(messages[index]!);
+      }
+
+      const first = await createIfAbsent('create-1', '# Canonical retro\n');
+      const second = await createIfAbsent('create-2', '# Duplicate retro\n');
+
+      // Exactly one creator wins; the loser is surfaced as an MCP error result.
+      expect(first['isError']).not.toBe(true);
+      expect(second['isError']).toBe(true);
+      const loserText = (second['content'] as Array<{ text: string }>)[0]!.text;
+      expect(loserText).toMatch(/already exists/i);
+
+      // The winner's content is preserved verbatim — never overwritten.
+      const readIndex = messages.length;
+      await session.handleRequest({
+        jsonrpc: '2.0',
+        id: 'read-canonical',
+        method: 'tools/call',
+        params: { name: 'squad_state_read', arguments: { key } },
+      });
+      expect(resultAsRecord(messages[readIndex]!)['content'])
+        .toEqual([{ type: 'text', text: '# Canonical retro\n' }]);
+
+      // Mutable state never leaks into the worktree for git-native backends.
+      expect(existsSync(join(TMP, '.squad', 'log', '2026-08-29T00-00-00Z-retrospective.md'))).toBe(false);
+    },
+  );
 
   it('writes and reads two-layer state without mutating the worktree .squad files', async () => {
     initSquad('two-layer');
@@ -163,7 +229,7 @@ describe('state-mcp bridge', () => {
         expect(existsSync(join(TMP, '.squad', ...key.split('/')))).toBe(false);
       }
 
-      expect(git('status --porcelain')).toBe('');
+      expect(git(['status', '--porcelain'])).toBe('');
     },
     30_000,
   );

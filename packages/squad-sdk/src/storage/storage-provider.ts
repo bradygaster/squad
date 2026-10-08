@@ -13,6 +13,10 @@
  * SQLiteStorageProvider throw plain `Error` for invalid operations. Callers
  * that need provider-agnostic error handling should catch `Error` and inspect
  * `.code` only when the value is a `StorageError`.
+ *
+ * **Atomic create:** `createIfAbsent` creates a key only when absent and
+ * throws `StateKeyConflictError` (key already exists) or
+ * `StateBackendUncertaintyError` (outcome unknown). It never overwrites.
  */
 
 /** Metadata returned by stat(). */
@@ -26,6 +30,24 @@ export interface StorageStats {
 }
 
 export interface StorageProvider {
+  /**
+   * Atomically create a file with the given data only if it does not already
+   * exist. Resolves with `void` on success (this caller is the sole creator).
+   *
+   * Throws {@link StateKeyConflictError} if the file already exists.
+   * Throws {@link StateBackendUncertaintyError} if the outcome cannot be
+   * determined (e.g. write failed after exclusive open, lock lost after CAS).
+   *
+   * **Never** overwrites existing content. Unconditional writes continue to
+   * use `write()` as before.
+   *
+   * Repository scope is verified by the provider at construction time (rootDir
+   * for FSStorageProvider; git repository root for git-backed providers).
+   * Operations against an ambiguous or inaccessible repository fail with
+   * `StateBackendUncertaintyError`.
+   */
+  createIfAbsent(filePath: string, data: string): Promise<void>;
+
   /**
    * Read the full contents of a file as a UTF-8 string.
    * Returns `undefined` if the file does not exist (ENOENT).
