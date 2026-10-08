@@ -16,7 +16,8 @@ import { TEMPLATE_MANIFEST, getTemplatesDir } from './templates.js';
 import { runMigrations } from './migrations.js';
 import { scrubEmails } from './email-scrub.js';
 import { getPackageVersion, stampVersion, readInstalledVersion } from './version.js';
-import { resolveSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
+import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
+import { copyManagedFile, writeManagedText } from './managed-file.js';
 export { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 
@@ -141,7 +142,7 @@ function copyDirRecursive(src: string, dest: string, force = true): void {
     if (storage.isDirectorySync(srcEntry)) {
       copyDirRecursive(srcEntry, destEntry, force);
     } else if (force || !storage.existsSync(destEntry)) {
-      storage.copySync(srcEntry, destEntry);
+      copyManagedFile(srcEntry, destEntry);
     }
   }
 }
@@ -247,13 +248,13 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
 
   // Back up locally-customized squad.agent.md before overwriting (#1052)
   if (storage.existsSync(agentDest)) {
-    const existing = (storage.readSync(agentDest) ?? '').replace(/\r\n/g, '\n');
+    const existing = storage.readSync(agentDest) ?? '';
     // Strip the version stamp before comparing (version line changes every upgrade)
     const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
     // Strip the generated Team Capabilities block too (#1608) — it is machine
     // written on every cast change and must not read as a user customization.
     const normalize = (s: string) => stripTeamCapabilitiesBlock(stripVersion(s));
-    const normalizedExisting = normalize(existing);
+    const normalizedExisting = normalize(existing.replace(/\r\n/g, '\n'));
     const normalizedTemplate = normalize(agentContent.replace(/\r\n/g, '\n'));
 
     if (normalizedExisting !== normalizedTemplate && normalizedExisting.trim().length > 0) {
@@ -274,7 +275,7 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
     return;
   }
 
-  storage.writeSync(agentDest, agentContent);
+  writeManagedText(agentDest, agentContent);
   stampVersion(agentDest, cliVersion);
 
   // Re-advertise the current cast to outer coordinators (#1608). An upgrade
@@ -497,12 +498,12 @@ function writeWorkflowFile(file: string, srcPath: string, destPath: string, proj
     const stub = generateProjectWorkflowStub(file, projectType);
     if (stub) {
       backupIfCustomized(stub);
-      storage.writeSync(destPath, stub);
+      writeManagedText(destPath, stub);
       return;
     }
   }
   backupIfCustomized(storage.readSync(srcPath) ?? '');
-  storage.copySync(srcPath, destPath);
+  copyManagedFile(srcPath, destPath);
 }
 
 /* ── Infrastructure ensure functions ────────────────────────────── */
@@ -552,7 +553,7 @@ export function ensureGitattributes(dest: string): string[] {
   if (added.length > 0) {
     const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
     try {
-      storage.writeSync(filePath, content + suffix + added.join('\n') + '\n');
+      writeManagedText(filePath, content + suffix + added.join('\n') + '\n');
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
         warn('Could not update .gitattributes (read-only). Add merge=union entries manually.');
@@ -599,7 +600,7 @@ export function ensureGitignore(dest: string): string[] {
   }
   if (added.length > 0) {
     const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-    storage.writeSync(filePath, content + suffix + added.join('\n') + '\n');
+    writeManagedText(filePath, content + suffix + added.join('\n') + '\n');
   }
   return added;
 }
@@ -789,7 +790,7 @@ function syncAllSkills(dest: string, templatesDir: string): number {
 
     warnIfSkillCustomized(srcPath, destPath, entry.source);
     storage.mkdirSync(path.dirname(destPath), { recursive: true });
-    storage.copySync(srcPath, destPath);
+    copyManagedFile(srcPath, destPath);
     synced++;
   }
   return synced;
@@ -810,7 +811,7 @@ function refreshSquadTemplatesDir(dest: string, templatesDir: string): void {
     if (storage.isDirectorySync(srcPath)) {
       copyDirRecursive(srcPath, destPath);
     } else {
-      storage.copySync(srcPath, destPath);
+      copyManagedFile(srcPath, destPath);
     }
   }
 }
@@ -938,7 +939,7 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
   // git root looking for .mcp.json) and tombstone any stale project-level
   // entry left by older Squad versions in `.copilot/mcp-config.json`.
   // No HOME modifications.
-  const pinnedSpec = await resolveSquadStateMcpSpec(getPackageVersion());
+  const pinnedSpec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(getPackageVersion()));
   try {
     const rootResult = ensureSquadStateMcpInRoot(dest, getPackageVersion(), pinnedSpec);
     if (rootResult.written) {
@@ -1188,7 +1189,7 @@ export function ensureUserOwnedTemplates(dest: string, templatesDir: string): st
     if (storage.existsSync(destPath)) continue;
 
     storage.mkdirSync(path.dirname(destPath), { recursive: true });
-    storage.copySync(srcPath, destPath);
+    copyManagedFile(srcPath, destPath);
     created.push(entry.destination);
   }
   return created;
@@ -1330,7 +1331,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       warnIfSkillCustomized(srcPath, destPath, file.source);
     }
     storage.mkdirSync(path.dirname(destPath), { recursive: true });
-    storage.copySync(srcPath, destPath);
+    copyManagedFile(srcPath, destPath);
 
     filesUpdated.push(file.destination);
   }
@@ -1369,7 +1370,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
     if (copilotEnabled && storage.existsSync(copilotInstructionsSrc)) {
       storage.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
-      storage.copySync(copilotInstructionsSrc, copilotInstructionsDest);
+      copyManagedFile(copilotInstructionsSrc, copilotInstructionsDest);
       success('upgraded .github/copilot-instructions.md');
       filesUpdated.push('copilot-instructions.md');
     }

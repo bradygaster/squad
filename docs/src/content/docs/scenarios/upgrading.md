@@ -39,6 +39,16 @@ That's it.
 
 Squad-owned files (`squad.agent.md` and `.ai-team-templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.
 
+Updates retain each existing destination's newline style, including CRLF on
+Windows, across the coordinator, generated capability block, templates,
+built-in skills, and workflows. A newline-only difference does not rewrite a
+managed template; real content updates still apply. New files use shipped
+template newlines. Upgrade does not change your repository's line-ending policy.
+
+Shared `.mcp.json` entries never contain a standalone installation's absolute
+path. Packaged installs use `squad.exe` on Windows or `squad` on Unix from the
+MCP host's PATH; npm installs retain their version-pinned `npx` entry.
+
 Agent identities, charters, histories, decisions, and session logs are preserved.
 Supported legacy casting state is migrated as described below; built-in skills
 may be refreshed as Squad-owned files.

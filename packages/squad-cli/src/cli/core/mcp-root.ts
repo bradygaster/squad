@@ -22,14 +22,17 @@
  * Safety: we refuse to overwrite a malformed `.mcp.json` rather than
  * silently clobber a user-edited file; other `mcpServers.*` entries are
  * preserved semantically through the JSON round-trip, and user-supplied
- * `env` values on the `squad_state` entry survive re-runs.
+ * `env`, tool restrictions, and custom fields on the `squad_state` entry survive
+ * re-runs. Standalone launchers are published as PATH commands, never absolute
+ * machine-local installation paths.
  *
  * @module cli/core/mcp-root
  */
 
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
-import type { SquadStateMcpSpec } from './mcp-spec.js';
+import { projectSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
+import { writeManagedText } from './managed-file.js';
 
 const storage = new FSStorageProvider();
 
@@ -63,7 +66,7 @@ export interface EnsureRootResult {
  * @param dest         Squad project root (absolute or relative).
  * @param _cliVersion  Reserved for forensic metadata (unused — Copilot
  *                     CLI does not currently surface extra fields).
- * @param spec         Pinned/insider command + args from
+ * @param spec         Local standalone or pinned/insider command + args from
  *                     `resolveSquadStateMcpSpec`.
  */
 export function ensureSquadStateMcpInRoot(
@@ -97,23 +100,24 @@ export function ensureSquadStateMcpInRoot(
   }
 
   const existing = parsed.mcpServers[key];
+  const projectSpec = projectSquadStateMcpSpec(spec);
 
-  // `command`/`args` are Squad-managed (they carry the version pin) and are
+  // `command`/`args` are Squad-managed (version pin or portable launcher) and are
   // always refreshed. `env` is user territory — Squad writes no keys into it,
   // so anything already there (corporate npm proxy settings, for example) is
   // carried forward rather than reset. See bradygaster/squad#1893.
   const hasUsableEnv =
     !!existing?.env && typeof existing.env === 'object' && !Array.isArray(existing.env);
   const desired: McpServerEntry = {
-    command: spec.command,
-    args: [...spec.args],
+    ...existing,
+    command: projectSpec.command,
+    args: [...projectSpec.args],
     env: hasUsableEnv ? { ...existing!.env } : {},
-    tools: ['*'],
+    tools: Array.isArray(existing?.tools) && existing.tools.every(tool => typeof tool === 'string')
+      ? [...existing.tools] : ['*'],
   };
 
-  // `desired.env` is a verbatim copy of `existing.env` whenever the latter is a
-  // usable object, so `hasUsableEnv` is the whole env comparison. A malformed
-  // `env` (array/string/null) is normalized to `{}` above and must be rewritten.
+  // User-owned fields are carried forward; only launch command/args are managed.
   if (
     existing &&
     existing.command === desired.command &&
@@ -122,15 +126,15 @@ export function ensureSquadStateMcpInRoot(
     existing.args.every((a, i) => a === desired.args![i]) &&
     hasUsableEnv &&
     Array.isArray(existing.tools) &&
-    existing.tools.length === 1 &&
-    existing.tools[0] === '*'
+    existing.tools.length === desired.tools!.length &&
+    existing.tools.every((tool, index) => tool === desired.tools![index])
   ) {
     return { written: false, key, path: cfgPath };
   }
 
   parsed.mcpServers[key] = desired;
 
-  storage.writeSync(cfgPath, JSON.stringify(parsed, null, 2) + '\n');
+  writeManagedText(cfgPath, JSON.stringify(parsed, null, 2) + '\n');
   return { written: true, key, path: cfgPath };
 }
 
@@ -168,7 +172,7 @@ export function tombstoneStaleSquadStateInProjectMcp(dest: string): TombstoneRes
   }
 
   delete config.mcpServers.squad_state;
-  storage.writeSync(cfgPath, JSON.stringify(config, null, 2) + '\n');
+  writeManagedText(cfgPath, JSON.stringify(config, null, 2) + '\n');
   return { removed: true, path: cfgPath };
 }
 
