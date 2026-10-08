@@ -186,7 +186,12 @@ for the exact `squad/bootstrap-cast` PR created by the base-controlled bootstrap
 workflow. It verifies the GitHub Actions bot author, canonical title and branch,
 matching provenance in the PR body and a durable bot-authored PR comment, exact
 base/head SHAs, and the referenced default-branch `squad-bootstrap.lock.yml`
-push run. It binds the reserved roles
+push run. A fresh-reset generation instead uses the exact branch and title
+derived from the maintainer-reviewed `.squad/bootstrap-reset.json`. Its manual
+dispatch is eligible only when the guard independently verifies human actor
+permissions and the same committed reset record at the recorded run SHA and
+current PR base. No reset record broadens legacy manual-dispatch authorization.
+It binds the reserved roles
 `@squad/base-controlled-bootstrap` and `@squad/base-controlled-review`; the
 clearing gate additionally requires that bootstrap run to finish successfully.
 All other missing, malformed, or non-404 attribution evidence is refused.

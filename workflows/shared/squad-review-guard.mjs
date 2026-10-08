@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { evaluateImplementDispatchInputs } from './squad-retro-provenance.mjs';
 import {
+  BOOTSTRAP_RESET_PATH,
+  bootstrapIdentity,
+  parseBootstrapReset,
   BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
   bootstrapPrFallbackIssueMarker,
   buildBootstrapPrFallbackCompareUrl,
@@ -19,7 +22,6 @@ const ID = /^[a-z][a-z0-9-]*$/;
 const BOT = 'github-actions[bot]';
 const BOT_ID = 41898282;
 const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
-const BOOTSTRAP_TITLE = '[squad] Cast your Squad';
 const BOOTSTRAP_AUTHOR = '@squad/base-controlled-bootstrap';
 const BOOTSTRAP_REVIEWER = '@squad/base-controlled-review';
 const BOOTSTRAP_PREFIX = '<' + '!-- squad:bootstrap-provenance ';
@@ -174,6 +176,38 @@ async function requireRecordedBaseAncestor(get, repository, recordedSha, liveSha
   );
 }
 
+async function bootstrapReviewIdentity(get, repository, pr) {
+  const reset = parseBootstrapReset(await committedJson(
+    get, repository, BOOTSTRAP_RESET_PATH, pr.base.sha, { allowMissing: true },
+  ));
+  requireThat(!reset?.archived_pull_requests.includes(pr.number),
+    'archived bootstrap pull requests cannot regain review authorization');
+  if (pr.head.ref === BOOTSTRAP_BRANCH) return { reset: null, ...bootstrapIdentity() };
+  requireThat(/^squad\/bootstrap-cast-[a-z][a-z0-9-]{0,31}$/.test(pr.head.ref),
+    'invalid base-controlled bootstrap pull request branch');
+  requireThat(reset && bootstrapIdentity(reset).BOOTSTRAP_BRANCH === pr.head.ref,
+    'bootstrap generation does not match the committed reset');
+  return { reset, ...bootstrapIdentity(reset) };
+}
+
+async function trustedBootstrapEvent(get, repository, run, identity) {
+  if (!identity.reset) return run.event === 'push';
+  const recordedReset = parseBootstrapReset(await committedJson(
+    get, repository, BOOTSTRAP_RESET_PATH, run.head_sha,
+  ));
+  requireThat(JSON.stringify(recordedReset) === JSON.stringify(identity.reset),
+    'bootstrap reset changed since the provenance run');
+  if (run.event !== 'workflow_dispatch') return false;
+  for (const actor of [run.actor, run.triggering_actor]) {
+    requireThat(actor?.type === 'User' && typeof actor.login === 'string',
+      'fresh bootstrap run requires an authenticated human maintainer');
+    const access = await get(`repos/${repository}/collaborators/${encodeURIComponent(actor.login)}/permission`);
+    requireThat(['write', 'maintain', 'admin'].includes(access.permission),
+      'fresh bootstrap run actor lacks maintainer permission');
+  }
+  return true;
+}
+
 // The post-install bootstrap PR fallback (documented alongside `can_approve_pull_request_reviews: false`
 // in docs/src/content/docs/guide/gh-aw.md) asks a human to open the Cast PR manually from a compare-URL
 // link after `pulls.create` is permission-denied. That PR is human-authored, so it cannot satisfy the
@@ -189,15 +223,16 @@ async function requireRecordedBaseAncestor(get, repository, recordedSha, liveSha
 // check (SHA pinning, default-branch targeting, workflow-source binding, etc.) is enforced unchanged by
 // the surrounding `reviewTarget`. This never relies on `pulls.create`/review-approval permissions.
 async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, requireRunSuccess) {
-  requireThat(pr.head.ref === BOOTSTRAP_BRANCH && pr.user?.type === 'User',
+  const identity = await bootstrapReviewIdentity(get, repository, pr);
+  requireThat(pr.head.ref === identity.BOOTSTRAP_BRANCH && pr.user?.type === 'User',
     'pull request does not match the documented manual Cast fallback shape');
-  // Mirrors validateBootstrapAttribution's own `pr.title === BOOTSTRAP_TITLE` requirement below:
+  // Mirrors the bot-authored path's canonical title requirement:
   // without it, a manually opened PR with an arbitrary title passes this review path (the compare
   // URL a human is asked to open already pre-fills this exact title via its `title` query param),
   // but classifyBootstrapState() rejects any PR on this branch with another title, so a manual
   // bootstrap rerun — or the post-merge bootstrap run itself — would then fail before ever creating
   // the linked research-proposals issue.
-  requireThat(pr.title === BOOTSTRAP_TITLE,
+  requireThat(pr.title === identity.BOOTSTRAP_PR_TITLE,
     'pull request does not match the documented manual Cast fallback shape');
   // Deliberately omits `baseSha` here (unlike squad-bootstrap.md's own push-triggered dedupe
   // call): a human may open this Cast PR well after the default branch has legitimately
@@ -207,7 +242,7 @@ async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, 
   // the default branch. The recorded (immutable) `base_sha` is instead validated for live
   // ancestry below, and the base-controlled run binding is pinned to that same immutable value.
   const issues = await list(get, `repos/${repository}/issues`);
-  const fallbackIssue = findExistingBootstrapPrFallbackIssue(issues, BOOTSTRAP_BRANCH, {
+  const fallbackIssue = findExistingBootstrapPrFallbackIssue(issues, identity.BOOTSTRAP_BRANCH, {
     repository,
     baseBranch: pr.base.ref,
     headSha: pr.head.sha,
@@ -221,7 +256,7 @@ async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, 
   requireThat(timestamp(fallbackIssue.updated_at) === timestamp(fallbackIssue.created_at),
     'bootstrap PR fallback issue was edited after creation');
   const body = String(fallbackIssue.body ?? '');
-  requireThat(body.includes(bootstrapPrFallbackIssueMarker(BOOTSTRAP_BRANCH)),
+  requireThat(body.includes(bootstrapPrFallbackIssueMarker(identity.BOOTSTRAP_BRANCH)),
     'bootstrap PR fallback issue is missing its branch marker');
   const provenance = parseBootstrapPrFallbackProvenance(body);
   requireThat(provenance, 'missing or malformed bootstrap PR fallback provenance record');
@@ -259,7 +294,7 @@ async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, 
     repository,
     baseBranch: provenance.base_branch,
     headBranch: provenance.head_branch,
-    title: BOOTSTRAP_TITLE,
+    title: identity.BOOTSTRAP_PR_TITLE,
     server: env.GITHUB_SERVER_URL,
   });
   requireThat(provenance.compare_url === expectedCompareUrl,
@@ -273,7 +308,7 @@ async function validateBootstrapPrFallbackAttribution(env, get, repository, pr, 
   // exact base commit recorded in this provenance.
   const run = await get(`repos/${repository}/actions/runs/${provenance.run_id}`);
   requireThat(
-    run.event === 'push' &&
+    await trustedBootstrapEvent(get, repository, run, identity) &&
     run.path === BOOTSTRAP_WORKFLOW &&
     run.repository?.full_name === repository &&
     run.head_sha === provenance.base_sha &&
@@ -307,9 +342,10 @@ async function validateBootstrapAttribution(get, repository, pr, requireRunSucce
   );
   requireThat(JSON.stringify(commentProvenance) === JSON.stringify(provenance),
     'bootstrap PR and bot-authenticated comment provenance differ');
+  const identity = await bootstrapReviewIdentity(get, repository, pr);
   requireThat(
-    pr.title === BOOTSTRAP_TITLE &&
-    pr.head.ref === BOOTSTRAP_BRANCH &&
+    pr.title === identity.BOOTSTRAP_PR_TITLE &&
+    pr.head.ref === identity.BOOTSTRAP_BRANCH &&
     pr.user?.login === BOT &&
     pr.user?.type === 'Bot' &&
     provenance.repository === repository &&
@@ -327,7 +363,7 @@ async function validateBootstrapAttribution(get, repository, pr, requireRunSucce
   );
   const run = await get(`repos/${repository}/actions/runs/${provenance.run_id}`);
   requireThat(
-    run.event === 'push' &&
+    await trustedBootstrapEvent(get, repository, run, identity) &&
     run.path === BOOTSTRAP_WORKFLOW &&
     run.repository?.full_name === repository &&
     run.head_sha === provenance.install_sha &&
@@ -398,7 +434,7 @@ export async function reviewTarget(
   if (value === undefined) {
     requireThat(relay === false && env.GITHUB_EVENT_NAME === 'pull_request_target',
       'missing committed attribution outside base-controlled bootstrap activation');
-    attribution = pr.head.ref === BOOTSTRAP_BRANCH && pr.user?.type !== 'Bot'
+    attribution = pr.head.ref.startsWith(BOOTSTRAP_BRANCH) && pr.user?.type !== 'Bot'
       ? await validateBootstrapPrFallbackAttribution(env, get, repository, pr, requireBootstrapRunSuccess)
       : await validateBootstrapAttribution(get, repository, pr, requireBootstrapRunSuccess);
   } else {

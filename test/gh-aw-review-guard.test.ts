@@ -154,6 +154,9 @@ function fixture(relay = false) {
       }
       return encode(attribution);
     }
+    if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+      throw Object.assign(new Error('Not Found'), { status: 404 });
+    }
     if (route.endsWith('/contents/.squad/casting/registry.json')) {
       expect(fields?.ref).toBe(BASE);
       return encode(registry);
@@ -296,6 +299,93 @@ function retainFirstAttempt(f: ReturnType<typeof fixture>) {
   f.sync();
   return first;
 }
+
+describe('generation-bound fresh bootstrap review', () => {
+  const reset = {
+    schema: 'squad-bootstrap-reset/v1', id: 'retry-1',
+    archived_pull_requests: [3], archived_issues: [],
+  };
+  function freshFixture(manual = false) {
+    const f = fixture();
+    makeBootstrap(f);
+    f.pr.head.ref = 'squad/bootstrap-cast-retry-1';
+    f.pr.title += ' [reset:retry-1]';
+    f.bootstrapRun.event = 'workflow_dispatch';
+    const actors = {
+      actor: { login: 'maintainer', type: 'User' },
+      triggering_actor: { login: 'maintainer', type: 'User' },
+    };
+    Object.assign(f.bootstrapRun, actors);
+    if (manual) {
+      f.pr.user = { login: 'human', type: 'User' };
+      f.state.comments = [];
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: f.pr.head.ref, baseBranch: f.pr.base.ref,
+        compareUrlOverride: buildBootstrapPrFallbackCompareUrl({
+          repository: REPOSITORY, baseBranch: f.pr.base.ref,
+          headBranch: f.pr.head.ref, title: f.pr.title, server: 'https://github.com',
+        }),
+      })];
+    }
+    const state = { reset, recordedReset: reset };
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+        return f.encode(fields?.ref === f.pr.base.sha ? state.reset : state.recordedReset);
+      }
+      return f.get(route, fields);
+    };
+    return { ...f, get, actors, resetState: state };
+  }
+
+  it.each([false, true])('authorizes exact authenticated dispatch provenance (manual fallback=%s)', async manual => {
+    const f = freshFixture(manual);
+    expect((await reviewTarget(f.env, f.get, { requireBootstrapRunSuccess: true })).author_agent)
+      .toBe('@squad/base-controlled-bootstrap');
+    expect(f.state.calls.some(route => route.includes('/collaborators/maintainer/permission'))).toBe(true);
+  });
+
+  it.each([false, true])('rejects wrong actor, identity, head and unsuccessful runs (fallback=%s)', async manual => {
+    for (const mutate of [
+      (f: ReturnType<typeof freshFixture>) => { f.state.permission = 'read'; },
+      (f: ReturnType<typeof freshFixture>) => { f.actors.triggering_actor.type = 'Bot'; },
+      (f: ReturnType<typeof freshFixture>) => { f.resetState.reset = { ...reset, id: 'other' }; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.head_sha = HEAD; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.conclusion = 'failure'; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.path = '.github/workflows/other.yml'; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.event = 'push'; },
+    ]) {
+      const f = freshFixture(manual);
+      mutate(f);
+      await expect(reviewTarget(f.env, f.get, { requireBootstrapRunSuccess: true })).rejects.toThrow();
+    }
+  });
+
+  it('keeps legacy manual dispatch ineligible and refuses changed committed reset history', async () => {
+    const legacy = fixture();
+    makeBootstrap(legacy);
+    legacy.bootstrapRun.event = 'workflow_dispatch';
+    await expect(reviewTarget(legacy.env, legacy.get)).rejects.toThrow('base-controlled workflow run');
+    const f = freshFixture();
+    f.pr.base.sha = '9'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.resetState.recordedReset = { ...reset, archived_pull_requests: [99] };
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('reset changed');
+  });
+
+  it.each([false, true])('refuses reopened archived legacy Cast authorization (fallback=%s)', async manual => {
+    const f = fixture();
+    if (manual) makeBootstrapPrFallback(f);
+    else makeBootstrap(f);
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+        return f.encode({ ...reset, archived_pull_requests: [42] });
+      }
+      return f.get(route, fields);
+    };
+    await expect(reviewTarget(f.env, get)).rejects.toThrow('archived bootstrap pull requests');
+  });
+});
 
 describe('independent Squad review guard', () => {
   it('uses reserved workflow roles only for the base-controlled post-install bootstrap PR', async () => {

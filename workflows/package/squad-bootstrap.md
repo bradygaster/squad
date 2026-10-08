@@ -15,7 +15,12 @@ on:
       - .github/aw/packages/*.json
       - .github/aw/squad/runtime/**
       - .github/workflows/shared/squad-bootstrap-trigger-probe.json
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      fresh_start:
+        description: "Explicit fresh start: enter the ID from committed .squad/bootstrap-reset.json; otherwise leave blank"
+        type: string
+        required: false
 if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 permissions:
   contents: read
@@ -48,6 +53,7 @@ pre-agent-steps:
     uses: actions/github-script@v9
     env:
       SQUAD_BOOTSTRAP_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      SQUAD_BOOTSTRAP_FRESH_START: ${{ inputs.fresh_start }}
     with:
       script: |
         const { writeFileSync } = await import('node:fs');
@@ -57,6 +63,15 @@ pre-agent-steps:
           process.env.GITHUB_WORKSPACE,
           '.github/workflows/shared/squad-bootstrap-validator.mjs',
         )).href);
+        const reset = stateModule.readBootstrapReset(process.env.GITHUB_WORKSPACE);
+        const resetAuthorized = await stateModule.authorizeBootstrapReset({
+          reset, input: process.env.SQUAD_BOOTSTRAP_FRESH_START, context, github,
+        });
+        const resetState = {
+          reset, resetAuthorized,
+          repository: `${context.repo.owner}/${context.repo.repo}`,
+          installedTeam: stateModule.hasCommittedBootstrapTeam(process.env.GITHUB_WORKSPACE),
+        };
         const pullRequests = await github.paginate(github.rest.pulls.list, {
           ...context.repo,
           state: 'all',
@@ -70,6 +85,7 @@ pre-agent-steps:
         let state;
         try {
           const preliminary = stateModule.classifyBootstrapState({
+            ...resetState,
             pullRequests,
             issues,
             defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
@@ -82,6 +98,7 @@ pre-agent-steps:
               })
             : [];
           state = stateModule.classifyBootstrapState({
+            ...resetState,
             pullRequests,
             issues,
             comments,
@@ -154,7 +171,7 @@ pre-agent-steps:
       # BEGIN GENERATED RESOURCE DIGESTS
       check_hash "$install_verifier" "a279cd5c4adeb613ceb90c1bfbb9818265aeb6bc8986e2e3799e96f7c2d787e5"
       check_hash "$cast_validator" "c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
-      check_hash "$bootstrap_validator" "ea43df25b9813cbb78d85abaf1b0b906b64b202915c34bdb1562ddd05af03797"
+      check_hash "$bootstrap_validator" "ac969d1cc92353219ba312d0d9af8702b1a7a569b4e8d5c79ae71e4aa020aad6"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
@@ -185,6 +202,7 @@ safe-outputs:
         contents: write
         issues: write
         pull-requests: write
+        actions: read
       inputs:
         payload_encoding:
           description: Fixed bootstrap payload encoding; must be base64.
@@ -238,7 +256,7 @@ safe-outputs:
         - name: Checkout trusted default branch
           uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
           with:
-            ref: refs/heads/${{ github.event.repository.default_branch }}
+            ref: ${{ github.sha }}
             persist-credentials: false
             path: bootstrap-repo
         - name: Validate and materialize both artifacts
@@ -248,6 +266,7 @@ safe-outputs:
             SQUAD_BOOTSTRAP_INSTALL_SHA: ${{ github.sha }}
             SQUAD_BOOTSTRAP_REPOSITORY: ${{ github.repository }}
             SQUAD_BOOTSTRAP_RUN_ID: ${{ github.run_id }}
+            SQUAD_BOOTSTRAP_FRESH_START: ${{ inputs.fresh_start }}
           with:
             script: |
               const {
@@ -259,10 +278,20 @@ safe-outputs:
               const { pathToFileURL } = await import('node:url');
 
               const checkout = join(process.env.GITHUB_WORKSPACE, 'bootstrap-repo');
-              const stateModule = await import(pathToFileURL(join(
+              const bootstrapModule = await import(pathToFileURL(join(
                 checkout,
                 '.github/workflows/shared/squad-bootstrap-validator.mjs',
               )).href);
+              const reset = bootstrapModule.readBootstrapReset(checkout);
+              const stateModule = { ...bootstrapModule, ...bootstrapModule.bootstrapIdentity(reset) };
+              const resetAuthorized = await stateModule.authorizeBootstrapReset({
+                reset, input: process.env.SQUAD_BOOTSTRAP_FRESH_START, context, github,
+              });
+              const resetState = {
+                reset, resetAuthorized,
+                repository: `${context.repo.owner}/${context.repo.repo}`,
+                installedTeam: stateModule.hasCommittedBootstrapTeam(checkout),
+              };
               const validatorModule = await import(pathToFileURL(join(
                 checkout,
                 '.github/workflows/shared/squad-bootstrap-validator.mjs',
@@ -357,6 +386,7 @@ safe-outputs:
                     per_page: 100,
                   })).filter((issue) => !issue.pull_request);
                   const preliminary = stateModule.classifyBootstrapState({
+                    ...resetState,
                     pullRequests,
                     issues,
                     defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
@@ -373,6 +403,7 @@ safe-outputs:
                     issues,
                     comments,
                     state: stateModule.classifyBootstrapState({
+                      ...resetState,
                       pullRequests,
                       issues,
                       comments,
@@ -382,6 +413,10 @@ safe-outputs:
                 };
 
                 let snapshot = await listState();
+                if (snapshot.state.action === 'reset_armed') {
+                  core.info('Fresh bootstrap is armed; a maintainer must manually dispatch the exact fresh_start ID.');
+                  return;
+                }
                 if (snapshot.state.action === 'opt_out') {
                   core.info('A closed-unmerged bootstrap Cast PR records human opt-out; no replacement was created.');
                   return;
@@ -429,19 +464,28 @@ safe-outputs:
                 };
 
                 let pullRequest = snapshot.state.pull_request;
+                const recoveringReset = reset && Boolean(pullRequest);
                 if (!pullRequest) {
+                  if (reset) {
+                    const liveBase = await github.rest.git.getRef({
+                      ...context.repo, ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
+                    });
+                    if (liveBase.data.object.sha !== context.sha) {
+                      throw new Error('Default branch advanced during fresh bootstrap; dispatch again against its new tip.');
+                    }
+                  }
                   const branchRefName = `heads/${stateModule.BOOTSTRAP_BRANCH}`;
                   const existingRef = await getRef(branchRefName);
                   if (existingRef) {
                     await assertRemotePayload(stateModule.BOOTSTRAP_BRANCH);
                   } else {
-                    const baseRef = await github.rest.git.getRef({
+                    const baseSha = reset ? context.sha : (await github.rest.git.getRef({
                       ...context.repo,
                       ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
-                    });
+                    })).data.object.sha;
                     const baseCommit = await github.rest.git.getCommit({
                       ...context.repo,
-                      commit_sha: baseRef.data.object.sha,
+                      commit_sha: baseSha,
                     });
                     const tree = [];
                     for (const file of payload.files) {
@@ -466,8 +510,16 @@ safe-outputs:
                       ...context.repo,
                       message: 'chore(squad): add repository-derived Squad',
                       tree: createdTree.data.sha,
-                      parents: [baseRef.data.object.sha],
+                      parents: [baseSha],
                     });
+                    if (reset) {
+                      const liveBase = await github.rest.git.getRef({
+                        ...context.repo, ref: `heads/${process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH}`,
+                      });
+                      if (liveBase.data.object.sha !== baseSha) {
+                        throw new Error('Default branch advanced before fresh bootstrap publication; dispatch again.');
+                      }
+                    }
                     await github.rest.git.createRef({
                       ...context.repo,
                       ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`,
@@ -525,14 +577,9 @@ safe-outputs:
                       );
                       return;
                     }
-                    // squad-review-guard's validateBootstrapPrFallbackAttribution() only authorizes a
-                    // fallback provenance record whose referenced run has event === 'push' (mirroring
-                    // the bot-authored path's own push-only trust model). A workflow_dispatch run that
-                    // reaches this branch would mint a fallback issue no Cast PR could ever satisfy,
-                    // and future reruns would dedupe against that permanently-unusable issue forever
-                    // (findExistingBootstrapPrFallbackIssue does not consider triggering event). Fail
-                    // closed instead of minting a dead-end issue.
-                    if (context.eventName !== 'push') {
+                    // Legacy fallback provenance remains push-only. The only dispatch exception
+                    // is a committed generation with independently checked maintainer authorization.
+                    if (context.eventName !== 'push' && !(reset && resetAuthorized)) {
                       throw new Error(
                         'Squad bootstrap cannot open a trusted fallback issue because this run was triggered by ' +
                           `'${context.eventName}', not 'push'. The Squad review workflow only authorizes a Cast ` +
@@ -596,7 +643,18 @@ safe-outputs:
                   ...context.repo,
                   pull_number: pullRequest.number,
                 })).data;
-                const provenance = {
+                const provenance = recoveringReset
+                  ? await stateModule.recoverBootstrapResetProvenance({
+                      reset, github,
+                      repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
+                      defaultBranch: process.env.SQUAD_BOOTSTRAP_DEFAULT_BRANCH,
+                      currentSha: context.sha, currentRunId: context.runId, resetAuthorized,
+                      pullRequest: pullRequestDetails, issues: snapshot.issues,
+                      comments: await github.paginate(github.rest.issues.listComments, {
+                        ...context.repo, issue_number: pullRequest.number, per_page: 100,
+                      }),
+                    })
+                  : {
                   schema: 1,
                   repository: process.env.SQUAD_BOOTSTRAP_REPOSITORY,
                   run_id: process.env.SQUAD_BOOTSTRAP_RUN_ID,
@@ -604,8 +662,8 @@ safe-outputs:
                   cast_sha: pullRequestDetails.head.sha,
                 };
                 if (provenance.repository !== `${context.repo.owner}/${context.repo.repo}`
-                  || provenance.run_id !== String(context.runId)
-                  || provenance.install_sha !== context.sha
+                  || (!recoveringReset && (provenance.run_id !== String(context.runId)
+                    || provenance.install_sha !== context.sha))
                   || !/^[0-9a-f]{40}$/.test(provenance.install_sha)
                   || !/^[0-9a-f]{40}$/.test(provenance.cast_sha)
                   || pullRequestDetails.head.ref !== stateModule.BOOTSTRAP_BRANCH
@@ -746,6 +804,9 @@ Read `.github/workflows/squad-bootstrap-state.json` before doing any analysis.
 - `noop`: call `noop` and stop. Both artifacts already exist.
 - `opt_out`: call `noop` with a message that the closed-unmerged Cast PR records
   human opt-out, then stop. Never create a replacement.
+- `reset_armed`: call `noop` and stop. Only an authenticated maintainer's manual
+  dispatch with `fresh_start` equal to the committed reset ID may create this
+  generation. Never turn an ordinary push or blank manual run into a reset.
 - `create_both`: generate one shared payload and request materialization.
 - `create_issue`: preserve the checked-out existing Cast tree, generate the
   issue from it, and request materialization.
@@ -820,6 +881,12 @@ selected by this Cast, but never remove or rewrite the four built-ins.
 ## Shared payload
 
 Write `.github/workflows/squad-bootstrap-payload.json` with this exact shape:
+
+For a committed reset, use the exact `identity.BOOTSTRAP_BRANCH`,
+`identity.BOOTSTRAP_PR_TITLE`, and `identity.BOOTSTRAP_ISSUE_TITLE` from the
+deterministic state file instead of the legacy values shown below. The writer
+and validator independently load this identity from committed Git history;
+never choose or edit the reset ID, record, archived numbers, or output names.
 
 ```json
 {

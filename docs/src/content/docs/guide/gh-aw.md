@@ -250,6 +250,64 @@ The validator reads the scope only from committed `HEAD` and fails closed on a
 malformed file. The scope only narrows focus; it never changes outputs or
 permissions.
 
+### Explicit fresh bootstrap after a failed attempt
+
+Closing an unmerged Cast PR still means **opt out**. Ordinary pushes, blank
+manual runs, renaming that PR, or deleting its branch do not undo that decision.
+To intentionally start over without deleting history, a maintainer can prepare
+an explicit generation on the default branch:
+
+1. Disable **Squad Bootstrap** while preparing the retry. Close the exact stale
+   unmerged Cast PR and any old bootstrap research or fallback issues you intend
+   to archive. Preserve unrelated issues and all old branches.
+2. In a reviewed PR, install the complete coherent Squad package at an approved
+   immutable SHA and add `.squad/bootstrap-reset.json`. For example, if Cast PR
+   3 is closed and there are no research/fallback issues to archive:
+
+   ```json
+   {
+     "schema": "squad-bootstrap-reset/v1",
+     "id": "retry-1",
+     "archived_pull_requests": [3],
+     "archived_issues": []
+   }
+   ```
+
+3. Merge that preparation PR. The record only **arms** the generation: pushes
+   and blank manual runs cannot create it. Re-enable **Squad Bootstrap**, choose
+   the default branch in **Run workflow**, and enter `retry-1` in `fresh_start`.
+   The requester and rerun actor must be human repository collaborators with
+   write, maintain, or admin permission.
+4. Review the new `squad/bootstrap-cast-retry-1` draft Cast PR (or open the exact
+   compare link from its new signed fallback issue). The Cast and research issue
+   titles end in `[reset:retry-1]`. Existing bot and fallback provenance checks
+   remain mandatory; the review guard additionally binds manual dispatch to the
+   committed reset record and authenticated actors.
+
+Use your actual closed artifact numbers, not the example numbers. All historical
+Cast PRs and marked research issues must be explicitly accounted for; wrong,
+missing, duplicate, open, foreign, or merged archived PRs fail closed. Closed
+fallback issues may be included in `archived_issues`; unrelated issues cannot.
+The operation never closes artifacts, deletes branches, or overwrites an
+installed team or registry. A merged current-generation Cast may still finish
+its linked research through ordinary recovery.
+
+Keep the same record and ID for retries: they select the same branch and artifact
+identities. Existing branch contents must match the validated payload; divergent
+contents are refused, never force-pushed. If the default branch advances during
+initial materialization, dispatch again at its new tip. After the current Cast
+exists, blank runs recover it rather than starting another generation. Closing
+that new Cast again opts out, even with the same `fresh_start` input. Another
+fresh attempt requires a new reviewed ID and an archive list that also names
+that closed generation. Do not remove or edit the record while its Cast is under
+review; its exact committed contents are part of review authorization.
+Recovery preserves the original authenticated dispatch provenance, including
+the signed fallback origin for a manually opened PR. A push is never a reset
+trust root. An existing generation without that authenticated origin fails
+closed. If the originating dispatch failed after publishing provenance, use
+**Re-run all jobs** on that same run with its original inputs; another run
+cannot promote a failed origin into successful provenance.
+
 Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
 classify its existing bootstrap proposals. If a proposal needs deeper or newer
 evidence, use one of the issue's focused `/squad research ...` commands first;
