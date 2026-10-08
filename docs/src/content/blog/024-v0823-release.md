@@ -410,7 +410,8 @@ If you've had issues with `npx @bradygaster/squad-cli` on fresh machines, v0.8.2
 npx @bradygaster/squad-cli@latest doctor
 # Now works reliably without dependency resolution errors
 ```
-### To Migrate to SDK-First (Optional)
+### Historical SDK-First Migration Steps (Legacy Compatibility Only)
+Do not adopt SDK-First mode for a new team; use markdown-first `squad init` instead. The steps below are preserved for teams maintaining legacy SDK-first configurations and should be read only as release-era migration context.
 1. Create `squad.config.ts` with builder functions
 2. Run `squad build --dry-run` to preview generated files
 3. Run `squad build` to generate `.squad/` markdown
@@ -478,19 +479,13 @@ This release was shipped by the Squad core team with community contributions:
 Thanks to all early SDK-First adopters for feedback.
 
 ---
-## Try It Now
+## Start a New Team with Markdown-First Initialization
+For current releases, create new teams with markdown as the source of truth:
 ```bash
 npm install -g @bradygaster/squad-cli@latest
-mkdir my-sdk-squad && cd my-sdk-squad
+mkdir my-squad && cd my-squad
 git init
-# Create squad.config.ts with builders
-# (see quick start above, or copy from samples/azure-function-squad/)
-# Build your squad
-npx squad build
-# See the generated markdown
-cat .squad/team.md
-# Run agents (same CLI, same experience)
-npx squad start
+squad init
 ```
 
 ---
