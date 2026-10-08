@@ -78,6 +78,7 @@ describe('CLI: init command', () => {
       `<!-- version: ${staleVersion} -->`,
       '',
       `- **Version:** ${staleVersion}. Include it as \`Squad v${staleVersion}\` in your first response.`,
+      'Keep unrelated examples such as `Squad velocity` and invalid `Squad v1.2` unchanged.',
     ].join('\n');
     await writeFile(agentPath, before, 'utf-8');
 
@@ -88,6 +89,8 @@ describe('CLI: init command', () => {
     expect(after).toContain(`- **Version:** ${currentVersion}`);
     expect(after).toContain(`\`Squad v${currentVersion}\``);
     expect(after).not.toContain(staleVersion);
+    expect(after).toContain('`Squad velocity`');
+    expect(after).toContain('`Squad v1.2`');
   });
 
   it('re-running init against an existing project should refresh a stale resolved version everywhere, including the greeting literal (re-init regression)', async () => {
