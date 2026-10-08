@@ -38,8 +38,11 @@ export function stampVersion(filePath: string, version: string): void {
   content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${version} -->`);
   // Replace version in the Identity section's Version line
   content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m, `- **Version:** ${version}`);
-  // Replace {version} placeholder in the greeting instruction so it's unambiguous
-  content = content.replace(/`Squad v\{version\}`/g, `\`Squad v${version}\``);
+  // Replace only the unresolved placeholder or a valid SemVer literal.
+  content = content.replace(
+    /`Squad v(?:\{version\}|(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)`/g,
+    `\`Squad v${version}\``,
+  );
   storage.writeSync(filePath, content);
 }
 
