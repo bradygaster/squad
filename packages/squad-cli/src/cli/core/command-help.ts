@@ -76,10 +76,11 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   },
 
   migrate: (version) => {
-    header('migrate', version, 'Convert between markdown and SDK-First squad formats');
+    header('migrate', version, 'Convert between markdown and legacy SDK-First squad formats');
     console.log(`Usage: squad migrate --to sdk|markdown [options]\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--to sdk|markdown${RESET}           Target format`);
+    console.log(`  ${BOLD}--to sdk${RESET}                    Generate squad.config.ts (deprecated; removed in v2)`);
+    console.log(`  ${BOLD}--to markdown${RESET}               Convert an existing SDK-First squad to markdown`);
     console.log(`  ${BOLD}--from ai-team${RESET}              Source format (defaults to current)`);
     console.log(`  ${BOLD}--dry-run${RESET}                   Show planned changes without writing\n`);
   },

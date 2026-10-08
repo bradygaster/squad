@@ -1,7 +1,5 @@
 # VS Code Troubleshooting
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 This page covers known issues and mitigations when running Squad inside VS Code's integrated terminal.
 
 ---

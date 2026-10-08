@@ -67,10 +67,10 @@ Spawned agents have read access to the entire repository, including `.env` files
    - Report to user:
      ```
      🚨 SECRET DETECTED — commit blocked
-     
+
      File: .squad/decisions/inbox/river-db-config.md
      Pattern: DATABASE_URL=postgres://user:password@localhost:5432/prod
-     
+
      This file contains credentials and MUST NOT be committed.
      Please remove the secret, replace with placeholder, and try again.
      ```
@@ -92,17 +92,17 @@ Spawned agents have read access to the entire repository, including `.env` files
 2. **Alert the user:**
    ```
    🚨 CREDENTIAL LEAK DETECTED
-   
+
    A secret was found in git history:
    Commit: abc1234
    File: .squad/decisions/inbox/agent-config.md
    Pattern: API_KEY=sk-proj-...
-   
+
    This requires immediate remediation:
    1. Revoke the exposed credential (regenerate API key, rotate password)
    2. Remove from git history (git filter-repo or BFG)
    3. Force-push the cleaned history
-   
+
    Do NOT proceed with new work until this is resolved.
    ```
 3. **Do NOT attempt to fix it yourself** — secret removal requires specialized tools
@@ -139,7 +139,7 @@ Agent: (reads .env)
 
 → Writes to .squad/decisions/inbox/river-db-schema.md:
     "Database connection: postgres://admin:super_secret_pw@prod.example.com:5432/appdb"
-    
+
 🚨 VIOLATION: Live credential written to committed file
 ```
 

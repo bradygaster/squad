@@ -68,6 +68,14 @@ describe('printCommandHelp', () => {
     expect(logs).toEqual([]);
   });
 
+  it('marks SDK migration as deprecated', () => {
+    expect(printCommandHelp('migrate', '9.9.9-test')).toBe(true);
+    const blob = logs.join('\n');
+    expect(blob).toContain('--to sdk');
+    expect(blob).toContain('deprecated; removed in v2');
+    expect(blob).toContain('--to markdown');
+  });
+
   it('normalizes subsquads aliases ("streams", "workstreams") to the canonical help block', () => {
     // Regression guard for PR #1202 review nit: cli-entry.ts routes
     // `squad streams` and `squad workstreams` to the subsquads command,

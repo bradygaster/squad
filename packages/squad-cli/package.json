@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.13.1",
+  "version": "1.0.0",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -191,16 +191,16 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@bradygaster/squad-sdk": ">=0.11.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@bradygaster/squad-sdk": ">=1.0.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "ink": "^7.1.1",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "jsonc-parser": "^3.3.1",
-    "vscode-jsonrpc": "^9.0.1"
+    "vscode-jsonrpc": "^9.0.3"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "@types/react": "^19.2.18",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
     "typescript": "^6.0.3",
     "ink-testing-library": "^4.0.0"
   },

@@ -226,7 +226,10 @@ function extractFrontmatter(text) {
 }
 
 function measureAlwaysLoadedSkillFrontmatter() {
-  const skillFiles = [...findSkillFiles('.copilot/skills'), ...findSkillFiles('.squad/skills')];
+  const skillFiles = [
+    ...findSkillFiles('.copilot/skills'),
+    ...findSkillFiles('.squad-templates/skills'),
+  ];
   const alwaysOn = [];
   for (const path of skillFiles) {
     const text = readText(path);

@@ -23,6 +23,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: 'Architecture', slug: 'concepts/architecture' },
       { title: 'Your Team', slug: 'concepts/your-team' },
+      { title: 'Agent Identity Provenance', slug: 'concepts/agent-identity-provenance' },
       { title: 'Memory & Knowledge', slug: 'concepts/memory-and-knowledge' },
       { title: 'Parallel Work', slug: 'concepts/parallel-work' },
       { title: 'GitHub Workflow', slug: 'concepts/github-workflow' },

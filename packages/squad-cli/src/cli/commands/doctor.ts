@@ -13,7 +13,10 @@
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
-import { resolveStateDir } from '../core/effective-squad-dir.js';
+import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
+import { resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
+import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
 
@@ -157,6 +160,77 @@ function checkTeamRootResolves(squadDir: string, teamRoot: string): DoctorCheck 
   };
 }
 
+/** Squad writes state as .md and .json; other files in a code dir named log/ etc. are not ours. */
+const STRAY_STATE_FILE = /\.(md|json)$/;
+const STRAY_STATE_MAX_DEPTH = 4;
+const STRAY_STATE_LIST_LIMIT = 10;
+
+/** Push `/`-separated keys of files under `base/rel`. Skips dirs it cannot list. */
+function collectFileKeys(base: string, rel: string, depth: number, out: string[]): void {
+  let entries: string[];
+  try {
+    entries = storage.listSync(path.join(base, rel));
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const key = `${rel}/${name}`;
+    const full = path.join(base, key);
+    if (isDirectory(full)) {
+      if (depth > 1) collectFileKeys(base, key, depth - 1, out);
+    } else {
+      out.push(key);
+    }
+  }
+}
+
+function formatKeyList(keys: string[]): string {
+  const shown = keys.slice(0, STRAY_STATE_LIST_LIMIT).join(', ');
+  return keys.length > STRAY_STATE_LIST_LIMIT ? `${shown}, and ${keys.length - STRAY_STATE_LIST_LIMIT} more` : shown;
+}
+
+/**
+ * Before #2107, a `squad link` project (teamRoot = the team repo) made the
+ * state MCP server write team state to `<teamRoot>/<key>` instead of
+ * `<teamRoot>/.squad/<key>`. Squad no longer reads those files. Report every
+ * state-tool path (MUTABLE_STATE_PATHS) found there, split into files to move
+ * and files to merge by hand because a newer copy exists. Read-only.
+ */
+function checkStrandedLinkedTeamState(squadDir: string): DoctorCheck | undefined {
+  // Doctor must see the current disk, not a walk cached by an earlier call.
+  clearResolveSquadCache();
+  const paths = resolveSquadPaths(path.dirname(squadDir));
+  if (!paths || paths.mode !== 'remote' || paths.projectDir !== path.resolve(squadDir)) return undefined;
+  if (paths.teamSquadDir === paths.teamDir) return undefined;
+
+  const candidates: string[] = [];
+  for (const { root, kind } of MUTABLE_STATE_PATHS) {
+    const full = path.join(paths.teamDir, root);
+    if (kind === 'file') {
+      if (fileExists(full) && !isDirectory(full)) candidates.push(root);
+    } else if (isDirectory(full)) {
+      collectFileKeys(paths.teamDir, root, STRAY_STATE_MAX_DEPTH, candidates);
+    }
+  }
+  // Match only what the state tools could write, so an unrelated code dir
+  // named agents/ or log/ does not trigger advice to move it.
+  const stray = candidates.filter(key => isMutableStateKey(key) && STRAY_STATE_FILE.test(key));
+  if (stray.length === 0) return undefined;
+
+  const toMerge = stray.filter(key => fileExists(path.join(paths.teamSquadDir, key)));
+  const toMove = stray.filter(key => !toMerge.includes(key));
+  const parts = [
+    `found ${stray.length} team state file(s) in ${paths.teamDir}, outside the team's squad dir. Squad now reads team state from ${paths.teamSquadDir}.`,
+  ];
+  // teamSquadDir normally has its own agents/ and decisions/, so tell the user
+  // to move files, not to move (and replace) the directories.
+  if (toMove.length > 0) parts.push(`Move each file to the same relative path under it: ${formatKeyList(toMove)}.`);
+  if (toMerge.length > 0) parts.push(`A file already exists at the same relative path for these; merge by hand and do not overwrite the newer state: ${formatKeyList(toMerge)}.`);
+  parts.push('Do not replace the existing directories there.');
+
+  return { name: 'linked team state location', status: 'warn', message: parts.join(' ') };
+}
+
 function checkTeamMd(squadDir: string): DoctorCheck {
   const teamPath = path.join(squadDir, 'team.md');
   if (!fileExists(teamPath)) {
@@ -201,11 +275,16 @@ function checkCastingRegistry(squadDir: string): DoctorCheck {
   if (!fileExists(registryPath)) {
     return { name: 'casting/registry.json exists', status: 'fail', message: 'file not found' };
   }
-  const data = tryReadJson(registryPath);
-  if (data === undefined) {
-    return { name: 'casting/registry.json exists', status: 'fail', message: 'file exists but is not valid JSON' };
+  try {
+    readCastingRegistryPair(path.join(squadDir, 'casting'));
+  } catch (error) {
+    return {
+      name: 'casting/registry.json exists',
+      status: 'fail',
+      message: `registry/history pair is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
-  return { name: 'casting/registry.json exists', status: 'pass', message: 'file present, valid JSON' };
+  return { name: 'casting/registry.json exists', status: 'pass', message: 'registry/history pair is consistent' };
 }
 
 function configuredStateBackend(squadDir: string): StateBackendType | undefined {
@@ -711,12 +790,17 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
   // 4. Remote team root resolution
   if (mode === 'remote' && teamRoot) {
     checks.push(checkTeamRootResolves(squadDir, teamRoot));
+    const strayState = checkStrandedLinkedTeamState(squadDir);
+    if (strayState) checks.push(strayState);
   }
 
   // 5–9 standard files (only if .squad/ exists)
   if (isDirectory(squadDir)) {
-    // Resolve effective state dir for externalized files
-    const stateDir = resolveStateDir(squadDir);
+    // Resolve effective state dir for externalized files and remote team
+    // roots — mirrors the dual-root resolver used by `squad cast`/`squad status`
+    // so linked (remote-mode) projects are validated against the team root's
+    // .squad/ instead of the local stub that only holds config.json (#2056).
+    const { stateDir } = effectiveSquadDir(resolvedCwd);
     checks.push(checkTeamMd(stateDir));
     checks.push(checkRoutingMd(stateDir));
     checks.push(checkAgentsDir(stateDir));

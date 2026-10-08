@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  ContextUtilizationTracker,
   StreamingPipeline,
+  type ContextUsageEvent,
   type StreamDelta,
   type UsageEvent,
   type ReasoningDelta,
-} from '@bradygaster/squad-sdk/runtime/streaming';
+} from '@bradygaster/squad-sdk';
 import { CostTracker } from '@bradygaster/squad-sdk/runtime/cost-tracker';
 import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
 
@@ -30,6 +32,12 @@ describe('StreamingPipeline', () => {
   it('should register a usage handler', () => {
     const handler = vi.fn();
     const unsubscribe = pipeline.onUsage(handler);
+    expect(unsubscribe).toBeInstanceOf(Function);
+  });
+
+  it('should register a context utilization handler', () => {
+    const handler = vi.fn();
+    const unsubscribe = pipeline.onContextUtilization(handler);
     expect(unsubscribe).toBeInstanceOf(Function);
   });
 
@@ -111,6 +119,90 @@ describe('StreamingPipeline', () => {
     await pipeline.processEvent(event);
 
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('should calculate exact context utilization from runtime accounting', async () => {
+    const handler = vi.fn();
+    pipeline.onContextUtilization(handler);
+    pipeline.attachToSession('s1');
+
+    await pipeline.processEvent(makeContextUsage('s1', 80_000, 100_000));
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's1',
+      occupiedTokens: 80_000,
+      contextWindowTokens: 100_000,
+      utilization: 0.8,
+      source: 'runtime',
+      warning: true,
+      thresholdCrossed: true,
+    }));
+    expect(pipeline.getContextUtilization('s1')?.utilization).toBe(0.8);
+  });
+
+  it('should estimate post-turn context without cumulatively double-counting usage', async () => {
+    pipeline = new StreamingPipeline({
+      resolveContextWindow: model => model === 'claude-sonnet-4' ? 1_000 : undefined,
+    });
+    pipeline.attachToSession('s1');
+
+    await pipeline.processEvent(makeUsage('s1', 100, 50));
+    await pipeline.processEvent(makeUsage('s1', 200, 75));
+
+    expect(pipeline.getContextUtilization('s1')).toEqual(expect.objectContaining({
+      occupiedTokens: 275,
+      contextWindowTokens: 1_000,
+      utilization: 0.275,
+      source: 'estimated',
+    }));
+  });
+
+  it('should keep context utilization isolated by session', async () => {
+    pipeline = new StreamingPipeline({ resolveContextWindow: () => 1_000 });
+    pipeline.attachToSession('s1');
+    pipeline.attachToSession('s2');
+
+    await pipeline.processEvent(makeUsage('s1', 100, 50));
+    await pipeline.processEvent(makeUsage('s2', 600, 200));
+
+    expect(pipeline.getContextUtilization('s1')?.utilization).toBe(0.15);
+    expect(pipeline.getContextUtilization('s2')?.utilization).toBe(0.8);
+    expect(pipeline.getAllContextUtilizations()).toHaveLength(2);
+  });
+
+  it('should let exact runtime accounting supersede estimated samples', async () => {
+    pipeline = new StreamingPipeline({ resolveContextWindow: () => 1_000 });
+    pipeline.attachToSession('s1');
+
+    await pipeline.processEvent(makeUsage('s1', 100, 50));
+    await pipeline.processEvent(makeContextUsage('s1', 400, 2_000));
+    await pipeline.processEvent(makeUsage('s1', 900, 100));
+
+    expect(pipeline.getContextUtilization('s1')).toEqual(expect.objectContaining({
+      occupiedTokens: 400,
+      contextWindowTokens: 2_000,
+      utilization: 0.2,
+      source: 'runtime',
+    }));
+  });
+
+  it('should emit typed context utilization events', async () => {
+    const bus = new EventBus();
+    const handler = vi.fn();
+    bus.subscribe('context:utilization', handler);
+    pipeline = new StreamingPipeline({ eventBus: bus });
+    pipeline.attachToSession('s1');
+
+    await pipeline.processEvent(makeContextUsage('s1', 50, 100));
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'context:utilization',
+      sessionId: 's1',
+      payload: expect.objectContaining({
+        utilization: 0.5,
+        source: 'runtime',
+      }),
+    }));
   });
 
   it('should ignore events from unattached sessions', async () => {
@@ -200,6 +292,46 @@ describe('StreamingPipeline', () => {
     pipeline.clear();
     expect(pipeline.isAttached('s1')).toBe(false);
     expect(pipeline.getUsageSummary().totalInputTokens).toBe(0);
+    expect(pipeline.getAllContextUtilizations()).toEqual([]);
+  });
+});
+
+describe('ContextUtilizationTracker', () => {
+  it('warns once per threshold crossing and resets after recovery', () => {
+    const tracker = new ContextUtilizationTracker({ warningThreshold: 0.75 });
+
+    expect(tracker.recordRuntime({
+      sessionId: 's1', currentTokens: 800, tokenLimit: 1_000,
+    })?.thresholdCrossed).toBe(true);
+    expect(tracker.recordRuntime({
+      sessionId: 's1', currentTokens: 900, tokenLimit: 1_000,
+    })?.thresholdCrossed).toBe(false);
+    expect(tracker.recordRuntime({
+      sessionId: 's1', currentTokens: 500, tokenLimit: 1_000,
+    })?.warning).toBe(false);
+    expect(tracker.recordRuntime({
+      sessionId: 's1', currentTokens: 800, tokenLimit: 1_000,
+    })?.thresholdCrossed).toBe(true);
+  });
+
+  it('does not clamp over-limit utilization', () => {
+    const tracker = new ContextUtilizationTracker();
+    expect(tracker.recordRuntime({
+      sessionId: 's1', currentTokens: 1_200, tokenLimit: 1_000,
+    })?.utilization).toBe(1.2);
+  });
+
+  it('rejects invalid thresholds and invalid or unresolved samples', () => {
+    expect(() => new ContextUtilizationTracker({ warningThreshold: 0 })).toThrow(RangeError);
+    expect(() => new ContextUtilizationTracker({ warningThreshold: 1.1 })).toThrow(RangeError);
+
+    const tracker = new ContextUtilizationTracker({ resolveContextWindow: () => undefined });
+    expect(tracker.recordRuntime({
+      sessionId: 's1', currentTokens: -1, tokenLimit: 100,
+    })).toBeUndefined();
+    expect(tracker.recordEstimated({
+      sessionId: 's1', model: 'unknown', inputTokens: 10, outputTokens: 5,
+    })).toBeUndefined();
   });
 });
 
@@ -476,6 +608,20 @@ function makeReasoning(sessionId: string, content: string, index = 0): Reasoning
     sessionId,
     content,
     index,
+    timestamp: new Date(),
+  };
+}
+
+function makeContextUsage(
+  sessionId: string,
+  currentTokens: number,
+  tokenLimit: number,
+): ContextUsageEvent {
+  return {
+    type: 'context_usage',
+    sessionId,
+    currentTokens,
+    tokenLimit,
     timestamp: new Date(),
   };
 }

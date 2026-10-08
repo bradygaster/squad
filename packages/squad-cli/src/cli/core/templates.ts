@@ -425,7 +425,14 @@ export function getTemplatesDir(): string {
   let dir = dirname(currentFile);
   for (let i = 0; i < 6; i++) {
     const candidate = join(dir, 'templates');
-    if (storage.existsSync(candidate)) return candidate;
+    // src/cli/templates contains runtime-only fixtures, so the directory name
+    // alone is not enough to identify the distributable template root.
+    if (
+      storage.existsSync(join(candidate, 'squad.agent.md.template'))
+      && storage.existsSync(join(candidate, 'scribe-charter.md'))
+    ) {
+      return candidate;
+    }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

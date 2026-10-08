@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import {
   recordTokenUsage,
+  recordContextUtilization,
   recordAgentSpawn,
   recordAgentDuration,
   recordAgentError,
@@ -113,6 +114,37 @@ describe('OTel Metrics — Token Usage (#261)', () => {
     expect(output.add).toHaveBeenCalledWith(50, { 'agent.name': 'fenster', model: 'gpt-5.6-luna' });
     expect(cost.add).toHaveBeenCalledWith(0.003, { 'agent.name': 'fenster', model: 'gpt-5.6-luna' });
     expect(total.add).toHaveBeenCalledWith(150, { 'agent.name': 'fenster', model: 'gpt-5.6-luna' });
+  });
+
+  describe('OTel Metrics — Context Utilization (#1718)', () => {
+    it('records the utilization gauge with session metadata', () => {
+      recordContextUtilization({
+        sessionId: 'sess-context',
+        agentName: 'fenster',
+        model: 'gpt-5.6-luna',
+        occupiedTokens: 80_000,
+        contextWindowTokens: 100_000,
+        utilization: 0.8,
+        warningThreshold: 0.8,
+        warning: true,
+        thresholdCrossed: true,
+        source: 'runtime',
+        timestamp: new Date(),
+      });
+
+      const gauge = getInstrument('squad.context.utilization');
+      expect(gauge.record).toHaveBeenCalledWith(0.8, {
+        'session.id': 'sess-context',
+        'agent.name': 'fenster',
+        'model': 'gpt-5.6-luna',
+        'source': 'runtime',
+        'warning': true,
+      });
+      expect(spyMeter.createGauge).toHaveBeenCalledWith(
+        'squad.context.utilization',
+        expect.objectContaining({ unit: '1' }),
+      );
+    });
   });
 
   it('defaults agentName to "unknown" when not provided', () => {

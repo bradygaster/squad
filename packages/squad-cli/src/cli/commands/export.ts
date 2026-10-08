@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 import { FSStorageProvider, exportToRepo, parseRepoString } from '@bradygaster/squad-sdk';
+import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import type { RepoSpec } from '@bradygaster/squad-sdk';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
@@ -66,15 +67,15 @@ function buildManifest(dest: string, storage: FSStorageProvider, squadInfo: { pa
 
   // Read casting state
   const castingDir = path.join(squadInfo.path, 'casting');
-  for (const file of ['registry.json', 'policy.json', 'history.json']) {
-    const filePath = path.join(castingDir, file);
+  const pair = readCastingRegistryPair(castingDir);
+  manifest.casting['registry'] = pair.registry;
+  manifest.casting['history'] = pair.history;
+  const policyRaw = storage.readSync(path.join(castingDir, 'policy.json'));
+  if (policyRaw !== undefined) {
     try {
-      const raw = storage.readSync(filePath);
-      if (raw !== undefined) {
-        manifest.casting[file.replace('.json', '')] = JSON.parse(raw);
-      }
+      manifest.casting['policy'] = JSON.parse(policyRaw);
     } catch (err) {
-      console.error(`Warning: could not read casting/${file}: ${(err as Error).message}`);
+      console.error(`Warning: could not read casting/policy.json: ${(err as Error).message}`);
     }
   }
 

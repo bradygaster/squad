@@ -47,7 +47,7 @@ squad watch --interval 5
 Ralph will log skipped issues:
 ```
 ⏭️ Skipping #42 "Train ML model" — missing: gpu
-✓ Triaged #43 "Fix CSS layout" → Picard (routing-rule)
+✓ Triaged #43 "Fix CSS layout" → Experience Engineer (routing-rule)
 ```
 
 ## How It Works

@@ -1,8 +1,5 @@
 # Configuration Reference
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 squad init
@@ -200,6 +197,7 @@ First match wins.
 |----------|---------|
 | `SQUAD_CLIENT` | Detected client (`cli` or `vscode`) |
 | `COPILOT_TOKEN` | Auth token for SDK usage |
+| `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context warning threshold as a fraction greater than `0` and at most `1` (default: `0.8`) |
 
 ---
 

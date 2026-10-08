@@ -1,7 +1,5 @@
 # What is Squad?
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Squad is an AI multi-agent orchestration framework that lives inside your repository. It coordinates a team of specialist AI agents, each with a defined role, persistent memory, and a charter that governs what it can and cannot do. Squad extends your team at agentic speed while keeping a human in charge of every meaningful decision.
 
 ## What is Squad?

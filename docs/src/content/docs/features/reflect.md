@@ -5,8 +5,6 @@ description: Built-in skill that extracts HIGH/MED/LOW confidence patterns from 
 
 # Reflect — In-Session Learning Capture
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 The `reflect` skill is a built-in capability that turns every user correction into a learning opportunity. Agents invoke `reflect` after critical conversation moments — corrections, praise, edge-case discoveries — to capture patterns that prevent repeating mistakes across sessions.
 
 It ships at `.copilot/skills/reflect/SKILL.md` and is automatically available to every spawned agent. The skill complements the existing knowledge layers (`history.md`, `decisions.md`) by capturing **in-flight** learnings that may later graduate to permanent memory.

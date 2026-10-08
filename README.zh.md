@@ -4,16 +4,17 @@
 
 **为任何项目打造的 AI 智能体团队。** 一行命令，拥有一个随代码同步成长的开发团队。
 
-[![状态](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![平台](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
 
-> ⚠️ **Alpha 预览版** — Squad 仍处于实验阶段。API 和命令行工具可能在版本更迭中发生变化。我们会在 [CHANGELOG.md](CHANGELOG.md) 中记录重大变更。
+重大变更会记录在 [CHANGELOG.md](CHANGELOG.md) 中。
 
 ---
 
 ## 什么是 Squad?
 
 Squad 通过 GitHub Copilot 为你提供一支 AI 开发团队。只需描述你正在构建的内容，即可获得一支由专家组成的小队 —— 前端、后端、测试、组长 —— 它们以文件形式存在于你的仓库中。它们能够跨会话持久存在，学习你的代码库，共享决策，并且用得越多就越聪明。
+
+Squad 是面向人类的生产力工具，而不是工程师、审阅者或决策者的替代品。人们仍需对优先级、审批和最终变更负责；Squad 帮助实现协调、重复性工作和并行执行。
 
 这不仅仅是一个"戴着不同帽子"的聊天机器人。团队中的每个成员都在独立的上下文中运行，只读取属于自己的知识库，并将学到的内容写回。
 

@@ -21,6 +21,7 @@ import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
 import { addSquadStateGitignoreBlock, removeSquadStateGitignoreBlock } from './gitignore-state.js';
 import { syncTeamCapabilities } from './team-capabilities.js';
+import { ensureCastingRegistryPair } from '../casting/durable-registry.js';
 
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
@@ -631,10 +632,10 @@ function stampVersionInContent(content: string, version: string): string {
     /- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m,
     `- **Version:** ${version}`
   );
-  // Greeting placeholder: `Squad v{version}`
+  // Greeting placeholder or an already-resolved valid SemVer literal.
   content = content.replace(
-    /`Squad v\{version\}`/g,
-    `\`Squad v${version}\``
+    /`Squad v(?:\{version\}|(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)`/g,
+    `\`Squad v${version}\``,
   );
   return content;
 }
@@ -867,26 +868,46 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   // -------------------------------------------------------------------------
 
   const castingDir = join(squadDir, 'casting');
-  const castingFiles: Array<{ name: string; templateName: string; fallback: string }> = [
-    { name: 'policy.json', templateName: 'casting-policy.json', fallback: JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n' },
-    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ agents: {} }, null, 2) + '\n' },
-    { name: 'history.json', templateName: 'casting-history.json', fallback: JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n' },
-  ];
+  const castingDefault = (
+    templateName: string,
+    fallback: string,
+  ): string => {
+    const templateSrc = templatesDir ? join(templatesDir, templateName) : null;
+    return templateSrc && storage.existsSync(templateSrc)
+      ? (storage.readSync(templateSrc) ?? fallback)
+      : fallback;
+  };
+  const registryDefault = castingDefault(
+    'casting-registry.json',
+    JSON.stringify({ schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1, generated_at: '1970-01-01T00:00:00.000Z', agents: {} }, null, 2) + '\n',
+  );
+  const historyDefault = castingDefault(
+    'casting-history.json',
+    JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n',
+  );
+  const pairResult = ensureCastingRegistryPair(
+    castingDir,
+    registryDefault,
+    historyDefault,
+    'SDK init',
+  );
+  for (const name of ['registry.json', 'history.json']) {
+    if (pairResult.created) createdFiles.push(toRelativePath(join(castingDir, name)));
+    else skippedFiles.push(toRelativePath(join(castingDir, name)));
+  }
 
-  for (const cf of castingFiles) {
-    const dest = join(castingDir, cf.name);
-    if (!storage.existsSync(dest)) {
-      // Try to copy from SDK templates first, fall back to inline defaults
-      const templateSrc = templatesDir ? join(templatesDir, cf.templateName) : null;
-      if (templateSrc && storage.existsSync(templateSrc)) {
-        storage.copySync(templateSrc, dest);
-      } else {
-        await storage.write(dest, cf.fallback);
-      }
-      createdFiles.push(toRelativePath(dest));
-    } else {
-      skippedFiles.push(toRelativePath(dest));
-    }
+  const policyPath = join(castingDir, 'policy.json');
+  if (!storage.existsSync(policyPath)) {
+    await storage.write(
+      policyPath,
+      castingDefault(
+        'casting-policy.json',
+        JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n',
+      ),
+    );
+    createdFiles.push(toRelativePath(policyPath));
+  } else {
+    skippedFiles.push(toRelativePath(policyPath));
   }
 
   // -------------------------------------------------------------------------
@@ -1335,7 +1356,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
           `missing from the SDK templates dir (${skillsSrc}): ${missing.join(', ')}. ` +
           `This is a packaging bug — try \`squad upgrade\` or reinstall the SDK; ` +
           `if it persists, please report it at https://github.com/bradygaster/squad/issues. ` +
-          `(Contributors: re-run \`node scripts/sync-skill-templates.mjs\` from the repo root before packaging.)`
+          `(Contributors: re-run \`node scripts/sync-templates.mjs --sync\` from the repo root before packaging.)`
         );
       }
       storage.mkdirSync(skillsDir, { recursive: true });
