@@ -4,7 +4,7 @@
  * Consolidates all inline separator rendering (AgentPanel, MessageStream, App.tsx)
  * into a single reusable component. Uses box-drawing chars that degrade to ASCII.
  *
- * Owned by Cheritto (TUI Engineer).
+ * Maintained by the TUI engineering owner.
  */
 
 import React from 'react';

@@ -96,14 +96,17 @@ from the prerelease version to stable `1.2.0`. A preview version cannot be
 converted in place after publication; `1.2.0-preview.1` and `1.2.0` are
 different releases.
 
-After the stable preparation lands on `dev`, test the promotion:
+After the stable preparation lands on `dev`, a human must run the promotion
+validation. This is not agent-safe: `squad-promote.yml` grants
+`actions: write` and `contents: write`, checks out `dev` with the workflow
+token, installs dependencies, and runs the release build and tests.
 
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=true
 gh run watch
 ```
 
-Then run it:
+Only a human may then run the live promotion:
 
 ```bash
 gh workflow run squad-promote.yml --ref dev -f dry_run=false

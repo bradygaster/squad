@@ -33,7 +33,6 @@ const governedPaths = [
   '.squad-templates/scribe-charter.md',
   'templates/skills/release-process/SKILL.md',
   'templates/casting/policy.json',
-  '.squad/agents/troi/charter.md',
 ];
 
 const unrelatedPaths = [
@@ -44,8 +43,11 @@ const unrelatedPaths = [
   'packages/squad-cli/package.json',
   'scripts/bump-build.mjs',
   'test/ci/changelog-gate.test.ts',
+  '.squad/team.md',
   '.squad/agents/troi/notes.md',
+  '.squad/agents/troi/charter.md',
   '.squad/routing.md',
+  '.squad/casting/registry.json',
 ];
 
 describe('changelog gate path matching', () => {

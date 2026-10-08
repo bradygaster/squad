@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EventBus as ClientEventBus } from '@bradygaster/squad-sdk/client';
 import { EventBus as RuntimeEventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
+import { createSquadEvent, isSquadEventOfType } from '@bradygaster/squad-sdk/runtime/event-payloads';
 
 describe('ClientEventBus', () => {
   let bus: ClientEventBus;
@@ -178,6 +179,28 @@ describe('RuntimeEventBus', () => {
 
   it('should construct empty bus', () => {
     expect(bus).toBeDefined();
+  });
+
+  it('should preserve the typed context utilization payload', async () => {
+    const handler = vi.fn();
+    bus.subscribe('context:utilization', handler);
+    const event = createSquadEvent('context:utilization', {
+      occupiedTokens: 80,
+      contextWindowTokens: 100,
+      utilization: 0.8,
+      warningThreshold: 0.8,
+      warning: true,
+      thresholdCrossed: true,
+      source: 'runtime',
+      model: 'gpt-5.6-luna',
+    }, { sessionId: 's1', agentName: 'fenster' });
+
+    await bus.emit(event);
+
+    expect(isSquadEventOfType(event, 'context:utilization')).toBe(true);
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ utilization: 0.8, source: 'runtime' }),
+    }));
   });
 
   it('should subscribe to specific event type', () => {

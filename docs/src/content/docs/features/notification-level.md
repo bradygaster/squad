@@ -1,7 +1,5 @@
 # Notification Level
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to silence empty rounds:**
 ```
 squad watch --notify-level important

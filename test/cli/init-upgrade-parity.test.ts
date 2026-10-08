@@ -20,6 +20,10 @@ import {
   ensureGitattributes,
   ensureDirectories,
 } from '@bradygaster/squad-cli/core/upgrade';
+import {
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+} from '@bradygaster/squad-sdk/casting';
 
 const TEST_ROOT = join(
   tmpdir(),
@@ -143,9 +147,23 @@ describe('Init / Upgrade parity', () => {
 
     // Write a sentinel casting file
     const registryPath = join(TEST_ROOT, '.squad', 'casting', 'registry.json');
-    const customRegistry = JSON.stringify({ agents: { sentinel: true } });
     if (existsSync(registryPath)) {
-      await writeFile(registryPath, customRegistry);
+      const castingDir = join(TEST_ROOT, '.squad', 'casting');
+      const pair = readCastingRegistryPair(castingDir);
+      const revision = Number(pair.registry?.revision) + 1;
+      const registry = { ...pair.registry, revision, sentinel: true };
+      delete registry.transaction_id;
+      commitCastingRegistryPair(
+        castingDir,
+        pair.registryRaw,
+        registry,
+        pair.historyRaw,
+        {
+          assignment_cast_snapshots: pair.history?.assignment_cast_snapshots,
+          universe_usage_history: pair.history?.universe_usage_history,
+        },
+        revision,
+      );
     }
 
     await runUpgrade(TEST_ROOT);

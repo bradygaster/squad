@@ -6,8 +6,6 @@ order: 15
 
 # State Backend Selection
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > 🔗 **Full backend documentation:** [State Backends](/squad/docs/features/state-backends/) · [Container Image — Env Var Contract](/squad/docs/reference/container-image/) · [#1402](https://github.com/bradygaster/squad/issues/1402) (external state gaps — tracked separately)
 
 ---

@@ -1,7 +1,5 @@
 # Using Squad with the Aspire Dashboard
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > 📌 **Squad CLI only** — The Aspire dashboard integration requires the Squad CLI (`squad aspire`). It is not available when using GitHub Copilot CLI directly. Only Squad CLI commands emit OpenTelemetry data to the dashboard.
 
 **Try this:**

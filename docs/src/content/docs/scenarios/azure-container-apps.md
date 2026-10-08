@@ -6,8 +6,6 @@ order: 20
 
 # Azure Container Apps Deployment
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Azure Container Apps (ACA) is the lowest-friction path to running Squad in production on Azure. ACA provides managed KEDA scaling, managed TLS/ingress, and native workload identity — so you get autoscaling and secretless authentication without managing a Kubernetes control plane.
 
 This guide takes you from zero to a running Squad agent that polls a GitHub repository and executes issues automatically.
@@ -385,3 +383,6 @@ az containerapp identity show \
 - [Container Image contract](/squad/docs/reference/container-image/) — environment variables, Dockerfile reference, process lifecycle
 - [KEDA Autoscaling](/squad/docs/features/keda-scaling/) — Squad-specific KEDA ScaledObject configuration
 - [State Backends](/squad/docs/features/state-backends/) — choosing a backend safe for container deployments
+- Community projects explore complementary patterns to the long-running watcher and KEDA setup above:
+  - [Squad on Azure Container Apps](https://github.com/swigerb/squad-on-aca) (community) — one ACA Job per Squad session, triggered through GitHub Actions and OIDC, with governance-state protection and Aspire telemetry
+  - [Squad Hub](https://github.com/swigerb/squad-hub) (community) — supervise and approve Squad sessions, including those running in ACA, from a browser or phone

@@ -93,6 +93,21 @@ export interface PoolHealthPayload {
 }
 
 // ============================================================================
+// Context utilization payload
+// ============================================================================
+
+export interface ContextUtilizationPayload {
+  occupiedTokens: number;
+  contextWindowTokens: number;
+  utilization: number;
+  warningThreshold: number;
+  warning: boolean;
+  thresholdCrossed: boolean;
+  source: 'runtime' | 'estimated';
+  model?: string;
+}
+
+// ============================================================================
 // Payload map - maps each event type to its payload shape
 // ============================================================================
 
@@ -106,6 +121,7 @@ export interface SquadEventPayloadMap {
   'agent:milestone': AgentMilestonePayload;
   'coordinator:routing': CoordinatorRoutingPayload;
   'pool:health': PoolHealthPayload;
+  'context:utilization': ContextUtilizationPayload;
 }
 
 // ============================================================================
