@@ -170,7 +170,7 @@ jobs:
             gh release create "${{ steps.version.outputs.tag }}" \
               --title "${{ steps.version.outputs.tag }}" \
               --generate-notes \
-              --latest
+              --latest=false
           else
             gh release create "${{ steps.version.outputs.tag }}" \
               --title "${{ steps.version.outputs.tag }}" \
@@ -226,3 +226,53 @@ jobs:
       upload: true
       release_tag: ${{ needs.release.outputs.tag }}
       source_ref: ${{ needs.release.outputs.tag }}
+
+  promote-latest:
+    name: Promote complete stable release to latest
+    needs: [release, standalone]
+    if: needs.release.outputs.created == 'true' && needs.release.outputs.stable_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Verify standalone assets and promote latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          required_assets=(
+            squad-linux-x64.tar.gz
+            squad-linux-arm64.tar.gz
+            squad-darwin-x64.tar.gz
+            squad-darwin-arm64.tar.gz
+            squad-win32-x64.zip
+            squad-win32-arm64.zip
+            SHA256SUMS.txt
+          )
+          mapfile -t published_assets < <(
+            gh release view "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --json assets \
+              --jq '.assets[].name'
+          )
+
+          missing_assets=()
+          for asset in "${required_assets[@]}"; do
+            if ! printf '%s\n' "${published_assets[@]}" | grep -Fxq "${asset}"; then
+              missing_assets+=("${asset}")
+            fi
+          done
+          if [ "${#missing_assets[@]}" -gt 0 ]; then
+            printf '::error::Release %s is incomplete; refusing latest promotion. Missing: %s\n' \
+              "${TAG}" "${missing_assets[*]}"
+            exit 1
+          fi
+
+          gh release edit "${TAG}" --latest --repo "${GITHUB_REPOSITORY}"
+          latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
+          if [ "${latest_tag}" != "${TAG}" ]; then
+            echo "::error::Latest release is ${latest_tag}; expected ${TAG}."
+            exit 1
+          fi
+          echo "✅ Complete stable release ${TAG} promoted to latest."

@@ -113,7 +113,7 @@ describe('standalone release handoff', () => {
     expect(release).toContain('-preview\\.(0|[1-9][0-9]*)');
     expect(release).toContain('Preview releases require the CLI SDK dependency');
     expect(release).toContain('--prerelease');
-    expect(release).toContain('--latest');
+    expect(release).toContain('--latest=false');
     expect(releaseWorkflow.jobs.release.outputs?.stable_release).toBe(
       '${{ steps.version.outputs.stable_release }}',
     );
@@ -130,6 +130,34 @@ describe('standalone release handoff', () => {
     expect(release).toContain('uses: ./.github/workflows/squad-standalone-release.yml');
     expect(release).toContain('release_tag: ${{ needs.release.outputs.tag }}');
     expect(release).toContain('source_ref: ${{ needs.release.outputs.tag }}');
+  });
+
+  it('keeps an incomplete stable release out of latest until standalone assets exist', () => {
+    const create = stepNamed(releaseWorkflow.jobs.release, 'Create GitHub Release');
+    const promotion = releaseWorkflow.jobs['promote-latest'];
+    const promote = stepNamed(promotion, 'Verify standalone assets and promote latest').run ?? '';
+
+    expect(create.run).toContain('--latest=false');
+    expect(promotion.needs).toEqual(['release', 'standalone']);
+    expect(promotion.if).toBe(
+      "needs.release.outputs.created == 'true' && needs.release.outputs.stable_release == 'true'",
+    );
+    for (const asset of [
+      'squad-linux-x64.tar.gz',
+      'squad-linux-arm64.tar.gz',
+      'squad-darwin-x64.tar.gz',
+      'squad-darwin-arm64.tar.gz',
+      'squad-win32-x64.zip',
+      'squad-win32-arm64.zip',
+      'SHA256SUMS.txt',
+    ]) {
+      expect(promote).toContain(asset);
+    }
+    expect(promote).toContain('refusing latest promotion');
+    expect(promote.indexOf('missing_assets[@]')).toBeLessThan(
+      promote.indexOf('gh release edit "${TAG}" --latest'),
+    );
+    expect(promote).toContain('repos/${GITHUB_REPOSITORY}/releases/latest');
   });
 
   it('uses only contents permission for the reusable release upload', () => {
@@ -258,7 +286,7 @@ describe('reusable npm publication', () => {
     });
   });
 
-  it('uses the requested source ref except for the dev activation pin', () => {
+  it('uses the requested source ref for publication and promotion', () => {
     for (const jobName of [
       'preflight',
       'smoke-test',
@@ -273,10 +301,7 @@ describe('reusable npm publication', () => {
       expect(checkout?.with?.ref, jobName).toBe('${{ inputs.source_ref || github.ref }}');
     }
 
-    const activationCheckout = npmPublishWorkflow.jobs['bump-activation-pin'].steps?.find(
-      (step) => step.uses?.startsWith('actions/checkout@'),
-    );
-    expect(activationCheckout?.with?.ref).toBe('dev');
+    expect(npmPublishWorkflow.jobs).not.toHaveProperty('bump-activation-pin');
   });
 
   it('builds release-tag workspaces without contributor-only prebuild inputs', () => {
@@ -360,9 +385,6 @@ describe('reusable npm publication', () => {
       expect(verify.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
     }
 
-    expect(npmPublishWorkflow.jobs['bump-activation-pin'].if).toBe(
-      "needs.publish-cli.outputs.stable_release == 'true'",
-    );
     expect(npmPublishWorkflow.jobs['promote-insider-tag-sdk'].if).toBe(
       "needs.publish-sdk.outputs.stable_release == 'true'",
     );
@@ -371,7 +393,7 @@ describe('reusable npm publication', () => {
     );
   });
 
-  it('uses least privilege for provenance and the activation pin PR', () => {
+  it('uses least privilege for publication provenance', () => {
     for (const jobName of [
       'publish-sdk',
       'publish-cli',
@@ -384,10 +406,6 @@ describe('reusable npm publication', () => {
     for (const jobName of ['promote-insider-tag-sdk', 'promote-insider-tag-cli']) {
       expect(npmPublishWorkflow.jobs[jobName].permissions).toBeUndefined();
     }
-    expect(npmPublishWorkflow.jobs['bump-activation-pin'].permissions).toEqual({
-      contents: 'write',
-      'pull-requests': 'write',
-    });
   });
 });
 
@@ -576,6 +594,7 @@ describe('automated package publication', () => {
     for (const permissions of [
       releaseWorkflow.permissions,
       releaseWorkflow.jobs.standalone.permissions,
+      releaseWorkflow.jobs['promote-latest'].permissions,
       standaloneWorkflow.permissions,
       standaloneWorkflow.jobs.publish.permissions,
       homebrew.permissions,
