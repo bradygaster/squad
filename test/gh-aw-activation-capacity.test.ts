@@ -412,33 +412,24 @@ describe('gh-aw: self-validation reconciles activated items with label operation
     ).toBe(true);
   });
 
-  it('states report_incomplete semantics accurately — a tracking record, not a red run', () => {
-    // Verified against pinned gh-aw v0.87.10 rather than gh-aw's own tool description
-    // (which says "treated as a failure signal even when the agent exits successfully"
-    // — misleading in exactly the way this issue is about):
-    //   report_incomplete_handler.cjs   -> core.warning only.
-    //   handle_agent_failure.cjs        -> contains no core.setFailed / process.exit;
-    //                                      "failure handling" opens/updates an
-    //                                      "[aw] ... reported incomplete result" issue.
-    // The run still concludes successfully. The workflow must say so, so the agent does
-    // not assume a red run is carrying the signal for it.
+  it('describes pinned report_incomplete failure status without tracking-issue writes', () => {
+    // v0.89.22 fails conclusion for report_incomplete. #2185 disables its independent
+    // issue-writing path; the real-handler regression lives in command-authorization.
     expect(
-      /reported incomplete result/i.test(activateProse),
-      'The workflow must name the durable artifact report_incomplete actually produces.',
+      /`report_incomplete` records the reason in Actions logs and fails the conclusion step/i.test(activateProse),
+      'The workflow must describe the failure status and logged evidence from the pinned runtime.',
+    ).toBe(true);
+    expect(
+      /automatic tracking-issue reporting is disabled/i.test(activateProse),
+      'The workflow must not promise an issue from the disabled conclusion reporting path.',
+    ).toBe(true);
+    expect(
+      /Include the shortfall in the guarded activation summary as well, so the originating issue retains an actionable signal/i.test(activateProse),
+      'The authorized originating-issue summary must still identify incomplete activation.',
     ).toBe(true);
     expect(
       /does \*\*not\*\* change the run's conclusion/i.test(activateProse),
-      'The workflow must state that report_incomplete does not change the run conclusion.',
-    ).toBe(true);
-    expect(
-      /never rely on a red run/i.test(activateProse),
-      'The workflow must forbid relying on a failed run to carry the incompletion signal.',
-    ).toBe(true);
-    // Guard against reintroducing the overclaim this test previously asserted.
-    expect(
-      /failure signal even when the agent exits successfully/i.test(activateProse),
-      'The workflow must not repeat gh-aw\'s misleading "failure signal" phrasing: the ' +
-        'pinned runtime emits a warning and a tracking issue, and never fails the run.',
+      'The obsolete v0.87.10 success-conclusion claim must not return.',
     ).toBe(false);
   });
 
