@@ -78,6 +78,7 @@ describe('CLI: init command', () => {
       `<!-- version: ${staleVersion} -->`,
       '',
       `- **Version:** ${staleVersion}. Include it as \`Squad v${staleVersion}\` in your first response.`,
+      'A valid digit-leading prerelease also appears as `Squad v1.2.3-01alpha`.',
       'Keep unrelated examples such as `Squad velocity` and invalid `Squad v1.2` unchanged.',
     ].join('\n');
     await writeFile(agentPath, before, 'utf-8');
@@ -89,6 +90,7 @@ describe('CLI: init command', () => {
     expect(after).toContain(`- **Version:** ${currentVersion}`);
     expect(after).toContain(`\`Squad v${currentVersion}\``);
     expect(after).not.toContain(staleVersion);
+    expect(after).not.toContain('`Squad v1.2.3-01alpha`');
     expect(after).toContain('`Squad velocity`');
     expect(after).toContain('`Squad v1.2`');
   });

@@ -439,7 +439,7 @@ describe('squad.agent.md template handling (#730)', () => {
             }
             return [
               content,
-              '`Squad v0.9.0`',
+              '`Squad v1.2.3-01alpha`',
               ...preservedText,
             ].join('\n');
           };
@@ -456,7 +456,7 @@ describe('squad.agent.md template handling (#730)', () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
     const content = await readFile(agentPath, 'utf-8');
     expect(content).toContain(`\`Squad v${version}\``);
-    expect(content).not.toContain('`Squad v0.9.0`');
+    expect(content).not.toContain('`Squad v1.2.3-01alpha`');
     for (const text of preservedText) {
       expect(content).toContain(text);
     }
