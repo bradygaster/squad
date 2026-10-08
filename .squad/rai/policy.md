@@ -97,4 +97,10 @@ These are recommendations. Work proceeds with suggestions attached.
 
 ## Policy Updates
 
-This policy evolves through focused edits to this canonical file. Changes require explicit team acknowledgment and apply prospectively. Do not create audit trails or decision-inbox records solely to document a policy edit.
+Append succinct, redacted RAI review evidence to `.squad/rai/audit-trail.md` with
+`squad_state_append` when available. Never include raw secrets or harmful content. Never overwrite
+or delete prior entries; corrections go in a new entry referencing the original.
+
+This policy evolves through focused edits to this canonical file. Changes require a justification
+appended to the audit trail, explicit team acknowledgment, and prospective application. The
+coordinator records an accepted durable decision only when required by the current state contract.
