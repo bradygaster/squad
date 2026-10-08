@@ -292,9 +292,126 @@ export function rejectionComment(result) {
   ].join('\n');
 }
 
-export async function enforceSquadCommandContract({ payload, eventName, createComment }) {
+export async function authorizeSquadCommand({ payload, eventName, actor, resolvePermission, result }) {
+  if (result?.status !== 'accepted') throw new Error('An accepted command result is required.');
+  const sender = payload?.sender;
+  if (typeof actor !== 'string' || !actor.trim() || sender?.login !== actor ||
+      !['User', 'Bot'].includes(sender?.type)) {
+    throw new Error('Squad command authorization requires a verified event actor and sender.');
+  }
+  // GitHub authorizes workflow_dispatch with Actions write permission, including
+  // GITHUB_TOKEN router/worker continuations. Inputs never select this trust path.
+  if (eventName === 'workflow_dispatch' && result.source === 'workflow_dispatch') return;
+  if (!['issues', 'issue_comment'].includes(eventName)) {
+    throw new Error(`Unsupported Squad command event: ${eventName}`);
+  }
+  const author = eventName === 'issue_comment' ? payload?.comment?.user : payload?.issue?.user;
+  if (sender.type !== 'User' || author?.type !== 'User' ||
+      typeof author.login !== 'string' || !author.login.trim()) {
+    throw new Error('Squad issue commands require identifiable human actor and command author.');
+  }
+  if (!editedCommandShouldRoute(payload, eventName, result)) {
+    throw new Error('Squad edited command is unchanged or previous-body evidence is unavailable.');
+  }
+  if (!commandRequiresAuthorization(result)) return;
+  if (typeof resolvePermission !== 'function') {
+    throw new Error('Squad command permission resolver is unavailable.');
+  }
+  const checked = new Set();
+  for (const [principal, login] of [['event actor', actor], ['command author', author.login]]) {
+    if (checked.has(login)) continue;
+    let permission;
+    try {
+      permission = await resolvePermission(login);
+    } catch (error) {
+      throw new Error(`Unable to resolve Squad repository permission for ${login}: ${error.message}`);
+    }
+    if (!isAuthorizedPermission(permission)) {
+      throw new Error(`Squad refused mutating mode ${result.mode}: ${principal} ${login}=${permission || 'unresolved'}. Both the event actor and command author require write, maintain, or admin.`);
+    }
+    checked.add(login);
+  }
+}
+
+function validateOpenModeOutputs(result, payload, items) {
+  const issueNumber = Number(result.source === 'workflow_dispatch'
+    ? payload?.inputs?.issue_number : payload?.issue?.number);
+  const types = new Set(['noop', 'missing_data', 'report_incomplete', 'add_comment']);
+  if (result.mode === 'research') types.add('upsert_research_artifact');
+  if (['research', 'plan'].includes(result.mode)) types.add('upsert_lifecycle_state');
+  for (const item of items) {
+    if (!item || !types.has(item.type)) {
+      throw new Error(`Squad open mode ${result.mode} cannot emit ${item?.type || 'untyped output'}.`);
+    }
+    if (['noop', 'missing_data', 'report_incomplete'].includes(item.type)) continue;
+    if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+      throw new Error('Squad open-mode output requires a valid originating issue.');
+    }
+    const keys = item.type === 'add_comment'
+      ? ['type', 'body', 'item_number', 'data']
+      : ['type', 'body'];
+    if (Object.keys(item).some(key => !keys.includes(key))) {
+      throw new Error('Squad open-mode output contains unsupported mutation fields.');
+    }
+    if (item.type === 'add_comment' && item.item_number !== undefined &&
+        String(item.item_number) !== String(issueNumber)) {
+      throw new Error('Squad open-mode comments must target the originating issue.');
+    }
+    // Inspect the complete body: gh-aw preserves HTML comments in code regions,
+    // and downstream lifecycle readers parse their envelopes as ordinary text.
+    if (typeof item.body !== 'string' ||
+        /structured\s+data\s*:|[`~]{3,}\s*json|"squad_artifact"\s*:/i.test(item.body)) {
+      throw new Error('Squad open-mode body must not supply a structured artifact envelope.');
+    }
+    if (item.data !== undefined) {
+      const data = item.data;
+      if (result.mode !== 'plan' || !data || typeof data !== 'object' ||
+          Object.keys(data).sort().join(',') !== 'origin_issue,phases,schema_version,squad_artifact' ||
+          !['plan', 'program', 'implementation', 'validation'].includes(data.squad_artifact) ||
+          data.schema_version !== '1' || data.origin_issue !== issueNumber ||
+          !Array.isArray(data.phases) || data.phases.length !== 0) {
+        throw new Error('Squad open mode cannot emit acceptance, activation, or unrelated artifacts.');
+      }
+    }
+    if (item.type === 'upsert_lifecycle_state') {
+      const expected = result.mode === 'research' ? 'Researched' : 'Planned';
+      const states = [...item.body.matchAll(/^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+(.+)$/gim)];
+      const commands = [...item.body.matchAll(/^(?:[-*]\s+)?\*\*Last command:\*\*\s+`([^`]+)`[ \t]*$/gim)];
+      if (states.length !== 1 || states[0][1].trim() !== expected ||
+          commands.length !== 1 ||
+          ![`/squad ${result.mode}`, `/squad ${result.argumentText}`].includes(commands[0][1])) {
+        throw new Error('Squad open-mode lifecycle must describe only the requested research or plan.');
+      }
+    }
+  }
+}
+
+function readOutputItems(agentOutputPath) {
+  if (!agentOutputPath) throw new Error('GH_AW_AGENT_OUTPUT is required for Squad output authorization.');
+  const output = JSON.parse(readFileSync(agentOutputPath, 'utf8'));
+  if (!Array.isArray(output?.items)) throw new Error('Squad agent output must contain an items array.');
+  return output.items;
+}
+
+export function enforceSquadRouterOutputs(agentOutputPath) {
+  for (const item of readOutputItems(agentOutputPath)) {
+    if (!item || !['noop', 'missing_data', 'report_incomplete'].includes(item.type)) {
+      throw new Error('Squad router agent may emit diagnostics only; routing is deterministic.');
+    }
+  }
+}
+
+export async function enforceSquadCommandContract({
+  payload, eventName, createComment, actor, resolvePermission, agentOutputPath,
+}) {
   const result = classifySquadCommand(payload, eventName);
-  if (result.status !== 'rejected') return result;
+  if (result.status === 'accepted') {
+    await authorizeSquadCommand({ payload, eventName, actor, resolvePermission, result });
+    const items = readOutputItems(agentOutputPath);
+    if (!commandRequiresAuthorization(result)) validateOpenModeOutputs(result, payload, items);
+    return result;
+  }
+  if (result.status === 'none') throw new Error('No explicit Squad command; refusing all safe outputs.');
   const issueNumber = Number(payload?.issue?.number ?? payload?.pull_request?.number);
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error(`Rejected command has no valid issue or pull request target: ${result.rejectedCommand}`);

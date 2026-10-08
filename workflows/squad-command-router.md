@@ -32,6 +32,12 @@ permissions:
 resources:
   - shared/squad-command-contract.mjs
 safe-outputs:
+  # Conclusion runs even when deterministic routing rejects the agent output.
+  report-failure-as-issue: false
+  report-failed-jobs: false
+  threat-detection:
+    report-as-issue: false
+  activation-comments: false
   steps:
     - name: Checkout executing workflow commit for command routing
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,6 +49,7 @@ safe-outputs:
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       env:
         SQUAD_EVENT_NAME: ${{ github.event_name }}
+        GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
       with:
         script: |
           const nodePath = require('node:path');
@@ -52,6 +59,7 @@ safe-outputs:
             trustedRoot,
             '.github/workflows/shared/squad-command-contract.mjs',
           )).href);
+          contract.enforceSquadRouterOutputs(process.env.GH_AW_AGENT_OUTPUT);
           const result = contract.classifySquadCommand(
             context.payload,
             process.env.SQUAD_EVENT_NAME,
@@ -116,57 +124,25 @@ safe-outputs:
             core.info('No standalone Squad command was found after excluding code contexts.');
             return;
           }
-          if (contract.commandRequiresAuthorization(result)) {
-            const eventActor = typeof context.actor === 'string' && context.actor.trim()
-              ? context.actor.trim()
-              : null;
-            const commandAuthorCandidate = process.env.SQUAD_EVENT_NAME === 'issue_comment'
-              ? context.payload.comment?.user?.login
-              : process.env.SQUAD_EVENT_NAME === 'issues'
-                ? context.payload.issue?.user?.login
-                : null;
-            const commandAuthor = typeof commandAuthorCandidate === 'string' && commandAuthorCandidate.trim()
-              ? commandAuthorCandidate.trim()
-              : null;
-            const permissionByLogin = new Map();
-            const resolvePermission = async (login, principal) => {
-              if (!login) return 'unresolved';
-              if (permissionByLogin.has(login)) return permissionByLogin.get(login);
-              let permission = 'unresolved';
-              try {
-                permission = (await github.rest.repos.getCollaboratorPermissionLevel({
-                  ...context.repo,
-                  username: login,
-                })).data.permission || 'unresolved';
-              } catch (error) {
-                core.warning(`Unable to resolve repository permission for ${principal} ${login}: ${error.message}`);
-              }
-              permissionByLogin.set(login, permission);
-              return permission;
-            };
-            const actorPermission = await resolvePermission(eventActor, 'event actor');
-            const authorPermission = await resolvePermission(commandAuthor, 'command author');
-            const actorAuthorized = Boolean(eventActor) &&
-              contract.isAuthorizedPermission(actorPermission);
-            const authorAuthorized = Boolean(commandAuthor) &&
-              contract.isAuthorizedPermission(authorPermission);
-            if (!actorAuthorized || !authorAuthorized) {
-              const actorEvidence = eventActor
-                ? `@${eventActor} (${actorPermission})`
-                : 'unresolved (unresolved)';
-              const authorEvidence = commandAuthor
-                ? `@${commandAuthor} (${authorPermission})`
-                : 'unresolved (unresolved)';
-              await github.rest.issues.createComment({
+          try {
+            await contract.authorizeSquadCommand({
+              payload: context.payload,
+              eventName: process.env.SQUAD_EVENT_NAME,
+              actor: context.actor,
+              result,
+              resolvePermission: async (login) => (await github.rest.repos.getCollaboratorPermissionLevel({
                 ...context.repo,
-                issue_number: issueNumber,
-                body: `⛔ /squad ${result.argumentText || 'cast'} was refused. Mutating /squad modes require write, maintain, or admin repository permission for both the event actor and the author of the classified command text. Event actor: ${actorEvidence}; command author: ${authorEvidence}. Ask a repository maintainer to author and run this command.`,
-              });
-              core.setFailed(
-                `Squad refused mutating mode ${result.mode}; event actor ${eventActor || 'unresolved'}=${actorPermission}, command author ${commandAuthor || 'unresolved'}=${authorPermission}.`,
-              );
-              return;
-            }
+                username: login,
+              })).data.permission,
+            });
+          } catch (error) {
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: issueNumber,
+              body: `Squad refused this command: ${error.message}`,
+            });
+            core.setFailed(error.message);
+            return;
           }
           // Forward the originating comment (when this run was triggered by
           // one) through the typed `aw_context` relay input. The dispatched
@@ -199,6 +175,7 @@ safe-outputs:
     max: 1
   noop:
     max: 1
+    report-as-issue: false
 ---
 
 Command routing and rejection are enforced deterministically by the safe-output
