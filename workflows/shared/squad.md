@@ -1,63 +1,33 @@
 ---
 # Squad Bootstrap Component — installs and initializes Squad
 # (https://github.com/bradygaster/squad) in the activation job, then hands off
-# the generated team state to the agent job.
+# the generated team state to the agent job. This is the DISTRIBUTION version,
+# living under workflows/shared/ so users can pull the standard stack from one
+# immutable nested native package:
+#   gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 #
-# This is the DISTRIBUTION version of the bootstrap, living under workflows/shared/
-# so users can pull it via:
-#   gh aw add \
-#     bradygaster/squad/workflows/squad.md@dev \
-#     bradygaster/squad/workflows/squad-implement-worker.md@dev \
-#     bradygaster/squad/workflows/squad-deps-worker.md@dev \
-#     bradygaster/squad/workflows/squad-review.md@dev
+# Adapted from Peli de Halleux's gh-aw integration:
+# https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md
 #
-# Design credit: adapted from Peli de Halleux's proven gh-aw integration in
-# github/gh-aw. Original:
-#   https://github.com/github/gh-aw/blob/main/.github/workflows/shared/squad.md
+# Activation installs the standalone release (no npm), preserves a committed
+# cast or initializes one, checks readiness, and uploads `squad-state`.
+# The agent receives .squad/ and .github/agents/squad.agent.md, never the CLI.
+# gh-aw loads that coordinator natively; engine.agent selects `--agent squad`.
+# Import `shared/squad.md` locally or pin the remote path to a commit SHA.
 #
-# The Squad CLI is never installed or executed in the agent job — only the files it
-# produces (`.squad/` team state and `.github/agents/squad.agent.md`) are restored
-# there. The activation job downloads a self-contained GitHub Release bundle, runs
-# initialization, and hands the resulting state to the network-constrained agent job.
+# Optional custom credentials for `squad init`: vars.SQUAD_GITHUB_APP_ID /
+# secrets.SQUAD_GITHUB_APP_PRIVATE_KEY / vars.SQUAD_GITHUB_APP_OWNER mint a
+# GitHub App installation token; secrets.SQUAD_GITHUB_TOKEN is the fallback if
+# the App ID is not set. Auth precedence: GitHub App installation token >
+# SQUAD_GITHUB_TOKEN > github.token.
 #
-# Usage (as an import in your gh-aw workflow):
-#   imports:
-#     - shared/squad.md
+# Optional custom Squad CLI version: vars.SQUAD_CLI_VERSION.
+# Default is v1.0.0.
+# This is a GitHub Release tag whose standalone assets are installed without
+# npm; values without a leading `v` are normalized for older configs.
 #
-# Usage (remote import, pinned to a ref):
-#   imports:
-#     - bradygaster/squad/workflows/shared/squad.md@latest
-#   (Pin to a SHA for reproducible builds:
-#     - bradygaster/squad/workflows/shared/squad.md@<40-char-commit-sha>)
-#
-# How the coordinator reaches the agent: gh-aw natively restores files under
-# `.github/agents/*.agent.md` as inline sub-agents. The `squad.agent.md` that
-# `squad init` writes is picked up by that mechanism. Additionally, `engine.agent`
-# is set to `squad`, so the compiler emits `--agent squad` on the Copilot invocation.
-#
-# `ambient-folders` adds committed `.squad/` state to gh-aw's activation checkout
-# so the roster guard can preserve an existing cast. The explicit artifact below
-# remains the fail-fast handoff for the standalone distribution.
-#
-# Optional custom credentials for `squad init`:
-#   vars.SQUAD_GITHUB_APP_ID / secrets.SQUAD_GITHUB_APP_PRIVATE_KEY / vars.SQUAD_GITHUB_APP_OWNER
-#     — mints a GitHub App installation token
-#   secrets.SQUAD_GITHUB_TOKEN
-#     — fallback if the App ID is not set
-# Auth precedence: GitHub App installation token > SQUAD_GITHUB_TOKEN > github.token
-#
-# Optional custom Squad CLI version:
-#   vars.SQUAD_CLI_VERSION
-# Default is v0.13.1.
-#   This is a GitHub Release tag whose standalone assets are installed without npm.
-#   Values without a leading `v` are normalized for compatibility with older configs.
-#
-# Optional model override:
-#   vars.SQUAD_MODEL
-#   Set to a model name or alias (e.g., 'agent', 'opus', 'gpt-5.6-sol',
-#   'claude-opus-4.6'). Omit or set to 'auto' for engine default. The gh-aw
-#   proxy resolves aliases based on model availability, so if the chosen model
-#   is unavailable the proxy walks a fallback chain automatically.
+# Optional model: vars.SQUAD_MODEL; omit or use 'auto' for the engine default.
+# gh-aw resolves aliases with availability fallback.
 #
 # State backend is pinned to `local`: the compiled agent invocation passes
 # `--disable-builtin-mcps`, so Squad's `state-mcp` bridge does not load. A non-local
@@ -220,7 +190,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields; structured data is normalized by the writer.
+          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
           required: true
           type: string
       steps:
@@ -268,18 +238,18 @@ safe-outputs:
                 (/\bsquad\b/i.test(firstLine) || /\bplanning\b/i.test(firstLine));
               const hasState = /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+\S+/im.test(body);
               const hasLastCommand = /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad\b[^`]*`/im.test(body);
-              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`/im.test(body);
+              const hasNextCommand = /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+`\/squad\b[^`]*`[ \t]*$/im.test(body);
               const hasActivationDone =
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
-                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\s*\|/im.test(body);
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
                 /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
                 hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
+                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
                 /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
               const hasNextAction = hasNextCommand || hasTerminalState;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
-                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and next-action fields.");
+                core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
               }
               if (body.includes("Structured data:") || body.replace(/\s/g, "").includes('"squad_artifact":"lifecycle-state"')) {
@@ -331,16 +301,24 @@ jobs:
       - detection
       - safe_outputs
     if: >-
-      ${{
-        !cancelled() &&
-        needs.agent.result == 'success' &&
-        needs.detection.result == 'success' &&
-        needs.safe_outputs.result == 'success' &&
-        !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
-        github.event_name == 'issue_comment' &&
-        (github.event.comment.body == '/squad activate' ||
-         github.event.comment.body == '/squad plan accept')
-      }}
+      !cancelled() &&
+      needs.agent.result == 'success' &&
+      needs.detection.result == 'success' &&
+      needs.safe_outputs.result == 'success' &&
+      !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
+      (
+        (github.event_name == 'issue_comment' &&
+         (github.event.comment.body == '/squad activate' ||
+          github.event.comment.body == '/squad plan accept' ||
+          github.event.comment.body == '/squad plan activate')) ||
+        (github.event_name == 'workflow_dispatch' &&
+         (github.event.inputs.command == 'activate' ||
+          github.event.inputs.command == '/squad activate' ||
+          github.event.inputs.command == 'plan accept' ||
+          github.event.inputs.command == '/squad plan accept' ||
+          github.event.inputs.command == 'plan activate' ||
+          github.event.inputs.command == '/squad plan activate'))
+      )
     runs-on: ubuntu-slim
     permissions:
       issues: write
@@ -349,19 +327,64 @@ jobs:
       - name: Repair terminal lifecycle after idempotent activation
         uses: actions/github-script@v9
         env:
-          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          SQUAD_COMMAND: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number }}
+          SQUAD_EVENT_NAME: ${{ github.event_name }}
+          SQUAD_COMMAND: ${{ github.event.inputs.command || github.event.comment.body }}
         with:
           script: |
             const issueNumber = Number(process.env.ISSUE_NUMBER);
-            const command = String(process.env.SQUAD_COMMAND || "").trim();
+            const eventName = String(process.env.SQUAD_EVENT_NAME || "");
+            const CANONICAL_BY_BARE_COMMAND = {
+              "activate": "/squad activate",
+              "plan accept": "/squad plan accept",
+              "plan activate": "/squad plan activate",
+            };
+            let command = String(process.env.SQUAD_COMMAND || "").trim();
+            if (eventName === "workflow_dispatch") {
+              // The command router relays a deterministically parsed, bare
+              // command (e.g. "activate") via workflow_dispatch; normalize it
+              // to the same canonical form used by the issue_comment path so
+              // both event sources share one acceptance check below.
+              const bare = command.replace(/^\/squad\s+/i, "").trim().toLowerCase();
+              command = CANONICAL_BY_BARE_COMMAND[bare] || command;
+            }
             if (
               !Number.isInteger(issueNumber) ||
               issueNumber <= 0 ||
-              !["/squad activate", "/squad plan accept"].includes(command)
+              !["/squad activate", "/squad plan accept", "/squad plan activate"].includes(command)
             ) {
               core.setFailed("A valid whole-plan activation command and issue number are required.");
               return;
+            }
+
+            if (eventName === "workflow_dispatch") {
+              // GitHub requires write access to trigger workflow_dispatch, and
+              // the deterministic command router already authorized this
+              // mutating mode for the triggering actor before relaying it
+              // here as a workflow_dispatch; no further permission lookup
+              // applies for this event source.
+              core.info("Lifecycle repair authorized via workflow_dispatch (write access required to trigger).");
+            } else {
+              const actor = String(context.payload.comment?.user?.login || "").trim();
+              if (!actor) {
+                core.setFailed("Lifecycle repair requires an identifiable comment author.");
+                return;
+              }
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: actor,
+                });
+                permission = String(response.data?.permission || "").toLowerCase();
+              } catch (error) {
+                core.setFailed(`Unable to verify lifecycle repair permission for ${actor}: ${error.message}`);
+                return;
+              }
+              if (!["admin", "maintain", "write"].includes(permission)) {
+                core.info(`Lifecycle repair is not authorized for ${actor} with ${permission || "unresolved"} permission.`);
+                return;
+              }
             }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -390,16 +413,16 @@ jobs:
               comment,
               envelope: envelopeFor(comment),
             }));
-            const accepted = artifacts.some(
-              ({ envelope }) =>
-                envelope?.squad_artifact === "plan-accepted" &&
-                envelope?.schema_version === "1" &&
-                envelope?.origin_issue === issueNumber &&
-                Array.isArray(envelope?.phases) &&
-                envelope.phases.length === 0,
+            const ok = artifacts.some(
+              ({ envelope: e }) =>
+                ["plan-accepted", "activated"].includes(e?.squad_artifact) &&
+                e?.schema_version === "1" &&
+                e?.origin_issue === issueNumber &&
+                Array.isArray(e?.phases) &&
+                (e.squad_artifact === "activated" || e.phases.length === 0),
             );
-            if (!accepted) {
-              core.info("No trusted whole-plan acceptance artifact; lifecycle repair is not applicable.");
+            if (!ok) {
+              core.info("No trusted whole-plan acceptance or activation artifact; lifecycle repair is not applicable.");
               return;
             }
 
@@ -417,8 +440,9 @@ jobs:
             const lifecycleBody = String(lifecycle?.body || "");
             const terminal =
               /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Activation:\*\*\s+✅\s+Done\s*$/im.test(lifecycleBody) &&
-              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept)`\s*$/im.test(lifecycleBody);
+              (/^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(lifecycleBody) ||
+                /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(lifecycleBody)) &&
+              /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(lifecycleBody);
             if (terminal) {
               core.info("The newest lifecycle tracker already records terminal activation.");
               return;
@@ -469,7 +493,7 @@ jobs:
       - name: Resolve Squad standalone release
         id: squad-release
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v0.13.1' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || 'v1.0.0' }}
         run: |
           set -euo pipefail
           release_tag="${SQUAD_CLI_VERSION}"
@@ -551,29 +575,6 @@ steps:
       name: squad-state
       path: ${{ github.workspace }}
 ---
-
-<!--
-
-## Squad Bootstrap Component
-
-This shared component handles the entire Squad install/init lifecycle outside the
-agent sandbox:
-
-1. **`jobs.activation.steps`** — the repository is already checked out by the
-   activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), downloads the selected standalone GitHub Release bundle,
-   checks whether `.squad/team.md` already exists with roster entries (preserving
-   any previously committed cast), and only runs `squad init` if no usable team
-   is found. It then runs `squad health --json` when the installed release
-   supports it and uploads the resulting `.squad/` team state plus
-   `.github/agents/squad.agent.md` only when readiness checks pass — all inside
-   the activation job without contacting an npm registry.
-
-2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
-   into the workspace. The Squad CLI is never installed here; only the files it
-   produced are needed.
-
--->
 
 ## Working with Squad
 

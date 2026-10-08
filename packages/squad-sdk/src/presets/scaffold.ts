@@ -17,6 +17,19 @@
  */
 
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { reconcileAgentProvenanceRegistry } from '../casting/agent-provenance.js';
+import {
+  CastingCommitInDoubtError,
+  _setCastingDurabilityHooksForTesting,
+  acquireCastingRegistryLock,
+  commitCastingRegistryPair,
+  prepareCastingRegistryPairLocked,
+  readCastingRegistryPair,
+  recoverCastingRegistryTransaction,
+  type CastingDurabilityBoundary,
+  type CastingRecoveryPathState,
+} from '../casting/durable-registry.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { PresetAgent } from './types.js';
 
@@ -24,10 +37,243 @@ const storage = new FSStorageProvider();
 
 const MEMBERS_HEADER = '## Members';
 const ROUTING_HEADER = '## Work Type → Agent';
+const REGISTRY_UPDATE_MAX_ATTEMPTS = 8;
+const DEFAULT_POLICY_RAW = JSON.stringify(
+  { universe_allowlist: ['*'], max_capacity: 25 },
+  null,
+  2,
+) + '\n';
+let atomicWriteSequence = 0;
+
+interface PresetRegistryTestHooks {
+  afterSnapshot?: (context: { registryPath: string; attempt: number }) => void;
+  beforeWrite?: (context: { filePath: string; stage: string }) => void;
+  beforeRename?: (context: {
+    registryPath: string;
+    tempPath: string;
+    attempt: number;
+    filePath?: string;
+    stage?: string;
+  }) => void;
+  now?: () => number;
+  wait?: (milliseconds: number) => void;
+  isProcessAlive?: (pid: number) => boolean | undefined;
+  lockTimeoutMs?: number;
+  staleLockAgeMs?: number;
+  beforeRollback?: () => void;
+  afterOutputMutation?: (context: {
+    surface: 'agent-tree' | 'routing' | 'team' | 'managed-routing';
+    path: string;
+  }) => void;
+  boundary?: (context: {
+    boundary: CastingDurabilityBoundary;
+    path: string;
+    transactionId?: string;
+  }) => void;
+}
+
+let presetRegistryTestHooks: PresetRegistryTestHooks | null = null;
+
+/** @internal Test-only deterministic conflict/failure injection. */
+export function _setPresetRegistryHooksForTesting(
+  nextHooks: PresetRegistryTestHooks | null,
+): void {
+  presetRegistryTestHooks = nextHooks;
+  _setCastingDurabilityHooksForTesting(nextHooks ? {
+    now: nextHooks.now,
+    wait: nextHooks.wait,
+    isProcessAlive: nextHooks.isProcessAlive,
+    lockTimeoutMs: nextHooks.lockTimeoutMs,
+    staleLockAgeMs: nextHooks.staleLockAgeMs,
+    boundary: (context) => {
+      nextHooks.boundary?.(context);
+      const [stage, operation] = context.boundary.split(':');
+      if (operation === 'write') {
+        nextHooks.beforeWrite?.({ filePath: context.path, stage: stage! });
+      }
+      if (operation === 'rename') {
+        nextHooks.beforeRename?.({
+          registryPath: context.path,
+          tempPath: context.path,
+          attempt: 0,
+          filePath: context.path,
+          stage,
+        });
+      }
+    },
+  } : null);
+}
+
+/** @internal Test-only deterministic external-writer injection. */
+export function _afterPresetOutputMutationForTesting(
+  surface: 'agent-tree' | 'routing' | 'team' | 'managed-routing',
+  outputPath: string,
+): void {
+  presetRegistryTestHooks?.afterOutputMutation?.({ surface, path: outputPath });
+}
 
 interface ScaffoldOptions {
   /** Universe tag for the casting registry. Defaults to `preset:<name>`. */
   universe: string;
+}
+
+function nowMilliseconds(): number {
+  return presetRegistryTestHooks?.now?.() ?? Date.now();
+}
+
+interface CastingHistory {
+  assignment_cast_snapshots: Record<string, {
+    created_at: string;
+    agents: string[];
+    universe: string;
+  }>;
+  universe_usage_history: Array<{ universe: string; used_at: string }>;
+}
+
+function readCastingHistoryRaw(raw: string | undefined): { raw: string | undefined; value: CastingHistory } {
+  if (raw === undefined) {
+    return {
+      raw,
+      value: { assignment_cast_snapshots: {}, universe_usage_history: [] },
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('history root must be an object');
+    }
+    const snapshots = parsed['assignment_cast_snapshots'];
+    const usage = parsed['universe_usage_history'];
+    if (
+      snapshots !== undefined
+      && (typeof snapshots !== 'object' || snapshots === null || Array.isArray(snapshots))
+    ) {
+      throw new Error('assignment_cast_snapshots must be an object');
+    }
+    if (usage !== undefined && !Array.isArray(usage)) {
+      throw new Error('universe_usage_history must be an array');
+    }
+    return {
+      raw,
+      value: {
+        assignment_cast_snapshots: (snapshots ?? {}) as CastingHistory['assignment_cast_snapshots'],
+        universe_usage_history: (usage ?? []) as CastingHistory['universe_usage_history'],
+      },
+    };
+  } catch (error) {
+    throw new Error(
+      `Cannot update malformed casting/history.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function validateCastingPolicy(policyPath: string): void {
+  const raw = storage.readSync(policyPath);
+  if (raw === undefined) return;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('policy root must be an object');
+    }
+  } catch (error) {
+    throw new Error(
+      `Cannot update malformed casting/policy.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function validatePresetCastingInputs(castingDir: string): void {
+  if (!storage.existsSync(castingDir)) return;
+  const registryPath = path.join(castingDir, 'registry.json');
+  const historyPath = path.join(castingDir, 'history.json');
+  const journalPath = path.join(castingDir, 'registry-history.transaction.json');
+  const manifestPath = path.join(castingDir, 'registry-history.commit.json');
+  const registryExists = storage.existsSync(registryPath);
+  const historyExists = storage.existsSync(historyPath);
+  if (registryExists !== historyExists) {
+    throw new Error(
+      'Cannot update casting registry/history: exactly one authoritative file exists',
+    );
+  }
+  if (
+    registryExists
+    || storage.existsSync(journalPath)
+    || storage.existsSync(manifestPath)
+  ) {
+    const pair = readCastingRegistryPair(castingDir);
+    readCastingHistoryRaw(pair.historyRaw);
+  }
+  validateCastingPolicy(path.join(castingDir, 'policy.json'));
+}
+
+function fileState(raw: string | undefined): string {
+  if (raw === undefined) return 'missing';
+  return `file:sha256:${createHash('sha256').update(raw).digest('hex')}`;
+}
+
+function restoreFileIfUnchanged(
+  filePath: string,
+  original: string | undefined,
+  written: string | undefined,
+): CastingRecoveryPathState | undefined {
+  let observed: string | undefined;
+  try {
+    observed = storage.readSync(filePath);
+  } catch {
+    return {
+      path: filePath,
+      originalState: fileState(original),
+      transactionWrittenState: fileState(written),
+      observedState: 'indeterminate',
+      status: 'indeterminate',
+    };
+  }
+  if (observed !== written) {
+    return {
+      path: filePath,
+      originalState: fileState(original),
+      transactionWrittenState: fileState(written),
+      observedState: fileState(observed),
+      status: 'diverged',
+    };
+  }
+  try {
+    if (original === undefined) storage.deleteSync(filePath);
+    else storage.writeSync(filePath, original);
+    return undefined;
+  } catch {
+    return {
+      path: filePath,
+      originalState: fileState(original),
+      transactionWrittenState: fileState(written),
+      observedState: 'rollback-failed',
+      status: 'indeterminate',
+    };
+  }
+}
+
+function atomicWriteFile(
+  filePath: string,
+  content: string,
+  stage: string,
+  registryPath: string,
+  attempt: number,
+): void {
+  const tempPath = `${filePath}.tmp-${process.pid}-${nowMilliseconds()}-${attempt}-${atomicWriteSequence++}`;
+  try {
+    presetRegistryTestHooks?.beforeWrite?.({ filePath, stage });
+    storage.writeSync(tempPath, content);
+    presetRegistryTestHooks?.beforeRename?.({
+      registryPath,
+      tempPath,
+      attempt,
+      filePath,
+      stage,
+    });
+    storage.renameSync(tempPath, filePath);
+  } finally {
+    storage.deleteSync(tempPath);
+  }
 }
 
 /**
@@ -116,7 +362,21 @@ function existingRoutingAgents(routingContent: string): Set<string> {
  * preset's agents. Existing members are preserved; only new names are added.
  * If team.md does not exist, a minimal one is created.
  */
-function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], presetName: string): void {
+function writeManagedScaffoldFile(
+  filePath: string,
+  content: string,
+  surface: 'team' | 'managed-routing',
+): string {
+  storage.writeSync(filePath, content);
+  _afterPresetOutputMutationForTesting(surface, filePath);
+  return content;
+}
+
+function writeOrMergeTeamMembers(
+  squadDir: string,
+  agents: PresetAgent[],
+  presetName: string,
+): string {
   const teamPath = path.join(squadDir, 'team.md');
   const existing = storage.existsSync(teamPath) ? (storage.readSync(teamPath) ?? '') : '';
 
@@ -146,8 +406,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
       '',
     ].join('\n');
     storage.mkdirSync(squadDir, { recursive: true });
-    storage.writeSync(teamPath, fresh);
-    return;
+    return writeManagedScaffoldFile(teamPath, fresh, 'team');
   }
 
   // team.md exists — merge into existing ## Members table
@@ -155,7 +414,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
   const newRows = agents
     .filter(a => !already.has(a.name.toLowerCase()))
     .map(memberRow);
-  if (newRows.length === 0) return; // nothing to do, all already present
+  if (newRows.length === 0) return existing; // nothing to do, all already present
 
   const membersIdx = existing.indexOf(MEMBERS_HEADER);
   if (membersIdx === -1) {
@@ -169,8 +428,11 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
       ...newRows,
       '',
     ].join('\n');
-    storage.writeSync(teamPath, existing.trimEnd() + '\n' + block);
-    return;
+    return writeManagedScaffoldFile(
+      teamPath,
+      existing.trimEnd() + '\n' + block,
+      'team',
+    );
   }
 
   // Members section exists — find end of its table and insert rows there
@@ -199,8 +461,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
     ];
     const newSection = MEMBERS_HEADER + '\n' + headerLines.join('\n') + '\n';
     const updated = existing.slice(0, membersIdx) + newSection + existing.slice(sectionEnd);
-    storage.writeSync(teamPath, updated);
-    return;
+    return writeManagedScaffoldFile(teamPath, updated, 'team');
   }
 
   // Append new rows after the last existing table row
@@ -208,7 +469,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
   const after = sectionLines.slice(lastTableLineRel + 1).join('\n');
   const newSection = before + '\n' + newRows.join('\n') + (after ? '\n' + after : '\n');
   const updated = existing.slice(0, membersIdx) + newSection + existing.slice(sectionEnd);
-  storage.writeSync(teamPath, updated);
+  return writeManagedScaffoldFile(teamPath, updated, 'team');
 }
 
 /**
@@ -217,7 +478,7 @@ function writeOrMergeTeamMembers(squadDir: string, agents: PresetAgent[], preset
  * primary agents are added. If routing.md does not exist, a minimal one is
  * created.
  */
-function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
+function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): string {
   const routingPath = path.join(squadDir, 'routing.md');
   const existing = storage.existsSync(routingPath) ? (storage.readSync(routingPath) ?? '') : '';
 
@@ -238,15 +499,14 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
       '',
     ].join('\n');
     storage.mkdirSync(squadDir, { recursive: true });
-    storage.writeSync(routingPath, fresh);
-    return;
+    return writeManagedScaffoldFile(routingPath, fresh, 'managed-routing');
   }
 
   const already = existingRoutingAgents(existing);
   const newRows = agents
     .filter(a => !already.has(a.name.toLowerCase()))
     .map(routingRow);
-  if (newRows.length === 0) return;
+  if (newRows.length === 0) return existing;
 
   const headerIdx = existing.indexOf(ROUTING_HEADER);
   if (headerIdx === -1) {
@@ -260,8 +520,11 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
       ...newRows,
       '',
     ].join('\n');
-    storage.writeSync(routingPath, existing.trimEnd() + '\n' + block);
-    return;
+    return writeManagedScaffoldFile(
+      routingPath,
+      existing.trimEnd() + '\n' + block,
+      'managed-routing',
+    );
   }
 
   // Existing routing section — append new rows after its last table row
@@ -286,14 +549,13 @@ function writeOrMergeRouting(squadDir: string, agents: PresetAgent[]): void {
     ];
     const newSection = ROUTING_HEADER + '\n' + headerLines.join('\n') + '\n';
     const updated = existing.slice(0, headerIdx) + newSection + existing.slice(sectionEnd);
-    storage.writeSync(routingPath, updated);
-    return;
+    return writeManagedScaffoldFile(routingPath, updated, 'managed-routing');
   }
   const before = sectionLines.slice(0, lastTableLineRel + 1).join('\n');
   const after = sectionLines.slice(lastTableLineRel + 1).join('\n');
   const newSection = before + '\n' + newRows.join('\n') + (after ? '\n' + after : '\n');
   const updated = existing.slice(0, headerIdx) + newSection + existing.slice(sectionEnd);
-  storage.writeSync(routingPath, updated);
+  return writeManagedScaffoldFile(routingPath, updated, 'managed-routing');
 }
 
 /**
@@ -314,71 +576,60 @@ function writeOrMergeCastingState(
 
   // ---- registry.json ----
   const registryPath = path.join(castingDir, 'registry.json');
-  let registry: { agents: Record<string, unknown> } = { agents: {} };
-  if (storage.existsSync(registryPath)) {
-    try {
-      const raw = storage.readSync(registryPath) ?? '{}';
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.agents && typeof parsed.agents === 'object') {
-        registry = parsed as { agents: Record<string, unknown> };
-      }
-    } catch {
-      // Corrupt or unparsable — start fresh (don't lose preset wiring)
-      registry = { agents: {} };
-    }
-  }
-  for (const agent of agents) {
-    const key = agent.name.toLowerCase();
-    if (!(key in registry.agents)) {
-      registry.agents[key] = {
-        created_at: now,
-        persistent_name: agent.name,
-        universe: options.universe,
-        status: 'active',
-      };
-    }
-  }
-  storage.writeSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+  const candidates = agents.map((agent) => ({
+    id: agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    displayName: agent.name,
+    role: agent.role,
+    universe: options.universe,
+  }));
 
   // ---- history.json ----
   const historyPath = path.join(castingDir, 'history.json');
-  interface CastingHistory {
-    assignment_cast_snapshots: Record<string, { created_at: string; agents: string[]; universe: string }>;
-    universe_usage_history: Array<{ universe: string; used_at: string }>;
-  }
-  let history: CastingHistory = {
-    assignment_cast_snapshots: {},
-    universe_usage_history: [],
-  };
-  if (storage.existsSync(historyPath)) {
-    try {
-      const raw = storage.readSync(historyPath) ?? '{}';
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        history = {
-          assignment_cast_snapshots: parsed.assignment_cast_snapshots ?? {},
-          universe_usage_history: parsed.universe_usage_history ?? [],
-        };
-      }
-    } catch {
-      // Keep the fresh defaults above
-    }
-  }
-  const snapshotKey = `preset-${options.universe}-${now}`;
-  history.assignment_cast_snapshots[snapshotKey] = {
-    created_at: now,
-    agents: agents.map(a => a.name.toLowerCase()),
-    universe: options.universe,
-  };
-  history.universe_usage_history.push({ universe: options.universe, used_at: now });
-  storage.writeSync(historyPath, JSON.stringify(history, null, 2) + '\n');
-
-  // ---- policy.json ----
   const policyPath = path.join(castingDir, 'policy.json');
   if (!storage.existsSync(policyPath)) {
-    const policy = { universe_allowlist: ['*'], max_capacity: 25 };
-    storage.writeSync(policyPath, JSON.stringify(policy, null, 2) + '\n');
+    atomicWriteFile(policyPath, DEFAULT_POLICY_RAW, 'policy', policyPath, 0);
   }
+  for (let attempt = 1; attempt <= REGISTRY_UPDATE_MAX_ATTEMPTS; attempt++) {
+    const pairSnapshot = prepareCastingRegistryPairLocked(castingDir);
+    const snapshot = pairSnapshot.registryRaw?.trim()
+      ? { raw: pairSnapshot.registryRaw, value: pairSnapshot.registry }
+      : { raw: pairSnapshot.registryRaw, value: undefined };
+    const registry = reconcileAgentProvenanceRegistry(
+      snapshot.value,
+      candidates,
+      { generatedAt: now, retireMissing: false },
+    );
+    const historySnapshot = readCastingHistoryRaw(pairSnapshot.historyRaw);
+    const history = structuredClone(historySnapshot.value);
+    const snapshotKey = `preset-${options.universe}-revision-${registry.revision}-${now}`;
+    history.assignment_cast_snapshots[snapshotKey] = {
+      created_at: now,
+      agents: candidates.map(candidate => candidate.id),
+      universe: options.universe,
+    };
+    history.universe_usage_history.push({ universe: options.universe, used_at: now });
+
+    presetRegistryTestHooks?.afterSnapshot?.({ registryPath, attempt });
+    if (storage.readSync(registryPath) !== snapshot.raw) {
+      continue;
+    }
+    if (storage.readSync(historyPath) !== historySnapshot.raw) {
+      continue;
+    }
+    commitCastingRegistryPair(
+      castingDir,
+      snapshot.raw,
+      registry as unknown as Record<string, unknown>,
+      historySnapshot.raw,
+      history as unknown as Record<string, unknown>,
+      registry.revision,
+    );
+
+    return;
+  }
+  throw new Error(
+    `Casting registry changed during ${REGISTRY_UPDATE_MAX_ATTEMPTS} update attempts`,
+  );
 }
 
 /**
@@ -392,10 +643,52 @@ export function scaffoldPresetIntoSquad(
   squadDir: string,
   agents: PresetAgent[],
   presetName: string,
+  prepareOutputs?: () => PresetAgent[],
 ): void {
-  if (agents.length === 0) return;
   const universe = `preset:${presetName}`;
-  writeOrMergeTeamMembers(squadDir, agents, presetName);
-  writeOrMergeRouting(squadDir, agents);
-  writeOrMergeCastingState(squadDir, agents, { universe });
+  const castingDir = path.join(squadDir, 'casting');
+  validatePresetCastingInputs(castingDir);
+  storage.mkdirSync(castingDir, { recursive: true });
+  const releaseLock = acquireCastingRegistryLock(castingDir, 'preset scaffold');
+  const teamPath = path.join(squadDir, 'team.md');
+  const routingPath = path.join(squadDir, 'routing.md');
+  const policyPath = path.join(castingDir, 'policy.json');
+  try {
+    recoverCastingRegistryTransaction(castingDir);
+    prepareCastingRegistryPairLocked(castingDir);
+    validateCastingPolicy(path.join(castingDir, 'policy.json'));
+
+    const wireableAgents = prepareOutputs?.() ?? agents;
+    if (wireableAgents.length === 0) return;
+
+    const originalTeam = storage.readSync(teamPath);
+    const originalRouting = storage.readSync(routingPath);
+    const originalPolicy = storage.readSync(policyPath);
+    let writtenTeam = originalTeam;
+    let writtenRouting = originalRouting;
+    const writtenPolicy = originalPolicy ?? DEFAULT_POLICY_RAW;
+    try {
+      writtenTeam = writeOrMergeTeamMembers(squadDir, wireableAgents, presetName);
+      writtenRouting = writeOrMergeRouting(squadDir, wireableAgents);
+      writeOrMergeCastingState(squadDir, wireableAgents, { universe });
+    } catch (error) {
+      if (error instanceof CastingCommitInDoubtError) throw error;
+      presetRegistryTestHooks?.beforeRollback?.();
+      const affectedPaths = [
+        restoreFileIfUnchanged(teamPath, originalTeam, writtenTeam),
+        restoreFileIfUnchanged(routingPath, originalRouting, writtenRouting),
+        restoreFileIfUnchanged(policyPath, originalPolicy, writtenPolicy),
+      ].filter((entry): entry is CastingRecoveryPathState => entry !== undefined);
+      if (affectedPaths.length > 0) {
+        throw new CastingCommitInDoubtError(
+          `Preset scaffold rollback is in doubt for ${affectedPaths.length} path(s)`,
+          error,
+          { affectedPaths },
+        );
+      }
+      throw error;
+    }
+  } finally {
+    releaseLock();
+  }
 }

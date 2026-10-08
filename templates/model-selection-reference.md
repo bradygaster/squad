@@ -85,11 +85,11 @@ If you've exhausted the fallback chain and reached the platform default fallback
 When spawning, include the model in your acknowledgment:
 
 ```
-🔧 Fenster (claude-sonnet-5) — refactoring auth module
-🎨 Redfoot (gpt-5.6-sol · vision) — designing color system
+🔧 Runtime Engineer (claude-sonnet-5) — refactoring auth module
+🎨 Experience Engineer (gpt-5.6-sol · vision) — designing color system
 📋 Scribe (gpt-5.6-luna · fast) — logging session
-⚡ Keaton (gpt-5.6-sol · bumped for architecture) — reviewing proposal
-📝 McManus (gpt-5.6-luna · fast) — updating docs
+⚡ Lead (gpt-5.6-sol · bumped for architecture) — reviewing proposal
+📝 Docs Engineer (gpt-5.6-luna · fast) — updating docs
 ```
 
 Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.

@@ -10,11 +10,84 @@
  */
 
 import { execFile, execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { WatchContext } from './types.js';
 import { withAdditionalMcpConfig } from '../../core/copilot-invocation.js';
 
 /** True when running on Windows — used to gate `shell: true`. */
 export const IS_WINDOWS = process.platform === 'win32';
+
+export interface CopilotUsageOutput {
+  currentModel: string;
+  lastCallInputTokens: number;
+  lastCallOutputTokens: number;
+}
+
+export interface AgentSpawnResult {
+  success: boolean;
+  error?: string;
+  usage?: CopilotUsageOutput;
+  usageError?: string;
+}
+
+export interface CopilotUsageCapture {
+  args: string[];
+  filePath: string;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+/** Add Copilot's per-invocation usage output flag under the effective state directory. */
+export function withCopilotUsageOutput(
+  args: string[],
+  stateRoot: string,
+): CopilotUsageCapture {
+  const logDir = path.join(stateRoot, 'log');
+  mkdirSync(logDir, { recursive: true });
+  const filePath = path.join(logDir, `context-usage-${randomUUID()}.json`);
+  return {
+    args: [...args, '--usage-output-file', filePath],
+    filePath,
+  };
+}
+
+/** Strictly parse the subset of Copilot usage output needed for context estimation. */
+export function parseCopilotUsageOutput(value: unknown): CopilotUsageOutput | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record['currentModel'] !== 'string'
+    || record['currentModel'].trim() === ''
+    || !isNonNegativeInteger(record['lastCallInputTokens'])
+    || !isNonNegativeInteger(record['lastCallOutputTokens'])
+  ) {
+    return undefined;
+  }
+  return {
+    currentModel: record['currentModel'],
+    lastCallInputTokens: record['lastCallInputTokens'],
+    lastCallOutputTokens: record['lastCallOutputTokens'],
+  };
+}
+
+function readCopilotUsageOutput(filePath: string): {
+  usage?: CopilotUsageOutput;
+  error?: string;
+} {
+  if (!existsSync(filePath)) {
+    return { error: 'Copilot usage output was not created' };
+  }
+  try {
+    const usage = parseCopilotUsageOutput(JSON.parse(readFileSync(filePath, 'utf8')));
+    return usage ? { usage } : { error: 'Copilot usage output has an invalid shape' };
+  } catch (error) {
+    return { error: `Could not read Copilot usage output: ${(error as Error).message}` };
+  }
+}
 
 /**
  * Escape an argument for safe use with cmd.exe when `shell: true`.
@@ -206,9 +279,10 @@ export function spawnAgent(
   cwd: string,
   timeoutMs: number,
   pidTracking?: { tracker: NonNullable<WatchContext['pidTracker']>; label: string },
-): Promise<{ success: boolean; error?: string }> {
+  usageOutputFile?: string,
+): Promise<AgentSpawnResult> {
   const safeArgs = escapeArgs(args);
-  return new Promise<{ success: boolean; error?: string }>((resolve) => {
+  return new Promise<AgentSpawnResult>((resolve) => {
     const cp = execFile(
       cmd,
       safeArgs,
@@ -219,12 +293,31 @@ export function spawnAgent(
         shell: IS_WINDOWS,
       },
       (err) => {
+        const usageResult = usageOutputFile
+          ? readCopilotUsageOutput(usageOutputFile)
+          : {};
+        if (usageOutputFile && existsSync(usageOutputFile)) {
+          try {
+            unlinkSync(usageOutputFile);
+          } catch (cleanupError) {
+            usageResult.error ??= `Could not remove Copilot usage output: ${(cleanupError as Error).message}`;
+          }
+        }
         if (err) {
           const execErr = err as Error & { killed?: boolean };
           const msg = execErr.killed ? 'Timed out' : execErr.message;
-          resolve({ success: false, error: msg });
+          resolve({
+            success: false,
+            error: msg,
+            usage: usageResult.usage,
+            usageError: usageResult.error,
+          });
         } else {
-          resolve({ success: true });
+          resolve({
+            success: true,
+            usage: usageResult.usage,
+            usageError: usageResult.error,
+          });
         }
       },
     );

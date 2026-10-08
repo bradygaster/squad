@@ -4,7 +4,7 @@ description: Squad planning ontology — artifact schemas, lifecycle state machi
 ---
 # Planning Ontology & Artifact Schemas
 
-> **Version:** 2.0 · **Owner:** Procedures · **Status:** Active
+> **Version:** 2.0 · **Owner:** Agent systems role · **Status:** Active
 >
 > **Decision Ratifications:**
 > - `copilot-plan-workflow-ux.md` → **Ratified Option A + Option 3**: Explicit commands (`/squad plan accept`) under the `/squad` namespace; planning logic lives in `shared/` components imported by `squad.md`. This file IS the shared component.
@@ -128,36 +128,44 @@ The issue body IS the intent. No special format required, but structured intents
 <Links, prior art, relevant decisions>
 ```
 
-### 3.2 Research Findings
+### 3.2 Squad Research
 
 ```markdown
-## Research Findings
+## 🔬 Squad Research — <Title>
 
 ### Summary
 <1-3 sentence overview of what was discovered>
 
-### Sources
-| # | Source | Type | Key Insight |
-|---|--------|------|-------------|
-| 1 | <link/file/doc> | <codebase/docs/external> | <insight> |
+### Goals
+- <What this research must establish>
+
+### Non-goals
+- <What is explicitly outside this research>
+
+### Evidence table
+| ID | Finding | Risk | Complexity | Citation |
+|----|---------|------|------------|----------|
+| R1 | <checkable finding> | <🟢/🟡/🔴> | <S/M/L/XL> | <one path, path:line, URL, or issue/PR reference> |
+
+### Load-bearing assumptions
+- <Assumption referencing the Rn evidence it depends on>
+
+### Open decisions
+- <Decision requiring human judgment>
+
+### Acceptance framing
+- <Measurable evidence that would make the proposed next step acceptable>
 
 ### Online sources
 <`consulted` — list the URLs fetched this run (each also cited above); or
 `unavailable — <reason>` when no external documentation was fetched. Makes
 degradation observable: never claim `consulted` for a page not actually fetched.>
 
-### Findings
-#### Finding 1: <title>
-<Evidence and analysis>
-
-#### Finding 2: <title>
-<Evidence and analysis>
-
-### Open Questions
-- <Unresolved question needing human input>
-
 ### Recommendations
-- <Actionable recommendation derived from evidence>
+- <Actionable recommendation referencing its Rn evidence>
+
+### Next step
+<`/squad triage` or `/squad plan`>
 ```
 
 ### 3.3 Triage Disposition
@@ -252,7 +260,7 @@ degradation observable: never claim `consulted` for a page not actually fetched.
 ```markdown
 ## Plan Validation
 
-### Result: <✅ PASS | ❌ FAIL>
+RESULT: <PASS | FAIL>
 
 ### Checks
 
@@ -395,9 +403,14 @@ This comment is created on first transition and updated on every subsequent tran
 
 **Current state:** Triaged
 **Last command:** `/squad triage` by @user at <timestamp>
-**Next action:** `/squad plan program` — create a program plan from triage dispositions
+**Next action:** `/squad plan program`
+**Guidance:** Create a program plan from triage dispositions.
 **Also available:** `/squad triage revise <feedback>` — adjust triage before planning
 ```
+
+For nonterminal states, `Next action` is only the backticked `/squad` command;
+put prose elsewhere. `Activated` is terminal and may use terminal prose there.
+Its canonical granular command is `/squad plan activate`.
 
 Status icons: `✅ Done` · `⏳ In Progress` · `⬚ Pending` · `❌ Failed` · `⏭ Skipped`
 

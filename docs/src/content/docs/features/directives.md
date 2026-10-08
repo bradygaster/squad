@@ -1,8 +1,5 @@
 # Directives
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this to establish team coding standards:**
 ```
 From now on, all tests must use Jest instead of Mocha

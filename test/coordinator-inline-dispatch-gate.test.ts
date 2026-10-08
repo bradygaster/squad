@@ -12,8 +12,9 @@
  * work on its own instead of using his roster of agents."
  *
  * This test pins the always-on dispatch contract into the canonical coordinator
- * template AND asserts byte-level PARITY across all 5 synced copies so a future
- * size-reduction refactor cannot silently relocate them again:
+ * template and asserts semantic parity across its synced copies and the
+ * compatibility references so a future size-reduction refactor cannot silently
+ * relocate or contradict it again:
  *   1. An explicit INLINE-DISPATCH GATE in Client Compatibility — inline work is
  *      permitted ONLY in Direct Mode; missing spawn tools require refusal.
  *   2. A one-line STOP gate under "How to Spawn an Agent" — about to produce a
@@ -57,6 +58,27 @@ const ROUTING_LOCATIONS = [
   'packages/squad-cli/templates/routing.md',
   'packages/squad-sdk/templates/routing.md',
 ] as const;
+const CLIENT_COMPATIBILITY_LOCATIONS = [
+  '.squad-templates/client-compatibility-reference.md',
+  'templates/client-compatibility-reference.md',
+  'packages/squad-cli/templates/client-compatibility-reference.md',
+  'packages/squad-sdk/templates/client-compatibility-reference.md',
+] as const;
+const SPAWN_REFERENCE_LOCATIONS = [
+  '.squad-templates/spawn-reference.md',
+  'templates/spawn-reference.md',
+  'packages/squad-cli/templates/spawn-reference.md',
+  'packages/squad-sdk/templates/spawn-reference.md',
+] as const;
+const CLIENT_COMPATIBILITY_SKILL_LOCATIONS = [
+  '.copilot/skills/client-compatibility/SKILL.md',
+  '.squad-templates/skills/client-compatibility/SKILL.md',
+  'templates/skills/client-compatibility/SKILL.md',
+  'packages/squad-cli/templates/skills/client-compatibility/SKILL.md',
+  'packages/squad-sdk/templates/skills/client-compatibility/SKILL.md',
+] as const;
+const CLIENT_COMPATIBILITY_DOC =
+  'docs/src/content/docs/scenarios/client-compatibility.md';
 
 /**
  * Stable anchor introduced by the fix. Phrasing of the surrounding sentence may
@@ -101,6 +123,18 @@ function assertScribeBootstrap(content: string, label: string): void {
   expect(tail, `${label}: VS Code bootstrap must use runSubagent`).toMatch(/\brunSubagent\b/i);
 }
 
+function assertCompatibilityDispatchContract(content: string, label: string): void {
+  expect(content, `${label}: Copilot App must use create_session`).toMatch(
+    /Copilot App mode.{0,100}\bcreate_session\b/is,
+  );
+  expect(content, `${label}: missing dispatch tools must require refusal`).toMatch(
+    /(?:No dispatch tool available|None available).{0,250}refuse domain work/is,
+  );
+  expect(content, `${label}: stale inline fallback guidance remains`).not.toMatch(
+    /Fallback mode.{0,200}work inline/is,
+  );
+}
+
 describe('coordinator inline-dispatch gate (regression #1035)', () => {
   describe('canonical template carries all three always-on elements', () => {
     const content = read(CANONICAL);
@@ -140,6 +174,19 @@ describe('coordinator inline-dispatch gate (regression #1035)', () => {
       for (const loc of ROUTING_LOCATIONS) {
         it(`${loc} starts Scribe at the beginning of Team Mode`, () => {
           expect(read(loc)).toMatch(/Scribe always starts once at the beginning of every Team Mode session/i);
+        });
+      }
+    });
+
+    describe('client compatibility reference parity', () => {
+      for (const loc of [
+        ...CLIENT_COMPATIBILITY_LOCATIONS,
+        ...SPAWN_REFERENCE_LOCATIONS,
+        ...CLIENT_COMPATIBILITY_SKILL_LOCATIONS,
+        CLIENT_COMPATIBILITY_DOC,
+      ]) {
+        it(`${loc} preserves the mandatory dispatch contract`, () => {
+          assertCompatibilityDispatchContract(read(loc), loc);
         });
       }
     });

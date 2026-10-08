@@ -26,7 +26,13 @@ on:
         description: 'Originating agentic workflow context'
         required: false
         type: string
+if: >-
+  github.event_name != 'issues' ||
+  github.actor != 'github-actions[bot]' ||
+  github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' ||
+  !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
 permissions:
+  actions: read
   contents: read
   copilot-requests: write
   issues: read
@@ -43,7 +49,14 @@ imports:
   - shared/squad-planning-ontology.md
   - shared/squad-planning-policy.md
 resources:
+  - shared/squad-command-contract.mjs
   - shared/squad-cast-validator.mjs
+  - shared/squad-bootstrap-validator.mjs
+  - shared/squad-improvement-gate.mjs
+  - shared/squad-retro-evidence.mjs
+  - shared/squad-retro-provenance.mjs
+  - shared/squad-implementation-provenance.mjs
+  - shared/implementation-provenance-v1.schema.json
   - shared/builtins/scribe-charter.md
   - shared/builtins/ralph-charter.md
   - shared/builtins/rai-charter.md
@@ -56,9 +69,22 @@ tools:
     toolsets: [default]
 # pre-agent-steps (not steps:): runs after gh-aw's native base-branch/ambient
 # restores that can reintroduce a stale committed .squad/ snapshot late in the
-# job, so this stays the last writer of the four built-in charters before the
-# agent turn begins.
+# job, so this stays the last writer of the four built-in charters.
 pre-agent-steps:
+  - name: Checkout executing workflow commit for the command contract
+    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    with:
+      ref: ${{ github.workflow_sha }}
+      persist-credentials: false
+      path: .squad-command-trusted-base
+  - name: Materialize deterministic Squad command context
+    shell: bash
+    env:
+      SQUAD_COMMAND_CONTEXT: ${{ github.workspace }}/.github/workflows/squad-command-context.json
+    run: |
+      set -euo pipefail
+      node "${GITHUB_WORKSPACE:?}/.squad-command-trusted-base/.github/workflows/shared/squad-command-contract.mjs" \
+        --materialize "$SQUAD_COMMAND_CONTEXT"
   - name: Materialize canonical built-in support agents
     shell: bash
     run: |
@@ -125,7 +151,9 @@ pre-agent-steps:
       fi
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
-      validator_expected_sha256="f0c79694d9832c53070f059d4bff181a8ccd857e1be49d24b8d5b72ed8887251"
+      # BEGIN GENERATED RESOURCE DIGEST
+      validator_expected_sha256="c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
+      # END GENERATED RESOURCE DIGEST
       : > "$stderr_file"
       validator_actual_sha256="$(
         node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' \
@@ -168,7 +196,59 @@ pre-agent-steps:
       cat "$validator_output"
       SQUAD_CAST_VALIDATOR_RUNNER
       chmod 500 "$validator_runner"
+  - name: Validate improvement command before the agent
+    uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    with:
+      script: |
+        const { join } = require('node:path');
+        const { pathToFileURL } = require('node:url');
+        const gate = await import(pathToFileURL(join(process.env.GITHUB_WORKSPACE,
+          '.github/workflows/shared/squad-improvement-gate.mjs')).href);
+        const result = await gate.validateImprovementCommand(context.payload, process.env);
+        if (!result.ok) core.setFailed(gate.describeViolations(result.violations).join('; '));
 safe-outputs:
+  allowed-domains:
+    - learn.microsoft.com
+    - aspire.dev
+  activation-comments: ${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}
+  steps:
+    - name: Checkout executing workflow commit for command enforcement
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.workflow_sha }}
+        persist-credentials: false
+        path: .squad-command-trusted-base
+    - name: Reject unknown or malformed Squad commands
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        SQUAD_EVENT_NAME: ${{ github.event_name }}
+      with:
+        script: |
+          const nodePath = require('node:path');
+          const { pathToFileURL } = require('node:url');
+          const trustedRoot = nodePath.join(process.env.GITHUB_WORKSPACE, '.squad-command-trusted-base');
+          const contract = await import(pathToFileURL(nodePath.join(
+            trustedRoot,
+            '.github/workflows/shared/squad-command-contract.mjs',
+          )).href);
+          try {
+            await contract.enforceSquadCommandContract({
+              payload: context.payload,
+              eventName: process.env.SQUAD_EVENT_NAME,
+              createComment: async (issueNumber, body) => {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  body,
+                });
+              },
+            });
+          } catch (error) {
+            core.setFailed(error instanceof Error ? error.message : String(error));
+          }
   messages:
     append-only-comments: true
     run-success: "🤖 [{workflow_name}]({run_url}) finished processing. This completion message does not indicate Cast success. For Cast, only a linked Cast pull request indicates success."
@@ -344,7 +424,7 @@ safe-outputs:
     max: 20
     target: "*"
   dispatch-workflow:
-    workflows: [squad-implement-worker, squad-deps-worker, squad-review]
+    workflows: [squad-implement-worker, squad-deps-worker, squad-retro, squad-improvement-worker]
     max: 3
 ---
 
@@ -371,6 +451,8 @@ matching the exact structured fields, and choosing the newest match.
 
 For each lifecycle-state write, call `upsert_lifecycle_state` once with the
 complete body. It updates the newest trusted tracker or creates the first one.
+For nonterminal states, `Next action` MUST be only the backticked `/squad`
+command; put prose elsewhere. `Activated` may use terminal prose instead.
 
 # Squad — `/squad` Slash Command
 
@@ -383,23 +465,23 @@ failures, not commands to reinterpret as Cast.
 - **Event name:** `${{ github.event_name }}`
 - **Dispatched command:** `${{ github.event.inputs.command }}`
 - **Dispatched issue number:** `${{ github.event.inputs.issue_number }}`
+- **Dispatched aw_context:** `${{ github.event.inputs.aw_context }}`
 
 ### Workflow-dispatch activation guard [MANDATORY — run before any skill]
 
 `workflow_dispatch` inputs `command` and `issue_number` are both
-`required: false`, so an empty activation probe can reach this workflow. The
-`squad-implement-worker` relay fires such a probe before its real dispatch (see
-EECOM's `dispatch-workflow` `max` fix in PR #1777). That probe arrives here as a
-`workflow_dispatch` with empty inputs. It is NOT a command. Guard against it as
-the FIRST action of the run, before resolving any command or entering any skill:
+`required: false`, so an empty activation probe can reach this workflow — the
+`squad-implement-worker` relay fires one before its real dispatch (the
+`dispatch-workflow` `max` fix, PR #1777). It is NOT a command. Guard against it
+as the FIRST action of the run, before resolving any command or entering any
+skill:
 
 - When `github.event_name` is `workflow_dispatch` AND the **Dispatched command**
-  above is empty or missing: this is an empty activation probe, not a real run.
-  Emit exactly one diagnostic annotation via bash —
+  above is empty or missing: emit exactly one diagnostic annotation via bash —
   `echo "::warning::Squad workflow_dispatch fired with empty command input — empty activation probe (see PR #1777); halting with no side effects"`
   — and STOP immediately. Do NOT create an issue, do NOT post a comment, do NOT
-  enter any skill. Creating an issue here is the junk-issue defect that produced
-  fixture issues #12 and #14; never do it.
+  enter any skill; creating an issue here is the junk-issue defect behind
+  fixture issues #12 and #14.
 - When `github.event_name` is `workflow_dispatch`, the **Dispatched command** is
   non-empty and names an issue-bound mode (`research`, `triage`, `plan*`, or
   `implement`), but neither a dispatched nor a triggering `issue_number` is
@@ -407,19 +489,15 @@ the FIRST action of the run, before resolving any command or entering any skill:
   `echo "::warning::Squad workflow_dispatch for the named command is missing issue_number; halting with no side effects"`
   and STOP. Do NOT create an issue.
 
-This guard is defense-in-depth: PR #1777's `max` bump keeps the real relay
-dispatch alive, and this guard makes the surviving probe harmless and visible
-(a log annotation that survives the run) instead of silently minting junk
-issues. If the LLM ever emits a third dispatch entry, `max` alone fails again —
-this guard still holds.
+`max` alone is not enough: this guard makes the surviving probe harmless and
+visible instead of silently minting junk issues.
 
 Resolve the slash command in this order:
 
-1. **Dispatched command** (above) — when the event name is
-   `workflow_dispatch`, this input must be present for the run to proceed. If it
-   is empty, the activation guard above has already halted the run; never reach
-   this step with an empty dispatched command. When it is non-empty, it is the
-   trigger source; skip the remaining sources.
+1. **Dispatched command** (above) — on `workflow_dispatch` this input must be
+   present for the run to proceed; an empty one has already been halted by the
+   activation guard. When non-empty it is the trigger source; skip the
+   remaining sources.
 2. **Issue comment / PR conversation comment:** `github.event.comment.body` —
    the full comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
@@ -437,14 +515,13 @@ Resolve the target issue in this order:
    issue, including for merge-driven epic continuations.
 2. The triggering issue or pull request number from the event payload.
 
-**Never emit `noop` when the dispatched command is non-empty.** A workflow
-dispatch with a non-empty command is always actionable: run the named mode
-against the dispatched issue number. If the dispatched command names no mode in
-the Modes table, that is a loud failure via Step PC-3 — still never `noop`. The
-missing-`issue_number` case is handled by the activation guard above — halt with
-a log annotation, never an issue.
+**Never emit `noop` when the dispatched command is non-empty.** Run the named
+mode against the dispatched issue number. If the dispatched command names no
+mode in the Modes table, that is a loud failure via Step PC-3 — still never
+`noop`. The missing-`issue_number` case is handled by the activation guard
+above: halt with a log annotation, never an issue.
 
-The activation job already ran `squad init --preset default`, which produced a
+The activation job already ran `squad init --preset default`, producing a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
 mode REPLACES this scaffolding with a team tailored to the repository.
 
@@ -462,6 +539,9 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad retire <name>` | Retire |
 | `/squad status` | Status |
 | `/squad review` | Review Relay |
+| `/squad retro` | Retro Relay |
+| `/squad approve-improvement` | Approve Improvement |
+| `/squad revoke-improvement` | Revoke Improvement |
 | `/squad research` | Research |
 | `/squad plan` | Plan |
 | `/squad plan revise <feedback>` | Plan Revise |
@@ -485,190 +565,47 @@ Repository owners must configure Copilot setup steps separately when needed.
 
 ## Parse Command
 
-**The command may appear anywhere in the body — not only at the start.** A body
-that opens with a greeting, a sentence of context, or a blank line and *then*
-carries the command is the normal shape of a first-run issue. Never assume the
-body begins with `/squad`, and never decide by eye whether a command is present.
+Command discovery, normalization, argument validation, and rejection are one
+deterministic contract implemented by
+`.github/workflows/shared/squad-command-contract.mjs`. Do not independently
+parse event prose or use prefix matching here.
 
-### Shell input security contract [MANDATORY]
+The pre-agent guard writes its result to
+`.github/workflows/squad-command-context.json`. Read that file before selecting
+a mode:
 
-Issue and comment bodies, issue/PR titles, and any other GitHub event text are
-**attacker-controlled**.
+- `status: "accepted"` — use only its `mode` and optional `phase`.
+- `status: "none"` — this event contains no `/squad` invocation. Emit no output
+  and stop. Comments and issue bodies without an invocation are ordinary
+  non-events.
+- `status: "rejected"` — emit no output and stop. The deterministic safe-output
+  guard posts an explanatory comment containing `rejectedCommand` and fails the
+  workflow run. Never call `noop`, because that would add a conflicting success
+  signal.
 
-**Mandatory channel:** event text MUST reach the shell only through named
-step/job `env:` variables, read only by quoted parameter expansion:
+`workflow_dispatch` is a separate call site covered by the same module. It
+accepts bare commands such as `implement` as well as `/squad implement`, skips
+leading/trailing whitespace, and treats an empty dispatch as a non-event for the
+activation guard. Issue bodies, issue comments, and pull request conversation
+comments require an actual `/squad` invocation. The command may appear anywhere
+in those bodies.
 
-```yaml
-env:
-  # Angle brackets stand in for Actions expression delimiters; literal ones
-  # fail gh-aw's allowlist and break `gh aw compile`.
-  SQUAD_TRIGGER_BODY: <github.event.comment.body || github.event.issue.body>
-run: |
-  body="${SQUAD_TRIGGER_BODY-}"
-  printf '%s\n' "$body" | awk '...' | grep -F -- '/squad'
-```
-
-**Forbidden:**
-
-- `UNTRUSTED_TEMPLATE_IN_RUN` — never place an event-text expression, or anything
-  derived from one, inside a `run:` block. Actions expansion happens *before* the
-  shell starts, so shell quoting cannot protect it.
-- `UNTRUSTED_COMMAND_STRING` — never build shell syntax from that text: no
-  `eval`, `source`, generated script text, or `bash -c`/`sh -c` string.
-- `UNTRUSTED_PRINTF_FORMAT` — never pass it as `printf`'s first argument; that
-  slot is the format. The body belongs in an argument slot: `printf '%s\n' "$body"`.
-- `UNTRUSTED_AWK_PROGRAM_OR_VAR` — never interpolate it into an awk program, and
-  never pass the raw body through `awk -v`, which applies escape processing and
-  can mutate parser input. Use stdin.
-
-**Per-hop requirements:**
-
-1. **Actions assignment** — event text in YAML `env:` only; no such expression
-   may appear in any compiled `run:` block.
-2. **Shell variable** — plain assignment only. No `eval`, command substitution,
-   here-doc generation, or `bash -c`.
-3. **`printf`** — literal format string; body always an argument.
-4. **Pipe** — stdin bytes between stages; never re-materialized as shell syntax.
-5. **`awk`** — static single-quoted program, body on stdin; awk variables carry
-   trusted constants only.
-6. **`grep`** — `grep -F -- "$pattern"`, quoted: `-F` forces fixed-string, `--`
-   ends option parsing so `-e` or `--version` stay data.
-
-**Verification requirement:** the gate must inspect **compiled** gh-aw output,
-not just this markdown, and fail when a compiled `run:` block carries event
-expressions, or when parser code passes a body variable as a `printf` format,
-into `eval`/`bash -c`, or into an awk program/`awk -v`. A gate that cannot turn
-red on a fixture whose `run:` prints a raw issue-body expression is not valid.
-
-That gate is **implemented** (#1834) in `test/gh-aw-quality.test.ts` (describe
-`gh-aw: compiled workflow shell input security contract`), backed by the scanner
-in `test/gh-aw-shell-contract.ts` and the positive-control fixture
-`test/fixtures/gh-aw-shell-contract/violating.lock.yml`. It runs in CI, which
-installs `gh aw` and compiles this workflow (see `.github/workflows/squad-ci.yml`).
-The gate fails closed: a missing compiler, an absent lock, or zero inspected
-surfaces are failures, never skips.
-
-Because the contract spans two artifacts, it is verified on two surfaces:
-
-- **Hop 1 (`UNTRUSTED_TEMPLATE_IN_RUN`)** is a property of the compiled lock, so
-  it is scanned there. Actions expands template expressions before the shell
-  starts, so an attacker-controlled event expression left in a compiled `run:`
-  block is the observable failure.
-- **Hops 2–6 (`printf`/`eval`/`bash -c`/`awk`)** live in the `/squad` parser
-  one-liners below, which gh-aw pulls in verbatim at runtime via a
-  runtime-import of this file and never inlines into the lock. That
-  runtime-imported source is therefore the only surface on which those hops can
-  be observed, and the gate scans it directly. The steps below satisfy hops 2–6
-  as written.
-
-### Step PC-0: Normalize a dispatched command [MANDATORY on `workflow_dispatch`]
-
-`workflow_dispatch` delivers a **bare** command — its input schema documents
-`cast`, `implement`, `connect org/repo`, never `/squad implement`. PC-1 scans for
-a literal `/squad` token, so a bare token yields `NO_COMMAND` and routes a valid
-manual or relayed run into the PC-3 failure path. Normalize here rather than
-loosening PC-1: on the comment and issue-body paths a missing token *is* the
-error condition and must keep failing loudly (#1824). Only dispatch is
-structurally guaranteed a command, so only it is normalized.
-
-When `github.event_name` is `workflow_dispatch`, assign the **Dispatched
-command** to `SQUAD_DISPATCH_COMMAND` per hop 1 and run exactly this. Its output
-is the `SQUAD_TRIGGER_BODY` PC-1 consumes:
-
-```bash
-printf '%s\n' "$SQUAD_DISPATCH_COMMAND" | awk '{sub(/\r$/,"");sub(/^[[:space:]]+/,"");sub(/[[:space:]]+$/,"");if($0=="")next;f=1;if($0~/^\/squad([[:space:]]|$)/)print;else print "/squad " $0;exit}END{if(!f)print "EMPTY_DISPATCH"}'
-```
-
-Normalization is idempotent: `implement` and `/squad implement` both yield
-`/squad implement`, so typing the slash prefix into the dispatch box is not
-penalized. It scans the first non-empty line (#1835).
-
-`EMPTY_DISPATCH` means the activation guard above should already have halted the
-run. Halt with that guard's `::warning::`; never route it to PC-3, which posts a
-comment and fails the run. An empty activation probe must stay silent and
-side-effect free (PR #1777; junk issues #12 and #14).
-
-On the comment and issue-body paths there is no PC-0: assign the raw body
-directly to `SQUAD_TRIGGER_BODY`.
-
-### Step PC-1: Extract the command argument [MANDATORY]
-
-Assign the trigger body chosen above — PC-0's output on `workflow_dispatch`, the
-raw comment or issue body otherwise — to `SQUAD_TRIGGER_BODY` per hop 1, then
-run exactly this:
-
-```bash
-printf '%s\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\r$/,"")} !f && match($0, /(^|[[:space:]])\/squad([[:space:]]|$)/) {f=1; rest=substr($0, RSTART+RLENGTH); sub(/^[[:space:]]+/,"",rest); sub(/[[:space:]]+$/,"",rest); print rest} END{if(!f) print "NO_COMMAND"}'
-```
-
-It scans **every** line, takes the first `/squad` token wherever it sits, and
-prints the argument text that followed it. Empty output means a bare `/squad`.
-Exactly `NO_COMMAND` means no `/squad` token exists anywhere in the body.
-
-`match()`/`substr()` extract the remainder of the **first** token. Greedy
-`sub(/^.*\/squad/,"")` strips through the *last* token on the line, so
-`/squad cast, then /squad status` resolves to `status` — a different mode than
-requested. First-token-wins is the contract; keep extraction anchored to
-`RSTART`/`RLENGTH`.
-
-### Step PC-2: Route on the extracted text
-
-1. `NO_COMMAND` → go to **Step PC-3**. Do **not** fall back to `cast`, do not
-   enter a skill, do not finish the run reporting success.
-2. Empty → mode is `cast` (bare `/squad`).
-3. Otherwise match **longest-prefix-first**:
-   - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
-   - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `activate` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `review`, `research`, `triage`, `implement`
-4. No prefix matches → go to **Step PC-3**.
-5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
-
-### Step PC-3: No recognized command [MANDATORY — a no-op run must never report success]
-
-Reaching this step means the run matched no mode: it cast nothing, planned
-nothing, changed nothing. Reporting success here is the #1824 defect — a green
-check and a real cast were indistinguishable, so a first-run user got an empty
-team and no signal that anything had gone wrong.
-
-1. Show the text actually present in the body:
-
-   ```bash
-   printf '%s\n' "$SQUAD_TRIGGER_BODY" | tr -d '\r' | grep -n -i -m 3 -F -- '/squad' || echo 'NO_SQUAD_TEXT_IN_BODY'
-   ```
-
-2. Emit `echo "::error::Squad parsed no recognized command. Text seen: <verbatim
-   output of the command above>"`. Quote the observed text — never a generic
-   "unrecognized command" message with the offending input omitted.
-3. Post one comment on the triggering issue reproducing that same text verbatim
-   and listing the valid commands from the Modes table.
-4. **Fail the run** — exit non-zero. Never call `noop`, never post a success
-   summary, never let the run finish green.
-
-Deliberate widening: this scan also matches `/squad` inside a quoted line or a
-fenced block. Excluding those would reintroduce a silent-skip path, which is the
-exact bug class this step exists to eliminate. Parsing them and surfacing the
-result is preferred over ignoring them without a trace.
-
-**Known limitation — step 4 is an instruction, not an enforced exit code.** This
-file is an LLM prompt, so "fail the run" is a directive the runtime agent is
-asked to obey, not a branch CI can execute. `test/gh-aw-command-parse.test.ts`
-proves the *declared* commands emit `NO_COMMAND` and a diagnostic quoting the
-offending text; it cannot prove the agent then exits non-zero. That gap is
-inherent to gh-aw, not an oversight — two independent reviews have flagged it.
-Steps 1–3 are load-bearing precisely because their output is observable: an
-`::error::` annotation and an issue comment survive whatever exit status the
-agent chooses. Do not drop them in favor of step 4, and do not call step 4 a
-guarantee.
+The contract rejects unknown modes and malformed arguments rather than routing
+by a shorter recognized prefix. The safe-output guard re-runs the same committed
+module against the original event payload; therefore an agent cannot turn a
+rejected command into a successful mode or suppress the diagnostic failure.
 
 ## Actor Authorization Guard
 
-Run this guard after **Step PC-2** resolves the parsed mode and before **Execute Mode** loads any skill.
+Run this guard after the shared command contract returns `status: "accepted"`
+and before **Execute Mode** loads any skill.
 
 ### Step AG-1: Classify the parsed mode [MANDATORY]
 
-Authorization is opt-out only for the explicit open-mode allow-list below. Never infer "read-only" from a prefix, from the absence of a mutating keyword, or from prose. Anything outside the allow-list — including empty, malformed, or future mode strings — requires authorization or should already have been stopped by **Step PC-3**. Unknown text must never bypass this guard by being treated as read-only.
+Authorization is opt-out only for the explicit open-mode allow-list below. Never infer "read-only" from a prefix, from the absence of a mutating keyword, or from prose. Anything outside the allow-list — including empty, malformed, or future mode strings — requires authorization or should already have been rejected by the shared command contract.
 
-Assign the parsed mode string from **Step PC-2** to `SQUAD_PARSED_MODE` and run exactly this:
+Assign the accepted `mode` from `squad-command-context.json` to
+`SQUAD_PARSED_MODE` and run exactly this:
 
 ```bash
 mode="${SQUAD_PARSED_MODE-}"
@@ -686,16 +623,17 @@ esac
 - `AUTH_REQUIRED` → continue to **Step AG-2**.
 
 **Open-mode allow-list:** `status`, `review` (advisory relay), `research`, and
-`plan` (plan preview). These commands remain available to any actor. Every
-other recognized mode changes repository state, revises or advances a durable
-planning artifact, or dispatches implementation work, so it requires
-authorization.
+`plan` (plan preview). These read-only commands remain available to any actor.
+Every other recognized mode changes repository state, revises or advances a
+durable planning artifact, or dispatches implementation work, so it requires
+authorization. This includes `revoke-improvement`, which mutates durable
+approval state even though it emits no output.
 
 ### Step AG-2: Resolve actor permission [MANDATORY for `AUTH_REQUIRED`]
 
 When **Step AG-1** returned `AUTH_REQUIRED`, resolve the event, actor, and repository only through named YAML `env:` bindings; never embed Actions expressions inside a shell block. Use `github.event_name` for `SQUAD_EVENT_NAME`, `github.actor` for `SQUAD_TRIGGER_ACTOR`, and `github.repository` for `SQUAD_REPOSITORY`.
 
-GitHub requires write access to trigger `workflow_dispatch`. That platform authorization also covers the controlled `dispatch-workflow` relay from `squad-implement-worker`; do not look up the relay bot as though it were a human collaborator. For all issue, issue-comment, and pull-request-review-comment paths, call the collaborator-permission API for the triggering actor.
+GitHub requires write access to trigger `workflow_dispatch`. That platform authorization also covers the controlled `dispatch-workflow` relays into this router; do not look up a relay bot as though it were a human collaborator. On every issue, issue-comment, and pull-request-review-comment path, call the collaborator-permission API for the triggering actor.
 
 ```bash
 event="${SQUAD_EVENT_NAME-}"
@@ -747,7 +685,7 @@ When **Step AG-3** returned `REFUSE`:
    `⛔ /squad <parsed mode> was refused for @<actor> (repository permission: <observed tier or unresolved>). Mutating /squad modes require write, maintain, or admin repository permission. Ask a repository maintainer to run this command or grant the required access.`
 3. Stop immediately. Do not load **Execute Mode**, do not post success breadcrumbs for the requested mutating mode, and do not emit `dispatch-workflow`, `create-issue`, or `create-pull-request`.
 
-**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
+**Authorization-required modes guarded by this section:** `cast`, `connect`, `adopt`, `cast-member`, `retire`, `retro`, `approve-improvement`, `revoke-improvement`, `plan revise`, `triage`, `triage revise`, `plan program`, `plan program revise`, `plan implementation`, `plan validate`, `activate`, `plan accept`, `plan accept scope`, `plan accept implementation`, `plan activate`, and `implement`. Phase variants inherit their base parsed mode: `activate phase {N}` → `activate`, `plan accept phase {N}` → `plan accept`, `plan accept implementation phase {N}` → `plan accept implementation`, `plan activate phase {N}` → `plan activate`.
 
 ## Execute Mode
 
@@ -755,7 +693,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 
 **MODE ISOLATION:** Execute ONLY the active mode's skill. Other modes' instructions do not apply — do not load more than one mode skill.
 
-**BREADCRUMB ≠ DELIVERABLE:** Every mode posts an acknowledgment first. This is never the deliverable — always complete ALL subsequent steps.
+**BREADCRUMB ≠ DELIVERABLE:** An acknowledgment is never the deliverable. Complete the mode; approval/revocation relays post no acknowledgment.
 
 | Parsed mode | Skill to load |
 |---|---|
@@ -766,6 +704,9 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `retire` | `squad-retire` |
 | `status` | `squad-status` |
 | `review` | `squad-review-relay` |
+| `retro` | `squad-retro-relay` |
+| `approve-improvement` | `squad-approve-improvement` |
+| `revoke-improvement` | `squad-revoke-improvement` |
 | `research` | `squad-research` |
 | `plan` | `squad-plan` |
 | `plan revise` | `squad-plan-revise` |
@@ -782,7 +723,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `plan activate` | `squad-plan-activate` |
 | `implement` | `squad-implement` |
 
-**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement) must not load them.
+**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Approve Improvement, Revoke Improvement, Implement) must not load them.
 
 If the parsed mode's skill cannot be loaded, report the failure in plain language and stop. Never improvise a mode playbook from memory.
 
@@ -791,7 +732,7 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 ## Team Guard
 
 **Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Activate, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
-**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Implement (these run their own pre-checks).
+**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Approve Improvement, Revoke Improvement, Implement (these run their own pre-checks).
 
 ### Step TG-1: Check Team Presence
 
@@ -799,9 +740,9 @@ If the parsed mode's skill cannot be loaded, report the failure in plain languag
 git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
 ```
 
-`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`. Neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
+`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`; neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
 
-**Why committed HEAD, not local files:** an activation pre-step (e.g. `squad init --preset default`) can restore a local `.squad/` scaffold before the job runs; reading the local filesystem would return TEAM_PRESENT for that uncast scaffold. `git show HEAD:.squad/team.md` reads only committed state, so activation-restored local files are invisible to the guard.
+**Why committed HEAD, not local files:** an activation pre-step (e.g. `squad init --preset default`) can restore a local `.squad/` scaffold before the job runs, so reading the working tree would report TEAM_PRESENT for that uncast scaffold. `git show HEAD:.squad/team.md` reads only committed state.
 
 The leading `sub(/\r$/,"")` normalizes CRLF so Windows-formatted team.md classifies correctly. No commits → `git show` exits non-zero → TEAM_ABSENT.
 
@@ -835,13 +776,25 @@ else
     echo "ROSTER_UNREADABLE: ## Members has no data rows in .squad/team.md"
   else
     printf '%s\n' "$ROSTER" | awk '{print "ROSTER_MEMBER: " $0}'
+    git show HEAD:.squad/casting/registry.json 2>/dev/null | node -e '
+      let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{
+        const r=JSON.parse(s);if(r.schema!=="squad-agent-provenance/v1"||r.schema_version!==1||
+          !Number.isInteger(r.revision)||r.revision<1||!r.agents)throw Error("invalid v1 registry");
+        for(const [id,a] of Object.entries(r.agents)){if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)||
+          !a||a.persistent_name!==a.display_name||!a.role||!a.universe||
+          !["active","inactive","retired"].includes(a.status)||!Date.parse(a.created_at)||!Date.parse(a.updated_at))
+          throw Error("malformed agent "+id);if(a.status==="active")
+          console.log("AGENT_IDENTITY: "+JSON.stringify({agent_id:id,display_name:a.display_name,registry_revision:r.revision}));}
+      }catch(e){console.log("IDENTITY_UNREADABLE: "+e.message)}})'
   fi
 fi
 ```
 
-Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); finds the `Name` column by header and emits one lowercased `ROSTER_MEMBER: {name}` per `## Members` data row, else a `ROSTER_UNREADABLE: {reason}`.
+Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); emits lowercased `ROSTER_MEMBER:` rows plus active `AGENT_IDENTITY:` records from the committed versioned registry.
 
 - **`ROSTER_MEMBER:` lines** are the **certified roster set** — bind only to these, reproduce them verbatim as provenance; a name outside them (bar `@copilot`) must never become a `squad:{name}` label.
+- **`AGENT_IDENTITY:` lines** are the only authority for stable agent IDs and registry revision. Copy IDs directly; never slug or match labels/roles/paths to invent one. Every roster-assigned new plan row must carry the matching ID.
+- **`IDENTITY_UNREADABLE:`** halts new planning and identity binding. Existing legacy plans may activate only with explicit `legacy-plan-missing-id` omissions.
 - **`ROSTER_UNREADABLE:`** halts binding with its named reason — never a provenance sentence for a read that did not happen, never a preset fallback; treat as `TEAM_ABSENT`.
 
 ### Auto-Cast Pivot
@@ -856,8 +809,15 @@ Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); finds the 
 #### TG-3: Dedup Open Cast PR
 
 ```bash
-gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName | (startswith("squad/cast-") and (startswith("squad/cast-member-") | not)))] | first'
+gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName == "squad/bootstrap-cast" or (.headRefName | (startswith("squad/cast-") and (startswith("squad/cast-member-") | not))))]'
 ```
+
+Treat only the exact deterministic branch `squad/bootstrap-cast` or a manual
+`squad/cast-*` branch other than `squad/cast-member-*` as a Cast candidate.
+Zero candidates means no open Cast PR. Exactly one candidate is the Cast PR.
+More than one candidate is ambiguous: fail closed, list each candidate's exact
+PR URL and branch, and tell the user to keep one Cast PR open before rerunning
+`{canonical_command}`. Never choose the first result heuristically.
 
 **If an open Cast PR is found (rerun before merge):**
 - `add-comment`:
@@ -969,7 +929,7 @@ Guidelines: 4–7 active agents. Min: Lead + 2 specialists + 1 quality role.
 3. Name rules:
    - Descriptive mode: keep names role-derived, short, and unique; do not assign fictional character names.
    - Themed modes: use one universe only, pressure/function over authority, no spoilers, and early-introduction names. For a custom universe, apply the same one-universe and spoiler-safety rules.
-4. Record in `.squad/casting/registry.json`: `{ "agents": { "{id}": { "created_at": "ISO", "persistent_name": "Name", "universe": "descriptive-or-Universe", "legacy_named": false, "status": "active" } } }`. In descriptive mode, set every registry entry's `universe` to `"descriptive"`; in themed modes, use the exact requested or selected universe.
+4. Write `.squad/casting/registry.json` as `squad-agent-provenance/v1`. Compare the committed registry: preserve every ID/tombstone, immutable role/creation time, and avatar unless explicitly cleared; set `revision` greater than the committed revision (legacy is 0). Keys are immutable IDs/directories. Records hold equal names, role, universe, lifecycle/status, and optional ID-owned avatar under `.squad/agents/{id}/`. Rename uses the existing ID; deletion tombstones; never reuse or infer IDs. In descriptive mode every registry entry has `universe` set to `"descriptive"`.
 5. Initialize `.squad/casting/history.json`: `{ "universe_usage_history": [{ "universe": "descriptive-or-Universe", "assigned_at": "ISO", "agent_count": N }], "assignment_cast_snapshots": {} }`
 
 ##### Step 4: Generate Scaffolding
@@ -1161,32 +1121,109 @@ and includes the verified PR number, URL, and CI-approval guidance.
 
 ## skill: `squad-review-relay`
 ---
-description: Relay `/squad review` on a pull request to the independent reviewer.
+description: Guide an operator to rerun the automatic independent review.
 ---
 
 This mode is only valid from a pull request comment or pull request review
 comment. Resolve the pull request number and current 40-character lowercase
 head SHA from GitHub's API, not from user text. If either cannot be established,
 post one `add-comment` explaining that `/squad review` must target a pull
-request, then stop without dispatching.
+request, then stop.
 
-Use only the typed `dispatch-workflow` safe-output. Never call the generic
-`dispatch_workflow` tool. Emit exactly one dispatch:
+List workflow runs for `.github/workflows/squad-review.lock.yml`. Keep only
+`pull_request_target` runs associated with this pull request whose API
+`head_sha` equals the pull request's exact base/workflow SHA and whose
+`pull_requests[].head.sha` equals the pull request's exact current head SHA.
+Keep immutable workflow source separate: the review guard binds `workflow_sha` to the pull request's exact base
+SHA, while `pull_requests[].head.sha` binds the reviewed revision to the exact
+pull request head.
+Select the newest run by creation
+time, breaking ties by numeric run ID, then fetch that run attempt's jobs and
+require exactly one job named `review`. A same-named job from any other run is
+advisory only. If no matching run or native authority job exists, emit exactly one
+`add-comment` stating that no base-controlled automatic review run exists for
+the exact head and that a new PR event
+(`synchronize`, reopen, or ready-for-review) is required. Stop without implying
+that a rerun occurred.
+
+Otherwise emit exactly one `add-comment` on the pull request that includes the
+selected run URL, run ID, attempt, status, conclusion, exact head SHA, and this
+instruction:
+
+> Squad Review is automatic and cannot be dispatched from a branch. In the
+> selected base-controlled automatic run, choose **Re-run all jobs**. This
+> command did not rerun it. Only the new attempt of that exact
+> `pull_request_target` run can publish verdict evidence and complete the native
+> `Squad Review / review` required job for PR #{pull-request-number}
+> at head `{current-head-sha}`.
+
+Do not review the diff in this router, emit a verdict, edit files, create an
+issue, or dispatch a workflow. The independent reviewer owns all provenance,
+deduplication, and review decisions.
+
+## skill: `squad-retro-relay`
+---
+description: Relay `/squad retro` to the shared worker.
+---
+
+Emit only this typed `dispatch-workflow`:
+
+```json
+{"workflow_name":"squad-retro","inputs":{"retro_reason":"manual","request_origin":"manual"}}
+```
+
+Stop; the worker owns the retrospective lifecycle.
+
+## skill: `squad-approve-improvement`
+---
+description: Relay an approved retrospective governance proposal to the improvement worker.
+---
+
+After the existing mutating authorization guard, relay only an issue comment
+created by the authorized human. Other events, PR comments and missing IDs
+receive a refusal, never a dispatch. The worker re-fetches the exact comment,
+permission, content revision and scope. Resolve `approval_comment_id` in this
+order: `github.event.comment.id` when this run was activated directly by the
+comment; otherwise, under `workflow_dispatch`, the `comment_id` field of the
+parsed **Dispatched aw_context** (Trigger Context) relayed by the command
+router. If neither resolves to a positive integer, refuse and STOP — never
+dispatch with a guessed, omitted, or placeholder id. Use the typed
+`dispatch_workflow` safe-output, with nested inputs (never a generic GitHub
+mutation). Always include `squad_approval_relay` exactly as shown — this run's
+own workflow_dispatch trigger carries no native issue/comment payload for
+gh-aw's dispatch engine to derive context from when this run was itself
+relayed, so the worker-side gate cannot rely on engine-injected `aw_context`
+for the item identity in that case and requires this explicit, separately
+re-verified echo instead. `squad_approval_relay` is declared `type: string` on
+the receiving workflow and the gate parses it with `JSON.parse`, and GitHub's
+`workflow_dispatch` REST input schema accepts only string values for every
+input regardless of its declared type — an object value is rejected outright
+("is not of a type(s) string") and the dispatch never happens. Emit
+`squad_approval_relay` as a **JSON-encoded string** (the object below,
+stringified), never as a nested JSON object:
 
 ```json
 {
-  "workflow_name": "squad-review",
+  "workflow_name": "squad-improvement-worker",
   "inputs": {
-    "issue_number": "{pull-request-number}",
-    "expected_head_sha": "{current-head-sha}",
-    "request_origin": "manual"
+    "issue_number": "{issue-number}",
+    "approval_comment_id": "{resolved-approval-comment-id}",
+    "squad_approval_relay": "{\"event_type\":\"issue_comment\",\"item_type\":\"issue\",\"item_number\":\"{issue-number}\",\"comment_id\":\"{resolved-approval-comment-id}\"}"
   }
 }
 ```
 
-Do not review the diff in this router, emit a verdict, edit files, create an
-issue, or dispatch any other workflow. The independent reviewer owns all
-provenance, deduplication, and review decisions.
+No other dispatch, verdict, file edit or success comment. Never restate the
+approval. Permission to route is not approval to change a file.
+
+## skill: `squad-revoke-improvement`
+---
+description: Reserve the durable human revocation without dispatching.
+---
+
+The human comment is the durable record; the worker checks it again before
+outputs. Emit nothing, dispatch nothing, and never route this recognized command
+to PC-3 or claim unknown-command success/failure.
 
 ## skill: `squad-connect`
 ---
@@ -1234,7 +1271,7 @@ Subcommands: `/squad cast-member <description>` (add), `/squad cast-member renam
 2. **Validate squad:** Confirm `.squad/team.md` and registry exist. If not, suggest `/squad cast`, stop.
 3. **Check duplicates** (new only): If similar role exists, ask user to confirm.
 4. **Allocate identity** (new only): Same universe, unused name, same naming rules. If universe full, suggest retire or re-cast.
-5. **Generate/regenerate charter:** New: create from template. Modify: update expertise/ownership/boundaries, preserve name and `created_at`.
+5. **Generate/regenerate charter:** New: create from template. Modify or rename: update charter and display fields, but preserve the registry key and `created_at`.
 6. **Update files:** `.squad/team.md`, `.squad/routing.md`, `.squad/casting/registry.json`, `meet-the-squad.md`.
 7. **Open PR:** On Squad PR: follow-up PR targeting existing branch. On issue: `create-pull-request` branch `squad/cast-member-{id}`, title `[squad] Add/Modify {Name}`.
 8. **Post:** `👤 {Name} ({Role}) has been added to the team.\n\n**PR:** #{pr_number}`
@@ -1273,11 +1310,8 @@ description: Dispatch implementation work to the dependency or general worker.
 Implement mode dispatches an isolated worker for a regular issue. Explicit,
 dependency-only Wave 1 work routes to `squad-deps-worker`; every other task
 routes to `squad-implement-worker`, whose manifest protection remains unchanged.
-When invoked on a parent (initiative or epic), this mode descends the sub-issue
-hierarchy to the **leaf tasks** and dispatches workers for up to three currently
-unblocked leaf tasks. The general worker relays merged implementation pull
-requests back to this mode so it can automatically refill the parent's available
-slots.
+For a parent, descend to **leaf tasks** and dispatch up to three unblocked
+leaves. Merged implementation PRs relay back here to refill available slots.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
@@ -1294,26 +1328,24 @@ slots.
    hierarchy (initiative → epic → task), not just immediate children. Also
    include open issues whose body contains a `Parent: #{ancestor-issue-number}`
    line for any ancestor, for compatibility with older plans.
-4. Identify the **leaf tasks**: open descendants that have **no sub-issues at
-   all** — neither open nor closed — and are not labeled `epic` or `initiative`.
-   Intermediate parents (initiatives and epics that only group other issues)
-   are never dispatched to a worker — only leaf tasks are implemented. Use "no
-   sub-issues at all" rather than "no *open* sub-issues": an epic whose children
-   have all been implemented and closed stays open until someone closes it, and
-   an open-children-only test would reclassify that drained epic as a leaf and
-   dispatch a worker against a grouping issue. That is the #1758 defect 2
-   failure shape reappearing at the end of an epic's life, and it is reachable
-   whenever a refill scan descends from the root across sibling epics.
+4. Identify the **leaf tasks**: open descendants with no sub-issues (open or closed)
+   and no `epic` or `initiative` label. Intermediate parents are never dispatched to a worker;
+   checking only open children would misclassify a drained parent
+   (#1758).
 5. If the target has one or more open leaf descendants, treat the target as a
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.
 6. Classify every leaf with the **Dependency Route Decision** below.
-7. If the target has no open descendants (it is itself a leaf), call exactly the
-   workflow-specific tool selected by that decision with `issue_number` set to
-   the target issue number.
-8. Post a comment linking the dispatched worker run and naming the selected
-   worker. The worker performs dependency, duplicate pull request, routing,
-   implementation, and validation checks.
+7. For a leaf target, post the exact five-line receipt below before calling the
+   selected worker with the four session fields in the Epic Dispatch JSON.
+
+```text
+Squad-Implementation-Dispatch: ${{ github.repository }}#{issue-number} worker={squad-implement-worker-or-squad-deps-worker}
+Implementation-Session: squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}
+Dispatcher-Workflow: .github/workflows/squad.lock.yml
+Dispatcher-Run: ${{ github.run_id }}
+Dispatcher-Attempt: {current-GITHUB_RUN_ATTEMPT-integer}
+```
 
 ##### Dependency Route Decision [MANDATORY — fail closed]
 
@@ -1370,16 +1402,20 @@ exactly one selected workflow-specific safe-output tool with this input:
 
 ```json
 {
-  "issue_number": "{leaf-issue-number}"
+  "issue_number": "{leaf-issue-number}",
+  "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}",
+  "implementation_session_origin_workflow": ".github/workflows/squad.lock.yml",
+  "implementation_session_origin_run_id": "${{ github.run_id }}",
+  "implementation_session_origin_run_attempt": "{current-GITHUB_RUN_ATTEMPT-integer}"
 }
 ```
 
-Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
-non-empty numeric `issue_number`. Emit exactly one workflow-specific dispatch
-per selected leaf task, and only report a leaf task as dispatched after the tool
-returns success. Never call both workers for one issue. If the dependency config
-guard denies a selected dependency task, leave that slot unused and report the
-denial; do not reroute it to the general worker.
+Never call the generic `dispatch_workflow` tool. Before each selected-worker
+call, post the five-line receipt with its worker and numeric
+`GITHUB_RUN_ATTEMPT`. Never emit a dispatch without a numeric `issue_number`,
+the exact session ID, and all three dispatcher-origin inputs above. Never call both workers for one issue.
+Report success only after the selected tool succeeds. A dependency-config denial
+leaves its slot unused; do not reroute it to the general worker.
 
 Post a comment on the target listing the dispatched leaf tasks, blocked leaf
 tasks, the worker selected for each dispatch, dependency tasks denied by config,
@@ -1464,7 +1500,10 @@ section MUST state exactly one status so a later reader or test can assert on it
 instead of trusting silence:
 
 - `Online sources: consulted` — followed by the list of URLs actually fetched
-  this run (each URL also appears as a citation in the evidence table); or
+  this run (each URL also appears as a citation in the evidence table). Preserve
+  each public documentation URL in full, including its path; do not replace the
+  path with `/redacted`. Never include URL userinfo, credentials, access tokens,
+  or secret-bearing query parameters; omit those sensitive parts instead; or
 - `Online sources: unavailable — <reason>` — when no external documentation was
   fetched, e.g. the network policy disallowed it, no external source was needed,
   or a requested source-of-truth site was unreachable.
@@ -1526,15 +1565,16 @@ update.
      stop. Only when the completed scan has no match may you use lightweight
      repository analysis.
    - When found, use the newest research artifact as the plan's primary context.
-3. Use the `ROSTER_MEMBER:` lines already emitted by mandatory Team Guard Step
-   TG-2 as the certified active roster set. **Owner binding gate:** when
+3. Use the `ROSTER_MEMBER:` and `AGENT_IDENTITY:` lines already emitted by mandatory Team Guard Step
+   TG-2 as the certified active roster and identity sets. **Owner binding gate:** when
    `TEAM_PRESENT`, every work item `Owner` MUST match one certified name. Resolve
    each item's domain through `.squad/routing.md`; if no exact rule exists, choose
    the closest active member whose documented remit fits, but never synthesize a
    role, alias, or placeholder and never use `@copilot` while a certified roster
    exists. Preserve each selected member's exact `Name` cell in the plan. On
    `ROSTER_UNREADABLE:`, stop instead of posting a plan. This gate governs every
-   `Owner` column and downstream `squad:{owner}` label.
+   `Owner` column and downstream `squad:{owner}` label. Copy that record's
+   immutable ID into the row's `Agent ID` column; never derive it from the name.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -1547,7 +1587,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 The `body` MUST NOT contain a `Structured data:` block or fenced metadata; pass
 the envelope only through `data` so gh-aw appends it exactly once.
 
-Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
+Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Agent ID | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad activate` preferred, `/squad activate phase 1`, `/squad plan revise`, `/squad plan`; `/squad plan accept` remains a supported legacy alias).
 
 Choose the hierarchy explicitly. A phased plan MUST place every work-item table
 under a heading matching `### Phase {N}` (optional title text may follow). Even a
@@ -1632,19 +1672,27 @@ work-item row and set every task's parent to the origin issue.
 Do not create an additional epic, summary, root, or phase issue for a flat plan.
 
 Before any `create-issue` call, run Team Guard Step TG-2 and validate every
-accepted plan row. Freeze a binding for each task number containing that row's
-original `Owner` and `Depends On` values. If TG-2 emitted a `ROSTER_UNREADABLE:`
+accepted plan row. Freeze a binding for each task number containing that row's original `Owner` and `Depends On` values,
+plus its authoritative `Agent ID`. If TG-2 emitted a `ROSTER_UNREADABLE:`
 line, stop before mutation and report that named reason. An individual `Owner`
 matching no certified active roster name and not `@copilot` does **not** stop the
 run — matching `squad-plan-activate`, create that issue with the base `squad` label
 only, omit the owner label, continue, and record the value under
 `Non-roster agent values` (Step 4). Never substitute, re-route, or fall back to
 another identity during acceptance.
+A roster Owner's `Agent ID` MUST exactly match its `AGENT_IDENTITY:` record;
+stop before mutation on mismatch. `@copilot`, non-roster, and legacy rows use
+only the explicit identity-omission cases defined in Step 4.
+
+For every roster member label, derive the slug exactly as label synchronization
+does: lowercase the certified display name, replace each run of non-`a-z0-9`
+characters with `-`, then trim leading and trailing `-`. The special `@copilot`
+value maps to `squad:copilot` instead.
 
 For each work item, `create-issue`:
 - Title: work item title
 - Temporary ID: `temporary_id` is required on every `create-issue` call (`require-temporary-id: true`). Mint one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. Must match `^#?aw_[A-Za-z0-9_]{3,12}$` and be unique in this run — gh-aw silently lets a duplicate's last writer own the mapping.
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the frozen row `Owner` lowercased. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not lowercased verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner-slug}` (color `9B8FCC`) where `{owner-slug}` is derived from the frozen row `Owner` lowercased first, then normalized by the slug rule above. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not slugged verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat). For a phase issue created in this run, pass its `#aw_ph{N}` temporary ID — `create-issue` resolves it. The flat-plan root is the triggering issue's own real number. Never guess a number for an issue this run created.
 - Size: set Project field if available, else body `**Size:**` line
@@ -1686,13 +1734,14 @@ supported order.
 
 **Label set, per issue:**
 
-- Work item: `squad`, plus `squad:{owner}` derived from that row's own frozen
-  certified `Owner`, lowercased. `@copilot` maps to the existing `squad:copilot`
-  routing label — never `squad:@copilot`. Re-read each row's frozen `Owner`; never
-  inherit the phase issue's owner or carry the previous row's value forward.
-- Phase issue: `squad`, plus `squad:{owner}` only when every accepted row in that
-  phase names one and the same owner. Two or more distinct owners is a multi-owner
-  phase: apply only `squad`, choose none of them, and record it under a
+- Work item: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`,
+  derived from that row's own frozen certified `Owner`, lowercased then slugged as above.
+  `@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`.
+  Never inherit the phase issue's owner or carry the previous row's value forward.
+- Phase issue: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`
+  only when every accepted row in that phase names one and the same owner, slugged as above.
+  Two or more distinct owners is a multi-owner phase: apply only `squad`, choose
+  none of them, and record it under a
   `Non-roster agent values` heading in the Step 4 summary.
 - The triggering intent issue is never an `add_labels` target. It is the flat-plan
   parent, not an activated item, and receives no owner label from this run.
@@ -1737,9 +1786,10 @@ that was not created.
 
 **Every phase and full acceptance artifact body MUST include an `Activation
 bindings:` fenced JSON block containing a non-empty array** — the identical
-binding shape, quoting, and omission-reason semantics as `squad-plan-activate`
-Step 4's contract: one object per created/recognized work item with
-`task`/`issue`/`epic`/`epic_issue`/`agent`/`epic_agents`, plus `label` or
+versioned provenance, binding shape, quoting, and omission semantics as
+`squad-plan-activate` Step 4: one object per created/recognized work item with
+repository/origin/artifact/registry provenance,
+`task`/`issue`/`epic`/`epic_issue`/`agent_id`/`epic_agent_ids`/`agent`/`epic_agents`, plus `label` or
 `omission_reason`, and `epic_label` or `epic_omission_reason` (`multi-owner` or
 `non-roster`). `issue` and `epic_issue` are quoted JSON strings — that item's own
 `temporary_id` when created this run, its verified real number when reused —
@@ -1754,7 +1804,7 @@ and `phases-activated`.
 ###### Label operations accepted
 
 Identical semantics to `squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
-an accepted `add_labels` operation targeting that issue. Report `squad:{owner}` only when
+an accepted `add_labels` operation targeting that issue. Report `squad:{owner-slug}` only when
 this run made an `add_labels` call carrying that label and targeting that same issue — by
 its own `temporary_id`, or by its verified real number for a reused issue. A successful
 `create-issue` is **not** evidence: its `labels:` field cannot land a label on a fresh
@@ -1951,21 +2001,21 @@ Search in order: `scope-accepted` artifact (use as authoritative) → `program` 
 
 ##### Step 2: Decompose Into Tasks
 
-Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Rollout notes.
+Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Agent ID, Rollout notes.
 
-**Agent binding rule:** permitted `Agent` values are Team Guard Step TG-2's certified roster set (the `Name` column of `## Members` in **this repository's** `.squad/team.md`), plus `@copilot`. Resolve each task's domain via `.squad/routing.md` and emit that member's exact `Name` cell; no other column, the `Role` column included, supplies a valid `Agent`. If none fits, use `@copilot`.
+**Agent binding rule:** permitted `Agent` values are Team Guard Step TG-2's certified roster set plus `@copilot`. For a roster member, copy `Agent ID` from the same `AGENT_IDENTITY:` record; no matching or slugging. Resolve each task's domain via `.squad/routing.md` and emit the value that appears verbatim in the `Name` column for that member. If none fits, use `@copilot` and `Agent ID` `—`.
 
 Rules: no task > max_task_size. DAG only. Every task traces to program item. Every epic has ≥1 task. Vertical slices. Group into phases by dependency order (Phase 1 = no deps).
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value matches a Team Guard Step TG-2 `ROSTER_MEMBER:` line — appears verbatim in the `Name` column — or is `@copilot`). Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity, and exact `Agent`/`Agent ID` pairing from TG-2 (`@copilot` uses `—`). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
 `add-comment` with `data: {"squad_artifact":"implementation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Next: `/squad plan validate`.
+Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Agent ID|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Next: `/squad plan validate`.
 
 Re-check every `Agent` against the Step 2 binding rule before posting.
 
@@ -2031,7 +2081,8 @@ Run mechanically; never accept a value because it "looks like" a teammate.
    `ROSTER_UNREADABLE:`, report Check 10 ❌ Critical and stop — no roster, no binding.
 2. Quote the roster set in the validation output.
 3. Every `Owner`/`Agent` cell is valid **only** if it matches a roster-set entry
-   ignoring case, or is exactly `@copilot`; any other value — including one from a
+   ignoring case and its `Agent ID` exactly matches the corresponding `AGENT_IDENTITY:`
+   record, or it is exactly `@copilot` with ID `—`; any other value — including one from a
    different column, such as the `Role` column — is invalid.
 4. Every invalid value is a ❌ **Critical** finding (`RESULT: FAIL`), reported with
    artifact, row, offending value, and the roster set it must be drawn from.
@@ -2095,7 +2146,21 @@ acceptance, and validator-owned synthesis.
 
 ##### Step 4: Update Lifecycle
 
-Set Validation = `✅ Done` or `❌ Failed`. Next on pass: `/squad plan accept scope`. On fail: fix + re-run.
+Set Validation = `✅ Done` or `❌ Failed`. Next on pass:
+`/squad plan accept scope`. The lifecycle field MUST be exactly this on pass:
+
+```markdown
+**Next action:** `/squad plan accept scope`
+```
+
+Or exactly this on fail:
+
+```markdown
+**Next action:** `/squad plan validate`
+```
+
+The backticked command must be the entire field value; put remediation or retry
+context in a separate `**Guidance:**` field.
 
 ##### Step 5: Surface Next Action
 
@@ -2266,22 +2331,27 @@ Step 2e, not the cap machinery, is what notices.
 **Roster binding gate — run this before any `create-issue` call.**
 
 1. Run Team Guard Step TG-2; its `ROSTER_MEMBER:` lines are the **certified roster
-   set** — the only valid source for a `squad:{agent}` label this run. Do not re-read
+   set** — the only valid source for a `squad:{agent-slug}` label this run. Do not re-read
    team.md or recall a name.
 2. If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP: report that named reason in the
-   activation summary and mint no `squad:{agent}` label. Never print a roster-provenance
+   activation summary and mint no `squad:{agent-slug}` label. Never print a roster-provenance
    sentence for a read that did not happen, and never fall back to a preset or
    remembered roster.
 3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
    provenance of the labels applied — the summary may name only values TG-2 emitted.
-4. For every `Agent` value, mint `squad:{agent}` only when its lowercased form matches
-   a certified `ROSTER_MEMBER:` name. The special value `@copilot` maps to the
-   existing `squad:copilot` routing label — never `squad:@copilot`.
+4. For every roster `Agent`, require the plan `Agent ID` to exactly match the
+   same `AGENT_IDENTITY:` record; stop before mutation on mismatch and never
+   substitute an ID. Then certify its lowercased raw value against a
+   `ROSTER_MEMBER:` name and mint `squad:{agent-slug}` by replacing each run of
+   non-`a-z0-9` characters with `-` and trimming leading and trailing `-`. The special
+   value `@copilot` maps to the existing `squad:copilot` routing label — never
+   `squad:@copilot`.
 5. A value matching no certified name and not `@copilot` MUST NOT become a
    `squad:{agent}` label: apply only `squad` for that issue and record the value under a
    `Non-roster agent values` heading, naming the certified set it should come from.
+   `{agent}` is the rejected raw value; emitted labels use `{agent-slug}`.
 6. Completeness: when the plan names at least one roster `Agent`, at least one
-   `squad:{agent}` label MUST be applied across the created issues. Zero labels on a
+   `squad:{agent-slug}` label MUST be applied across the created issues. Zero labels on a
    plan with roster owners is a binding failure, not a pass — report it, don't proceed
    silently.
 7. **Correspondence — the label must match *this* issue's own row.** Steps 4-6 certify the
@@ -2291,7 +2361,7 @@ Step 2e, not the cap machinery, is what notices.
    `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
    epic, or the previous call. Verify per issue; membership across the run is not evidence.
 8. **Report what was accepted, not what was intended.** The activation summary may name a
-   `squad:{agent}` label for an issue only after an `add_labels` call carrying that label
+   `squad:{agent-slug}` label for an issue only after an `add_labels` call carrying that label
    was accepted for that same issue — targeted by its own `temporary_id`, or by its verified
    real number for a reused issue. A successful `create-issue` is **not** evidence: its
    `labels:` field cannot land a label on a fresh repository, so a label is never "carried
@@ -2303,7 +2373,7 @@ Step 2e, not the cap machinery, is what notices.
    not happen. See Step 4's Label operations accepted section for the full contract.
 
 **Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
-`create-if-missing: true`) auto-creates `squad` and any `squad:{agent}` label the first
+`create-if-missing: true`) auto-creates `squad` and any `squad:{agent-slug}` label the first
 time this run needs it — a fresh repository with zero Squad labels requires no manual
 provisioning and is never a prerequisite gap. `create-issue`'s own `labels:` field cannot
 do this: GitHub silently drops label names that do not already exist in the target
@@ -2313,7 +2383,7 @@ to land a label on a fresh repository.
 
 In the same turn as each `create-issue` call in Steps 2b/2c, call `add_labels` with
 `item_number` set to that call's `temporary_id` and exactly the label set Steps 4-8 computed
-for that issue — `squad` alone, or `squad` plus the one `squad:{agent}` label the
+for that issue — `squad` alone, or `squad` plus the one `squad:{agent-slug}` label the
 correspondence rule (Step 7) certified. Do not wait for a returned issue number; none
 arrives. gh-aw resolves `add_labels` after the `create-issue` that minted the ID, so that
 order is the supported one. `create-if-missing` creates any label that does not yet exist
@@ -2338,7 +2408,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 **2b. Create Epic Issues:** `create-issue` per epic (dedup by title `[Epic] {name}` if already exists from prior phase).
 - Title: `[Epic] {name}`
 - Temporary ID: `temporary_id: "#aw_epic{K}"` per the Temporary-ID Contract. Required — the call is rejected without it.
-- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct roster value → mint `squad:{that agent}`; exactly `@copilot` → mint `squad:copilot`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
+- Labels: `squad` (0075ca), `squad:{agent-slug}` (e4e669) where `{agent-slug}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct roster value → mint its label using the lowercase/non-alphanumeric/hyphen slug rule above; exactly `@copilot` → mint `squad:copilot`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
 - Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
 - Parent: sub-issue of root intent issue — the triggering issue's own real number, which is known independently of this run's creations
 - Milestone: assigned
@@ -2354,7 +2424,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 
 - Title: task title
 - Temporary ID: `temporary_id: "#aw_task{N}"` per the Temporary-ID Contract. Required, and unique across every epic and task in this run.
-- Labels: `squad` (0075ca), `squad:{agent}` (e4e669) where `{agent}` is **this task's own `Agent` cell**, lowercased — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
+- Labels: `squad` (0075ca), `squad:{agent-slug}` (e4e669) where `{agent-slug}` is derived from **this task's own `Agent` cell** using the same lowercase/non-alphanumeric/hyphen slug rule as label synchronization — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
 - Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
 - Parent: sub-issue of EPIC (not root). If 2b minted this epic in this run, pass its `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. If 2b instead matched a pre-existing epic by title, that epic has no temporary ID in this run — pass its verified real number. Never guess the epic's real number, and never pass a temporary ID that was not minted this run.
 - Milestone: same as parent epic
@@ -2393,9 +2463,11 @@ activation over edge creation.
 
 Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Emit one object per created/recognized task:
+Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Each row is a `squad-work-agent-binding/v1` producer record. Copy `$GITHUB_REPOSITORY`, the current origin issue, artifact kind, and TG-2 registry revision exactly. Emit one object per created/recognized task:
 
-`{"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic across the full accepted plan}"],"label":"squad:{lowercased Agent cell}","epic_label":"squad:{sole lowercased epic task agent}"}`. For `@copilot`, use `squad:copilot`. Every binding for one epic MUST carry the same complete `epic_agents` set, including agents assigned in other activation phases.
+`{"binding_schema":"squad-work-agent-binding/v1","binding_version":1,"producer":"squad","repository":"{owner/repo}","origin_issue":{origin issue},"artifact":"{artifact kind}","registry_schema":"squad-agent-provenance/v1","registry_revision":{TG-2 revision},"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent_id":"{Agent ID cell}","epic_agent_ids":["{all distinct Agent ID cells for this epic}"],"agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic}"],"label":"squad:{slugged Agent cell}","epic_label":"squad:{slugged sole epic task agent}"}`. Slug label fields only. Every binding for one epic carries the same complete ID/name sets across all phases.
+
+For `@copilot` or non-roster work, set `agent_id:null` plus `identity_omission_reason:"external-agent"` or `"non-roster"`. For an older accepted plan with no ID column, use `"legacy-plan-missing-id"`; never reconstruct one from its name or label. Exclude unavailable IDs from `epic_agent_ids` and add `epic_identity_omission_reason:"partial"` when any epic task lacks an ID.
 
 ###### Issue references in bindings — quoted, never bare
 
@@ -2464,14 +2536,15 @@ accepted label — that manufactures a defect.
 ##### Step 5: Update Lifecycle
 
 Phase: `🔄 Phase {N} of {total} activated`. Next: accept/activate next phase.
-Full/last: `✅ Done`, state = Activated. Terminal — no next action needed.
+Full/last: `✅ Done`, state = Activated, last command = invoked
+`/squad plan activate`. Terminal — use terminal prose for Next action.
 
 ## end skill: `squad-plan-activate`
 
 ## agent: `fact-checker`
 ---
 description: "Produces advisory Devil's Advocate evidence for plan validation"
-model: inherited
+model: auto
 ---
 
 Operate only in Fact Checker's Devil's Advocate mode. Review the complete

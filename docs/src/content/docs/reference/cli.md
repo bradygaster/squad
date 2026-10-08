@@ -1,8 +1,5 @@
 # CLI Reference
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 Everything you need to run Squad from the command line — commands, shell interactions, configuration files, and environment variables.
 
 ---
@@ -357,6 +354,7 @@ First match wins.
 |----------|---------|--------|
 | `SQUAD_CLIENT` | Detected client platform | `cli`, `vscode` |
 | `COPILOT_TOKEN` | Copilot auth token (SDK usage) | Token string |
+| `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context utilization warning threshold | Fraction greater than `0` and at most `1` (default: `0.8`) |
 
 ---
 

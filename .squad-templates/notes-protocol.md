@@ -28,11 +28,8 @@ Each agent writes to its own namespace to prevent conflicts:
 
 | Namespace | Owner | Purpose |
 |-----------|-------|---------|
-| `refs/notes/squad/data` | Data | Architecture decisions, implementation choices |
-| `refs/notes/squad/worf` | Worf | Security reviews, vulnerability assessments |
-| `refs/notes/squad/seven` | Seven | Documentation quality, API contract decisions |
+| `refs/notes/squad/{agent-id}` | Current agent | Agent-owned decisions and implementation context |
 | `refs/notes/squad/ralph` | Ralph | Work-round progress, task-state annotations |
-| `refs/notes/squad/q` | Q | Devil's advocate findings, risk assessments |
 | `refs/notes/squad/research` | Any agent | Research notes that should survive branch deletion |
 | `refs/notes/squad/review` | Any agent | Code review context (mirrors Gerrit's pattern) |
 
@@ -47,7 +44,7 @@ All notes MUST be valid JSON. Minimum required fields:
 
 ```json
 {
-  "agent": "Data",
+  "agent": "{AgentName}",
   "timestamp": "2026-03-23T14:00:00Z",
   "type": "decision | research | review | progress | security",
   "content": "..."
@@ -58,7 +55,7 @@ All notes MUST be valid JSON. Minimum required fields:
 
 ```json
 {
-  "agent": "Data",
+  "agent": "{AgentName}",
   "timestamp": "2026-03-23T14:00:00Z",
   "type": "decision",
   "decision": "Use JWT RS256 for auth middleware",
@@ -76,7 +73,7 @@ Set `"promote_to_permanent": true` to signal Ralph to copy this to
 
 ```json
 {
-  "agent": "Data",
+  "agent": "{AgentName}",
   "timestamp": "2026-03-23T14:00:00Z",
   "type": "research",
   "topic": "JWT vs session tokens",

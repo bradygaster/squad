@@ -18,7 +18,6 @@ import { join } from 'node:path';
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const ONTOLOGY = join(WORKFLOWS_DIR, 'shared', 'squad-planning-ontology.md');
-const TEAM = join(process.cwd(), '.squad', 'team.md');
 const GH_AW_GUIDE = join(process.cwd(), 'docs', 'src', 'content', 'docs', 'guide', 'gh-aw.md');
 
 function readText(filePath: string): string {
@@ -96,7 +95,19 @@ function agentBlock(markdown: string, name: string): string {
 
 const squad = readText(SQUAD_WORKFLOW);
 const ontology = readText(ONTOLOGY);
-const team = readText(TEAM);
+const team = [
+  '# Synthetic Team Fixture',
+  '',
+  '## Members',
+  '',
+  '| Name | Role |',
+  '|------|------|',
+  '| Architect | Lead |',
+  '| Builder | Runtime Engineer |',
+  '| Writer | Documentation |',
+  '',
+  '## End',
+].join('\n');
 const guide = readText(GH_AW_GUIDE);
 
 // ---------------------------------------------------------------------------
@@ -175,8 +186,8 @@ function leakedRoleTokens(text: string): string[] {
 
 describe('#1759: Owner/Agent bind to the cast Name column', () => {
   it('team.md exposes distinct Name and Role columns to bind against', () => {
-    expect(NAMES).toContain('Procedures');
-    expect(NAMES).toContain('Flight');
+    expect(NAMES).toContain('Architect');
+    expect(NAMES).toContain('Builder');
     expect(ROLES_LC.has('lead')).toBe(true); // "Lead" is a Role, not a Name
     expect(NAMES_LC.has('lead')).toBe(false); // and it is not a valid Owner
   });
@@ -186,8 +197,8 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     const goodPlan = [
       '| # | Title | Owner | Size | Depends On |',
       '|---|-------|-------|------|-----------|',
-      '| 1 | Wire adapter | EECOM | M | - |',
-      '| 2 | Prompt refactor | Procedures | S | 1 |',
+      '| 1 | Wire adapter | Builder | M | - |',
+      '| 2 | Prompt refactor | Architect | S | 1 |',
     ].join('\n');
 
     // A plan table that leaked Role strings into the Owner column.
@@ -203,9 +214,9 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
 
     expect(owners(goodPlan).some(isRoleStringLeak)).toBe(false);
     expect(owners(badPlan).every(isRoleStringLeak)).toBe(true);
-    // The specific failure mode: "lead" is a Role, "Procedures"/"EECOM" are Names.
+    // The specific failure mode: "lead" is a Role, while the fixture values are Names.
     expect(isRoleStringLeak('lead')).toBe(true);
-    expect(isRoleStringLeak('Procedures')).toBe(false);
+    expect(isRoleStringLeak('Architect')).toBe(false);
   });
 
   it('squad-plan binds the Owner column to a certified team.md Name cell', () => {
@@ -679,6 +690,21 @@ describe('#1758.3: validate precedes both accept steps', () => {
     expect(() => assertPlanningNextHintsMatch(taggedOntology, squad)).not.toThrow();
   });
 
+  it('documents the Validation Result template with the exact machine-parsed RESULT: PASS|FAIL marker, not a stale heading variant', () => {
+    // squad-plan-validate's own output contract (and every downstream consumer parsing it,
+    // e.g. squad-review-guard.mjs / the plan-lifecycle harness above) requires the literal
+    // uppercase `RESULT: PASS` / `RESULT: FAIL` line. An earlier revision of this template
+    // documented a `### Result: ✅ PASS` heading instead -- producer/consumer would silently
+    // disagree on the contract text even though the actual emitting code was already correct.
+    const section = ontology.slice(
+      ontology.indexOf('### 3.6 Validation Result'),
+      ontology.indexOf('### 3.7', ontology.indexOf('### 3.6 Validation Result')),
+    );
+    expect(section).toMatch(/^RESULT: <PASS \| FAIL>$/m);
+    expect(section).not.toMatch(/Result: ✅/);
+    expect(section).not.toMatch(/^### Result:/m);
+  });
+
   it('fails when ontology transitions reorder while pinned inequalities still hold', () => {
     const reordered = ontology
       .replace('triggered_by: /squad plan program', 'triggered_by: /squad plan __swap__')
@@ -842,6 +868,11 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     expect(factChecker).toMatch(/Never emit `RESULT: PASS`, `RESULT: FAIL`/);
   });
 
+  it('uses automatic model resolution instead of the literal inherited model', () => {
+    expect(factChecker).toMatch(/^model: auto$/m);
+    expect(factChecker).not.toMatch(/^model: inherited$/m);
+  });
+
   it('requires all five DA elements with concrete semantic thresholds', () => {
     for (const section of [
       '##### Steelman of the opposition',
@@ -865,6 +896,13 @@ describe('#1757: squad-plan-validate has adversarial teeth', () => {
     );
     expect(validation).toMatch(/copied verdict,[\s\S]*cannot become `RESULT: PASS`/);
     expect(validation).toMatch(/Structural PASS alone cannot produce overall PASS/);
+  });
+
+  it('emits lifecycle next actions in the deterministic writer format', () => {
+    expect(validation).toContain('**Next action:** `/squad plan accept scope`');
+    expect(validation).toContain('**Next action:** `/squad plan validate`');
+    expect(validation).toMatch(/backticked command must\s+be the entire field value/);
+    expect(validation).toMatch(/retry\s+context in a separate\s+`\*\*Guidance:\*\*` field/);
   });
 
   it('distinguishes a neatly formatted bad plan from a genuinely validated plan', () => {
@@ -1008,6 +1046,7 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
     expect(lifecycle).toContain('Activation = `✅ Done`');
     expect(lifecycle).toContain('state =\n  Activated');
     expect(lifecycle).toContain('This is terminal');
+    expect(lifecycle).toContain('explicit terminal prose');
   });
 
   it('repairs stale lifecycle state on an idempotent activate rerun', () => {

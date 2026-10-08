@@ -23,11 +23,34 @@ const { mockResolveStateBackend, mockVerifyStateBackend } = vi.hoisted(() => ({
   mockVerifyStateBackend: vi.fn(),
 }));
 
-vi.mock('@bradygaster/squad-sdk', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('@bradygaster/squad-sdk')>();
+vi.mock('@bradygaster/squad-sdk', async () => {
+  const fs = await import('node:fs');
+  const pathModule = await import('node:path');
   return {
-    ...actual,
+    FSStorageProvider: class {
+      existsSync(filePath: string): boolean {
+        return fs.existsSync(filePath);
+      }
+
+      readSync(filePath: string): string {
+        return fs.readFileSync(filePath, 'utf8');
+      }
+    },
+    loadDirConfig(squadDir: string): Record<string, unknown> | undefined {
+      try {
+        return JSON.parse(
+          fs.readFileSync(pathModule.join(squadDir, 'config.json'), 'utf8'),
+        ) as Record<string, unknown>;
+      } catch {
+        return undefined;
+      }
+    },
+    resolveExternalStateDir(projectKey: string): string {
+      if (!projectKey || projectKey.split(/[\\/]/).includes('..')) {
+        throw new Error('invalid project key');
+      }
+      return pathModule.resolve(projectKey);
+    },
     resolveStateBackend: mockResolveStateBackend,
     verifyStateBackend: mockVerifyStateBackend,
   };
@@ -101,13 +124,36 @@ function createHealthyState(): void {
   writeSquad(
     path.join('casting', 'registry.json'),
     JSON.stringify({
+      schema: 'squad-agent-provenance/v1',
+      schema_version: 1,
+      revision: 1,
+      generated_at: '2026-01-01T00:00:00.000Z',
       agents: {
         alpha: {
           created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+          display_name: 'Alpha',
           persistent_name: 'Alpha',
+          role: 'Developer',
+          universe: 'descriptive',
           status: 'active',
         },
       },
+    }),
+  );
+  writeSquad(
+    path.join('casting', 'history.json'),
+    JSON.stringify({
+      assignment_cast_snapshots: {
+        'repl-cast-r1-2026-01-01T00:00:00.000Z': {
+          created_at: '2026-01-01T00:00:00.000Z',
+          agents: ['alpha'],
+          universe: 'descriptive',
+        },
+      },
+      universe_usage_history: [
+        { universe: 'descriptive', used_at: '2026-01-01T00:00:00.000Z' },
+      ],
     }),
   );
   writeSquad(path.join('agents', 'alpha', 'charter.md'), CHARTER);
@@ -223,13 +269,63 @@ describe('team readiness', () => {
     expect(result.diagnostics).toEqual(['duplicate: alpha']);
   });
 
-  it('parses multiple roster tables with their own column contracts', () => {
+  it('counts only the Members table, not the Coordinator table', () => {
     writeSquad('team.md', MULTI_TABLE_TEAM);
 
     const result = check(runSquadHealth(squadDir, repoRoot), 'team');
 
     expect(result.status).toBe('pass');
-    expect(result.message).toContain('2 members');
+    expect(result.message).toBe('team.md is valid (1 members)');
+  });
+
+  it('accepts the legacy Team Roster table heading', () => {
+    writeSquad(
+      'team.md',
+      `# Test Team
+
+## Team Roster
+
+| Name | Role |
+|------|------|
+| Alpha | Developer |
+`,
+    );
+
+    const result = check(runSquadHealth(squadDir, repoRoot), 'team');
+
+    expect(result.status).toBe('pass');
+    expect(result.message).toBe('team.md is valid (1 members)');
+  });
+
+  it('reports only roster members when team.md contains auxiliary tables', () => {
+    writeSquad(
+      'team.md',
+      `${TEAM}
+
+## Human Members
+
+| Name | Role | Skills |
+|------|------|--------|
+| Casey | Product Owner | Planning |
+
+## Existing Project Agents Reused
+
+| Name | Role | Skills |
+|------|------|--------|
+| Existing | Engineer | Reuse |
+
+## Project Notes
+
+| Description | Owner | Status |
+|-------------|-------|--------|
+| A project note | Alpha | Current |
+`,
+    );
+
+    const result = check(runSquadHealth(squadDir, repoRoot), 'team');
+
+    expect(result.status).toBe('pass');
+    expect(result.message).toBe('team.md is valid (1 members)');
   });
 });
 
@@ -257,8 +353,21 @@ describe('registry and charter readiness', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
       JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-01-01T00:00:00.000Z',
         agents: {
-          alpha: { persistent_name: 'Alpha', status: 'retired' },
+          alpha: {
+            display_name: 'Alpha',
+            persistent_name: 'Alpha',
+            role: 'Developer',
+            universe: 'descriptive',
+            status: 'retired',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+            retired_at: '2026-01-01T00:00:00.000Z',
+          },
         },
       }),
     );
@@ -276,7 +385,13 @@ describe('registry and charter readiness', () => {
   it('fails for a malformed registry entry instead of throwing', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
-      '{"agents":{"alpha":null}}',
+      JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-01-01T00:00:00.000Z',
+        agents: { alpha: null },
+      }),
     );
 
     const result = check(
@@ -285,15 +400,29 @@ describe('registry and charter readiness', () => {
     );
 
     expect(result.status).toBe('fail');
-    expect(result.diagnostics).toEqual([
-      'alpha: registry entry must be an object',
-    ]);
+    expect(result.message).toContain('registry contains invalid agent records');
   });
 
   it('fails for an unsupported registry status', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
-      '{"agents":{"alpha":{"persistent_name":"Alpha","status":"unknown"}}}',
+      JSON.stringify({
+        schema: 'squad-agent-provenance/v1',
+        schema_version: 1,
+        revision: 1,
+        generated_at: '2026-01-01T00:00:00.000Z',
+        agents: {
+          alpha: {
+            display_name: 'Alpha',
+            persistent_name: 'Alpha',
+            role: 'Developer',
+            universe: 'descriptive',
+            status: 'unknown',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
     );
 
     const result = check(
@@ -302,15 +431,29 @@ describe('registry and charter readiness', () => {
     );
 
     expect(result.status).toBe('fail');
-    expect(result.diagnostics).toEqual([
-      'alpha: registry entry has invalid status',
-    ]);
+    expect(result.message).toContain('registry contains invalid agent records');
+  });
+
+  it('fails closed when registry and history generations do not match', () => {
+    writeSquad(
+      path.join('casting', 'history.json'),
+      JSON.stringify({
+        transaction_id: 'history-generation',
+        registry_revision: 1,
+        assignment_cast_snapshots: {},
+        universe_usage_history: [],
+      }),
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'registry-charters').status)
+      .toBe('fail');
   });
 
   it('requires a charter for every registry entry, including retired entries', () => {
     writeSquad(
       path.join('casting', 'registry.json'),
       JSON.stringify({
+        revision: 1,
         agents: {
           alpha: { persistent_name: 'Alpha', status: 'retired' },
         },
@@ -392,6 +535,33 @@ describe('routing readiness', () => {
 
     expect(result.status).toBe('fail');
     expect(result.message).toContain('registry is invalid');
+  });
+
+  it('accepts persistent names and registry IDs as agent references', () => {
+    const registryPath = path.join(squadDir, 'casting', 'registry.json');
+    const registry = readFileSync(registryPath, 'utf8')
+      .replace('"display_name":"Alpha"', '"display_name":"Frontend Lead"')
+      .replace(
+        '"persistent_name":"Alpha"',
+        '"persistent_name":"Frontend Lead"',
+      );
+    writeFileSync(registryPath, registry, 'utf8');
+    writeSquad('team.md', TEAM.replace('| Alpha |', '| Frontend Lead |'));
+    writeSquad(
+      path.join('agents', 'alpha', 'charter.md'),
+      CHARTER.replace('**Name:** Alpha', '**Name:** Frontend Lead'),
+    );
+    writeSquad(
+      'routing.md',
+      ROUTING.replace(
+        '| feature | Alpha | New work |',
+        '| feature | Frontend Lead | New work |\n| maintenance | alpha | Maintenance |',
+      ),
+    );
+
+    expect(check(runSquadHealth(squadDir, repoRoot), 'routing').status).toBe(
+      'pass',
+    );
   });
 
   it('reports unknown agents deterministically', () => {
