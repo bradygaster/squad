@@ -41,6 +41,9 @@ export type CastingDurabilityBoundary =
   | 'payload:history-fsync'
   | 'payload:dir-fsync'
   | 'payload:parent-fsync'
+  | 'archive:write'
+  | 'archive:file-fsync'
+  | 'archive:parent-fsync'
   | 'journal:write'
   | 'journal:file-fsync'
   | 'journal:rename'
@@ -1363,6 +1366,241 @@ export function commitCastingRegistryPair(
   }
 }
 
+function legacyObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Cannot migrate legacy casting: ${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function legacyTimestamp(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
+    throw new Error(`Cannot migrate legacy casting: ${label} is not a timestamp`);
+  }
+  return value;
+}
+
+function rejectLegacyGenerationMetadata(record: Record<string, unknown>): void {
+  if (['schema', 'schema_version', 'revision', 'registry_revision', 'transaction_id', 'generated_at']
+    .some(key => Object.hasOwn(record, key))) {
+    throw new Error('Cannot migrate legacy casting: unsupported generation metadata');
+  }
+}
+
+function convertHistoricalCastingPair(
+  registry: Record<string, unknown>,
+  history: Record<string, unknown>,
+): { registry: Record<string, unknown>; history: Record<string, unknown> } {
+  if (
+    Object.keys(registry).some(key => key !== 'agents')
+    || Object.keys(history).some(key => ![
+      'assignment_cast_snapshots', 'universe_usage_history',
+    ].includes(key))
+  ) {
+    throw new Error('Cannot migrate legacy casting: unsupported schema or generation metadata');
+  }
+  const agents: Record<string, Record<string, unknown>> = Object.create(null);
+  for (const [id, value] of Object.entries(legacyObject(registry['agents'], 'agents'))) {
+    const agent = legacyObject(value, `agent ${id}`);
+    rejectLegacyGenerationMetadata(agent);
+    if (agent['legacy_named'] !== undefined && typeof agent['legacy_named'] !== 'boolean') {
+      throw new Error(`Cannot migrate legacy casting: agent ${id} has invalid legacy_named`);
+    }
+    agents[id] = {
+      ...agent,
+      display_name: agent['display_name'] === undefined ? agent['persistent_name'] : agent['display_name'],
+      role: agent['role'] === undefined ? id : agent['role'],
+      updated_at: agent['updated_at'] === undefined ? agent['created_at'] : agent['updated_at'],
+    };
+  }
+  const nextRegistry = {
+    schema: 'squad-agent-provenance/v1',
+    schema_version: 1,
+    // A new managed baseline, not a claim about historical casting generations.
+    revision: 1,
+    generated_at: new Date(now()).toISOString(),
+    agents,
+  };
+  validateRegistryShape(nextRegistry);
+
+  const snapshots: Record<string, Record<string, unknown>> = Object.create(null);
+  for (const [key, value] of Object.entries(
+    legacyObject(history['assignment_cast_snapshots'], 'snapshots'),
+  )) {
+    const snapshot = legacyObject(value, `snapshot ${key}`);
+    rejectLegacyGenerationMetadata(snapshot);
+    const ids: string[] = [];
+    if (snapshot['members'] !== undefined && snapshot['agents'] === undefined) {
+      if (!Array.isArray(snapshot['members'])) {
+        throw new Error(`Cannot migrate legacy casting: snapshot ${key} members are malformed`);
+      }
+      for (const value of snapshot['members']) {
+        const member = legacyObject(value, `snapshot ${key} member`);
+        const id = member['folder'];
+        if (
+          typeof id !== 'string' || !Object.hasOwn(agents, id)
+          || member['persistent_name'] !== agents[id]!['persistent_name']
+          || member['role'] !== agents[id]!['role']
+        ) {
+          throw new Error(`Cannot migrate legacy casting: snapshot ${key} member identity is inconsistent`);
+        }
+        ids.push(id);
+      }
+    } else if (snapshot['agents'] !== undefined && snapshot['members'] === undefined) {
+      if (Array.isArray(snapshot['agents'])) {
+        for (const id of snapshot['agents']) {
+          if (typeof id !== 'string' || !Object.hasOwn(agents, id)) {
+            throw new Error(`Cannot migrate legacy casting: snapshot ${key} references unknown agents`);
+          }
+          ids.push(id);
+        }
+      } else {
+        for (const [id, name] of Object.entries(legacyObject(snapshot['agents'], `snapshot ${key} agents`))) {
+          if (!Object.hasOwn(agents, id) || name !== agents[id]!['persistent_name']) {
+            throw new Error(`Cannot migrate legacy casting: snapshot ${key} agent identity is inconsistent`);
+          }
+          ids.push(id);
+        }
+      }
+    } else {
+      throw new Error(`Cannot migrate legacy casting: snapshot ${key} has ambiguous agent references`);
+    }
+    if (!key || new Set(ids).size !== ids.length) {
+      throw new Error(`Cannot migrate legacy casting: snapshot ${key} has duplicate or empty identity`);
+    }
+    snapshots[key] = {
+      agents: ids,
+      universe: snapshot['universe'],
+      created_at: legacyTimestamp(snapshot['created_at'], `snapshot ${key} created_at`),
+    };
+  }
+  if (!Array.isArray(history['universe_usage_history'])) {
+    throw new Error('Cannot migrate legacy casting: usage history must be an array');
+  }
+  const unmatched = new Set(Object.keys(snapshots));
+  const usage = history['universe_usage_history'].map((value: unknown) => {
+    const record = legacyObject(value, 'usage record');
+    rejectLegacyGenerationMetadata(record);
+    const usedAt = legacyTimestamp(
+      record['used_at'] === undefined ? record['created_at'] : record['used_at'],
+      'usage timestamp',
+    );
+    if (
+      record['created_at'] !== undefined
+      && Date.parse(legacyTimestamp(record['created_at'], 'usage created_at')) !== Date.parse(usedAt)
+    ) {
+      throw new Error('Cannot migrate legacy casting: usage timestamps disagree');
+    }
+    const candidates = [...unmatched].filter(key => {
+      const snapshot = snapshots[key]!;
+      const original = legacyObject(
+        (history['assignment_cast_snapshots'] as Record<string, unknown>)[key],
+        `snapshot ${key}`,
+      );
+      return (
+        (record['assignment_id'] === undefined || record['assignment_id'] === key)
+        && snapshot['universe'] === record['universe']
+        && Date.parse(String(snapshot['created_at'])) === Date.parse(usedAt)
+        && ['repository', 'team_root'].every(field => (
+          record[field] === undefined && original[field] === undefined
+        ) || record[field] === original[field])
+      );
+    });
+    if (candidates.length !== 1) {
+      throw new Error('Cannot migrate legacy casting: usage and snapshot evidence is inconsistent or ambiguous');
+    }
+    unmatched.delete(candidates[0]!);
+    return { universe: record['universe'], used_at: usedAt };
+  });
+  if (unmatched.size !== 0) {
+    throw new Error('Cannot migrate legacy casting: snapshots lack matching usage evidence');
+  }
+  const nextHistory = { assignment_cast_snapshots: snapshots, universe_usage_history: usage };
+  validateCastingRegistryPairForCommit(nextRegistry, nextHistory, 1);
+  return { registry: nextRegistry, history: nextHistory };
+}
+
+function migrateHistoricalCastingPairLocked(castingDir: string, dryRun: boolean): boolean {
+  const { registryPath, historyPath, journalPath, manifestPath } = transactionPaths(castingDir);
+  const registryRaw = readText(registryPath);
+  const historyRaw = readText(historyPath);
+  if (registryRaw === undefined && historyRaw === undefined) {
+    if (readText(journalPath) !== undefined || readText(manifestPath) !== undefined) {
+      throw new Error('Cannot migrate casting: transaction metadata exists without a pair');
+    }
+    return false;
+  }
+  if ((registryRaw === undefined) !== (historyRaw === undefined)) {
+    throw new Error('Cannot initialize casting registry/history: exactly one authoritative file exists');
+  }
+  const registry = parseObject(registryRaw, 'casting/registry.json')!;
+  const history = parseObject(historyRaw, 'casting/history.json')!;
+  if (
+    Object.keys(registry).length !== 1 || !Object.hasOwn(registry, 'agents')
+    || readText(journalPath) !== undefined || readText(manifestPath) !== undefined
+  ) {
+    const snapshot = validateCastingRegistryPairRaw(
+      registryRaw, historyRaw, readText(journalPath), readText(manifestPath),
+    );
+    if (snapshot.transactionId) return false;
+    if (!dryRun) {
+      commitCastingRegistryPair(
+        castingDir, registryRaw, registry, historyRaw, history, registry['revision'] as number,
+      );
+    }
+    return true;
+  }
+  if (
+    !readFileSync(registryPath).equals(Buffer.from(registryRaw!, 'utf8'))
+    || !readFileSync(historyPath).equals(Buffer.from(historyRaw!, 'utf8'))
+  ) {
+    throw new Error('Cannot migrate legacy casting: originals are not valid UTF-8');
+  }
+  const converted = convertHistoricalCastingPair(registry, history);
+  if (dryRun) return true;
+
+  const archive = path.join(castingDir, `legacy-archive-${sha256(registryRaw + '\u0000' + historyRaw)}`);
+  mkdirSync(archive, { recursive: true });
+  const originals: [string, string][] = [['registry.json', registryRaw!], ['history.json', historyRaw!]];
+  for (const [name, raw] of originals) {
+    const archivePath = path.join(archive, name);
+    const existing = readText(archivePath);
+    if (existing !== undefined && existing !== raw) {
+      throw new Error(`Cannot migrate casting: original archive differs at ${archivePath}`);
+    }
+    if (existing === undefined) {
+      writeDurableFile(archivePath, raw, 'archive:write', 'archive:file-fsync');
+    } else {
+      // A previous attempt may have stopped between archive write and fsync.
+      const descriptor = openSync(archivePath, 'r+');
+      try {
+        boundary('archive:file-fsync', archivePath);
+        fsyncSync(descriptor);
+      } finally {
+        closeSync(descriptor);
+      }
+    }
+  }
+  boundary('archive:parent-fsync', archive);
+  flushDirectory(archive);
+  flushDirectory(castingDir);
+  commitCastingRegistryPair(castingDir, registryRaw, converted.registry, historyRaw, converted.history, 1);
+  return true;
+}
+
+/** Validate before upgrade-owned writes; dry runs neither lock nor recover nor archive. */
+export function preflightCastingRegistryPair(castingDir: string, dryRun = false): boolean {
+  if (dryRun) return migrateHistoricalCastingPairLocked(castingDir, true);
+  if (!existsSync(castingDir)) return false;
+  const release = acquireCastingRegistryLock(castingDir, 'CLI upgrade casting preflight');
+  try {
+    recoverCastingRegistryTransaction(castingDir);
+    return migrateHistoricalCastingPairLocked(castingDir, false);
+  } finally {
+    release();
+  }
+}
+
 /**
  * Create a missing pair or migrate a valid generationless legacy pair while
  * the caller holds the shared casting writer lock.
@@ -1402,23 +1640,11 @@ export function ensureCastingRegistryPairLocked(
     };
   }
 
-  const snapshot = readCastingRegistryPair(castingDir);
-  if (snapshot.transactionId) {
-    return { snapshot, created: false, migrated: false };
-  }
-  const revision = validatePairRoots(snapshot.registry, snapshot.history, false);
-  commitCastingRegistryPair(
-    castingDir,
-    snapshot.registryRaw,
-    snapshot.registry!,
-    snapshot.historyRaw,
-    snapshot.history!,
-    revision,
-  );
+  const migrated = migrateHistoricalCastingPairLocked(castingDir, false);
   return {
     snapshot: readCastingRegistryPair(castingDir),
     created: false,
-    migrated: true,
+    migrated,
   };
 }
 

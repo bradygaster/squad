@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
-import { ensureCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
+import { ensureCastingRegistryPair, preflightCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -1225,6 +1225,16 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   const isAlreadyCurrent = !options.force && oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;
 
   const projectType = detectProjectType(dest);
+
+  const castingMigrated = preflightCastingRegistryPair(
+    path.join(squadDirInfo.path, 'casting'),
+    options.dryRun ?? false,
+  );
+  if (castingMigrated) {
+    info(options.dryRun
+      ? 'Would migrate legacy casting state to a managed registry/history pair.'
+      : 'Migrated legacy casting state to a managed registry/history pair.');
+  }
 
   // --dry-run: preview what upgrade would do without writing (#1052)
   if (options.dryRun) {
