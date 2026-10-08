@@ -124,6 +124,7 @@ describe('ToolRegistry', () => {
     'squad_state_read',
     'squad_state_write',
     'squad_state_append',
+    'squad_state_create_if_absent',
     'squad_state_delete',
     'squad_state_list',
     'squad_state_health',

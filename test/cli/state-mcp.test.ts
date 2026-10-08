@@ -20,6 +20,10 @@ function git(args: string[]): string {
 }
 
 function initSquad(stateBackend: 'orphan' | 'two-layer'): void {
+  process.env['GIT_AUTHOR_NAME'] = 'Test';
+  process.env['GIT_AUTHOR_EMAIL'] = 'test';
+  process.env['GIT_COMMITTER_NAME'] = 'Test';
+  process.env['GIT_COMMITTER_EMAIL'] = 'test';
   mkdirSync(join(TMP, '.squad'), { recursive: true });
   writeFileSync(join(TMP, '.squad', 'config.json'), JSON.stringify({ stateBackend }, null, 2));
   writeFileSync(join(TMP, 'README.md'), '# state mcp test\n');

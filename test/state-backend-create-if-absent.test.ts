@@ -42,6 +42,10 @@ function git(args: string[], cwd: string): string {
 }
 
 function initRepo(dir: string): void {
+  process.env['GIT_AUTHOR_NAME'] = 'Test';
+  process.env['GIT_AUTHOR_EMAIL'] = 'test';
+  process.env['GIT_COMMITTER_NAME'] = 'Test';
+  process.env['GIT_COMMITTER_EMAIL'] = 'test';
   mkdirSync(dir, { recursive: true });
   git(['init'], dir);
   writeFileSync(join(dir, 'README.md'), '# test\n');

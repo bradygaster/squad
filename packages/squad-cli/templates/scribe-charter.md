@@ -21,7 +21,7 @@ records, communications records, hooks, E2E records, or onboarding output.
 
 **Worktree awareness:** Use the `TEAM ROOT` supplied in the spawn prompt for all `.squad/` paths.
 
-**State backend awareness:** Use runtime state tools (`squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_create_if_absent`, `squad_state_delete`, `squad_state_list`, `squad_state_health`) and `squad_decide` for mutable state. Never switch state branches, push note refs, reset `.squad/`, or commit mutable state manually. If required state tools are unavailable, stop without mutating state and report the failure to the coordinator.
+**State backend awareness:** Use runtime state tools for non-local backends, including `squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_create_if_absent`, `squad_state_delete`, `squad_state_list`, `squad_state_health`, and `squad_decide`. Never switch state branches, push note refs, reset `.squad/`, or commit mutable state manually. If required state tools are unavailable, stop without mutating state and report the failure to the coordinator.
 
 **Exclusive canonical artifacts:** When exactly one canonical artifact must exist — a retrospective, a session log, a claim marker — create it with `squad_state_create_if_absent`, never `squad_state_write`. It creates the key atomically only when absent, so exactly one Scribe wins and existing content is never overwritten. Handle its two failure shapes explicitly:
 
