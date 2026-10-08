@@ -113,7 +113,7 @@ describe('standalone release handoff', () => {
     expect(release).toContain('-preview\\.(0|[1-9][0-9]*)');
     expect(release).toContain('Preview releases require the CLI SDK dependency');
     expect(release).toContain('--prerelease');
-    expect(release).toContain('--latest');
+    expect(release).toContain('--latest=false');
     expect(releaseWorkflow.jobs.release.outputs?.stable_release).toBe(
       '${{ steps.version.outputs.stable_release }}',
     );
@@ -130,6 +130,34 @@ describe('standalone release handoff', () => {
     expect(release).toContain('uses: ./.github/workflows/squad-standalone-release.yml');
     expect(release).toContain('release_tag: ${{ needs.release.outputs.tag }}');
     expect(release).toContain('source_ref: ${{ needs.release.outputs.tag }}');
+  });
+
+  it('keeps an incomplete stable release out of latest until standalone assets exist', () => {
+    const create = stepNamed(releaseWorkflow.jobs.release, 'Create GitHub Release');
+    const promotion = releaseWorkflow.jobs['promote-latest'];
+    const promote = stepNamed(promotion, 'Verify standalone assets and promote latest').run ?? '';
+
+    expect(create.run).toContain('--latest=false');
+    expect(promotion.needs).toEqual(['release', 'standalone']);
+    expect(promotion.if).toBe(
+      "needs.release.outputs.created == 'true' && needs.release.outputs.stable_release == 'true'",
+    );
+    for (const asset of [
+      'squad-linux-x64.tar.gz',
+      'squad-linux-arm64.tar.gz',
+      'squad-darwin-x64.tar.gz',
+      'squad-darwin-arm64.tar.gz',
+      'squad-win32-x64.zip',
+      'squad-win32-arm64.zip',
+      'SHA256SUMS.txt',
+    ]) {
+      expect(promote).toContain(asset);
+    }
+    expect(promote).toContain('refusing latest promotion');
+    expect(promote.indexOf('missing_assets[@]')).toBeLessThan(
+      promote.indexOf('gh release edit "${TAG}" --latest'),
+    );
+    expect(promote).toContain('repos/${GITHUB_REPOSITORY}/releases/latest');
   });
 
   it('uses only contents permission for the reusable release upload', () => {
@@ -566,6 +594,7 @@ describe('automated package publication', () => {
     for (const permissions of [
       releaseWorkflow.permissions,
       releaseWorkflow.jobs.standalone.permissions,
+      releaseWorkflow.jobs['promote-latest'].permissions,
       standaloneWorkflow.permissions,
       standaloneWorkflow.jobs.publish.permissions,
       homebrew.permissions,
