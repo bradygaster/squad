@@ -147,9 +147,11 @@ Squad supports a hybrid model where your **repository** lives in GitHub or Azure
 2. **Graph API access** — `az account get-access-token --resource-type ms-graph`
 3. **Plan ID** — Found in the Planner URL or via Graph API
 
-### Configuration
+### Configuration (legacy SDK-first projects)
 
-In `squad.config.ts`, specify the hybrid model:
+> ⚠️ **Legacy compatibility only.** The `squad.config.ts` authoring mode is deprecated and will be removed in v2. Use markdown-first `squad init` for new teams. The example below remains for existing projects.
+
+Existing SDK-first projects can specify the hybrid model in `squad.config.ts`:
 
 ```typescript
 const config: SquadConfig = {

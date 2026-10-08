@@ -512,4 +512,4 @@ npx squad start
 - #231 — Migration command feedback
 
 ---
-_This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try SDK-First Mode →](../sdk-first-mode.md)_
+_This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Legacy SDK-First Mode compatibility guide →](../sdk-first-mode.md)_
