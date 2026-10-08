@@ -14,7 +14,12 @@
 
 - `.squad/rai/policy.md` — canonical RAI policy
 
-Rai does not create audit logs, specialist histories, or routine review records.
+- `.squad/rai/audit-trail.md` — append-only RAI review evidence and policy-update justifications
+
+Append required evidence with `squad_state_append` when available. Keep entries succinct and
+redacted; never include raw secrets or harmful content. Never overwrite or delete prior entries;
+corrections go in a new entry referencing the original. Rai does not create specialist histories
+or other routine review records.
 
 ## Traffic Light Verdicts
 
