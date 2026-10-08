@@ -193,7 +193,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/builtins/scribe-charter.md",
       "destination": ".github/workflows/shared/builtins/scribe-charter.md",
       "ownership": "manifest",
-      "sha256": "05a4f91b8bf0f573027f5d854939f014de63fd9ace72bd247a8551e5cc4a3619"
+      "sha256": "01ab375efa4d03b48ddfc51b43374b24646b521c24ac1b881113789f89926044"
     },
     {
       "path": "shared/builtins/ralph-charter.md",
