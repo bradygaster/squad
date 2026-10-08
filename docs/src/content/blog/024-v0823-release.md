@@ -415,7 +415,7 @@ npx @bradygaster/squad-cli@latest doctor
 2. Run `squad build --dry-run` to preview generated files
 3. Run `squad build` to generate `.squad/` markdown
 4. Commit the config, version control the generated files, and sync your team
-Alternatively, keep your markdown-first squad — both modes will coexist indefinitely.
+At the time of this release, both modes were expected to coexist indefinitely. SDK-First mode is now deprecated and scheduled for removal in v2; keep markdown as the source of truth for new teams.
 
 ---
 ## Getting Started with v0.8.22
@@ -426,7 +426,8 @@ npm install -g @bradygaster/squad-cli@latest
 npx squad doctor
 npx squad start
 ```
-### Option 2: Try SDK-First Mode (New)
+### Historical Option 2: SDK-First Mode (Now Deprecated)
+The following commands are preserved as release-history context, not as current adoption guidance. Do not use SDK-First mode for new teams.
 ```bash
 npm install -g @bradygaster/squad-cli@latest
 mkdir my-sdk-squad && cd my-sdk-squad
