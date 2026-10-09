@@ -152,4 +152,30 @@ describe('managed text updates', () => {
     copyManagedFile(source, destination);
     expect(readFileSync(destination)).toEqual(bytes);
   });
+
+  it.each(['.bin', '.asset', '.example', ''])('copies unknown %j assets exactly over an existing CRLF destination', extension => {
+    const source = path.join(root, `payload${extension}`);
+    const destination = path.join(root, `copied${extension}`);
+    const bytes = Buffer.from([1, 2, 10, 3, 4, 10, 127]);
+    expect(bytes.includes(0)).toBe(false);
+    expect(Buffer.from(bytes.toString('utf8'), 'utf8')).toEqual(bytes);
+    writeFileSync(source, bytes);
+    writeFileSync(destination, 'existing\r\nasset\r\n');
+    copyManagedFile(source, destination);
+    expect(readFileSync(destination)).toEqual(bytes);
+  });
+
+  it.each(['.md', '.json', '.yml', '.ps1', '.template'])('preserves CRLF for known %s text updates and skips repeat writes', extension => {
+    const source = path.join(root, `source${extension}`);
+    const destination = path.join(root, `destination${extension}`);
+    writeFileSync(source, 'new\nbody\n');
+    writeFileSync(destination, 'old\r\nbody\r\n');
+    copyManagedFile(source, destination);
+    expect(readFileSync(destination, 'utf8')).toBe('new\r\nbody\r\n');
+    utimesSync(destination, new Date(0), new Date(0));
+    const before = statSync(destination).mtimeMs;
+    copyManagedFile(source, destination);
+    expect(statSync(destination).mtimeMs).toBe(before);
+    expect(readFileSync(destination, 'utf8')).toBe('new\r\nbody\r\n');
+  });
 });

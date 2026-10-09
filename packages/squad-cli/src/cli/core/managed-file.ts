@@ -1,4 +1,10 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { extname } from 'node:path';
+
+const MANAGED_TEXT_EXTENSIONS = new Set([
+  '.md', '.json', '.yml', '.yaml', '.js', '.mjs', '.cjs', '.ts',
+  '.ps1', '.sh', '.txt', '.template',
+]);
 
 function readExisting(filePath: string): string | undefined {
   try {
@@ -21,7 +27,7 @@ export function writeManagedText(filePath: string, content: string): boolean {
 }
 
 export function copyManagedFile(source: string, destination: string): void {
-  if (!existsSync(destination)) {
+  if (!MANAGED_TEXT_EXTENSIONS.has(extname(source).toLowerCase()) || !existsSync(destination)) {
     copyFileSync(source, destination);
     return;
   }
