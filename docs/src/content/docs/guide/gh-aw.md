@@ -2233,7 +2233,7 @@ The v0.91.5 compiler owns the reserved `aw_context` dispatch input; workflow
 sources must not declare it. The generated workflows retain that optional
 string input and Squad's existing provenance checks. The dispatcher alone uses
 Copilot SDK mode because this compiler disables native CLI web-fetch in offline
-BYOK mode. The SDK adapter preserves `web-fetch` for explicit `/squad research`,
+bring-your-own-key mode. The SDK adapter preserves `web-fetch` for explicit `/squad research`,
 the pinned Copilot CLI `1.0.78`, the `squad` agent, and the existing network and
 safe-output policies. Other workflows continue using their existing engine mode.
 
