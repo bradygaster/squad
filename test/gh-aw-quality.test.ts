@@ -3942,6 +3942,13 @@ describe('gh-aw: canonical package integrity contract', () => {
         expect(lock.on.workflow_dispatch.inputs.aw_context)
           .toEqual({ default: '', description: 'Agent caller context (Reserved for Agentic Workflows).', required: false, type: 'string' });
       }
+      if (name === 'squad-bootstrap') {
+        expect(lock.jobs.conclusion.permissions).toEqual({
+          actions: 'read',
+          issues: 'write',
+          'pull-requests': 'read',
+        });
+      }
       if (source.includes('  - shared/squad.md')) {
         const token = lock.jobs.activation.steps.find((step: { id?: string }) => step.id === 'squad-app-token');
         expect(token.with.repositories).toBe('${{ github.repository }}');
