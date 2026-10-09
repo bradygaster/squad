@@ -155,8 +155,10 @@ describe('gh-aw implement workflows', () => {
 
     expect(dispatcher).toContain('bots: ["github-actions[bot]"]');
     expect(worker).toContain('bots: ["github-actions[bot]"]');
-    expect(dispatcher).toContain('aw_context:');
-    expect(worker).toContain('aw_context:');
+    expect(dispatcherFrontmatter).not.toMatch(/^      aw_context:/m);
+    expect(workerFrontmatter).not.toMatch(/^      aw_context:/m);
+    expect(dispatcher).toContain('github.event.inputs.aw_context');
+    expect(worker).toContain('github.event.inputs.aw_context');
     expect(configuredWorkerTargets).toContain('squad-implement-worker');
     expect(dispatchMax).toBeGreaterThan(0);
     expect(dispatchMax).toBeLessThanOrEqual(slotCap);
@@ -974,10 +976,11 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     // this job IS conditional on a create_pull_request item and IS unpinned,
     // so relying on it is what left comment-only runs without a checkout.
     const ghAwCheckout = job.slice(0, trustedIndex);
-    expect(ghAwCheckout).toContain('name: Checkout repository');
-    expect(ghAwCheckout).toMatch(
-      /name: Checkout repository\n\s+if: [^\n]*contains\(needs\.agent\.outputs\.output_types, 'create_pull_request'\)/,
+    const checkout = parse(compiledWorkerLock()).jobs.safe_outputs.steps.find(
+      (step: { name?: string }) => step.name === 'Checkout repository (gh-aw default)',
     );
+    expect(checkout.if).toContain("contains(needs.agent.outputs.output_types, 'create_pull_request')");
+    expect(checkout.with.ref).toBeUndefined();
     expect(ghAwCheckout).not.toContain('ref: refs/heads/');
   }, 60000);
 

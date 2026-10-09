@@ -43,10 +43,6 @@ on:
           this dispatch implements. Required when request_origin is squad-retro.
         required: false
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
   pull_request:
     types: [closed]
 if: >-
@@ -78,6 +74,10 @@ network:
     - rust
 imports:
   - shared/squad.md
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
 resources:
   - shared/squad-retro-provenance.mjs
   - shared/squad-implementation-provenance.mjs
@@ -638,7 +638,7 @@ on the merge commit cannot substitute. Human approval is independently required.
 
 Do not pass `command` or `issue_number` as top-level `dispatch_workflow`
 arguments; gh-aw only forwards workflow inputs from the nested `inputs` object.
-The `squad` target declares `aw_context`, so gh-aw injects the current relay
+The compiler adds `aw_context` to the `squad` target, so gh-aw injects the current relay
 context automatically. Do not supply, copy, or synthesize `aw_context` in the
 tool payload.
 Never edit files or create a pull request in this mode. Stop after the `squad`

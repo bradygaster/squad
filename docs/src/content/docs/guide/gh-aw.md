@@ -11,6 +11,16 @@ request you can review before merging.
 
 This guide covers setup, every slash command, and daily usage patterns.
 
+> **v0.91.5 candidate: UNAPPROVED rollout blocker.** Do not deploy this compiler
+> upgrade until the permission change is explicitly approved. Compared with
+> v0.89.22, v0.91.5 adds `actions: read` and `pull-requests: read` to the Bootstrap
+> `conclusion` job, which previously requested only `issues: write`. The compiler
+> requires these reads for existing automatic failure-issue reporting; disabling
+> that reporting would change standalone behavior. No additional write scope is
+> introduced. Local installation and strict verification do not approve hosted
+> permissions, and the dispatcher SDK adapter's hosted runtime parity still
+> requires runtime evidence.
+
 ---
 
 ## Quick start
@@ -31,7 +41,7 @@ set -euo pipefail
 gh auth status
 
 # gh-aw-exact-version-start
-required_gh_aw_version="v0.89.22"
+required_gh_aw_version="v0.91.5"
 gh_aw_version_output="$(gh aw --version 2>&1)" || gh_aw_version_output=""
 gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
 
@@ -47,7 +57,7 @@ if [ "${gh_aw_version}" != "${required_gh_aw_version}" ]; then
 fi
 
 test "${gh_aw_version}" = "${required_gh_aw_version}" || {
-  echo "STOP: required gh-aw v0.89.22, but found ${gh_aw_version:-unavailable} after clean installation." >&2
+  echo "STOP: required gh-aw v0.91.5, but found ${gh_aw_version:-unavailable} after clean installation." >&2
   exit 1
 }
 # gh-aw-exact-version-end
@@ -554,7 +564,7 @@ retrospective proposal (see [Retrospective
 auto-implementation](#retrospective-auto-implementation-opt-in) below).
 
 `gh aw add` also installs the Squad skill under `.github/skills/`, which is why
-the bootstrap commit stages that path alongside the workflows. gh-aw v0.89.22
+the bootstrap commit stages that path alongside the workflows. gh-aw v0.91.5
 additionally generates `.github/skills/agentic-workflows/SKILL.md`. That
 tool-owned router loads mutable prompt files from the current `github/gh-aw`
 repository and is not bound to the pinned Squad revision or compiler version.
@@ -588,9 +598,9 @@ On a clean repository, `gh aw add` reports these expected safe-update changes:
 > the workflows *reference* so you can approve that surface — it is not asking you
 > to supply them. Both secrets are optional, they need not exist, and you do not
 > need to create either one to enlist a repository. Single-repo activation runs on
-> the built-in `github.token`. Configure these only for cross-repo access or
-> elevated permissions — see [enhanced permissions with a GitHub
-> App](#optional-enhanced-permissions-with-a-github-app) and [PAT
+> the built-in `github.token`. Configure these only for an explicit alternative
+> activation identity — see [activation credentials with a GitHub
+> App](#optional-activation-credentials-with-a-github-app) and [PAT
 > fallback](#optional-pat-fallback).
 
 Review the report before approving it. If it contains only those documented
@@ -612,7 +622,7 @@ gh aw compile --strict
 ```
 
 Run this exact command after any required first-install approval and before
-committing. With gh-aw v0.89.22, require exactly two warnings, one occurrence
+committing. With gh-aw v0.91.5, require exactly two warnings, one occurrence
 of each exact diagnostic header below (including its workflow path):
 
 <!-- compile-warning-allowlist-start -->
@@ -741,10 +751,10 @@ immutable, while each activation installs the current stable CLI. Direct consume
 can still select a release through the installer's `VERSION` environment variable
 or the composite action's optional `version` input; the shared workflow uses neither.
 
-### Optional: enhanced permissions with a GitHub App
+### Optional: activation credentials with a GitHub App
 
-By default the workflow uses the built-in `github.token`. For cross-repo access
-or elevated permissions, configure a GitHub App:
+By default activation uses the built-in `github.token`. To authenticate
+activation with a GitHub App instead, configure:
 
 | Setting | Type | Purpose |
 |---------|------|---------|
@@ -752,8 +762,11 @@ or elevated permissions, configure a GitHub App:
 | `SQUAD_GITHUB_APP_PRIVATE_KEY` | Secret | App private key (PEM) |
 | `SQUAD_GITHUB_APP_OWNER` | Variable | App installation owner (org or user) |
 
-The workflow mints an installation token from these credentials at activation
-time.
+The workflow mints an installation token at activation time, explicitly scoped
+to the current repository with `contents: read`, as required by gh-aw v0.91.5
+strict compilation. Only `squad init` and `squad health` receive this token.
+It does not grant cross-repository access or additional authority to the agent,
+reviewer, or safe-output jobs.
 
 ### Optional: PAT fallback
 
@@ -1561,7 +1574,7 @@ interchangeable — the trigger, the wording, and the remedy differ:
 | Issues not created | Created count is below the plan's declared total | `N of M issues created so far — rerun the identical activation command to continue.` |
 | Labels not applied | An activated issue had no `add_labels` call accepted | `{labeled} of {activated} activated issues had a label operation accepted` |
 
-Either one calls `report_incomplete`. With pinned gh-aw v0.89.22, **this fails the
+Either one calls `report_incomplete`. With pinned gh-aw v0.91.5, **this fails the
 conclusion step** and records the reason in the Actions logs. The dispatcher
 does not create or update a separate tracking issue. Inspect the run and the
 guarded activation summary on the originating issue:
@@ -2200,7 +2213,7 @@ prints the exact safe recovery commands.
 
 The schema-v2 integrity manifest records two complete compiled lock digests per
 workflow: `lock_sha256` for a per-workflow source annotation and
-`package_lock_sha256` for a package-root annotation. gh-aw v0.89.22 emits
+`package_lock_sha256` for a package-root annotation. gh-aw v0.91.5 emits
 `bradygaster/squad/workflows@SHA` for direct package includes, but can emit
 `bradygaster/squad/workflows/package/<workflow>.md@SHA` when installing dispatched
 dependencies. Fresh and forced installs can therefore contain different mixtures.
@@ -2210,11 +2223,26 @@ URLs, action pins, permissions and runtime bytes remain integrity-checked.
 No additional fields are removed during lock normalization.
 
 Manifest generation and installation test fixtures seed isolated compiler action
-locks with the immutable `setup` and `setup-cli` pins for gh-aw v0.89.22. Both
+locks with the immutable `setup` and `setup-cli` pins for gh-aw v0.91.5. Both
 source variants use the real strict compiler and validate its version and emitted
 action pins. This avoids a second network resolution returning a mutable version
 tag when credentials or the API are unavailable. Missing or altered pins fail
 generation; mutable-tag compiled locks still fail installation integrity.
+
+The v0.91.5 compiler owns the reserved `aw_context` dispatch input; workflow
+sources must not declare it. The generated workflows retain that optional
+string input and Squad's existing provenance checks. The dispatcher alone uses
+Copilot SDK mode because this compiler disables native CLI web-fetch in offline
+BYOK mode. The SDK adapter preserves `web-fetch` for explicit `/squad research`,
+the pinned Copilot CLI `1.0.78`, the `squad` agent, and the existing network and
+safe-output policies. Other workflows continue using their existing engine mode.
+
+Integrations compiling with an explicit `gh aw compile --schedule-seed owner/repo`
+must set `SQUAD_GH_AW_SCHEDULE_SEED=owner/repo` when running the verifier's
+`--strict-compile` gate. This changes only the scratch compiler's scattering
+seed, not integrity normalization or the byte-for-byte lock comparison.
+Without this opt-in, verification continues to derive the seed from the
+consumer's `origin` remote.
 
 This fixes the post-merge installation failure in #2103: the old generator and
 local-consumer tests covered only per-workflow annotations, while the native

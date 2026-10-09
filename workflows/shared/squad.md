@@ -12,7 +12,8 @@
 # Activation installs the standalone release (no npm), preserves a committed
 # cast or initializes one, checks readiness, and uploads `squad-state`.
 # The agent receives .squad/ and .github/agents/squad.agent.md, never the CLI.
-# gh-aw loads that coordinator natively; engine.agent selects `--agent squad`.
+# gh-aw loads that coordinator natively; each importing workflow selects
+# `engine.agent: squad`.
 # Import `shared/squad.md` locally or pin the remote path to a commit SHA.
 #
 # Optional custom credentials for `squad init`: vars.SQUAD_GITHUB_APP_ID /
@@ -33,10 +34,6 @@
 # backend would fail silently. If a committed .squad/team.md with roster entries
 # exists (e.g. from a previous /squad cast), init is skipped to preserve it.
 model: ${{ vars.SQUAD_MODEL || 'auto' }}
-engine:
-  id: copilot
-  version: 1.0.78
-  agent: squad
 ambient-folders:
   - .squad
 
@@ -490,6 +487,8 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
 
       - name: Install Squad CLI from standalone release
         id: squad-cli

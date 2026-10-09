@@ -360,7 +360,7 @@ describe('gh-aw squad-deps-worker S2: Wave 1 protected-files.exclude (#1748)', (
     expect(depsWorkerFrontmatter).toMatch(/^on:\r?\n\s+bots: \["github-actions\[bot\]"\]\r?\n\s+workflow_dispatch:/m);
     expect(depsWorker).not.toContain('slash_command:');
     expect(depsWorkerFrontmatter).toContain('issue_number:');
-    expect(depsWorkerFrontmatter).toContain('aw_context:');
+    expect(depsWorkerFrontmatter).not.toMatch(/^      aw_context:/m);
     expect(depsWorker).toMatch(/^tools:\r?\n\s+edit:/m);
 
     const dispatcherDispatch = yamlBlock(dispatcherFrontmatter, 'dispatch-workflow');

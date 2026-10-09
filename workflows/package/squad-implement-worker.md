@@ -1,9 +1,5 @@
 ---
 model: ${{ vars.SQUAD_MODEL || 'auto' }}
-engine:
-  id: copilot
-  version: 1.0.78
-  agent: squad
 ambient-folders:
   - .squad
 safe-outputs:
@@ -737,6 +733,8 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
       - name: Install Squad CLI from standalone release
         id: squad-cli
         uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f
@@ -835,10 +833,6 @@ on:
         description: The exact standalone Action-Key value of the squad-retro-action issue this dispatch implements. Required when request_origin is squad-retro.
         required: false
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
   pull_request:
     types:
       - closed
@@ -864,6 +858,10 @@ network:
     - python
     - ruby
     - rust
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
 tools:
   edit: null
   bash: true
@@ -1093,7 +1091,7 @@ on the merge commit cannot substitute. Human approval is independently required.
 
 Do not pass `command` or `issue_number` as top-level `dispatch_workflow`
 arguments; gh-aw only forwards workflow inputs from the nested `inputs` object.
-The `squad` target declares `aw_context`, so gh-aw injects the current relay
+The compiler adds `aw_context` to the `squad` target, so gh-aw injects the current relay
 context automatically. Do not supply, copy, or synthesize `aw_context` in the
 tool payload.
 Never edit files or create a pull request in this mode. Stop after the `squad`

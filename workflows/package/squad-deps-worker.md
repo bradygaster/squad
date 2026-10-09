@@ -1,9 +1,5 @@
 ---
 model: ${{ vars.SQUAD_MODEL || 'auto' }}
-engine:
-  id: copilot
-  version: 1.0.78
-  agent: squad
 ambient-folders:
   - .squad
 safe-outputs:
@@ -602,6 +598,8 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
       - name: Install Squad CLI from standalone release
         id: squad-cli
         uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f
@@ -692,10 +690,6 @@ on:
         description: Authoritative dispatcher run attempt that minted the session
         required: true
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -713,6 +707,10 @@ network:
     - dotnet
     - go
     - node
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
 tools:
   edit: null
   bash: true

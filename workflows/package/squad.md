@@ -1,9 +1,5 @@
 ---
 model: ${{ vars.SQUAD_MODEL || 'auto' }}
-engine:
-  id: copilot
-  version: 1.0.78
-  agent: squad
 ambient-folders:
   - .squad
 safe-outputs:
@@ -681,6 +677,8 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
       - name: Install Squad CLI from standalone release
         id: squad-cli
         uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f
@@ -766,10 +764,6 @@ on:
         description: Issue number to implement when run manually
         required: false
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
 if: github.event_name != 'issues' || github.actor != 'github-actions[bot]' || github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' || !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
 permissions:
   actions: read
@@ -784,6 +778,11 @@ concurrency:
 network:
   allowed:
     - defaults
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
+  copilot-sdk: true
 tools:
   bash: true
   web-fetch: null
@@ -2244,7 +2243,7 @@ gate `create-pull-request`. It diagnoses a `cast_failure` and
 outputs run separately after the agent; this diagnosis cannot prevent a pull
 request that is materialized concurrently.
 
-Pinned gh-aw v0.89.22 makes `report_incomplete` fail the conclusion step.
+Pinned gh-aw v0.91.5 makes `report_incomplete` fail the conclusion step.
 Automatic failure, failed-job, detection, no-op tracking issues and generic
 activation/completion comments are disabled in the dispatcher and router:
 conclusion runs independently of safe-output authorization and completion
@@ -3454,13 +3453,14 @@ limit) and the threshold the phased-activation rule above enforces. Worst case:
 |---|---|---|
 | `create-issue` | 50 — one per epic/task | 75 |
 | `add_labels` | 50 — one per created issue | 110 |
-| Labels in one call | 2 — `squad` + `squad:{agent}` | not capped |
+| Labels in one call | 2 — `squad` + `squad:{agent}` | 10 |
 | Label names per run | 100 — 50 × 2 | 110 |
 
 **`max` limits safe-output items (tool calls), not label names inside a call.** One
 `add_labels` call carrying two labels consumes **one** unit of budget, not two. gh-aw's
-injected constraint still phrases that number as "Maximum 110 label(s) can be added",
-which reads as a budget of *names*. That wording is the hazard 110 is sized against: it covers both readings — 50 calls and 100 names — so neither can justify
+injected constraint now states "Maximum 110 add_labels call(s) allowed" and a maximum
+of 10 labels per call. The existing 110 budget also covers the older compiler's
+ambiguous label-name reading — 50 calls and 100 names — so neither can justify
 skipping a label operation. Never batch several issues' labels into one call to save
 budget (it breaks per-issue correspondence), and never stop labeling early.
 
