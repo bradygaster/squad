@@ -3985,6 +3985,58 @@ describe('gh-aw: canonical package integrity contract', () => {
     }
   }, 120_000);
 
+  it.each(['workflow', 'package', 'mixed'] as const)(
+    'binds the complete %s lock digest to the declared 24-hour failure expiry', sourceBinding => {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+      const configPath = join(root, '.github/workflows/aw.json');
+      const config = JSON.stringify({ maintenance: { action_failure_issue_expires: 24 } });
+      const workerPath = join(root, '.github/workflows/squad-implement-worker.lock.yml');
+      expect(readText(workerPath)).toContain('GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "168"');
+      writeFileSync(configPath, config);
+      expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      compileWithPinnedActions(root);
+      expect(readText(workerPath)).toContain('GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "24"');
+      expect(readText(configPath)).toBe(config);
+      expect(verifyInstall(root, { strictCompile: true }).failures).toEqual([]);
+
+      writeFileSync(configPath, JSON.stringify({ maintenance: { action_failure_issue_expires: 168 } }));
+      expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      unlinkSync(configPath);
+      expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      writeFileSync(configPath, config);
+      const original = readText(workerPath);
+      for (const modified of [
+        original.replace('GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "24"', 'GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "48"'),
+        original.replace('contents: read', 'contents: write'),
+        original.replace('uses: actions/github-script@', 'uses: attacker/github-script@'),
+      ]) {
+        expect(modified).not.toBe(original);
+        writeFileSync(workerPath, modified);
+        expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      }
+    }, 120_000,
+  );
+
+  it.each([0, -1, 48, '24', null, {}, []])(
+    'rejects unsupported failure expiry %j without compiler fallback', expiry => {
+      const root = makeConsumer();
+      writeFileSync(join(root, '.github/workflows/aw.json'),
+        JSON.stringify({ maintenance: { action_failure_issue_expires: expiry } }));
+      expect(verifyInstall(root).failures.join('\n')).toContain('Unsupported');
+    },
+  );
+
+  it('rejects invalid consumer configuration instead of selecting baseline digests', () => {
+    const root = makeConsumer();
+    const path = join(root, '.github/workflows/aw.json');
+    for (const config of ['{', 'null', '[]', '{"maintenance":[]}', '{"maintenance":null}']) {
+      writeFileSync(path, config);
+      expect(verifyInstall(root).failures.length, config).toBeGreaterThan(0);
+    }
+  });
+
   it.each(['v0.89.22', 'v0.91.4', 'v0.91.50', 'v0.91.5-preview'])(
     'rejects ownership from unsupported installer %s', version => {
       const root = makeConsumer();
@@ -4207,6 +4259,10 @@ describe('gh-aw: canonical package integrity contract', () => {
       contract => { contract.schema_version = 1; },
       contract => { delete contract.workflows[0].package_lock_sha256; },
       contract => { contract.workflows[0].package_lock_sha256 = 'invalid'; },
+      contract => { delete contract.lock_variants; },
+      contract => { contract.lock_variants[0].action_failure_issue_expires = 48; },
+      contract => { contract.lock_variants[0].workflows[0].lock_sha256 = 'invalid'; },
+      contract => { contract.lock_variants[0].workflows.reverse(); },
     ];
     for (const mutate of mutations) {
       expect(mutateContract(makeConsumer(), mutate).length).toBeGreaterThan(0);

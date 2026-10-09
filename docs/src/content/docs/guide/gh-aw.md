@@ -2225,6 +2225,18 @@ annotation; it never tries both until one passes. Compiled source comments,
 URLs, action pins, permissions and runtime bytes remain integrity-checked.
 No additional fields are removed during lock normalization.
 
+The manifest also contains a separately compiled, full-lock digest variant for
+consumers that explicitly set `maintenance.action_failure_issue_expires` to `24`
+in `.github/workflows/aw.json`. This intentionally honors the adopter's existing
+24-hour failure-report retention instead of the standalone 168-hour default.
+The verifier selects that variant only from the actual configuration, never by
+trying whichever digest matches. Unsupported expiry values, malformed
+configuration, or any unrelated lock mutation fail verification. Generation
+proves that this variant changes only the failure-expiry environment value;
+no expiry field is removed from the hash. Strict compilation still compares
+all native lock bytes, and staged verification includes the unchanged consumer
+configuration. Squad never rewrites that file.
+
 Manifest generation and installation test fixtures seed isolated compiler action
 locks with the immutable `setup` and `setup-cli` pins for gh-aw v0.91.5. Both
 source variants use the real strict compiler and validate its version and emitted
