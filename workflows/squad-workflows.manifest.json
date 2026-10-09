@@ -14,18 +14,18 @@
       "source": "workflows/package/squad.md",
       "destination": ".github/workflows/squad.md",
       "lock": ".github/workflows/squad.lock.yml",
-      "source_sha256": "163a222ad305653394211c84a68facd272d59b777a2b4a3118e8877bd4ad9002",
-      "lock_sha256": "c5746fcc3c623a20d3869da35d47f8115204b560be09d9ec79dc7ddb01629107",
-      "package_lock_sha256": "9c5f31807d0bbd18addbcee47d601d45edd0741b6912d8cd607012b327032eb2"
+      "source_sha256": "ad0d41b593fdb61d1c2431b4726bbb8c03adbe6561f59b3223a46b42f4b48400",
+      "lock_sha256": "ca0c5bb0b173c0ff9534016912af772260e2fedba6ceae24c71dd27f235c6c6b",
+      "package_lock_sha256": "c2f98965d838cd2b759510e18d346d8fe1ae0cf8d366837b91428a44cf36db53"
     },
     {
       "name": "squad-implement-worker",
       "source": "workflows/package/squad-implement-worker.md",
       "destination": ".github/workflows/squad-implement-worker.md",
       "lock": ".github/workflows/squad-implement-worker.lock.yml",
-      "source_sha256": "c381086b69f54785e7cb7add436aa4149be837c62f69cc3e3b9dd1f04755a50d",
-      "lock_sha256": "2650742c88efc16ea43408e20b85e5fd7a3fae7f9fec9bd428dffebacd246977",
-      "package_lock_sha256": "127a7a35d9eecdf46f0ba69b23bc7464e5a2244a26d77c5d136fbba65e5d9d5f"
+      "source_sha256": "9e34eb6d59478e18da65f7aaa19e29110abb3393028a706c59091d55ca24fb6a",
+      "lock_sha256": "d40e879f6eeb79b3ddc7c0fa81ad2dbec8cb761dae1a16b17042fc81088026af",
+      "package_lock_sha256": "aa0c05a81f76c8f001d19ffdbe76765a6dbbaca464a58346fb223b93809b1902"
     },
     {
       "name": "squad-review",
@@ -41,18 +41,18 @@
       "source": "workflows/package/squad-deps-worker.md",
       "destination": ".github/workflows/squad-deps-worker.md",
       "lock": ".github/workflows/squad-deps-worker.lock.yml",
-      "source_sha256": "723d36c2b510b8edf5ccb126dddb8f710f92ed17a537eac22b945c7c7ea92590",
-      "lock_sha256": "9a077ae18fcd6660027426858bdb74476f699f0b7f79a0fe365067780a6760e8",
-      "package_lock_sha256": "6a3b5622e5b25f235dd33c7bdfe6bbad29e8424b43c4addbcedae323996fa4ac"
+      "source_sha256": "d48c640b39baffc8f8ed5ead9d675e86cb5788f1177cf5827cdcf5e69732a353",
+      "lock_sha256": "68c9ee78cf91e75d700a8ddca40faa6b6d77728c25b43f676bafd8e47b4bc5d9",
+      "package_lock_sha256": "bbac67cbf1d9d88eeddb5d7cd44fec0b1c759db1c5f4d9361b45391c03384c67"
     },
     {
       "name": "squad-retro",
       "source": "workflows/package/squad-retro.md",
       "destination": ".github/workflows/squad-retro.md",
       "lock": ".github/workflows/squad-retro.lock.yml",
-      "source_sha256": "5e1c67b39fe0594631a3246e6e754fd063ec11025f0fa1651af531981df13917",
-      "lock_sha256": "08f45aba2094c15c84acb975119f706cb3014200bbfb56b17b11affd35c12378",
-      "package_lock_sha256": "a3c67aa097a48c9fa67aedadb1169ade841132ee7557b234cbc8c8deba869978"
+      "source_sha256": "bf2e81e0d4f9c6498a5546f6a8118fa0dca1f85fdfba248365a1a3b35031ab07",
+      "lock_sha256": "be7fa80936260ee6ac8cd8f73c3e7682d15c5b3040e95af5a494567ba64a55b0",
+      "package_lock_sha256": "a4fc8b5fe055f3810ce60e7913ecea55bd2a07cc21031bc57b2d04b6e7a90103"
     },
     {
       "name": "squad-improvement-worker",
@@ -161,7 +161,7 @@
       "package_destination": ".github/aw/squad/runtime/shared/squad.md",
       "destination": ".github/workflows/shared/squad.md",
       "ownership": "manifest",
-      "sha256": "22cbdcc8392de82ef27bc57e47e0fd16a63971e6650f844d592824a483dbb05b"
+      "sha256": "d09adeac29dca305a7b37b81ca8886e81e985c05299d1a75e6dee6edd072311f"
     },
     {
       "path": "shared/squad-planning-ontology.md",

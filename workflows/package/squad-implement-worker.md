@@ -733,7 +733,7 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
-          repositories: ${{ github.event.repository.name }}
+          repositories: ${{ github.repository }}
           permission-contents: read
       - name: Install Squad CLI from standalone release
         id: squad-cli

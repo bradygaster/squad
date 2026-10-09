@@ -765,6 +765,9 @@ activation with a GitHub App instead, configure:
 The workflow mints an installation token at activation time, explicitly scoped
 to the current repository with `contents: read`, as required by gh-aw v0.91.5
 strict compilation. Only `squad init` and `squad health` receive this token.
+The repository is passed as its full `owner/name`; a configured installation
+owner that does not match the current repository fails explicitly rather than
+minting a token for a same-named repository under another owner.
 It does not grant cross-repository access or additional authority to the agent,
 reviewer, or safe-output jobs.
 

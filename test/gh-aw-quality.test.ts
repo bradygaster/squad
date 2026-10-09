@@ -3944,7 +3944,8 @@ describe('gh-aw: canonical package integrity contract', () => {
       }
       if (source.includes('  - shared/squad.md')) {
         const token = lock.jobs.activation.steps.find((step: { id?: string }) => step.id === 'squad-app-token');
-        expect(token.with.repositories).toBe('${{ github.event.repository.name }}');
+        expect(token.with.repositories).toBe('${{ github.repository }}');
+        expect(token.with.owner).toBe('${{ vars.SQUAD_GITHUB_APP_OWNER }}');
         expect(token.with['permission-contents']).toBe('read');
         expect(Object.keys(token.with).filter(key => key.startsWith('permission-')))
           .toEqual(['permission-contents']);
