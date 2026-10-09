@@ -349,7 +349,7 @@ describe('gh-aw-enlistment skill', () => {
     it('pins and verifies the package-capable gh-aw compiler', () => {
       expect(content).toContain('gh_aw_version_output="$(gh aw --version 2>&1)"');
       expect(content).toContain('gh extension remove gh-aw');
-      expect(content).toContain('required_gh_aw_version="v0.89.22"');
+      expect(content).toContain('required_gh_aw_version="v0.91.5"');
       expect(content).toContain('gh extension install --pin "${required_gh_aw_version}" github/gh-aw');
       expect(content).toContain('never select a newer release');
       expect(content).toContain('PowerShell');
@@ -394,37 +394,37 @@ describe('gh-aw-enlistment skill', () => {
     const agentGuide = readLF(AGENT_GUIDE);
     const versionGate = extractVersionGate(guide);
 
-    it('accepts an existing exact v0.89.22 installation without reinstalling', () => {
-      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22');
+    it('accepts an existing exact v0.91.5 installation without reinstalling', () => {
+      const result = runVersionGate(versionGate, 'v0.91.5', 'v0.91.5');
       expect(result.status).toBe(0);
       expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
       expect(result.stderr).not.toContain('CALL remove');
       expect(result.stderr).not.toContain('CALL install');
     });
 
-    it('captures exact v0.89.22 version output emitted on stderr', () => {
-      const result = runVersionGate(versionGate, 'v0.89.22', 'v0.89.22', 'stderr');
+    it('captures exact v0.91.5 version output emitted on stderr', () => {
+      const result = runVersionGate(versionGate, 'v0.91.5', 'v0.91.5', 'stderr');
       expect(result.status).toBe(0);
       expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(1);
       expect(result.stderr).not.toContain('CALL remove');
       expect(result.stderr).not.toContain('CALL install');
     });
 
-    it('removes pre-existing v0.89.21 and verifies a clean v0.89.22 install', () => {
-      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.22');
+    it('removes pre-existing v0.89.21 and verifies a clean v0.91.5 install', () => {
+      const result = runVersionGate(versionGate, 'v0.89.21', 'v0.91.5');
       expect(result.status).toBe(0);
       expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
       expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
-      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.91\.5$/gm)).toHaveLength(1);
     });
 
     it('fails closed when a clean reinstall persistently reports v0.89.21', () => {
       const result = runVersionGate(versionGate, 'v0.89.21', 'v0.89.21');
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain('required gh-aw v0.89.22, but found v0.89.21');
+      expect(result.stderr).toContain('required gh-aw v0.91.5, but found v0.89.21');
       expect(result.stderr.match(/^CALL version$/gm)).toHaveLength(2);
       expect(result.stderr.match(/^CALL remove$/gm)).toHaveLength(1);
-      expect(result.stderr.match(/^CALL install --pin v0\.89\.22$/gm)).toHaveLength(1);
+      expect(result.stderr.match(/^CALL install --pin v0\.91\.5$/gm)).toHaveLength(1);
       expect(guide.indexOf(VERSION_GATE_END)).toBeLessThan(
         guide.indexOf('git switch -c chore/squad-gh-aw-bootstrap'),
       );

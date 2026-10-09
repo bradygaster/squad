@@ -15,10 +15,6 @@ on:
         description: Exact unedited human approval comment ID (required for manual retry too)
         required: true
         type: string
-      aw_context:
-        description: Relay metadata, never approval evidence
-        required: false
-        type: string
       squad_approval_relay:
         description: Skill-forwarded origin (event_type/item_type/item_number/comment_id) for the router-relayed path, where this run's own workflow_dispatch trigger carries no native item payload for the engine to derive aw_context from. Never approval evidence; re-verified live.
         required: false

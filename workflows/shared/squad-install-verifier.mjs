@@ -22,7 +22,7 @@ export const PACKAGE_NAME = 'bradygaster/squad/workflows';
 export const PACKAGE_MANIFEST = 'workflows/aw.yml';
 export const CONTRACT_SOURCE = 'workflows/squad-workflows.manifest.json';
 export const CONTRACT_DESTINATION = '.github/aw/squad-workflows.manifest.json';
-export const MIN_GH_AW_VERSION = 'v0.89.22';
+export const MIN_GH_AW_VERSION = 'v0.91.5';
 export const OWNERSHIP_ENTRY_COUNT = 26;
 export const OWNERSHIP_DESTINATION =
   '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json';
@@ -35,9 +35,11 @@ export const TRIGGER_PROBE_DESTINATION =
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const LOCK_REVISION_PLACEHOLDER = 'f'.repeat(40);
-const COMPILER_ACTION_VERSION = 'v0.89.22';
-const COMPILER_ACTION_SHA = '2fbab69bfca02bebd76cd0fc43f2d12acfed994f';
+const COMPILER_ACTION_VERSION = 'v0.91.5';
+const COMPILER_ACTION_SHA = '16b430146d5d5646eccef5a1ceb72152333b18b9';
 const COMPILER_ACTION_REPOS = ['github/gh-aw-actions/setup', 'github/gh-aw-actions/setup-cli'];
+const REPO_CONFIG_PATH = '.github/workflows/aw.json';
+const FAILURE_EXPIRY_VARIANTS = Object.freeze([24]);
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -91,6 +93,7 @@ const TOP_LEVEL_KEYS = deepFreeze([
   'minimum_gh_aw_version',
   'revision_policy',
   'workflows',
+  'lock_variants',
   'shared_runtime',
   'skills',
   'bootstrap',
@@ -179,6 +182,23 @@ export function validateContract(contract) {
     assertDigest(entry.source_sha256, `Workflow ${name} source_sha256`);
     assertDigest(entry.lock_sha256, `Workflow ${name} lock_sha256`);
     assertDigest(entry.package_lock_sha256, `Workflow ${name} package_lock_sha256`);
+  });
+
+  assertArray(contract.lock_variants, FAILURE_EXPIRY_VARIANTS.length, 'Integrity contract lock_variants');
+  contract.lock_variants.forEach((variant, index) => {
+    assertKeys(variant, ['action_failure_issue_expires', 'workflows'], `Lock variant ${index}`);
+    if (variant.action_failure_issue_expires !== FAILURE_EXPIRY_VARIANTS[index]) {
+      throw new Error(`Unsupported action_failure_issue_expires in lock variant ${index}.`);
+    }
+    assertArray(variant.workflows, WORKFLOW_NAMES.length, `Lock variant ${index} workflows`);
+    variant.workflows.forEach((entry, workflowIndex) => {
+      assertKeys(entry, ['name', 'lock_sha256', 'package_lock_sha256'], `Lock variant workflow ${workflowIndex}`);
+      if (entry.name !== WORKFLOW_NAMES[workflowIndex]) {
+        throw new Error(`Lock variant workflow ${workflowIndex} name must be ${WORKFLOW_NAMES[workflowIndex]}.`);
+      }
+      assertDigest(entry.lock_sha256, `Lock variant ${entry.name} lock_sha256`);
+      assertDigest(entry.package_lock_sha256, `Lock variant ${entry.name} package_lock_sha256`);
+    });
   });
 
   assertArray(contract.shared_runtime, RUNTIME_TUPLES.length, 'Integrity contract shared_runtime');
@@ -428,7 +448,7 @@ export function compileWithPinnedActions(root, env = process.env) {
   }
 }
 
-function buildLockDigests(root, renderedWorkflows, packageSource = false) {
+function buildLockDigests(root, renderedWorkflows, packageSource = false, expiryHours, baseline) {
   const scratch = mkdtempSync(join(resolve(root), '.squad-gh-aw-lock-digests-'));
   try {
     const workflowRoot = resolve(scratch, '.github/workflows');
@@ -440,11 +460,26 @@ function buildLockDigests(root, renderedWorkflows, packageSource = false) {
         workflowWithSource(content, name, LOCK_REVISION_PLACEHOLDER, packageSource),
       );
     }
+    if (expiryHours !== undefined) {
+      writeFileSync(resolve(scratch, REPO_CONFIG_PATH), stableJson({
+        maintenance: { action_failure_issue_expires: expiryHours },
+      }));
+    }
     spawnChecked('git', ['init', '--quiet'], scratch);
     compileWithPinnedActions(scratch);
     return new Map(WORKFLOW_NAMES.map((name) => {
       const lock = readRequired(scratch, `.github/workflows/${name}.lock.yml`);
-      return [name, sha256(normalizeCompiledLock(lock, LOCK_REVISION_PLACEHOLDER))];
+      const normalized = normalizeCompiledLock(lock, LOCK_REVISION_PLACEHOLDER);
+      if (baseline) {
+        const expected = baseline.get(name).normalized.replace(
+          /^(\s+GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: )"168"$/gm,
+          `$1"${expiryHours}"`,
+        );
+        if (normalized !== expected) {
+          throw new Error(`Compiler expiry variant changes more than failure retention for ${name}.`);
+        }
+      }
+      return [name, { digest: sha256(normalized), normalized }];
     }));
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -457,6 +492,18 @@ export function buildContract(root) {
   ));
   const lockDigests = buildLockDigests(root, renderedWorkflows);
   const packageLockDigests = buildLockDigests(root, renderedWorkflows, true);
+  const lockVariants = FAILURE_EXPIRY_VARIANTS.map(expiryHours => {
+    const workflowDigests = buildLockDigests(root, renderedWorkflows, false, expiryHours, lockDigests);
+    const packageDigests = buildLockDigests(root, renderedWorkflows, true, expiryHours, packageLockDigests);
+    return {
+      action_failure_issue_expires: expiryHours,
+      workflows: WORKFLOW_NAMES.map(name => ({
+        name,
+        lock_sha256: workflowDigests.get(name).digest,
+        package_lock_sha256: packageDigests.get(name).digest,
+      })),
+    };
+  });
   return validateContract({
     schema_version: 2,
     package: PACKAGE_NAME,
@@ -472,10 +519,11 @@ export function buildContract(root) {
         destination,
         lock,
         source_sha256: sha256(content),
-        lock_sha256: lockDigests.get(name),
-        package_lock_sha256: packageLockDigests.get(name),
+        lock_sha256: lockDigests.get(name).digest,
+        package_lock_sha256: packageLockDigests.get(name).digest,
       };
     }),
+    lock_variants: lockVariants,
     shared_runtime: RUNTIME_TUPLES.map(
       ([path, source, package_destination, destination, ownership]) => ({
         path,
@@ -682,8 +730,8 @@ function verifyOwnership(root, contract, expectedRevision) {
   if (record.source !== `${PACKAGE_NAME}@${record.resolvedCommit}`) {
     throw new Error(`Package ownership source must be ${PACKAGE_NAME}@${record.resolvedCommit}.`);
   }
-  if (typeof record.installer !== 'string' || !/^gh-aw v0\.89\.22(?:\b|$)/.test(record.installer)) {
-    throw new Error('Package ownership installer must be gh-aw v0.89.22.');
+  if (typeof record.installer !== 'string' || !/^gh-aw v0\.91\.5(?:\s|$)/.test(record.installer)) {
+    throw new Error('Package ownership installer must be gh-aw v0.91.5.');
   }
   assertArray(record.files, OWNERSHIP_ENTRY_COUNT, 'Package ownership files');
   const expected = expectedOwnership(contract);
@@ -710,7 +758,7 @@ function digestMatchesWithFinalNewlineTolerance(content, expectedDigest) {
     .some(candidate => sha256(Buffer.from(candidate)) === expectedDigest);
 }
 
-function verifyWorkflowSourceBinding(root, entry, revision) {
+function verifyWorkflowSourceBinding(root, entry, revision, lockEntry = entry) {
   const installed = readRequired(root, entry.destination);
   const text = installed.toString('utf8');
   const lines = text.split('\n');
@@ -719,8 +767,8 @@ function verifyWorkflowSourceBinding(root, entry, revision) {
     .map((line, index) => line.startsWith('source:') ? index : -1)
     .filter(index => index >= 0);
   const sourceBindings = new Map([
-    [`source: ${PACKAGE_NAME}@${revision}`, entry.package_lock_sha256],
-    [`source: bradygaster/squad/${entry.source}@${revision}`, entry.lock_sha256],
+    [`source: ${PACKAGE_NAME}@${revision}`, lockEntry.package_lock_sha256],
+    [`source: bradygaster/squad/${entry.source}@${revision}`, lockEntry.lock_sha256],
   ]);
   const sourceIndex = sourceIndexes[0];
   const sourceBinding = lines[sourceIndex];
@@ -738,10 +786,31 @@ function verifyWorkflowSourceBinding(root, entry, revision) {
   };
 }
 
+function configuredFailureExpiry(root) {
+  if (!existsSync(safePath(root, REPO_CONFIG_PATH))) return 168;
+  const config = JSON.parse(readRequired(root, REPO_CONFIG_PATH));
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`${REPO_CONFIG_PATH} must contain a configuration object.`);
+  }
+  const maintenance = config.maintenance;
+  if (maintenance === undefined || typeof maintenance === 'boolean') return 168;
+  if (!maintenance || typeof maintenance !== 'object' || Array.isArray(maintenance)) {
+    throw new Error(`${REPO_CONFIG_PATH} maintenance must be an object or boolean.`);
+  }
+  const hours = maintenance.action_failure_issue_expires;
+  if (hours === undefined) return 168;
+  if (hours !== 168 && !FAILURE_EXPIRY_VARIANTS.includes(hours)) {
+    throw new Error(`Unsupported ${REPO_CONFIG_PATH} maintenance.action_failure_issue_expires: ${JSON.stringify(hours)}.`);
+  }
+  return hours;
+}
+
 function verifyInstalledBytes(root, contract, revision) {
+  const expiry = configuredFailureExpiry(root);
+  const variant = contract.lock_variants.find(entry => entry.action_failure_issue_expires === expiry);
   const lockDigests = new Map();
-  for (const entry of contract.workflows) {
-    const verified = verifyWorkflowSourceBinding(root, entry, revision);
+  for (const [index, entry] of contract.workflows.entries()) {
+    const verified = verifyWorkflowSourceBinding(root, entry, revision, variant?.workflows[index] ?? entry);
     // Select from the verified source, never accept whichever lock digest happens to match.
     lockDigests.set(entry.name, verified.lockDigest);
   }
@@ -846,9 +915,12 @@ function strictCompileMatches(root) {
       readFileSync(resolve(scratch, `.github/workflows/${name}.lock.yml`)),
     ]));
     const ghAwBin = process.env.SQUAD_GH_AW_BIN;
+    const compileArgs = ['compile', '--strict', '--no-check-update'];
+    const scheduleSeed = process.env.SQUAD_GH_AW_SCHEDULE_SEED;
+    if (scheduleSeed) compileArgs.push('--schedule-seed', scheduleSeed);
     spawnChecked(
       ghAwBin || 'gh',
-      ghAwBin ? ['compile', '--strict', '--no-check-update'] : ['aw', 'compile', '--strict', '--no-check-update'],
+      ghAwBin ? compileArgs : ['aw', ...compileArgs],
       scratch,
     );
     for (const name of WORKFLOW_NAMES) {
@@ -917,6 +989,7 @@ export function verifyStagedInstall(root, { expectedRevision = '', stageOwnershi
       ...contract.shared_runtime.flatMap(entry => [entry.package_destination, entry.destination]),
       ...contract.skills.map(entry => entry.destination),
     ]);
+    if (existsSync(safePath(root, REPO_CONFIG_PATH))) required.add(REPO_CONFIG_PATH);
     const expected = new Map([...required].map(path => [path, fileDigest(root, path)]));
     if (stageOwnership) {
       const ignored = spawnChecked('git', [
@@ -931,7 +1004,7 @@ export function verifyStagedInstall(root, { expectedRevision = '', stageOwnershi
     // Exact allowlisted paths bound output; no recursion into unrelated or substituted trees.
     const entries = spawnChecked(
       'git',
-      ['ls-tree', '-z', tree, '--', ...required, UNOWNED_MUTABLE_ROUTER_SKILL],
+      ['ls-tree', '-z', tree, '--', ...required, REPO_CONFIG_PATH, UNOWNED_MUTABLE_ROUTER_SKILL],
       root,
     ).stdout
       .split('\0').filter(Boolean);
@@ -955,6 +1028,9 @@ export function verifyStagedInstall(root, { expectedRevision = '', stageOwnershi
       throw new Error(
         `Unowned mutable gh-aw router skill remains in staged tree: ${UNOWNED_MUTABLE_ROUTER_SKILL}`,
       );
+    }
+    if (!required.has(REPO_CONFIG_PATH) && staged.has(REPO_CONFIG_PATH)) {
+      throw new Error(`Unverified compiler configuration remains in staged tree: ${REPO_CONFIG_PATH}`);
     }
   } catch (error) {
     result.failures.push(error instanceof Error ? error.message : String(error));
@@ -1027,7 +1103,7 @@ export function writeLocalTestOwnership(root, revision) {
     package: PACKAGE_NAME,
     source: `${PACKAGE_NAME}@${revision}`,
     resolvedCommit: revision,
-    installer: 'gh-aw v0.89.22 local package contract test',
+    installer: 'gh-aw v0.91.5 local package contract test',
     files,
   }));
 }

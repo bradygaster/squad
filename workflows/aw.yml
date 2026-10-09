@@ -1,5 +1,5 @@
 manifest-version: "1"
-min-version: v0.89.22
+min-version: v0.91.5
 name: Squad Agentic Workflows
 emoji: "🤖"
 description: Complete, integrity-checked Squad workflow bundle for issue-driven planning and implementation.

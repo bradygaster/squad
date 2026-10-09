@@ -9,7 +9,9 @@ import {
   CONTRACT_DESTINATION,
   OWNERSHIP_DESTINATION,
   UNOWNED_MUTABLE_ROUTER_SKILL,
+  WORKFLOW_NAMES,
   materializeRuntime,
+  compileWithPinnedActions,
   verifyInstall,
   verifyStagedInstall,
 } from '../workflows/shared/squad-install-verifier.mjs';
@@ -140,7 +142,8 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     const queries = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'ls-tree');
     expect(queries).toHaveLength(1);
     expect(queries[0][1]).toEqual([
-      'ls-tree', '-z', expect.any(String), '--', ...new Set(required), UNOWNED_MUTABLE_ROUTER_SKILL,
+      'ls-tree', '-z', expect.any(String), '--', ...new Set(required),
+      '.github/workflows/aw.json', UNOWNED_MUTABLE_ROUTER_SKILL,
     ]);
     const unrelatedObject = git(root, 'rev-parse', `HEAD:${unrelated}/ordinary-file-00000.txt`).trim();
     const blobReads = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'cat-file');
@@ -187,6 +190,31 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     expect(failed.stderr).toContain('do not commit/push');
     expect(failed.stderr).toMatch(/ownership record|ownership metadata/);
   });
+
+  it('requires the exact consumer expiry configuration in the staged tree', () => {
+    const root = consumer();
+    const path = '.github/workflows/aw.json';
+    const config = JSON.stringify({ maintenance: { action_failure_issue_expires: 24 } });
+    write(root, path, config);
+    compileWithPinnedActions(root);
+    git(root, 'add', '--', '.github/workflows/');
+    expect(verifyStagedInstall(root, { stageOwnership: true }).failures).toEqual([]);
+    write(root, path, `${config}\n`);
+    expect(verifyInstall(root).failures).toEqual([]);
+    expect(verifyStagedInstall(root).failures.join('\n')).toContain(`Staged digest mismatch for ${path}`);
+    git(root, 'add', '--', path);
+    expect(verifyStagedInstall(root).failures).toEqual([]);
+
+    rmSync(join(root, path));
+    compileWithPinnedActions(root);
+    git(root, 'add', '--', ...WORKFLOW_NAMES.map(name => `.github/workflows/${name}.lock.yml`));
+    expect(verifyInstall(root).failures).toEqual([]);
+    expect(verifyStagedInstall(root).failures.join('\n')).toContain(
+      `Unverified compiler configuration remains in staged tree: ${path}`,
+    );
+    git(root, 'add', '--', path);
+    expect(verifyStagedInstall(root).failures).toEqual([]);
+  }, 120_000);
 
   it('rejects the clean-install gh-aw router until it is removed, then accepts the exact Squad skill', () => {
     const root = consumer();

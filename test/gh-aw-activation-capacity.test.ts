@@ -8,7 +8,7 @@
  * output, which is governed by a `max`. Two problems let a large activation lose label
  * operations *while the run still reported success*:
  *
- * 1. **`max` is ambiguous in gh-aw's own surface area.** The compiler injects the tool
+ * 1. **`max` was ambiguous in gh-aw's own surface area.** The older compiler injected the tool
  *    constraint as "Maximum {N} label(s) can be added", which reads as a budget of label
  *    *names*. The runtime counts operations instead. At the previous `max: 80`, an agent
  *    that believed the label reading would conclude a 50-issue activation (up to 100 label
@@ -19,10 +19,10 @@
  *
  * Note what is *not* claimed: at `max: 80`, 50 `add_labels` calls did **not** overflow the
  * operation cap. Runtime truncation was not reachable at the documented maximum. The cap
- * moves to 110 to defeat the misleading injected wording and to hold a bounded margin —
+ * stays at 110 even though v0.91.5 now explicitly describes calls, retaining a bounded margin —
  * not to fix a proven 80-item overflow.
  *
- * ## Runtime semantics this suite is written against (gh-aw v0.89.22, the CI pin)
+ * ## Runtime semantics this suite is written against (gh-aw v0.91.5, the CI pin)
  *
  * **Cap enforcement is dual (Safe Outputs Specification MCE4) and neither half is fatal.**
  * Invocation time — `safe_outputs_handlers.cjs`, `enforcePerTypeMax` via
@@ -42,7 +42,7 @@
  * `max` therefore caps **operations of that type**, not label names inside one call. One
  * `add_labels` call carrying two labels costs one unit of budget, not two.
  *
- * **`report_incomplete` fails the conclusion step.** In v0.89.22,
+ * **`report_incomplete` fails the conclusion step.** In v0.91.5,
  * `report_incomplete_handler.cjs` logs a warning, then `handle_agent_failure.cjs` calls
  * `core.setFailed` even when the agent succeeded. #2185 disables that conclusion handler's
  * independent tracking-issue writes, not its failure status or logged evidence. The guarded
@@ -236,7 +236,7 @@ describe('gh-aw: configured caps cover the worst case under both readings of max
   });
 
   it('add-labels also covers every LABEL NAME in the run (the prompt-prose reading)', () => {
-    // gh-aw injects "Maximum {max} label(s) can be added". Even if the agent takes
+    // Older gh-aw injected "Maximum {max} label(s) can be added". Even if the agent takes
     // that literally, a full 50-issue activation applying squad + squad:{agent} to
     // every issue (100 names) must still fit, or the agent can rationalize dropping
     // label operations. This is the assertion that would have failed at max: 80.
@@ -245,7 +245,7 @@ describe('gh-aw: configured caps cover the worst case under both readings of max
     expect(
       addLabelsMax,
       `add-labels max (${addLabelsMax}) must cover the worst-case ${worstCaseLabelNames} ` +
-        'label names so the "Maximum N label(s)" constraint gh-aw injects cannot be read ' +
+        'label names so the older "Maximum N label(s)" constraint cannot be read ' +
         'as a reason to stop labeling early.',
     ).toBeGreaterThanOrEqual(worstCaseLabelNames);
   });
@@ -409,7 +409,7 @@ describe('gh-aw: self-validation reconciles activated items with label operation
   });
 
   it('describes pinned report_incomplete failure status without tracking-issue writes', () => {
-    // v0.89.22 fails conclusion for report_incomplete. #2185 disables its independent
+    // v0.91.5 fails conclusion for report_incomplete. #2185 disables its independent
     // issue-writing path; the real-handler regression lives in command-authorization.
     expect(
       /`report_incomplete` records the reason in Actions logs and fails the conclusion step/i.test(activateProse),
@@ -465,7 +465,7 @@ describe('gh-aw: self-validation reconciles activated items with label operation
 
 const GH_AW_INSTALL_HINT =
   '`gh aw` is required to compile the workflow this gate inspects. Install it with ' +
-  '`gh extension install --pin v0.87.10 github/gh-aw` (matches .github/workflows/squad-ci.yml). ' +
+  '`gh extension install --pin v0.91.5 github/gh-aw` (matches .github/workflows/squad-ci.yml). ' +
   'This gate fails closed rather than skipping: an unmeasured contract is ' +
   'indistinguishable from a violated one (#1834).';
 
@@ -528,12 +528,10 @@ describe('gh-aw: compiled runtime proves the capacity contract (#1961)', () => {
   });
 
   it("injects a tool constraint whose number matches the configured cap", () => {
-    // gh-aw phrases this as "Maximum {max} label(s) can be added". The workflow's
-    // rationale quotes that phrasing; if gh-aw's number and the configured cap ever
-    // diverge, the rationale would be describing a budget that does not exist.
     const compiled = lockText().replace(/\\"/g, '"');
     const declared = frontmatterMax('add-labels');
-    expect(compiled).toContain(`CONSTRAINTS: Maximum ${declared} label(s) can be added`);
+    expect(compiled).toContain(`CONSTRAINTS: Maximum ${declared} add_labels call(s) allowed.`);
+    expect(compiled).toContain('Maximum 10 label(s) per call.');
   });
 
   it('enables report_incomplete so the overflow signal is actually callable', () => {

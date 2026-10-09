@@ -52,7 +52,7 @@ beforeAll(async () => {
   // in memory, with no GitHub clients or writes and no approximate sanitizer stubs.
   const runtimeSha = DIAGNOSTIC_RUNTIME_SHA;
   expect(fixture.consumerFiles.get('.github/workflows/squad.lock.yml')!.toString())
-    .toContain(`github/gh-aw-actions/setup@${runtimeSha} # v0.89.22`);
+    .toContain(`github/gh-aw-actions/setup@${runtimeSha} # v0.91.5`);
   const sources = new Map(await Promise.all([
     'sanitize_content.cjs', 'sanitize_content_core.cjs', 'markdown_code_region_balancer.cjs',
     'repo_helpers.cjs', 'slash_command_matcher.cjs', 'glob_pattern_helpers.cjs', 'error_codes.cjs',
@@ -154,7 +154,11 @@ async function interpretLifecycleComment(body?: string) {
 describe('compiled Squad command authorization boundary (#2185)', () => {
   function assertDiagnosticIsolation(lock: Lock) {
     const steps = lock.jobs.conclusion.steps;
-    const handlers = steps.filter(step => step.with?.script);
+    const usage = steps.filter(step =>
+      step.name === 'Generate usage activity summary and unified session');
+    expect(usage).toHaveLength(1);
+    expect(usage[0].with?.script).toContain("'generate_usage_artifacts.cjs'");
+    const handlers = steps.filter(step => step.with?.script && !usage.includes(step));
     expect(handlers.every(step => ['noop', 'missing_tool', 'report_incomplete',
       'handle_agent_failure', 'conclusion'].includes(step.id || ''))).toBe(true);
     expect(steps.find(step => step.id === 'handle_agent_failure')?.env?.GH_AW_FAILURE_REPORT_AS_ISSUE)

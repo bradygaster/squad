@@ -31,10 +31,6 @@ on:
         description: Authoritative dispatcher run attempt that minted the session
         required: true
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -54,6 +50,10 @@ network:
     - node
 imports:
   - shared/squad.md
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
 resources:
   - shared/squad-implementation-provenance.mjs
   - shared/implementation-provenance-v1.schema.json

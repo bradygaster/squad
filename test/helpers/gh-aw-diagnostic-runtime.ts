@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, posix } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-export const DIAGNOSTIC_RUNTIME_SHA = '2fbab69bfca02bebd76cd0fc43f2d12acfed994f';
+export const DIAGNOSTIC_RUNTIME_SHA = '16b430146d5d5646eccef5a1ceb72152333b18b9';
 const requireNode = createRequire(import.meta.url);
 const entrypoints = [
   'handle_agent_failure.cjs', 'handle_noop_message.cjs', 'handle_detection_runs.cjs',
@@ -105,6 +105,8 @@ export function diagnosticRuntime(
   const runtimeEnv = {
     GITHUB_REPOSITORY: 'owner/repo', RUNNER_TEMP: scratch, GITHUB_WORKSPACE: scratch,
     GH_AW_WORKFLOW_NAME: 'Squad', GH_AW_RUN_URL: 'https://github.com/owner/repo/actions/runs/1',
+    GH_AW_JOB_RESULTS: JSON.stringify({ upsert_lifecycle_state: { result: 'failure' } }),
+    GH_AW_JOB_DISPLAY_NAMES: JSON.stringify({ upsert_lifecycle_state: 'upsert_lifecycle_state' }),
     ...env, GH_AW_AGENT_OUTPUT: outputPath,
   };
   const context = {
@@ -129,6 +131,7 @@ export function diagnosticRuntime(
     readdirSync: () => [],
     mkdirSync: () => {},
     writeFileSync: () => {},
+    appendFileSync: () => {},
   };
   const load = (name: string): Record<string, any> => {
     if (modules.has(name)) return modules.get(name)!.exports;
@@ -140,7 +143,7 @@ export function diagnosticRuntime(
       if (request.startsWith('.')) return load(posix.normalize(posix.join(posix.dirname(name), request)));
       if (request === 'fs' || request === 'node:fs') return filesystem;
       if (request === 'os' || request === 'node:os') return { ...requireNode(request), tmpdir: () => scratch };
-      if (['path', 'node:path', 'crypto', 'node:crypto', 'util', 'node:util'].includes(request)) return requireNode(request);
+      if (['path', 'node:path', 'crypto', 'node:crypto', 'util', 'node:util', 'vm', 'node:vm'].includes(request)) return requireNode(request);
       if (['https', 'http', 'child_process'].includes(request)) return new Proxy({}, {
         get: (_target, method: string) => (command: string) => {
           if (request === 'child_process' && method === 'execSync' && command === 'git rev-parse --abbrev-ref HEAD') return 'dev\n';

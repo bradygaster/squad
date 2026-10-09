@@ -378,12 +378,12 @@ describe('gh-aw enforcing Squad reviewer', () => {
 
   it('declares the complete native package for the pinned compiler job', () => {
     const manifest = read('workflows/aw.yml');
-    expect(manifest).toContain('min-version: v0.89.22');
+    expect(manifest).toContain('min-version: v0.91.5');
     expect(manifest.match(/destination: \.github\/workflows\/squad(?:-[\w-]+)?\.md/g)).toHaveLength(8);
     expect(manifest.match(/source: package\/squad(?:-[\w-]+)?\.md/g)).toHaveLength(8);
     expect(manifest).toContain('  - skills/gh-aw-enlistment');
     expect(read('.github/workflows/squad-ci.yml')).toContain(
-      'gh extension install --force --pin v0.89.22 github/gh-aw',
+      'gh extension install --force --pin v0.91.5 github/gh-aw',
     );
   });
 

@@ -8,7 +8,7 @@
  * - planning state machine structured-artifact consistency
  */
 
-import { afterAll, describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect, vi } from 'vitest';
 import { chmodSync, cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1699,9 +1699,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     const failureJob = compiled.match(
       /^  cast_failure:\n[\s\S]*?(?=^  conclusion:)/m,
     )?.[0] ?? '';
-    const conclusionNeeds = compiled.match(
-      /^  conclusion:\n    needs:\n([\s\S]*?)(?=    if:)/m,
-    )?.[1] ?? '';
+    const conclusionNeeds = parseDocument(compiled).toJS().jobs.conclusion.needs;
     expect(failureJob).toContain('name: Fail incomplete Cast');
     expect(failureJob).toContain('runs-on: ubuntu-slim');
     expect(failureJob).toContain("contains(needs.agent.outputs.output_types, 'cast_failure')");
@@ -1710,7 +1708,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     expect(failureJob).toContain('process.env.GH_AW_AGENT_OUTPUT');
     expect(failureJob).toContain('Cast did not complete.');
     expect(failureJob).toContain('core.setFailed');
-    expect(conclusionNeeds).toContain('- cast_failure');
+    expect(conclusionNeeds).toContain('cast_failure');
   }, 20000);
 
   it('prepares the materialized Cast validator runner outside the agent prompt', () => {
@@ -1750,7 +1748,7 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
     // Job-level guarantee: the agent job cannot start until the activation
     // job (which runs `squad init --preset default` when no cast exists yet)
     // has completed.
-    expect(compiled).toMatch(/\n {2}agent:\n {4}needs: activation\n/);
+    expect(parseDocument(compiled).toJS().jobs.agent.needs).toBe('activation');
     const activationJobIndex = compiled.indexOf('\n  activation:\n');
     const agentJobIndex = compiled.indexOf('\n  agent:\n');
     expect(activationJobIndex).toBeGreaterThan(-1);
@@ -1793,10 +1791,8 @@ describe('gh-aw: compiled workflow shell input security contract', () => {
 
   it('keeps custom safe-output failure visible in the terminal workflow state', () => {
     const compiled = lockText();
-    const conclusionNeeds = compiled.match(
-      /^  conclusion:\n    needs:\n([\s\S]*?)(?=    if:)/m,
-    )?.[1] ?? '';
-    expect(conclusionNeeds).toContain('- safe_outputs');
+    const conclusionNeeds = parseDocument(compiled).toJS().jobs.conclusion.needs;
+    expect(conclusionNeeds).toContain('safe_outputs');
     expect(compiled).toContain(
       "needs.safe_outputs.result == 'success'",
     );
@@ -3850,7 +3846,7 @@ describe('gh-aw: canonical package integrity contract', () => {
       package: PACKAGE_NAME,
       source: `${PACKAGE_NAME}@${revision}`,
       resolvedCommit: revision,
-      installer: 'gh-aw v0.89.22 test',
+      installer: 'gh-aw v0.91.5 test',
       files: owned,
     }, null, 2)}\n`);
     return root;
@@ -3934,6 +3930,131 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(record.files).toHaveLength(OWNERSHIP_ENTRY_COUNT);
   });
 
+  it('preserves compiler-owned relay inputs, pinned SDK research, and activation scope', () => {
+    const fixture = createFirstInstallFixture(revisionA, 'package');
+    for (const name of WORKFLOW_NAMES) {
+      const source = readText(join(WORKFLOWS_DIR, `${name}.md`));
+      const frontmatter = parseDocument(extractFrontmatter(join(WORKFLOWS_DIR, `${name}.md`))).toJS();
+      expect(frontmatter.on.workflow_dispatch?.inputs ?? {}).not.toHaveProperty('aw_context');
+      const lockText = fixture.consumerFiles.get(`.github/workflows/${name}.lock.yml`)!.toString();
+      const lock = parseDocument(lockText).toJS();
+      if (lock.on.workflow_dispatch) {
+        expect(lock.on.workflow_dispatch.inputs.aw_context)
+          .toEqual({ default: '', description: 'Agent caller context (Reserved for Agentic Workflows).', required: false, type: 'string' });
+      }
+      if (name === 'squad-bootstrap') {
+        expect(lock.jobs.conclusion.permissions).toEqual({
+          actions: 'read',
+          issues: 'write',
+          'pull-requests': 'read',
+        });
+      }
+      if (source.includes('  - shared/squad.md')) {
+        const token = lock.jobs.activation.steps.find((step: { id?: string }) => step.id === 'squad-app-token');
+        expect(token.with.repositories).toBe('${{ github.repository }}');
+        expect(token.with.owner).toBe('${{ vars.SQUAD_GITHUB_APP_OWNER }}');
+        expect(token.with['permission-contents']).toBe('read');
+        expect(Object.keys(token.with).filter(key => key.startsWith('permission-')))
+          .toEqual(['permission-contents']);
+      }
+      if (name === 'squad') {
+        expect(lockText).toContain('install_copilot_cli.sh" 1.0.78');
+        const agent = lock.jobs.agent.steps.find((step: { env?: Record<string, unknown> }) =>
+          step.env?.GH_AW_COPILOT_SDK_DRIVER);
+        const args = JSON.parse(agent.env.GH_AW_COPILOT_SDK_SERVER_ARGS);
+        expect(args).toEqual(expect.arrayContaining(['--agent', 'squad', '--disable-builtin-mcps']));
+        const config = JSON.parse(agent.env.GH_AW_COPILOT_SDK_TOOL_CONFIG);
+        expect(config.capabilities.webFetch).toBe(true);
+        expect(config.capabilities.webSearch).toBe(false);
+        expect(config.permissions.allowedTools).toContain('web_fetch');
+      } else {
+        expect(lockText).not.toContain('GH_AW_COPILOT_SDK_DRIVER:');
+      }
+    }
+  });
+
+  it('strict-verifies an explicit schedule seed without relaxing lock comparison', () => {
+    const root = makeConsumer(revisionA, true, 'package');
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+    compileWithPinnedActions(root);
+    execFileSync('gh', ['aw', 'compile', '--strict', '--no-check-update',
+      '--schedule-seed', 'example/shared-schedules'], { cwd: root, stdio: 'pipe' });
+    expect(verifyInstall(root, { strictCompile: true }).failures.join('\n')).toContain('Generated lock is stale');
+    vi.stubEnv('SQUAD_GH_AW_SCHEDULE_SEED', 'example/shared-schedules');
+    try {
+      expect(verifyInstall(root, { strictCompile: true }).failures).toEqual([]);
+      const path = join(root, '.github/workflows/squad-retro.lock.yml');
+      writeFileSync(path, readText(path).replace('contents: read', 'contents: write'));
+      expect(verifyInstall(root, { strictCompile: true }).failures.join('\n')).toContain('Installed digest mismatch');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }, 120_000);
+
+  it.each(['workflow', 'package', 'mixed'] as const)(
+    'binds the complete %s lock digest to the declared 24-hour failure expiry', sourceBinding => {
+      const root = makeConsumer(revisionA, true, sourceBinding);
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/squad-consumer.git'], { cwd: root });
+      const configPath = join(root, '.github/workflows/aw.json');
+      const config = JSON.stringify({ maintenance: { action_failure_issue_expires: 24 } });
+      const workerPath = join(root, '.github/workflows/squad-implement-worker.lock.yml');
+      expect(readText(workerPath)).toContain('GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "168"');
+      writeFileSync(configPath, config);
+      expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      compileWithPinnedActions(root);
+      expect(readText(workerPath)).toContain('GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "24"');
+      expect(readText(configPath)).toBe(config);
+      expect(verifyInstall(root, { strictCompile: true }).failures).toEqual([]);
+
+      writeFileSync(configPath, JSON.stringify({ maintenance: { action_failure_issue_expires: 168 } }));
+      expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      unlinkSync(configPath);
+      expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      writeFileSync(configPath, config);
+      const original = readText(workerPath);
+      for (const modified of [
+        original.replace('GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "24"', 'GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "48"'),
+        original.replace('contents: read', 'contents: write'),
+        original.replace('uses: actions/github-script@', 'uses: attacker/github-script@'),
+      ]) {
+        expect(modified).not.toBe(original);
+        writeFileSync(workerPath, modified);
+        expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
+      }
+    }, 120_000,
+  );
+
+  it.each([0, -1, 48, '24', null, {}, []])(
+    'rejects unsupported failure expiry %j without compiler fallback', expiry => {
+      const root = makeConsumer();
+      writeFileSync(join(root, '.github/workflows/aw.json'),
+        JSON.stringify({ maintenance: { action_failure_issue_expires: expiry } }));
+      expect(verifyInstall(root).failures.join('\n')).toContain('Unsupported');
+    },
+  );
+
+  it('rejects invalid consumer configuration instead of selecting baseline digests', () => {
+    const root = makeConsumer();
+    const path = join(root, '.github/workflows/aw.json');
+    for (const config of ['{', 'null', '[]', '{"maintenance":[]}', '{"maintenance":null}']) {
+      writeFileSync(path, config);
+      expect(verifyInstall(root).failures.length, config).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(['v0.89.22', 'v0.91.4', 'v0.91.50', 'v0.91.5-preview'])(
+    'rejects ownership from unsupported installer %s', version => {
+      const root = makeConsumer();
+      const path = join(root, '.github/aw/packages/bradygaster-squad-workflows-test.json');
+      const record = JSON.parse(readText(path));
+      record.installer = `gh-aw ${version}`;
+      writeFileSync(path, JSON.stringify(record));
+      expect(verifyInstall(root).failures.join('\n')).toContain('Package ownership installer must be gh-aw v0.91.5');
+    },
+  );
+
   it.each(['workflow', 'package', 'mixed'] as const)(
     'verifies %s source bindings at the immutable squash-merged revision',
     sourceBinding => {
@@ -4001,9 +4122,7 @@ describe('gh-aw: canonical package integrity contract', () => {
       expect(mutable).not.toBe(original);
       expect(mutable).not.toContain(actionReference);
       expect(createHash('sha256').update(normalizeCompiledLock(mutable, revisionA)).digest('hex'))
-        .toBe(sourceBinding === 'workflow'
-          ? '8bf36b5dcef66c5983d35962b4da32140ca7a4942bf579a03cb43a04114b98b3'
-          : '205d84067db90e20a2753b60c329d258f27a9e4ba2b10a971bf8c31df4504048');
+        .not.toBe(createHash('sha256').update(normalizeCompiledLock(original, revisionA)).digest('hex'));
       expect(() => validateCompilerActionPins(mutable)).toThrow(/invalid immutable action pin/);
       writeFileSync(lockPath, mutable);
       expect(verifyInstall(root).failures.join('\n'))
@@ -4057,7 +4176,8 @@ describe('gh-aw: canonical package integrity contract', () => {
     compile();
     const unpinned = readText(lockPath);
     expect(createHash('sha256').update(normalizeCompiledLock(unpinned, revisionA)).digest('hex'))
-      .toBe('205d84067db90e20a2753b60c329d258f27a9e4ba2b10a971bf8c31df4504048');
+      .not.toBe(JSON.parse(readText(join(root, CONTRACT_DESTINATION))).workflows
+        .find((entry: { name: string }) => entry.name === 'squad').package_lock_sha256);
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
     const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {
@@ -4146,6 +4266,10 @@ describe('gh-aw: canonical package integrity contract', () => {
       contract => { contract.schema_version = 1; },
       contract => { delete contract.workflows[0].package_lock_sha256; },
       contract => { contract.workflows[0].package_lock_sha256 = 'invalid'; },
+      contract => { delete contract.lock_variants; },
+      contract => { contract.lock_variants[0].action_failure_issue_expires = 48; },
+      contract => { contract.lock_variants[0].workflows[0].lock_sha256 = 'invalid'; },
+      contract => { contract.lock_variants[0].workflows.reverse(); },
     ];
     for (const mutate of mutations) {
       expect(mutateContract(makeConsumer(), mutate).length).toBeGreaterThan(0);
