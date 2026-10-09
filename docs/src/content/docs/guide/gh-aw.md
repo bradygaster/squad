@@ -290,7 +290,7 @@ missing, duplicate, open, foreign, or merged archived PRs fail closed. Closed
 fallback issues may be included in `archived_issues`; unrelated issues cannot.
 The operation never closes artifacts, deletes branches, or overwrites an
 installed team or registry. A merged current-generation Cast may still finish
-its linked research through ordinary recovery.
+its linked proposals issue through ordinary recovery.
 
 Keep the same record and ID for retries: they select the same branch and artifact
 identities. Existing branch contents must match the validated payload; divergent
@@ -308,12 +308,14 @@ closed. If the originating dispatch failed after publishing provenance, use
 **Re-run all jobs** on that same run with its original inputs; another run
 cannot promote a failed origin into successful provenance.
 
-Review and merge the Cast PR, then rerun `/squad triage` on the linked issue to
-classify its existing bootstrap proposals. If a proposal needs deeper or newer
-evidence, use one of the issue's focused `/squad research ...` commands first;
-that replaces the bootstrap research seed. Review the resulting plan and run
-`/squad activate`. The bootstrap journey ends when assignable implementation
-issues exist.
+Bootstrap creates the Cast PR and linked proposals issue only; it does not
+publish a research comment or artifact. Review and merge the Cast PR, then run
+`/squad research` on the linked issue, optionally using one of its focused
+proposal commands. Once research is published, run `/squad triage` to classify
+the findings, then `/squad plan`. Review the resulting plan and run
+`/squad activate`. Bootstrap retries do not require research and never modify
+existing research comments. The bootstrap journey ends when assignable
+implementation issues exist.
 
 ---
 

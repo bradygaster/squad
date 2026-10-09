@@ -216,6 +216,34 @@ describe('#1935: deterministic research artifact safe output', () => {
   ].join('\n');
   const boldSectionBody = body.replace(/^### (.+)$/gm, '**$1**');
 
+  it('publishes complete explicit research without a preexisting bootstrap artifact', async () => {
+    const completeBody = [
+      body,
+      '',
+      '### Online sources',
+      'Online sources: unavailable — repository evidence only.',
+      '',
+      '### Recommendations',
+      '- R1: address the verified finding before planning.',
+      '',
+      '### Next step',
+      'Run `/squad triage` or `/squad plan`.',
+    ].join('\n');
+    const result = await runResearchUpsert([
+      { type: 'upsert_research_artifact', body: completeBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.deleted).toEqual([]);
+    expect(result.created).toEqual([{
+      owner: 'octodemo',
+      repo: 'consumer',
+      issue_number: 5,
+      body: `${completeBody}\n\nStructured data:\n\n\`\`\`json\n{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}\n\`\`\``,
+    }]);
+  });
+
   it('accepts bold section labels and creates the fixed structured envelope', async () => {
     const result = await runResearchUpsert([
       { type: 'upsert_research_artifact', body: boldSectionBody },

@@ -22,7 +22,6 @@ import {
   BOOTSTRAP_ISSUE_TITLE,
   BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
   BOOTSTRAP_PR_TITLE,
-  BOOTSTRAP_RESEARCH_TITLE,
   CREATE_PR_PERMISSION_DENIED_TEXT,
   PAYLOAD_CHUNK_BYTES,
   PAYLOAD_CHUNK_STRING_MAX_BYTES,
@@ -38,10 +37,7 @@ import {
   buildBootstrapPrFallbackProvenanceLine,
   classifyBootstrapState,
   createBootstrapPayloadEnvelope,
-  createBootstrapResearchComment,
-  findBootstrapResearchArtifacts,
   findExistingBootstrapPrFallbackIssue,
-  isBootstrapResearchSeed,
   isCreatePullRequestPermissionDenied,
   reconstructBootstrapPayload,
   validateBootstrapPayload,
@@ -334,7 +330,7 @@ Review the corresponding [draft Cast PR](${link}) before accepting the roster.
 ## How to launch work
 
 1. Review and merge the linked draft Cast PR.
-2. Rerun \`/squad triage\` to classify these existing proposals, or use focused \`/squad research ...\` first when deeper research is desired.
+2. Run \`/squad research\` on the proposals you want to pursue, then \`/squad triage\` to classify the research findings.
 3. Run \`/squad plan\`, review the plan, then run \`/squad activate\` to create assignable implementation issues.
 
 \`\`\`text
@@ -351,7 +347,7 @@ Use \`/squad implement\` only on generated implementation tasks, never on a prop
 ## Actionable backlog
 
 - [ ] Review and merge the draft Cast PR.
-- [ ] Triage the existing proposals, or run focused research first when deeper evidence is desired.
+- [ ] Run research on the selected proposals, then triage the findings.
 - [ ] Review the plan and activate assignable implementation issues.
 `;
 }
@@ -653,18 +649,6 @@ describe('automatic Squad bootstrap workflow', () => {
       issues: [issue()],
       comments: [],
       defaultBranch: 'main',
-    }).action).toBe('create_research');
-    const research = {
-      id: 9,
-      created_at: '2026-09-14T00:00:00Z',
-      user: { login: 'github-actions[bot]' },
-      body: createBootstrapResearchComment(issueBody(), 6),
-    };
-    expect(classifyBootstrapState({
-      pullRequests: [pull()],
-      issues: [issue()],
-      comments: [research],
-      defaultBranch: 'main',
     }).action).toBe('noop');
     expect(classifyBootstrapState({ pullRequests: [pull('closed')], issues: [], defaultBranch: 'main' }).action).toBe('opt_out');
     expect(classifyBootstrapState({ pullRequests: [pull('closed', true)], issues: [], defaultBranch: 'main' }).action).toBe('create_issue');
@@ -701,57 +685,10 @@ describe('automatic Squad bootstrap workflow', () => {
     ).toThrow(/expected exact title and durable marker/);
   });
 
-  it('materializes one canonical research seed that normal triage can consume', () => {
-    const comment = createBootstrapResearchComment(issueBody(), 6);
-    expect(comment).toContain(BOOTSTRAP_RESEARCH_TITLE);
-    expect(comment).toContain('| R1 | P1 is a validated bootstrap proposal');
-    expect(comment).toContain('focused `/squad research ...`');
-    expect(comment).not.toContain('### P1 — Strengthen runtime contracts');
-    expect(comment).toContain(
-      '{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}',
-    );
-
-    const artifacts = findBootstrapResearchArtifacts([
-      {
-        id: 9,
-        created_at: '2026-09-14T00:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: comment,
-      },
-    ], 6);
-    expect(artifacts).toHaveLength(1);
-    expect(isBootstrapResearchSeed(artifacts[0])).toBe(true);
-    expect(isBootstrapResearchSeed({
-      body: comment.replace(BOOTSTRAP_RESEARCH_TITLE, '## 🔬 Squad Research — Focused follow-up'),
-    })).toBe(false);
-  });
-
-  it('fails closed on malformed research envelopes and repairs duplicate artifacts', () => {
-    const valid = createBootstrapResearchComment(issueBody(), 6);
-    expect(() => findBootstrapResearchArtifacts([
-      {
-        id: 10,
-        created_at: '2026-09-14T00:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: valid.replace('"origin_issue":6', '"origin_issue":7'),
-      },
-    ], 6)).toThrow(/canonical research envelope/);
-
-    const duplicates = findBootstrapResearchArtifacts([
-      {
-        id: 10,
-        created_at: '2026-09-14T00:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: valid,
-      },
-      {
-        id: 11,
-        created_at: '2026-09-14T01:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: valid,
-      },
-    ], 6);
-    expect(duplicates.map(({ id }) => id)).toEqual([10, 11]);
+  it.each([{ comments: [] }, { comments: [
+    { id: 10, body: 'Structured data:\n```json\n{"squad_artifact":"research"}\n```' },
+    { id: 11, body: 'Historical research comment' },
+  ] }])('ignores absent, malformed, or duplicate research during merged-Cast recovery: %j', ({ comments }) => {
     expect(classifyBootstrapState({
       pullRequests: [{
         number: 3,
@@ -768,9 +705,9 @@ describe('automatic Squad bootstrap workflow', () => {
         title: BOOTSTRAP_ISSUE_TITLE,
         body: issueBody('https://github.com/octo/example/pull/3'),
       }],
-      comments: duplicates,
+      comments,
       defaultBranch: 'main',
-    }).action).toBe('create_research');
+    }).action).toBe('noop');
   });
 
   it('validates the shared Cast and issue payload with exact success output', () => {
@@ -778,6 +715,18 @@ describe('automatic Squad bootstrap workflow', () => {
     const result = validateFixture(fixture);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe('Squad bootstrap validation passed.\n');
+  });
+
+  it('rejects proposal guidance that skips explicit research before triage', () => {
+    const fixture = createFixture();
+    fixture.payload.issue_body = fixture.payload.issue_body.replace(
+      '2. Run `/squad research` on the proposals you want to pursue, then `/squad triage` to classify the research findings.',
+      '2. Rerun `/squad triage` to classify these existing proposals, or use focused `/squad research ...` first when deeper research is desired.',
+    );
+    writeFileSync(fixture.payloadPath, JSON.stringify(fixture.payload));
+    const result = validateFixture(fixture);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('missing required bootstrap guidance 2. Run `/squad research`');
   });
 
   it('validates an isolated candidate against the trusted checkout Git history', () => {
@@ -1138,6 +1087,15 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('pullRequestDetails.head.repo?.full_name !== provenance.repository');
     expect(lock).toContain('body: `${provenanceMarker}\\n${prBodyWithoutProvenance}`');
     expect(lock).toContain('body: markedIssueBody');
+    const inspection = parse(lock).jobs.agent.steps.find(
+      (step: { name?: string }) => step.name === 'Inspect deterministic bootstrap state',
+    ).with.script;
+    expect(inspection).toContain('stateModule.classifyBootstrapState(');
+    expect(inspection).not.toContain('listComments');
+    expect(lock).not.toContain('createBootstrapResearch');
+    expect(lock).not.toContain('findBootstrapResearchArtifacts');
+    expect(lock).not.toContain('create_research');
+    expect(lock).not.toContain('github.rest.issues.deleteComment');
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
 
@@ -1223,11 +1181,10 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(WORKFLOW).toContain('github.paginate(github.rest.pulls.list');
     expect(WORKFLOW).toContain('github.paginate(github.rest.issues.listForRepo');
     expect(WORKFLOW).toContain('github.paginate(github.rest.issues.listComments');
-    expect(WORKFLOW).toContain('createBootstrapResearchComment(');
-    expect(WORKFLOW).toContain('findBootstrapResearchArtifacts(');
-    expect(WORKFLOW).toContain('isBootstrapResearchSeed(currentResearch)');
-    expect(WORKFLOW).toContain('Preserving focused research artifact comment');
-    expect(WORKFLOW).toContain('github.rest.issues.deleteComment');
+    expect(WORKFLOW).not.toContain('createBootstrapResearchComment(');
+    expect(WORKFLOW).not.toContain('findBootstrapResearchArtifacts(');
+    expect(WORKFLOW).not.toContain('create_research');
+    expect(WORKFLOW).not.toContain('github.rest.issues.deleteComment');
     expect(WORKFLOW).toContain("draft: true");
     expect(WORKFLOW).toContain("ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`");
     expect(WORKFLOW).not.toContain('auto-merge:');
@@ -1294,6 +1251,9 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     );
     const issueCalls: Array<{ title: string; body: string }> = [];
     const commentCalls: Array<{ issue_number: number; body: string }> = [];
+    const commentReads: number[] = [];
+    const commentUpdates: Array<{ comment_id: number; body: string }> = [];
+    const commentDeletes: number[] = [];
     const updates: Array<{ body: string }> = [];
     const commitParents: string[][] = [];
     const publishedRefs: string[] = [];
@@ -1378,8 +1338,14 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
         },
         issues: {
           listForRepo: async () => persistedIssues,
-          listComments: async ({ issue_number }: { issue_number: number }) =>
-            persistedComments.filter(comment => comment.issue_number === issue_number),
+          listComments: async ({ issue_number }: { issue_number: number }) => {
+            commentReads.push(issue_number);
+            return persistedComments.filter(comment => comment.issue_number === issue_number);
+          },
+          update: async (args: { issue_number: number; title: string; body: string }) => {
+            recordWrite();
+            Object.assign(persistedIssues.find(issue => issue.number === args.issue_number)!, args);
+          },
           create: async (args: { title: string; body: string }) => {
             recordWrite();
             issueCalls.push(args);
@@ -1394,7 +1360,15 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
               ...args, id: persistedComments.length + 1, user: { login: 'github-actions[bot]', type: 'Bot' },
             });
           },
-          updateComment: async () => {},
+          updateComment: async (args: { comment_id: number; body: string }) => {
+            commentUpdates.push(args);
+            Object.assign(persistedComments.find(comment => comment.id === args.comment_id)!, { body: args.body });
+          },
+          deleteComment: async ({ comment_id }: { comment_id: number }) => {
+            commentDeletes.push(comment_id);
+            const index = persistedComments.findIndex(comment => comment.id === comment_id);
+            if (index >= 0) persistedComments.splice(index, 1);
+          },
         },
       },
     };
@@ -1421,14 +1395,15 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
       captureCandidate,
     );
     return {
-      run, github, issueCalls, commentCalls, updates, writesWithCandidate, failures, commitParents, publishedRefs,
+      run, github, issueCalls, commentCalls, commentReads, commentUpdates, commentDeletes,
+      updates, writesWithCandidate, failures, commitParents, publishedRefs,
       context, runtimeEnv, persistedIssues, persistedComments, pull,
       candidate: () => candidate,
     };
   }
 
-  it('keeps the real candidate through resolved validation, issue and research creation, then removes it', async () => {
-    const fixture = writerFixture();
+  it('executes the compiled writer without research on fresh bootstrap or repeated retries', async () => {
+    const fixture = writerFixture('success', compileWorkflow());
     await fixture.run();
     expect(fixture.failures).toEqual([]);
     expect(fixture.issueCalls).toHaveLength(1);
@@ -1436,12 +1411,66 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     expect(fixture.issueCalls[0].body).toContain(`[draft Cast PR](${prUrl})`);
     expect(fixture.issueCalls[0].body).not.toContain('{{CAST_PR_URL}}');
     expect(fixture.updates[0].body).toContain('"cast_sha":"' + castSha + '"');
-    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3, 6]);
-    expect(fixture.commentCalls[1].body).toBe(createBootstrapResearchComment(issueBody(prUrl), 6));
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3]);
+    expect(fixture.commentReads).not.toContain(6);
     expect(fixture.writesWithCandidate.length).toBeGreaterThan(0);
     expect(fixture.writesWithCandidate.every(Boolean), 'candidate files must survive all GitHub writes').toBe(true);
     expect(existsSync(fixture.candidate()), 'success must remove the entire candidate tree').toBe(false);
-  });
+    for (let retry = 0; retry < 2; retry++) await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3]);
+    expect(fixture.commentUpdates).toEqual([]);
+    expect(fixture.commentDeletes).toEqual([]);
+    expect(fixture.commentReads).not.toContain(6);
+  }, 180000);
+
+  it('preserves explicit and historical research while recovering a missing Cast and retrying', async () => {
+    const fixture = writerFixture('success', compileWorkflow());
+    fixture.persistedIssues.push({ number: 6, state: 'open', title: BOOTSTRAP_ISSUE_TITLE,
+      body: issueBody(prUrl) });
+    fixture.persistedComments.push(...[
+      '## 🔬 Squad Research — Bootstrap proposals\nHistorical seed',
+      '## 🔬 Squad Research — Focused follow-up\nEvidence from explicit /squad research',
+    ].map((body, index) => ({
+      id: 10 + index, issue_number: 6,
+      body: `${body}\n\nStructured data:\n\`\`\`json\n{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}\n\`\`\``,
+      user: { login: 'github-actions[bot]', type: 'Bot' },
+    })));
+    const existing = structuredClone(fixture.persistedComments);
+    await fixture.run();
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.issueCalls).toEqual([]);
+    expect(fixture.persistedComments.filter(comment => comment.issue_number === 6)).toEqual(existing);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3]);
+    expect(fixture.commentReads).not.toContain(6);
+    expect(fixture.commentUpdates).toEqual([]);
+    expect(fixture.commentDeletes).toEqual([]);
+  }, 180000);
+
+  it('kills a compiled writer mutation that reintroduces a bootstrap research seed', async () => {
+    const assertNoSeed = async (source: string) => {
+      const fixture = writerFixture('success', source);
+      await fixture.run();
+      expect(fixture.failures).toEqual([]);
+      expect(fixture.commentCalls.filter(call => call.issue_number === 6)).toEqual([]);
+    };
+    await assertNoSeed(compileWorkflow());
+    const anchor = '              } finally {\n                rmSync(candidate, { recursive: true, force: true });';
+    expect(WORKFLOW).toContain(anchor);
+    const mutated = WORKFLOW.replace(anchor, [
+      '                await github.rest.issues.createComment({',
+      '                  ...context.repo,',
+      '                  issue_number: (await listState()).state.issue.number,',
+      '                  body: \'## Squad Research - Bootstrap proposals\\n\\nStructured data:\\n```json\\n{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}\\n```\',',
+      '                });',
+      anchor,
+    ].join('\n'));
+    await expect(assertNoSeed(compileWorkflow(mutated))).rejects.toThrow('expected');
+  }, 180000);
 
   it('executes the compiled writer against historical Cast #3, creates a separate generation and reuses its PR', async () => {
     const lock = compileWorkflow();
@@ -1450,7 +1479,7 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     expect(fixture.failures).toEqual([]);
     expect(fixture.issueCalls).toHaveLength(1);
     expect(fixture.issueCalls[0].title).toBe(bootstrapIdentity(RESET).BOOTSTRAP_ISSUE_TITLE);
-    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([5, 6]);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([5]);
     expect(fixture.updates).toHaveLength(1);
     await fixture.run();
     expect(fixture.failures).toEqual([]);
@@ -1480,6 +1509,12 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     expect(fixture.updates.at(-1)!.body).toContain('"run_id":"123"');
     expect(fixture.issueCalls.at(-1)!.body).toContain('"run_id":"123"');
     expect(fixture.updates.at(-1)!.body).not.toContain('"run_id":"456"');
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([5]);
+    expect(fixture.commentReads).not.toContain(6);
+    expect(fixture.commentUpdates.every(call =>
+      fixture.persistedComments.find(comment => comment.id === call.comment_id)?.issue_number === 5,
+    )).toBe(true);
+    expect(fixture.commentDeletes).toEqual([]);
   }, 180000);
 
   it('refuses ordinary recovery of a generation PR without authenticated dispatch provenance', async () => {
