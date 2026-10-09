@@ -755,6 +755,7 @@ export function syncTeamCapabilities(
     return { updated: false, profile };
   }
 
-  storage.writeSync(options.agentFile, next);
+  const eol = existing.match(/\r\n|\n|\r/)?.[0] ?? '\n';
+  storage.writeSync(options.agentFile, next.replace(/\n/g, eol));
   return { updated: true, profile };
 }

@@ -55,6 +55,7 @@ export {
   ensureCastingRegistryPair,
   ensureCastingRegistryPairLocked,
   prepareCastingRegistryPairLocked,
+  preflightCastingRegistryPair,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
   validateCastingRegistryPairForCommit,
