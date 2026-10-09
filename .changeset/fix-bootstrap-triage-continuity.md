@@ -3,6 +3,6 @@
 "@bradygaster/squad-sdk": patch
 ---
 
-Make automatic bootstrap proposals immediately available to `/squad triage`
-after the linked Cast PR merges, and recognize the deterministic bootstrap Cast
-branch during team-required command gating.
+Keep automatic bootstrap limited to the Cast PR and linked proposals issue;
+publish research only on explicit `/squad research` before triage. Recognize
+the deterministic bootstrap Cast branch during team-required command gating.

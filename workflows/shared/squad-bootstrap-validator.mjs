@@ -159,7 +159,6 @@ export async function recoverBootstrapResetProvenance({
   });
   return provenance;
 }
-export const BOOTSTRAP_RESEARCH_TITLE = '## 🔬 Squad Research — Bootstrap proposals';
 export const RESEARCH_SCOPE_PATH = '.squad/research-scope.json';
 export const RESEARCH_SCOPE_SCHEMA = 'squad-research-scope/v1';
 export const CREATE_PR_PERMISSION_DENIED_TEXT =
@@ -194,7 +193,7 @@ const REQUIRED_COMMANDS = [
 ];
 const REQUIRED_GUIDANCE_LINES = [
   '1. Review and merge the linked draft Cast PR.',
-  '2. Rerun `/squad triage` to classify these existing proposals, or use focused `/squad research ...` first when deeper research is desired.',
+  '2. Run `/squad research` on the proposals you want to pursue, then `/squad triage` to classify the research findings.',
   '3. Run `/squad plan`, review the plan, then run `/squad activate` to create assignable implementation issues.',
 ];
 const LINK_PLACEHOLDER = '{{CAST_PR_URL}}';
@@ -346,62 +345,6 @@ function pullBase(pullRequest) {
 
 function issueBody(issue) {
   return String(issue?.body ?? '');
-}
-
-function researchEnvelope(comment) {
-  const blocks = String(comment?.body ?? '').matchAll(
-    /Structured data:\s*```json\s*([\s\S]*?)```/gi,
-  );
-  let envelope = null;
-  for (const block of blocks) {
-    let candidate;
-    try {
-      candidate = JSON.parse(block[1]);
-    } catch {
-      continue;
-    }
-    if (candidate?.squad_artifact !== 'research') continue;
-    if (envelope) {
-      throw new Error(
-        `Ambiguous bootstrap research comment #${comment.id}: found multiple research envelopes.`,
-      );
-    }
-    envelope = candidate;
-  }
-  return envelope;
-}
-
-export function findBootstrapResearchArtifacts(comments, issueNumber) {
-  if (!Array.isArray(comments) || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error('Bootstrap research discovery requires comments and a positive issue number.');
-  }
-  return comments
-    .filter((comment) => comment?.user?.login === 'github-actions[bot]')
-    .filter((comment) => {
-      const envelope = researchEnvelope(comment);
-      if (!envelope) return false;
-      const keys = Object.keys(envelope).sort();
-      const expectedKeys = ['origin_issue', 'phases', 'schema_version', 'squad_artifact'];
-      if (
-        JSON.stringify(keys) !== JSON.stringify(expectedKeys) ||
-        envelope.schema_version !== '1' ||
-        envelope.origin_issue !== issueNumber ||
-        !Array.isArray(envelope.phases) ||
-        envelope.phases.length !== 0
-      ) {
-        throw new Error(
-          `Malformed bootstrap research comment #${comment.id}: expected the canonical research envelope.`,
-        );
-      }
-      return true;
-    })
-    .sort((left, right) =>
-      String(left.created_at).localeCompare(String(right.created_at)),
-    );
-}
-
-export function isBootstrapResearchSeed(comment) {
-  return String(comment?.body ?? '').startsWith(`${BOOTSTRAP_RESEARCH_TITLE}\n`);
 }
 
 // Detects exactly the GitHub Actions "create or approve pull requests" permission
@@ -683,7 +626,7 @@ export function buildBootstrapPrFallbackIssueBody({
 }
 
 export function classifyBootstrapState({
-  pullRequests, issues, comments, defaultBranch, reset = null, repository,
+  pullRequests, issues, defaultBranch, reset = null, repository,
   resetAuthorized = false, installedTeam = false,
 }) {
   if (!Array.isArray(pullRequests) || !Array.isArray(issues) || !defaultBranch) {
@@ -774,10 +717,6 @@ export function classifyBootstrapState({
   if (reset && installedTeam && !pullRequest?.merged_at && pullRequest?.merged !== true) {
     throw new Error('Fresh bootstrap cannot replace a committed team or registry.');
   }
-  const researchArtifacts =
-    issue && comments !== undefined
-      ? findBootstrapResearchArtifacts(comments, issue.number)
-      : [];
   const closedUnmerged =
     pullRequest?.state === 'closed' &&
     !pullRequest?.merged_at &&
@@ -785,9 +724,7 @@ export function classifyBootstrapState({
 
   let action;
   if (closedUnmerged) action = 'opt_out';
-  else if (pullRequest && issue && comments !== undefined && researchArtifacts.length !== 1) {
-    action = 'create_research';
-  } else if (pullRequest && issue) action = 'noop';
+  else if (pullRequest && issue) action = 'noop';
   else if (pullRequest) action = 'create_issue';
   else if (issue) action = 'create_pr';
   else action = 'create_both';
@@ -813,7 +750,6 @@ export function classifyBootstrapState({
           url: issue.html_url ?? issue.url ?? '',
         }
       : null,
-    research_artifact_count: researchArtifacts.length,
   };
 }
 
@@ -988,81 +924,6 @@ function validateProposalSections(issueBody, root, errors, scopeRoots = null) {
       }
     }
   }
-}
-
-export function createBootstrapResearchBody(issueBodyText) {
-  const errors = [];
-  if (occurrences(issueBodyText, BOOTSTRAP_ISSUE_MARKER) !== 1) {
-    errors.push('issue: durable bootstrap marker must appear exactly once');
-  }
-  for (const heading of REQUIRED_ISSUE_HEADINGS) {
-    if (occurrences(issueBodyText, heading) !== 1) {
-      errors.push(`issue: expected exactly one ${heading}`);
-    }
-  }
-  const proposals = parseProposalSections(issueBodyText, errors);
-  if (errors.length > 0) {
-    throw new Error(`Cannot derive bootstrap research:\n${[...new Set(errors)].map((error) => `- ${error}`).join('\n')}`);
-  }
-
-  const tableCell = (value) => String(value).replace(/\|/g, '\\|');
-  const evidenceRows = proposals.map((proposal, index) => {
-    const citation = `\`${tableCell(proposal.evidencePaths[0])}\``;
-    return `| R${index + 1} | ${proposal.id} is a validated bootstrap proposal in the root issue body. | 🟡 | M | ${citation} |`;
-  });
-  const traceability = proposals.map((_, index) => `R${index + 1}`).join(', ');
-
-  return [
-    BOOTSTRAP_RESEARCH_TITLE,
-    '',
-    'The automatic bootstrap validated these repository-derived proposals before publishing the issue. This concise seed makes them available to normal triage without duplicating the full proposal descriptions in another comment.',
-    '',
-    '### Goals',
-    '- Classify the existing bootstrap proposals into work, decisions, and exclusions.',
-    '- Preserve direct traceability to the validated repository evidence in the issue body.',
-    '',
-    '### Non-goals',
-    '- This seed does not approve the proposed roster or authorize implementation.',
-    '- This seed does not replace focused `/squad research ...` when deeper investigation is desired.',
-    '',
-    '### Evidence table',
-    '| Rn | Finding | Risk | Complexity | Citation |',
-    '| --- | --- | --- | --- | --- |',
-    ...evidenceRows,
-    '',
-    '### Load-bearing assumptions',
-    `- ${traceability}: cited paths remain representative when triage runs; focused research should refresh any stale evidence.`,
-    '',
-    '### Open decisions',
-    `- Decide which of ${proposals.map((proposal) => proposal.id).join(', ')} should proceed to planning after the Cast PR is merged.`,
-    '',
-    '### Acceptance framing',
-    `- ${traceability}: every selected proposal has a clear disposition, scope boundary, owner direction, and evidence-backed rationale.`,
-    '',
-    '### Online sources',
-    'Online sources: unavailable — automatic bootstrap intentionally uses validated repository evidence only.',
-    '',
-    '### Recommendations',
-    `- Triage ${traceability} directly after the linked Cast PR merges.`,
-    '- Run focused `/squad research ...` first only for proposals that need deeper or refreshed evidence.',
-    '',
-    '### Next step',
-    'Review and merge the linked Cast PR, then rerun `/squad triage` on this issue.',
-  ].join('\n');
-}
-
-export function createBootstrapResearchComment(issueBodyText, issueNumber) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error('Bootstrap research comment requires a positive issue number.');
-  }
-  const body = createBootstrapResearchBody(issueBodyText);
-  const data = JSON.stringify({
-    squad_artifact: 'research',
-    schema_version: '1',
-    origin_issue: issueNumber,
-    phases: [],
-  });
-  return `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
 }
 
 export function validateBootstrapPayload({
