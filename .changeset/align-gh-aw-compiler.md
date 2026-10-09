@@ -6,5 +6,5 @@
 Align native Squad workflow installation and bundled enlistment guidance with
 the exact gh-aw v0.91.5 compiler, preserving strict package ownership and
 integrity verification. Support an explicit schedule seed for integrations.
-The compiler-required Bootstrap conclusion read permissions remain subject to
-explicit approval before rollout.
+Review the compiler-required Bootstrap conclusion read permissions before
+installing the upgrade in a consumer repository.

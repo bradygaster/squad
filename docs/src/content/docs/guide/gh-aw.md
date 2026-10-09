@@ -11,9 +11,9 @@ request you can review before merging.
 
 This guide covers setup, every slash command, and daily usage patterns.
 
-> **v0.91.5 candidate: UNAPPROVED rollout blocker.** Do not deploy this compiler
-> upgrade until the permission change is explicitly approved. Compared with
-> v0.89.22, v0.91.5 adds `actions: read` and `pull-requests: read` to the Bootstrap
+> **v0.91.5 permission migration.** Review the permission change before installing
+> this compiler upgrade in a consumer repository. Compared with v0.89.22,
+> v0.91.5 adds `actions: read` and `pull-requests: read` to the Bootstrap
 > `conclusion` job, which previously requested only `issues: write`. The compiler
 > requires these reads for existing automatic failure-issue reporting; disabling
 > that reporting would change standalone behavior. No additional write scope is
