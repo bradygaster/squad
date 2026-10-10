@@ -513,7 +513,8 @@ describe('gh-aw enforcing Squad reviewer', () => {
     expect(permissionBlock).toContain('pull-requests: read');
     expect(permissionBlock).toContain('copilot-requests: write');
     expect(permissionBlock).not.toMatch(/^\s+(contents|issues|pull-requests): write$/m);
-    expect(safeOutputPermissions).toMatchObject({
+    expect(safeOutputPermissions).toEqual({
+      actions: 'read',
       contents: 'read',
       issues: 'write',
       'pull-requests': 'write',

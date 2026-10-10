@@ -614,6 +614,21 @@ afterAll(() => {
 });
 
 describe('automatic Squad bootstrap workflow', () => {
+  it('keeps generated support and routing guidance consistent with native contracts', () => {
+    const dispatcher = readFileSync(resolve(ROOT, 'workflows/squad.md'), 'utf8');
+    for (const source of [WORKFLOW, dispatcher]) {
+      const normalized = source.replace(/\s+/g, ' ');
+      expect(normalized).toContain('accepted durable decisions only, never session or orchestration logs');
+      expect(normalized).toContain('`squad:{member}` labels as specialist assignment');
+      expect(normalized).toContain('bare `squad` label is a tracking marker');
+      expect(normalized).toContain('A name mention alone does not dispatch a native workflow');
+      expect(source).not.toContain('Scribe logs sessions');
+    }
+    const guide = readFileSync(resolve(ROOT, 'docs/src/content/docs/guide/gh-aw.md'), 'utf8');
+    expect(guide).toContain('Do not amend that branch or rewrite provenance');
+    expect(guide.replace(/\s+/g, ' ')).toContain('reviewed fresh generation procedure');
+  });
+
   it('pins the canonical bootstrap validator digest in the authenticated runner', () => {
     const canonical = readFileSync(VALIDATOR);
     const commandDigest = WORKFLOW.match(
