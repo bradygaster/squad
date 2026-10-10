@@ -792,6 +792,14 @@ sections. The coordinator has concrete Cast-source paths and one synchronized,
 nonzero Team Capabilities block. Remove bootstrap specialist directories not
 selected by this Cast, but never remove or rewrite the four built-ins.
 
+In the coordinator and team introduction, describe Scribe as silently merging
+accepted durable decisions only, never session or orchestration logs. The
+canonical support charters govern when support agents run.
+Document `squad:{member}` labels as specialist assignment, using exact active
+registry names and `.squad/routing.md`. The bare `squad` label is a tracking marker,
+not specialist assignment. A name mention alone does not dispatch a native
+workflow; use documented `/squad` commands with their prerequisites.
+
 ## Shared payload
 
 Write `.github/workflows/squad-bootstrap-payload.json` with this exact shape:

@@ -262,6 +262,14 @@ permissions.
 
 ### Explicit fresh bootstrap after a failed attempt
 
+Signed Cast provenance binds the exact generated head commit (`cast_sha`).
+Do not amend that branch or rewrite provenance to fix review findings. Correct
+the generation guidance in the trusted package, then use the reviewed fresh
+generation procedure below. The replacement Cast receives new provenance and
+still requires independent review and human approval. An automatic review
+infrastructure failure does not authorize bypassing the guard or merging the
+original Cast.
+
 Closing an unmerged Cast PR still means **opt out**. Ordinary pushes, blank
 manual runs, renaming that PR, or deleting its branch do not undo that decision.
 To intentionally start over without deleting history, a maintainer can prepare

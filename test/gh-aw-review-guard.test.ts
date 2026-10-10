@@ -420,6 +420,27 @@ describe('independent Squad review guard', () => {
       .rejects.toThrow('missing or duplicate base-controlled bootstrap PR provenance');
   });
 
+  it('preserves review output when signed bootstrap run evidence is inaccessible', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    const workspace = mkdtempSync(join(tmpdir(), 'squad-review-run-permission-'));
+    workspaces.push(workspace);
+    const path = join(workspace, 'output.json');
+    const original = JSON.stringify({ items: [{
+      type: 'submit_pull_request_review', event: 'COMMENT', body: 'Bootstrap Cast reviewed.',
+    }] });
+    writeFileSync(path, original);
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route === `repos/${REPOSITORY}/actions/runs/29`) {
+        throw Object.assign(new Error('Resource not accessible by integration'), { status: 403 });
+      }
+      return f.get(route, fields);
+    };
+    await expect(enforceReviewOutputs({ ...f.env, GH_AW_AGENT_OUTPUT: path }, get))
+      .rejects.toThrow('Resource not accessible by integration');
+    expect(readFileSync(path, 'utf8')).toBe(original);
+  });
+
   it.each([
     ['branch', (f: ReturnType<typeof fixture>) => { f.pr.head.ref = 'attacker/bootstrap'; }],
     ['title', (f: ReturnType<typeof fixture>) => { f.pr.title = 'Trusted bootstrap'; }],
