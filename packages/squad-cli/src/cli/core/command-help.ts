@@ -37,7 +37,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Creates a markdown-based squad layout under .squad/ plus default agent`);
     console.log(`workflows under .github/. Safe to re-run — existing files are preserved.\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--sdk${RESET}                       Use SDK builder syntax (squad.config.ts)`);
+    console.log(`  ${BOLD}--sdk${RESET}                       Generate squad.config.ts (deprecated; removed in v2)`);
     console.log(`  ${BOLD}--roles${RESET}                     Seed the team with built-in base roles`);
     console.log(`  ${BOLD}--global${RESET}                    Initialize in the personal (global) squad directory`);
     console.log(`  ${BOLD}--no-workflows${RESET}              Skip writing GitHub Actions workflows`);
@@ -76,10 +76,11 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   },
 
   migrate: (version) => {
-    header('migrate', version, 'Convert between markdown and SDK-First squad formats');
+    header('migrate', version, 'Convert between markdown and legacy SDK-First squad formats');
     console.log(`Usage: squad migrate --to sdk|markdown [options]\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--to sdk|markdown${RESET}           Target format`);
+    console.log(`  ${BOLD}--to sdk${RESET}                    Generate squad.config.ts (deprecated; removed in v2)`);
+    console.log(`  ${BOLD}--to markdown${RESET}               Convert an existing SDK-First squad to markdown`);
     console.log(`  ${BOLD}--from ai-team${RESET}              Source format (defaults to current)`);
     console.log(`  ${BOLD}--dry-run${RESET}                   Show planned changes without writing\n`);
   },

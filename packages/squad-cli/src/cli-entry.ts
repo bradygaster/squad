@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
     console.log(`             Flags: --global (init in personal squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
-    console.log(`             Flags: --sdk (SDK builder syntax)`);
+    console.log(`             Flags: --sdk (deprecated; removed in v2)`);
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
@@ -171,7 +171,7 @@ async function main(): Promise<void> {
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
     console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
     console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
-    console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
+    console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and legacy SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
     console.log(`  ${BOLD}sync${RESET}       Sync squad-state branch(es) with remote (push/pull/both)`);
     console.log(`             Flags: --push, --pull, --remote <name>, --quiet`);
@@ -1172,4 +1172,3 @@ main().catch(err => {
   }
   process.exit(1);
 });
-

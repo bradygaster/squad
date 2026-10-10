@@ -9,11 +9,12 @@
  * @module test/migrate
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { existsSync } from 'fs';
+import { runMigrate } from '../packages/squad-cli/src/cli/commands/migrate.js';
 
 // Note: migrate function location TBD - adjust import when implementation lands
 // Expected at packages/squad-sdk/src/config/migration.ts or cli command
@@ -124,6 +125,18 @@ export default defineSquad({
     expect(configContent).toContain('defineTeam');
     expect(configContent).toContain('defineAgent');
     */
+  });
+
+  it('--to sdk warns that SDK-first migration is deprecated', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(runMigrate(tempDir, { to: 'sdk' })).rejects.toThrow('No squad found');
+      expect(log.mock.calls.flat().join('\n')).toContain(
+        '`squad migrate --to sdk` is deprecated and will be removed in v2'
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('--to sdk --dry-run prints preview without writing', async () => {

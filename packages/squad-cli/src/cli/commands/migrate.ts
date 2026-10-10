@@ -394,7 +394,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
     console.log(`\n${BOLD}Squad Migrate${RESET} — .ai-team/ → .squad/\n`);
     await migrateDirectory(cwd);
     
-    console.log(`\n${dim('Next:')} Run ${BOLD}squad migrate --to sdk${RESET} to convert to SDK-First mode.`);
+    console.log(`\n${dim('Next:')} Review the migrated markdown under ${BOLD}.squad/${RESET}.`);
     return;
   }
   
@@ -439,6 +439,8 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
   
   // Handle --to sdk (markdown → SDK-First)
   if (options.to === 'sdk') {
+    warn('`squad migrate --to sdk` is deprecated and will be removed in v2. Keep markdown as the source of truth for new teams.');
+
     if (mode === 'none') {
       fatal('No squad found. Run `squad init` first.');
     }
@@ -510,8 +512,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
     console.log();
     console.log('Your .squad/ directory is the source of truth.');
     console.log();
-    console.log('To convert to SDK-First mode, run:');
-    console.log(`  ${BOLD}squad migrate --to sdk${RESET}`);
+    console.log(`${DIM}SDK-First migration is deprecated; keep markdown as the source of truth for new teams.${RESET}`);
   } else if (mode === 'sdk') {
     console.log(`Current mode: ${BOLD}SDK-First${RESET}`);
     console.log();

@@ -1,5 +1,9 @@
 # What's New
 
+> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
+
+> ⚠️ **Current status.** SDK-first initialization is deprecated and will be removed in v2. Entries below retain the release history for existing users; use markdown-first `squad init` for new teams.
+
 Full release history for Squad — from beta through the v1 TypeScript replatform. Jump to the version you're looking for, or read top-down to see how the project evolved.
 
 ---
@@ -7,7 +11,7 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 ## v0.9.1 — Current Release
 
 - **Shell agent name extraction** — Robust multi-pattern fallback for extracting agent names from shell transcripts (#577)
-- **Init scaffolding** — `squad init --sdk` now scaffolds typed casting files; silences remote-lookup warnings (#579)
+- **Init scaffolding (deprecated)** — `squad init --sdk` scaffolded typed casting files and silenced remote-lookup warnings; the flag is retained only for transition compatibility (#579)
 - **Personal squad global mode** — `squad personal init --global` auto-discovers `~/.config/squad/` (#576)
 - **Release hardening** — CI playbook rewrite, publish policy linting, docs consistency checks (#564, #557)
 - **Doctor improvements** — Actionable warnings and `squad.agent.md` existence checks (#565, #533)
