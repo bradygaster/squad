@@ -215,22 +215,26 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 
 Before spawning agents, detect which platform you're running on:
 
-1. **CLI mode** — `task` tool is available
+1. **Copilot App mode** — `create_session` tool is available
+   - Use persistent sub-sessions with isolated worktrees for commit-producing work
+   - Collect results through the session's report-back
+
+2. **CLI mode** — `task` tool is available
    - Use `task` with `agent_type`, `mode`, `model`, `description`, `prompt` parameters
    - Full spawning control: per-spawn model selection, background mode, agent type selection
    - Use `read_agent` for result collection
 
-2. **VS Code mode** — `runSubagent` or `agent` tool is available
+3. **VS Code mode** — `runSubagent` or `agent` tool is available
    - Use `runSubagent` with task prompt (equivalent to CLI's `prompt` parameter)
    - Drop: `agent_type` (all subagents have full tools), `mode` (always sync), direct `model` param
    - Spawn multiple subagents in SINGLE turn for parallel execution
    - Results arrive automatically (skip `read_agent`)
    - Batch Scribe as last subagent in parallel groups (Scribe blocks)
 
-3. **Fallback mode** — Neither `task` nor `runSubagent` available
-   - Work inline without delegation
-   - Do not apologize or explain the limitation
-   - Execute the task directly to best of your ability
+4. **No dispatch tool available** — Neither `create_session`, `task`, nor `runSubagent` is available
+   - Refuse domain work
+   - Direct Mode remains limited to brief answers already supported by the current context
+   - Missing tools never authorize inline domain work
 ```
 
 **Feature Degradation Plan:**

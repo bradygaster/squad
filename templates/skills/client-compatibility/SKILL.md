@@ -8,7 +8,7 @@ source: "extracted"
 
 ## Context
 
-Squad runs on multiple Copilot surfaces (CLI, VS Code, JetBrains, GitHub.com). The coordinator must detect its platform and adapt spawning behavior accordingly. Different tools are available on different platforms, requiring conditional logic for agent spawning, SQL usage, and response timing.
+Squad runs on multiple Copilot surfaces (Copilot App, CLI, VS Code, JetBrains, GitHub.com). The coordinator must detect its platform and adapt spawning behavior accordingly. Different tools are available on different platforms, requiring conditional logic for agent spawning, SQL usage, and response timing.
 
 ## Patterns
 
@@ -16,13 +16,15 @@ Squad runs on multiple Copilot surfaces (CLI, VS Code, JetBrains, GitHub.com). T
 
 Before spawning agents, determine the platform by checking available tools:
 
-1. **CLI mode** — `task` tool is available → full spawning control. Use `task` with `agent_type`, `mode`, `model`, `description`, `prompt` parameters. Collect results via `read_agent`.
+1. **Copilot App mode** — `create_session` tool is available → persistent sub-sessions with isolated worktrees for commit-producing work.
 
-2. **VS Code mode** — `runSubagent` or `agent` tool is available → conditional behavior. Use `runSubagent` with the task prompt. Drop `agent_type`, `mode`, and `model` parameters. Multiple subagents in one turn run concurrently (equivalent to background mode). Results return automatically — no `read_agent` needed.
+2. **CLI mode** — `task` tool is available → full spawning control. Use `task` with `agent_type`, `mode`, `model`, `description`, `prompt` parameters. Collect results via `read_agent`.
 
-3. **Fallback mode** — neither `task` nor `runSubagent`/`agent` available → work inline. Do not apologize or explain the limitation. Execute the task directly.
+3. **VS Code mode** — `runSubagent` or `agent` tool is available → conditional behavior. Use `runSubagent` with the task prompt. Drop `agent_type`, `mode`, and `model` parameters. Multiple subagents in one turn run concurrently (equivalent to background mode). Results return automatically — no `read_agent` needed.
 
-If both `task` and `runSubagent` are available, prefer `task` (richer parameter surface).
+4. **No dispatch tool available** — refuse domain work. Direct Mode remains available only for brief answers already supported by the current context.
+
+If multiple dispatch tools are available, prefer `create_session` for commit-producing work, then `task` for richer ephemeral spawning control, then `runSubagent`.
 
 ### CopilotSession Lifecycle Invariant
 
@@ -77,10 +79,10 @@ runSubagent({ prompt: "...Scribe charter + task..." }) // Last in group
 // Results return automatically, no read_agent
 ```
 
-**Example 3: Fallback mode**
+**Example 3: No dispatch tool**
 ```typescript
-// Neither task nor runSubagent available → work inline
-// Coordinator executes the task directly without spawning
+// Neither create_session, task, nor runSubagent is available → refuse domain work
+// Direct Mode remains limited to brief answers already supported by context
 ```
 
 ## Anti-Patterns
@@ -91,4 +93,5 @@ runSubagent({ prompt: "...Scribe charter + task..." }) // Last in group
 - ❌ Showing launch table on VS Code (results already inline)
 - ❌ Apologizing or explaining platform limitations to the user
 - ❌ Using `task` when only `runSubagent` is available
+- ❌ Treating missing dispatch tools as permission to perform domain work inline
 - ❌ Dropping prompt structure (charter/identity/task) on non-CLI platforms
