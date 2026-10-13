@@ -78,6 +78,23 @@ absent; display names and update dates default to the persistent name and creati
 date only when absent. Supported history contains assignment snapshots using
 `members[].folder`, agent ID arrays, or role-ID-to-persistent-name maps, with
 matching universe usage records using `created_at` or `used_at`.
+Snapshots and usage records also accept the historical `assigned_at` timestamp.
+If multiple recognized timestamp fields are present, each must be valid and
+denote the same instant. The original timestamp string, including its timezone
+offset, is retained; migration never substitutes an agent creation date for an
+assignment date.
+
+The historical `entries[]` / `assignments[]` variant is also supported when
+each registry entry's persistent name matches exactly one canonical folder's
+`charter.md` under the team's `agents/` directory. The charter must contain an
+`## Identity` section with `- **Name:**`; its optional `- **Role:**` supplies the
+role, otherwise the canonical folder ID is used. Missing, duplicated, malformed,
+or conflicting identities stop migration; names are never slugified into IDs.
+Keep the original producer's charters with the state when testing this variant.
+Each assignment's explicit persistent-name list supplies **only that historical
+membership**, not today's roster. Its recorded universe and timestamp supply
+the corresponding usage event. Missing universe or date evidence is never filled
+from the current naming policy or agent creation dates.
 
 Migration preserves agent IDs, names, original dates (including timezone offsets),
 assignment keys, and snapshot dates. Revision 1 and `generated_at` establish a
@@ -96,6 +113,40 @@ archives, or transaction files. Unknown schemas, damaged files, missing pair
 members, mismatched assignment evidence, or inconsistent managed transactions
 stop the upgrade before managed files change. Back up the state and seek recovery
 help; do not manually add `revision`, delete casting files, or rewrite dates.
+
+#### Incomplete legacy provenance
+
+Automatic migration refuses agents without a nonempty universe, snapshots with
+a missing or `null` universe, and snapshots without matching historical usage.
+Descriptive names alone do not prove a universe. A current coordinator's naming
+policy does not prove the policy of an older assignment. Migration will not
+invent a universe, usage entry, or historical membership.
+
+The historical `entries[]` / `assignments[]` pair requires recovery when original
+folder/charter identities are missing or ambiguous. Persistent names are not
+canonical folder IDs. Today's team roster is not evidence of which agents
+belonged to an older assignment. Restore the original authoritative `charter.md`
+files alongside the original casting pair; do not create charters from guessed
+name-to-folder mappings.
+
+If either policy stops your upgrade:
+
+1. Keep the installed coordinator and both original casting files intact. Make
+   a private backup of the entire team state directory and coordinator before
+   attempting recovery.
+2. Retrieve the original assignment records and producing coordinator from
+   version control or backups. For identity recovery, include original folder
+   IDs and each historical assignment's membership, not just today's roster.
+   For universe recovery, include recorded universe and usage evidence for each
+   assignment. Do not fill fields from guesses or create synthetic usage.
+3. Request migration/recovery support with the producer version, schema shape,
+   and anonymized evidence. Do not publish private paths, state archives, or
+   team knowledge. If evidence is unavailable, keep using the installed version;
+   this refusal is **not** a completed migration.
+4. After an evidence-backed recovery is available, test it on a disposable
+   backup using `squad upgrade --dry-run`, then upgrade and verify identities,
+   historical membership, dates, and byte-exact original archives before
+   applying it to the live team.
 
 ---
 
