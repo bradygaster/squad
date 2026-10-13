@@ -9,9 +9,173 @@ import { pathToFileURL } from 'node:url';
 import { validateCastTree } from './squad-cast-validator.mjs';
 export const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
 export const BOOTSTRAP_PR_TITLE = '[squad] Cast your Squad';
+// Retain the unscoped identity for installed legacy generations and PR-only callers.
 export const BOOTSTRAP_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
 export const BOOTSTRAP_ISSUE_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
-export const BOOTSTRAP_RESEARCH_TITLE = '## 🔬 Squad Research — Bootstrap proposals';
+export const BOOTSTRAP_RESET_PATH = '.squad/bootstrap-reset.json';
+
+export function parseBootstrapReset(value) {
+  if (value === undefined) return null;
+  const fields = ['schema', 'id', 'archived_pull_requests', 'archived_issues'];
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).sort().join() !== fields.sort().join() ||
+      value.schema !== 'squad-bootstrap-reset/v1' ||
+      typeof value.id !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(value.id)) {
+    throw new Error('Invalid committed bootstrap reset record.');
+  }
+  for (const key of ['archived_pull_requests', 'archived_issues']) {
+    const numbers = value[key];
+    if (!Array.isArray(numbers) || numbers.length > 100 ||
+        numbers.some(number => !Number.isSafeInteger(number) || number < 1) ||
+        new Set(numbers).size !== numbers.length) {
+      throw new Error(`Invalid bootstrap reset ${key}; expected unique positive artifact numbers.`);
+    }
+  }
+  if (!value.archived_pull_requests.length) {
+    throw new Error('A bootstrap reset must name at least one closed-unmerged Cast pull request.');
+  }
+  return value;
+}
+
+export function readBootstrapReset(root) {
+  const path = execFileSync('git', ['ls-tree', '--name-only', 'HEAD', '--', BOOTSTRAP_RESET_PATH],
+    { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return path ? parseBootstrapReset(JSON.parse(execFileSync('git', ['show', `HEAD:${BOOTSTRAP_RESET_PATH}`],
+    { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))) : null;
+}
+
+export function bootstrapIdentity(reset = null, repository) {
+  if (repository !== undefined &&
+      (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))) {
+    throw new Error('Bootstrap research title requires an owner/repo scope.');
+  }
+  const suffix = reset ? ` [reset:${parseBootstrapReset(reset).id}]` : '';
+  return {
+    BOOTSTRAP_BRANCH: BOOTSTRAP_BRANCH + (reset ? `-${reset.id}` : ''),
+    BOOTSTRAP_PR_TITLE: BOOTSTRAP_PR_TITLE + suffix,
+    BOOTSTRAP_ISSUE_TITLE: (repository
+      ? `[Agentic Research] ${repository} — initial proposals`
+      : BOOTSTRAP_ISSUE_TITLE) + suffix,
+  };
+}
+
+function matchesBootstrapIssueTitle(title, reset, repository) {
+  return title === bootstrapIdentity(reset).BOOTSTRAP_ISSUE_TITLE ||
+    title === bootstrapIdentity(reset, repository).BOOTSTRAP_ISSUE_TITLE;
+}
+
+function hasBootstrapIssueAuthor(issue) {
+  return !issue?.title?.startsWith('[Agentic Research] ') ||
+    (issue.user?.login === 'github-actions[bot]' && issue.user?.type === 'Bot');
+}
+
+export function hasCommittedBootstrapTeam(root) {
+  return execFileSync('git', ['ls-tree', '--name-only', 'HEAD', '--',
+    '.squad/team.md', '.squad/casting/registry.json'],
+  { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim().length > 0;
+}
+
+export async function authorizeBootstrapReset({
+  reset, input, context, github, triggeringActor = process.env.GITHUB_TRIGGERING_ACTOR || context.actor,
+}) {
+  if (!input && (!reset || context.eventName !== 'workflow_dispatch')) return false;
+  if (!reset || (input && input !== reset.id) || context.eventName !== 'workflow_dispatch' ||
+      context.ref !== `refs/heads/${context.payload.repository.default_branch}`) {
+    throw new Error('Fresh bootstrap requires the committed reset ID and a default-branch manual dispatch.');
+  }
+  for (const actor of new Set([context.actor, context.payload.sender?.login,
+    triggeringActor])) {
+    if (!actor || context.payload.sender?.type !== 'User') {
+      throw new Error('Fresh bootstrap requires an authenticated human maintainer.');
+    }
+    const result = await github.rest.repos.getCollaboratorPermissionLevel({ ...context.repo, username: actor });
+    if (result.data.user?.type !== 'User' || result.data.user?.login !== actor) {
+      throw new Error('Fresh bootstrap requires each actor to be a verified human collaborator.');
+    }
+    if (!['write', 'maintain', 'admin'].includes(result.data.permission)) {
+      throw new Error('Fresh bootstrap requires write, maintain, or admin repository permission.');
+    }
+  }
+  return Boolean(input);
+}
+
+export async function recoverBootstrapResetProvenance({
+  reset, github, repository, defaultBranch, currentSha, currentRunId, resetAuthorized,
+  pullRequest, issues, comments,
+}) {
+  const identity = bootstrapIdentity(reset);
+  const prefix = '<' + '!-- squad:bootstrap-provenance ';
+  let provenance;
+  if (pullRequest.user?.login === 'github-actions[bot]' && pullRequest.user?.type === 'Bot') {
+    const records = String(pullRequest.body || '').split('\n').filter(line => line.startsWith(prefix));
+    const authenticated = comments.filter(comment => comment.user?.login === 'github-actions[bot]' &&
+      comment.user?.type === 'Bot' && String(comment.body || '').startsWith(prefix));
+    if (records.length !== 1 || !records[0].endsWith(' -->') || authenticated.length !== 1 ||
+        authenticated[0].body.split('\n')[0] !== records[0]) {
+      throw new Error('Reset recovery requires the original bot-authenticated dispatch provenance.');
+    }
+    provenance = JSON.parse(records[0].slice(prefix.length, -4));
+  } else if (pullRequest.user?.type === 'User') {
+    const fallback = findExistingBootstrapPrFallbackIssue(issues, identity.BOOTSTRAP_BRANCH, {
+      repository, baseBranch: defaultBranch, headSha: pullRequest.head?.sha,
+    });
+    const record = fallback && parseBootstrapPrFallbackProvenance(fallback.body);
+    if (!record || record.compare_url !== buildBootstrapPrFallbackCompareUrl({
+      repository, baseBranch: defaultBranch, headBranch: identity.BOOTSTRAP_BRANCH,
+      title: identity.BOOTSTRAP_PR_TITLE, server: process.env.GITHUB_SERVER_URL,
+    }) || !(Date.parse(fallback.created_at) <= Date.parse(pullRequest.created_at))) {
+      throw new Error('Reset recovery requires the original authenticated manual-fallback provenance.');
+    }
+    provenance = {
+      schema: 1, repository, run_id: record.run_id, install_sha: record.base_sha, cast_sha: record.head_sha,
+    };
+  }
+  if (!provenance || provenance.schema !== 1 ||
+      Object.keys(provenance).sort().join() !== ['schema', 'repository', 'run_id', 'install_sha', 'cast_sha'].sort().join() ||
+      provenance.repository !== repository || !/^[1-9]\d*$/.test(provenance.run_id) ||
+      !Number.isSafeInteger(Number(provenance.run_id)) ||
+      !/^[0-9a-f]{40}$/.test(provenance.install_sha) || provenance.cast_sha !== pullRequest.head?.sha ||
+      pullRequest.head?.repo?.full_name !== repository || pullRequest.base?.ref !== defaultBranch ||
+      pullRequest.head?.ref !== identity.BOOTSTRAP_BRANCH || pullRequest.title !== identity.BOOTSTRAP_PR_TITLE) {
+    throw new Error('Reset recovery provenance does not match the exact generation and Cast head.');
+  }
+  const [owner, repo] = repository.split('/');
+  const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: Number(provenance.run_id) });
+  const authorizedOriginRerun = resetAuthorized && String(currentRunId) === provenance.run_id &&
+    run.status === 'in_progress';
+  if (run.event !== 'workflow_dispatch' || run.path !== '.github/workflows/squad-bootstrap.lock.yml' ||
+      run.repository?.full_name !== repository || run.head_sha !== provenance.install_sha ||
+      run.head_branch !== defaultBranch ||
+      (!authorizedOriginRerun && (run.status !== 'completed' || run.conclusion !== 'success')) ||
+      run.actor?.type !== 'User' || run.triggering_actor?.type !== 'User') {
+    throw new Error('Reset recovery must retain a successful authenticated fresh-start dispatch as its trust root.');
+  }
+  const { data: file } = await github.rest.repos.getContent({
+    owner, repo, path: BOOTSTRAP_RESET_PATH, ref: provenance.install_sha,
+  });
+  if (file?.type !== 'file' || file.encoding !== 'base64' || !Number.isSafeInteger(file.size) ||
+      file.size > 16000 || typeof file.content !== 'string' ||
+      Buffer.from(file.content, 'base64').length !== file.size ||
+      JSON.stringify(parseBootstrapReset(JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')))) !== JSON.stringify(reset)) {
+    throw new Error('Reset recovery record changed since its original dispatch.');
+  }
+  const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+    owner, repo, basehead: `${provenance.install_sha}...${currentSha}`,
+  });
+  if (!['identical', 'ahead'].includes(comparison.status) ||
+      comparison.base_commit?.sha !== provenance.install_sha ||
+      comparison.merge_base_commit?.sha !== provenance.install_sha) {
+    throw new Error('Reset recovery origin is not an ancestor of the current default branch.');
+  }
+  await authorizeBootstrapReset({
+    reset, input: reset.id, github, triggeringActor: run.triggering_actor.login,
+    context: {
+      repo: { owner, repo }, actor: run.actor.login, ref: `refs/heads/${defaultBranch}`,
+      eventName: run.event, payload: { repository: { default_branch: defaultBranch }, sender: run.actor },
+    },
+  });
+  return provenance;
+}
 export const RESEARCH_SCOPE_PATH = '.squad/research-scope.json';
 export const RESEARCH_SCOPE_SCHEMA = 'squad-research-scope/v1';
 export const CREATE_PR_PERMISSION_DENIED_TEXT =
@@ -46,7 +210,7 @@ const REQUIRED_COMMANDS = [
 ];
 const REQUIRED_GUIDANCE_LINES = [
   '1. Review and merge the linked draft Cast PR.',
-  '2. Rerun `/squad triage` to classify these existing proposals, or use focused `/squad research ...` first when deeper research is desired.',
+  '2. Run `/squad research` on the proposals you want to pursue, then `/squad triage` to classify the research findings.',
   '3. Run `/squad plan`, review the plan, then run `/squad activate` to create assignable implementation issues.',
 ];
 const LINK_PLACEHOLDER = '{{CAST_PR_URL}}';
@@ -198,62 +362,6 @@ function pullBase(pullRequest) {
 
 function issueBody(issue) {
   return String(issue?.body ?? '');
-}
-
-function researchEnvelope(comment) {
-  const blocks = String(comment?.body ?? '').matchAll(
-    /Structured data:\s*```json\s*([\s\S]*?)```/gi,
-  );
-  let envelope = null;
-  for (const block of blocks) {
-    let candidate;
-    try {
-      candidate = JSON.parse(block[1]);
-    } catch {
-      continue;
-    }
-    if (candidate?.squad_artifact !== 'research') continue;
-    if (envelope) {
-      throw new Error(
-        `Ambiguous bootstrap research comment #${comment.id}: found multiple research envelopes.`,
-      );
-    }
-    envelope = candidate;
-  }
-  return envelope;
-}
-
-export function findBootstrapResearchArtifacts(comments, issueNumber) {
-  if (!Array.isArray(comments) || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error('Bootstrap research discovery requires comments and a positive issue number.');
-  }
-  return comments
-    .filter((comment) => comment?.user?.login === 'github-actions[bot]')
-    .filter((comment) => {
-      const envelope = researchEnvelope(comment);
-      if (!envelope) return false;
-      const keys = Object.keys(envelope).sort();
-      const expectedKeys = ['origin_issue', 'phases', 'schema_version', 'squad_artifact'];
-      if (
-        JSON.stringify(keys) !== JSON.stringify(expectedKeys) ||
-        envelope.schema_version !== '1' ||
-        envelope.origin_issue !== issueNumber ||
-        !Array.isArray(envelope.phases) ||
-        envelope.phases.length !== 0
-      ) {
-        throw new Error(
-          `Malformed bootstrap research comment #${comment.id}: expected the canonical research envelope.`,
-        );
-      }
-      return true;
-    })
-    .sort((left, right) =>
-      String(left.created_at).localeCompare(String(right.created_at)),
-    );
-}
-
-export function isBootstrapResearchSeed(comment) {
-  return String(comment?.body ?? '').startsWith(`${BOOTSTRAP_RESEARCH_TITLE}\n`);
 }
 
 // Detects exactly the GitHub Actions "create or approve pull requests" permission
@@ -534,20 +642,59 @@ export function buildBootstrapPrFallbackIssueBody({
   );
 }
 
-export function classifyBootstrapState({ pullRequests, issues, comments, defaultBranch }) {
+export function classifyBootstrapState({
+  pullRequests, issues, defaultBranch, reset = null, repository,
+  resetAuthorized = false, installedTeam = false,
+}) {
   if (!Array.isArray(pullRequests) || !Array.isArray(issues) || !defaultBranch) {
     throw new Error('Bootstrap state requires pullRequests, issues, and defaultBranch.');
   }
 
+  const identity = bootstrapIdentity(reset, repository);
+  const canonicalPull = pull => {
+    const head = pullHead(pull);
+    const suffix = head?.slice(BOOTSTRAP_BRANCH.length);
+    return (head === BOOTSTRAP_BRANCH || /^-[a-z][a-z0-9-]{0,31}$/.test(suffix)) &&
+      pull.title === BOOTSTRAP_PR_TITLE + (suffix ? ` [reset:${suffix.slice(1)}]` : '') &&
+      pullBase(pull) === defaultBranch;
+  };
+  if (reset) {
+    parseBootstrapReset(reset);
+    for (const number of reset.archived_pull_requests) {
+      const matches = pullRequests.filter(pull => pull.number === number);
+      const pull = matches[0];
+      if (matches.length !== 1 || !canonicalPull(pull) || pull.state !== 'closed' ||
+          pull.merged_at || pull.merged === true || !repository ||
+          pull.head?.repo?.full_name !== repository || pull.base?.repo?.full_name !== repository ||
+          pullHead(pull) === identity.BOOTSTRAP_BRANCH) {
+        throw new Error(`Unsafe bootstrap reset archive pull request #${number}.`);
+      }
+    }
+    for (const number of reset.archived_issues) {
+      const matches = issues.filter(issue => issue.number === number);
+      const issue = matches[0];
+      const titleWithoutReset = issue?.title?.replace(/ \[reset:[a-z][a-z0-9-]{0,31}\]$/, '');
+      const research = issue && matchesBootstrapIssueTitle(titleWithoutReset, null, repository) &&
+        hasBootstrapIssueAuthor(issue) &&
+        occurrences(issueBody(issue), BOOTSTRAP_ISSUE_MARKER) === 1;
+      const fallback = issue?.title === BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE &&
+        parseBootstrapPrFallbackProvenance(issueBody(issue))?.repository === repository;
+      if (matches.length !== 1 || issue.state !== 'closed' || (!research && !fallback) ||
+          matchesBootstrapIssueTitle(issue.title, reset, repository)) {
+        throw new Error(`Unsafe bootstrap reset archive issue #${number}.`);
+      }
+    }
+  }
   const relevantPullRequests = pullRequests.filter(
     (pullRequest) =>
-      pullHead(pullRequest) === BOOTSTRAP_BRANCH ||
-      pullRequest?.title === BOOTSTRAP_PR_TITLE,
+      !reset?.archived_pull_requests.includes(pullRequest.number) &&
+      (pullHead(pullRequest)?.startsWith(BOOTSTRAP_BRANCH) ||
+      pullRequest?.title?.startsWith(BOOTSTRAP_PR_TITLE)),
   );
   const malformedPullRequest = relevantPullRequests.find(
     (pullRequest) =>
-      pullHead(pullRequest) !== BOOTSTRAP_BRANCH ||
-      pullRequest?.title !== BOOTSTRAP_PR_TITLE ||
+      pullHead(pullRequest) !== identity.BOOTSTRAP_BRANCH ||
+      pullRequest?.title !== identity.BOOTSTRAP_PR_TITLE ||
       pullBase(pullRequest) !== defaultBranch,
   );
   if (malformedPullRequest) {
@@ -563,17 +710,20 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
 
   const relevantIssues = issues.filter(
     (issue) =>
-      issue?.title === BOOTSTRAP_ISSUE_TITLE ||
-      issueBody(issue).includes(BOOTSTRAP_ISSUE_MARKER),
+      !reset?.archived_issues.includes(issue.number) &&
+      (issue?.title?.startsWith(BOOTSTRAP_ISSUE_TITLE) ||
+      issue?.title?.startsWith(bootstrapIdentity(null, repository).BOOTSTRAP_ISSUE_TITLE) ||
+      issueBody(issue).includes(BOOTSTRAP_ISSUE_MARKER)),
   );
   const malformedIssue = relevantIssues.find(
     (issue) =>
-      issue?.title !== BOOTSTRAP_ISSUE_TITLE ||
+      !matchesBootstrapIssueTitle(issue?.title, reset, repository) ||
+      !hasBootstrapIssueAuthor(issue) ||
       occurrences(issueBody(issue), BOOTSTRAP_ISSUE_MARKER) !== 1,
   );
   if (malformedIssue) {
     throw new Error(
-      `Ambiguous bootstrap issue #${malformedIssue.number}: expected exact title and durable marker.`,
+      `Ambiguous bootstrap issue #${malformedIssue.number}: expected exact title and durable marker; Agentic Research requires the GitHub Actions bot author.`,
     );
   }
   if (relevantIssues.length > 1) {
@@ -584,10 +734,9 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
 
   const pullRequest = relevantPullRequests[0] ?? null;
   const issue = relevantIssues[0] ?? null;
-  const researchArtifacts =
-    issue && comments !== undefined
-      ? findBootstrapResearchArtifacts(comments, issue.number)
-      : [];
+  if (reset && installedTeam && !pullRequest?.merged_at && pullRequest?.merged !== true) {
+    throw new Error('Fresh bootstrap cannot replace a committed team or registry.');
+  }
   const closedUnmerged =
     pullRequest?.state === 'closed' &&
     !pullRequest?.merged_at &&
@@ -595,15 +744,15 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
 
   let action;
   if (closedUnmerged) action = 'opt_out';
-  else if (pullRequest && issue && comments !== undefined && researchArtifacts.length !== 1) {
-    action = 'create_research';
-  } else if (pullRequest && issue) action = 'noop';
+  else if (pullRequest && issue) action = 'noop';
   else if (pullRequest) action = 'create_issue';
   else if (issue) action = 'create_pr';
   else action = 'create_both';
+  if (reset && !pullRequest && !resetAuthorized) action = 'reset_armed';
 
   return {
     action,
+    identity,
     pull_request: pullRequest
       ? {
           number: pullRequest.number,
@@ -621,7 +770,6 @@ export function classifyBootstrapState({ pullRequests, issues, comments, default
           url: issue.html_url ?? issue.url ?? '',
         }
       : null,
-    research_artifact_count: researchArtifacts.length,
   };
 }
 
@@ -798,81 +946,6 @@ function validateProposalSections(issueBody, root, errors, scopeRoots = null) {
   }
 }
 
-export function createBootstrapResearchBody(issueBodyText) {
-  const errors = [];
-  if (occurrences(issueBodyText, BOOTSTRAP_ISSUE_MARKER) !== 1) {
-    errors.push('issue: durable bootstrap marker must appear exactly once');
-  }
-  for (const heading of REQUIRED_ISSUE_HEADINGS) {
-    if (occurrences(issueBodyText, heading) !== 1) {
-      errors.push(`issue: expected exactly one ${heading}`);
-    }
-  }
-  const proposals = parseProposalSections(issueBodyText, errors);
-  if (errors.length > 0) {
-    throw new Error(`Cannot derive bootstrap research:\n${[...new Set(errors)].map((error) => `- ${error}`).join('\n')}`);
-  }
-
-  const tableCell = (value) => String(value).replace(/\|/g, '\\|');
-  const evidenceRows = proposals.map((proposal, index) => {
-    const citation = `\`${tableCell(proposal.evidencePaths[0])}\``;
-    return `| R${index + 1} | ${proposal.id} is a validated bootstrap proposal in the root issue body. | 🟡 | M | ${citation} |`;
-  });
-  const traceability = proposals.map((_, index) => `R${index + 1}`).join(', ');
-
-  return [
-    BOOTSTRAP_RESEARCH_TITLE,
-    '',
-    'The automatic bootstrap validated these repository-derived proposals before publishing the issue. This concise seed makes them available to normal triage without duplicating the full proposal descriptions in another comment.',
-    '',
-    '### Goals',
-    '- Classify the existing bootstrap proposals into work, decisions, and exclusions.',
-    '- Preserve direct traceability to the validated repository evidence in the issue body.',
-    '',
-    '### Non-goals',
-    '- This seed does not approve the proposed roster or authorize implementation.',
-    '- This seed does not replace focused `/squad research ...` when deeper investigation is desired.',
-    '',
-    '### Evidence table',
-    '| Rn | Finding | Risk | Complexity | Citation |',
-    '| --- | --- | --- | --- | --- |',
-    ...evidenceRows,
-    '',
-    '### Load-bearing assumptions',
-    `- ${traceability}: cited paths remain representative when triage runs; focused research should refresh any stale evidence.`,
-    '',
-    '### Open decisions',
-    `- Decide which of ${proposals.map((proposal) => proposal.id).join(', ')} should proceed to planning after the Cast PR is merged.`,
-    '',
-    '### Acceptance framing',
-    `- ${traceability}: every selected proposal has a clear disposition, scope boundary, owner direction, and evidence-backed rationale.`,
-    '',
-    '### Online sources',
-    'Online sources: unavailable — automatic bootstrap intentionally uses validated repository evidence only.',
-    '',
-    '### Recommendations',
-    `- Triage ${traceability} directly after the linked Cast PR merges.`,
-    '- Run focused `/squad research ...` first only for proposals that need deeper or refreshed evidence.',
-    '',
-    '### Next step',
-    'Review and merge the linked Cast PR, then rerun `/squad triage` on this issue.',
-  ].join('\n');
-}
-
-export function createBootstrapResearchComment(issueBodyText, issueNumber) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error('Bootstrap research comment requires a positive issue number.');
-  }
-  const body = createBootstrapResearchBody(issueBodyText);
-  const data = JSON.stringify({
-    squad_artifact: 'research',
-    schema_version: '1',
-    origin_issue: issueNumber,
-    phases: [],
-  });
-  return `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
-}
-
 export function validateBootstrapPayload({
   root,
   gitRoot = root,
@@ -893,13 +966,19 @@ export function validateBootstrapPayload({
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return ['payload: expected a JSON object'];
   }
+  let identity;
+  try {
+    identity = bootstrapIdentity(readBootstrapReset(gitRoot), repository);
+  } catch (error) {
+    return [`payload: committed bootstrap identity unavailable (${error.message})`];
+  }
   if (payload.schema_version !== '1') errors.push('payload: schema_version must be "1"');
   if (payload.repository !== repository) errors.push('payload: repository does not match the runtime repository');
   if (payload.default_branch !== defaultBranch) errors.push('payload: default_branch does not match the runtime default');
-  if (payload.branch !== BOOTSTRAP_BRANCH) errors.push(`payload: branch must be ${BOOTSTRAP_BRANCH}`);
-  if (payload.pr_title !== BOOTSTRAP_PR_TITLE) errors.push(`payload: pr_title must be ${BOOTSTRAP_PR_TITLE}`);
-  if (payload.issue_title !== BOOTSTRAP_ISSUE_TITLE) {
-    errors.push(`payload: issue_title must be ${BOOTSTRAP_ISSUE_TITLE}`);
+  if (payload.branch !== identity.BOOTSTRAP_BRANCH) errors.push(`payload: branch must be ${identity.BOOTSTRAP_BRANCH}`);
+  if (payload.pr_title !== identity.BOOTSTRAP_PR_TITLE) errors.push(`payload: pr_title must be ${identity.BOOTSTRAP_PR_TITLE}`);
+  if (payload.issue_title !== identity.BOOTSTRAP_ISSUE_TITLE) {
+    errors.push(`payload: issue_title must be ${identity.BOOTSTRAP_ISSUE_TITLE}`);
   }
   if (!Array.isArray(payload.files) || payload.files.length === 0) {
     errors.push('payload: files must be a non-empty array');

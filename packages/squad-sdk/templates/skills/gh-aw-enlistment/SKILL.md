@@ -56,7 +56,7 @@ gh auth status
 
 # Prove the exact package-capable compiler version before creating artifacts
 # gh-aw-exact-version-start
-required_gh_aw_version="v0.89.22"
+required_gh_aw_version="v0.91.5"
 gh_aw_version_output="$(gh aw --version 2>&1)" || gh_aw_version_output=""
 gh_aw_version="$(printf '%s\n' "${gh_aw_version_output}" | awk 'END {print $NF}')"
 
@@ -72,7 +72,7 @@ if [ "${gh_aw_version}" != "${required_gh_aw_version}" ]; then
 fi
 
 test "${gh_aw_version}" = "${required_gh_aw_version}" || {
-  echo "STOP: required gh-aw v0.89.22, but found ${gh_aw_version:-unavailable} after clean installation." >&2
+  echo "STOP: required gh-aw v0.91.5, but found ${gh_aw_version:-unavailable} after clean installation." >&2
   exit 1
 }
 # gh-aw-exact-version-end
@@ -88,15 +88,15 @@ git status --short
 
 > **Portability — compiler check:** use the equivalent PowerShell commands to
 > capture both output streams from `gh aw --version`. On any mismatch, remove
-> `github/gh-aw`, cleanly install the exact `v0.89.22` pin, and verify both
+> `github/gh-aw`, cleanly install the exact `v0.91.5` pin, and verify both
 > streams again. Stop before branch creation or file generation unless that
-> second check proves exactly `v0.89.22`; never select a newer release.
+> second check proves exactly `v0.91.5`; never select a newer release.
 
 - **STOP** if `gh auth status` is not logged in, or is logged in as the wrong
   identity for this repo (see the `gh-auth-isolation` skill to operate as a
   specific account without switching the global default).
 - **STOP** if `owner_repo` or `default_branch` cannot be resolved.
-- **STOP** if exact gh-aw `v0.89.22` cannot be proven after the clean pinned
+- **STOP** if exact gh-aw `v0.91.5` cannot be proven after the clean pinned
   reinstall. Do not create a branch or generate repository files.
 - **STOP** if the working tree has unrelated uncommitted changes you cannot
   account for — the bootstrap must land as an isolated, reviewable change.
@@ -217,7 +217,7 @@ governance-scoped retrospective proposal (see the gh-aw guide's retrospective
 auto-implementation section); installing it alongside the other seven keeps the
 full stack consistent and avoids a second bootstrap pass later.
 
-gh-aw v0.89.22 also materializes
+gh-aw v0.91.5 also materializes
 `.github/skills/agentic-workflows/SKILL.md`. That generic tool-owned router is
 not part of the Squad package and directs agents to mutable prompts from the
 current `github/gh-aw` repository rather than the pinned Squad revision. Remove
@@ -285,7 +285,7 @@ This must run after any first-install approval and before committing. Success
 criteria:
 
 - All eight workflows compile successfully.
-- With gh-aw v0.89.22, require exactly two warnings, one occurrence of each
+- With gh-aw v0.91.5, require exactly two warnings, one occurrence of each
   exact diagnostic header below (including its workflow path):
 
 <!-- compile-warning-allowlist-start -->
@@ -438,8 +438,13 @@ the workflow installation is merged and the post-merge Cast canary succeeds.
 - Make the two-PR flow explicit to the user: after the workflow-installation PR
   reaches the default branch, `squad-bootstrap` normally creates one **draft,
   human-reviewed Cast PR** and one linked
-  `[Research Proposals] Agent-discovered repo opportunities` issue from the
-  same validated repository analysis. If `can_approve_pull_request_reviews`
+  `[Agentic Research] owner/repo — initial proposals` issue (using the runtime
+  repository and retaining any committed reset suffix) from the
+  same validated repository analysis. This is a proposal agenda, not completed
+  research. Update and verify the complete package before optionally renaming
+  an existing bootstrap issue; legacy exact titles remain recognized, and
+  completed bootstrap does not auto-rename them. Preserve its reset suffix,
+  body, comments, and provenance. If `can_approve_pull_request_reviews`
   is `false` (the recommended, least-privilege setting from step 4),
   `GITHUB_TOKEN` cannot open that PR either; `squad-bootstrap` instead opens a
   **bot-authored fallback issue** carrying a signed provenance record and a

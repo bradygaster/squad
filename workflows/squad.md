@@ -22,14 +22,11 @@ on:
         description: 'Issue number to implement when run manually'
         required: false
         type: string
-      aw_context:
-        description: 'Originating agentic workflow context'
-        required: false
-        type: string
 if: >-
   github.event_name != 'issues' ||
   github.actor != 'github-actions[bot]' ||
-  github.event.issue.title != '[Research Proposals] Agent-discovered repo opportunities' ||
+  !(startsWith(github.event.issue.title, '[Research Proposals] Agent-discovered repo opportunities') ||
+    startsWith(github.event.issue.title, format('[Agentic Research] {0} — initial proposals', github.repository))) ||
   !contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->')
 permissions:
   actions: read
@@ -49,6 +46,8 @@ imports:
   - shared/squad-planning-ontology.md
   - shared/squad-planning-policy.md
 resources:
+  - shared/squad-activation.mjs
+  - shared/check-agent-binding.mjs
   - shared/squad-command-contract.mjs
   - shared/squad-cast-validator.mjs
   - shared/squad-bootstrap-validator.mjs
@@ -61,6 +60,11 @@ resources:
   - shared/builtins/ralph-charter.md
   - shared/builtins/rai-charter.md
   - shared/builtins/fact-checker-charter.md
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
+  copilot-sdk: true
 tools:
   bash: true
   web-fetch:
@@ -152,7 +156,7 @@ pre-agent-steps:
       validator_script="$(cd "$(dirname "$validator_script")" && pwd -P)/$(basename "$validator_script")"
 
       # BEGIN GENERATED RESOURCE DIGEST
-      validator_expected_sha256="c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
+      validator_expected_sha256="15f0d47917d269b5b967dc2a782a0eb761c39af7a92ddb64fed687a427070760"
       # END GENERATED RESOURCE DIGEST
       : > "$stderr_file"
       validator_actual_sha256="$(
@@ -209,10 +213,19 @@ pre-agent-steps:
         const result = await gate.validateImprovementCommand(context.payload, process.env);
         if (!result.ok) core.setFailed(gate.describeViolations(result.violations).join('; '));
 safe-outputs:
+  # Conclusion runs independently of the command guard; diagnostics must not write tracking issues.
+  report-failure-as-issue: false
+  report-failed-jobs: false
+  threat-detection:
+    report-as-issue: false
+  noop:
+    max: 1
+    report-as-issue: false
   allowed-domains:
     - learn.microsoft.com
     - aspire.dev
-  activation-comments: ${{ !(startsWith(github.event.comment.body, '/squad approve-improvement') || startsWith(github.event.comment.body, '/squad revoke-improvement')) }}
+  # Completion comments append raw noop text even when the safe-output guard fails.
+  activation-comments: false
   steps:
     - name: Checkout executing workflow commit for command enforcement
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -225,6 +238,7 @@ safe-outputs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
         SQUAD_EVENT_NAME: ${{ github.event_name }}
+        GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
       with:
         script: |
           const nodePath = require('node:path');
@@ -238,6 +252,12 @@ safe-outputs:
             await contract.enforceSquadCommandContract({
               payload: context.payload,
               eventName: process.env.SQUAD_EVENT_NAME,
+              actor: context.actor,
+              agentOutputPath: process.env.GH_AW_AGENT_OUTPUT,
+              resolvePermission: async (login) => (await github.rest.repos.getCollaboratorPermissionLevel({
+                ...context.repo,
+                username: login,
+              })).data.permission,
               createComment: async (issueNumber, body) => {
                 await github.rest.issues.createComment({
                   ...context.repo,
@@ -255,6 +275,160 @@ safe-outputs:
     run-failure: "🤖 [{workflow_name}]({run_url}) {status}. The requested result was not delivered."
     pull-request-created: "🤖 Squad created [PR #{item_number}]({item_url}) for review. If its checks show `action_required`, approve the workflow run before merging."
   jobs:
+    reconcile-activation:
+      name: Reconcile explicitly authorized current activation state
+      description: Reconcile only the explicit request bound by the authorized command. Creates no issues and accepts no model-provided mappings.
+      runs-on: ubuntu-latest
+      needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
+      permissions:
+        contents: read
+        issues: write
+      max: 1
+      inputs:
+        action:
+          description: Must be the literal reconcile.
+          type: string
+          required: true
+      steps:
+        - name: Checkout trusted reconciliation implementation
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          with:
+            ref: ${{ github.workflow_sha }}
+            persist-credentials: false
+            path: .squad-activation-trusted-base
+        - name: Validate authorization and reconcile existing dependency references
+          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+          env:
+            SQUAD_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          with:
+            script: |
+              const { join } = require('node:path');
+              const { pathToFileURL } = require('node:url');
+              const { readFileSync } = require('node:fs');
+              const items = JSON.parse(readFileSync(process.env.GH_AW_AGENT_OUTPUT, 'utf8')).items;
+              if (items.length !== 1 || items[0].type !== 'reconcile_activation' ||
+                  items[0].action !== 'reconcile' ||
+                  Object.keys(items[0]).some(key => !['type', 'action'].includes(key))) {
+                throw new Error('Reconciliation rejects model-provided mappings or additional operations.');
+              }
+              const root = join(process.env.GITHUB_WORKSPACE, '.squad-activation-trusted-base');
+              const activation = await import(pathToFileURL(join(root,
+                '.github/workflows/shared/squad-activation.mjs')).href);
+              const result = await activation.reconcileActivation({ github, context, env: process.env, root });
+              core.info(result.unchanged
+                ? 'Existing validated reconciliation retained; no new publication is asserted.'
+                : 'This execution published and independently checked its exact reconciliation response.');
+    activate-plan:
+      name: Create and finalize validated activation
+      description: Activate the exact plan comment through the trusted deterministic writer. Do not call native issue creation, acceptance or lifecycle tools for activation.
+      runs-on: ubuntu-latest
+      needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
+      permissions:
+        contents: read
+        actions: read
+        issues: write
+      max: 1
+      inputs:
+        plan_comment_id:
+          description: Exact numeric ID of the latest plan or accepted implementation plan comment on the origin issue.
+          type: string
+          required: true
+      steps:
+        - name: Checkout trusted activation implementation
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          with:
+            ref: ${{ github.workflow_sha }}
+            persist-credentials: false
+            path: .squad-activation-trusted-base
+        - name: Setup pinned issue creation API
+          uses: github/gh-aw-actions/setup@v0.91.5
+          with:
+            destination: ${{ runner.temp }}/gh-aw/actions
+        - name: Freeze and validate activation inputs
+          id: activation_prepare
+          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+          env:
+            SQUAD_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          with:
+            script: |
+              const { join } = require('node:path');
+              const { pathToFileURL } = require('node:url');
+              const root = join(process.env.GITHUB_WORKSPACE, '.squad-activation-trusted-base');
+              const activation = await import(pathToFileURL(join(root,
+                '.github/workflows/shared/squad-activation.mjs')).href);
+              const result = await activation.prepareActivation({
+                github, context, env: process.env, root,
+                outputPath: process.env.GH_AW_AGENT_OUTPUT,
+                capturePath: join(process.env.RUNNER_TEMP, 'squad-activation-capture.json'),
+              });
+              core.setOutput('fresh', result.existingAcceptanceId ? 'false' : 'true');
+              if (result.existingAcceptanceId) core.info('Existing valid acceptance retained; no creates, acceptance edits or new historical attestation.');
+        - name: Persist frozen activation capture
+          id: activation_capture
+          if: steps.activation_prepare.outputs.fresh == 'true'
+          uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          with:
+            name: squad-activation-capture-${{ github.run_id }}-${{ github.run_attempt }}
+            path: ${{ runner.temp }}/squad-activation-capture.json
+            if-no-files-found: error
+        - name: Reserve activation and record actual create results
+          id: activation_create
+          if: steps.activation_prepare.outputs.fresh == 'true'
+          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+          env:
+            CAPTURE_ARTIFACT_ID: ${{ steps.activation_capture.outputs.artifact-id }}
+            SQUAD_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          with:
+            script: |
+              const { join } = require('node:path');
+              const { pathToFileURL } = require('node:url');
+              const { readFileSync } = require('node:fs');
+              const actionsDir = join(process.env.RUNNER_TEMP, 'gh-aw/actions');
+              const { setupGlobals, createIssue } = require(join(actionsDir, 'index.cjs'));
+              const { sanitizeContent } = require(join(actionsDir, 'sanitize_content.cjs'));
+              const { formatIssueBody } = require(join(actionsDir, 'issue_body.cjs'));
+              setupGlobals(core, github, context, exec, io, getOctokit);
+              const activation = await import(pathToFileURL(join(process.env.GITHUB_WORKSPACE,
+                '.squad-activation-trusted-base/.github/workflows/shared/squad-activation.mjs')).href);
+              await activation.createActivation({
+                github, context, env: process.env,
+                root: join(process.env.GITHUB_WORKSPACE, '.squad-activation-trusted-base'),
+                createIssue, sanitizeContent, formatIssueBody,
+                capture: JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'squad-activation-capture.json'), 'utf8')),
+                captureArtifactId: Number(process.env.CAPTURE_ARTIFACT_ID),
+                journalPath: join(process.env.RUNNER_TEMP, 'squad-activation-receipts.json'),
+              });
+        - name: Persist actual activation receipts including partial outcomes
+          id: activation_receipts
+          if: always() && steps.activation_create.outcome != 'skipped'
+          uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          with:
+            name: squad-activation-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+            path: ${{ runner.temp }}/squad-activation-receipts.json
+            if-no-files-found: error
+        - name: Validate actual bindings before publishing acceptance
+          if: steps.activation_prepare.outputs.fresh == 'true'
+          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+          env:
+            RECEIPT_ARTIFACT_ID: ${{ steps.activation_receipts.outputs.artifact-id }}
+            SQUAD_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          with:
+            script: |
+              const { join } = require('node:path');
+              const { pathToFileURL } = require('node:url');
+              const { readFileSync } = require('node:fs');
+              const activation = await import(pathToFileURL(join(process.env.GITHUB_WORKSPACE,
+                '.squad-activation-trusted-base/.github/workflows/shared/squad-activation.mjs')).href);
+              await activation.finalizeActivation({
+                github, context, env: process.env,
+                root: join(process.env.GITHUB_WORKSPACE, '.squad-activation-trusted-base'),
+                capture: JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'squad-activation-capture.json'), 'utf8')),
+                journal: JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'squad-activation-receipts.json'), 'utf8')),
+                receiptArtifactId: Number(process.env.RECEIPT_ARTIFACT_ID),
+              });
+              core.info('This execution published and independently checked its exact activation response.');
     cast-failure:
       name: Fail incomplete Cast
       description: "Fail a Cast run from an emitted factual failure record."
@@ -352,6 +526,95 @@ safe-outputs:
                 'Stderr:',
                 failure.stderr,
               ].join('\n'));
+    dispatch-implementation-workers:
+      name: Dispatch verified Squad implementation workers
+      description: Write target-bound receipts and dispatch native worker identities for one to three selected issues.
+      runs-on: ubuntu-slim
+      needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
+      permissions:
+        actions: write
+        contents: read
+        issues: write
+      max: 1
+      output: Verified implementation worker dispatches completed.
+      inputs:
+        dispatches_json:
+          description: >-
+            JSON array of one to three unique objects, sorted by issue number,
+            with exactly issue_number (positive integer) and worker
+            (squad-implement-worker or squad-deps-worker).
+          required: true
+          type: string
+      steps:
+        - name: Checkout the executing workflow commit for dispatch provenance
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          with:
+            ref: ${{ github.workflow_sha }}
+            persist-credentials: false
+            path: .squad-trusted-base
+        - name: Write verified receipts and dispatch native workers
+          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+          env:
+            SQUAD_DISPATCH_REPOSITORY: ${{ github.repository }}
+            SQUAD_DISPATCH_REPOSITORY_ID: ${{ github.event.repository.id }}
+            SQUAD_DISPATCH_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+            SQUAD_DISPATCH_RUN_ID: ${{ github.run_id }}
+            SQUAD_DISPATCH_RUN_ATTEMPT: ${{ github.run_attempt }}
+          with:
+            script: |
+              const { readFileSync } = await import('node:fs');
+              const { join } = await import('node:path');
+              const { pathToFileURL } = await import('node:url');
+              const outputPath = process.env.GH_AW_AGENT_OUTPUT;
+              if (!outputPath) throw new Error('GH_AW_AGENT_OUTPUT is unavailable.');
+              const output = JSON.parse(readFileSync(outputPath, 'utf8'));
+              if (!output || !Array.isArray(output.items)) {
+                throw new Error('Agent output does not contain an items array.');
+              }
+              const items = output.items.filter(
+                item => item?.type === 'dispatch_implementation_workers',
+              );
+              if (items.length !== 1 || typeof items[0].dispatches_json !== 'string') {
+                throw new Error(`Expected one dispatch_implementation_workers item, found ${items.length}.`);
+              }
+
+              const trustedRoot = join(process.env.GITHUB_WORKSPACE, '.squad-trusted-base');
+              const provenance = await import(pathToFileURL(join(
+                trustedRoot,
+                '.github/workflows/shared/squad-implementation-provenance.mjs',
+              )).href);
+              const [owner, repo] = process.env.SQUAD_DISPATCH_REPOSITORY.split('/');
+              const fetchJson = async (route, fields) =>
+                (await github.request(`GET /${route}`, fields)).data;
+              const result = await provenance.dispatchImplementationWorkers({
+                requests: JSON.parse(items[0].dispatches_json),
+                repository: process.env.SQUAD_DISPATCH_REPOSITORY,
+                repositoryId: process.env.SQUAD_DISPATCH_REPOSITORY_ID,
+                defaultBranch: process.env.SQUAD_DISPATCH_DEFAULT_BRANCH,
+                runId: process.env.SQUAD_DISPATCH_RUN_ID,
+                runAttempt: process.env.SQUAD_DISPATCH_RUN_ATTEMPT,
+                fetchJson,
+                createComment: async (repository, issueNumber, body) => {
+                  const [targetOwner, targetRepo] = repository.split('/');
+                  await github.rest.issues.createComment({
+                    owner: targetOwner,
+                    repo: targetRepo,
+                    issue_number: issueNumber,
+                    body,
+                  });
+                },
+                dispatchWorkflow: async ({ workflowId, ref, inputs }) => {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner,
+                    repo,
+                    workflow_id: workflowId,
+                    ref,
+                    inputs,
+                  });
+                },
+              });
+              core.info(`Verified and dispatched ${result.length} implementation worker(s).`);
   data:
     type: object
     properties:
@@ -424,7 +687,7 @@ safe-outputs:
     max: 20
     target: "*"
   dispatch-workflow:
-    workflows: [squad-implement-worker, squad-deps-worker, squad-retro, squad-improvement-worker]
+    workflows: [squad-retro, squad-improvement-worker]
     max: 3
 ---
 
@@ -560,6 +823,7 @@ Repository owners must configure Copilot setup steps separately when needed.
 | `/squad plan accept implementation phase {N}` | Plan Accept Implementation |
 | `/squad plan activate` | Plan Activate |
 | `/squad plan activate phase {N}` | Plan Activate |
+| `/squad reconcile activation <request-comment-id> <request-sha256>` | Authorized current-state reconciliation |
 | `/squad implement` | Implement |
 | `/squad` (no args) | Cast |
 
@@ -721,6 +985,7 @@ Each mode's playbook ships as a **skill**. Enter this section only after **Actor
 | `plan accept scope` | `squad-plan-accept-scope` |
 | `plan accept implementation` | `squad-plan-accept-implementation` |
 | `plan activate` | `squad-plan-activate` |
+| `reconcile activation` | `squad-reconcile-activation` |
 | `implement` | `squad-implement` |
 
 **Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Review Relay, Approve Improvement, Revoke Improvement, Implement) must not load them.
@@ -794,7 +1059,7 @@ Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); emits lowe
 
 - **`ROSTER_MEMBER:` lines** are the **certified roster set** — bind only to these, reproduce them verbatim as provenance; a name outside them (bar `@copilot`) must never become a `squad:{name}` label.
 - **`AGENT_IDENTITY:` lines** are the only authority for stable agent IDs and registry revision. Copy IDs directly; never slug or match labels/roles/paths to invent one. Every roster-assigned new plan row must carry the matching ID.
-- **`IDENTITY_UNREADABLE:`** halts new planning and identity binding. Existing legacy plans may activate only with explicit `legacy-plan-missing-id` omissions.
+- **`IDENTITY_UNREADABLE:`** halts planning and activation. The trusted activation writer requires explicit, validated Agent ID columns.
 - **`ROSTER_UNREADABLE:`** halts binding with its named reason — never a provenance sentence for a read that did not happen, never a preset fallback; treat as `TEAM_ABSENT`.
 
 ### Auto-Cast Pivot
@@ -955,6 +1220,14 @@ mandatory support agents, separate from selected Cast specialists.
 Create/replace:
 
 1. **`.squad/team.md`** — Roster table containing only Coordinator (Squad), active registry Members (Name|Role|Charter path|Status), and Coding Agent (@copilot with `copilot-auto-assign: false`). Every charter path must be a concrete active-member path created by this Cast. Do not add the four built-ins as Members rows or charter references there. Instead, add one dedicated `## Built-in Support Agents` section (separate from `## Members`) that lists exactly the four required built-ins — Scribe, Ralph, Rai, Fact Checker — each with its concrete canonical charter path (`.squad/agents/scribe/charter.md`, `.squad/agents/ralph/charter.md`, `.squad/agents/rai/charter.md`, `.squad/agents/fact-checker/charter.md`) and a one-line note that they are mandatory support agents, not Cast specialists and not routing destinations.
+   Use exactly one `## Coordinator` section with a table row whose Name is `Squad`
+   and Role is `Coordinator`, and exactly one `## Coding Agent` section with a
+   table row whose Name is `@copilot`, Role is `Coding Agent`, and final Status
+   cell is exactly `🤖 Coding Agent` (the native CLI detection marker). Keep both out of
+   `## Members`. Inside `## Coding Agent`, emit exactly one standalone line
+   `<!-- copilot-auto-assign: false -->` (without backticks in the file), not an
+   inline table annotation. These sections and the disabled marker are validated
+   before the Cast can be published.
 2. **`.squad/agents/{id}/charter.md`** — Per selected specialist only: `# Name — Role`, Identity block (name, role, expertise, style), "What I Own", Boundaries (handle/don't), Model: auto. Never write, overwrite, or reinterpret `.squad/agents/scribe/charter.md`, `.squad/agents/ralph/charter.md`, `.squad/agents/rai/charter.md`, or `.squad/agents/fact-checker/charter.md` — those are the verbatim materialized resources from the prior deterministic step.
 3. **`.squad/routing.md`** — Completely replace the file. It must contain exactly one `## Routing Table` section, using section heading `## Routing Table` and exact headers `Work Type | Route To | Examples`; every `Route To` value is an exact active casting-registry `persistent_name`, with multiple names comma-separated and no prose or annotations. No `## Work Type → Agent` section or other legacy routing section may remain anywhere in the file. Do not route to the four built-ins or any other inactive/support role.
 4. **`.squad/casting/registry.json`** — From Step 3. Specialist entries only; never add scribe, ralph, rai, or fact-checker.
@@ -966,7 +1239,7 @@ Create/replace:
    - `# Squad Coordinator` plus one short paragraph establishing that the coordinator routes work and does not replace specialist judgment.
    - `## Cast sources` listing only the concrete final Cast paths for the team, routing, registry, history, policy, meet-the-squad, every active specialist member charter, and the four built-in charter paths (`.squad/agents/scribe/charter.md`, `.squad/agents/ralph/charter.md`, `.squad/agents/rai/charter.md`, `.squad/agents/fact-checker/charter.md`). Do not use path globs or dynamic paths.
    - `## Routing work` with this behavior: read the routing table, select only active registry members, load only the selected member's charter, delegate through the platform's available agent mechanism, and synthesize the result for the user. If no route matches, choose the active Lead; if no active Lead exists, ask the user rather than inventing a member.
-   - `## Built-in Support Agents` — concise operational instructions establishing that Scribe, Ralph, Rai, and Fact Checker are mandatory always-on support agents with a fixed lifecycle role (Scribe logs sessions and merges decisions silently in the background; Ralph monitors the work queue on request; Rai reviews for RAI/content-safety concerns and can gate on 🔴 Critical findings; Fact Checker verifies claims and offers Devil's-Advocate review before risky work ships). Never present them as selectable domain specialists, never list them as routing-table destinations, and never count them toward `specialists`, `taskTypes`, or `hints`.
+   - `## Built-in Support Agents` — concise operational instructions establishing that Scribe, Ralph, Rai, and Fact Checker are mandatory support agents with a fixed lifecycle role (Scribe silently merges accepted durable decisions only, never session or orchestration logs; Ralph monitors the work queue on request; Rai reviews for RAI/content-safety concerns and can gate on 🔴 Critical findings; Fact Checker verifies claims and offers Devil's-Advocate review before risky work ships). Their canonical charters govern when they run. Never present them as selectable domain specialists, never list them as routing-table destinations, and never count them toward `specialists`, `taskTypes`, or `hints`.
    - One complete generated Team Capabilities block delimited by `<!-- SQUAD:TEAM-CAPABILITIES:BEGIN -->` and `<!-- SQUAD:TEAM-CAPABILITIES:END -->`. Preserve the stable heading, metadata, specialist table, supported task types, routing hints, and capability boundaries format. Set `specialists` to the active registry count and set both `taskTypes` and `hints` to the routing-row count; all three counts must be nonzero and must never include the four built-ins. Generate every value from the final team, routing, registry, and active specialist charters.
 
    The coordinator must be self-contained for the final Cast tree. It must not mention standalone lifecycle behavior, templates, configuration, decisions, plugins, logs, non-GH-AW clients, internal Squad source paths, or sample labels/names that are not active registry members. The four built-in charter references and the `## Built-in Support Agents` section are the one permitted exception to "no inactive/support roles" content — they are mandatory, not inactive, and must never be phrased as selectable specialists or routing destinations.
@@ -976,6 +1249,7 @@ Keep naming consistent across generated team state and the Cast PR summary. In d
 ##### Step 5: Generate meet-the-squad.md
 
 Create `meet-the-squad.md` at repo root with: title, naming mode (`Descriptive` in descriptive mode; otherwise the exact universe name), active team table (Name|Role|Specialty|How to talk), How to Work With Your Squad (label-based assignment with `9B8FCC` color, iteration commands, routing reference), "What Happened Here" block with analysis rationale (languages, structure, CI/CD, rationale), footer with cast date. Do not advertise the four built-ins or any other inactive/support role as a selectable specialist.
+Document `squad:{member}` labels as specialist assignment, using exact active registry names and `.squad/routing.md`. The bare `squad` label is a tracking marker, not specialist assignment. A name mention alone does not dispatch a native workflow; use documented `/squad` commands with their prerequisites.
 
 ##### Step 6: Build the Safe-Output Payload
 
@@ -1100,14 +1374,14 @@ gate `create-pull-request`. It diagnoses a `cast_failure` and
 outputs run separately after the agent; this diagnosis cannot prevent a pull
 request that is materialized concurrently.
 
-Built-in `report_incomplete` only warns and creates or updates a durable tracking
-issue; it does not fail the run. The factual failure comment and, when emitted,
-the red `cast_failure` job are the Cast failure signals. The generic completion
-hook is deliberately neutral because pinned gh-aw chooses `run-success` from
-the agent and consolidated `safe_outputs` results without considering the
-custom job result. A red `cast_failure` job can therefore still select this
-neutral hook; it does not select `run-failure`. Processing completion does not
-indicate Cast success. Only a linked Cast PR is the success signal.
+Pinned gh-aw v0.91.5 makes `report_incomplete` fail the conclusion step.
+Automatic failure, failed-job, detection, no-op tracking issues and generic
+activation/completion comments are disabled in the dispatcher and router:
+conclusion runs independently of safe-output authorization and completion
+comments otherwise append unvalidated no-op text. Diagnostics remain in Actions
+logs and summaries; detection still runs. The factual, guarded failure comment
+and, when emitted, the red `cast_failure` job remain the Cast failure signals.
+Only a linked Cast PR is the success signal.
 
 ##### Step 8: Open PR
 
@@ -1336,8 +1610,9 @@ leaves. Merged implementation PRs relay back here to refill available slots.
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.
 6. Classify every leaf with the **Dependency Route Decision** below.
-7. For a leaf target, post the exact five-line receipt below before calling the
-   selected worker with the four session fields in the Epic Dispatch JSON.
+7. For a leaf target, select its worker using the **Dependency Route Decision**
+   and submit it through the deterministic dispatch handler below. Do not author
+   its receipt or session fields.
 
 ```text
 Squad-Implementation-Dispatch: ${{ github.repository }}#{issue-number} worker={squad-implement-worker-or-squad-deps-worker}
@@ -1397,25 +1672,30 @@ For each open leaf task in the target's descendant set:
 5. Exclude active implementation tasks from the ready set.
 6. Sort ready leaf tasks by issue number and select at most `available-slots`.
 
-For each selected leaf task, apply the **Dependency Route Decision**, then call
-exactly one selected workflow-specific safe-output tool with this input:
+For each selected leaf task, apply the **Dependency Route Decision**, then
+include one exact target object in a single
+`dispatch_implementation_workers` safe-output call. `dispatches_json` is a
+JSON array of one to three objects with exactly `issue_number` (positive
+integer) and `worker` (the selected worker name), sorted in ascending
+issue-number order. The deterministic handler writes and verifies the target's
+five-line bot receipt, then supplies the exact native session and dispatcher
+identity fields to the selected workflow.
 
 ```json
-{
-  "issue_number": "{leaf-issue-number}",
-  "implementation_session_id": "squad-implementation-session/v1/${{ github.event.repository.id }}/${{ github.run_id }}",
-  "implementation_session_origin_workflow": ".github/workflows/squad.lock.yml",
-  "implementation_session_origin_run_id": "${{ github.run_id }}",
-  "implementation_session_origin_run_attempt": "{current-GITHUB_RUN_ATTEMPT-integer}"
-}
+[
+  {
+    "issue_number": 123,
+    "worker": "squad-implement-worker"
+  }
+]
 ```
 
-Never call the generic `dispatch_workflow` tool. Before each selected-worker
-call, post the five-line receipt with its worker and numeric
-`GITHUB_RUN_ATTEMPT`. Never emit a dispatch without a numeric `issue_number`,
-the exact session ID, and all three dispatcher-origin inputs above. Never call both workers for one issue.
-Report success only after the selected tool succeeds. A dependency-config denial
-leaves its slot unused; do not reroute it to the general worker.
+Never call the generic `dispatch_workflow` tool for an implementation worker.
+Never provide or guess session IDs, run IDs, attempts, or receipts; the
+deterministic handler derives and verifies them. Never dispatch duplicate or
+unsorted issue targets or call both workers for one issue. Report success only
+after the safe-output handler succeeds. A dependency-config denial leaves its
+slot unused; do not reroute it to the general worker.
 
 Post a comment on the target listing the dispatched leaf tasks, blocked leaf
 tasks, the worker selected for each dispatch, dependency tasks denied by config,
@@ -1610,230 +1890,87 @@ Set Plan = `✅ Done`, state = Planned, last command = `/squad plan`, next =
 
 ## skill: `squad-plan-accept`
 ---
-description: Review and activate a fast plan (whole plan or a single phase), accepting it and creating issues.
+description: Activate the latest frozen plan through the trusted deterministic writer.
 ---
 
-`/squad activate` [phase {N}] (recommended) or `/squad plan accept` [phase {N}]
-(supported legacy alias) — review the latest fast plan, then combine
-scope+implementation acceptance and activation for simple workflows.
+`/squad activate [phase N]` and `/squad plan accept [phase N]` use the same
+trusted activation writer. The model never creates the issues or writes acceptance.
 
-**Behavior:** If `program` or `implementation` artifacts exist, run Accept Scope → Accept Impl → Activate in sequence. If only a `plan` artifact exists, use the fast-path behavior below.
+1. Paginate all origin-issue comments. Identify the latest `plan` or
+   `implementation` artifact, matching the current origin issue.
+2. Call `activate_plan` exactly once with `plan_comment_id` set to that
+   comment's numeric ID as a string. Emit no other safe-output operation.
+3. Stop. The writer freezes the exact comment and committed registry, validates
+   stable IDs, owners, dependencies, hierarchy and capacity, then captures actual
+   issue IDs from the pinned runtime's supported synchronous createIssue API.
 
-**Acknowledge:** `🤖 Squad is creating the planned issues…`
+Do not call `create_issue`, `add_labels`, `add_comment` or
+`upsert_lifecycle_state` for activation. Do not author Activation bindings,
+acceptance metadata, issue-number maps, or an Activated lifecycle. In particular,
+a bare `aw_wi1` in JSON is not an actual issue number.
 
-##### Step 1: Find Plan and Route
+The finalizer's `Activation bindings:` maps `"task":"{plan # cell}"` to actual
+numeric issue references, including `"epic_issue":"{epic issue reference}"` and
+`"epic_agents":["{all distinct lowercased Agent cells in the frozen epic}"]`.
+These describe its output fields, not a model-authored acceptance template.
 
-Resolve which planning path this issue is on, in this order:
+The writer alone publishes versioned acceptance and lifecycle after every actual
+ID, dependency reference, frozen owner, and live label validates and capture plus
+receipts have been durably uploaded. A failed or ambiguous write is not acceptance.
+The pending reservation is durable before issue creation; every rerun is no-create
+unless independently validated current-state recovery supplies the missing evidence.
+Never deduplicate by title, guess issue numbers, recreate an acceptance, or edit an
+invalid acceptance. Artifact hashes identify bytes; they are not historical producer
+attestation.
 
-1. Find the latest `program` and `implementation` artifacts for this issue. If
-   **either** exists, this is a granular (long-path) plan. Run the granular
-   sequence in this exact order — **Accept Scope** (`squad-plan-accept-scope`) →
-   **Accept Implementation** (`squad-plan-accept-implementation`) → **Activate**
-   (`squad-plan-activate`) — each honoring its own preconditions (e.g. Accept
-   Implementation requires a `validation` PASS). Then stop; do NOT run the
-   fast-path steps below.
-2. Otherwise, find the latest `plan` artifact. If found, continue with the
-   fast-path behavior in the steps below.
-3. If none of `program`, `implementation`, or `plan` exist, reply "No plan found.
-   Run `/squad plan` first." and stop.
+Supported plan tables require unique stable `#`, `Title`, `Owner`,
+`Agent ID` and `Depends On` columns. Dependencies are unique comma-separated
+stable task IDs, or `None`/`-` for none. Explicit `### Phase N` headings
+define hierarchy; a flat plan uses the origin issue as parent without labeling it.
+Granular tables use `Agent` instead of `Owner` and also require `Epic`;
+granular activation requires prior scope and implementation acceptance. Malformed
+tables, omitted identity columns, missing prior-phase authority, cycles, and plans
+over the applicable per-invocation policy limit (never above 50 issues) fail before
+issue creation. Larger plans may activate bounded phases.
 
-##### Step 1a: Phase Resolution
+For phase continuation, first supply an authorized reconciliation request covering
+all prior phases and their exact existing numeric issue IDs. The writer verifies
+the frozen plan/registry, current hierarchy/dependencies, and explicit predecessor
+chain, then creates only the newly selected work. Shared epics retain the complete
+plan's owner/label set, including future phases. Missing or stale mappings block
+that invocation; do not infer a map from titles or rerun native creates.
 
-1. Extract `requested_phase` from args (or null).
-2. Paginate all comments and select the newest `plan-accepted`,
-   `phases-accepted`, and `lifecycle-state` artifacts whose `origin_issue`
-   matches this issue.
-3. **Whole-plan idempotency:** when `requested_phase` is null and a matching
-   `plan-accepted` artifact exists, create no issues and post no acceptance
-   artifact. Before stopping, inspect the newest lifecycle state. If it is
-   missing or does not record State = Activated, Activation = `✅ Done`, and the
-   invoked activation command, call `upsert_lifecycle_state` exactly once with
-   the terminal body from Step 5. Return `noop` only when that lifecycle state
-   is already terminal and consistent. Then stop.
-4. **Phase-specific:** read `accepted_phases` from the latest matching
-   `phases-accepted` artifact (or `[]`). Already accepted → verify the lifecycle
-   reflects that phase, repair it if stale, then stop with the next-available
-   hint. Out of order → stop with the sequential hint.
-5. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
-6. If no items remain after filter: stop.
-7. Determine hierarchy only from the latest plan artifact's headings. Any heading
-   matching `### Phase {N}` makes the plan explicitly phased, including a lone
-   `### Phase 1`; every accepted row must remain in its declared phase. With no
-   matching heading, the plan is flat. Do not infer hierarchy from prose, task
-   count, dependency shape, or personal preference.
+For an existing invalid record, use the separately authorized
+`/squad reconcile activation <request-comment-id> <request-sha256>` contract.
+The model must never supply the authoritative mapping.
 
-##### Step 2: Create Sub-Issues — Hierarchical
+## skill: `squad-reconcile-activation`
+---
+description: Reconcile explicit operator-approved current issue mappings without creating issues.
+---
 
-The origin issue is always the root. Apply Step 1a's heading rule exactly. If the
-plan has explicit `### Phase {N}` headings, create one phase issue per accepted
-phase under the origin issue, then create that phase's task issues under its phase
-issue; never flatten it. For a flat plan, create exactly one issue per accepted
-work-item row and set every task's parent to the origin issue.
-Do not create an additional epic, summary, root, or phase issue for a flat plan.
+For `/squad reconcile activation <request-comment-id> <request-sha256>`,
+call `reconcile_activation` exactly once with `action: "reconcile"`, and
+emit no other safe output. The trusted writer reads the request identified by
+the authorized command, verifies its author permission and exact content hash,
+and freezes current plan/registry and numeric task/epic issue mappings.
 
-Before any `create-issue` call, run Team Guard Step TG-2 and validate every
-accepted plan row. Freeze a binding for each task number containing that row's original `Owner` and `Depends On` values,
-plus its authoritative `Agent ID`. If TG-2 emitted a `ROSTER_UNREADABLE:`
-line, stop before mutation and report that named reason. An individual `Owner`
-matching no certified active roster name and not `@copilot` does **not** stop the
-run — matching `squad-plan-activate`, create that issue with the base `squad` label
-only, omit the owner label, continue, and record the value under
-`Non-roster agent values` (Step 4). Never substitute, re-route, or fall back to
-another identity during acceptance.
-A roster Owner's `Agent ID` MUST exactly match its `AGENT_IDENTITY:` record;
-stop before mutation on mismatch. `@copilot`, non-roster, and legacy rows use
-only the explicit identity-omission cases defined in Step 4.
+It may correct only approved temporary references in one standalone
+`**Depends On:**` field. Titles, scope prose, owners, labels, hierarchy and the
+original acceptance remain unchanged. Fresh reads and post-write checks detect
+conflicts but are not an atomic compare-and-swap; external editors must avoid
+concurrent changes. Partial correction is not acceptance. The explicit
+`activation-reconciled` supplement has basis `current-state-authorized`,
+links the original comment ID/hash, and makes no historical creation claim.
+Only the deterministic chain-validated reader may select it; never select the
+newest matching envelope as a fallback.
 
-For every roster member label, derive the slug exactly as label synchronization
-does: lowercase the certified display name, replace each run of non-`a-z0-9`
-characters with `-`, then trim leading and trailing `-`. The special `@copilot`
-value maps to `squad:copilot` instead.
-
-For each work item, `create-issue`:
-- Title: work item title
-- Temporary ID: `temporary_id` is required on every `create-issue` call (`require-temporary-id: true`). Mint one per item: `#aw_ph{N}` for a phase issue and `#aw_wi{N}` for a work item, where `{N}` is that row's plan number with non-alphanumeric characters replaced by `_`. Must match `^#?aw_[A-Za-z0-9_]{3,12}$` and be unique in this run — gh-aw silently lets a duplicate's last writer own the mapping.
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner-slug}` (color `9B8FCC`) where `{owner-slug}` is derived from the frozen row `Owner` lowercased first, then normalized by the slug rule above. Map `@copilot` to `squad:copilot`; never `squad:@copilot` — `@copilot` is the one permitted non-roster value and it is mapped, not slugged verbatim. Mint the member label only from that task's certified binding; never re-read team.md, re-route the task, or carry another row's owner forward. An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values` (Step 4). On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster. This computes the label set; `add_labels` applies it (see Fast-Path Label Provisioning) — `create-issue`'s `labels:` field alone cannot land it on a fresh repository.
-- Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
-- Parent: phase issue (hierarchical) or root (flat). For a phase issue created in this run, pass its `#aw_ph{N}` temporary ID — `create-issue` resolves it. The flat-plan root is the triggering issue's own real number. Never guess a number for an issue this run created.
-- Size: set Project field if available, else body `**Size:**` line
-- Label application: in the same turn as this `create-issue` call, call `add_labels` with `item_number` set to this item's own temporary ID and this item's computed label set (see Fast-Path Label Provisioning). `create-if-missing` provisions `squad`/`squad:{owner}` on a fresh repository automatically.
-
-Copy every frozen `Depends On` value into the created issue body. Cross-phase
-deps: look up real issue numbers from prior acceptance comments without changing
-the declared task dependencies.
-
-Create in dependency order.
-
-##### Fast-Path Label Provisioning
-
-`create-issue`'s own `labels:` field cannot provision a label: GitHub silently drops
-label names that do not already exist in the target repository instead of creating
-them, so on a fresh repository every fast-path issue would come out unlabeled. The
-`add-labels` safe output (`allowed: [squad, "squad:*"]`, `create-if-missing: true`) is
-the only operation here that creates a missing label, and it is the same one
-`squad-plan-activate` uses — both activation paths provision labels identically, so
-`/squad activate` needs no manual label setup on a fresh repository.
-
-In the same turn as each `create-issue` call in Step 2, call `add_labels` with:
-
-- `item_number` — that same `create-issue` call's `temporary_id` (`#aw_ph{N}` for a
-  phase issue, `#aw_wi{N}` for a work item). For an issue this run did **not** create
-  — one recognized by Step 1a's idempotency check or matched by title — pass its
-  verified real number instead; a temporary ID maps only issues this run created.
-- `labels` — exactly the set computed below for that one issue, and nothing else.
-
-**Explicit targeting is mandatory.** Every `add_labels` call MUST pass `item_number`.
-Omitting it does not fail — it silently applies the labels to the **triggering intent
-issue**, branding the user's own request with an activated item's owner label. Never
-reuse another item's temporary ID, and never emit `add_labels` for an item whose
-`create-issue` call was not made in this run. `create-issue` returns no real issue
-number during this run, so never predict or infer one and never pause between the two
-calls waiting for one; gh-aw resolves `add_labels` after the `create-issue` that
-minted the ID, so `create-issue` first and `add_labels` immediately after is the
-supported order.
-
-**Label set, per issue:**
-
-- Work item: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`,
-  derived from that row's own frozen certified `Owner`, lowercased then slugged as above.
-  `@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`.
-  Never inherit the phase issue's owner or carry the previous row's value forward.
-- Phase issue: `squad`, plus `squad:{owner}` conceptually; emit `squad:{owner-slug}`
-  only when every accepted row in that phase names one and the same owner, slugged as above.
-  Two or more distinct owners is a multi-owner phase: apply only `squad`, choose
-  none of them, and record it under a
-  `Non-roster agent values` heading in the Step 4 summary.
-- The triggering intent issue is never an `add_labels` target. It is the flat-plan
-  parent, not an activated item, and receives no owner label from this run.
-
-An `Owner` that is neither a certified roster name nor `@copilot` never becomes a
-`squad:{owner}` label: send `squad` alone for that issue and record the value under
-`Non-roster agent values` in the Step 4 summary — the same omit-and-record contract
-`squad-plan-activate` uses, so an uncertified value can reach `add_labels` only as
-the base `squad` label.
-
-Re-applying an already-present label on a rerun is a no-op under add-only merge
-semantics, so this is safe under Step 1a's idempotency path. Labels must have
-descriptions and intentional colors when they already exist; a label auto-provisioned
-by `create-if-missing` on a fresh repository instead receives gh-aw's deterministic
-color and an empty description — that is expected, not a failure, and must not be
-reported as one. Report only the labels an accepted `add_labels` call carried for that
-same issue; never a label that was skipped, deferred, or merely intended, and never one
-attributed to `create-issue` (see Step 4, Label operations accepted).
-
-##### Step 3: Preserve Dependencies
-
-For every non-empty frozen `Depends On` entry, preserve the corresponding task
-references in the created issue body using the created issue-number map. Do not
-infer, drop, or reorder dependencies.
-
-Add native `blockedBy` relationships only when an available approved safe-output
-tool explicitly exposes that field or operation. Do not bypass safe outputs with
-a direct write API call. When native edges are unavailable, body references are
-the expected fallback, and the acceptance summary MUST say that dependencies
-were preserved in issue bodies without native edges.
-
-##### Step 4: Post Summary
-
-Artifact data varies:
-- Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table + the `Activation bindings:` JSON array.
-- Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table + the `Activation bindings:` JSON array.
-
-Report the exact number of created task issues, their actual parent hierarchy,
-and whether dependencies use native edges or the body-reference fallback. Never
-claim an epic, phase issue, sub-issue relationship, or native dependency edge
-that was not created.
-
-**Every phase and full acceptance artifact body MUST include an `Activation
-bindings:` fenced JSON block containing a non-empty array** — the identical
-versioned provenance, binding shape, quoting, and omission semantics as
-`squad-plan-activate` Step 4: one object per created/recognized work item with
-repository/origin/artifact/registry provenance,
-`task`/`issue`/`epic`/`epic_issue`/`agent_id`/`epic_agent_ids`/`agent`/`epic_agents`, plus `label` or
-`omission_reason`, and `epic_label` or `epic_omission_reason` (`multi-owner` or
-`non-roster`). `issue` and `epic_issue` are quoted JSON strings — that item's own
-`temporary_id` when created this run, its verified real number when reused —
-never bare numbers; a surviving `#aw_…` reference means `create-issue` never
-landed and must be left unresolved rather than repaired. Never omit a created
-or recognized task from `bindings`, never infer an issue number, and never
-emit an empty array — the deterministic post-activation checker treats a
-missing, empty, malformed, or unresolved bindings block on a `plan-accepted`
-or `phases-accepted` artifact as a failure exactly as it does for `activated`
-and `phases-activated`.
-
-###### Label operations accepted
-
-Identical semantics to `squad-plan-activate` Step 4. A label reaches an activated issue through exactly one route:
-an accepted `add_labels` operation targeting that issue. Report `squad:{owner-slug}` only when
-this run made an `add_labels` call carrying that label and targeting that same issue — by
-its own `temporary_id`, or by its verified real number for a reused issue. A successful
-`create-issue` is **not** evidence: its `labels:` field cannot land a label on a fresh
-repository, so no summary may say a label was carried by, applied by, or included in issue
-creation. Never report a label merely computed, intended, skipped, or deferred, never borrow
-another item's label operation, and never report an accepted operation as an omission.
-
-`add_labels` is a safe output: this run knows only that the call was accepted for a specific
-target, never the GitHub API result. State it at that strength — never write that a label
-was verified, confirmed, or checked on the issue, because nothing here reads labels back.
-
-Whenever an accepted `Owner` did not become a `squad:{owner}` label — a multi-owner
-phase issue, or a value certified by neither the roster nor `@copilot` — a
-`Non-roster agent values` heading is **required** in this summary, naming the value
-and the issue it applied to. Omitting the label while omitting the heading reports a
-clean run that did not happen. Conversely, never emit the heading for an owner that
-*did* become an accepted label — that manufactures a defect that did not occur.
-
-##### Step 5: Update Fast-Path Lifecycle
-
-Call `upsert_lifecycle_state` once with the complete lifecycle body.
-
-- Phase-specific: keep Plan = `✅ Done`, record phase `{N}` activated, set the
-  last command to the invoked `/squad activate phase {N}` or legacy alias, and
-  point next to the next unactivated phase.
-- Full or last phase: set Plan = `✅ Done`, Activation = `✅ Done`, state =
-  Activated, and the last command to the invoked `/squad activate` or legacy
-  alias. This is terminal. Set Next action to explicit terminal prose such as
-  `None — activation is complete`; do not invent another slash command.
+Downstream consumption must run the installed read-only checker
+`.github/workflows/shared/check-agent-binding.mjs` with all origin records and
+the current team/registry. It verifies the API request and source hashes before
+skipping a superseded malformed original. The SDK `selectActivationRecord` API
+requires independently supplied reconciliation evidence and frozen epic
+assignments for partial-phase groups. Structural parsing alone is not admission.
 
 ## skill: `squad-plan-revise`
 ---
@@ -2139,6 +2276,15 @@ this synthesis is Check 16 ❌ Critical and cannot become `RESULT: PASS`.
 
 Structure: `## ✅/❌ Squad Plan Validation — PASSED/FAILED` → Validated artifacts + timestamp → Results table (Check|Status|Details; all checks 1–16) → Adversarial Evidence (Steelman of the opposition; Load-bearing assumptions; 30-day pre-mortem; Alternative approach; Remaining risk acceptance, each with WHAT/WHY/HOW) → Validator Synthesis (independent reasoning across structural and adversarial evidence) → Issues Found (Critical ❌ then Warnings ⚠️ with fix instructions) → Summary (counts + validator-owned verdict) → Next action.
 
+For deterministic phase acceptance, include exactly one plain `RESULT: PASS` or
+`RESULT: FAIL` line, `**Implementation plan:** <exact comment URL>`, and
+`**Implementation SHA-256:** <SHA-256 of the API comment's exact raw body>`.
+The results table uses exactly `Check | Status | Details`, with unique numeric
+Check cells 1–16 and `PASS`/`FAIL` status. Include a `Task | Size | Traces to`
+Sizing Summary table covering every stable task ID. This is frozen validator
+evidence, not permission to invent findings, skip checks, or re-derive sizing
+during acceptance.
+
 Rules: any ❌ = FAILED heading+verdict. Warnings alone ≠ failure.
 Structural PASS alone cannot produce overall PASS. Overall PASS requires checks
 1–16 to have run, complete adversarial evidence, explicit remaining-risk
@@ -2202,6 +2348,15 @@ description: Accept the implementation plan (whole or per phase) and lock it for
 
 `/squad plan accept implementation` [phase {N}] — locks the implementation plan (the HOW). Supports incremental phase acceptance.
 
+**Phase-specific command:** use the `squad-plan-accept` trusted `activate_plan`
+procedure only; do not emit separate acceptance, lifecycle or create operations.
+The trusted writer binds the current implementation revision and selected phase,
+requires the existing scope acceptance and matching passed validation (all sixteen
+checks plus authoritative sizing/traceability), validates the prior-phase mapping
+bridge, then records implementation-phase acceptance and creates/finalizes only
+that phase. Missing/stale prerequisites fail before creation. Retries never
+recreate prior work. The remaining steps below apply to whole-plan acceptance.
+
 **Acknowledge:** `🤖 Squad is creating implementation tasks…`
 
 ##### Step 1: Validate
@@ -2235,309 +2390,20 @@ Both include: impl plan link, scope acceptance link, accepted by, date, counts.
 
 Phase: `🔄 Phase {N} of {total}`. Full: `✅ Done`, next = `/squad plan activate`.
 
-##### Step 5: Auto-Activate (Phase-Specific Only)
-
-After phase acceptance, check if ready for automatic activation:
-1. All prior phases must be accepted AND activated (check the latest `phases-activated` artifact's `phases` array).
-2. If Phase 1 or all prior activated: auto-activate using Plan Activate logic for this phase.
-3. If prior phases not activated: tell user to activate them first.
-4. Update lifecycle to reflect both acceptance and activation.
+Whole-plan acceptance remains acceptance-only; next use `/squad plan activate`.
+Phase acceptance and activation use the single trusted path above, never a
+second native create path or model-authored Activated lifecycle.
 
 ## skill: `squad-plan-activate`
 ---
-description: Activate an accepted plan by creating the epic and task issues on GitHub.
+description: Activate an accepted implementation plan through the trusted deterministic writer.
 ---
 
-`/squad plan activate` [phase {N}] — creates real GitHub issues/milestones. Irreversible.
-
-**Acknowledge:** Phase: `🤖 Squad is activating Phase {N}…` Full: `🤖 Squad is activating the team…`
-
-##### Step 1: Validate
-
-**Phase-specific:**
-1. Check the latest `impl-phases-accepted` artifact's `phases` array contains requested phase. If not: stop.
-2. Check ordering: prior phase must be in the latest `phases-activated` artifact's `phases` array. If not: stop.
-3. Check not already activated.
-
-**No phase:**
-1. Find an `impl-accepted` artifact or fully accepted `impl-phases-accepted` state. If none: stop.
-2. Check for an `activated` artifact: if it exists, only create missing issues (idempotent).
-
-##### Hallucination Guard
-
-`create-issue` does **not** return a real GitHub issue number during this run — gh-aw defers
-creation to the safe-output job, so the agent sees only a success acknowledgement. NEVER
-predict, infer, or "read back" a number for an issue this run created, and never wait for
-one. Use a real number only when verified independently: a pre-existing issue matched by
-title, the triggering issue, or one recorded in a prior run's artifact.
-
-##### Temporary-ID Contract
-
-Every `create-issue` call MUST carry a `temporary_id`, and every operation pointing back at
-that issue MUST reuse the identical value. `require-temporary-id: true` enforces the first
-half — a call without one is rejected. The second half is yours.
-
-**Form.** Matches `^#?aw_[A-Za-z0-9_]{3,12}$`. Write the canonical `#aw_…` form. Dots,
-hyphens, spaces, and `:` are illegal.
-
-**Minting — derive, never invent.** Epic: `#aw_epic{K}`, `{K}` = the epic's 1-based position
-in the accepted plan. Task: `#aw_task{N}`, `{N}` = that task's own `#` cell with every
-character outside `A-Za-z0-9` replaced by `_` (`2.3` → `#aw_task2_3`). If a derived ID
-exceeds 12 characters after `aw_`, drop the `epic`/`task` word (`#aw_e{K}` / `#aw_t{N}`)
-rather than truncating the number.
-
-**Uniqueness is your responsibility.** gh-aw does not reject a duplicate `temporary_id`; it
-silently lets the last `create-issue` using it own the mapping, so every later reference
-lands on the wrong issue. Confirm each ID is unused; epics and tasks share one namespace.
-
-**Explicit targeting is mandatory.** Every `add_labels` call MUST pass `item_number`. Omitting
-it does not fail — it silently labels the **triggering intent issue**, branding the user's own
-request with an activated item's owner label.
-
-**Existing and reused issues.** An issue recognized by Step 1's idempotent-rerun path or a
-dedup-by-title match has a real, verified number: target it by that number, not a temporary
-ID, which only maps issues this run created.
-
-##### Output Budget Awareness
-
-Count expected issues before starting. If total > 50: recommend phased activation (`/squad plan activate phase {N}`) and proceed with the current phase only. If total > 30: use compact issue bodies (scope + acceptance criteria only; omit elaboration).
-
-**Activation capacity budget.** The largest activation supported in a single run is
-**50 issues** — the `enterprise` profile's `max_issues: 50` (the highest documented
-limit) and the threshold the phased-activation rule above enforces. Worst case:
-
-| Safe output | Worst case | `max` |
-|---|---|---|
-| `create-issue` | 50 — one per epic/task | 75 |
-| `add_labels` | 50 — one per created issue | 110 |
-| Labels in one call | 2 — `squad` + `squad:{agent}` | not capped |
-| Label names per run | 100 — 50 × 2 | 110 |
-
-**`max` limits safe-output items (tool calls), not label names inside a call.** One
-`add_labels` call carrying two labels consumes **one** unit of budget, not two. gh-aw's
-injected constraint still phrases that number as "Maximum 110 label(s) can be added",
-which reads as a budget of *names*. That wording is the hazard 110 is sized against: it covers both readings — 50 calls and 100 names — so neither can justify
-skipping a label operation. Never batch several issues' labels into one call to save
-budget (it breaks per-issue correspondence), and never stop labeling early.
-
-**Reaching a cap is enforced twice, and neither layer fails the run.** A call past the
-limit is rejected at invocation time with a JSON-RPC error (`E002: {type} limit
-reached`) the agent *does* see; a surplus item is dropped at collection time with a
-warning. Neither marks the run failed, so it can finish green with labels missing —
-Step 2e, not the cap machinery, is what notices.
-
-##### Label Pre-flight
-
-**Roster binding gate — run this before any `create-issue` call.**
-
-1. Run Team Guard Step TG-2; its `ROSTER_MEMBER:` lines are the **certified roster
-   set** — the only valid source for a `squad:{agent-slug}` label this run. Do not re-read
-   team.md or recall a name.
-2. If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP: report that named reason in the
-   activation summary and mint no `squad:{agent-slug}` label. Never print a roster-provenance
-   sentence for a read that did not happen, and never fall back to a preset or
-   remembered roster.
-3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
-   provenance of the labels applied — the summary may name only values TG-2 emitted.
-4. For every roster `Agent`, require the plan `Agent ID` to exactly match the
-   same `AGENT_IDENTITY:` record; stop before mutation on mismatch and never
-   substitute an ID. Then certify its lowercased raw value against a
-   `ROSTER_MEMBER:` name and mint `squad:{agent-slug}` by replacing each run of
-   non-`a-z0-9` characters with `-` and trimming leading and trailing `-`. The special
-   value `@copilot` maps to the existing `squad:copilot` routing label — never
-   `squad:@copilot`.
-5. A value matching no certified name and not `@copilot` MUST NOT become a
-   `squad:{agent}` label: apply only `squad` for that issue and record the value under a
-   `Non-roster agent values` heading, naming the certified set it should come from.
-   `{agent}` is the rejected raw value; emitted labels use `{agent-slug}`.
-6. Completeness: when the plan names at least one roster `Agent`, at least one
-   `squad:{agent-slug}` label MUST be applied across the created issues. Zero labels on a
-   plan with roster owners is a binding failure, not a pass — report it, don't proceed
-   silently.
-7. **Correspondence — the label must match *this* issue's own row.** Steps 4-6 certify the
-   *vocabulary*: that each value is a roster Name. They do not check that the right issue
-   received the right value. **A label can be simultaneously certified and wrong.** Before
-   each `create-issue` call, re-read the agent from that issue's own source — a task's own
-   `Agent` cell, an epic's derived task-set — and never from the row above it, the parent
-   epic, or the previous call. Verify per issue; membership across the run is not evidence.
-8. **Report what was accepted, not what was intended.** The activation summary may name a
-   `squad:{agent-slug}` label for an issue only after an `add_labels` call carrying that label
-   was accepted for that same issue — targeted by its own `temporary_id`, or by its verified
-   real number for a reused issue. A successful `create-issue` is **not** evidence: its
-   `labels:` field cannot land a label on a fresh repository, so a label is never "carried
-   by" issue creation. Never state a label that was skipped, omitted, deferred, or assumed,
-   and never report an accepted label operation as an omission. Whenever an `Agent` value did
-   not become a label — multi-owner epic, uncertified name, unavailable label — the
-   `Non-roster agent values` heading is **required**, and must name the value and the issue
-   it applied to. Omitting the heading while omitting the label reports a clean run that did
-   not happen. See Step 4's Label operations accepted section for the full contract.
-
-**Label provisioning.** The `add-labels` safe output (`allowed: [squad, "squad:*"]`,
-`create-if-missing: true`) auto-creates `squad` and any `squad:{agent-slug}` label the first
-time this run needs it — a fresh repository with zero Squad labels requires no manual
-provisioning and is never a prerequisite gap. `create-issue`'s own `labels:` field cannot
-do this: GitHub silently drops label names that do not already exist in the target
-repository instead of creating them, which is the behavior that previously produced the
-"prerequisite gap" reported here. Do not rely on `create-issue`'s `labels:` field alone
-to land a label on a fresh repository.
-
-In the same turn as each `create-issue` call in Steps 2b/2c, call `add_labels` with
-`item_number` set to that call's `temporary_id` and exactly the label set Steps 4-8 computed
-for that issue — `squad` alone, or `squad` plus the one `squad:{agent-slug}` label the
-correspondence rule (Step 7) certified. Do not wait for a returned issue number; none
-arrives. gh-aw resolves `add_labels` after the `create-issue` that minted the ID, so that
-order is the supported one. `create-if-missing` creates any label that does not yet exist
-before applying it; re-applying an already-present label on a rerun is a no-op, so this is
-safe under the Step 1 idempotent-rerun path. Never emit `add_labels` for an item whose
-`create-issue` call was not made in this run.
-
-##### Transient Failure Handling
-
-On `5xx` response from `create-issue`: wait briefly and retry once. On second failure or `4xx`: record the issue title as skipped in the activation summary, continue with remaining issues. Never abort the full run for a single transient failure.
-
-##### Sub-issue Fallback
-
-When setting a `parent` sub-issue relationship returns `404` or `422` (feature disabled or repo plan): degrade gracefully — record the intended parent as a body reference, then continue. If that parent was minted this run, write its temporary ID (`Parent: #aw_epic{K}`); gh-aw rewrites an `#aw_…` body reference to the real `#{number}`, so no number is predicted. If the parent is pre-existing or was matched by dedup, write its verified real number (`Parent: #{issue_number}`) — gh-aw leaves an unresolved `#aw_…` reference in the body verbatim, so a temporary ID it never minted would ship as a meaningless literal. Never fail activation over sub-issue API unavailability.
-
-##### Step 2: Create Issues — Full Hierarchy
-
-Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
-
-**2a. Create Milestones:** Check for existing, create missing. Record IDs. On failure: document in root issue body instead.
-
-**2b. Create Epic Issues:** `create-issue` per epic (dedup by title `[Epic] {name}` if already exists from prior phase).
-- Title: `[Epic] {name}`
-- Temporary ID: `temporary_id: "#aw_epic{K}"` per the Temporary-ID Contract. Required — the call is rejected without it.
-- Labels: `squad` (0075ca), `squad:{agent-slug}` (e4e669) where `{agent-slug}` is **derived from this epic's own tasks**: collect the `Agent` values of every implementation-plan row whose `Epic` cell names this epic. Exactly one distinct roster value → mint its label using the lowercase/non-alphanumeric/hyphen slug rule above; exactly `@copilot` → mint `squad:copilot`. Two or more → multi-owner epic: apply only `squad` and record it under `Non-roster agent values`. Never mint a single agent label for a multi-owner epic, and never choose one of several.
-- Body: outcome, stories, epic-level acceptance criteria, context (parent, initiative, milestone, deps)
-- Parent: sub-issue of root intent issue — the triggering issue's own real number, which is known independently of this run's creations
-- Milestone: assigned
-- Label application: in the same turn as this `create-issue` call, call `add_labels` with `item_number` set to this epic's `#aw_epic{K}` temporary ID and this epic's computed label set (see Label Pre-flight). A dedup-by-title match instead targets that existing issue's verified real number. `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
-
-**⚠️ DO NOT STOP after epics. Tasks MUST follow immediately.**
-
-**2c. Create Task Issues:** `create-issue` per task in dependency order.
-
-> **⚠️ ATOMIC CONTRACT — strictly one task at a time:**
-> For each task: compose ONLY that task's body → call `create-issue` immediately, carrying that task's `temporary_id` → call `add_labels` with `item_number` set to that same temporary ID and the task's computed label set → then move to the next task.
-> **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one `create-issue` call → one `add_labels` call, repeated per task. Do not pause for a returned issue number between the two calls; none is returned.
-
-- Title: task title
-- Temporary ID: `temporary_id: "#aw_task{N}"` per the Temporary-ID Contract. Required, and unique across every epic and task in this run.
-- Labels: `squad` (0075ca), `squad:{agent-slug}` (e4e669) where `{agent-slug}` is derived from **this task's own `Agent` cell** using the same lowercase/non-alphanumeric/hyphen slug rule as label synchronization — read from the implementation-plan row whose `#` matches this task. Map `@copilot` to `squad:copilot`. Never inherit the parent epic's agent, and never carry the previous task's value forward: re-read the `Agent` cell for every task, because consecutive tasks under one epic routinely have different agents. No `size:*` labels unless policy says so.
-- Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
-- Parent: sub-issue of EPIC (not root). If 2b minted this epic in this run, pass its `#aw_epic{K}` temporary ID, which `create-issue`'s `parent` field accepts. If 2b instead matched a pre-existing epic by title, that epic has no temporary ID in this run — pass its verified real number. Never guess the epic's real number, and never pass a temporary ID that was not minted this run.
-- Milestone: same as parent epic
-- Size: Project field if available, else body line
-- Label application: same as epics — call `add_labels` with `item_number` set to this task's temporary ID and the task's computed label set (see Label Pre-flight). `create-if-missing` provisions `squad`/`squad:{agent}` on a fresh repository automatically.
-
-**2d. Self-Validation:** The **created count** is the number of `create-issue` calls this run emitted. Compare it against the plan's declared total (not the safe-output cap). If it is lower: call `report_incomplete` immediately with `created={N}` set to that created count, `expected={M}` set to the declared total, and the last task's temporary ID — never noop, and never substitute a guessed issue number. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as a guessed reason for a partial run — name a cap only when Step 2e observed one actually being reached.
-
-**2e. Label-Operation Reconciliation — no activation is complete until every activated item's labels are accounted for.**
-
-While Steps 2b/2c run, keep two counts: `activated` (issues created or recognized this run) and `labeled` (issues whose `add_labels` call was accepted). An `add_labels` call that was never made, was rejected, or returned an error counts as **unlabeled**. These counts track *label operations*, not labels present on GitHub: acceptance means the call was queued for a specific target this turn, and gh-aw applies it in the post-agent job. Never state or imply that a counted label was applied, landed, or was confirmed on the issue — nothing here reads labels back. At the end of Step 2:
-
-1. `labeled == activated` → the activation is complete; proceed to Step 3.
-2. `labeled < activated` → **this is an incomplete activation, not a successful one.** Call `report_incomplete` with a `reason` naming the shortfall (`{labeled} of {activated} activated issues had a label operation accepted`) and `details` listing **every affected work item — the identifier you used to target its `add_labels` call, its title, and the label set that missing operation targeted**. For an item created this run that identifier is the `temporary_id` you minted under the Temporary-ID Contract (`#aw_epic{K}` / `#aw_task{N}`) — not a GitHub issue number, because creation is deferred to the safe-output job and no real number exists yet. Quote a real number only where one is independently verified: an epic or task matched by dedup-by-title, or an issue recognized by Step 1's idempotent-rerun path. Never predict, infer, or invent a number. `report_incomplete` logs a warning and opens or updates a durable `[aw] ... reported incomplete result` tracking issue; it does **not** change the run's conclusion — the run still reports success. That record and the rule below keep a truncated activation from passing as clean, so never rely on a red run to carry the signal.
-
-**Cap exhaustion is a reportable, nameable cause.** If the shortfall is because a cap was reached, say so in the `reason`, name which cap (`create-issue` 75 or `add_labels` 110) and list the work items that did not fit, and recommend `/squad plan activate phase {N}`. This is the one case where a cap may be named as the cause: it was observed, not guessed. Do not infer a cap from a rejection you never received, and do not treat the absence of an `E002` error as proof that every label operation was accepted: the count comparison, not the error stream, is the authority.
-
-**Never report a clean activation you did not perform.** An `activated` or `phases-activated` artifact listing every item as activated while `labeled < activated`, or omitting the shortfall, is a false success report — the silent truncation this step exists to prevent.
-
-Labels must have descriptions and intentional colors when they already exist in the
-repository. A label auto-provisioned by `add-labels`'s `create-if-missing` on a fresh
-repository instead receives gh-aw's deterministic color and an empty description — that
-is expected, not a failure, and must not be reported as one.
-
-##### Step 3: Native Dependency Edges
-
-Declare `blocked_by` on the `create-issue` call itself, passing the blocking item's
-temporary ID (`#aw_task{N}` / `#aw_epic{K}`) — `blocked_by` resolves temporary IDs. Use a
-verified real number only for a dependency on a pre-existing issue. Never call a write API
-with a guessed number to add an edge. Graceful fallback to a body reference. Never fail
-activation over edge creation.
-
-##### Step 4: Post Activation Record
-
-**LAST action** — only after Steps 2+3 complete.
-
-Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
-
-Every phase and full activation artifact body MUST include an `Activation bindings:` fenced JSON block containing a non-empty array built only from accepted activation operations. Each row is a `squad-work-agent-binding/v1` producer record. Copy `$GITHUB_REPOSITORY`, the current origin issue, artifact kind, and TG-2 registry revision exactly. Emit one object per created/recognized task:
-
-`{"binding_schema":"squad-work-agent-binding/v1","binding_version":1,"producer":"squad","repository":"{owner/repo}","origin_issue":{origin issue},"artifact":"{artifact kind}","registry_schema":"squad-agent-provenance/v1","registry_revision":{TG-2 revision},"task":"{plan # cell}","issue":"{task issue reference}","epic":"{Epic cell}","epic_issue":"{epic issue reference}","agent_id":"{Agent ID cell}","epic_agent_ids":["{all distinct Agent ID cells for this epic}"],"agent":"{raw Agent cell}","epic_agents":["{all distinct lowercased Agent cells for this epic}"],"label":"squad:{slugged Agent cell}","epic_label":"squad:{slugged sole epic task agent}"}`. Slug label fields only. Every binding for one epic carries the same complete ID/name sets across all phases.
-
-For `@copilot` or non-roster work, set `agent_id:null` plus `identity_omission_reason:"external-agent"` or `"non-roster"`. For an older accepted plan with no ID column, use `"legacy-plan-missing-id"`; never reconstruct one from its name or label. Exclude unavailable IDs from `epic_agent_ids` and add `epic_identity_omission_reason:"partial"` when any epic task lacks an ID.
-
-###### Issue references in bindings — quoted, never bare
-
-`issue` and `epic_issue` are **JSON strings**, never bare numbers, and never a real number
-for an issue this run created.
-
-- **Created this run:** that item's own `temporary_id`, quoted — `"issue":"#aw_task{N}"`,
-  `"epic_issue":"#aw_epic{K}"`. gh-aw rewrites an `#aw_…` reference in a comment body to
-  `#{real number}` once the issue exists, so the posted artifact carries the real number
-  without this run predicting one.
-- **Reused or pre-existing** (Step 1 idempotent rerun, dedup-by-title): its verified real
-  number in the same quoted form — `"issue":"#123"`. One shape covers both.
-
-**The quoting is load-bearing.** gh-aw's substitution is a plain text replacement over the
-whole body — it does not skip fenced code blocks — and it keeps the `#`. Bare,
-`"issue":#aw_task1` becomes `"issue":#42`, which is invalid JSON and fails the whole block.
-Quoted, `"issue":"#aw_task1"` becomes `"issue":"#42"`, which parses. Never emit a bare
-`#aw_…`, a bare number, or a `{created task issue number}` placeholder in these two fields.
-
-An `#aw_…` surviving into the posted artifact was never resolved — that `create-issue` did
-not land. Leave it rather than repairing it by hand: the consumer fails closed on it, which
-is correct.
-
-For a multi-owner epic, omit `epic_label` and set `"epic_omission_reason":"multi-owner"` on each of its task bindings. For a task whose agent is not certified by TG-2, omit `label` and set `"omission_reason":"non-roster"`; if that task is the epic's sole owner, likewise omit `epic_label` and set `"epic_omission_reason":"non-roster"`. Never omit a created task from `bindings`, never infer an issue number, and never emit an empty array. The deterministic post-activation workflow treats missing, empty, malformed, or unresolved bindings as a failure. The safe-output schema deliberately uses one uniform task-binding shape because gh-aw's data schema dialect does not support conditional `if`/`then` or `allOf`; the checker enforces activation-only presence and cross-row epic consistency.
-
-Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table + the `Activation bindings:` JSON array.
-
-Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order + the `Activation bindings:` JSON array.
-
-Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}]}` with an "All Phases Activated" heading and the accumulated `Activation bindings:` JSON array.
-
-###### Label operations accepted
-
-A label reaches an activated issue through exactly one route: an accepted `add_labels`
-operation targeting that issue. `create-issue`'s `labels:` field never lands a label this
-workflow can claim — it silently drops names the repository lacks — so it is never evidence.
-
-**The rule.** Report `squad:{agent}` for an issue only when this run made an `add_labels`
-call that carried that label and targeted that same issue — by its own `temporary_id`, or by
-its verified real number for a reused issue. Every `label` and `epic_label` in the bindings
-block, and every label named in the prose or issue tables, MUST trace to such a call.
-
-**Forbidden:** reporting a label because `create-issue` succeeded or its `labels:` field
-named it (a successful `create-issue` means an issue was requested — nothing more); reporting
-a label that was computed or intended but whose `add_labels` call was never made, was
-skipped, or was rejected; reporting a label from another item's `add_labels` call
-(per-issue correspondence holds exactly as in Label Pre-flight Step 7); and reporting an
-omission when that item's call was in fact made and accepted — a silent under-claim is as
-wrong as an over-claim.
-
-**What "accepted" means.** `add_labels` is a safe output: the call is accepted and queued
-this turn, and gh-aw applies it in the post-agent job. This run has evidence only that the
-operation was accepted *for a specific target*, never the GitHub API result. State it at
-that strength — never write that a label was "verified", "confirmed on the issue", or
-"checked", because nothing here reads labels back. The deterministic post-activation checker
-compares these bindings against the labels actually present; over-claiming defeats it.
-
-**Omission is reported, never inferred.** Whenever an `Agent` value did not become a
-`squad:{agent}` label — multi-owner epic, uncertified name, or a label operation not made or
-not accepted — the `Non-roster agent values` heading is **required**, naming the value and
-the issue it applied to, and the matching binding carries its `omission_reason` /
-`epic_omission_reason`. Applying bare `squad` while omitting the heading reports a clean run
-that did not happen. Conversely, never emit the heading for an owner that *did* become an
-accepted label — that manufactures a defect.
-
-##### Step 5: Update Lifecycle
-
-Phase: `🔄 Phase {N} of {total} activated`. Next: accept/activate next phase.
-Full/last: `✅ Done`, state = Activated, last command = invoked
-`/squad plan activate`. Terminal — use terminal prose for Next action.
+Use the same `activate_plan` procedure and no-create recovery rules as
+`squad-plan-accept` above. The latest implementation plan must have explicit
+stable task IDs, Agent IDs and Epic IDs, and prior scope/implementation acceptance.
+The model emits one `activate_plan` request only. The trusted writer owns
+all issue creation, binding finalization and lifecycle publication.
 
 ## end skill: `squad-plan-activate`
 

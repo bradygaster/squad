@@ -22,22 +22,22 @@ import {
   BOOTSTRAP_ISSUE_TITLE,
   BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
   BOOTSTRAP_PR_TITLE,
-  BOOTSTRAP_RESEARCH_TITLE,
   CREATE_PR_PERMISSION_DENIED_TEXT,
   PAYLOAD_CHUNK_BYTES,
   PAYLOAD_CHUNK_STRING_MAX_BYTES,
   PAYLOAD_MAX_BYTES,
   PAYLOAD_MAX_CHUNKS,
   bootstrapPrFallbackIssueMarker,
+  authorizeBootstrapReset,
+  bootstrapIdentity,
+  parseBootstrapReset,
+  readBootstrapReset,
   buildBootstrapPrFallbackCompareUrl,
   buildBootstrapPrFallbackIssueBody,
   buildBootstrapPrFallbackProvenanceLine,
   classifyBootstrapState,
   createBootstrapPayloadEnvelope,
-  createBootstrapResearchComment,
-  findBootstrapResearchArtifacts,
   findExistingBootstrapPrFallbackIssue,
-  isBootstrapResearchSeed,
   isCreatePullRequestPermissionDenied,
   reconstructBootstrapPayload,
   validateBootstrapPayload,
@@ -61,6 +61,193 @@ const builtins = [
   { id: 'rai', name: 'Rai' },
   { id: 'fact-checker', name: 'Fact Checker' },
 ];
+const RESET = {
+  schema: 'squad-bootstrap-reset/v1', id: 'retry-1',
+  archived_pull_requests: [3], archived_issues: [],
+};
+const RESEARCH_TITLE = '[Agentic Research] octo/example — initial proposals';
+const ACTIONS_AUTHOR = { login: 'github-actions[bot]', type: 'Bot' };
+
+describe('Agentic Research bootstrap naming compatibility', () => {
+  it('derives a fixed proposal title from runtime repository scope without changing Cast identity', () => {
+    expect(bootstrapIdentity(null, 'octo/example')).toEqual({
+      BOOTSTRAP_BRANCH, BOOTSTRAP_PR_TITLE, BOOTSTRAP_ISSUE_TITLE: RESEARCH_TITLE,
+    });
+    expect(bootstrapIdentity(RESET, 'octo/example').BOOTSTRAP_ISSUE_TITLE)
+      .toBe(`${RESEARCH_TITLE} [reset:retry-1]`);
+    expect(bootstrapIdentity().BOOTSTRAP_ISSUE_TITLE).toBe(BOOTSTRAP_ISSUE_TITLE);
+    expect(() => bootstrapIdentity(null, 'invented farm\nscope')).toThrow('owner/repo');
+  });
+
+  it.each([null, RESET])('recognizes both exact titles before and after Cast merge for reset %j', reset => {
+    const identity = bootstrapIdentity(reset, 'octo/example');
+    const suffix = reset ? ' [reset:retry-1]' : '';
+    for (const merged of [false, true]) {
+      const pull = {
+        ...archivedCast(), number: 5, state: merged ? 'closed' : 'open', merged,
+        title: identity.BOOTSTRAP_PR_TITLE,
+        head: { ...archivedCast().head, ref: identity.BOOTSTRAP_BRANCH },
+      };
+      const state = {
+        pullRequests: [...(reset ? [archivedCast()] : []), pull],
+        defaultBranch: 'main', repository: 'octo/example', reset, installedTeam: merged,
+      };
+      for (const title of [BOOTSTRAP_ISSUE_TITLE + suffix, RESEARCH_TITLE + suffix]) {
+        expect(classifyBootstrapState({
+          ...state, issues: [{ number: 6, state: 'open', title,
+            body: BOOTSTRAP_ISSUE_MARKER, user: ACTIONS_AUTHOR }],
+        }).action).toBe('noop');
+      }
+    }
+  });
+
+  it.each([
+    ['wrong repository', { title: '[Agentic Research] octo/other — initial proposals' }],
+    ['arbitrary scope', { title: '[Agentic Research] Example farm — initial proposals' }],
+    ['later wave', { title: '[Agentic Research] octo/example — 2026-10-12' }],
+    ['wrong generation', { title: `${RESEARCH_TITLE} [reset:other]` }],
+    ['missing marker', { body: '' }],
+    ['duplicate marker', { body: `${BOOTSTRAP_ISSUE_MARKER}\n${BOOTSTRAP_ISSUE_MARKER}` }],
+    ['human author', { user: { login: 'maintainer', type: 'User' } }],
+    ['other bot', { user: { login: 'other[bot]', type: 'Bot' } }],
+    ['missing author', { user: undefined }],
+  ])('rejects new-title %s even with an installed team', (_label, change) => {
+    expect(() => classifyBootstrapState({
+      pullRequests: [], defaultBranch: 'main', repository: 'octo/example', installedTeam: true,
+      issues: [{ number: 6, state: 'open', title: RESEARCH_TITLE,
+        body: BOOTSTRAP_ISSUE_MARKER, user: ACTIONS_AUTHOR, ...change }],
+    })).toThrow('Ambiguous bootstrap issue');
+  });
+
+  it('rejects duplicate generations even when one title is legacy', () => {
+    expect(() => classifyBootstrapState({
+      pullRequests: [], defaultBranch: 'main', repository: 'octo/example',
+      issues: [BOOTSTRAP_ISSUE_TITLE, RESEARCH_TITLE].map((title, index) => ({
+        number: 6 + index, title, body: BOOTSTRAP_ISSUE_MARKER, user: ACTIONS_AUTHOR,
+      })),
+    })).toThrow('found 2 matching issues');
+  });
+
+  it.each([BOOTSTRAP_ISSUE_TITLE, RESEARCH_TITLE])('archives exact closed prior-generation title %s', title => {
+    const state = {
+      pullRequests: [archivedCast()], defaultBranch: 'main', repository: 'octo/example',
+      reset: { ...RESET, archived_issues: [4] }, resetAuthorized: true,
+      issues: [{ number: 4, state: 'closed', title,
+        body: BOOTSTRAP_ISSUE_MARKER, user: ACTIONS_AUTHOR }],
+    };
+    expect(classifyBootstrapState(state).action).toBe('create_both');
+    state.issues[0].title += ' [reset:retry-1]';
+    expect(() => classifyBootstrapState(state)).toThrow('Unsafe bootstrap reset archive issue');
+  });
+});
+
+function archivedCast() {
+  return {
+    number: 3, state: 'closed', merged: false, merged_at: null,
+    title: BOOTSTRAP_PR_TITLE,
+    user: { login: 'github-actions[bot]', type: 'Bot' },
+    head: { ref: BOOTSTRAP_BRANCH, sha: 'a'.repeat(40), repo: { full_name: 'octo/example' } },
+    base: { ref: 'main', repo: { full_name: 'octo/example' } },
+  };
+}
+
+describe('explicit committed bootstrap reset', () => {
+  const classify = (extra = {}) => classifyBootstrapState({
+    pullRequests: [archivedCast()], issues: [], defaultBranch: 'main',
+    repository: 'octo/example', reset: RESET, ...extra,
+  });
+
+  it('preserves legacy opt-out and arms a reset without creating it on ordinary runs', () => {
+    expect(classify({ reset: null }).action).toBe('opt_out');
+    expect(classify().action).toBe('reset_armed');
+    expect(classify({ resetAuthorized: true }).action).toBe('create_both');
+    expect(classify().identity.BOOTSTRAP_BRANCH).toBe('squad/bootstrap-cast-retry-1');
+  });
+
+  it.each([
+    ['open', { state: 'open' }],
+    ['merged', { merged_at: '2026-10-08T00:00:00Z' }],
+    ['foreign', { head: { ...archivedCast().head, repo: { full_name: 'other/repo' } } }],
+    ['wrong base', { base: { ...archivedCast().base, ref: 'release' } }],
+    ['wrong title', { title: 'Human work' }],
+  ])('refuses %s archived history', (_label, change) => {
+    expect(() => classify({ pullRequests: [{ ...archivedCast(), ...change }] })).toThrow('Unsafe bootstrap reset');
+  });
+
+  it('rejects installed teams, missing history, duplicate numbers and unarchived ambiguous history', () => {
+    expect(() => classify({ installedTeam: true, resetAuthorized: true })).toThrow('committed team');
+    expect(() => classify({ pullRequests: [] })).toThrow('Unsafe bootstrap reset');
+    expect(() => classify({ pullRequests: [archivedCast(), { ...archivedCast(), number: 4 }] })).toThrow('Ambiguous');
+    expect(() => parseBootstrapReset({ ...RESET, archived_pull_requests: [3, 3] })).toThrow('unique');
+    expect(() => parseBootstrapReset({ ...RESET, id: '../../branch' })).toThrow('Invalid');
+    expect(() => parseBootstrapReset({ ...RESET, extra: true })).toThrow('Invalid');
+  });
+
+  it('resumes the stable generation and preserves its new opt-out on repeated reset', () => {
+    const identity = bootstrapIdentity(RESET);
+    const current = {
+      ...archivedCast(), number: 5, state: 'open', title: identity.BOOTSTRAP_PR_TITLE,
+      head: { ...archivedCast().head, ref: identity.BOOTSTRAP_BRANCH },
+    };
+    expect(classify({ pullRequests: [archivedCast(), current] }).action).toBe('create_issue');
+    expect(classify({
+      pullRequests: [archivedCast(), { ...current, state: 'closed' }], resetAuthorized: true,
+    }).action).toBe('opt_out');
+    expect(classify({
+      pullRequests: [archivedCast(), { ...current, state: 'closed', merged: true }], installedTeam: true,
+    }).action).toBe('create_issue');
+    expect(() => classify({
+      pullRequests: [archivedCast(), current, { ...current, number: 6 }],
+    })).toThrow('Ambiguous');
+  });
+
+  it('archives only exact closed research issues and keeps new research identity separate', () => {
+    const oldIssue = { number: 4, state: 'closed', title: BOOTSTRAP_ISSUE_TITLE, body: BOOTSTRAP_ISSUE_MARKER };
+    const reset = { ...RESET, archived_issues: [4] };
+    expect(classify({ reset, issues: [oldIssue], resetAuthorized: true }).action).toBe('create_both');
+    expect(() => classify({ reset, issues: [{ ...oldIssue, state: 'open' }] })).toThrow('Unsafe');
+    expect(() => classify({ reset, issues: [{ ...oldIssue, title: 'Unrelated retrospective' }] })).toThrow('Unsafe');
+    expect(() => classify({ issues: [oldIssue] })).toThrow('Ambiguous');
+  });
+
+  it('requires default-branch dispatch, exact committed ID and every human actor permission', async () => {
+    const context = {
+      eventName: 'workflow_dispatch', ref: 'refs/heads/main', actor: 'maintainer',
+      repo: { owner: 'octo', repo: 'example' },
+      payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
+    };
+    let permission = 'write';
+    const github = { rest: { repos: { getCollaboratorPermissionLevel: async ({ username }: { username: string }) =>
+      ({ data: { permission, user: { login: username, type: 'User' } } }) } } };
+    const args = { reset: RESET, input: 'retry-1', context, github };
+    expect(await authorizeBootstrapReset(args)).toBe(true);
+    expect(await authorizeBootstrapReset({ ...args, input: '' })).toBe(false);
+    for (const change of [{ input: 'other' }, { reset: null },
+      { context: { ...context, eventName: 'push' } }, { context: { ...context, ref: 'refs/tags/main' } }]) {
+      await expect(authorizeBootstrapReset({ ...args, ...change })).rejects.toThrow('Fresh bootstrap');
+    }
+    permission = 'read';
+    await expect(authorizeBootstrapReset(args)).rejects.toThrow('permission');
+    await expect(authorizeBootstrapReset({
+      ...args, context: { ...context, payload: { ...context.payload, sender: { login: 'bot', type: 'Bot' } } },
+    })).rejects.toThrow('human');
+  });
+
+  it('uses committed reset identity, never an agent-written working-tree record', () => {
+    const fixture = createFixture();
+    write(fixture.root, '.squad/bootstrap-reset.json', JSON.stringify(RESET));
+    expect(readBootstrapReset(fixture.root)).toBeNull();
+    execFileSync('git', ['add', '.squad/bootstrap-reset.json'], { cwd: fixture.root });
+    execFileSync('git', ['commit', '-qm', 'authorize reset'], { cwd: fixture.root });
+    expect(readBootstrapReset(fixture.root)).toEqual(RESET);
+    write(fixture.root, '.squad/bootstrap-reset.json', JSON.stringify({ ...RESET, id: 'attacker' }));
+    expect(readBootstrapReset(fixture.root)).toEqual(RESET);
+    expect(validateBootstrapPayload({
+      root: fixture.root, payloadText: JSON.stringify(fixture.payload),
+      repository: 'octo/example', defaultBranch: 'main', linkMode: 'placeholder',
+    })).toContain('payload: branch must be squad/bootstrap-cast-retry-1');
+  });
+});
 
 function write(root: string, path: string, content: string | Buffer): void {
   const target = join(root, ...path.split('/'));
@@ -99,7 +286,7 @@ ${builtins.map(({ id, name }) => `| ${name} | Built-in | \`.squad/agents/${id}/c
 
 | Name | Role | Status |
 | --- | --- | --- |
-| @copilot | Coding Agent | Available |
+| @copilot | Coding Agent | 🤖 Coding Agent |
 `;
 }
 
@@ -218,7 +405,7 @@ Review the corresponding [draft Cast PR](${link}) before accepting the roster.
 ## How to launch work
 
 1. Review and merge the linked draft Cast PR.
-2. Rerun \`/squad triage\` to classify these existing proposals, or use focused \`/squad research ...\` first when deeper research is desired.
+2. Run \`/squad research\` on the proposals you want to pursue, then \`/squad triage\` to classify the research findings.
 3. Run \`/squad plan\`, review the plan, then run \`/squad activate\` to create assignable implementation issues.
 
 \`\`\`text
@@ -235,7 +422,7 @@ Use \`/squad implement\` only on generated implementation tasks, never on a prop
 ## Actionable backlog
 
 - [ ] Review and merge the draft Cast PR.
-- [ ] Triage the existing proposals, or run focused research first when deeper evidence is desired.
+- [ ] Run research on the selected proposals, then triage the findings.
 - [ ] Review the plan and activate assignable implementation issues.
 `;
 }
@@ -355,7 +542,7 @@ function createFixture(): { root: string; payloadPath: string; payload: Record<s
 ${active.map(({ name, role }) => `| ${name} | ${role} |`).join('\n')}
 
 This draft Cast requires human review before merge.`,
-    issue_title: BOOTSTRAP_ISSUE_TITLE,
+    issue_title: RESEARCH_TITLE,
     issue_body: issueBody(),
     files: paths.map((path) => ({
       path,
@@ -502,6 +689,24 @@ afterAll(() => {
 });
 
 describe('automatic Squad bootstrap workflow', () => {
+  it('keeps generated support and routing guidance consistent with native contracts', () => {
+    const dispatcher = readFileSync(resolve(ROOT, 'workflows/squad.md'), 'utf8');
+    for (const source of [WORKFLOW, dispatcher]) {
+      const normalized = source.replace(/\s+/g, ' ');
+      expect(normalized).toContain('accepted durable decisions only, never session or orchestration logs');
+      expect(normalized).toContain('`squad:{member}` labels as specialist assignment');
+      expect(normalized).toContain('bare `squad` label is a tracking marker');
+      expect(normalized).toContain('A name mention alone does not dispatch a native workflow');
+      expect(source).not.toContain('Scribe logs sessions');
+      expect(normalized).toContain('exactly one `## Coordinator` section');
+      expect(normalized).toContain('exactly one `## Coding Agent`');
+      expect(normalized).toContain('copilot-auto-assign: false');
+    }
+    const guide = readFileSync(resolve(ROOT, 'docs/src/content/docs/guide/gh-aw.md'), 'utf8');
+    expect(guide).toContain('Do not amend that branch or rewrite provenance');
+    expect(guide.replace(/\s+/g, ' ')).toContain('reviewed fresh generation procedure');
+  });
+
   it('pins the canonical bootstrap validator digest in the authenticated runner', () => {
     const canonical = readFileSync(VALIDATOR);
     const commandDigest = WORKFLOW.match(
@@ -536,18 +741,6 @@ describe('automatic Squad bootstrap workflow', () => {
       pullRequests: [pull()],
       issues: [issue()],
       comments: [],
-      defaultBranch: 'main',
-    }).action).toBe('create_research');
-    const research = {
-      id: 9,
-      created_at: '2026-09-14T00:00:00Z',
-      user: { login: 'github-actions[bot]' },
-      body: createBootstrapResearchComment(issueBody(), 6),
-    };
-    expect(classifyBootstrapState({
-      pullRequests: [pull()],
-      issues: [issue()],
-      comments: [research],
       defaultBranch: 'main',
     }).action).toBe('noop');
     expect(classifyBootstrapState({ pullRequests: [pull('closed')], issues: [], defaultBranch: 'main' }).action).toBe('opt_out');
@@ -585,57 +778,10 @@ describe('automatic Squad bootstrap workflow', () => {
     ).toThrow(/expected exact title and durable marker/);
   });
 
-  it('materializes one canonical research seed that normal triage can consume', () => {
-    const comment = createBootstrapResearchComment(issueBody(), 6);
-    expect(comment).toContain(BOOTSTRAP_RESEARCH_TITLE);
-    expect(comment).toContain('| R1 | P1 is a validated bootstrap proposal');
-    expect(comment).toContain('focused `/squad research ...`');
-    expect(comment).not.toContain('### P1 — Strengthen runtime contracts');
-    expect(comment).toContain(
-      '{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}',
-    );
-
-    const artifacts = findBootstrapResearchArtifacts([
-      {
-        id: 9,
-        created_at: '2026-09-14T00:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: comment,
-      },
-    ], 6);
-    expect(artifacts).toHaveLength(1);
-    expect(isBootstrapResearchSeed(artifacts[0])).toBe(true);
-    expect(isBootstrapResearchSeed({
-      body: comment.replace(BOOTSTRAP_RESEARCH_TITLE, '## 🔬 Squad Research — Focused follow-up'),
-    })).toBe(false);
-  });
-
-  it('fails closed on malformed research envelopes and repairs duplicate artifacts', () => {
-    const valid = createBootstrapResearchComment(issueBody(), 6);
-    expect(() => findBootstrapResearchArtifacts([
-      {
-        id: 10,
-        created_at: '2026-09-14T00:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: valid.replace('"origin_issue":6', '"origin_issue":7'),
-      },
-    ], 6)).toThrow(/canonical research envelope/);
-
-    const duplicates = findBootstrapResearchArtifacts([
-      {
-        id: 10,
-        created_at: '2026-09-14T00:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: valid,
-      },
-      {
-        id: 11,
-        created_at: '2026-09-14T01:00:00Z',
-        user: { login: 'github-actions[bot]' },
-        body: valid,
-      },
-    ], 6);
-    expect(duplicates.map(({ id }) => id)).toEqual([10, 11]);
+  it.each([{ comments: [] }, { comments: [
+    { id: 10, body: 'Structured data:\n```json\n{"squad_artifact":"research"}\n```' },
+    { id: 11, body: 'Historical research comment' },
+  ] }])('ignores absent, malformed, or duplicate research during merged-Cast recovery: %j', ({ comments }) => {
     expect(classifyBootstrapState({
       pullRequests: [{
         number: 3,
@@ -652,9 +798,9 @@ describe('automatic Squad bootstrap workflow', () => {
         title: BOOTSTRAP_ISSUE_TITLE,
         body: issueBody('https://github.com/octo/example/pull/3'),
       }],
-      comments: duplicates,
+      comments,
       defaultBranch: 'main',
-    }).action).toBe('create_research');
+    }).action).toBe('noop');
   });
 
   it('validates the shared Cast and issue payload with exact success output', () => {
@@ -662,6 +808,32 @@ describe('automatic Squad bootstrap workflow', () => {
     const result = validateFixture(fixture);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe('Squad bootstrap validation passed.\n');
+  });
+
+  it.each([
+    BOOTSTRAP_ISSUE_TITLE,
+    '[Agentic Research] octo/other — initial proposals',
+    '[Agentic Research] octo/example — 2026-10-12',
+    `${RESEARCH_TITLE} [reset:other]`,
+  ])('rejects noncanonical new payload title %s while retaining legacy state compatibility', title => {
+    const fixture = createFixture();
+    fixture.payload.issue_title = title;
+    writeFileSync(fixture.payloadPath, JSON.stringify(fixture.payload));
+    const result = validateFixture(fixture);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`issue_title must be ${RESEARCH_TITLE}`);
+  });
+
+  it('rejects proposal guidance that skips explicit research before triage', () => {
+    const fixture = createFixture();
+    fixture.payload.issue_body = fixture.payload.issue_body.replace(
+      '2. Run `/squad research` on the proposals you want to pursue, then `/squad triage` to classify the research findings.',
+      '2. Rerun `/squad triage` to classify these existing proposals, or use focused `/squad research ...` first when deeper research is desired.',
+    );
+    writeFileSync(fixture.payloadPath, JSON.stringify(fixture.payload));
+    const result = validateFixture(fixture);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('missing required bootstrap guidance 2. Run `/squad research`');
   });
 
   it('validates an isolated candidate against the trusted checkout Git history', () => {
@@ -681,7 +853,7 @@ describe('automatic Squad bootstrap workflow', () => {
       linkMode: 'placeholder',
     };
     expect(validateBootstrapPayload(options)).toContainEqual(
-      expect.stringContaining('registry base: committed HEAD is unavailable'),
+      expect.stringContaining('committed bootstrap identity unavailable'),
     );
     expect(validateBootstrapPayload({ ...options, gitRoot: fixture.root })).toEqual([]);
 
@@ -934,6 +1106,20 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(unavailable.stdout).toBe('');
   });
 
+  it.each(['Coordinator', 'Coding Agent'])('refuses a generated Cast missing %s before tool submission', heading => {
+    const fixture = submissionFixture();
+    const team = fixture.payload.files.find(file => file.path === '.squad/team.md')!;
+    team.content = team.content.replace(new RegExp(`## ${heading}\\n[\\s\\S]*?(?=\\n## |$)`), '');
+    write(fixture.root, team.path, team.content);
+    const text = JSON.stringify(fixture.payload);
+    writeFileSync(fixture.payloadPath, text);
+    writeFileSync(fixture.envelopePath, JSON.stringify(createBootstrapPayloadEnvelope(text)));
+    const result = fixture.submit();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`expected exactly one "## ${heading}" heading`);
+    expect(existsSync(fixture.capture)).toBe(false);
+  });
+
   it('enforces encoder total-size and fixed chunk-count bounds', () => {
     expect(() => createBootstrapPayloadEnvelope('x'.repeat(PAYLOAD_MAX_BYTES + 1))).toThrow(
       new RegExp(`between 1 and ${PAYLOAD_MAX_BYTES}`),
@@ -975,6 +1161,7 @@ describe('automatic Squad bootstrap workflow', () => {
 
   it('compiles the default-branch/path gates and isolates writes to the typed materializer', () => {
     const lock = compileWorkflow();
+    expect(lock).toContain('{{#runtime-import .github/workflows/squad-bootstrap.md}}');
     expect(lock).toContain('branches:\n      - "**"');
     expect(lock).toContain('.github/workflows/squad-bootstrap.md');
     expect(lock).toContain('.github/workflows/squad-bootstrap.lock.yml');
@@ -982,7 +1169,9 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('group: squad-bootstrap-${{ github.repository }}');
     expect(lock).toContain('cancel-in-progress: false');
     expect(lock).toMatch(/agent:[\s\S]*?permissions:\n\s+contents: read\n\s+copilot-requests: write\n\s+issues: read\n\s+pull-requests: read/);
-    expect(lock).toMatch(/materialize_bootstrap:[\s\S]*?permissions:\n\s+contents: write\n\s+issues: write\n\s+pull-requests: write/);
+    expect(parse(lock).jobs.materialize_bootstrap.permissions).toEqual({
+      actions: 'read', contents: 'write', issues: 'write', 'pull-requests': 'write',
+    });
     expect(lock).toContain('"payload_chunk_00"');
     expect(lock).toContain('"payload_chunk_15"');
     expect(lock).toContain('"payload_byte_length"');
@@ -1020,6 +1209,15 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(lock).toContain('pullRequestDetails.head.repo?.full_name !== provenance.repository');
     expect(lock).toContain('body: `${provenanceMarker}\\n${prBodyWithoutProvenance}`');
     expect(lock).toContain('body: markedIssueBody');
+    const inspection = parse(lock).jobs.agent.steps.find(
+      (step: { name?: string }) => step.name === 'Inspect deterministic bootstrap state',
+    ).with.script;
+    expect(inspection).toContain('stateModule.classifyBootstrapState(');
+    expect(inspection).not.toContain('listComments');
+    expect(lock).not.toContain('createBootstrapResearch');
+    expect(lock).not.toContain('findBootstrapResearchArtifacts');
+    expect(lock).not.toContain('create_research');
+    expect(lock).not.toContain('github.rest.issues.deleteComment');
     expect(lock).not.toMatch(/\$\{\{[^}]*\\u00(?:26|3[cCeE])/);
   }, 180000);
 
@@ -1105,11 +1303,10 @@ describe('automatic Squad bootstrap workflow', () => {
     expect(WORKFLOW).toContain('github.paginate(github.rest.pulls.list');
     expect(WORKFLOW).toContain('github.paginate(github.rest.issues.listForRepo');
     expect(WORKFLOW).toContain('github.paginate(github.rest.issues.listComments');
-    expect(WORKFLOW).toContain('createBootstrapResearchComment(');
-    expect(WORKFLOW).toContain('findBootstrapResearchArtifacts(');
-    expect(WORKFLOW).toContain('isBootstrapResearchSeed(currentResearch)');
-    expect(WORKFLOW).toContain('Preserving focused research artifact comment');
-    expect(WORKFLOW).toContain('github.rest.issues.deleteComment');
+    expect(WORKFLOW).not.toContain('createBootstrapResearchComment(');
+    expect(WORKFLOW).not.toContain('findBootstrapResearchArtifacts(');
+    expect(WORKFLOW).not.toContain('create_research');
+    expect(WORKFLOW).not.toContain('github.rest.issues.deleteComment');
     expect(WORKFLOW).toContain("draft: true");
     expect(WORKFLOW).toContain("ref: `refs/heads/${stateModule.BOOTSTRAP_BRANCH}`");
     expect(WORKFLOW).not.toContain('auto-merge:');
@@ -1124,6 +1321,10 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
   const prUrl = 'https://github.com/octo/example/pull/3';
 
   function writerScript(source: string): string {
+    if (!source.startsWith('---')) {
+      return parse(source).jobs.materialize_bootstrap.steps
+        .find((step: { name?: string }) => step.name === 'Validate and materialize both artifacts').with.script;
+    }
     const frontmatter = source.split('\n---\n')[0].replace(/^---\n/, '');
     const steps = parse(frontmatter)['safe-outputs'].jobs['materialize-bootstrap'].steps;
     const script = steps.find((step: { with?: { script?: string } }) => step.with?.script)?.with.script;
@@ -1134,12 +1335,23 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
   function writerFixture(
     scenario: 'success' | 'opt-out' | 'permission-denied' | 'api-error' = 'success',
     source = WORKFLOW,
+    fresh = false,
   ) {
     const fixture = createFixture();
+    if (fresh) {
+      execFileSync('git', ['rm', '--cached', '--', ...fixture.payload.files.map(file => file.path)], { cwd: fixture.root });
+      write(fixture.root, '.squad/bootstrap-reset.json', JSON.stringify(RESET));
+      execFileSync('git', ['add', '.squad/bootstrap-reset.json'], { cwd: fixture.root });
+      execFileSync('git', ['commit', '-qm', 'authorize fresh bootstrap without installed team'], { cwd: fixture.root });
+      const identity = bootstrapIdentity(RESET, 'octo/example');
+      fixture.payload.branch = identity.BOOTSTRAP_BRANCH;
+      fixture.payload.pr_title = identity.BOOTSTRAP_PR_TITLE;
+      fixture.payload.issue_title = identity.BOOTSTRAP_ISSUE_TITLE;
+    }
     const workspace = mkdtempSync(join(tmpdir(), 'gh-aw-bootstrap-writer-'));
     workspaces.push(workspace);
     const checkout = join(workspace, 'bootstrap-repo');
-    cpSync(fixture.root, checkout, { recursive: true });
+    execFileSync('git', ['clone', '--quiet', fixture.root, checkout]);
     cpSync(resolve(ROOT, 'workflows/shared'), join(checkout, '.github/workflows/shared'), { recursive: true });
     const outputPath = join(workspace, 'output.json');
     writeFileSync(outputPath, JSON.stringify({
@@ -1161,7 +1373,12 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
     );
     const issueCalls: Array<{ title: string; body: string }> = [];
     const commentCalls: Array<{ issue_number: number; body: string }> = [];
+    const commentReads: number[] = [];
+    const commentUpdates: Array<{ comment_id: number; body: string }> = [];
+    const commentDeletes: number[] = [];
     const updates: Array<{ body: string }> = [];
+    const commitParents: string[][] = [];
+    const publishedRefs: string[] = [];
     const writesWithCandidate: boolean[] = [];
     const recordWrite = () => writesWithCandidate.push(
       existsSync(join(candidate, '.squad/team.md')) &&
@@ -1169,23 +1386,27 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
       existsSync(join(candidate, '.github/workflows/shared/builtins/scribe-charter.md')),
     );
     const pull = {
-      number: 3,
+      number: fresh ? 5 : 3,
       state: scenario === 'opt-out' ? 'closed' : 'open',
-      title: BOOTSTRAP_PR_TITLE,
-      head: { ref: BOOTSTRAP_BRANCH, sha: castSha, repo: { full_name: 'octo/example' } },
+      title: fixture.payload.pr_title,
+      head: { ref: fixture.payload.branch, sha: castSha, repo: { full_name: 'octo/example' } },
       base: { ref: 'main' },
       html_url: prUrl,
       body: fixture.payload.pr_body,
       merged_at: null,
+      user: { login: 'github-actions[bot]', type: 'Bot' },
     };
     let branchCreated = false;
     let pullCreated = false;
+    const persistedIssues: Array<{ number: number; state: string; title: string; body: string;
+      user?: { login: string; type: string } }> = [];
+    const persistedComments: Array<{ id: number; issue_number: number; body: string; user: { login: string; type: string } }> = [];
     const github = {
-      paginate: async (method: () => Promise<unknown>) => method(),
+      paginate: async (method: (args: unknown) => Promise<unknown>, args: unknown) => method(args),
       rest: {
         git: {
           getRef: async ({ ref }: { ref: string }) => {
-            if (ref === `heads/${BOOTSTRAP_BRANCH}` && !branchCreated) {
+            if (ref === `heads/${fixture.payload.branch}` && !branchCreated) {
               throw Object.assign(new Error('Not Found'), { status: 404 });
             }
             return { data: { object: { sha: ref === 'heads/main' ? baseSha : castSha } } };
@@ -1193,11 +1414,17 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
           getCommit: async () => ({ data: { tree: { sha: 'base-tree' } } }),
           createBlob: async () => { recordWrite(); return { data: { sha: 'blob' } }; },
           createTree: async () => ({ data: { sha: 'tree' } }),
-          createCommit: async () => ({ data: { sha: castSha } }),
-          createRef: async () => { branchCreated = true; },
+          createCommit: async ({ parents }: { parents: string[] }) => {
+            commitParents.push(parents);
+            return { data: { sha: castSha } };
+          },
+          createRef: async ({ ref }: { ref: string }) => { branchCreated = true; publishedRefs.push(ref); },
         },
         pulls: {
-          list: async () => scenario === 'opt-out' || pullCreated ? [pull] : [],
+          list: async () => [
+            ...(fresh ? [archivedCast()] : []),
+            ...(scenario === 'opt-out' || pullCreated ? [pull] : []),
+          ],
           create: async () => {
             recordWrite();
             if (scenario === 'permission-denied') throw new Error(CREATE_PR_PERMISSION_DENIED_TEXT);
@@ -1205,30 +1432,76 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
             return { data: pull };
           },
           get: async () => ({ data: pull }),
-          update: async (args: { body: string }) => { recordWrite(); updates.push(args); },
+          update: async (args: { body: string }) => { recordWrite(); updates.push(args); pull.body = args.body; },
+        },
+        repos: {
+          getCollaboratorPermissionLevel: async ({ username }: { username: string }) =>
+            ({ data: { permission: 'write', user: { login: username, type: 'User' } } }),
+          getContent: async ({ path }: { path: string }) => {
+            const content = path === '.squad/bootstrap-reset.json'
+              ? JSON.stringify(RESET) : fixture.payload.files.find(file => file.path === path)!.content;
+            return { data: { type: 'file', encoding: 'base64', size: Buffer.byteLength(content),
+              content: Buffer.from(content).toString('base64') } };
+          },
+          compareCommitsWithBasehead: async () => ({
+            data: {
+              files: fixture.payload.files.map(file => ({ filename: file.path })),
+              status: 'identical', base_commit: { sha: baseSha }, merge_base_commit: { sha: baseSha },
+            },
+          }),
+        },
+        actions: {
+          getWorkflowRun: async () => ({ data: {
+            event: 'workflow_dispatch', path: '.github/workflows/squad-bootstrap.lock.yml',
+            repository: { full_name: 'octo/example' }, head_sha: baseSha, head_branch: 'main',
+            status: 'completed', conclusion: 'success',
+            actor: { login: 'maintainer', type: 'User' },
+            triggering_actor: { login: 'maintainer', type: 'User' },
+          } }),
         },
         issues: {
-          listForRepo: async () => [],
-          listComments: async () => [],
+          listForRepo: async () => persistedIssues,
+          listComments: async ({ issue_number }: { issue_number: number }) => {
+            commentReads.push(issue_number);
+            return persistedComments.filter(comment => comment.issue_number === issue_number);
+          },
+          update: async (args: { issue_number: number; title: string; body: string }) => {
+            recordWrite();
+            Object.assign(persistedIssues.find(issue => issue.number === args.issue_number)!, args);
+          },
           create: async (args: { title: string; body: string }) => {
             recordWrite();
             issueCalls.push(args);
             if (scenario === 'api-error') throw new Error('research issue API outage');
+            persistedIssues.push({ ...args, number: 6, state: 'open', user: ACTIONS_AUTHOR });
             return { data: { number: 6, html_url: 'https://github.com/octo/example/issues/6' } };
           },
           createComment: async (args: { issue_number: number; body: string }) => {
             recordWrite();
             commentCalls.push(args);
+            persistedComments.push({
+              ...args, id: persistedComments.length + 1, user: { login: 'github-actions[bot]', type: 'Bot' },
+            });
+          },
+          updateComment: async (args: { comment_id: number; body: string }) => {
+            commentUpdates.push(args);
+            Object.assign(persistedComments.find(comment => comment.id === args.comment_id)!, { body: args.body });
+          },
+          deleteComment: async ({ comment_id }: { comment_id: number }) => {
+            commentDeletes.push(comment_id);
+            const index = persistedComments.findIndex(comment => comment.id === comment_id);
+            if (index >= 0) persistedComments.splice(index, 1);
           },
         },
       },
     };
     const failures: string[] = [];
-    const run = () => runScript(
-      github,
-      { repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123, eventName: 'push' },
-      { info: () => {}, warning: () => {}, setFailed: (message: string) => failures.push(message) },
-      { env: {
+    const context = {
+      repo: { owner: 'octo', repo: 'example' }, sha: baseSha, runId: 123,
+      eventName: fresh ? 'workflow_dispatch' : 'push', ref: 'refs/heads/main', actor: 'maintainer',
+      payload: { repository: { default_branch: 'main' }, sender: { login: 'maintainer', type: 'User' } },
+    };
+    const runtimeEnv = {
         GITHUB_WORKSPACE: workspace,
         GH_AW_AGENT_OUTPUT: outputPath,
         GITHUB_SERVER_URL: 'https://github.com',
@@ -1236,30 +1509,284 @@ describe('gh-aw: squad-bootstrap candidate lifetime', () => {
         SQUAD_BOOTSTRAP_REPOSITORY: 'octo/example',
         SQUAD_BOOTSTRAP_INSTALL_SHA: baseSha,
         SQUAD_BOOTSTRAP_RUN_ID: '123',
-      } },
+        SQUAD_BOOTSTRAP_FRESH_START: fresh ? RESET.id : '',
+    };
+    const run = () => runScript(
+      github, context,
+      { info: () => {}, warning: () => {}, setFailed: (message: string) => failures.push(message) },
+      { env: runtimeEnv },
       captureCandidate,
     );
     return {
-      run, issueCalls, commentCalls, updates, writesWithCandidate, failures,
+      run, github, issueCalls, commentCalls, commentReads, commentUpdates, commentDeletes,
+      updates, writesWithCandidate, failures, commitParents, publishedRefs,
+      context, runtimeEnv, persistedIssues, persistedComments, pull,
       candidate: () => candidate,
     };
   }
 
-  it('keeps the real candidate through resolved validation, issue and research creation, then removes it', async () => {
-    const fixture = writerFixture();
+  it('executes the compiled writer without research on fresh bootstrap or repeated retries', async () => {
+    const fixture = writerFixture('success', compileWorkflow());
     await fixture.run();
     expect(fixture.failures).toEqual([]);
     expect(fixture.issueCalls).toHaveLength(1);
-    expect(fixture.issueCalls[0].title).toBe(BOOTSTRAP_ISSUE_TITLE);
+    expect(fixture.issueCalls[0].title).toBe(RESEARCH_TITLE);
     expect(fixture.issueCalls[0].body).toContain(`[draft Cast PR](${prUrl})`);
     expect(fixture.issueCalls[0].body).not.toContain('{{CAST_PR_URL}}');
     expect(fixture.updates[0].body).toContain('"cast_sha":"' + castSha + '"');
-    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3, 6]);
-    expect(fixture.commentCalls[1].body).toBe(createBootstrapResearchComment(issueBody(prUrl), 6));
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3]);
+    expect(fixture.commentReads).not.toContain(6);
     expect(fixture.writesWithCandidate.length).toBeGreaterThan(0);
     expect(fixture.writesWithCandidate.every(Boolean), 'candidate files must survive all GitHub writes').toBe(true);
     expect(existsSync(fixture.candidate()), 'success must remove the entire candidate tree').toBe(false);
+    for (let retry = 0; retry < 2; retry++) await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3]);
+    expect(fixture.commentUpdates).toEqual([]);
+    expect(fixture.commentDeletes).toEqual([]);
+    expect(fixture.commentReads).not.toContain(6);
+  }, 180000);
+
+  it('preserves explicit and historical research while recovering a missing Cast and retrying', async () => {
+    const fixture = writerFixture('success', compileWorkflow());
+    fixture.persistedIssues.push({ number: 6, state: 'open', title: BOOTSTRAP_ISSUE_TITLE, user: ACTIONS_AUTHOR,
+      body: issueBody(prUrl) });
+    fixture.persistedComments.push(...[
+      '## 🔬 Squad Research — Bootstrap proposals\nHistorical seed',
+      '## 🔬 Squad Research — Focused follow-up\nEvidence from explicit /squad research',
+    ].map((body, index) => ({
+      id: 10 + index, issue_number: 6,
+      body: `${body}\n\nStructured data:\n\`\`\`json\n{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}\n\`\`\``,
+      user: { login: 'github-actions[bot]', type: 'Bot' },
+    })));
+    const existing = structuredClone(fixture.persistedComments);
+    await fixture.run();
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.issueCalls).toEqual([]);
+    expect(fixture.persistedIssues[0].title).toBe(RESEARCH_TITLE);
+    expect(fixture.persistedComments.filter(comment => comment.issue_number === 6)).toEqual(existing);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([3]);
+    expect(fixture.commentReads).not.toContain(6);
+    expect(fixture.commentUpdates).toEqual([]);
+    expect(fixture.commentDeletes).toEqual([]);
+  }, 180000);
+
+  it('preserves legacy titles and provenance on completed bootstrap until a maintainer renames only the title', async () => {
+    const fixture = writerFixture('success', compileWorkflow());
+    await fixture.run();
+    const issue = fixture.persistedIssues[0];
+    issue.title = BOOTSTRAP_ISSUE_TITLE;
+    const body = issue.body;
+    const comments = structuredClone(fixture.persistedComments);
+    fixture.pull.state = 'closed';
+    Object.assign(fixture.pull, { merged: true });
+    await fixture.run();
+    expect(issue.title).toBe(BOOTSTRAP_ISSUE_TITLE);
+    issue.title = RESEARCH_TITLE;
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(issue.body).toBe(body);
+    expect(fixture.persistedComments).toEqual(comments);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.updates).toHaveLength(1);
+  }, 180000);
+
+  it('kills a compiled writer mutation that restores legacy output titles', async () => {
+    const assertTitle = async (source: string) => {
+      const fixture = writerFixture('success', compileWorkflow(source));
+      await fixture.run();
+      expect(fixture.failures).toEqual([]);
+      expect(fixture.issueCalls[0].title).toBe(RESEARCH_TITLE);
+    };
+    await assertTitle(WORKFLOW);
+    const mutated = WORKFLOW.replaceAll(
+      'title: stateModule.BOOTSTRAP_ISSUE_TITLE,',
+      `title: '${BOOTSTRAP_ISSUE_TITLE}',`,
+    );
+    expect(mutated).not.toBe(WORKFLOW);
+    await expect(assertTitle(mutated)).rejects.toThrow('expected');
+  }, 180000);
+
+  it('kills a compiled writer mutation that reintroduces a bootstrap research seed', async () => {
+    const assertNoSeed = async (source: string) => {
+      const fixture = writerFixture('success', source);
+      await fixture.run();
+      expect(fixture.failures).toEqual([]);
+      expect(fixture.commentCalls.filter(call => call.issue_number === 6)).toEqual([]);
+    };
+    await assertNoSeed(compileWorkflow());
+    const anchor = '              } finally {\n                rmSync(candidate, { recursive: true, force: true });';
+    expect(WORKFLOW).toContain(anchor);
+    const mutated = WORKFLOW.replace(anchor, [
+      '                await github.rest.issues.createComment({',
+      '                  ...context.repo,',
+      '                  issue_number: (await listState()).state.issue.number,',
+      '                  body: \'## Squad Research - Bootstrap proposals\\n\\nStructured data:\\n```json\\n{"squad_artifact":"research","schema_version":"1","origin_issue":6,"phases":[]}\\n```\',',
+      '                });',
+      anchor,
+    ].join('\n'));
+    await expect(assertNoSeed(compileWorkflow(mutated))).rejects.toThrow('expected');
+  }, 180000);
+
+  it('executes the compiled writer against historical Cast #3, creates a separate generation and reuses its PR', async () => {
+    const lock = compileWorkflow();
+    const fixture = writerFixture('success', lock, true);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.issueCalls[0].title).toBe(`${RESEARCH_TITLE} [reset:retry-1]`);
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([5]);
+    expect(fixture.updates).toHaveLength(1);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.issueCalls).toHaveLength(1);
+  }, 180000);
+
+  it('allows a signed manual fallback for an authenticated reset generation', async () => {
+    const fixture = writerFixture('permission-denied', WORKFLOW, true);
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls).toHaveLength(1);
+    expect(fixture.issueCalls[0].body).toContain('squad/bootstrap-cast-retry-1');
+    expect(fixture.commentCalls).toEqual([]);
   });
+
+  it('preserves the original authenticated dispatch through compiled push recovery', async () => {
+    const fixture = writerFixture('success', compileWorkflow(), true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    fixture.context.eventName = 'push';
+    fixture.context.runId = 456;
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_RUN_ID = '456';
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_FRESH_START = '';
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.updates.at(-1)!.body).toContain('"run_id":"123"');
+    expect(fixture.issueCalls.at(-1)!.body).toContain('"run_id":"123"');
+    expect(fixture.updates.at(-1)!.body).not.toContain('"run_id":"456"');
+    expect(fixture.commentCalls.map(call => call.issue_number)).toEqual([5]);
+    expect(fixture.commentReads).not.toContain(6);
+    expect(fixture.commentUpdates.every(call =>
+      fixture.persistedComments.find(comment => comment.id === call.comment_id)?.issue_number === 5,
+    )).toBe(true);
+    expect(fixture.commentDeletes).toEqual([]);
+  }, 180000);
+
+  it('refuses ordinary recovery of a generation PR without authenticated dispatch provenance', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    fixture.persistedComments.length = 0;
+    fixture.context.eventName = 'push';
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_FRESH_START = '';
+    await expect(fixture.run()).rejects.toThrow('original bot-authenticated dispatch provenance');
+    expect(fixture.updates).toHaveLength(1);
+    expect(fixture.issueCalls).toHaveLength(1);
+  });
+
+  it('recovers a manually opened generation from its signed dispatch fallback without rebinding the origin', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    fixture.persistedComments.length = 0;
+    fixture.pull.user = { login: 'maintainer', type: 'User' };
+    const date = '2026-10-08T00:00:00Z';
+    Object.assign(fixture.pull, { created_at: date });
+    const compareUrl = buildBootstrapPrFallbackCompareUrl({
+      repository: 'octo/example', baseBranch: 'main', headBranch: fixture.pull.head.ref,
+      title: fixture.pull.title,
+    });
+    fixture.persistedIssues.push(Object.assign({
+      number: 7, state: 'open', title: BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE,
+      body: bootstrapPrFallbackIssueMarker(fixture.pull.head.ref) + '\n' + buildBootstrapPrFallbackProvenanceLine({
+        repository: 'octo/example', runId: '123', baseBranch: 'main', baseSha,
+        headBranch: fixture.pull.head.ref, headSha: castSha, compareUrl,
+      }),
+    }, { user: { login: 'github-actions[bot]', type: 'Bot' }, created_at: date, updated_at: date }));
+    fixture.context.eventName = 'push';
+    fixture.context.runId = 456;
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_RUN_ID = '456';
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_FRESH_START = '';
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    expect(fixture.issueCalls.at(-1)!.body).toContain('"run_id":"123"');
+  });
+
+  it('permits an authenticated rerun of the origin but refuses another run promoting a failed origin', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    await fixture.run();
+    fixture.persistedIssues.length = 0;
+    const getRun = fixture.github.rest.actions.getWorkflowRun;
+    fixture.github.rest.actions.getWorkflowRun = async () => {
+      const result = await getRun();
+      result.data.status = 'in_progress';
+      result.data.conclusion = '';
+      return result;
+    };
+    await fixture.run();
+    expect(fixture.failures).toEqual([]);
+    fixture.persistedIssues.length = 0;
+    fixture.context.runId = 456;
+    fixture.runtimeEnv.SQUAD_BOOTSTRAP_RUN_ID = '456';
+    await expect(fixture.run()).rejects.toThrow('trust root');
+  });
+
+  it('rejects a bot rerun actor in the executable writer before publishing anything', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    const original = process.env.GITHUB_TRIGGERING_ACTOR;
+    process.env.GITHUB_TRIGGERING_ACTOR = 'automation[bot]';
+    fixture.github.rest.repos.getCollaboratorPermissionLevel = async ({ username }) => ({
+      data: { permission: 'write', user: { login: username, type: username === 'automation[bot]' ? 'Bot' : 'User' } },
+    });
+    try {
+      await expect(fixture.run()).rejects.toThrow('verified human collaborator');
+      expect(fixture.publishedRefs).toEqual([]);
+      expect(fixture.issueCalls).toEqual([]);
+    } finally {
+      if (original === undefined) delete process.env.GITHUB_TRIGGERING_ACTOR;
+      else process.env.GITHUB_TRIGGERING_ACTOR = original;
+    }
+  });
+
+  it('pins the reset parent and refuses publication if the default branch advances mid-write', async () => {
+    const fixture = writerFixture('success', WORKFLOW, true);
+    const getRef = fixture.github.rest.git.getRef;
+    let baseReads = 0;
+    fixture.github.rest.git.getRef = async args => {
+      if (args.ref === 'heads/main' && ++baseReads > 1) {
+        return { data: { object: { sha: 'd'.repeat(40) } } };
+      }
+      return getRef(args);
+    };
+    await expect(fixture.run()).rejects.toThrow('advanced before fresh bootstrap publication');
+    expect(fixture.commitParents).toEqual([[baseSha]]);
+    expect(fixture.publishedRefs).toEqual([]);
+    expect(fixture.updates).toEqual([]);
+    expect(fixture.issueCalls).toEqual([]);
+  });
+
+  it('fails the compiled authorization contract when the writer permission gate is removed', async () => {
+    const assertDenied = async (source: string) => {
+      const fixture = writerFixture('success', compileWorkflow(source), true);
+      fixture.github.rest.repos.getCollaboratorPermissionLevel = async ({ username }) =>
+        ({ data: { permission: 'read', user: { login: username, type: 'User' } } });
+      await expect(fixture.run()).rejects.toThrow('permission');
+      expect(fixture.issueCalls).toEqual([]);
+      expect(fixture.updates).toEqual([]);
+    };
+    await assertDenied(WORKFLOW);
+    const mutated = WORKFLOW.replace(
+      /const resetAuthorized = await stateModule\.authorizeBootstrapReset\(\{\n {16}reset, input: process\.env\.SQUAD_BOOTSTRAP_FRESH_START, context, github,\n {14}\}\);/,
+      'const resetAuthorized = true;',
+    );
+    expect(mutated).not.toBe(WORKFLOW);
+    await expect(assertDenied(mutated)).rejects.toThrow();
+  }, 180000);
 
   it.each(['opt-out', 'permission-denied'] as const)('removes the candidate on the %s early return', async (scenario) => {
     const fixture = writerFixture(scenario);
@@ -1342,7 +1869,7 @@ describe('gh-aw: squad-bootstrap pull-request-creation permission-denied fallbac
 
   function compileScript(script: string) {
     return compileFunction(
-      `return (async () => {\n${script}\n return pullRequest;\n})();`,
+      `return (async () => {\nconst reset = null; const resetAuthorized = false;\n${script}\n return pullRequest;\n})();`,
       ['snapshot', 'payload', 'stateModule', 'context', 'process', 'github', 'core', 'assertRemotePayload'],
       { importModuleDynamically: vmConstants.USE_MAIN_CONTEXT_DEFAULT_LOADER },
     ) as (...args: unknown[]) => Promise<unknown>;

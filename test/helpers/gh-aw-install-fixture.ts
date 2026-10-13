@@ -167,7 +167,7 @@ export function createFirstInstallFixture(
         package: PACKAGE_NAME,
         source: `${PACKAGE_NAME}@${revision}`,
         resolvedCommit: revision,
-        installer: 'gh-aw v0.89.22 test',
+        installer: 'gh-aw v0.91.5 test',
         files,
       },
       consumerFiles,

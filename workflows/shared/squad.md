@@ -12,7 +12,8 @@
 # Activation installs the standalone release (no npm), preserves a committed
 # cast or initializes one, checks readiness, and uploads `squad-state`.
 # The agent receives .squad/ and .github/agents/squad.agent.md, never the CLI.
-# gh-aw loads that coordinator natively; engine.agent selects `--agent squad`.
+# gh-aw loads that coordinator natively; each importing workflow selects
+# `engine.agent: squad`.
 # Import `shared/squad.md` locally or pin the remote path to a commit SHA.
 #
 # Optional custom credentials for `squad init`: vars.SQUAD_GITHUB_APP_ID /
@@ -33,10 +34,6 @@
 # backend would fail silently. If a committed .squad/team.md with roster entries
 # exists (e.g. from a previous /squad cast), init is skipped to preserve it.
 model: ${{ vars.SQUAD_MODEL || 'auto' }}
-engine:
-  id: copilot
-  version: 1.0.78
-  agent: squad
 ambient-folders:
   - .squad
 
@@ -46,6 +43,7 @@ safe-outputs:
       description: Create or replace the single Squad research artifact for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -182,6 +180,7 @@ safe-outputs:
       description: Update the single Squad planning lifecycle comment for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -189,7 +188,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
+          description: Lifecycle Markdown with an H2 lifecycle heading, state, last-command, and next-action fields. Include exactly one last-command field containing only the backticked /squad command requested; put optional actor/time attribution on a separate Updated by line. For nonterminal states, next-action must contain only a backticked /squad command; put explanatory prose in a separate field. The writer normalizes structured data.
           required: true
           type: string
       steps:
@@ -242,11 +241,12 @@ safe-outputs:
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
                 /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
-                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
-                hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
-                /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
-              const hasNextAction = hasNextCommand || hasTerminalState;
+                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body);
+              if (hasTerminalState || hasActivationDone) {
+                core.setFailed("Activated lifecycle belongs exclusively to the trusted activation finalizer.");
+                return;
+              }
+              const hasNextAction = hasNextCommand;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
                 core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
@@ -304,6 +304,7 @@ jobs:
       needs.agent.result == 'success' &&
       needs.detection.result == 'success' &&
       needs.safe_outputs.result == 'success' &&
+      !contains(needs.agent.outputs.output_types, 'activate_plan') &&
       !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
       (
         (github.event_name == 'issue_comment' &&
@@ -488,6 +489,8 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+          repositories: ${{ github.repository }}
+          permission-contents: read
 
       - name: Install Squad CLI from standalone release
         id: squad-cli

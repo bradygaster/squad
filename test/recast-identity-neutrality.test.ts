@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { parseActivationPlan } from '../workflows/shared/squad-activation.mjs';
 
 const workflowCopies = [
   '.github/workflows/squad-triage.yml',
@@ -157,26 +158,25 @@ describe('product and team isolation', () => {
     expect(isolationCheck).not.toContain("'test/cli-packaging-smoke.test.ts'");
 
     const activationWorkflow = readFileSync('workflows/squad.md', 'utf8');
-    expect(activationWorkflow).toMatch(
-      /replace each run of non-`a-z0-9`\s+characters with `-`/
-    );
-    expect(activationWorkflow).toContain('"label":"squad:{slugged Agent cell}"');
-    expect(activationWorkflow).not.toContain(
-      '"label":"squad:{lowercased Agent cell}"'
-    );
-    const phaseLabels = activationWorkflow.match(
-      /\*\*Label set, per issue:\*\*([\s\S]*?)- The triggering intent issue/
-    )?.[1] ?? '';
-    expect(phaseLabels).toContain('emit `squad:{owner-slug}`');
-    expect(phaseLabels).toMatch(/Phase issue:[\s\S]*slugged as above/);
-
-    const labelPreflight = activationWorkflow.match(
-      /##### Label Pre-flight([\s\S]*?)##### Transient Failure Handling/
-    )?.[1] ?? '';
-    expect(labelPreflight).toContain('mint `squad:{agent-slug}`');
-    expect(labelPreflight).toMatch(
-      /replacing each run of\s+non-`a-z0-9` characters with `-`/
-    );
+    expect(activationWorkflow).toContain('Call `activate_plan` exactly once');
+    expect(activationWorkflow).toContain('Do not call `create_issue`, `add_labels`, `add_comment`');
+    const name = '--Example Runtime_Engineer--';
+    const timestamp = '2026-01-01T00:00:00Z';
+    const plan = parseActivationPlan([
+      '| # | Title | Owner | Agent ID | Depends On |',
+      '|---|---|---|---|---|',
+      `| task-1 | Synthetic task | ${name} | runtime-engineer | None |`,
+    ].join('\n'), 'plan', {
+      schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1,
+      agents: { 'runtime-engineer': {
+        display_name: name, persistent_name: name, status: 'active', role: 'Engineer',
+        universe: 'synthetic', created_at: timestamp, updated_at: timestamp,
+      } },
+    }, `## Members\n| Name | Role |\n|---|---|\n| ${name} | Engineer |`);
+    const sync = labelSyncHelpers(readFileSync(labelSyncWorkflowCopies[0], 'utf8'));
+    expect(plan.tasks[0].label).toBe(`squad:${sync.slugify(name)}`);
+    expect(plan.tasks[0].label).toBe('squad:example-runtime-engineer');
+    expect(plan.tasks[0].agent_id).toBe('runtime-engineer');
 
     const testFiles = filesUnder('test').filter(file => file.endsWith('.ts'));
     for (const file of testFiles) {

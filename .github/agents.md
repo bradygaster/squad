@@ -53,7 +53,7 @@ gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
 rm -f .github/skills/agentic-workflows/SKILL.md
 ```
 
-The removal is intentional: gh-aw v0.89.22 generates that generic tool-owned
+The removal is intentional: gh-aw v0.91.5 generates that generic tool-owned
 router, which loads mutable prompts from the current `github/gh-aw` repository.
 It is not Squad-owned or bound to `SQUAD_SHA`. Keep the exact
 `.github/skills/gh-aw-enlistment/SKILL.md` installed by Squad.

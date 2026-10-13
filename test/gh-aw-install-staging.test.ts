@@ -3,11 +3,15 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parse } from 'yaml';
 import {
   CONTRACT_DESTINATION,
   OWNERSHIP_DESTINATION,
   UNOWNED_MUTABLE_ROUTER_SKILL,
+  WORKFLOW_NAMES,
   materializeRuntime,
+  compileWithPinnedActions,
   verifyInstall,
   verifyStagedInstall,
 } from '../workflows/shared/squad-install-verifier.mjs';
@@ -71,6 +75,42 @@ afterEach(() => {
 });
 
 describe('gh-aw: verified ownership staging under consumer ignore rules', () => {
+  it('installs a coherent reset-capable package and excludes only the named historical Cast', async () => {
+    const root = consumer();
+    const reset = {
+      schema: 'squad-bootstrap-reset/v1', id: 'retry-1',
+      archived_pull_requests: [3], archived_issues: [],
+    };
+    write(root, '.squad/bootstrap-reset.json', JSON.stringify(reset));
+    git(root, 'add', '--', '.squad/bootstrap-reset.json');
+    git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'reviewed reset preparation');
+    expect(verifyInstall(root, { expectedRevision: revision }).failures).toEqual([]);
+    const installed = await import(pathToFileURL(join(root,
+      '.github/workflows/shared/squad-bootstrap-validator.mjs')).href);
+    const lock = parse(readFileSync(join(root, '.github/workflows/squad-bootstrap.lock.yml'), 'utf8'));
+    expect(lock.on.workflow_dispatch.inputs.fresh_start.type).toBe('string');
+    const writer = lock.jobs.materialize_bootstrap.steps.find(
+      (step: { name?: string }) => step.name === 'Validate and materialize both artifacts',
+    );
+    expect(writer.env.SQUAD_BOOTSTRAP_FRESH_START).toBe('${{ inputs.fresh_start }}');
+    expect(writer.with.script).toContain('stateModule.authorizeBootstrapReset');
+    expect(writer.with.script).toContain('...resetState');
+    expect(installed.readBootstrapReset(root)).toEqual(reset);
+    expect(installed.hasCommittedBootstrapTeam(root)).toBe(false);
+    const state = {
+      reset, repository: 'octo/example', defaultBranch: 'main', issues: [],
+      pullRequests: [{
+        number: 3, title: '[squad] Cast your Squad', state: 'closed', merged_at: null,
+        head: { ref: 'squad/bootstrap-cast', repo: { full_name: 'octo/example' } },
+        base: { ref: 'main', repo: { full_name: 'octo/example' } },
+      }],
+    };
+    expect(installed.classifyBootstrapState(state).action).toBe('reset_armed');
+    expect(installed.classifyBootstrapState({ ...state, resetAuthorized: true }).action).toBe('create_both');
+    expect(installed.classifyBootstrapState({ ...state, reset: null }).action).toBe('opt_out');
+  });
+
   it('bounds staged reads to required paths in a large unrelated consumer tree', () => {
     const root = consumer();
     const unrelated = 'consumer-data';
@@ -102,7 +142,8 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     const queries = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'ls-tree');
     expect(queries).toHaveLength(1);
     expect(queries[0][1]).toEqual([
-      'ls-tree', '-z', expect.any(String), '--', ...new Set(required), UNOWNED_MUTABLE_ROUTER_SKILL,
+      'ls-tree', '-z', expect.any(String), '--', ...new Set(required),
+      '.github/workflows/aw.json', UNOWNED_MUTABLE_ROUTER_SKILL,
     ]);
     const unrelatedObject = git(root, 'rev-parse', `HEAD:${unrelated}/ordinary-file-00000.txt`).trim();
     const blobReads = spawn.mock.calls.filter(([command, args]) => command === 'git' && args?.[0] === 'cat-file');
@@ -149,6 +190,31 @@ describe('gh-aw: verified ownership staging under consumer ignore rules', () => 
     expect(failed.stderr).toContain('do not commit/push');
     expect(failed.stderr).toMatch(/ownership record|ownership metadata/);
   });
+
+  it('requires the exact consumer expiry configuration in the staged tree', () => {
+    const root = consumer();
+    const path = '.github/workflows/aw.json';
+    const config = JSON.stringify({ maintenance: { action_failure_issue_expires: 24 } });
+    write(root, path, config);
+    compileWithPinnedActions(root);
+    git(root, 'add', '--', '.github/workflows/');
+    expect(verifyStagedInstall(root, { stageOwnership: true }).failures).toEqual([]);
+    write(root, path, `${config}\n`);
+    expect(verifyInstall(root).failures).toEqual([]);
+    expect(verifyStagedInstall(root).failures.join('\n')).toContain(`Staged digest mismatch for ${path}`);
+    git(root, 'add', '--', path);
+    expect(verifyStagedInstall(root).failures).toEqual([]);
+
+    rmSync(join(root, path));
+    compileWithPinnedActions(root);
+    git(root, 'add', '--', ...WORKFLOW_NAMES.map(name => `.github/workflows/${name}.lock.yml`));
+    expect(verifyInstall(root).failures).toEqual([]);
+    expect(verifyStagedInstall(root).failures.join('\n')).toContain(
+      `Unverified compiler configuration remains in staged tree: ${path}`,
+    );
+    git(root, 'add', '--', path);
+    expect(verifyStagedInstall(root).failures).toEqual([]);
+  }, 120_000);
 
   it('rejects the clean-install gh-aw router until it is removed, then accepts the exact Squad skill', () => {
     const root = consumer();

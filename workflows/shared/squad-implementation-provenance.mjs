@@ -35,6 +35,10 @@ const SESSION_ORIGIN_KEYS = Object.freeze([
   'run_id',
   'run_attempt',
 ]);
+const IMPLEMENTATION_WORKER_PATHS = Object.freeze({
+  'squad-implement-worker': '.github/workflows/squad-implement-worker.lock.yml',
+  'squad-deps-worker': '.github/workflows/squad-deps-worker.lock.yml',
+});
 const WORKFLOW_RUN_KEYS = Object.freeze([
   'repository',
   'workflow',
@@ -367,11 +371,17 @@ export function evaluateImplementationProvenanceItems({
     violations.push(...validateReplacements(record.replaces));
     if (requireLegacyMarker) {
       const marker = `<!-- squad:implement issue=${issueNumber} run=${runId || '[1-9][0-9]*'} -->`;
-      const lines = normalizeText(pull.body).split('\n');
+      const body = normalizeText(pull.body);
+      const lines = body.split('\n');
       const exact = runId
         ? lines.filter(line => line === marker).length === 1
         : lines.filter(line => new RegExp(`^<!-- squad:implement issue=${issueNumber} run=[1-9][0-9]* -->$`).test(line)).length === 1;
-      if (!exact || (normalizeText(pull.body).match(/<!-- squad:implement\b/g) || []).length !== 1) {
+      const finalLine = body.replace(/\n+$/, '').split('\n').at(-1);
+      const finalMarker = runId
+        ? finalLine === marker
+        : new RegExp(`^<!-- squad:implement issue=${issueNumber} run=[1-9][0-9]* -->$`).test(finalLine || '');
+      if (!exact || !finalMarker ||
+          (body.match(/<!-- squad:implement\b/g) || []).length !== 1) {
         violations.push({ kind: 'implementation-provenance-legacy-marker-invalid' });
       }
     }
@@ -404,6 +414,150 @@ async function collectComments(fetchJson, repository, issueNumber, maxPages = 3)
     if (pageValues.length < 100) return { values, complete: true };
   }
   return { values, complete: false };
+}
+
+export async function dispatchImplementationWorkers({
+  requests,
+  repository,
+  repositoryId,
+  defaultBranch,
+  runId,
+  runAttempt,
+  fetchJson,
+  createComment,
+  dispatchWorkflow,
+}) {
+  if (!repositoryName(repository) ||
+      !numericText(repositoryId) ||
+      !numericText(runId) ||
+      !numericText(runAttempt) ||
+      typeof defaultBranch !== 'string' ||
+      defaultBranch.length === 0 ||
+      typeof fetchJson !== 'function' ||
+      typeof createComment !== 'function' ||
+      typeof dispatchWorkflow !== 'function') {
+    throw new Error('Implementation dispatch context is incomplete or invalid.');
+  }
+  if (!Array.isArray(requests) || requests.length < 1 || requests.length > 3 ||
+      requests.some(request => !exactKeys(request, ['issue_number', 'worker']) ||
+        !numeric(request.issue_number) ||
+        !Object.hasOwn(IMPLEMENTATION_WORKER_PATHS, request.worker))) {
+    throw new Error('Implementation dispatch requests must contain one to three exact worker targets.');
+  }
+  const issueNumbers = requests.map(request => request.issue_number);
+  if (new Set(issueNumbers).size !== issueNumbers.length ||
+      issueNumbers.some((issueNumber, index) =>
+        index > 0 && issueNumbers[index - 1] >= issueNumber)) {
+    throw new Error('Implementation dispatch targets must be unique and sorted by issue number.');
+  }
+
+  const dispatcherWorkflow = '.github/workflows/squad.lock.yml';
+  const numericRunId = Number(runId);
+  const numericRunAttempt = Number(runAttempt);
+  const sessionId = implementationSessionId(repositoryId, numericRunId);
+  if (!sessionId || !numeric(numericRunAttempt)) {
+    throw new Error('Implementation dispatch run identity is invalid.');
+  }
+
+  const plans = [];
+  const workerWorkflows = new Map();
+  for (const request of requests) {
+    const issue = await fetchJson(
+      `repos/${repository}/issues/${request.issue_number}`,
+      {},
+    );
+    if (Number(issue?.number) !== request.issue_number ||
+        issue?.state !== 'open' ||
+        issue?.pull_request) {
+      throw new Error(`Implementation target #${request.issue_number} is not an open issue.`);
+    }
+
+    const path = IMPLEMENTATION_WORKER_PATHS[request.worker];
+    let workflow = workerWorkflows.get(path);
+    if (!workflow) {
+      workflow = await fetchJson(
+        `repos/${repository}/actions/workflows/${path.split('/').at(-1)}`,
+        {},
+      );
+      if (!numeric(Number(workflow?.id)) ||
+          workflow?.path !== path ||
+          workflow?.state !== 'active') {
+        throw new Error(`Implementation worker workflow is not active at ${path}.`);
+      }
+      workerWorkflows.set(path, workflow);
+    }
+
+    const comments = await collectComments(fetchJson, repository, request.issue_number);
+    if (!comments.complete) {
+      throw new Error(`Unable to verify the complete comment history for #${request.issue_number}.`);
+    }
+    const duplicateCandidate = comments.values.some(comment => {
+      if ((comment?.user?.login ?? comment?.author) !== BOT) return false;
+      const lines = normalizeText(comment.body).split('\n');
+      return lines.some(line =>
+        line.startsWith(`Squad-Implementation-Dispatch: ${repository}#${request.issue_number} worker=`)) &&
+        lines.includes(`Dispatcher-Workflow: ${dispatcherWorkflow}`) &&
+        lines.includes(`Dispatcher-Run: ${numericRunId}`) &&
+        lines.includes(`Dispatcher-Attempt: ${numericRunAttempt}`);
+    });
+    if (duplicateCandidate) {
+      throw new Error(`A dispatch receipt for #${request.issue_number} already exists in this run attempt.`);
+    }
+
+    plans.push({
+      issueNumber: request.issue_number,
+      worker: request.worker,
+      workflowPath: path,
+      workflowId: Number(workflow.id),
+      receipt: implementationDispatchReceipt({
+        repository,
+        issueNumber: request.issue_number,
+        worker: request.worker,
+        sessionId,
+        workflow: dispatcherWorkflow,
+        runId: numericRunId,
+        runAttempt: numericRunAttempt,
+      }),
+    });
+  }
+
+  const results = [];
+  for (const plan of plans) {
+    await createComment(repository, plan.issueNumber, plan.receipt);
+    const comments = await collectComments(fetchJson, repository, plan.issueNumber);
+    const receipts = comments.values.filter(comment =>
+      parseImplementationDispatchReceipt(comment, {
+        repository,
+        issue_number: plan.issueNumber,
+        worker: plan.worker,
+        session_id: sessionId,
+        workflow: dispatcherWorkflow,
+        run_id: numericRunId,
+        run_attempt: numericRunAttempt,
+      }));
+    if (!comments.complete || receipts.length !== 1) {
+      throw new Error(`The dispatch receipt for #${plan.issueNumber} could not be verified.`);
+    }
+
+    await dispatchWorkflow({
+      workflowId: plan.workflowId,
+      ref: defaultBranch,
+      inputs: {
+        issue_number: String(plan.issueNumber),
+        implementation_session_id: sessionId,
+        implementation_session_origin_workflow: dispatcherWorkflow,
+        implementation_session_origin_run_id: String(numericRunId),
+        implementation_session_origin_run_attempt: String(numericRunAttempt),
+      },
+    });
+    results.push({
+      issue_number: plan.issueNumber,
+      worker: plan.worker,
+      workflow: plan.workflowPath,
+      session_id: sessionId,
+    });
+  }
+  return results;
 }
 
 export async function validateWorkerIdentity(env = process.env, {

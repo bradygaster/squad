@@ -1,9 +1,5 @@
 ---
 model: ${{ vars.SQUAD_MODEL || 'auto' }}
-engine:
-  id: copilot
-  version: 1.0.78
-  agent: squad
 ambient-folders:
   - .squad
 safe-outputs:
@@ -12,6 +8,7 @@ safe-outputs:
       description: Create or replace the single Squad research artifact for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -147,6 +144,7 @@ safe-outputs:
       description: Update the single Squad planning lifecycle comment for this issue.
       runs-on: ubuntu-slim
       needs: safe_outputs
+      if: needs.safe_outputs.result == 'success'
       permissions:
         issues: write
         pull-requests: write
@@ -154,7 +152,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
+          description: Lifecycle Markdown with an H2 lifecycle heading, state, last-command, and next-action fields. Include exactly one last-command field containing only the backticked /squad command requested; put optional actor/time attribution on a separate Updated by line. For nonterminal states, next-action must contain only a backticked /squad command; put explanatory prose in a separate field. The writer normalizes structured data.
           required: true
           type: string
       steps:
@@ -207,11 +205,12 @@ safe-outputs:
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
                 /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
-                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
-                hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
-                /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
-              const hasNextAction = hasNextCommand || hasTerminalState;
+                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body);
+              if (hasTerminalState || hasActivationDone) {
+                core.setFailed("Activated lifecycle belongs exclusively to the trusted activation finalizer.");
+                return;
+              }
+              const hasNextAction = hasNextCommand;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
                 core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
@@ -317,7 +316,7 @@ safe-outputs:
           required: true
           type: string
         goals_json:
-          description: JSON array of explicit issue goals for the pull request
+          description: JSON array of unique exact objects with only repository (OWNER/REPO), issue (positive integer), and relationship ("closes" or "relates"). Include the origin issue as a "closes" goal.
           required: true
           type: string
         replaces_json:
@@ -418,7 +417,7 @@ jobs:
       - detection
       - safe_outputs
     if: |-
-      !cancelled() && needs.agent.result == 'success' && needs.detection.result == 'success' && needs.safe_outputs.result == 'success' && !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') && (
+      !cancelled() && needs.agent.result == 'success' && needs.detection.result == 'success' && needs.safe_outputs.result == 'success' && !contains(needs.agent.outputs.output_types, 'activate_plan') && !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') && (
         (github.event_name == 'issue_comment' &&
          (github.event.comment.body == '/squad activate' ||
           github.event.comment.body == '/squad plan accept' ||
@@ -600,6 +599,8 @@ jobs:
           app-id: ${{ vars.SQUAD_GITHUB_APP_ID }}
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
+          repositories: ${{ github.repository }}
+          permission-contents: read
       - name: Install Squad CLI from standalone release
         id: squad-cli
         uses: bradygaster/squad/.github/actions/squad-init@5c662ba015ec4f99befa51b0e8ca4f2148b0497f
@@ -690,10 +691,6 @@ on:
         description: Authoritative dispatcher run attempt that minted the session
         required: true
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -711,6 +708,10 @@ network:
     - dotnet
     - go
     - node
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
 tools:
   edit: null
   bash: true
@@ -831,10 +832,12 @@ Use the `create-pull-request` safe-output:
 - Durable provenance is not PR-body text. Give the `create_pull_request` call a
   unique `temporary_id`, then immediately call
   `record_implementation_provenance` with `pull_request` set to that temporary
-  ID, `goals_json` containing a JSON array with the primary closing goal plus
-  any other explicit goals, and `replaces_json` containing a JSON array of only
-  verified earlier Squad PRs from this
-  same repository, origin issue, and implementation session. The trusted
+  ID. `goals_json` must be a non-empty JSON array of unique objects with exactly
+  these keys: `repository` (OWNER/REPO string), `issue` (positive integer), and
+  `relationship` (exactly `"closes"` or `"relates"`). Include the target issue
+  in this repository with relationship `"closes"`; do not add other keys.
+  `replaces_json` must be a JSON array of only verified earlier Squad PRs from
+  this same repository, origin issue, and implementation session. The trusted
   handler runs after PR creation, resolves the actual PR number, re-fetches all
   replacement evidence, and writes the schema payload as a PR comment. Never
   put `Squad implementation provenance:`, `"number": "self"`, or an unresolved

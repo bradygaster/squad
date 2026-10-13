@@ -148,20 +148,26 @@ describe('gh-aw implement workflows', () => {
   });
 
   it('bounds dispatch and serializes workers for the same issue', () => {
-    const dispatcherDispatch = yamlBlock(dispatcherFrontmatter, 'dispatch-workflow');
-    const configuredWorkerTargets = listInBlock(dispatcherDispatch, 'workflows');
+    const dispatcherDispatch = yamlBlock(
+      dispatcherFrontmatter,
+      'dispatch-implementation-workers',
+    );
     const dispatchMax = Number(scalarInBlock(dispatcherDispatch, 'max'));
     const slotCap = Number(dispatcher.match(/available-slots = max\(0, (\d+) - active-implementation-count\)/)?.[1]);
 
     expect(dispatcher).toContain('bots: ["github-actions[bot]"]');
     expect(worker).toContain('bots: ["github-actions[bot]"]');
-    expect(dispatcher).toContain('aw_context:');
-    expect(worker).toContain('aw_context:');
-    expect(configuredWorkerTargets).toContain('squad-implement-worker');
+    expect(dispatcherFrontmatter).not.toMatch(/^      aw_context:/m);
+    expect(workerFrontmatter).not.toMatch(/^      aw_context:/m);
+    expect(dispatcher).toContain('github.event.inputs.aw_context');
+    expect(worker).toContain('github.event.inputs.aw_context');
+    expect(dispatcherDispatch).toContain('one to three');
+    expect(dispatcherDispatch).toContain('squad-implement-worker or squad-deps-worker');
     expect(dispatchMax).toBeGreaterThan(0);
-    expect(dispatchMax).toBeLessThanOrEqual(slotCap);
+    expect(dispatchMax).toBe(1);
+    expect(slotCap).toBe(3);
     expect(dispatcher).toContain('Never call the generic `dispatch_workflow` tool');
-    expect(dispatcher).toContain('Never emit a dispatch without a');
+    expect(dispatcher).toContain('Never provide or guess session IDs, run IDs, attempts, or receipts');
     expect(worker).toContain(
       'group: "squad-implement-${{ github.event.inputs.issue_number || github.event.pull_request.number }}"',
     );
@@ -257,7 +263,7 @@ describe('gh-aw implement workflows', () => {
   it('documents one immutable nested native package installation', () => {
     const normalizedGuide = guide.replace(/\r\n/g, '\n');
     expect(normalizedGuide).toContain('gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"');
-    expect(normalizedGuide).toContain('exactly eight workflows, seventeen runtime');
+    expect(normalizedGuide).toContain('exactly eight agentic workflows, twenty runtime');
     expect(normalizedGuide).toContain('one enlistment skill');
     expect(normalizedGuide).not.toMatch(/gh aw add \\\n\s+bradygaster\/squad\/workflows\/squad\.md/);
   });
@@ -974,10 +980,11 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     // this job IS conditional on a create_pull_request item and IS unpinned,
     // so relying on it is what left comment-only runs without a checkout.
     const ghAwCheckout = job.slice(0, trustedIndex);
-    expect(ghAwCheckout).toContain('name: Checkout repository');
-    expect(ghAwCheckout).toMatch(
-      /name: Checkout repository\n\s+if: [^\n]*contains\(needs\.agent\.outputs\.output_types, 'create_pull_request'\)/,
+    const checkout = parse(compiledWorkerLock()).jobs.safe_outputs.steps.find(
+      (step: { name?: string }) => step.name === 'Checkout repository (gh-aw default)',
     );
+    expect(checkout.if).toContain("contains(needs.agent.outputs.output_types, 'create_pull_request')");
+    expect(checkout.with.ref).toBeUndefined();
     expect(ghAwCheckout).not.toContain('ref: refs/heads/');
   }, 60000);
 

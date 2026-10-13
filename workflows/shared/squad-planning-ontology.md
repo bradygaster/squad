@@ -337,23 +337,45 @@ the safe-output `data` envelope because gh-aw expands nested data schemas beyond
 GitHub's expression-size limit. The post-activation checker can still
 fail closed without matching model-authored titles.
 
-**Issue references are quoted strings, never bare numbers.** `issue` and `epic_issue`
-carry a `#`-prefixed reference in a JSON string: an item's own gh-aw `temporary_id`
-(`"#aw_task3"`) when this run created it, or its verified real number (`"#123"`) when the
-item was reused or matched by title. The agent never learns a created issue's real number
-during its turn, so it never writes one; gh-aw rewrites `#aw_…` references in a comment body
-to `#{real number}` once the issue exists. Quoting is required for validity: that
-substitution is plain text replacement across the whole body — it does not skip fenced code
-blocks — and preserves the `#`, so bare `"issue":#aw_task3` becomes invalid `"issue":#42`
-while quoted becomes `"issue":"#42"`. A reference still matching `#aw_…` was never resolved;
-consumers MUST treat it as a failure rather than skipping or repairing it.
+**Issue references are quoted, actual numeric references.** `issue` and `epic_issue`
+use strings such as `"#123"`. The model emits only `activate_plan`; it must not
+emit issue creation, acceptance, bindings or an Activated lifecycle. The trusted
+custom job freezes the exact API plan comment and committed registry, reserves
+the activation before creating anything, and receives actual IDs directly from
+the pinned runtime's synchronous `createIssue` API. The finalizer validates every
+operation, dependency, live label and frozen assignment before publishing.
+Neither bare nor `#`-prefixed `aw_` tokens are valid consumable references.
+Do not infer identity from titles, labels or model claims.
 
-**Reported labels mean accepted label operations.** A `label` / `epic_label` asserts that an
-`add_labels` safe output carrying that label was accepted for that same issue, targeted by
-its temporary ID or verified real number. It does not assert the label was observed on the
-issue — safe outputs are applied after the agent turn — and never means it was carried by
-`create-issue`, whose `labels:` field cannot create a missing label. Verifying bindings
-against the labels actually present is the post-activation checker's job.
+**Labels remain checked against current API state.** Older records' labels mean
+accepted operations, not proof that those operations landed. New finalization
+also checks the live result. Epic ownership is derived from the entire frozen
+plan, including future phases; verifier-supplied `epicAssignments` preserves that
+contract when a phase contains only a subset of its epic's tasks.
+
+**Recovery is explicit, current-state-only and creates no issues.** An eligible
+operator binds a request-comment ID/hash to the original acceptance ID/hash,
+current plan/registry and complete numeric task/epic mappings. A validated
+`activation-reconciled` record has `basis: current-state-authorized` and explicit
+`supersedes_comment_id`/`supersedes_sha256`. Preserve the original bytes, even if
+its bindings are malformed. The supplement never claims historical attestation.
+Only independently verified request evidence may authorize reader selection;
+an actor name, authorization flag or digest inside a record is not proof.
+Reject competing, unknown, changed or ambiguous chains; never choose newest.
+
+Durable capture/receipt artifacts are diagnostics, not producer attestations.
+A pending reservation cannot authorize recovery. A missing receipt after an
+operation started leaves the activation non-consumable and forbids recreation.
+An explicitly authorized current-state request may name that reservation using
+`source_kind: pending`, its exact comment ID/hash, matching frozen plan/registry
+and complete existing numeric mappings. Only the new request grants authority.
+The supplement records `supersedes_kind: pending`; incomplete coverage never
+accepts missing work or permits creation, and no historical attestation is claimed.
+For later phases, explicitly reconcile complete prior-phase coverage first
+when attestable producer mappings are unavailable. Create only the newly
+selected phase; carry exact predecessor ID/hash links and validated prior IDs.
+Downstream readers must run the packaged binding checker or the SDK selector
+with verifier-supplied context; a lifecycle state or green run is insufficient.
 
 ---
 
@@ -364,7 +386,7 @@ against the labels actually present is the post-activation checker's job.
 | `research` | Research findings | `[]` | 1 current per issue | Replace body |
 | `plan` | Fast-path plan | `[]` | 1 current per issue | Replace body |
 | `plan-accepted` | Fast-path full acceptance | `[]` | 1 total | Immutable |
-| `phases-accepted` | Fast-path accepted phase state | Accumulated accepted phases | 1 current per issue | Replace accumulated state |
+| `phases-accepted` | Fast-path accepted phase state | Accumulated accepted phases | Explicit continuation chain | Immutable new revision; retain predecessors |
 | `triage` | Triage disposition | `[]` | 1 current per issue | Replace body |
 | `program` | Program plan | `[]` | 1 current per issue | Replace body |
 | `implementation` | Implementation plan | `[]` | 1 current per issue | Replace body |
@@ -372,8 +394,9 @@ against the labels actually present is the post-activation checker's job.
 | `scope-accepted` | Scope acceptance | `[]` | 1 total | Immutable |
 | `impl-accepted` | Full implementation acceptance | `[]` | 1 total | Immutable |
 | `impl-phases-accepted` | Accepted implementation phase state | Accumulated accepted phases | 1 current per issue | Replace accumulated state |
-| `phases-activated` | Activated phase state | Accumulated activated phases | 1 current per issue | Replace accumulated state |
+| `phases-activated` | Activated phase state | Accumulated activated phases | Explicit continuation chain | Immutable new revision; retain predecessors |
 | `activated` | Terminal activation record | All phases when phased; otherwise `[]` | 1 total | Immutable |
+| `activation-reconciled` | Authorized current-state supplement | Explicit covered phases, or `[]` for whole plan | 1 per exact superseded source | Immutable; preserve original |
 | `lifecycle-state` | Lifecycle summary | `[]` | 1 current per issue | Updated every transition |
 
 Every entry also requires `schema_version: "1"` and the triggering `origin_issue`.
@@ -402,11 +425,16 @@ This comment is created on first transition and updated on every subsequent tran
 | Activated | ⬚ Pending | — | — |
 
 **Current state:** Triaged
-**Last command:** `/squad triage` by @user at <timestamp>
+**Last command:** `/squad triage`
+**Updated by:** @user at <timestamp>
 **Next action:** `/squad plan program`
 **Guidance:** Create a program plan from triage dispositions.
 **Also available:** `/squad triage revise <feedback>` — adjust triage before planning
 ```
+
+Use exactly one `Last command`, containing only the requested backticked command.
+Keep actor/time attribution on `Updated by`. Open research/plan commands use
+`Researched`/`Planned`, never acceptance or activation.
 
 For nonterminal states, `Next action` is only the backticked `/squad` command;
 put prose elsewhere. `Activated` is terminal and may use terminal prose there.

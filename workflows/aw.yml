@@ -1,5 +1,5 @@
 manifest-version: "1"
-min-version: v0.89.22
+min-version: v0.91.5
 name: Squad Agentic Workflows
 emoji: "🤖"
 description: Complete, integrity-checked Squad workflow bundle for issue-driven planning and implementation.
@@ -23,6 +23,12 @@ includes:
     destination: .github/workflows/squad-command-router.md
   - skills/gh-aw-enlistment
 resources:
+  - source: shared/squad-agent-binding-check.yml
+    destination: .github/aw/squad/runtime/shared/squad-agent-binding-check.yml
+  - source: shared/squad-activation.mjs
+    destination: .github/workflows/shared/squad-activation.mjs
+  - source: shared/check-agent-binding.mjs
+    destination: .github/workflows/shared/check-agent-binding.mjs
   - source: shared/squad-review-guard.mjs
     destination: .github/workflows/shared/squad-review-guard.mjs
   - source: shared/squad-install-verifier.mjs

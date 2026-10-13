@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export const AGENT_PROVENANCE_SCHEMA = 'squad-agent-provenance/v1' as const;
 export const AGENT_PROVENANCE_VERSION = 1 as const;
 export const WORK_AGENT_BINDING_SCHEMA = 'squad-work-agent-binding/v1' as const;
@@ -64,7 +66,7 @@ export interface WorkAgentBinding {
   producer: 'squad';
   repository: string;
   origin_issue: number;
-  artifact: 'activated' | 'phases-activated' | 'plan-accepted' | 'phases-accepted';
+  artifact: 'activated' | 'phases-activated' | 'plan-accepted' | 'phases-accepted' | 'activation-reconciled';
   registry_schema: typeof AGENT_PROVENANCE_SCHEMA;
   registry_revision: number;
   task: string;
@@ -81,6 +83,73 @@ export interface WorkAgentBindingContext {
   repository: string;
   originIssue: number;
   artifact: WorkAgentBinding['artifact'];
+  /** Full frozen-plan assignments supplied independently by the trusted verifier. */
+  epicAssignments?: readonly EpicAssignment[];
+}
+
+/**
+ * One task's epic and agent assignment from the full frozen plan.
+ * Supply independently verified assignments when validating epic owner sets.
+ */
+export interface EpicAssignment {
+  task: string;
+  epic: string;
+  agent: string;
+  agentId: string | null;
+}
+
+/**
+ * A comment ID and exact body supplied to activation selection, including any
+ * required source or predecessor. These fields alone do not authenticate its author.
+ */
+export interface ActivationRecord {
+  id: number;
+  body: string;
+}
+
+/**
+ * Evidence supplied independently by a trusted API verifier, never derived from
+ * artifact claims or an `authorized` boolean. The verifier authenticates the
+ * request actor and authorization and freezes the current plan and registry.
+ * This reader does not authenticate authors or attest historical correctness.
+ */
+export interface ReconciliationEvidence {
+  requestCommentId: number;
+  requestSha256: string;
+  actorId: number;
+  sourceCommentId: number;
+  sourceSha256: string;
+  planSha256: string;
+  registrySha256: string;
+  bindingsSha256: string;
+  /** Ascending, unique positive safe phase IDs; omitted means whole-plan ([]). */
+  phases?: readonly number[];
+  /** Independently verified source kind; omission preserves legacy activation sources. */
+  sourceKind?: 'activation' | 'pending';
+}
+
+/**
+ * Repository and origin scope plus independently verified reconciliation evidence.
+ * Supply one proof per reconciliation in a complete chain; caller-populated
+ * fields and frozen-plan assignments are not themselves authorization.
+ */
+export interface ActivationSelectionContext {
+  repository: string;
+  originIssue: number;
+  reconciliations: readonly ReconciliationEvidence[];
+  /** Full frozen-plan assignments, never authorization claimed by an artifact. */
+  epicAssignments?: readonly EpicAssignment[];
+}
+
+/**
+ * The selected comment's ID, artifact kind and validated work-agent bindings.
+ * Selection checks consistency against supplied inputs, not API authorship or
+ * historical publication; callers must establish those trust boundaries separately.
+ */
+export interface SelectedActivationRecord {
+  id: number;
+  artifact: WorkAgentBinding['artifact'];
+  bindings: WorkAgentBinding[];
 }
 
 export class AgentProvenanceError extends Error {
@@ -95,6 +164,27 @@ export class AgentProvenanceError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function numericIssueReference(
+  value: unknown,
+  path: string,
+  diagnostics: AgentProvenanceDiagnostic[],
+): string {
+  if (typeof value !== 'string' || !/^#?[1-9]\d*$/.test(value)
+    || !isPositiveSafeInteger(Number(value.replace(/^#/, '')))) {
+    diagnostics.push({ path, message: 'must be a positive safe integer issue reference' });
+    return '';
+  }
+  return value;
+}
+
+function issueReferenceKey(value: string): string {
+  return value.replace(/^#/, '');
 }
 
 function isTimestamp(value: unknown): value is string {
@@ -235,6 +325,43 @@ export function parseWorkAgentBindings(
     throw new AgentProvenanceError('Work-agent bindings must be a non-empty array');
   }
   const diagnostics: AgentProvenanceDiagnostic[] = [];
+  const assignmentsByTask = new Map<string, EpicAssignment>();
+  const assignmentsByEpic = new Map<string, EpicAssignment[]>();
+  if (context.epicAssignments !== undefined) {
+    if (!Array.isArray(context.epicAssignments) || context.epicAssignments.length === 0) {
+      throw new AgentProvenanceError('Verifier epic assignments must be a non-empty array');
+    }
+    for (const assignment of context.epicAssignments) {
+      if (!isRecord(assignment)
+        || typeof assignment.task !== 'string' || !assignment.task || /\s/.test(assignment.task)
+        || typeof assignment.epic !== 'string' || !assignment.epic || /\s/.test(assignment.epic)
+        || typeof assignment.agent !== 'string' || !assignment.agent.trim()
+        || assignmentsByTask.has(assignment.task)) {
+        throw new AgentProvenanceError('Verifier epic assignments require unique stable task IDs and complete identities');
+      }
+      const agentName = normalizedDisplayName(assignment.agent);
+      if (assignment.agentId === null) {
+        if (Object.values(registry.agents).some((agent) =>
+          normalizedDisplayName(agent.display_name) === normalizedDisplayName(agentName))) {
+          throw new AgentProvenanceError('Verifier epic assignment omits a registered agent identity');
+        }
+      } else if (typeof assignment.agentId !== 'string' || !validateId(assignment.agentId)
+        || !registry.agents[assignment.agentId]
+        || normalizedDisplayName(registry.agents[assignment.agentId]!.display_name) !== agentName) {
+        throw new AgentProvenanceError('Verifier epic assignment agent and display identity do not match the registry');
+      }
+      const validatedAssignment: EpicAssignment = {
+        task: assignment.task,
+        epic: assignment.epic,
+        agent: agentName,
+        agentId: assignment.agentId as string | null,
+      };
+      assignmentsByTask.set(assignment.task, validatedAssignment);
+      const epicAssignments = assignmentsByEpic.get(assignment.epic) ?? [];
+      epicAssignments.push(validatedAssignment);
+      assignmentsByEpic.set(assignment.epic, epicAssignments);
+    }
+  }
   const bindings: WorkAgentBinding[] = [];
   const issues = new Set<string>();
   const tasks = new Set<string>();
@@ -253,9 +380,9 @@ export function parseWorkAgentBindings(
     const registrySchema = rawBinding.registry_schema;
     const registryRevision = rawBinding.registry_revision;
     const task = requiredString(rawBinding.task, `${path}.task`, diagnostics);
-    const issue = requiredString(rawBinding.issue, `${path}.issue`, diagnostics);
+    const issue = numericIssueReference(rawBinding.issue, `${path}.issue`, diagnostics);
     const epic = requiredString(rawBinding.epic, `${path}.epic`, diagnostics);
-    const epicIssue = requiredString(rawBinding.epic_issue, `${path}.epic_issue`, diagnostics);
+    const epicIssue = numericIssueReference(rawBinding.epic_issue, `${path}.epic_issue`, diagnostics);
     const agentId = rawBinding.agent_id === null
       ? null
       : requiredString(rawBinding.agent_id, `${path}.agent_id`, diagnostics);
@@ -265,6 +392,31 @@ export function parseWorkAgentBindings(
       ? rawBinding.epic_agent_ids.map((value, agentIndex) =>
         requiredString(value, `${path}.epic_agent_ids.${agentIndex}`, diagnostics))
       : [];
+
+    if (context.epicAssignments !== undefined) {
+      const assignment = assignmentsByTask.get(task);
+      if (!assignment || rawBinding.task !== assignment.task || rawBinding.epic !== assignment.epic
+        || rawBinding.agent_id !== assignment.agentId
+        || (rawBinding.agent !== undefined && (typeof rawBinding.agent !== 'string'
+          || normalizedDisplayName(rawBinding.agent) !== assignment.agent))) {
+        diagnostics.push({
+          path, message: 'must exactly match a task, epic, and agent in the verifier frozen-plan assignments',
+        });
+      }
+      if (rawBinding.epic_agents !== undefined) {
+        const expectedNames = [...new Set(
+          (assignmentsByEpic.get(epic) ?? []).map((entry) => entry.agent),
+        )].sort();
+        if (!Array.isArray(rawBinding.epic_agents)
+          || rawBinding.epic_agents.some((name) => typeof name !== 'string')
+          || JSON.stringify(rawBinding.epic_agents.map(normalizedDisplayName).sort()) !== JSON.stringify(expectedNames)) {
+          diagnostics.push({
+            path: `${path}.epic_agents`,
+            message: 'must equal the complete agent name set in the verifier frozen-plan assignments',
+          });
+        }
+      }
+    }
 
     if (bindingSchema !== WORK_AGENT_BINDING_SCHEMA) {
       diagnostics.push({ path: `${path}.binding_schema`, message: `must be ${WORK_AGENT_BINDING_SCHEMA}` });
@@ -278,7 +430,7 @@ export function parseWorkAgentBindings(
     if (repository !== context.repository) {
       diagnostics.push({ path: `${path}.repository`, message: 'does not match the artifact repository' });
     }
-    if (!Number.isInteger(originIssue) || originIssue !== context.originIssue) {
+    if (!isPositiveSafeInteger(originIssue) || originIssue !== context.originIssue) {
       diagnostics.push({ path: `${path}.origin_issue`, message: 'does not match the artifact origin issue' });
     }
     if (artifact !== context.artifact) {
@@ -339,10 +491,10 @@ export function parseWorkAgentBindings(
         });
       }
     }
-    if (issue && issues.has(issue)) {
+    if (issue && issues.has(issueReferenceKey(issue))) {
       diagnostics.push({ path: `${path}.issue`, message: 'duplicates another work binding' });
     }
-    if (issue) issues.add(issue);
+    if (issue) issues.add(issueReferenceKey(issue));
     if (task && tasks.has(task)) {
       diagnostics.push({ path: `${path}.task`, message: 'duplicates another work binding' });
     }
@@ -379,6 +531,23 @@ export function parseWorkAgentBindings(
     throw new AgentProvenanceError('Work-agent bindings are malformed or partial', diagnostics);
   }
 
+  const epicIssueKeys = new Set(bindings.map((binding) => issueReferenceKey(binding.epic_issue)));
+  for (const [index, binding] of bindings.entries()) {
+    const taskIssueKey = issueReferenceKey(binding.issue);
+    if (taskIssueKey === String(context.originIssue) || epicIssueKeys.has(taskIssueKey)) {
+      diagnostics.push({
+        path: `bindings.${index}.issue`,
+        message: 'task issue must not be the origin issue or any epic issue',
+      });
+    }
+    if (binding.epic !== 'origin' && issueReferenceKey(binding.epic_issue) === String(context.originIssue)) {
+      diagnostics.push({
+        path: `bindings.${index}.epic_issue`,
+        message: 'only the origin epic may reference the origin issue',
+      });
+    }
+  }
+
   const expectedRegistryRevision = bindings[0]!.registry_revision;
   const epicIssueByIdentifier = new Map<string, string>();
   const epicIdentifierByIssue = new Map<string, string>();
@@ -393,38 +562,40 @@ export function parseWorkAgentBindings(
       });
     }
 
+    const epicIssueKey = issueReferenceKey(binding.epic_issue);
     const priorEpicIssue = epicIssueByIdentifier.get(binding.epic);
-    if (priorEpicIssue !== undefined && priorEpicIssue !== binding.epic_issue) {
+    if (priorEpicIssue !== undefined && priorEpicIssue !== epicIssueKey) {
       diagnostics.push({
         path: `${path}.epic_issue`,
         message: `epic ${binding.epic} maps to multiple epic issues`,
       });
     } else {
-      epicIssueByIdentifier.set(binding.epic, binding.epic_issue);
+      epicIssueByIdentifier.set(binding.epic, epicIssueKey);
     }
 
-    const priorEpicIdentifier = epicIdentifierByIssue.get(binding.epic_issue);
+    const priorEpicIdentifier = epicIdentifierByIssue.get(epicIssueKey);
     if (priorEpicIdentifier !== undefined && priorEpicIdentifier !== binding.epic) {
       diagnostics.push({
         path: `${path}.epic`,
         message: `epic issue ${binding.epic_issue} maps to multiple epic identifiers`,
       });
     } else {
-      epicIdentifierByIssue.set(binding.epic_issue, binding.epic);
+      epicIdentifierByIssue.set(epicIssueKey, binding.epic);
     }
 
-    const epicBindings = bindingsByEpicIssue.get(binding.epic_issue) ?? [];
+    const epicBindings = bindingsByEpicIssue.get(epicIssueKey) ?? [];
     epicBindings.push({ binding, index });
-    bindingsByEpicIssue.set(binding.epic_issue, epicBindings);
+    bindingsByEpicIssue.set(epicIssueKey, epicBindings);
   }
 
   for (const epicBindings of bindingsByEpicIssue.values()) {
+    const completeAgentIds = context.epicAssignments === undefined
+      ? epicBindings.map(({ binding }) => binding.agent_id)
+      : assignmentsByEpic.get(epicBindings[0]!.binding.epic)!.map((assignment) => assignment.agentId);
     const expectedAgentIds = [...new Set(
-      epicBindings
-        .map(({ binding }) => binding.agent_id)
-        .filter((agentId): agentId is string => agentId !== null),
+      completeAgentIds.filter((agentId): agentId is string => agentId !== null),
     )].sort();
-    const hasIdentityOmission = epicBindings.some(({ binding }) => binding.agent_id === null);
+    const hasIdentityOmission = completeAgentIds.some((agentId) => agentId === null);
 
     for (const { binding, index } of epicBindings) {
       const path = `bindings.${index}`;
@@ -453,6 +624,391 @@ export function parseWorkAgentBindings(
     throw new AgentProvenanceError('Work-agent bindings are malformed or partial', diagnostics);
   }
   return bindings;
+}
+
+const ACTIVATION_ARTIFACTS: readonly WorkAgentBinding['artifact'][] = [
+  'activated', 'phases-activated', 'plan-accepted', 'phases-accepted', 'activation-reconciled',
+];
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function readActivationSection(body: string, label: string): unknown {
+  const labels = body.match(new RegExp(`^${label}:[ \\t]*\\r?$`, 'gm')) ?? [];
+  const blocks = [...body.matchAll(new RegExp(
+    `^${label}:[ \\t]*\\r?\\n\\s*\`\`\`json[ \\t]*\\r?\\n([\\s\\S]*?)^\`\`\`[ \\t]*\\r?$`,
+    'gm',
+  ))];
+  if (labels.length !== 1 || blocks.length !== 1) {
+    throw new AgentProvenanceError(`Activation record requires exactly one ${label} JSON section`);
+  }
+  try {
+    return JSON.parse(blocks[0]![1]!);
+  } catch {
+    throw new AgentProvenanceError(`Malformed ${label} JSON section`);
+  }
+}
+
+function activationEnvelope(value: unknown, originIssue: number): WorkAgentBinding['artifact'] {
+  if (!isRecord(value)
+    || !ACTIVATION_ARTIFACTS.includes(value.squad_artifact as WorkAgentBinding['artifact'])
+    || value.schema_version !== '1'
+    || !isPositiveSafeInteger(value.origin_issue)
+    || value.origin_issue !== originIssue
+    || !Array.isArray(value.phases)) {
+    throw new AgentProvenanceError('Unknown, malformed, or cross-origin activation envelope');
+  }
+  if (!value.phases.every(isPositiveSafeInteger) || new Set(value.phases).size !== value.phases.length) {
+    throw new AgentProvenanceError('Malformed activation phase scope: expected unique positive safe integers');
+  }
+  return value.squad_artifact as WorkAgentBinding['artifact'];
+}
+
+function isCanonicalPhases(value: unknown): value is number[] {
+  return Array.isArray(value) && Array.from(value).every((phase, index, phases) =>
+    isPositiveSafeInteger(phase) && (index === 0 || phase > phases[index - 1]));
+}
+
+function readPendingSourceBody(body: string): unknown {
+  const fences = body.match(/^```[^\r\n]*\r?$/gm) ?? [];
+  const blocks = [...body.matchAll(/^```json[ \t]*\r?\n([\s\S]*?)^```[ \t]*\r?$/gm)];
+  if (/Structured data:|Activation bindings:|Activation reconciliation:/.test(body)
+    || fences.length !== 2 || blocks.length !== 1) {
+    throw new AgentProvenanceError('Pending source requires exactly one bare JSON fence');
+  }
+  try {
+    return JSON.parse(blocks[0]![1]!);
+  } catch {
+    throw new AgentProvenanceError('Malformed pending source JSON');
+  }
+}
+
+function classifyActivationHistory(
+  record: ActivationRecord,
+  originIssue: number,
+): WorkAgentBinding['artifact'] | 'activation-pending' | undefined {
+  // Pending reservations belong to history but are never acceptance candidates.
+  try {
+    const pending = readPendingSourceBody(record.body);
+    if (isRecord(pending) && pending.schema === 'squad-activation-pending/v1') return 'activation-pending';
+  } catch (error) {
+    if (record.body.includes('squad-activation-pending/v1')) throw error;
+  }
+  const reconciliationMarker = /Activation reconciliation:|activation-reconciled/.test(record.body);
+  const activationMarker = reconciliationMarker || /Activation bindings:/.test(record.body);
+  if (!/Structured data:/.test(record.body) && !activationMarker) return undefined;
+  let envelope: unknown;
+  try {
+    envelope = readActivationSection(record.body, 'Structured data');
+  } catch (error) {
+    if (activationMarker || /activated|plan-accepted|phases-accepted/.test(record.body)) throw error;
+    return undefined;
+  }
+  const knownArtifact = isRecord(envelope)
+    && ACTIVATION_ARTIFACTS.includes(envelope.squad_artifact as WorkAgentBinding['artifact']);
+  if (!knownArtifact && !activationMarker) return undefined;
+  if (!reconciliationMarker && isRecord(envelope) && knownArtifact
+    && envelope.squad_artifact !== 'activation-reconciled'
+    && isPositiveSafeInteger(envelope.origin_issue) && envelope.origin_issue !== originIssue) {
+    return undefined;
+  }
+  const artifact = activationEnvelope(envelope, originIssue);
+  if (reconciliationMarker && artifact !== 'activation-reconciled') {
+    throw new AgentProvenanceError('Reconciliation requires activation-reconciled artifact');
+  }
+  return artifact;
+}
+
+/**
+ * Select a unique activation using independently verified current-state evidence.
+ * Digests use SHA-256 over UTF-8: source bodies are hashed verbatim, registry is
+ * JSON.stringify(registry), and bindings are JSON.stringify(the full parsed JSON
+ * array), before binding validation normalizes or drops any fields.
+ * Historical invalid bindings are tolerated only in an explicitly superseded
+ * old record; malformed reconciliation never falls back to older activation.
+ */
+function selectActivationPair(
+  records: readonly ActivationRecord[],
+  registry: AgentProvenanceRegistry,
+  context: ActivationSelectionContext,
+): SelectedActivationRecord | undefined {
+  if (!isPositiveSafeInteger(context.originIssue) || !context.repository
+    || !Array.isArray(context.reconciliations)) {
+    throw new AgentProvenanceError('Invalid activation selection context');
+  }
+  const evidenceFields = {
+    request_comment_id: 'requestCommentId',
+    request_sha256: 'requestSha256',
+    actor_id: 'actorId',
+    supersedes_comment_id: 'sourceCommentId',
+    supersedes_sha256: 'sourceSha256',
+    plan_sha256: 'planSha256',
+    registry_sha256: 'registrySha256',
+    bindings_sha256: 'bindingsSha256',
+  } as const;
+  const validEvidenceValue = (field: string, value: unknown): boolean =>
+    field.endsWith('_id') ? isPositiveSafeInteger(value)
+      : typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+  for (const evidence of context.reconciliations) {
+    if (!isRecord(evidence) || Object.entries(evidenceFields).some(([field, key]) =>
+      !validEvidenceValue(field, evidence[key]))) {
+      throw new AgentProvenanceError('Malformed verifier reconciliation evidence');
+    }
+    if (evidence.phases !== undefined && !isCanonicalPhases(evidence.phases)) {
+      throw new AgentProvenanceError('Malformed verifier reconciliation phase scope');
+    }
+    if (evidence.sourceKind !== undefined
+      && evidence.sourceKind !== 'activation' && evidence.sourceKind !== 'pending') {
+      throw new AgentProvenanceError('Malformed verifier reconciliation source kind');
+    }
+  }
+  const byId = new Map<number, ActivationRecord>();
+  const candidates: Array<{ record: ActivationRecord; artifact: WorkAgentBinding['artifact'] }> = [];
+  for (const record of records) {
+    if (!isPositiveSafeInteger(record.id) || typeof record.body !== 'string' || byId.has(record.id)) {
+      throw new AgentProvenanceError('Invalid or duplicate activation record id');
+    }
+    byId.set(record.id, record);
+    const artifact = classifyActivationHistory(record, context.originIssue);
+    if (artifact === undefined || artifact === 'activation-pending') continue;
+    candidates.push({ record, artifact });
+  }
+  const reconciled = candidates.filter(({ artifact }) => artifact === 'activation-reconciled');
+  if (reconciled.length > 1) {
+    throw new AgentProvenanceError('Competing activation reconciliations');
+  }
+  const reconciliation = reconciled[0];
+  if (reconciliation) {
+    const { record, artifact } = reconciliation;
+    const metadata = readActivationSection(record.body, 'Activation reconciliation');
+    if (!isRecord(metadata)
+      || metadata.schema !== 'squad-activation-reconciliation/v1'
+      || metadata.basis !== 'current-state-authorized'
+      || (metadata.supersedes_kind !== undefined && metadata.supersedes_kind !== 'pending')
+      || Object.keys(metadata).length !== Object.keys(evidenceFields).length
+        + (metadata.supersedes_kind === 'pending' ? 3 : 2)
+      || Object.keys(evidenceFields).some((field) => !validEvidenceValue(field, metadata[field]))) {
+      throw new AgentProvenanceError('Malformed activation reconciliation metadata');
+    }
+    const matchingEvidence = context.reconciliations.filter((entry) =>
+      (entry.sourceKind ?? 'activation') === (metadata.supersedes_kind ?? 'activation')
+      && Object.entries(evidenceFields).every(([field, key]) => metadata[field] === entry[key]));
+    if (matchingEvidence.length !== 1) {
+      throw new AgentProvenanceError('Activation reconciliation requires exactly one matching verifier evidence record');
+    }
+    const evidence = matchingEvidence[0]!;
+    const envelope = readActivationSection(record.body, 'Structured data') as Record<string, unknown>;
+    if (JSON.stringify(envelope.phases) !== JSON.stringify(evidence.phases ?? [])) {
+      throw new AgentProvenanceError('Activation reconciliation phase scope does not match verifier evidence');
+    }
+    const source = byId.get(evidence.sourceCommentId);
+    if (!source || sha256(source.body) !== evidence.sourceSha256) {
+      throw new AgentProvenanceError('Activation reconciliation source body digest mismatch');
+    }
+    if (evidence.sourceKind === 'pending') {
+      const pending = readPendingSourceBody(source.body);
+      if (!isRecord(pending) || pending.schema !== 'squad-activation-pending/v1'
+        || pending.repository !== context.repository
+        || !isPositiveSafeInteger(pending.origin_issue) || pending.origin_issue !== context.originIssue
+        || ['run_id', 'run_attempt', 'capture_artifact_id', 'plan_comment_id']
+          .some((field) => !isPositiveSafeInteger(pending[field]))
+        || ['capture_sha256', 'plan_sha256', 'registry_sha256']
+          .some((field) => typeof pending[field] !== 'string' || !/^[0-9a-f]{64}$/.test(pending[field]))
+        || !isCanonicalPhases(pending.phases)
+        || pending.plan_sha256 !== evidence.planSha256
+        || pending.registry_sha256 !== evidence.registrySha256
+        || JSON.stringify(pending.phases) !== JSON.stringify(evidence.phases ?? [])) {
+        throw new AgentProvenanceError('Malformed pending source or mismatched verifier plan, registry, or phase scope');
+      }
+    } else {
+      const sourceEnvelope = readActivationSection(source.body, 'Structured data');
+      const sourceArtifact = activationEnvelope(sourceEnvelope, context.originIssue);
+      if (JSON.stringify((sourceEnvelope as Record<string, unknown>).phases)
+        !== JSON.stringify(evidence.phases ?? [])) {
+        throw new AgentProvenanceError('Activation reconciliation source phase scope does not match verifier evidence');
+      }
+      if (sourceArtifact === 'activation-reconciled' || /Activation reconciliation:/.test(source.body)) {
+        throw new AgentProvenanceError('Activation reconciliation cannot supersede a reconciliation');
+      }
+    }
+    if (candidates.some((candidate) => candidate.record.id !== record.id
+      && candidate.record.id !== source.id)) {
+      throw new AgentProvenanceError('Ambiguous unsuperseded activation records');
+    }
+    const rawBindings = readActivationSection(record.body, 'Activation bindings');
+    if (sha256(JSON.stringify(registry)) !== evidence.registrySha256
+      || sha256(JSON.stringify(rawBindings)) !== evidence.bindingsSha256) {
+      throw new AgentProvenanceError('Activation reconciliation registry or bindings digest mismatch');
+    }
+    return {
+      id: record.id,
+      artifact,
+      bindings: parseWorkAgentBindings(rawBindings, parseAgentProvenanceRegistry(registry), {
+        ...context, artifact,
+      }),
+    };
+  }
+  if (context.reconciliations.length > 0) {
+    throw new AgentProvenanceError('Verifier reconciliation evidence has no matching activation record');
+  }
+  if (candidates.length > 1) {
+    throw new AgentProvenanceError('Ambiguous activation records');
+  }
+  const candidate = candidates[0];
+  if (!candidate) return undefined;
+  return {
+    id: candidate.record.id,
+    artifact: candidate.artifact,
+    bindings: parseWorkAgentBindings(
+      readActivationSection(candidate.record.body, 'Activation bindings'),
+      parseAgentProvenanceRegistry(registry),
+      { ...context, artifact: candidate.artifact },
+    ),
+  };
+}
+
+/**
+ * Select one scoped pair or one complete, independently authorized phase chain.
+ * Full histories require one verifier proof per reconciliation; links in source
+ * bodies provide only hash-bound ancestry data, never authorization or recency.
+ */
+export function selectActivationRecord(
+  records: readonly ActivationRecord[],
+  registry: AgentProvenanceRegistry,
+  context: ActivationSelectionContext,
+): SelectedActivationRecord | undefined {
+  const nodes = records.flatMap((record) => {
+    try {
+      const envelope = readActivationSection(record.body, 'Structured data');
+      return isRecord(envelope) && envelope.squad_artifact === 'activation-reconciled'
+        ? [{ record, envelope }] : [];
+    } catch {
+      return [];
+    }
+  });
+  if (nodes.length <= 1 && context.reconciliations.length <= 1) {
+    return selectActivationPair(records, registry, context);
+  }
+  const fail = (message: string): never => {
+    throw new AgentProvenanceError(`Activation chain: ${message}`);
+  };
+  if (nodes.length < 2 || nodes.length !== context.reconciliations.length) {
+    fail('missing or extra verifier proofs');
+  }
+  const byId = new Map<number, ActivationRecord>();
+  for (const record of records) {
+    if (!isPositiveSafeInteger(record.id) || typeof record.body !== 'string' || byId.has(record.id)) {
+      fail('duplicate or malformed record identity');
+    }
+    byId.set(record.id, record);
+  }
+  const usedRecords = new Set<number>();
+  const usedProofs = new Set<ReconciliationEvidence>();
+  const usedRequests = new Set<number>();
+  const validated = new Map<number, {
+    selected: SelectedActivationRecord;
+    source: ActivationRecord;
+    proof: ReconciliationEvidence;
+    prior: unknown;
+  }>();
+  for (const { record } of nodes) {
+    const metadata = readActivationSection(record.body, 'Activation reconciliation') as Record<string, unknown>;
+    const proofs = context.reconciliations.filter((proof) =>
+      proof.requestCommentId === metadata.request_comment_id && proof.requestSha256 === metadata.request_sha256
+      && proof.actorId === metadata.actor_id && proof.sourceCommentId === metadata.supersedes_comment_id
+      && proof.sourceSha256 === metadata.supersedes_sha256 && proof.planSha256 === metadata.plan_sha256
+      && proof.registrySha256 === metadata.registry_sha256 && proof.bindingsSha256 === metadata.bindings_sha256
+      && (proof.sourceKind ?? 'activation') === (metadata.supersedes_kind ?? 'activation'));
+    if (proofs.length !== 1) fail('missing or duplicate matching verifier proof');
+    const proof = proofs[0]!;
+    const source = byId.get(proof.sourceCommentId) ?? fail('missing source');
+    if (usedProofs.has(proof) || usedRequests.has(proof.requestCommentId)
+      || usedRecords.has(source.id) || usedRecords.has(record.id)) {
+      fail('missing source or competing reconciliation');
+    }
+    const selected = selectActivationPair([source, record], registry, {
+      ...context, reconciliations: [proof],
+    });
+    if (!selected || selected.id !== record.id) fail('invalid reconciliation node');
+    const first = validated.values().next().value;
+    if (first && (proof.planSha256 !== first.proof.planSha256
+      || proof.registrySha256 !== first.proof.registrySha256)) fail('inconsistent frozen plan or registry');
+    let carrier: Record<string, unknown> | undefined;
+    if (proof.sourceKind === 'pending') {
+      carrier = readPendingSourceBody(source.body) as Record<string, unknown>;
+    } else if (source.body.includes('Activation evidence:')) {
+      const evidence = readActivationSection(source.body, 'Activation evidence');
+      if (!isRecord(evidence) || evidence.schema !== 'squad-activation-finalization/v1'
+        || evidence.basis !== 'current-trusted-execution'
+        || evidence.plan_sha256 !== proof.planSha256 || evidence.registry_sha256 !== proof.registrySha256) {
+        fail('invalid finalization source link carrier');
+      }
+      carrier = evidence as Record<string, unknown>;
+    }
+    usedRecords.add(source.id);
+    usedRecords.add(record.id);
+    usedProofs.add(proof);
+    usedRequests.add(proof.requestCommentId);
+    validated.set(record.id, { selected: selected!, source, proof, prior: carrier?.prior });
+  }
+  if (records.some(record => !usedRecords.has(record.id)
+    && classifyActivationHistory(record, context.originIssue) !== undefined)
+    || usedProofs.size !== context.reconciliations.length) {
+    fail('unconsumed history records or verifier proofs');
+  }
+  const parents = new Map<number, number>();
+  const children = new Set<number>();
+  for (const [id, node] of validated) {
+    if (node.prior === undefined) continue;
+    const link = node.prior;
+    const keys = ['source_comment_id', 'source_sha256', 'reconciliation_comment_id', 'reconciliation_sha256'];
+    if (!isRecord(link) || Object.keys(link).sort().join() !== [...keys].sort().join()
+      || !isPositiveSafeInteger(link.source_comment_id) || !isPositiveSafeInteger(link.reconciliation_comment_id)
+      || ![link.source_sha256, link.reconciliation_sha256].every((hash) =>
+        typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash))) fail('malformed prior link');
+    const reference = link as Record<string, unknown>;
+    const parentId = reference.reconciliation_comment_id as number;
+    const parent = validated.get(parentId);
+    if (!parent || parent.source.id !== reference.source_comment_id
+      || sha256(parent.source.body) !== reference.source_sha256
+      || sha256(byId.get(parentId)!.body) !== reference.reconciliation_sha256) {
+      fail('unknown, missing, or changed ancestor');
+    }
+    if (children.has(parentId)) fail('forked phase history');
+    const before = parent!.proof.phases ?? [];
+    const after = node.proof.phases ?? [];
+    if (before.length === 0 || before.length >= after.length || !before.every((phase, index) => after[index] === phase)) {
+      fail('phase coverage must strictly expand');
+    }
+    const current = new Map(node.selected.bindings.map((binding) => [binding.task, binding]));
+    for (const priorBinding of parent!.selected.bindings) {
+      const next = current.get(priorBinding.task);
+      if (!next || issueReferenceKey(next.issue) !== issueReferenceKey(priorBinding.issue)
+        || next.epic !== priorBinding.epic
+        || issueReferenceKey(next.epic_issue) !== issueReferenceKey(priorBinding.epic_issue)
+        || next.agent_id !== priorBinding.agent_id
+        || next.registry_revision !== priorBinding.registry_revision
+        || [...next.epic_agent_ids].sort().join() !== [...priorBinding.epic_agent_ids].sort().join()
+        || next.identity_omission_reason !== priorBinding.identity_omission_reason
+        || next.epic_identity_omission_reason !== priorBinding.epic_identity_omission_reason) {
+        fail('prior task or epic bindings changed');
+      }
+    }
+    parents.set(id, parentId);
+    children.add(parentId);
+  }
+  const heads = [...validated.keys()].filter((id) => !children.has(id));
+  if (heads.length !== 1) fail('competing heads or cyclic history');
+  const visited = new Set<number>();
+  let id: number | undefined = heads[0];
+  while (id !== undefined) {
+    if (visited.has(id)) fail('cyclic history');
+    visited.add(id);
+    id = parents.get(id);
+  }
+  if (visited.size !== validated.size) fail('disconnected or cyclic history');
+  return validated.get(heads[0]!)!.selected;
 }
 
 /**
