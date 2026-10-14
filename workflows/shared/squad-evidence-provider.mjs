@@ -53,6 +53,13 @@ export function safeRelative(path) {
   return path;
 }
 
+function safeSourcePath(path) {
+  requireThat(typeof path === 'string' && !/[\0\\]/.test(path) &&
+    !/^(?:\/|[A-Za-z]:)/.test(path) &&
+    path.split('/').every(part => part && part !== '.' && part !== '..'),
+  'unsafe relative source path');
+}
+
 /** Reject links in every component, including a missing descriptor's parent. */
 export function trustedPath(root, relative, optional = false) {
   const base = realpathSync(root);
@@ -217,7 +224,7 @@ export function validateBundle(directory, expected, now = Date.now()) {
     const paths = new Set();
     for (const file of repository.files) {
       keys(file, ['path', 'truncated'], 'source file');
-      safeRelative(file.path);
+      safeSourcePath(file.path);
       requireThat(typeof file.truncated === 'boolean' && !paths.has(file.path), 'invalid source file');
       paths.add(file.path);
     }
@@ -454,10 +461,11 @@ export function unpackArtifact(bytes, destination) {
 
 export async function restoreReference(github, reference, directory) {
   const [owner, repo] = reference.control_repository.split('/');
-  const { data: run } = await github.rest.actions.getWorkflowRun({
-    owner, repo, run_id: reference.run_id,
+  const { data: run } = await github.rest.actions.getWorkflowRunAttempt({
+    owner, repo, run_id: reference.run_id, attempt_number: reference.run_attempt,
   });
-  requireThat(run.repository?.full_name === reference.control_repository &&
+  requireThat(String(run.id) === reference.run_id && String(run.run_attempt) === reference.run_attempt &&
+    run.repository?.full_name === reference.control_repository &&
     run.path === '.github/workflows/squad.lock.yml' && run.conclusion === 'success',
   'referenced run is not a successful native Squad workflow; run /squad research');
   const { data } = await github.rest.actions.listWorkflowRunArtifacts({

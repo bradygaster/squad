@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import {
   DESCRIPTOR, RUNTIME_ROOT, RUNTIME_ENTRY, RUNTIME_FILES, POLICY, MAX_AGE_MS, digest, readProvider,
   runContext, validateBundle, provenance, unpackArtifact, evidenceMode, policyDigests,
-  invokeProvider, verifyProviderBundle, prepareEvidence, validatePublication,
+  invokeProvider, verifyProviderBundle, prepareEvidence, validatePublication, restoreReference,
 } from '../workflows/shared/squad-evidence-provider.mjs';
 
 const roots: string[] = [];
@@ -114,6 +114,21 @@ describe('trusted CAO evidence provider descriptor', () => {
 });
 
 describe('run-bound complete evidence bundle', () => {
+  it.each(['src/app/[slug]/page.tsx', 'docs/Getting Started.md'])('accepts ordinary source path %s', path => {
+    const { root, manifest } = bundle();
+    manifest.repositories[0].files = [{ path, truncated: false }];
+    put(root, 'manifest.json', JSON.stringify(manifest));
+    expect(validateBundle(root, context, now).manifest.repositories[0].files[0].path).toBe(path);
+  });
+
+  it.each(['../escape', '/absolute', 'src/../escape', 'src/./file', 'src//file',
+    'src/file\0.md', 'C:/absolute', 'src\\..\\escape'])('rejects unsafe source path %s', path => {
+    const { root, manifest } = bundle();
+    manifest.repositories[0].files = [{ path, truncated: false }];
+    put(root, 'manifest.json', JSON.stringify(manifest));
+    expect(() => validateBundle(root, context, now), `source path ${JSON.stringify(path)}`).toThrow('unsafe');
+  });
+
   it('authors provenance from verified bytes, not model data', () => {
     const { root, manifest } = bundle();
     const checked = validateBundle(root, context, now);
@@ -159,6 +174,57 @@ describe('run-bound complete evidence bundle', () => {
     }
 
     describe('bounded referenced artifact restore', () => {
+      function restoreFixture(runOverrides = {}) {
+        const { root, manifest } = bundle();
+        const reference = provenance(validateBundle(root, context, now));
+        const files = Object.fromEntries(['manifest.json', ...Object.keys(manifest.documents)]
+          .map(name => [name, readFileSync(join(root, name), 'utf8')]));
+        const attemptCalls: unknown[] = [];
+        let downloads = 0;
+        const github = { rest: { actions: {
+          // A later rerun failed, but the referenced producer attempt succeeded.
+          getWorkflowRun: async () => ({ data: {
+            id: 100, run_attempt: 2, conclusion: 'failure',
+            repository: { full_name: context.control_repository }, path: '.github/workflows/squad.lock.yml',
+          } }),
+          getWorkflowRunAttempt: async (params: unknown) => {
+            attemptCalls.push(params);
+            return { data: {
+              id: 100, run_attempt: 1, conclusion: 'success',
+              repository: { full_name: context.control_repository }, path: '.github/workflows/squad.lock.yml',
+              ...runOverrides,
+            } };
+          },
+          listWorkflowRunArtifacts: async () => ({ data: {
+            total_count: 1, artifacts: [{ id: 10, name: reference.artifact, expired: false, size_in_bytes: 100 }],
+          } }),
+          downloadArtifact: async () => {
+            downloads++;
+            return { data: zip(files) };
+          },
+        } } };
+        return { github, reference, attemptCalls, downloads: () => downloads };
+      }
+
+      it('restores the successful producer attempt even after a failed rerun', async () => {
+        const fixture = restoreFixture();
+        const directory = join(scratch(), 'bundle');
+        await restoreReference(fixture.github, fixture.reference, directory);
+        expect(fixture.attemptCalls).toEqual([{
+          owner: 'octo', repo: 'control', run_id: '100', attempt_number: '1',
+        }]);
+        expect(provenance(validateBundle(directory, context, now))).toEqual(fixture.reference);
+      });
+
+      it.each([{ id: 101 }, { run_attempt: 2 }, { conclusion: 'failure' }])(
+        'rejects the wrong or unsuccessful producer %j', async run => {
+          const fixture = restoreFixture(run);
+          await expect(restoreReference(fixture.github, fixture.reference, join(scratch(), 'bundle')))
+            .rejects.toThrow('successful native Squad workflow');
+          expect(fixture.downloads()).toBe(0);
+        },
+      );
+
       it('extracts only regular evidence files', () => {
         const destination = join(scratch(), 'bundle');
         unpackArtifact(zip({ 'manifest.json': '{}', 'farm/evidence.json': '{}' }), destination);
@@ -295,6 +361,7 @@ describe('evidence mutation checks', () => {
         import {writeFileSync} from 'node:fs';
         assert.deepEqual(process.argv.slice(2), ['--validate-bundle']);
         assert.equal(process.env.GITHUB_RUN_ID, '200', 'provider must receive the current run, not the referenced wave run');
+        assert.equal(process.env.GITHUB_RUN_ATTEMPT, '3', 'consumer attempt must not replace the producer binding');
         assert.equal(process.env.GH_AW_GITHUB_READ_APP_PRIVATE_KEY, undefined);
         assert.equal(process.env.GH_AW_GITHUB_AUTH_MODE, undefined);
         assert.ok(process.env.SQUAD_EVIDENCE_BUNDLE);
@@ -307,7 +374,7 @@ describe('evidence mutation checks', () => {
       const currentEnv = {
         PATH: process.env.PATH, GITHUB_REPOSITORY: context.control_repository,
         SQUAD_WORKFLOW_SHA: 'e'.repeat(40), SQUAD_ISSUE_NUMBER: String(context.issue_number),
-        GITHUB_RUN_ID: '200', GITHUB_RUN_ATTEMPT: '1',
+        GITHUB_RUN_ID: '200', GITHUB_RUN_ATTEMPT: '3',
       };
       expect(verifyProviderBundle(root, directory, provenance(verified), now, currentEnv)).toEqual(verified);
       expect(readFileSync(join(root, 'executed'), 'utf8')).toBe('validate');

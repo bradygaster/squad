@@ -185,7 +185,7 @@
       "package_destination": ".github/workflows/shared/squad-evidence-provider.mjs",
       "destination": ".github/workflows/shared/squad-evidence-provider.mjs",
       "ownership": "manifest",
-      "sha256": "0fcfa35874f260d3a84d9653219eba9f92adcea56603c2a8d6470c586463effe"
+      "sha256": "a71e5cc6f0a95665feb25b82a02e8adbb22ae7b7da0fe8553f16bee1dc4a8e5f"
     },
     {
       "path": "shared/squad-cast-validator.mjs",
