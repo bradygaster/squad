@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdir, rm, writeFile } from 'fs/promises';
+import { mkdir, rm, writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -222,5 +222,51 @@ describe('squad cast', () => {
       if (origXdg === undefined) delete process.env['XDG_CONFIG_HOME'];
       else process.env['XDG_CONFIG_HOME'] = origXdg;
     }
+  });
+
+  it('persists a new agent to disk when runCastAdd is called with --name and --role (#2191)', async () => {
+    const sq = join(TEST_ROOT, '.squad');
+    await mkdir(join(sq, 'agents', 'test-agent'), { recursive: true });
+    await writeFile(join(sq, 'agents', 'test-agent', 'charter.md'), SAMPLE_CHARTER);
+    await writeFile(join(sq, 'team.md'), '# Team\n\n## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n| TestAgent | Core Dev | `.squad/agents/test-agent/charter.md` | ✅ Active |\n');
+    await writeFile(join(sq, 'routing.md'), '# Routing\n');
+    await writeFile(join(sq, 'decisions.md'), '# Decisions\n');
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { runCastAdd, runCast } = await import('@bradygaster/squad-cli/commands/cast');
+    const created = await runCastAdd(TEST_ROOT, { name: 'Probe', role: 'developer' });
+
+    expect(created.agentId).toBe('probe');
+    expect(existsSync(join(sq, 'agents', 'probe', 'charter.md'))).toBe(true);
+    expect(existsSync(join(sq, 'agents', 'probe', 'history.md'))).toBe(true);
+
+    const charter = await readFile(join(sq, 'agents', 'probe', 'charter.md'), 'utf-8');
+    expect(charter).toContain('Probe');
+
+    const teamMd = await readFile(join(sq, 'team.md'), 'utf-8');
+    expect(teamMd).toContain('| Probe |');
+    expect(teamMd).toContain('.squad/agents/probe/charter.md');
+
+    const registryRaw = await readFile(join(sq, 'casting', 'registry.json'), 'utf-8');
+    const registry = JSON.parse(registryRaw) as { agents: Record<string, { display_name: string }> };
+    expect(registry.agents['probe']?.display_name).toBe('Probe');
+
+    logSpy.mockClear();
+    await runCast(TEST_ROOT);
+    const castOutput = logSpy.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(castOutput).toContain('Probe');
+  });
+
+  it('rejects missing --name or --role with SquadError (#2191)', async () => {
+    await scaffold(TEST_ROOT);
+    const { runCastAdd } = await import('@bradygaster/squad-cli/commands/cast');
+
+    await expect(runCastAdd(TEST_ROOT, { name: 'Probe', role: '' })).rejects.toThrow(
+      /Usage: squad cast --name <name> --role <role>/,
+    );
+    await expect(runCastAdd(TEST_ROOT, { name: '', role: 'developer' })).rejects.toThrow(
+      /Usage: squad cast --name <name> --role <role>/,
+    );
   });
 });

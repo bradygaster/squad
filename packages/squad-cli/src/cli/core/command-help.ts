@@ -142,13 +142,14 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   cast: (version) => {
     header('cast', version, 'Show roster or add a new agent to the team');
     console.log(`Usage: squad cast                        ${DIM}# show the current cast (roster)${RESET}`);
-    console.log(`       squad cast --name <name> --role <role>  ${DIM}# add a new agent${RESET}\n`);
+    console.log(`       squad cast --name <name> --role <role> [--force]  ${DIM}# add a new agent${RESET}\n`);
     console.log(`With no flags, displays the current session cast (project + personal agents).`);
-    console.log(`With --name/--role, launches the team creation wizard.\n`);
+    console.log(`With --name and --role (or via "squad hire --name <name> --role <role>"), adds a new specialist agent to the project squad.\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--name <name>${RESET}               Pre-fill the agent name`);
-    console.log(`  ${BOLD}--role <role>${RESET}               Pre-select a built-in role (see 'squad roles')`);
-    console.log(`\nAlias: ${BOLD}squad hire${RESET} (always runs the creation wizard)\n`);
+    console.log(`  ${BOLD}--name <name>${RESET}               Name for the new agent (required when adding)`);
+    console.log(`  ${BOLD}--role <role>${RESET}               Role for the new agent (see 'squad roles')`);
+    console.log(`  ${BOLD}--force${RESET}                     Overwrite existing agent charter if already present`);
+    console.log(`\nAlias: ${BOLD}squad hire --name <name> --role <role>${RESET}\n`);
   },
 
   copilot: (version) => {
@@ -215,8 +216,12 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Usage: squad memory <subcommand> [options]\n`);
     console.log(`Common subcommands:`);
     console.log(`  ${BOLD}write --content "..." --class LOCAL${RESET}  Write a memory entry`);
-    console.log(`  ${BOLD}list${RESET}                                 List memory entries`);
-    console.log(`  ${BOLD}read <id>${RESET}                            Read a single entry\n`);
+    console.log(`  ${BOLD}search --query "..."${RESET}                 Search governed memory`);
+    console.log(`  ${BOLD}provider${RESET}                             Inspect or configure memory providers\n`);
+    console.log(`Provider notes:`);
+    console.log(`  • Native Copilot Memory (${BOLD}--provider copilot${RESET}) is unsupported in this release.`);
+    console.log(`  • ${BOLD}hostInjectedCopilotAdapter${RESET} is an optional host-supplied client adapter,`);
+    console.log(`    distinct from native Copilot Memory persistence.\n`);
     console.log(`Diagnostics:`);
     console.log(`  ${BOLD}--log-level info|debug${RESET}      Increase log verbosity`);
     console.log(`  ${BOLD}--verbose${RESET}                   Shortcut for --log-level debug\n`);

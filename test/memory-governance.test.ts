@@ -457,6 +457,34 @@ describe('LocalMemoryStore', () => {
     });
   });
 
+  it('surfaces SquadError for provider=copilot and documents native provider limitation in help (#2193)', async () => {
+    const root = testRoot('memory-provider-cli-squad-error');
+    const { SquadError } = await import('../packages/squad-cli/src/cli/core/errors.js');
+
+    let caught: unknown;
+    try {
+      await runMemoryCommand(root, ['provider', '--provider', 'copilot']);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SquadError);
+    expect((caught as Error).message).toContain('Real Copilot Memory API unavailable');
+
+    const helpOutput: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      helpOutput.push(String(value));
+    };
+    try {
+      await runMemoryCommand(root, ['help']);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(helpOutput.join('\n')).toContain('provider --provider copilot is unsupported in this release');
+    expect(helpOutput.join('\n')).toContain('hostInjectedCopilotAdapter');
+  });
+
 
   it('CLI emits safe memory diagnostics when log level is enabled', async () => {
     const root = testRoot('memory-cli-diagnostics');
