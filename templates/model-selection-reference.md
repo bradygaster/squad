@@ -30,17 +30,18 @@ Spawn guidance never names a model ID. It reasons in sources and tiers (`premium
 
 **`charter` — charter preference:** Does the agent's charter have a `## Model` section with `**Preferred:**` set to a specific model (not `auto`)? If yes, use that model.
 
-**Quality profile:** Task-aware selection runs under one of three profiles. The profile changes only `task-auto` and `default`; it never replaces a `user-override`, `config`, `session` or `charter` model, and never replaces an explicit opt-in model such as one the user picked for the session.
+**Quality profile:** Task-aware selection runs under one of three GA profiles, plus one opt-in preview profile (Appendix A, *Opt-in preview models*). The profile changes only `task-auto` and `default`; it never replaces a `user-override`, `config`, `session` or `charter` model, and never replaces an explicit opt-in model such as one the user picked for the session.
 
 | Profile | When it is active | Intent |
 |---------|-------------------|--------|
 | `quality-first` | Default when nothing else is set | Pick the tier that gives the best result for the task; avoid reruns caused by an underpowered model |
 | `balanced` | Explicit opt-in | Keep premium for quality-sensitive gates; research and language-heavy work stay standard rather than automatically cheap |
 | `economy` | Explicit opt-in (`economyMode: true` or `modelProfile: "economy"`) | Cost first; then apply the economy map. Always visible: the rationale says `(economy profile)` |
+| Opt-in preview profile | Explicit opt-in only (`modelProfile` or a session profile; name in Appendix A) | Research preview. Quality-sensitive work goes to the preview model first, then falls through to the quality-first premium chain; every other task follows `quality-first` |
 
 Profile precedence: session profile ("use the balanced profile for this session") → `economyMode: true` → persistent `modelProfile` in `.squad/config.json` → `quality-first`. An explicit `economyMode: false` cancels a persisted `economy` profile. Cost ceilings (`maxCategory`) still apply under every profile.
 
-- **When user says "use the {profile} profile" / "always use {profile}":** Write `modelProfile` to `.squad/config.json` (`quality-first`, `balanced` or `economy`). Acknowledge: `✅ Model profile saved: {profile}`.
+- **When user says "use the {profile} profile" / "always use {profile}":** Write `modelProfile` to `.squad/config.json` (`quality-first`, `balanced`, `economy`, or the opt-in preview profile in Appendix A). Acknowledge: `✅ Model profile saved: {profile}`.
 - **When user says "use {profile} for this session":** Treat it as the session profile; do not write config.
 
 **`task-auto` — task-aware auto-selection:** Match the agent's task to its type, look up the tier for the active profile, and use the head of that tier's fallback chain (Appendix A):
@@ -55,6 +56,8 @@ Profile precedence: session profile ("use the balanced profile for this session"
 | Mechanical ops (Scribe, git, release, changelogs, version bumps) | Fast | Fast | Fast |
 
 Quality-sensitive work that is not code (architecture, research, verification, reviewer gates, security, design) can use the premium tier. Mechanical work stays fast under every profile.
+
+**Opt-in preview models:** Research-preview models are never chosen by default and are in no fallback chain, GA profile or example. They may be unavailable, for example in corporate environments. A user opts in through the opt-in preview profile or by picking the model explicitly (per-spawn, config or session); see Appendix A, *Opt-in preview models*. Under the preview profile, Scribe and mechanical ops stay fast and reviewer gates still run.
 
 **Role-to-tier mapping** (under `quality-first`):
 
@@ -125,7 +128,7 @@ Every spawn acknowledgment names the resolved model, its source and a short rati
 
 This appendix is catalog data, not spawn guidance. It mirrors `MODELS.FALLBACK_CHAINS` and `MODEL_CATALOG` in the SDK and is maintained with the model catalog. The guidance above refers only to tiers and sources; these lists turn a tier into model IDs.
 
-Source of truth for public availability: the GitHub Copilot supported-models table (https://docs.github.com/en/copilot/reference/ai-models/supported-models), verified 2026-10-14. Only public GA models are listed; internal and preview models are never recommended. Tiers place models by their Copilot `model_picker_category` (`powerful`, `versatile`, `lightweight`), not by guessed pricing. An opt-in model the user names explicitly is still passed through unchanged.
+Source of truth for public availability: the GitHub Copilot supported-models table (https://docs.github.com/en/copilot/reference/ai-models/supported-models), verified 2026-10-14. Only public GA models are listed; internal and preview models are never recommended. The research-preview `hydrafusion` and `hydrafusion-max` IDs are in `MODEL_CATALOG` (marked `preview`, premium tier) but not in any chain below; they are used only on opt-in. Tiers place models by their Copilot `model_picker_category` (`powerful`, `versatile`, `lightweight`), not by guessed pricing. An opt-in model the user names explicitly is still passed through unchanged.
 
 **Fallback chains:**
 
@@ -144,3 +147,13 @@ Fast:     claude-haiku-5.5 → gpt-6-luna → gpt-5.6-luna → gemini-3.8-flash 
 Premium (powerful): `claude-opus-5.5`, `gpt-6.1-sol`, `claude-opus-5`, `gpt-6-sol`, `claude-opus-4.8`, `gpt-5.6-sol`, `gemini-4-argon`
 Standard: `claude-sonnet-5.5`, `gpt-5.6-terra`, `claude-sonnet-5`, `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`, `grok-4.7`, `grok-4.6`
 Fast: `claude-haiku-5.5`, `gpt-6-luna`, `gpt-5.6-luna`, `gemini-3.8-flash`, `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5-mini`, `mai-code-1.1-flash`
+
+### Opt-in preview models
+
+**HydraFusion (research preview):** `hydrafusion` and `hydrafusion-max` are GitHub multi-model orchestration models. They are a research preview and may be unavailable, for example in corporate environments where preview models are turned off. Squad never chooses them by default: they are in no fallback chain, no GA profile and no example. Squad treats them as model IDs; the runtime runs the orchestration itself.
+
+- **Opt in with the profile:** `modelProfile: "hydrafusion"` in `.squad/config.json`, or "use the hydrafusion profile for this session". Architecture, research, verification, review, security and design tasks then resolve to `hydrafusion` with the quality-first premium chain behind it. Visual work, code, docs, planning and other tasks follow `quality-first` unchanged; Scribe and mechanical ops stay on the fast tier. Reviewer gates still run.
+- **Opt in with a model:** pick `hydrafusion` as the session model, `defaultModel`, `agentModelOverrides.{agent}` or a per-spawn directive. That pick is honored like any explicit model and the session model is inherited by every sub-agent spawn.
+- **`hydrafusion-max`** is used only when named explicitly (per-spawn directive, config or session model). It is never chosen implicitly, including under the `hydrafusion` profile.
+- **Fallback:** if `hydrafusion` is unavailable, resolution falls forward to the head of the quality-first premium chain (source `fallback`), never back to `hydrafusion` and never over the active cost ceiling. If nothing in the ceiling is left, the `model` parameter is omitted.
+- **VS Code** runs every agent on the single session model the user picked; per-agent selection (including this profile) applies where Squad passes a model per spawn, such as the Copilot CLI and app.

@@ -23,8 +23,10 @@ describe('MODEL_CATALOG', () => {
     expect(fastModels.length).toBeGreaterThan(0);
   });
 
-  it('marks every catalog model as vision-capable', () => {
-    expect(MODEL_CATALOG.every(model => model.vision === true)).toBe(true);
+  it('marks every GA catalog model as vision-capable', () => {
+    // Preview opt-in entries (#2014) do not claim capabilities that are not documented.
+    const notVision = MODEL_CATALOG.filter(model => model.preview !== true && model.vision !== true).map(model => model.id);
+    expect(notVision, `GA catalog models without vision: ${JSON.stringify(notVision)}`).toEqual([]);
   });
 
   it('includes expected premium models', () => {

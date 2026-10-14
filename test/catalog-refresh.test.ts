@@ -76,6 +76,9 @@ const EXPECTED_CATALOG_IDS = [
   'grok-4.6',
   'grok-4.7',
   'mai-code-1.1-flash',
+  // Research preview, opt-in only (#2014); never in a default chain.
+  'hydrafusion',
+  'hydrafusion-max',
 ];
 
 const CONFIG_CHAINS = DEFAULT_FALLBACK_CHAINS as Record<string, string[]>;

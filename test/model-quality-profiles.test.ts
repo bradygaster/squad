@@ -177,7 +177,8 @@ describe('catalog, constants and config defaults agree on public GA ids (#1598)'
     'MODELS.FALLBACK_CHAINS': Object.values(MODELS.FALLBACK_CHAINS).flat(),
     DEFAULT_FALLBACK_CHAINS: Object.values(DEFAULT_FALLBACK_CHAINS).flat(),
     'DEFAULT_CONFIG.models.tiers': Object.values(DEFAULT_CONFIG.models.tiers).flat(),
-    MODEL_CATALOG: MODEL_CATALOG.map((m) => m.id),
+    // Preview ids are allowed in the catalog only as opt-in entries (#2014).
+    'MODEL_CATALOG (non-preview)': MODEL_CATALOG.filter((m) => m.preview !== true).map((m) => m.id),
     ECONOMY_MODEL_MAP: Object.entries(ECONOMY_MODEL_MAP).flat(),
     'MODELS defaults': [MODELS.DEFAULT, MODELS.SELECTOR_DEFAULT, MODELS.NUCLEAR_FALLBACK],
   };
@@ -189,6 +190,14 @@ describe('catalog, constants and config defaults agree on public GA ids (#1598)'
       }
     });
   }
+
+  it('preview catalog entries are only the opt-in HydraFusion ids and never internal ids', () => {
+    const preview = MODEL_CATALOG.filter((m) => m.preview === true).map((m) => m.id);
+    for (const id of preview) {
+      expect(['hydrafusion', 'hydrafusion-max'], `MODEL_CATALOG preview entry '${id}' is not an approved opt-in id`).toContain(id);
+    }
+    expect(MODEL_CATALOG.map((m) => m.id), "MODEL_CATALOG contains internal id 'gpt-5.6-sol-fast'").not.toContain('gpt-5.6-sol-fast');
+  });
 
   it('runtime and config fallback chains are identical', () => {
     expect(DEFAULT_FALLBACK_CHAINS, 'DEFAULT_FALLBACK_CHAINS vs MODELS.FALLBACK_CHAINS').toEqual(MODELS.FALLBACK_CHAINS);

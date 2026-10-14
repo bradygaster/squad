@@ -62,6 +62,7 @@ Resolution is **first-match-wins** — the highest layer with a value wins.
 - Docs, writing, planning, triage → standard under `quality-first`; fast under `economy` (and planning under `balanced`)
 - Mechanical (Scribe, git, release, changelogs, version bumps) → fast (`claude-haiku-5.5`)
 - `economy` then applies the economy map (premium → standard, standard → `gpt-5.6-luna`) and says so in the rationale
+- `hydrafusion` (opt-in only) sends architecture, research, verification, reviewer gates, security and design to `hydrafusion`, then the premium chain; everything else (including visual and Scribe) follows `quality-first`
 6. FALLBACK Layer 4: head of the standard chain; `gpt-5.6-luna` under `economy`
 7. INCLUDE model in spawn acknowledgment: `🔧 {Name} ({resolved_model}) — {task}`
 
@@ -79,12 +80,22 @@ Resolution is **first-match-wins** — the highest layer with a value wins.
 2. WRITE to `agentModelOverrides.{agent}` in `.squad/config.json`
 3. ACKNOWLEDGE: `✅ {Agent} will always use {model} — saved to config.`
 
-**Profile trigger:** "use the {quality-first|balanced|economy} profile" / "always use economy"
+**Profile trigger:** "use the {quality-first|balanced|economy|hydrafusion} profile" / "always use economy"
 
 1. WRITE `modelProfile` to `.squad/config.json` (merge, don't overwrite); for "this session" only, keep it in session context instead
 2. ACKNOWLEDGE: `✅ Model profile saved: {profile}`
 
 A profile never replaces an explicit model (config, session, charter or per-spawn), including an opt-in model the user chose.
+
+### HydraFusion (research preview, opt-in)
+
+`hydrafusion` and `hydrafusion-max` are GitHub multi-model orchestration models in research preview. They may be unavailable, for example in corporate environments where preview models are turned off, so Squad never uses them by default: they are in no fallback chain, no GA profile and no example. The runtime runs the orchestration; Squad only passes the model ID.
+
+- **Opt in:** `modelProfile: "hydrafusion"` (or "use the hydrafusion profile for this session"), or pick `hydrafusion` as the session model, `defaultModel`, an `agentModelOverrides` entry or a per-spawn model. A session model is inherited by every sub-agent spawn.
+- **`hydrafusion-max`:** only when named explicitly by ID. Never chosen implicitly, even under the `hydrafusion` profile.
+- **Fallback:** when `hydrafusion` is unavailable, fall forward to the head of the premium chain; never back, never over the cost ceiling; omit the model if nothing in the ceiling is left.
+- **Unchanged:** Scribe and mechanical ops stay fast; reviewer gates still run.
+- **VS Code** uses the single session model for every agent; per-agent selection applies where Squad passes a model per spawn (Copilot CLI and app).
 
 ### When User Clears a Preference
 
@@ -119,7 +130,7 @@ After resolving the model and including it in the spawn template, this skill is 
 
 - `defaultModel` — applies to ALL agents unless overridden by `agentModelOverrides`
 - `agentModelOverrides` — per-agent overrides that take priority over `defaultModel`
-- `modelProfile` — `quality-first` (default), `balanced` or `economy`; affects only Layers 3-4
+- `modelProfile` — `quality-first` (default), `balanced`, `economy` or `hydrafusion` (opt-in research preview); affects only Layers 3-4
 - All fields are optional. When absent, Layers 1-4 apply normally.
 
 ## Fallback Chains

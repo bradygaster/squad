@@ -1384,7 +1384,8 @@ describe('availability fallback respects the active cost ceiling (#1720)', () =>
   }
 
   it('without a cost policy the out-of-catalog availability fallback is unchanged', () => {
-    const opts: ModelResolutionOptions = { sessionModel: 'hydrafusion', taskType: 'code', unavailableModels: ['hydrafusion'] };
+    // 'hydrafusion' is a catalog entry since #2014; use a truly out-of-catalog id.
+    const opts: ModelResolutionOptions = { sessionModel: 'custom-preview-model', taskType: 'code', unavailableModels: ['custom-preview-model'] };
     const r = resolveAgentModel(opts);
     expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} picked '${r.model}'`).toEqual({ model: standard[0], source: 'fallback' });
   });

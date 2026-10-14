@@ -105,10 +105,10 @@ export interface ModelInfo {
   tier: ModelTier;
 
   /** Provider */
-  provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'microsoft';
+  provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'microsoft' | 'github';
 
   /** Model family */
-  family: 'claude' | 'gpt' | 'gemini' | 'grok' | 'mai';
+  family: 'claude' | 'gpt' | 'gemini' | 'grok' | 'mai' | 'hydrafusion';
 
   /**
    * GitHub Copilot billing cost-ceiling category (cost axis).
@@ -130,6 +130,14 @@ export interface ModelInfo {
 
   /** Uncached input/output token pricing in USD (if known) */
   pricing?: ModelPricing;
+
+  /**
+   * Research-preview, opt-in only (#2014). Preview entries are known to the
+   * resolver (tier, cost category) but never appear in a default fallback
+   * chain, a GA profile, or an example, and are never chosen implicitly.
+   * They may be unavailable, for example in corporate environments.
+   */
+  preview?: boolean;
 }
 
 /**
@@ -404,7 +412,39 @@ export const MODEL_CATALOG: ModelInfo[] = [
     vision: true,
     useCases: ['fast code edits', 'code diversity'],
   },
+
+  // Research preview — opt-in only (#2014). Multi-model orchestration ids;
+  // the runtime handles orchestration, cost and fallback. Excluded from every
+  // default chain and GA profile. `hydrafusion` is used implicitly only under
+  // the opt-in `hydrafusion` profile; `hydrafusion-max` only when named.
+  {
+    id: 'hydrafusion',
+    tier: 'premium',
+    provider: 'github',
+    family: 'hydrafusion',
+    githubCategory: 'powerful',
+    preview: true,
+    useCases: ['architecture proposals', 'reviewer gates', 'security audits', 'research', 'design'],
+  },
+  {
+    id: 'hydrafusion-max',
+    tier: 'premium',
+    provider: 'github',
+    family: 'hydrafusion',
+    githubCategory: 'powerful',
+    preview: true,
+    useCases: ['explicit opt-in only'],
+  },
 ];
+
+/** Opt-in preview model the `hydrafusion` profile puts first for quality-sensitive work (#2014). */
+export const HYDRAFUSION_MODEL_ID = 'hydrafusion';
+
+/** True when `id` is a research-preview, opt-in-only {@link MODEL_CATALOG} entry. */
+export function isPreviewModel(id: string): boolean {
+  const key = id.trim().toLowerCase();
+  return MODEL_CATALOG.some((m) => m.preview === true && m.id === key);
+}
 
 /**
  * Default fallback chains per tier — public GA IDs ordered by preference
@@ -705,11 +745,16 @@ export function applyEconomyMode(model: string): string {
  *   for code and language-heavy work, fast for planning and mechanical work.
  * - `economy`: opt-in cost-first selection plus {@link ECONOMY_MODEL_MAP}
  *   substitution. Legacy `economyMode: true` selects this profile.
+ * - `hydrafusion` (#2014): opt-in research preview. Quality-sensitive work
+ *   (architecture, research, verification, review, security, design) tries
+ *   {@link HYDRAFUSION_MODEL_ID} first, then the quality-first premium chain;
+ *   everything else follows `quality-first`. `hydrafusion-max` is never
+ *   chosen by this profile.
  */
-export type ModelSelectionProfile = 'quality-first' | 'balanced' | 'economy';
+export type ModelSelectionProfile = 'quality-first' | 'balanced' | 'economy' | 'hydrafusion';
 
 /** All supported {@link ModelSelectionProfile} values. */
-export const MODEL_SELECTION_PROFILES: readonly ModelSelectionProfile[] = ['quality-first', 'balanced', 'economy'] as const;
+export const MODEL_SELECTION_PROFILES: readonly ModelSelectionProfile[] = ['quality-first', 'balanced', 'economy', 'hydrafusion'] as const;
 
 /** Profile used when neither the session nor `.squad/config.json` selects one. */
 export const DEFAULT_MODEL_SELECTION_PROFILE: ModelSelectionProfile = 'quality-first';

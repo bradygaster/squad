@@ -6,7 +6,9 @@ import { MODELS } from '../runtime/constants.js';
 import {
   applyEconomyMode,
   DEFAULT_MODEL_SELECTION_PROFILE,
+  HYDRAFUSION_MODEL_ID,
   isModelSelectionProfile,
+  isPreviewModel,
   MODEL_CATALOG,
   type ModelSelectionProfile,
   CATEGORY_ORDER,
@@ -407,6 +409,16 @@ function applyAvailabilityFallback(
 function selectModelForTask(taskType: TaskType, profile: ModelSelectionProfile): ResolvedModel | undefined {
   const taskTier = PROFILE_TASK_TIERS[profile][taskType];
   if (!taskTier) return undefined;
+
+  if (profile === 'hydrafusion' && HYDRAFUSION_PROFILE_TASKS.has(taskType)) {
+    return {
+      model: HYDRAFUSION_MODEL_ID,
+      tier: 'premium',
+      source: 'task-auto',
+      fallbackChain: [HYDRAFUSION_MODEL_ID, ...MODELS.FALLBACK_CHAINS.premium],
+      rationale: `hydrafusion: ${taskType} task → opt-in '${HYDRAFUSION_MODEL_ID}', then the quality-first premium chain`,
+    };
+  }
   const economyMode = profile === 'economy';
 
   // Task-aware picks are the head of the tier's fallback chain, so the
@@ -441,28 +453,48 @@ function selectTaskModel(taskModel: string, economyMode?: boolean): ResolvedMode
   };
 }
 
+/** quality-first task → tier table, shared by the opt-in `hydrafusion` profile. */
+const QUALITY_FIRST_TASK_TIERS: Readonly<Record<TaskType, ModelTier>> = {
+  architecture: 'premium',
+  research: 'premium',
+  verification: 'premium',
+  review: 'premium',
+  security: 'premium',
+  design: 'premium',
+  visual: 'premium',
+  code: 'standard',
+  prompt: 'standard',
+  docs: 'standard',
+  writing: 'standard',
+  planning: 'standard',
+  mechanical: 'fast',
+};
+
+/**
+ * Quality-sensitive task types that the opt-in `hydrafusion` profile sends to
+ * {@link HYDRAFUSION_MODEL_ID} first (#2014). Other tasks, including Scribe and
+ * other mechanical work, follow `quality-first` unchanged.
+ */
+const HYDRAFUSION_PROFILE_TASKS: ReadonlySet<TaskType> = new Set<TaskType>([
+  'architecture',
+  'research',
+  'verification',
+  'review',
+  'security',
+  'design',
+]);
+
 /**
  * Task → tier per quality profile (#1598). quality-first sends
  * quality-sensitive non-code work to premium even when no code is written;
  * economy keeps the historical cost-first table and then substitutes via
- * {@link applyEconomyMode}.
+ * {@link applyEconomyMode}. The opt-in `hydrafusion` profile uses the
+ * quality-first tiers; {@link selectModelForTask} puts `hydrafusion` first for
+ * quality-sensitive tasks.
  */
 export const PROFILE_TASK_TIERS: Readonly<Record<ModelSelectionProfile, Readonly<Record<TaskType, ModelTier>>>> = {
-  'quality-first': {
-    architecture: 'premium',
-    research: 'premium',
-    verification: 'premium',
-    review: 'premium',
-    security: 'premium',
-    design: 'premium',
-    visual: 'premium',
-    code: 'standard',
-    prompt: 'standard',
-    docs: 'standard',
-    writing: 'standard',
-    planning: 'standard',
-    mechanical: 'fast',
-  },
+  'quality-first': QUALITY_FIRST_TASK_TIERS,
+  hydrafusion: QUALITY_FIRST_TASK_TIERS,
   balanced: {
     architecture: 'premium',
     verification: 'premium',
@@ -585,7 +617,8 @@ function findInCeilingReplacement(
   };
   add(base.model);
   for (const id of base.fallbackChain) add(id);
-  for (const info of MODEL_CATALOG) add(info.id);
+  // Preview entries are opt-in only and never an implicit replacement (#2014).
+  for (const info of MODEL_CATALOG) if (!isPreviewModel(info.id)) add(info.id);
 
   for (const id of candidates) {
     const cat = catalogMap.get(id);
