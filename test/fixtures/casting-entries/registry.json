@@ -1,0 +1,18 @@
+{
+  "entries": [
+    { "persistent_name": "Example Member 01", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 02", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 03", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 04", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 05", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 06", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 07", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 08", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 09", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 10", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 11", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 12", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 13", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" },
+    { "persistent_name": "Example Member 14", "universe": "descriptive", "created_at": "2024-02-03", "legacy_named": true, "status": "active" }
+  ]
+}
