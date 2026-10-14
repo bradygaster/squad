@@ -16,6 +16,7 @@ import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
+import { syncCopilotInstructionsFile } from './managed-file.js';
 import { getTemplatesDir } from './templates.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 import {
@@ -546,9 +547,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
           const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
           const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
 
-          if (storage.existsSync(instructionsSrc) && !storage.existsSync(instructionsDest)) {
+          if (storage.existsSync(instructionsSrc)) {
             storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
-            storage.copySync(instructionsSrc, instructionsDest);
+            syncCopilotInstructionsFile(instructionsSrc, instructionsDest);
             success('.github/copilot-instructions.md');
           }
         } else {

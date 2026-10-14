@@ -9,6 +9,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 const storage = new FSStorageProvider();
 import { success, dim, bold, info, BOLD, RESET, DIM } from '../core/output.js';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
+import { removeCopilotInstructionsBlock, syncCopilotInstructionsFile, writeManagedText } from '../core/managed-file.js';
 import {
   readTeamMd,
   writeTeamMd,
@@ -50,11 +51,18 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
     writeTeamMd(stateDir, content);
     success('Removed @copilot from the team roster');
 
-    // Remove copilot-instructions.md
+    // Remove Squad-managed section from copilot-instructions.md (or delete if no user content remains)
     const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
     if (storage.existsSync(instructionsDest)) {
-      storage.deleteSync(instructionsDest);
-      success('Removed .github/copilot-instructions.md');
+      const existingInstructions = storage.readSync(instructionsDest) ?? '';
+      const remainingInstructions = removeCopilotInstructionsBlock(existingInstructions);
+      if (remainingInstructions === null) {
+        storage.deleteSync(instructionsDest);
+        success('Removed .github/copilot-instructions.md');
+      } else {
+        writeManagedText(instructionsDest, remainingInstructions);
+        success('Removed Squad section from .github/copilot-instructions.md');
+      }
     }
     return;
   }
@@ -80,7 +88,7 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
     success('Auto-assign enabled — squad-labeled issues will be assigned to @copilot');
   }
 
-  // Copy copilot-instructions.md from templates
+  // Upsert Squad section into copilot-instructions.md from templates
   // Templates are at the root of the package (../../../templates from dist/cli/commands/)
   const currentFileUrl = new URL(import.meta.url);
   const currentFilePath = currentFileUrl.pathname.startsWith('/') && process.platform === 'win32'
@@ -92,7 +100,7 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
   
   if (storage.existsSync(instructionsSrc)) {
     storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
-    storage.copySync(instructionsSrc, instructionsDest);
+    syncCopilotInstructionsFile(instructionsSrc, instructionsDest);
     success('.github/copilot-instructions.md');
   }
 

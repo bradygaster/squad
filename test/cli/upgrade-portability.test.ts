@@ -98,6 +98,11 @@ describe('upgrade portability and destination newlines', () => {
       expect(body, file).not.toMatch(/(?<!\r)\n/);
       if (version === 'current' && file === path.join('.github', 'copilot-instructions.md')) {
         expect(body).toBe('OLD-MANAGED-BODY\r\nreplace this\r\n');
+      } else if (file === path.join('.github', 'copilot-instructions.md')) {
+        // #2186: user-authored content in copilot-instructions.md is preserved, and the Squad section is appended
+        expect(body, file).toContain('OLD-MANAGED-BODY\r\nreplace this\r\n');
+        expect(body, file).toContain('<!-- squad:copilot-instructions:start -->');
+        expect(body, file).toContain('<!-- squad:copilot-instructions:end -->');
       } else {
         expect(body, file).not.toContain('OLD-MANAGED-BODY');
       }

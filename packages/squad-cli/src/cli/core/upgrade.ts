@@ -17,7 +17,7 @@ import { runMigrations } from './migrations.js';
 import { scrubEmails } from './email-scrub.js';
 import { getPackageVersion, stampVersion, readInstalledVersion } from './version.js';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
-import { copyManagedFile, writeManagedText } from './managed-file.js';
+import { copyManagedFile, syncCopilotInstructionsFile, writeManagedText } from './managed-file.js';
 export { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 
@@ -1370,7 +1370,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
     if (copilotEnabled && storage.existsSync(copilotInstructionsSrc)) {
       storage.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
-      copyManagedFile(copilotInstructionsSrc, copilotInstructionsDest);
+      syncCopilotInstructionsFile(copilotInstructionsSrc, copilotInstructionsDest);
       success('upgraded .github/copilot-instructions.md');
       filesUpdated.push('copilot-instructions.md');
     }
