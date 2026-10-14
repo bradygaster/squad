@@ -1,0 +1,13 @@
+{
+  "universe_usage_history": [],
+  "assignment_cast_snapshots": {
+    "example-writing-2024-02-03": {
+      "assignment_id": "example-writing-2024-02-03",
+      "universe": null,
+      "naming_style": "descriptive-creative",
+      "created_at": "2024-02-03T09:00:00Z",
+      "agents": ["writer-01", "writer-02", "writer-03", "writer-04", "writer-05", "writer-06"],
+      "note": "Example descriptive naming request without a recorded universe."
+    }
+  }
+}

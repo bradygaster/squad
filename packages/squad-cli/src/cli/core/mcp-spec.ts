@@ -7,7 +7,9 @@
  * Resolution order:
  *   0. If Squad is running from a standalone bundle (`SQUAD_STANDALONE_HOME`,
  *      exported by the bundle launcher) → spawn that bundle's launcher
- *      directly with an absolute path. This tier short-circuits *before* any
+ *      directly with an absolute path for machine-local use. Project config
+ *      writers convert this to the host's portable PATH command through
+ *      `projectSquadStateMcpSpec`. This tier short-circuits *before* any
  *      registry probe, so a machine that cannot reach registry.npmjs.org
  *      never makes a network call here and never writes an `npx` spec it
  *      cannot execute later (#1593).
@@ -30,7 +32,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 export interface SquadStateMcpSpec {
-  /** Executable to spawn — `npx`, or an absolute launcher path when bundled. */
+  /** `npx`, a local absolute launcher, or a portable project PATH executable. */
   command: string;
   /** Argv for the executable. */
   args: string[];
@@ -39,6 +41,16 @@ export interface SquadStateMcpSpec {
 }
 
 const PACKAGE_NAME = '@bradygaster/squad-cli';
+
+/** Shared configs must resolve the installed CLI on each host, not this host. */
+export function projectSquadStateMcpSpec(
+  spec: SquadStateMcpSpec,
+  platform: NodeJS.Platform = process.platform,
+): SquadStateMcpSpec {
+  return spec.source === 'standalone'
+    ? { command: platform === 'win32' ? 'squad.exe' : 'squad', args: ['state-mcp'], source: 'standalone' }
+    : spec;
+}
 
 /**
  * Environment variable exported by the standalone bundle launchers
@@ -70,9 +82,9 @@ export function _resetMcpSpecCache(): void {
  * Locate the launcher of the standalone bundle this CLI is running from.
  *
  * Returns an absolute path, or null when not running from a bundle. The
- * absolute path matters: Copilot spawns the MCP server itself, in an
- * environment that will not necessarily have the bundle on PATH or
- * `SQUAD_STANDALONE_HOME` set, so the written spec has to stand alone.
+ * absolute path supports machine-local launch contexts without PATH or
+ * `SQUAD_STANDALONE_HOME`. Shared project config uses the portable mapper
+ * instead; each MCP host must expose its own installed Squad on PATH.
  */
 export function detectStandaloneLauncher(): string | null {
   const home = process.env[STANDALONE_HOME_ENV];
