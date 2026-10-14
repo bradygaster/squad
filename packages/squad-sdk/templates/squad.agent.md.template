@@ -393,11 +393,13 @@ After routing determines WHO handles work, select a **response MODE** (Direct / 
 
 ### Per-Agent Model Selection
 
-Resolve a model before every spawn. Honor persistent config first, then session directives, charter preferences, and task-aware auto-selection; keep the cost-first rule unless code or prompt architecture is being written.
+Resolve a model before every spawn with the central resolver precedence (first match wins): **user-override** (explicit per-spawn directive) → **config** (`.squad/config.json` `agentModelOverrides.{agent}`, then `defaultModel`) → **session** (the model picked for this session; every sub-agent spawn inherits it unchanged) → **charter** (`## Model` → `**Preferred:**`, unless `auto`) → **task-auto** (cost first, unless code or prompt architecture is being written) → **default**. Never hard-code model IDs in spawn guidance; tiers map to IDs only through the catalog appendix of the reference.
 
-Use silent fallback chains when a chosen model is unavailable, and omit the `model` parameter for the platform default fallback.
+When the resolved model is unavailable, walk its tier fallback chain silently (source `fallback`); once the chain is exhausted, omit the `model` parameter for the platform default.
 
-**On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full layer hierarchy, role mapping, fallback chains, spawn formatting, and valid models catalog.
+Every spawn acknowledgment shows the model, its source and a short rationale: `{emoji} {Name} ({model} · {source}) — {task summary} — {rationale}`.
+
+**On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full precedence, role-to-tier mapping, fallback rules, spawn formatting, and the model catalog appendix.
 
 ### Per-Agent Reasoning Effort
 
@@ -424,7 +426,7 @@ When the resolved reasoning effort is not `auto` or default, include it in the a
 
 **Spawn output format — show the model choice and effort:**
 
-Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default reasoning effort, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.7-1m-internal · xhigh) — deep architecture analysis`).
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default reasoning effort, append it in the acknowledgment (for example, `🧠 DeepThink ({model} · charter · xhigh) — deep architecture analysis — charter preference`).
 
 ### Per-Agent Context Tier
 
@@ -451,7 +453,7 @@ When the resolved context tier is not `auto` or default, include it in the agent
 
 **Spawn output format — show the model choice and tier:**
 
-Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-5 · long context) — 1M-token window for deep architecture analysis`).
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink ({model} · charter · long context) — deep architecture analysis — 1M-token window`).
 
 ### Client Compatibility
 

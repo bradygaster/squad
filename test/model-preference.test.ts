@@ -31,6 +31,13 @@ import {
   resolveContextTier,
   clampContextTier,
 } from '@bradygaster/squad-sdk/config';
+import {
+  resolveModel as resolveAgentModel,
+  MODEL_RESOLUTION_PRECEDENCE,
+  type ModelResolutionOptions,
+  type ResolvedModel,
+} from '@bradygaster/squad-sdk/agents';
+import { MODELS } from '@bradygaster/squad-sdk';
 
 // Temp directory for each test
 let squadDir: string;
@@ -1016,5 +1023,139 @@ describe('clampContextTier', () => {
 
   it('returns fallback for an unrecognized tier value', () => {
     expect(clampContextTier('turbo', ['default', 'long_context'])).toBe('default');
+  });
+});
+
+// ============================================================================
+// Central model resolver (agents/model-selector) — #1720
+// ============================================================================
+
+describe('central resolver: config, session, fallback sources + rationale (#1720)', () => {
+  type Opts = ModelResolutionOptions;
+  const describeCall = (opts: Opts) =>
+    `resolveAgentModel(${JSON.stringify(opts, (_k, v) => (v instanceof Set ? [...v] : v))})`;
+
+  function expectResolution(opts: Opts, model: string, source: string): ResolvedModel {
+    const result = resolveAgentModel(opts);
+    expect(
+      { model: result.model, source: result.source },
+      `${describeCall(opts)} should pick '${model}' from '${source}', got '${result.model}' from '${result.source}'`,
+    ).toEqual({ model, source });
+    expect(
+      typeof result.rationale === 'string' && result.rationale.length > 0,
+      `${describeCall(opts)} returned no rationale`,
+    ).toBe(true);
+    return result;
+  }
+
+  it('exports the documented precedence order', () => {
+    expect(
+      [...MODEL_RESOLUTION_PRECEDENCE],
+      'MODEL_RESOLUTION_PRECEDENCE must be user-override > config > session > charter > task-auto > default',
+    ).toEqual(['user-override', 'config', 'session', 'charter', 'task-auto', 'default']);
+  });
+
+  it('config source: persistent .squad/config.json model wins over session, charter and task', () => {
+    const r = expectResolution(
+      { configModel: 'cfg-model', sessionModel: 'sess-model', charterPreference: 'charter-model', taskType: 'code' },
+      'cfg-model',
+      'config',
+    );
+    expect(r.rationale, `config rationale should name the model and config file: '${r.rationale}'`).toMatch(
+      /config\.json.*'cfg-model'/,
+    );
+  });
+
+  it('session source: session model wins over charter and task', () => {
+    const r = expectResolution(
+      { sessionModel: 'sess-model', charterPreference: 'charter-model', taskType: 'visual' },
+      'sess-model',
+      'session',
+    );
+    expect(r.rationale, `session rationale should say the model is inherited: '${r.rationale}'`).toMatch(
+      /session model 'sess-model' inherited/,
+    );
+  });
+
+  it('user-override still beats config and session', () => {
+    expectResolution(
+      { userOverride: 'spawn-model', configModel: 'cfg-model', sessionModel: 'sess-model' },
+      'spawn-model',
+      'user-override',
+    );
+  });
+
+  it('applies every precedence layer in order as higher layers are removed', () => {
+    const full: Opts = {
+      userOverride: 'L-user',
+      configModel: 'L-config',
+      sessionModel: 'L-session',
+      charterPreference: 'L-charter',
+      taskType: 'code',
+    };
+    const keys: (keyof Opts)[] = ['userOverride', 'configModel', 'sessionModel', 'charterPreference', 'taskType'];
+    const observed: string[] = [];
+    const opts: Opts = { ...full };
+    for (const key of [...keys, undefined]) {
+      const result = resolveAgentModel(opts);
+      observed.push(`${result.source}`);
+      expect(result.rationale, `${describeCall(opts)} returned no rationale`).toBeTruthy();
+      if (key) delete opts[key];
+    }
+    expect(observed, `sources observed while peeling layers off ${JSON.stringify(full)}`).toEqual([
+      ...MODEL_RESOLUTION_PRECEDENCE,
+    ]);
+  });
+
+  it("'auto' at config or session means no preference and falls through", () => {
+    expectResolution({ configModel: 'auto', sessionModel: 'auto', charterPreference: 'charter-model' }, 'charter-model', 'charter');
+  });
+
+  it('session inheritance: every sub-agent spawn inherits the session model, whatever its charter or task', () => {
+    const sessionModel = 'hydrafusion';
+    const spawns: Opts[] = [
+      { charterPreference: 'auto', taskType: 'docs' },
+      { charterPreference: 'gpt-5.6-sol', taskType: 'visual' },
+      { taskType: 'code', economyMode: true },
+      { taskType: 'mechanical' },
+      {},
+    ];
+    for (const spawn of spawns) {
+      expectResolution({ ...spawn, sessionModel }, sessionModel, 'session');
+    }
+  });
+
+  it('task-auto and default results carry a rationale', () => {
+    const task = expectResolution({ taskType: 'docs' }, MODELS.FALLBACK_CHAINS.fast[0], 'task-auto');
+    expect(task.rationale, `task-auto rationale should name the task type: '${task.rationale}'`).toMatch(/docs task/);
+    const def = expectResolution({}, MODELS.FALLBACK_CHAINS.fast[0], 'default');
+    expect(def.rationale, `default rationale should say nothing matched: '${def.rationale}'`).toMatch(/default/);
+  });
+
+  it('fallback source: an unavailable chosen model is replaced by the next available chain entry', () => {
+    const chain = MODELS.FALLBACK_CHAINS.standard;
+    const opts: Opts = { charterPreference: chain[0], unavailableModels: [chain[0], chain[1]] };
+    const r = expectResolution(opts, chain[2], 'fallback');
+    expect(r.fallbackFrom, `${describeCall(opts)} should record what it fell back from`).toEqual({
+      model: chain[0],
+      source: 'charter',
+    });
+    expect(r.rationale, `fallback rationale should name the unavailable model: '${r.rationale}'`).toContain(
+      `'${chain[0]}' (charter) unavailable`,
+    );
+  });
+
+  it('fallback source: an exhausted chain asks the caller to omit the model parameter', () => {
+    const chain = MODELS.FALLBACK_CHAINS.fast;
+    const opts: Opts = { taskType: 'docs', unavailableModels: [...chain] };
+    const r = resolveAgentModel(opts);
+    expect(
+      { source: r.source, omitModel: r.omitModel, model: r.model },
+      `${describeCall(opts)} should signal omit-model fallback`,
+    ).toEqual({ source: 'fallback', omitModel: true, model: '' });
+  });
+
+  it('available models are not touched by the fallback step', () => {
+    expectResolution({ sessionModel: 'sess-model', unavailableModels: ['other-model'] }, 'sess-model', 'session');
   });
 });

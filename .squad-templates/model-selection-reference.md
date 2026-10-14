@@ -2,65 +2,75 @@
 
 ## Per-Agent Model Selection
 
-Before spawning an agent, determine which model to use. Check these layers in order — first match wins:
+Before spawning an agent, resolve its model with the central resolver (`resolveModel` in `@bradygaster/squad-sdk`). Apply the precedence below; first match wins. Every result carries a **source** and a **rationale**, and both appear in the spawn acknowledgment.
 
-**Layer 0 — Persistent Config (`.squad/config.json`):** On session start, read `.squad/config.json`. If `agentModelOverrides.{agentName}` exists, use that model for this specific agent. Otherwise, if `defaultModel` exists, use it for ALL agents. This layer survives across sessions — the user set it once and it sticks.
+Spawn guidance never names a model ID. It reasons in sources and tiers (`premium`, `standard`, `fast`); **Appendix A** is the only place that turns a tier into model IDs.
+
+| # | Source | Where the model comes from |
+|---|--------|----------------------------|
+| 1 | `user-override` | Explicit per-spawn directive in the current request ("use {model} for this task") |
+| 2 | `config` | Persistent `.squad/config.json`: `agentModelOverrides.{agentName}`, otherwise `defaultModel` |
+| 3 | `session` | The model picked for this session (by the user or the session itself); inherited by every sub-agent spawn |
+| 4 | `charter` | The agent charter's `## Model` → `**Preferred:**` value, unless it is `auto` |
+| 5 | `task-auto` | Task-aware tier selection (cost first, unless code is being written) |
+| 6 | `default` | Nothing else matched |
+| — | `fallback` | Not a layer: replaces the chosen model only after it is known to be unavailable |
+
+`auto` at any layer means "no preference here"; continue to the next layer.
+
+**`user-override` — per-spawn directive:** A directive that names a model for one specific spawn ("have {agent} use {model} for this") applies to that spawn only. It does not persist and does not change the session model.
+
+**`config` — persistent config (`.squad/config.json`):** On session start, read `.squad/config.json`. If `agentModelOverrides.{agentName}` exists, use that model for this specific agent. Otherwise, if `defaultModel` exists, use it for ALL agents. This layer survives across sessions — the user set it once and it sticks. Because `config` outranks `session`, a session pick does not replace a saved config preference; tell the user to clear the config preference if they want the session pick to win.
 
 - **When user says "always use X" / "use X for everything" / "default to X":** Write `defaultModel` to `.squad/config.json`. Acknowledge: `✅ Model preference saved: {model} — all future sessions will use this until changed.`
 - **When user says "use X for {agent}":** Write to `agentModelOverrides.{agent}` in `.squad/config.json`. Acknowledge: `✅ {Agent} will always use {model} — saved to config.`
 - **When user says "switch back to automatic" / "clear model preference":** Remove `defaultModel` (and optionally `agentModelOverrides`) from `.squad/config.json`. Acknowledge: `✅ Model preference cleared — returning to automatic selection.`
 
-**Layer 1 — Session Directive:** Did the user specify a model for this session? ("use opus for this session", "save costs"). If yes, use that model. Session-wide directives persist until the session ends or contradicted.
+**`session` — session model:** If the user picked a model for this session ("use {model} for this session"), or the session itself is running on a model the user chose, that is the session model. Session-wide directives persist until the session ends or are contradicted. Pass the session model to **every** sub-agent spawn unchanged, with source `session`; sub-agents inherit it rather than re-resolving from their charter or task. Pass it through even when it is not listed in Appendix A (for example, an opt-in or preview model the user selected).
 
-**Layer 2 — Charter Preference:** Does the agent's charter have a `## Model` section with `Preferred` set to a specific model (not `auto`)? If yes, use that model.
+**`charter` — charter preference:** Does the agent's charter have a `## Model` section with `**Preferred:**` set to a specific model (not `auto`)? If yes, use that model.
 
-**Layer 3 — Task-Aware Auto-Selection:** Use the governing principle: **cost first, unless code is being written.** Match the agent's task to determine output type, then select accordingly:
+**`task-auto` — task-aware auto-selection:** Use the governing principle: **cost first, unless code is being written.** Match the agent's task to its output type, select the tier, and use the head of that tier's fallback chain (Appendix A):
 
-| Task Output | Model | Tier | Rule |
-|-------------|-------|------|------|
-| Writing code (implementation, refactoring, test code, bug fixes) | `gpt-5.6-terra` | Standard | Quality and accuracy matter for code. Use standard tier. |
-| Writing prompts or agent designs (structured text that functions like code) | `gpt-5.6-terra` | Standard | Prompts are executable — treat like code. |
-| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `gpt-5.6-luna` | Fast | Cost first. Luna handles non-code tasks. |
-| Visual/design work requiring image analysis | `gpt-5.6-sol` | Premium | Vision capability required. Overrides cost rule. |
+| Task Output | Tier | Rule |
+|-------------|------|------|
+| Writing code (implementation, refactoring, test code, bug fixes) | Standard | Quality and accuracy matter for code. |
+| Writing prompts or agent designs (structured text that functions like code) | Standard | Prompts are executable — treat like code. |
+| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | Fast | Cost first. |
+| Visual/design work requiring image analysis | Premium | Vision capability required. Overrides cost rule. |
 
-**Role-to-model mapping** (applying cost-first principle):
+**Role-to-tier mapping** (applying the cost-first principle):
 
-| Role | Default Model | Why | Override When |
+| Role | Default Tier | Why | Override When |
 |------|--------------|-----|---------------|
-| Core Dev / Backend / Frontend | `gpt-5.6-terra` | Writes code — quality first | Heavy code gen → `gpt-5.3-codex` |
-| Tester / QA | `gpt-5.6-terra` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
-| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
-| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
-| Copilot SDK Expert | `gpt-5.6-terra` | Technical analysis that often touches code | Pure research → `gpt-5.6-luna` |
-| Designer / Visual | `gpt-5.6-sol` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
-| DevRel / Writer | `gpt-5.6-luna` | Docs and writing — not code | — |
-| Scribe / Logger | `gpt-5.6-luna` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
-| Git / Release | `gpt-5.6-luna` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
+| Core Dev / Backend / Frontend | Standard | Writes code — quality first | Heavy code gen → code specialist |
+| Tester / QA | Standard | Writes test code — quality first | Simple test scaffolding → fast |
+| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → fast |
+| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → standard; research/analysis → fast |
+| Copilot SDK Expert | Standard | Technical analysis that often touches code | Pure research → fast |
+| Designer / Visual | Premium | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
+| DevRel / Writer | Fast | Docs and writing — not code | — |
+| Scribe / Logger | Fast | Mechanical file ops — cheapest possible | — (never bump Scribe) |
+| Git / Release | Fast | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
 
 **Task complexity adjustments** (apply at most ONE — no cascading):
 - **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
-- **Bump DOWN to fast/cheap:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
-- **Switch to code specialist (`gpt-5.3-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
-- **Switch to analytical diversity (`gemini-3.1-pro`):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
+- **Bump DOWN to fast:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
+- **Switch to the code specialist (Appendix A):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
+- **Switch to the analytical-diversity model (Appendix A):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
 
-**Layer 4 — Default:** If nothing else matched, use `gpt-5.6-luna`. Cost wins when in doubt, unless code is being produced.
+**`default`:** If nothing else matched, use the head of the fast tier chain. Cost wins when in doubt, unless code is being produced.
 
-**Fallback chains — when a model is unavailable:**
+**`fallback` — when a model is unavailable:**
 
-If a spawn fails because the selected model is unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), silently retry with the next model in the chain. Do NOT tell the user about fallback attempts. Maximum 3 retries before using the platform default fallback.
-
-```
-Premium:  gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
-Standard: gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro → (omit model param)
-Fast:     gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
-```
+If the resolved model is known to be unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), or a spawn fails for that reason, silently retry with the next model in its tier's fallback chain (Appendix A). The source becomes `fallback` and the rationale names the unavailable model and its original source. Do NOT tell the user about retry attempts. Maximum 3 retries before using the platform default fallback.
 
 `(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the platform default fallback — it lets the platform choose the model.
 
 **Fallback rules:**
-- If the user specified a provider ("use Claude"), fall back within that provider only before using the platform default fallback
+- If the user specified a provider ("use {provider}"), fall back within that provider only before using the platform default fallback
 - Never fall back UP in tier — a fast/cheap task should not land on a premium model
-- Log fallbacks to the orchestration log for debugging, but never surface to the user unless asked
+- Log fallbacks (source `fallback` plus rationale) to the orchestration log for debugging, but never surface retries to the user unless asked
 
 **Passing the model to spawns:**
 
@@ -76,23 +86,35 @@ prompt: |
   ...
 ```
 
-Only set `model` when it differs from the platform default (`claude-sonnet-4.6`). If the resolved model IS `claude-sonnet-4.6`, you MAY omit the `model` parameter — the platform uses it as default.
-
 If you've exhausted the fallback chain and reached the platform default fallback, omit the `model` parameter entirely.
 
-**Spawn output format — show the model choice:**
+**Spawn output format — show the model, source and rationale:**
 
-When spawning, include the model in your acknowledgment:
+Every spawn acknowledgment names the resolved model, its source and a short rationale (the resolver's `rationale`, shortened if needed). Substitute the actual resolved model for `{model}`:
 
 ```
-🔧 Runtime Engineer (claude-sonnet-5) — refactoring auth module
-🎨 Experience Engineer (gpt-5.6-sol · vision) — designing color system
-📋 Scribe (gpt-5.6-luna · fast) — logging session
-⚡ Lead (gpt-5.6-sol · bumped for architecture) — reviewing proposal
-📝 Docs Engineer (gpt-5.6-luna · fast) — updating docs
+{emoji} {Name} ({model} · {source}) — {task summary} — {rationale}
+
+🔧 Runtime Engineer ({model} · session) — refactoring auth module — session model inherited by this spawn
+🎨 Experience Engineer ({model} · task-auto) — designing color system — visual task needs vision → premium tier
+📋 Scribe ({model} · task-auto) — logging session — mechanical task → fast tier
+⚡ Lead ({model} · config) — reviewing proposal — agentModelOverrides.lead in .squad/config.json
+📝 Docs Engineer ({model} · fallback) — updating docs — charter model unavailable; next in fast chain
 ```
 
-Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
+## Appendix A — Model catalog snapshot
+
+This appendix is catalog data, not spawn guidance. It mirrors `MODELS.FALLBACK_CHAINS` and `MODEL_CATALOG` in the SDK and is maintained with the model catalog. The guidance above refers only to tiers and sources; these lists turn a tier into model IDs.
+
+**Fallback chains:**
+
+```
+Premium:  gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
+Standard: gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro → (omit model param)
+Fast:     gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
+```
+
+**Specialists:** code specialist `gpt-5.3-codex` (standard); analytical diversity `gemini-3.1-pro` (standard).
 
 **Valid models (current platform catalog):**
 
