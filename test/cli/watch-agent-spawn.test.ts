@@ -15,6 +15,7 @@ const {
   mockFsMkdirSync,
   mockFsReadFileSync,
   mockFsUnlinkSync,
+  mockFsWriteFileSync,
 } = vi.hoisted(() => ({
   mockExecFile: vi.fn((...args: unknown[]) => {
     const cb = args.find(a => typeof a === 'function') as
@@ -27,6 +28,7 @@ const {
   mockFsMkdirSync: vi.fn(),
   mockFsReadFileSync: vi.fn((): string => ''),
   mockFsUnlinkSync: vi.fn(),
+  mockFsWriteFileSync: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -39,13 +41,18 @@ vi.mock('node:fs', () => ({
   mkdirSync: mockFsMkdirSync,
   readFileSync: mockFsReadFileSync,
   unlinkSync: mockFsUnlinkSync,
+  writeFileSync: mockFsWriteFileSync,
 }));
 
 import {
+  WINDOWS_MAX_INLINE_ARG_LENGTH,
   buildAgentCommand,
   buildCopilotCommand,
+  escapeArgs,
   parseCopilotUsageOutput,
+  prepareArgsForSpawn,
   spawnAgent,
+  spillPromptArgForCmd,
   withCopilotUsageOutput,
 } from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
@@ -257,3 +264,59 @@ describe('agent-spawn: Copilot usage capture', () => {
     expect(missing.usageError).toBe('Copilot usage output was not created');
   });
 });
+
+describe('agent-spawn: Windows multiline and oversized prompt handling (#2070)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFsExistsSync.mockReturnValue(true);
+  });
+
+  it('spills multiline prompt arguments to a temp .md file and returns a single-line pointer', () => {
+    const multilinePrompt = 'You are an AI agent on a software development team.\n\nYOUR CHARTER:\n# Ralph\n\nHere are the current open squad issues:\n- #2070: Fix Windows prompt truncation';
+    const tempFiles: string[] = [];
+
+    const rewritten = spillPromptArgForCmd(multilinePrompt, tempFiles);
+
+    expect(tempFiles).toHaveLength(1);
+    expect(tempFiles[0]).toMatch(/squad-prompts[\\/]prompt-.*\.md$/);
+    expect(mockFsWriteFileSync).toHaveBeenCalledWith(tempFiles[0], multilinePrompt, 'utf8');
+    expect(rewritten).not.toMatch(/[\r\n]/);
+    expect(rewritten).toContain(tempFiles[0]!);
+    expect(rewritten).toContain('Your complete instructions are in the file');
+  });
+
+  it('spills single-line prompts exceeding WINDOWS_MAX_INLINE_ARG_LENGTH to a temp file', () => {
+    const longPrompt = 'x'.repeat(WINDOWS_MAX_INLINE_ARG_LENGTH + 100);
+    const tempFiles: string[] = [];
+
+    const rewritten = spillPromptArgForCmd(longPrompt, tempFiles);
+
+    expect(tempFiles).toHaveLength(1);
+    expect(mockFsWriteFileSync).toHaveBeenCalledWith(tempFiles[0], longPrompt, 'utf8');
+    expect(rewritten.length).toBeLessThan(500);
+  });
+
+  it('prepareArgsForSpawn escapes spilled prompt for cmd.exe on Windows and cleans up temp file', () => {
+    const multilinePrompt = 'Line 1\nLine 2\nLine 3';
+    const prepared = prepareArgsForSpawn(['-p', multilinePrompt, '--yolo'], true);
+
+    expect(prepared.tempFiles).toHaveLength(1);
+    expect(prepared.args[0]).toBe('-p');
+    expect(prepared.args[1]).toMatch(/^"Your complete instructions are in the file .+ - read that whole file first and follow it exactly as if it were this prompt\."$/);
+    expect(prepared.args[1]).not.toMatch(/[\r\n]/);
+    expect(prepared.args[2]).toBe('--yolo');
+
+    prepared.cleanup();
+    expect(mockFsUnlinkSync).toHaveBeenCalledWith(prepared.tempFiles[0]);
+  });
+
+  it('leaves args untouched when isWindows is false', () => {
+    const multilinePrompt = 'Line 1\nLine 2';
+    const prepared = prepareArgsForSpawn(['-p', multilinePrompt], false);
+
+    expect(prepared.tempFiles).toHaveLength(0);
+    expect(prepared.args).toEqual(['-p', multilinePrompt]);
+    expect(escapeArgs(['-p', multilinePrompt], false)).toEqual(['-p', multilinePrompt]);
+  });
+});
+

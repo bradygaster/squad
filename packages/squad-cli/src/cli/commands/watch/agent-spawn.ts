@@ -10,14 +10,18 @@
  */
 
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import type { WatchContext } from './types.js';
 import { withAdditionalMcpConfig } from '../../core/copilot-invocation.js';
 
 /** True when running on Windows — used to gate `shell: true`. */
 export const IS_WINDOWS = process.platform === 'win32';
+
+/** Maximum single-arg length before spilling to a temp prompt file on Windows (cmd.exe limit is 8,191 chars). */
+export const WINDOWS_MAX_INLINE_ARG_LENGTH = 4_000;
 
 export interface CopilotUsageOutput {
   currentModel: string;
@@ -110,13 +114,78 @@ export function escapeForCmd(arg: string): string {
   return `"${escaped}"`;
 }
 
+export interface PreparedWindowsArgs {
+  args: string[];
+  tempFiles: string[];
+  cleanup: () => void;
+}
+
+/**
+ * Spill a multiline or oversized prompt argument to a temporary `.md` file
+ * so `cmd.exe /d /s /c` does not truncate at the first newline or hit the
+ * 8,191-character command-line limit (#2070).
+ */
+export function spillPromptArgForCmd(
+  arg: string,
+  tempFiles?: string[],
+): string {
+  if (
+    typeof arg !== 'string' ||
+    (!/[\r\n]/.test(arg) && arg.length <= WINDOWS_MAX_INLINE_ARG_LENGTH)
+  ) {
+    return arg;
+  }
+
+  try {
+    const dir = path.join(os.tmpdir(), 'squad-prompts');
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(
+      dir,
+      `prompt-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}.md`,
+    );
+    writeFileSync(file, arg, 'utf8');
+    tempFiles?.push(file);
+    return `Your complete instructions are in the file ${file} - read that whole file first and follow it exactly as if it were this prompt.`;
+  } catch {
+    // If temp-file creation fails (e.g. read-only tmpdir), collapse newlines so cmd.exe does not truncate at line 1.
+    return arg.replace(/\r?\n+/g, ' ');
+  }
+}
+
+/**
+ * Prepare and escape an array of args for cmd.exe shell invocation, tracking
+ * any temporary prompt files so the caller can clean them up when the process exits.
+ */
+export function prepareArgsForSpawn(
+  args: string[],
+  isWindows: boolean = IS_WINDOWS,
+): PreparedWindowsArgs {
+  if (!isWindows) {
+    return { args, tempFiles: [], cleanup: () => {} };
+  }
+  const tempFiles: string[] = [];
+  const prepared = args
+    .map(arg => spillPromptArgForCmd(arg, tempFiles))
+    .map(escapeForCmd);
+  const cleanup = (): void => {
+    for (const file of tempFiles) {
+      try {
+        if (existsSync(file)) unlinkSync(file);
+      } catch {
+        // Best-effort cleanup of temp prompt files
+      }
+    }
+  };
+  return { args: prepared, tempFiles, cleanup };
+}
+
 /**
  * Escape an array of args for cmd.exe shell invocation.
  * Only applies on Windows — returns args unchanged on other platforms.
  */
-export function escapeArgs(args: string[]): string[] {
-  if (!IS_WINDOWS) return args;
-  return args.map(escapeForCmd);
+export function escapeArgs(args: string[], isWindows: boolean = IS_WINDOWS): string[] {
+  if (!isWindows) return args;
+  return args.map(arg => spillPromptArgForCmd(arg)).map(escapeForCmd);
 }
 
 /**
@@ -242,7 +311,7 @@ export function spawnWithTimeout(
   cwd: string,
   timeoutMs: number,
 ): Promise<void> {
-  const safeArgs = escapeArgs(args);
+  const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
   return new Promise<void>((resolve, reject) => {
     execFile(cmd, safeArgs, {
       cwd,
@@ -250,6 +319,7 @@ export function spawnWithTimeout(
       maxBuffer: 50 * 1024 * 1024,
       shell: IS_WINDOWS,
     }, (err) => {
+      cleanup();
       if (err) {
         const execErr = err as Error & { killed?: boolean };
         reject(new Error(
@@ -281,7 +351,7 @@ export function spawnAgent(
   pidTracking?: { tracker: NonNullable<WatchContext['pidTracker']>; label: string },
   usageOutputFile?: string,
 ): Promise<AgentSpawnResult> {
-  const safeArgs = escapeArgs(args);
+  const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
   return new Promise<AgentSpawnResult>((resolve) => {
     const cp = execFile(
       cmd,
@@ -293,6 +363,7 @@ export function spawnAgent(
         shell: IS_WINDOWS,
       },
       (err) => {
+        cleanup();
         const usageResult = usageOutputFile
           ? readCopilotUsageOutput(usageOutputFile)
           : {};

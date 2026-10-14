@@ -21,6 +21,7 @@ const {
   mockFsMkdirSync,
   mockFsReadFileSync,
   mockFsUnlinkSync,
+  mockFsWriteFileSync,
   mockRmSync,
   mockListModels,
   mockDisconnect,
@@ -41,6 +42,7 @@ const {
   mockFsMkdirSync: vi.fn(),
   mockFsReadFileSync: vi.fn((): string => ''),
   mockFsUnlinkSync: vi.fn(),
+  mockFsWriteFileSync: vi.fn(),
   mockRmSync: vi.fn(),
   mockListModels: vi.fn().mockResolvedValue([]),
   mockDisconnect: vi.fn().mockResolvedValue(undefined),
@@ -71,6 +73,7 @@ vi.mock('node:fs', () => ({
   mkdirSync: mockFsMkdirSync,
   readFileSync: mockFsReadFileSync,
   unlinkSync: mockFsUnlinkSync,
+  writeFileSync: mockFsWriteFileSync,
   rmSync: mockRmSync,
 }));
 
@@ -227,18 +230,18 @@ describe('Watch Capabilities', () => {
         // TEMPLATE_MANIFEST destination ('ralph-instructions.md' under .squad/)
         // matches the lookup in execute.ts.
         mockFsExistsSync.mockImplementation((p: unknown) => {
-          return typeof p === 'string' && p.endsWith('.squad/ralph-instructions.md');
+          return typeof p === 'string' && p.replace(/\\/g, '/').endsWith('.squad/ralph-instructions.md');
         });
         const issues: ExecutableWorkItem[] = [
           { number: 1, title: 'Task', labels: [{ name: 'squad' }], assignees: [] },
         ];
         const prompt = buildAgentPrompt(issues, '/some/repo');
         expect(mockFsExistsSync).toHaveBeenCalledWith(
-          expect.stringContaining('.squad/ralph-instructions.md'),
+          expect.stringMatching(/\.squad[\\/]ralph-instructions\.md$/),
         );
         // Path must be constructed from teamRoot, not a global path
         const [calledPath] = mockFsExistsSync.mock.calls[0] as [string];
-        expect(calledPath).toContain('/some/repo');
+        expect(calledPath.replace(/\\/g, '/')).toContain('/some/repo');
         expect(prompt).toContain('Ralph, Go!');
       });
 
@@ -370,6 +373,7 @@ describe('Watch Capabilities', () => {
         expect(result.success).toBe(true);
         expect(result.summary).toContain('agent dispatched');
         expect(result.data?.dispatched).toBe(1);
+        expect(result.data?.executed).toBe(1);
       });
 
       it('reports estimated context utilization from Copilot usage output', async () => {
@@ -400,7 +404,9 @@ describe('Watch Capabilities', () => {
           utilization: 0.5,
           source: 'estimated',
         });
-        expect(mockFsUnlinkSync).toHaveBeenCalledOnce();
+        expect(mockFsUnlinkSync).toHaveBeenCalledWith(
+          expect.stringMatching(/context-usage-.*\.json$/),
+        );
         expect(mockDisconnect).toHaveBeenCalledOnce();
       });
 
@@ -415,7 +421,10 @@ describe('Watch Capabilities', () => {
 
         const args = mockExecFile.mock.calls.at(-1)?.[1] as string[];
         expect(args).not.toContain('--usage-output-file');
-        expect(mockFsMkdirSync).not.toHaveBeenCalled();
+        expect(mockFsMkdirSync).not.toHaveBeenCalledWith(
+          expect.stringMatching(/[\\/]log$/),
+          expect.anything(),
+        );
       });
 
       it('still dispatches when usage capture cannot be initialized', async () => {
