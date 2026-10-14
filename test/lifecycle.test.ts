@@ -18,6 +18,7 @@ import {
 } from '@bradygaster/squad-sdk/agents';
 import { SquadClientWithPool } from '@bradygaster/squad-sdk/client';
 import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
+import { MODELS } from '@bradygaster/squad-sdk';
 
 describe('Agent Lifecycle Manager', () => {
   let tempDir: string;
@@ -523,6 +524,55 @@ describe('Agent Lifecycle Manager — persistent model preference + provenance (
     expect(resolved, `model.resolved events: ${JSON.stringify(events)}`).toHaveLength(1);
     expect(resolved[0]).toMatchObject({ model: 'persisted-model', source: 'config' });
     expect(String(resolved[0]!.rationale)).toMatch(/config\.json/);
+  });
+
+  it('inherits the session model (e.g. opt-in hydrafusion) over the charter in the created session', async () => {
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', taskType: 'code', sessionModel: 'hydrafusion' });
+    expect(sessionConfigs[0]?.model, `createSession with sessionModel 'hydrafusion': ${JSON.stringify(sessionConfigs[0])}`).toBe('hydrafusion');
+    expect(handle.model).toBe('hydrafusion');
+    expect(handle.modelResolution?.source, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toBe('session');
+    const resolved = events.filter((e) => e.event === 'model.resolved');
+    expect(resolved[0], `model.resolved events: ${JSON.stringify(events)}`).toMatchObject({ model: 'hydrafusion', source: 'session' });
+  });
+
+  it("'auto' session model falls through to the charter", async () => {
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', sessionModel: ' AUTO ' });
+    expect(sessionConfigs[0]?.model, `createSession with sessionModel ' AUTO ': ${JSON.stringify(sessionConfigs[0])}`).toBe('charter-model');
+    expect(handle.modelResolution?.source).toBe('charter');
+  });
+
+  it('explicit spawn override and persistent config both beat the session model', async () => {
+    const explicit = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', modelOverride: 'spawn-model', sessionModel: 'hydrafusion' });
+    expect(sessionConfigs[0]?.model, `override vs session: ${JSON.stringify(sessionConfigs[0])}`).toBe('spawn-model');
+    expect(explicit.modelResolution?.source).toBe('user-override');
+
+    await writeConfig({ agentModelOverrides: { 'pref-agent': 'persisted-model' } });
+    const persisted = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', sessionModel: 'hydrafusion' });
+    expect(sessionConfigs[1]?.model, `config vs session: ${JSON.stringify(sessionConfigs[1])}`).toBe('persisted-model');
+    expect(persisted.modelResolution?.source).toBe('config');
+  });
+
+  it('forwards unavailableModels: falls forward along the chain and records fallback provenance', async () => {
+    const chain = MODELS.FALLBACK_CHAINS.standard;
+    const handle = await manager.spawnAgent({
+      agentName: 'pref-agent', task: 'Work', modelOverride: chain[1], unavailableModels: [chain[1]!],
+    });
+    expect(sessionConfigs[0]?.model, `createSession with '${chain[1]}' unavailable: ${JSON.stringify(sessionConfigs[0])}`).toBe(chain[2]);
+    expect(handle.modelResolution).toMatchObject({ source: 'fallback', fallbackFrom: { model: chain[1], source: 'user-override' } });
+  });
+
+  it('exhausted fallback omits the model key from the SDK session config (no undefined own property)', async () => {
+    const chain = MODELS.FALLBACK_CHAINS.standard;
+    const last = chain[chain.length - 1]!;
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', sessionModel: last, unavailableModels: [last] });
+    const config = sessionConfigs[0]!;
+    expect(
+      Object.prototype.hasOwnProperty.call(config, 'model'),
+      `createSession config must not carry a 'model' key when '${last}' (last chain entry) is unavailable: ${JSON.stringify(Object.keys(config))} model=${String(config.model)}`,
+    ).toBe(false);
+    expect(handle.modelResolution, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toMatchObject({
+      source: 'fallback', omitModel: true, fallbackFrom: { model: last, source: 'session' },
+    });
   });
 });
 

@@ -32,7 +32,8 @@ import {
   clampContextTier,
 } from '@bradygaster/squad-sdk/config';
 import {
-  resolveModel as resolveAgentModel,
+  resolveAgentModel,
+  resolveModel as centralResolveModel,
   MODEL_RESOLUTION_PRECEDENCE,
   type ModelResolutionOptions,
   type ResolvedModel,
@@ -1248,15 +1249,60 @@ describe('legacy config resolveModel delegates to the central resolver (#1720)',
 });
 
 describe('documented resolver entry point (#1720)', () => {
-  it('model-selection-reference names the subpath that exports the provenance-returning resolver', async () => {
+  it('@bradygaster/squad-sdk/agents exports resolveAgentModel as the same function as its resolveModel', () => {
+    expect(typeof resolveAgentModel, '@bradygaster/squad-sdk/agents must export resolveAgentModel').toBe('function');
+    expect(resolveAgentModel, 'resolveAgentModel must be an alias of the agents resolveModel, not a fork').toBe(centralResolveModel);
+  });
+
+  it('model-selection-reference names the subpath that exports resolveAgentModel with provenance', async () => {
     const reference = readFileSync(join(import.meta.dirname, '..', '.squad-templates', 'model-selection-reference.md'), 'utf8');
-    const match = reference.match(/`resolveModel` (?:from|in) `(@bradygaster\/squad-sdk[^`]*)`/);
-    expect(match, 'model-selection-reference.md must name the module that exports resolveModel').toBeTruthy();
-    const mod = (await import(match![1]!)) as { resolveModel: (o: unknown) => unknown };
-    const r = mod.resolveModel({ taskType: 'docs', charterPreference: 'auto' }) as ResolvedModel;
+    const match = reference.match(/`resolveAgentModel` (?:from|in) `(@bradygaster\/squad-sdk[^`]*)`/);
+    expect(match, 'model-selection-reference.md must name the module that exports resolveAgentModel').toBeTruthy();
+    const mod = (await import(match![1]!)) as { resolveAgentModel?: (o: unknown) => unknown };
+    expect(typeof mod.resolveAgentModel, `${match![1]} must export resolveAgentModel`).toBe('function');
+    const r = mod.resolveAgentModel!({ taskType: 'docs', charterPreference: 'auto' }) as ResolvedModel;
     expect(
       typeof r === 'object' && r !== null && typeof r.source === 'string' && typeof r.rationale === 'string',
-      `${match![1]} resolveModel must return {model, source, rationale}; got ${JSON.stringify(r)}`,
+      `${match![1]} resolveAgentModel must return {model, source, rationale}; got ${JSON.stringify(r)}`,
     ).toBe(true);
+  });
+});
+
+describe('cost policy composes with forward-only availability fallback (#1720)', () => {
+  const versatile = { costPolicy: { maxCategory: 'versatile' as const } };
+  const chain = MODELS.FALLBACK_CHAINS.standard;
+
+  it('explicit over-ceiling pick that is unavailable never falls back to an earlier chain entry', () => {
+    const opts: ModelResolutionOptions = { userOverride: 'gpt-5.4', config: versatile, unavailableModels: ['gpt-5.4'] };
+    const r = resolveAgentModel(opts);
+    const earlier = chain.slice(0, chain.indexOf('gpt-5.4'));
+    expect(earlier, `${JSON.stringify(opts)} chose '${r.model}', which precedes 'gpt-5.4' in ${JSON.stringify(chain)}`).not.toContain(r.model);
+    expect(
+      { model: r.model, source: r.source, fallbackFrom: r.fallbackFrom },
+      `${JSON.stringify(opts)} must fall forward to the next in-ceiling entry after 'gpt-5.4'`,
+    ).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback', fallbackFrom: { model: 'gpt-5.4', source: 'user-override' } });
+    expect(r.policy?.action).toBe('warn-allow-explicit');
+  });
+
+  it('explicit over-ceiling pick with every later in-ceiling entry unavailable omits the model instead of wrapping', () => {
+    const opts: ModelResolutionOptions = {
+      userOverride: 'gpt-5.4', config: versatile, unavailableModels: ['gpt-5.4', 'claude-sonnet-4.5'],
+    };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, omitModel: r.omitModel }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: '', omitModel: true });
+  });
+
+  it('session over-ceiling pick keeps the forward cursor under a session cost policy', () => {
+    const opts: ModelResolutionOptions = {
+      sessionModel: 'gpt-5.5', sessionCostPolicy: { maxCategory: 'versatile' }, unavailableModels: ['gpt-5.5'],
+    };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
+  });
+
+  it('within-ceiling pick that is unavailable moves forward over pruned entries', () => {
+    const opts: ModelResolutionOptions = { userOverride: 'claude-sonnet-4.6', config: versatile, unavailableModels: ['claude-sonnet-4.6'] };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
   });
 });

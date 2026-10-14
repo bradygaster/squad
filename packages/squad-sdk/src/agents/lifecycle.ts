@@ -99,6 +99,20 @@ export interface SpawnAgentOptions {
   /** User-specified model override */
   modelOverride?: string;
 
+  /**
+   * Model picked for the current session, inherited by this spawn with source
+   * `session` (below explicit override and persistent config, above charter).
+   * Any id passes through, including opt-in preview models.
+   */
+  sessionModel?: string;
+
+  /**
+   * Model ids known to be unavailable. The resolver falls forward along the
+   * fallback chain; when no candidate remains, `model` is omitted from the
+   * session config so the platform default applies.
+   */
+  unavailableModels?: Iterable<string>;
+
   /** User-specified reasoning effort override */
   reasoningEffortOverride?: SquadReasoningEffort;
 
@@ -204,6 +218,8 @@ export class AgentLifecycleManager {
       task,
       taskType = 'code',
       modelOverride,
+      sessionModel,
+      unavailableModels,
       reasoningEffortOverride,
       contextTierOverride,
       sessionCostPolicy,
@@ -256,6 +272,7 @@ export class AgentLifecycleManager {
       const modelOptions: ModelResolutionOptions = {
         userOverride: modelOverride,
         configModel: persistentConfigModel(persistent, agentName),
+        sessionModel,
         economyMode: persistent?.economyMode === true,
         charterPreference: agentConfig.resolvedModel !== undefined
           ? agentConfig.resolvedModel
@@ -264,6 +281,7 @@ export class AgentLifecycleManager {
         agentRole: agentName,
         config: this.costPolicy ? { costPolicy: this.costPolicy } : undefined,
         sessionCostPolicy,
+        unavailableModels,
       };
       
       const resolvedModel = resolveModel(modelOptions);

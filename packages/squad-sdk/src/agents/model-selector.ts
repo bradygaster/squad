@@ -160,6 +160,14 @@ export function resolveModel(options: ModelResolutionOptions): ModelResolution {
 }
 
 /**
+ * Documented provenance-returning entry point for agent model resolution.
+ * Alias of {@link resolveModel} in `@bradygaster/squad-sdk/agents`; distinct
+ * from the root `resolveModel` export, which is a legacy adapter returning
+ * only the model id.
+ */
+export const resolveAgentModel: (options: ModelResolutionOptions) => ModelResolution = resolveModel;
+
+/**
  * True when a layer value expresses a model preference. Empty values and the
  * `auto` sentinel (any case, surrounding whitespace ignored) mean "no
  * preference here; continue to the next layer".
@@ -497,8 +505,11 @@ export function finalizeResolvedModel(
     base.source === 'charter';
 
   if (isExplicit) {
-    // AC6: honor the explicit over-ceiling selection, but warn loudly.
-    const prunedRest = pruneChainToCeiling(base.fallbackChain, maxCategory, catalogMap).filter(
+    // AC6: honor the explicit over-ceiling selection, but warn loudly. Keep
+    // only chain entries after the model's own position so availability
+    // fallback stays forward-only (never back toward the chain head).
+    const position = base.fallbackChain.findIndex((id) => id.toLowerCase() === base.model.toLowerCase());
+    const prunedRest = pruneChainToCeiling(base.fallbackChain.slice(position + 1), maxCategory, catalogMap).filter(
       (id) => id !== base.model,
     );
     return {

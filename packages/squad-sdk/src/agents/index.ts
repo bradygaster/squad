@@ -64,6 +64,7 @@ export {
 // --- M1-9 Model Selection + M3-5 Model Fallback ---
 export { 
   resolveModel,
+  resolveAgentModel,
   MODEL_RESOLUTION_PRECEDENCE,
   inferTierFromModel,
   isTierFallbackAllowed,

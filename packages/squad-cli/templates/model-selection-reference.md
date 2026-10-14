@@ -2,7 +2,7 @@
 
 ## Per-Agent Model Selection
 
-Before spawning an agent, resolve its model with the central resolver (`resolveModel` from `@bradygaster/squad-sdk/agents`; it returns the model with its `source` and `rationale`). The root `@bradygaster/squad-sdk` export `resolveModel` is a legacy adapter over the same resolver that reads `.squad/config.json` and returns only the model ID. Apply the precedence below; first match wins. Every result carries a **source** and a **rationale**, and both appear in the spawn acknowledgment.
+Before spawning an agent, resolve its model with the central resolver (`resolveAgentModel` from `@bradygaster/squad-sdk/agents`, also exported there under its original name `resolveModel`; it returns the model with its `source` and `rationale`). The root `@bradygaster/squad-sdk` export `resolveModel` is a legacy adapter over the same resolver that reads `.squad/config.json` and returns only the model ID. Apply the precedence below; first match wins. Every result carries a **source** and a **rationale**, and both appear in the spawn acknowledgment.
 
 Spawn guidance never names a model ID. It reasons in sources and tiers (`premium`, `standard`, `fast`); **Appendix A** is the only place that turns a tier into model IDs.
 
