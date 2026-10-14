@@ -12,6 +12,7 @@ import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
 import type { ModelId, ModelTier } from '../runtime/config.js';
 import type { SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
+import { resolveModel as resolveCentralModel, persistentConfigModel } from '../agents/model-selector.js';
 
 /**
  * Per-token pricing in USD.
@@ -1475,18 +1476,14 @@ export function resolveContextTier(options: {
 }
 
 /**
- * Resolves the effective model for an agent spawn using the 5-layer hierarchy:
- *   Layer 0: Persistent config (.squad/config.json defaultModel)
- *   Layer 1: Session-wide user directive ("always use opus")
- *   Layer 2: Charter preference (agent's ## Model section)
- *   Layer 3: Task-aware auto-selection (code → sonnet, docs → haiku)
- *   Layer 4: Default (gpt-5.6-luna)
+ * Legacy string-returning adapter over the central model resolver
+ * (`resolveModel` in `@bradygaster/squad-sdk/agents`). It reads persistent
+ * `.squad/config.json` preferences and delegates precedence, the `auto`
+ * sentinel, and economy-mode handling to the central resolver:
+ *   config (agentModelOverrides, then defaultModel) > session directive >
+ *   charter preference > task model > default.
  *
- * Per-agent overrides from config.json take priority over the global defaultModel.
- *
- * Economy mode modifier: when active (via economyMode option or config.json),
- * shifts model selection at Layer 3 and Layer 4 to cheaper alternatives per
- * ECONOMY_MODEL_MAP. Layers 0–2 (explicit user preferences) are never overridden.
+ * Use the central resolver directly when you need the source and rationale.
  *
  * @param options - Resolution inputs
  * @returns Resolved model ID
@@ -1505,44 +1502,26 @@ export function resolveModel(options: {
   const { agentName, squadDir, sessionDirective, charterPreference, taskModel } = options;
   const storage = options.storage ?? new FSStorageProvider();
 
-  // Layer 0a: Per-agent persistent override (explicit — economy does not apply)
-  if (squadDir && agentName) {
-    const agentOverrides = readAgentModelOverrides(squadDir, storage);
-    if (agentOverrides[agentName]) {
-      return agentOverrides[agentName]!;
-    }
-  }
+  const configModel = squadDir
+    ? persistentConfigModel(
+        {
+          agentModelOverrides: agentName ? readAgentModelOverrides(squadDir, storage) : undefined,
+          defaultModel: readModelPreference(squadDir, storage) ?? undefined,
+        },
+        agentName,
+      )
+    : undefined;
 
-  // Layer 0b: Global persistent config (explicit — economy does not apply)
-  if (squadDir) {
-    const persistedModel = readModelPreference(squadDir, storage);
-    if (persistedModel) {
-      return persistedModel;
-    }
-  }
-
-  // Layer 1: Session-wide user directive (explicit — economy does not apply)
-  if (sessionDirective) {
-    return sessionDirective;
-  }
-
-  // Layer 2: Charter preference (explicit — economy does not apply)
-  if (charterPreference) {
-    return charterPreference;
-  }
-
-  // Determine if economy mode is active (option takes precedence over config)
-  const isEconomy =
+  const economyMode =
     options.economyMode !== undefined
       ? options.economyMode
       : (squadDir ? readEconomyMode(squadDir, storage) : false);
 
-  // Layer 3: Task-aware auto-selection (economy mode applies)
-  if (taskModel) {
-    return isEconomy ? applyEconomyMode(taskModel) : taskModel;
-  }
-
-  // Layer 4: Default (economy mode applies)
-  const defaultModel = 'gpt-5.6-luna';
-  return isEconomy ? applyEconomyMode(defaultModel) : defaultModel;
+  return resolveCentralModel({
+    configModel,
+    sessionModel: sessionDirective ?? undefined,
+    charterPreference: charterPreference ?? undefined,
+    taskModel: taskModel ?? undefined,
+    economyMode,
+  }).model;
 }

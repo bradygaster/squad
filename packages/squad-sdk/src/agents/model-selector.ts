@@ -75,8 +75,13 @@ export interface ModelResolutionOptions {
   sessionModel?: string;
   /** Model preference from agent's charter (## Model section) */
   charterPreference?: string;
-  /** Type of task being performed */
-  taskType: TaskType;
+  /** Type of task being performed. When omitted, task-aware selection is skipped. */
+  taskType?: TaskType;
+  /**
+   * Caller-chosen task-aware model. When set (and not `auto`) it replaces the
+   * tier pick of the `task-auto` layer; economy mode still applies to it.
+   */
+  taskModel?: string;
   /** Agent role (for context) */
   agentRole?: string;
   /** When true, apply economy mode substitution at Layer 3/4 */
@@ -91,7 +96,9 @@ export interface ModelResolutionOptions {
   /**
    * Model ids known to be unavailable (plan restriction, org policy, rate
    * limit, deprecation). When the resolved model is listed, the next available
-   * entry of its fallback chain is chosen with source `fallback`.
+   * fallback-chain entry after it is chosen with source `fallback`; a model
+   * that is not in its chain searches the chain from the head. When no
+   * candidate remains, `omitModel` is set.
    */
   unavailableModels?: Iterable<string>;
 }
@@ -110,8 +117,12 @@ export interface ResolvedModel {
   fallbackChain: string[];
   /** Cost-policy outcome, present only when a policy was applied. */
   policy?: CostPolicyOutcome;
-  /** Human-readable explanation of why this model was chosen. */
-  rationale: string;
+  /**
+   * Human-readable explanation of why this model was chosen. Always set on
+   * {@link resolveModel} output (see {@link ModelResolution}); optional here so
+   * consumer-constructed values stay valid.
+   */
+  rationale?: string;
   /** Model and source that were preferred before an availability fallback. */
   fallbackFrom?: { model: string; source: ModelResolutionSource };
   /**
@@ -120,6 +131,9 @@ export interface ResolvedModel {
    */
   omitModel?: boolean;
 }
+
+/** Output of {@link resolveModel}: a {@link ResolvedModel} with guaranteed provenance. */
+export type ModelResolution = ResolvedModel & { rationale: string };
 
 /**
  * Effective (merged) cost policy after combining persistent config + session
@@ -137,15 +151,49 @@ export interface EffectiveCostPolicy {
  * @param options - Model resolution options
  * @returns Resolved model with tier, source, rationale, fallback chain, and optional policy outcome
  */
-export function resolveModel(options: ModelResolutionOptions): ResolvedModel {
+export function resolveModel(options: ModelResolutionOptions): ModelResolution {
   const base = resolveBaseModel(options);
   const policy = buildEffectiveCostPolicy(options.config, options.sessionCostPolicy);
   const finalized = policy ? finalizeResolvedModel(base, policy, buildCatalogCategoryMap()) : base;
-  return applyAvailabilityFallback(finalized, options.unavailableModels);
+  const resolved = applyAvailabilityFallback(finalized, options.unavailableModels);
+  return { ...resolved, rationale: resolved.rationale ?? resolved.source };
 }
 
-function isSet(value: string | undefined): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
+/**
+ * True when a layer value expresses a model preference. Empty values and the
+ * `auto` sentinel (any case, surrounding whitespace ignored) mean "no
+ * preference here; continue to the next layer".
+ */
+export function isModelPreference(value: string | null | undefined): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.toLowerCase() !== 'auto';
+}
+
+/** Persistent `.squad/config.json` model fields consulted by {@link persistentConfigModel}. */
+export interface PersistentModelConfig {
+  defaultModel?: unknown;
+  agentModelOverrides?: unknown;
+}
+
+/**
+ * Pick the persistent `config` layer model for an agent: its
+ * `agentModelOverrides` entry, otherwise `defaultModel`. `auto` at either
+ * field means no preference there.
+ */
+export function persistentConfigModel(
+  config: PersistentModelConfig | null | undefined,
+  agentName?: string,
+): string | undefined {
+  if (!config || typeof config !== 'object') return undefined;
+  const overrides = config.agentModelOverrides;
+  if (agentName && overrides && typeof overrides === 'object') {
+    const agentModel = (overrides as Record<string, unknown>)[agentName];
+    if (typeof agentModel === 'string' && isModelPreference(agentModel)) return agentModel.trim();
+  }
+  const defaultModel = config.defaultModel;
+  if (typeof defaultModel === 'string' && isModelPreference(defaultModel)) return defaultModel.trim();
+  return undefined;
 }
 
 function explicitModel(model: string, source: ModelResolutionSource, rationale: string): ResolvedModel {
@@ -164,26 +212,34 @@ function explicitModel(model: string, source: ModelResolutionSource, rationale: 
  * charter) are never altered by economy mode.
  */
 function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
-  const { userOverride, configModel, sessionModel, charterPreference, taskType, economyMode } = options;
+  const { taskType, taskModel, economyMode } = options;
+  const userOverride = options.userOverride?.trim();
+  const configModel = options.configModel?.trim();
+  const sessionModel = options.sessionModel?.trim();
+  const charterPreference = options.charterPreference?.trim();
 
-  if (isSet(userOverride)) {
+  if (isModelPreference(userOverride)) {
     return explicitModel(userOverride, 'user-override', `explicit per-spawn directive selected '${userOverride}'`);
   }
 
-  if (isSet(configModel) && configModel !== 'auto') {
+  if (isModelPreference(configModel)) {
     return explicitModel(configModel, 'config', `persistent .squad/config.json override selected '${configModel}'`);
   }
 
-  if (isSet(sessionModel) && sessionModel !== 'auto') {
+  if (isModelPreference(sessionModel)) {
     return explicitModel(sessionModel, 'session', `session model '${sessionModel}' inherited by this spawn`);
   }
 
-  if (isSet(charterPreference) && charterPreference !== 'auto') {
+  if (isModelPreference(charterPreference)) {
     return explicitModel(charterPreference, 'charter', `charter preference selected '${charterPreference}'`);
   }
 
   // Layer 3: Task-Aware Auto-Selection (economy mode applies)
-  const autoSelected = selectModelForTask(taskType, economyMode);
+  const autoSelected = isModelPreference(taskModel)
+    ? selectTaskModel(taskModel.trim(), economyMode)
+    : taskType
+      ? selectModelForTask(taskType, economyMode)
+      : undefined;
   if (autoSelected) {
     return autoSelected;
   }
@@ -204,9 +260,11 @@ function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
 }
 
 /**
- * Replace an unavailable model with the first available fallback-chain entry.
- * When every candidate is unavailable, signal that the `model` parameter
- * should be omitted so the platform default applies.
+ * Replace an unavailable model with the next available fallback-chain entry.
+ * A model found in its chain searches only the entries after it (never back
+ * toward the head); a model not in its chain searches the chain from the
+ * head. When no candidate remains, signal that the `model` parameter should
+ * be omitted so the platform default applies.
  */
 function applyAvailabilityFallback(
   resolved: ResolvedModel,
@@ -217,11 +275,13 @@ function applyAvailabilityFallback(
   if (!unavailable.has(resolved.model.toLowerCase())) return resolved;
 
   const fallbackFrom = { model: resolved.model, source: resolved.source };
-  const next = resolved.fallbackChain.find(
-    (id) => id.toLowerCase() !== resolved.model.toLowerCase() && !unavailable.has(id.toLowerCase()),
+  const position = resolved.fallbackChain.findIndex((id) => id.toLowerCase() === resolved.model.toLowerCase());
+  const start = position + 1; // 0 when the model is not in its chain
+  const index = resolved.fallbackChain.findIndex(
+    (id, i) => i >= start && !unavailable.has(id.toLowerCase()),
   );
+  const next = index >= 0 ? resolved.fallbackChain[index] : undefined;
   if (next) {
-    const index = resolved.fallbackChain.indexOf(next);
     return {
       ...resolved,
       model: next,
@@ -239,7 +299,7 @@ function applyAvailabilityFallback(
     fallbackChain: [],
     fallbackFrom,
     omitModel: true,
-    rationale: `'${resolved.model}' (${resolved.source}) and its fallback chain are unavailable; omit the model parameter for the platform default`,
+    rationale: `'${resolved.model}' (${resolved.source}) unavailable and no later fallback-chain candidate is available; omit the model parameter for the platform default`,
   };
 }
 
@@ -270,6 +330,19 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
     source: 'task-auto',
     fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
     rationale: `${taskType} task → ${taskTier} tier '${model}'` + (economyMode ? ' (economy mode)' : ''),
+  };
+}
+
+/** Caller-supplied task model (legacy `taskModel`), with optional economy substitution. */
+function selectTaskModel(taskModel: string, economyMode?: boolean): ResolvedModel {
+  const model = economyMode ? applyEconomyMode(taskModel) : taskModel;
+  const tier = inferTierFromModel(model);
+  return {
+    model,
+    tier,
+    source: 'task-auto',
+    fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
+    rationale: `task-aware model '${model}'` + (economyMode ? ' (economy mode)' : ''),
   };
 }
 

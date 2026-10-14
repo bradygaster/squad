@@ -2,7 +2,7 @@
 
 ## Per-Agent Model Selection
 
-Before spawning an agent, resolve its model with the central resolver (`resolveModel` in `@bradygaster/squad-sdk`). Apply the precedence below; first match wins. Every result carries a **source** and a **rationale**, and both appear in the spawn acknowledgment.
+Before spawning an agent, resolve its model with the central resolver (`resolveModel` from `@bradygaster/squad-sdk/agents`; it returns the model with its `source` and `rationale`). The root `@bradygaster/squad-sdk` export `resolveModel` is a legacy adapter over the same resolver that reads `.squad/config.json` and returns only the model ID. Apply the precedence below; first match wins. Every result carries a **source** and a **rationale**, and both appear in the spawn acknowledgment.
 
 Spawn guidance never names a model ID. It reasons in sources and tiers (`premium`, `standard`, `fast`); **Appendix A** is the only place that turns a tier into model IDs.
 
@@ -16,7 +16,7 @@ Spawn guidance never names a model ID. It reasons in sources and tiers (`premium
 | 6 | `default` | Nothing else matched |
 | — | `fallback` | Not a layer: replaces the chosen model only after it is known to be unavailable |
 
-`auto` at any layer means "no preference here"; continue to the next layer.
+`auto` at any layer (any letter case) means "no preference here"; continue to the next layer. This includes a per-spawn directive, the persistent config fields, the session model and the charter.
 
 **`user-override` — per-spawn directive:** A directive that names a model for one specific spawn ("have {agent} use {model} for this") applies to that spawn only. It does not persist and does not change the session model.
 
@@ -63,7 +63,7 @@ Spawn guidance never names a model ID. It reasons in sources and tiers (`premium
 
 **`fallback` — when a model is unavailable:**
 
-If the resolved model is known to be unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), or a spawn fails for that reason, silently retry with the next model in its tier's fallback chain (Appendix A). The source becomes `fallback` and the rationale names the unavailable model and its original source. Do NOT tell the user about retry attempts. Maximum 3 retries before using the platform default fallback.
+If the resolved model is known to be unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), or a spawn fails for that reason, silently retry with the next model **after** it in its tier's fallback chain (Appendix A) — never back toward the head of the chain. A model that is not in its tier's chain (for example a session-picked opt-in model) tries that chain from the head. The source becomes `fallback` and the rationale names the unavailable model and its original source. Do NOT tell the user about retry attempts. Maximum 3 retries before using the platform default fallback.
 
 `(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the platform default fallback — it lets the platform choose the model.
 
@@ -86,7 +86,7 @@ prompt: |
   ...
 ```
 
-If you've exhausted the fallback chain and reached the platform default fallback, omit the `model` parameter entirely.
+If no later fallback candidate is available (the resolver sets `omitModel`), omit the `model` parameter entirely.
 
 **Spawn output format — show the model, source and rationale:**
 

@@ -72,8 +72,12 @@ export {
   buildEffectiveCostPolicy,
   buildCatalogCategoryMap,
   pruneChainToCeiling,
+  isModelPreference,
+  persistentConfigModel,
   type ModelResolutionOptions, 
   type ResolvedModel,
+  type ModelResolution,
+  type PersistentModelConfig,
   type EffectiveCostPolicy,
   type TaskType,
   type ModelTier,
@@ -90,6 +94,7 @@ export {
   type AgentStatus,
   type SpawnAgentOptions,
   type LifecycleManagerConfig,
+  type AgentModelResolution,
 } from './lifecycle.js';
 
 // --- M1-11 History Shadows ---

@@ -1159,3 +1159,104 @@ describe('central resolver: config, session, fallback sources + rationale (#1720
     expectResolution({ sessionModel: 'sess-model', unavailableModels: ['other-model'] }, 'sess-model', 'session');
   });
 });
+
+// ============================================================================
+// Central resolver revision: forward fallback, sentinel, legacy adapter (#1720)
+// ============================================================================
+
+describe('central resolver: forward fallback from the chosen chain position (#1720)', () => {
+  const chain = MODELS.FALLBACK_CHAINS.standard;
+
+  it('a middle-chain pick falls forward to the next available candidate, never back to the head', () => {
+    const opts: ModelResolutionOptions = { charterPreference: chain[2], taskType: 'code', unavailableModels: [chain[2]] };
+    const r = resolveAgentModel(opts);
+    expect(
+      { model: r.model, source: r.source },
+      `resolveModel(charterPreference=${chain[2]}, unavailable=[${chain[2]}]) must pick next candidate ${chain[3]}, got '${r.model}' (${r.source})`,
+    ).toEqual({ model: chain[3], source: 'fallback' });
+    expect(r.fallbackChain[0], `fallbackChain must start at the chosen fallback '${chain[3]}'`).toBe(chain[3]);
+  });
+
+  it('skips unavailable subsequent candidates and keeps searching forward', () => {
+    const opts: ModelResolutionOptions = { charterPreference: chain[1], taskType: 'code', unavailableModels: [chain[1], chain[2]] };
+    const r = resolveAgentModel(opts);
+    expect(r.model, `charter ${chain[1]} with ${chain[1]},${chain[2]} unavailable must pick ${chain[3]}, got '${r.model}'`).toBe(chain[3]);
+  });
+
+  it('the last chain entry being unavailable exhausts the chain: omit the model rather than wrapping to the head', () => {
+    const last = chain[chain.length - 1]!;
+    const r = resolveAgentModel({ charterPreference: last, taskType: 'code', unavailableModels: [last] });
+    expect(
+      { omitModel: r.omitModel, model: r.model, source: r.source },
+      `last-entry '${last}' unavailable must omit the model param, got '${r.model}' omit=${r.omitModel}`,
+    ).toEqual({ omitModel: true, model: '', source: 'fallback' });
+    expect(r.fallbackFrom, 'exhausted fallback must still record what it fell back from').toEqual({ model: last, source: 'charter' });
+  });
+
+  it('an out-of-chain pick searches its tier chain from the head', () => {
+    const r = resolveAgentModel({ sessionModel: 'custom-out-of-chain', taskType: 'code', unavailableModels: ['custom-out-of-chain', chain[0]] });
+    expect(r.model, `out-of-chain 'custom-out-of-chain' unavailable must pick first available ${chain[1]}, got '${r.model}'`).toBe(chain[1]);
+    expect(r.fallbackFrom).toEqual({ model: 'custom-out-of-chain', source: 'session' });
+  });
+});
+
+describe("central resolver: 'auto' sentinel at every layer (#1720)", () => {
+  it("userOverride 'auto' means no preference and falls through to config", () => {
+    const opts: ModelResolutionOptions = { userOverride: 'auto', configModel: 'saved-model', taskType: 'docs' };
+    const r = resolveAgentModel(opts);
+    expect(
+      { model: r.model, source: r.source },
+      `resolveModel(${JSON.stringify(opts)}) must skip the 'auto' override; got '${r.model}' (${r.source})`,
+    ).toEqual({ model: 'saved-model', source: 'config' });
+  });
+
+  it("'auto' is case- and whitespace-insensitive at every explicit layer", () => {
+    const opts: ModelResolutionOptions = {
+      userOverride: ' AUTO ',
+      configModel: 'Auto',
+      sessionModel: 'auto ',
+      charterPreference: 'AUTO',
+      taskType: 'docs',
+    };
+    const r = resolveAgentModel(opts);
+    expect(
+      { model: r.model, source: r.source },
+      `resolveModel(${JSON.stringify(opts)}) must treat every 'auto' as no preference; got '${r.model}' (${r.source})`,
+    ).toEqual({ model: MODELS.FALLBACK_CHAINS.fast[0], source: 'task-auto' });
+  });
+});
+
+describe('legacy config resolveModel delegates to the central resolver (#1720)', () => {
+  it("charter 'auto' with a task model returns the task model, not the literal sentinel", () => {
+    const taskModel = MODELS.FALLBACK_CHAINS.fast[0];
+    const got = resolveModel({ charterPreference: 'auto', taskModel });
+    expect(got, `legacy resolveModel({charterPreference:'auto', taskModel:'${taskModel}'}) returned '${got}'`).toBe(taskModel);
+  });
+
+  it("'auto' session directive and config defaultModel fall through", () => {
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify({ version: 1, defaultModel: 'auto', agentModelOverrides: { fenster: 'auto' } }));
+    const got = resolveModel({ agentName: 'fenster', squadDir, sessionDirective: 'auto', charterPreference: 'charter-model' });
+    expect(got, `legacy resolveModel with every higher layer 'auto' must pick the charter model, got '${got}'`).toBe('charter-model');
+  });
+
+  it('agrees with the central resolver for persistent config', () => {
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify({ version: 1, agentModelOverrides: { fenster: 'persisted' } }));
+    const legacy = resolveModel({ agentName: 'fenster', squadDir, sessionDirective: 'sess', charterPreference: 'charter' });
+    const central = resolveAgentModel({ configModel: 'persisted', sessionModel: 'sess', charterPreference: 'charter', taskType: 'code' });
+    expect(legacy, `legacy '${legacy}' must equal central '${central.model}'`).toBe(central.model);
+  });
+});
+
+describe('documented resolver entry point (#1720)', () => {
+  it('model-selection-reference names the subpath that exports the provenance-returning resolver', async () => {
+    const reference = readFileSync(join(import.meta.dirname, '..', '.squad-templates', 'model-selection-reference.md'), 'utf8');
+    const match = reference.match(/`resolveModel` (?:from|in) `(@bradygaster\/squad-sdk[^`]*)`/);
+    expect(match, 'model-selection-reference.md must name the module that exports resolveModel').toBeTruthy();
+    const mod = (await import(match![1]!)) as { resolveModel: (o: unknown) => unknown };
+    const r = mod.resolveModel({ taskType: 'docs', charterPreference: 'auto' }) as ResolvedModel;
+    expect(
+      typeof r === 'object' && r !== null && typeof r.source === 'string' && typeof r.rationale === 'string',
+      `${match![1]} resolveModel must return {model, source, rationale}; got ${JSON.stringify(r)}`,
+    ).toBe(true);
+  });
+});

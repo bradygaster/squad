@@ -10,7 +10,14 @@
 import { SquadClientWithPool } from '../client/index.js';
 import type { SquadSession, SquadSessionConfig, SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
 import { compileCharterFull, type CharterCompileOptions } from './charter-compiler.js';
-import { resolveModel, type ModelResolutionOptions, type TaskType } from './model-selector.js';
+import {
+  resolveModel,
+  persistentConfigModel,
+  type ModelResolution,
+  type ModelResolutionOptions,
+  type ModelResolutionSource,
+  type TaskType,
+} from './model-selector.js';
 import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS } from '../config/models.js';
 import type { CostPolicyConfig, SessionCostPolicyOverride } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
@@ -40,6 +47,8 @@ export interface AgentHandle {
   sessionId: string;
   /** Model being used for this agent */
   model: string;
+  /** How {@link model} was resolved (source, rationale, availability fallback). */
+  modelResolution?: AgentModelResolution;
   /** Current agent status */
   status: AgentStatus;
   /** Timestamp when agent was spawned */
@@ -58,6 +67,20 @@ export interface AgentHandle {
    * Saves history and cleans up resources.
    */
   destroy(): Promise<void>;
+}
+
+/**
+ * Provenance of an agent's model, recorded at spawn time.
+ */
+export interface AgentModelResolution {
+  /** Precedence layer that selected the model. */
+  source: ModelResolutionSource;
+  /** Human-readable explanation from the central resolver. */
+  rationale: string;
+  /** Model and source preferred before an availability fallback. */
+  fallbackFrom?: { model: string; source: ModelResolutionSource };
+  /** True when the model parameter was omitted so the platform default applies. */
+  omitModel?: boolean;
 }
 
 /**
@@ -164,7 +187,7 @@ export class AgentLifecycleManager {
    * Pipeline:
    * 1. Read charter.md from team root
    * 2. Compile charter with team context
-   * 3. Resolve model using 4-layer priority
+   * 3. Resolve model via the central resolver (persistent config included)
    * 4. Create session via Squad Client
    * 5. Set up event handlers
    * 6. Return AgentHandle
@@ -226,9 +249,14 @@ export class AgentLifecycleManager {
       
       const agentConfig = compileCharterFull(compileOptions);
       
-      // Step 3: Resolve model (with cost-policy finalization, issue #1080/#1183)
+      // Step 3: Resolve model (with cost-policy finalization, issue #1080/#1183).
+      // Persistent .squad/config.json lives beside the agents/ directory.
+      const squadDir = path.dirname(path.dirname(path.dirname(charterPath)));
+      const persistent = await this.readPersistentModelConfig(squadDir);
       const modelOptions: ModelResolutionOptions = {
         userOverride: modelOverride,
+        configModel: persistentConfigModel(persistent, agentName),
+        economyMode: persistent?.economyMode === true,
         charterPreference: agentConfig.resolvedModel !== undefined
           ? agentConfig.resolvedModel
           : this.extractModelPreference(charterContent),
@@ -239,6 +267,9 @@ export class AgentLifecycleManager {
       };
       
       const resolvedModel = resolveModel(modelOptions);
+      span.setAttribute('model.id', resolvedModel.model);
+      span.setAttribute('model.source', resolvedModel.source);
+      await this.emitModelResolved(agentName, resolvedModel);
       
       // Surface the cost-policy outcome — this was the #1089 bug: the policy
       // result was computed but never wired/emitted. Never swallow it.
@@ -264,7 +295,7 @@ export class AgentLifecycleManager {
         ? rawTier as SquadContextTier
         : undefined;
       const sessionConfig: SquadSessionConfig = {
-        model: resolvedModel.model,
+        ...(resolvedModel.omitModel ? {} : { model: resolvedModel.model }),
         systemMessage: {
           content: agentConfig.prompt,
         },
@@ -279,6 +310,12 @@ export class AgentLifecycleManager {
         agentName,
         sessionId: session.sessionId,
         model: resolvedModel.model,
+        modelResolution: {
+          source: resolvedModel.source,
+          rationale: resolvedModel.rationale,
+          ...(resolvedModel.fallbackFrom ? { fallbackFrom: resolvedModel.fallbackFrom } : {}),
+          ...(resolvedModel.omitModel ? { omitModel: true } : {}),
+        },
         session,
         idleTimeout,
         onDestroy: () => this.agents.delete(session.sessionId),
@@ -401,6 +438,45 @@ export class AgentLifecycleManager {
   }
 
   /**
+   * Read the persistent model fields of `.squad/config.json`, if present.
+   * @private
+   */
+  private async readPersistentModelConfig(
+    squadDir: string,
+  ): Promise<{ defaultModel?: unknown; agentModelOverrides?: unknown; economyMode?: unknown } | undefined> {
+    const raw = await this.storage.read(path.join(squadDir, 'config.json'));
+    if (raw === undefined) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Record model-resolution provenance as an `agent:milestone` event
+   * (`event: 'model.resolved'`) when an event bus is configured.
+   * @private
+   */
+  private async emitModelResolved(agentName: string, resolved: ModelResolution): Promise<void> {
+    if (!this.eventBus) return;
+    await this.eventBus.emit({
+      type: 'agent:milestone',
+      agentName,
+      payload: {
+        event: 'model.resolved',
+        model: resolved.model,
+        source: resolved.source,
+        rationale: resolved.rationale,
+        ...(resolved.fallbackFrom ? { fallbackFrom: resolved.fallbackFrom } : {}),
+        ...(resolved.omitModel ? { omitModel: true } : {}),
+      },
+      timestamp: new Date(),
+    });
+  }
+
+  /**
    * Surface a cost-policy outcome (downgrade / warn-allow / fail-closed).
    *
    * Emits an `agent:milestone` event (`event: 'model.policy'`) on the bus when
@@ -444,6 +520,7 @@ class AgentHandleImpl implements AgentHandle {
   agentName: string;
   sessionId: string;
   model: string;
+  modelResolution?: AgentModelResolution;
   status: AgentStatus;
   createdAt: Date;
   lastActivityAt: Date;
@@ -456,6 +533,7 @@ class AgentHandleImpl implements AgentHandle {
     agentName: string;
     sessionId: string;
     model: string;
+    modelResolution?: AgentModelResolution;
     session: SquadSession;
     idleTimeout: number;
     onDestroy: () => void;
@@ -463,6 +541,7 @@ class AgentHandleImpl implements AgentHandle {
     this.agentName = config.agentName;
     this.sessionId = config.sessionId;
     this.model = config.model;
+    this.modelResolution = config.modelResolution;
     this.session = config.session;
     this.idleTimeout = config.idleTimeout;
     this.onDestroy = config.onDestroy;

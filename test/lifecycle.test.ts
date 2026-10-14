@@ -443,6 +443,89 @@ Test collaboration.
   });
 });
 
+describe('Agent Lifecycle Manager — persistent model preference + provenance (#1720)', () => {
+  let tempDir: string;
+  let squadDir: string;
+  let mockClient: SquadClientWithPool;
+  let sessionConfigs: Array<Record<string, unknown>>;
+  let events: Array<Record<string, unknown>>;
+  let manager: AgentLifecycleManager;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'squad-model-pref-spawn-'));
+    squadDir = path.join(tempDir, '.squad');
+    const agentsDir = path.join(squadDir, 'agents', 'pref-agent');
+    await fs.mkdir(agentsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(agentsDir, 'charter.md'),
+      `# Pref Agent\n\n## Identity\n\n**Name:** Pref Agent\n**Role:** Test\n\n## Model\n\n**Preferred:** charter-model\n`,
+      'utf-8',
+    );
+    mockClient = createMockClient();
+    sessionConfigs = [];
+    const create = mockClient.createSession.bind(mockClient);
+    (mockClient as any).createSession = async (config: Record<string, unknown>) => {
+      sessionConfigs.push(config);
+      return create(config as any);
+    };
+    const eventBus = new EventBus();
+    events = [];
+    eventBus.subscribe('agent:milestone', (e) => {
+      events.push(e.payload as Record<string, unknown>);
+    });
+    manager = new AgentLifecycleManager({ client: mockClient, teamRoot: tempDir, defaultIdleTimeout: 60_000, eventBus });
+  });
+
+  afterEach(async () => {
+    await manager.shutdown();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function writeConfig(config: Record<string, unknown>): Promise<void> {
+    await fs.writeFile(path.join(squadDir, 'config.json'), JSON.stringify({ version: 1, ...config }), 'utf-8');
+  }
+
+  it('per-agent persistent config beats charter and task in the created session', async () => {
+    await writeConfig({ defaultModel: 'global-model', agentModelOverrides: { 'pref-agent': 'persisted-model' } });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', taskType: 'visual' });
+
+    expect(sessionConfigs[0]?.model, `createSession model with agentModelOverrides set: ${JSON.stringify(sessionConfigs[0])}`).toBe('persisted-model');
+    expect(handle.model).toBe('persisted-model');
+    expect(handle.modelResolution?.source, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toBe('config');
+    expect(handle.modelResolution?.rationale).toMatch(/config\.json.*'persisted-model'/);
+  });
+
+  it('global defaultModel applies when the agent has no override', async () => {
+    await writeConfig({ defaultModel: 'global-model' });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work' });
+    expect(sessionConfigs[0]?.model, `createSession model with defaultModel set: ${JSON.stringify(sessionConfigs[0])}`).toBe('global-model');
+    expect(handle.modelResolution?.source).toBe('config');
+  });
+
+  it("'auto' persisted preference falls through to the charter", async () => {
+    await writeConfig({ defaultModel: 'auto' });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work' });
+    expect(sessionConfigs[0]?.model, `createSession model with defaultModel 'auto': ${JSON.stringify(sessionConfigs[0])}`).toBe('charter-model');
+    expect(handle.modelResolution?.source).toBe('charter');
+  });
+
+  it('explicit spawn override still beats persistent config', async () => {
+    await writeConfig({ defaultModel: 'global-model' });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', modelOverride: 'spawn-model' });
+    expect(sessionConfigs[0]?.model).toBe('spawn-model');
+    expect(handle.modelResolution?.source).toBe('user-override');
+  });
+
+  it('records resolution provenance as a model.resolved milestone event', async () => {
+    await writeConfig({ agentModelOverrides: { 'pref-agent': 'persisted-model' } });
+    await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work' });
+    const resolved = events.filter((e) => e.event === 'model.resolved');
+    expect(resolved, `model.resolved events: ${JSON.stringify(events)}`).toHaveLength(1);
+    expect(resolved[0]).toMatchObject({ model: 'persisted-model', source: 'config' });
+    expect(String(resolved[0]!.rationale)).toMatch(/config\.json/);
+  });
+});
+
 // --- Mock Client ---
 
 function createMockClient(): SquadClientWithPool {
