@@ -553,12 +553,13 @@ export async function prepareActivation({ github, context, env, root, outputPath
       validateImplementationVerdict(validation.body, planComment, fullPlan);
       approvals = { scope, validation };
     } else {
-      const implementation = acceptedComments.find(comment => {
+      const implementation = acceptedComments.filter(comment => {
         const value = envelope(comment.body);
         return value.squad_artifact === 'impl-accepted' ||
           (command.phase !== null && value.squad_artifact === 'impl-phases-accepted' && value.phases?.includes(command.phase));
-      });
+      }).at(-1);
       requireThat(implementation, 'granular activation requires existing impl-accepted or selected implementation-phase acceptance');
+      validateImplementationAcceptance(implementation, planComment, `${context.repo.owner}/${context.repo.repo}`, origin);
       approvals = { scope, implementation };
     }
   }
@@ -681,6 +682,47 @@ function validationTable(body, columns) {
     rows.push(Object.fromEntries(columns.map((column, offset) => [column, cells[offset]])));
   }
   return rows;
+}
+
+function extractImplementationPlanCommentIds(body, repository, origin) {
+  const text = String(body ?? '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/```[\s\S]*?```/g, '');
+  const escapedRepo = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ids = [];
+  const collect = source => {
+    for (const match of source.matchAll(
+      new RegExp(`https://github\\.com/${escapedRepo}/issues/${origin}#issuecomment-([1-9]\\d*)\\b`, 'g'),
+    )) {
+      ids.push(Number(match[1]));
+    }
+    for (const match of source.matchAll(/(?:^|[^A-Za-z0-9_/])#issuecomment-([1-9]\d*)\b/g)) {
+      ids.push(Number(match[1]));
+    }
+    for (const match of source.matchAll(/\bcomment(?:[-_\s]+id)?\s*[:=#]?\s*([1-9]\d*)\b/gi)) {
+      ids.push(Number(match[1]));
+    }
+  };
+  const labeledLines = text.split(/\r?\n/).filter(line =>
+    /^(?:[-*]\s+)?(?:\*\*)?(?:implementation(?:\s+plan)?(?:\s+version)?|impl\s+plan(?:\s+version)?|plan\s+version)(?:\*\*)?\s*:/i
+      .test(line.trim()),
+  );
+  if (labeledLines.length) {
+    for (const line of labeledLines) collect(line);
+  } else {
+    collect(text);
+  }
+  return [...new Set(ids.filter(positive))];
+}
+
+function validateImplementationAcceptance(comment, planComment, repository, origin) {
+  const body = String(comment.body ?? '');
+  const ids = extractImplementationPlanCommentIds(body, repository, origin);
+  requireThat(ids.length === 1 && ids[0] === planComment.id,
+    'implementation acceptance must uniquely reference the selected implementation plan revision');
+  const shas = [...body.matchAll(/^\*\*Implementation SHA-256:\*\*\s*(\S+)\s*$/gm)].map(match => match[1]);
+  requireThat(shas.length <= 1 && (shas.length === 0 || shas[0] === digest(planComment.body)),
+    'implementation acceptance SHA-256 does not match the selected implementation plan revision');
 }
 
 function validateImplementationVerdict(body, planComment, plan) {

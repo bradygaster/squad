@@ -232,7 +232,7 @@ function activationFixture(body = taskTable(), command = 'activate', kind = 'pla
   });
   const artifacts = (kind: string) => [...comments.values()].filter(item =>
     parseStructuredData(item.body)?.squad_artifact === kind);
-  return { prepare, create, finalize, artifacts, comments, comment, issues, createIssue, github, context };
+  return { prepare, create, finalize, artifacts, comments, comment, issues, createIssue, github, context, root, outputPath };
 }
 
 // ---------------------------------------------------------------------------
@@ -579,13 +579,96 @@ describe('#1758.1: squad-plan-accept routes granular plans before failing', () =
     f.comments.set(7, f.comment(7, structured('scope-accepted')));
     await expect(f.prepare()).rejects.toThrow(/granular activation requires existing impl-accepted/);
     expect(f.createIssue).not.toHaveBeenCalled();
-    f.comments.set(8, f.comment(8, structured('impl-accepted')));
+    f.comments.set(8, f.comment(8, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${f.comments.get(10)!.html_url}`,
+      structured('impl-accepted'),
+    ].join('\n')));
     const capture = await f.prepare();
     expect(capture.plan.kind).toBe('implementation');
     expect(capture.operations.map((operation: any) => operation.id)).toEqual(['epic:epic1', 'task:1']);
     const journal = await f.create(capture);
     await f.finalize(capture, journal);
     expect(f.artifacts('activated')).toHaveLength(1);
+  });
+
+  it('binds implementation acceptance to the selected plan revision and rejects stale, missing, or ambiguous links (#2206)', async () => {
+    // 1. Reproduce exact #2206 scenario: plan 10 accepted by comment 13, then newer unaccepted plan 20 is added
+    const f = activationFixture(implementation, 'plan activate', 'implementation');
+    f.comments.set(11, f.comment(11, structured('scope-accepted')));
+    f.comments.set(13, f.comment(13, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${f.comments.get(10)!.html_url}`,
+      structured('impl-accepted'),
+    ].join('\n')));
+    f.comments.set(20, f.comment(20, `${implementation}\n${structured('implementation')}`));
+    writeFileSync(f.outputPath, JSON.stringify({ items: [{ type: 'activate_plan', plan_comment_id: '20' }] }));
+    await expect(f.prepare()).rejects.toThrow(/implementation acceptance must uniquely reference the selected implementation plan revision/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
+
+    // 2. Missing link in impl-accepted rejects
+    f.comments.set(13, f.comment(13, structured('impl-accepted')));
+    await expect(f.prepare()).rejects.toThrow(/implementation acceptance must uniquely reference the selected implementation plan revision/);
+
+    // 3. Ambiguous links (both 10 and 20 referenced) rejects
+    f.comments.set(13, f.comment(13, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${f.comments.get(10)!.html_url} and ${f.comments.get(20)!.html_url}`,
+      structured('impl-accepted'),
+    ].join('\n')));
+    await expect(f.prepare()).rejects.toThrow(/implementation acceptance must uniquely reference the selected implementation plan revision/);
+
+    // 4. Matching acceptance for plan 20 (via standard comment-id or URL format) succeeds
+    f.comments.set(21, f.comment(21, [
+      '## Implementation Accepted',
+      '- **Implementation plan version:** #42 (comment-id: 20)',
+      structured('impl-accepted'),
+    ].join('\n')));
+    const capture = await f.prepare();
+    expect(capture.plan_comment.id).toBe(20);
+    expect(capture.approvals.implementation.id).toBe(21);
+  });
+
+  it('binds phased implementation acceptance to the selected plan revision and rejects stale phase acceptance (#2206)', async () => {
+    const phasedImpl = [
+      '### Phase 1',
+      taskTable(['| 1 | Phase 1 task | Builder | builder | None | epic1 |'], true),
+    ].join('\n');
+    const f = activationFixture(phasedImpl, 'plan activate phase 1', 'implementation');
+    f.comments.set(11, f.comment(11, structured('scope-accepted')));
+    f.comments.set(13, f.comment(13, [
+      '## Implementation Phase 1 Accepted',
+      `**Implementation plan:** ${f.comments.get(10)!.html_url}`,
+      `**Implementation SHA-256:** ${digest(f.comments.get(10)!.body)}`,
+      structured('impl-phases-accepted', [1]),
+    ].join('\n')));
+
+    // Add newer implementation revision 20 without accepting phase 1 for revision 20
+    f.comments.set(20, f.comment(20, `${phasedImpl}\n${structured('implementation')}`));
+    writeFileSync(f.outputPath, JSON.stringify({ items: [{ type: 'activate_plan', plan_comment_id: '20' }] }));
+    await expect(f.prepare()).rejects.toThrow(/implementation acceptance must uniquely reference the selected implementation plan revision/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+
+    // Even if URL points to 20, a stale SHA-256 on impl-phases-accepted rejects
+    f.comments.set(14, f.comment(14, [
+      '## Implementation Phase 1 Accepted',
+      `**Implementation plan:** ${f.comments.get(20)!.html_url}`,
+      `**Implementation SHA-256:** ${'0'.repeat(64)}`,
+      structured('impl-phases-accepted', [1]),
+    ].join('\n')));
+    await expect(f.prepare()).rejects.toThrow(/implementation acceptance SHA-256 does not match/);
+
+    // Matching URL and SHA-256 for revision 20 succeeds
+    f.comments.set(15, f.comment(15, [
+      '## Implementation Phase 1 Accepted',
+      `**Implementation plan:** ${f.comments.get(20)!.html_url}`,
+      `**Implementation SHA-256:** ${digest(f.comments.get(20)!.body)}`,
+      structured('impl-phases-accepted', [1]),
+    ].join('\n')));
+    const capture = await f.prepare();
+    expect(capture.plan_comment.id).toBe(20);
+    expect(capture.approvals.implementation.id).toBe(15);
   });
 
   it('fails closed without a supported task plan and never turns a program into invented tasks', async () => {

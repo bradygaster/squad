@@ -144,7 +144,7 @@
       "package_destination": ".github/workflows/shared/squad-activation.mjs",
       "destination": ".github/workflows/shared/squad-activation.mjs",
       "ownership": "manifest",
-      "sha256": "16c579cc85ff191614a9635757ee5281f4f9f3f1f0f8ead44fe33c44b90a0980"
+      "sha256": "1d6cc4f5a924d471e83b4bd0cfb754fe8e5376efea339d2a303138350c3bc4f8"
     },
     {
       "path": "shared/check-agent-binding.mjs",

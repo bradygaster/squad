@@ -118,7 +118,11 @@ function fixture({ count = 2, epic = false } = {}) {
   const comments = new Map<number, ReturnType<typeof comment>>([[10, comment(10, planBody)]]);
   if (epic) {
     comments.set(7, comment(7, block('Structured data', envelope('scope-accepted'))));
-    comments.set(8, comment(8, block('Structured data', envelope('impl-accepted'))));
+    comments.set(8, comment(8, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${comments.get(10)!.html_url}`,
+      block('Structured data', envelope('impl-accepted')),
+    ].join('\n')));
   }
   function issue(number: number, values: Record<string, any> = {}) {
     return {
@@ -1602,6 +1606,24 @@ describe('combined implementation-phase acceptance and activation', () => {
     else f.comments.get(11)!.body += '\nChanged.';
     await expect(f.create(capture)).rejects.toThrow();
     expect(f.writes).toEqual([]);
+  });
+
+  it('rejects activation when implementation acceptance references an older plan revision (#2206)', async () => {
+    const f = fixture({ epic: true });
+    f.comments.set(20, f.comment(20, f.comments.get(10)!.body));
+    writeFileSync(f.outputPath, JSON.stringify({ items: [{ type: 'activate_plan', plan_comment_id: '20' }] }));
+    await expect(f.prepare()).rejects.toThrow(/implementation acceptance must uniquely reference the selected implementation plan revision/);
+    expect(f.writes).toEqual([]);
+    expect(f.createIssue).not.toHaveBeenCalled();
+
+    f.comments.set(21, f.comment(21, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${f.comments.get(20)!.html_url}`,
+      block('Structured data', envelope('impl-accepted')),
+    ].join('\n')));
+    const capture = await f.prepare();
+    expect(capture.plan_comment.id).toBe(20);
+    expect(capture.approvals.implementation.id).toBe(21);
   });
 });
 

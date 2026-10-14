@@ -84,7 +84,11 @@ function fixture({ owners = ['Builder', 'Reviewer', '@copilot'], implementation 
   const comments = new Map([[10, comment(10, planBody)]]);
   if (implementation) {
     comments.set(7, comment(7, block('scope-accepted')));
-    comments.set(8, comment(8, block('impl-accepted')));
+    comments.set(8, comment(8, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${comments.get(10)!.html_url}`,
+      block('impl-accepted'),
+    ].join('\n')));
   }
   const issue = (number: number, params: any = {}) => ({
     number, id: number + 1000, node_id: `I_labels_${number}`,

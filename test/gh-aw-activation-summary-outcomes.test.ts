@@ -83,7 +83,11 @@ function fixture(command: string = 'activate', secondOwner = 'Kint') {
   const comments = new Map([[10, comment(10, planBody)]]);
   if (granular) {
     comments.set(7, comment(7, block('Structured data', envelope('scope-accepted'))));
-    comments.set(8, comment(8, block('Structured data', envelope('impl-accepted'))));
+    comments.set(8, comment(8, [
+      '## Implementation Accepted',
+      `- **Implementation plan version:** ${comments.get(10)!.html_url}`,
+      block('Structured data', envelope('impl-accepted')),
+    ].join('\n')));
   }
   const issue = (number: number, values: Record<string, any> = {}) => ({
     number, id: number + 1000, node_id: `I_${number}`, body: '', labels: [],
