@@ -97,8 +97,9 @@ export interface ModelResolutionOptions {
    * Model ids known to be unavailable (plan restriction, org policy, rate
    * limit, deprecation). When the resolved model is listed, the next available
    * fallback-chain entry after it is chosen with source `fallback`; a model
-   * that is not in its chain searches the chain from the head. When no
-   * candidate remains, `omitModel` is set.
+   * that is not in its chain searches the chain from the head. Under an
+   * active cost ceiling, catalog-known candidates above it are skipped. When
+   * no candidate remains, `omitModel` is set.
    */
   unavailableModels?: Iterable<string>;
 }
@@ -154,8 +155,10 @@ export interface EffectiveCostPolicy {
 export function resolveModel(options: ModelResolutionOptions): ModelResolution {
   const base = resolveBaseModel(options);
   const policy = buildEffectiveCostPolicy(options.config, options.sessionCostPolicy);
-  const finalized = policy ? finalizeResolvedModel(base, policy, buildCatalogCategoryMap()) : base;
-  const resolved = applyAvailabilityFallback(finalized, options.unavailableModels);
+  const catalogMap = policy ? buildCatalogCategoryMap() : undefined;
+  const finalized = policy && catalogMap ? finalizeResolvedModel(base, policy, catalogMap) : base;
+  const ceiling = policy && catalogMap ? { maxCategory: policy.maxCategory, catalogMap } : undefined;
+  const resolved = applyAvailabilityFallback(finalized, options.unavailableModels, ceiling);
   return { ...resolved, rationale: resolved.rationale ?? resolved.source };
 }
 
@@ -271,12 +274,15 @@ function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
  * Replace an unavailable model with the next available fallback-chain entry.
  * A model found in its chain searches only the entries after it (never back
  * toward the head); a model not in its chain searches the chain from the
- * head. When no candidate remains, signal that the `model` parameter should
- * be omitted so the platform default applies.
+ * head. Under an active cost ceiling, catalog-known candidates above the
+ * ceiling are skipped: an automatic fallback is never an explicit opt-in.
+ * When no candidate remains, signal that the `model` parameter should be
+ * omitted so the platform default applies.
  */
 function applyAvailabilityFallback(
   resolved: ResolvedModel,
   unavailableModels?: Iterable<string>,
+  ceiling?: { maxCategory: GitHubModelCategory; catalogMap: Map<string, GitHubModelCategory> },
 ): ResolvedModel {
   if (!unavailableModels) return resolved;
   const unavailable = new Set(Array.from(unavailableModels, (id) => id.toLowerCase()));
@@ -285,19 +291,25 @@ function applyAvailabilityFallback(
   const fallbackFrom = { model: resolved.model, source: resolved.source };
   const position = resolved.fallbackChain.findIndex((id) => id.toLowerCase() === resolved.model.toLowerCase());
   const start = position + 1; // 0 when the model is not in its chain
+  const withinCeiling = (id: string): boolean => {
+    if (!ceiling) return true;
+    const cat = ceiling.catalogMap.get(id.toLowerCase());
+    return cat === undefined || CATEGORY_ORDER[cat] <= CATEGORY_ORDER[ceiling.maxCategory];
+  };
   const index = resolved.fallbackChain.findIndex(
-    (id, i) => i >= start && !unavailable.has(id.toLowerCase()),
+    (id, i) => i >= start && !unavailable.has(id.toLowerCase()) && withinCeiling(id),
   );
   const next = index >= 0 ? resolved.fallbackChain[index] : undefined;
+  const ceilingNote = ceiling ? ` within cost ceiling '${ceiling.maxCategory}'` : '';
   if (next) {
     return {
       ...resolved,
       model: next,
       tier: inferTierFromModel(next),
       source: 'fallback',
-      fallbackChain: resolved.fallbackChain.slice(index),
+      fallbackChain: resolved.fallbackChain.slice(index).filter(withinCeiling),
       fallbackFrom,
-      rationale: `'${resolved.model}' (${resolved.source}) unavailable; fell back to '${next}'`,
+      rationale: `'${resolved.model}' (${resolved.source}) unavailable; fell back to '${next}'${ceilingNote}`,
     };
   }
   return {
@@ -307,7 +319,7 @@ function applyAvailabilityFallback(
     fallbackChain: [],
     fallbackFrom,
     omitModel: true,
-    rationale: `'${resolved.model}' (${resolved.source}) unavailable and no later fallback-chain candidate is available; omit the model parameter for the platform default`,
+    rationale: `'${resolved.model}' (${resolved.source}) unavailable and no later fallback-chain candidate is available${ceilingNote}; omit the model parameter for the platform default`,
   };
 }
 

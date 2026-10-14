@@ -30,11 +30,14 @@ import {
   writeAgentContextTierOverrides,
   resolveContextTier,
   clampContextTier,
+  CATEGORY_ORDER,
+  type GitHubModelCategory,
 } from '@bradygaster/squad-sdk/config';
 import {
   resolveAgentModel,
   resolveModel as centralResolveModel,
   MODEL_RESOLUTION_PRECEDENCE,
+  buildCatalogCategoryMap,
   type ModelResolutionOptions,
   type ResolvedModel,
 } from '@bradygaster/squad-sdk/agents';
@@ -1304,5 +1307,78 @@ describe('cost policy composes with forward-only availability fallback (#1720)',
     const opts: ModelResolutionOptions = { userOverride: 'claude-sonnet-4.6', config: versatile, unavailableModels: ['claude-sonnet-4.6'] };
     const r = resolveAgentModel(opts);
     expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
+  });
+});
+
+describe('availability fallback respects the active cost ceiling (#1720)', () => {
+  const standard = MODELS.FALLBACK_CHAINS.standard;
+  const fast = MODELS.FALLBACK_CHAINS.fast;
+  const ceilingSources = [
+    { label: 'config.costPolicy', policy: (maxCategory: GitHubModelCategory) => ({ config: { costPolicy: { maxCategory } } }) },
+    { label: 'sessionCostPolicy', policy: (maxCategory: GitHubModelCategory) => ({ sessionCostPolicy: { maxCategory } }) },
+  ] as const;
+  const categories = buildCatalogCategoryMap();
+  const overCeiling = (ids: readonly string[], ceiling: GitHubModelCategory) =>
+    ids.filter((id) => {
+      const cat = categories.get(id);
+      return cat !== undefined && CATEGORY_ORDER[cat] > CATEGORY_ORDER[ceiling];
+    });
+
+  for (const { label, policy } of ceilingSources) {
+    it(`[${label}] available out-of-catalog 'hydrafusion' is still honored unchanged under a lightweight ceiling`, () => {
+      const opts: ModelResolutionOptions = { sessionModel: 'hydrafusion', taskType: 'code', ...policy('lightweight') };
+      const r = resolveAgentModel(opts);
+      expect(
+        { model: r.model, source: r.source, omitModel: r.omitModel },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (${r.source}); explicit opt-in must pass through`,
+      ).toEqual({ model: 'hydrafusion', source: 'session', omitModel: undefined });
+    });
+
+    it(`[${label}] unavailable 'hydrafusion' with no in-ceiling chain entry omits the model instead of exceeding a lightweight ceiling`, () => {
+      const opts: ModelResolutionOptions = {
+        sessionModel: 'hydrafusion', taskType: 'code', unavailableModels: ['hydrafusion'], ...policy('lightweight'),
+      };
+      const r = resolveAgentModel(opts);
+      expect(
+        { model: r.model, omitModel: r.omitModel, source: r.source, fallbackFrom: r.fallbackFrom },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (category ${categories.get(r.model) ?? 'none'}); ` +
+          'an automatic fallback must not exceed the ceiling',
+      ).toEqual({ model: '', omitModel: true, source: 'fallback', fallbackFrom: { model: 'hydrafusion', source: 'session' } });
+    });
+
+    it(`[${label}] unavailable explicit out-of-catalog pick skips over-ceiling entries and lands on an allowed later entry`, () => {
+      // versatile ceiling: gpt-5.5 (powerful) must be skipped, not chosen, after the versatile entries are unavailable.
+      const unavailable = ['hydrafusion', ...standard.slice(0, standard.indexOf('gpt-5.5'))];
+      const opts: ModelResolutionOptions = {
+        userOverride: 'hydrafusion', taskType: 'code', unavailableModels: unavailable, ...policy('versatile'),
+      };
+      const r = resolveAgentModel(opts);
+      const picked = categories.get(r.model);
+      expect(
+        { model: r.model, source: r.source },
+        `${JSON.stringify(opts)} (ceiling versatile via ${label}) picked '${r.model}' (category ${picked ?? 'none'})`,
+      ).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
+      expect(
+        overCeiling(r.fallbackChain, 'versatile'),
+        `${JSON.stringify(opts)} (ceiling versatile via ${label}) left over-ceiling entries in fallbackChain ${JSON.stringify(r.fallbackChain)}`,
+      ).toEqual([]);
+    });
+
+    it(`[${label}] unavailable fast-tier out-of-catalog pick falls back to an in-ceiling lightweight entry`, () => {
+      const opts: ModelResolutionOptions = {
+        configModel: 'custom-mini', unavailableModels: ['custom-mini'], ...policy('lightweight'),
+      };
+      const r = resolveAgentModel(opts);
+      expect(
+        { model: r.model, source: r.source },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (category ${categories.get(r.model) ?? 'none'})`,
+      ).toEqual({ model: fast[0], source: 'fallback' });
+    });
+  }
+
+  it('without a cost policy the out-of-catalog availability fallback is unchanged', () => {
+    const opts: ModelResolutionOptions = { sessionModel: 'hydrafusion', taskType: 'code', unavailableModels: ['hydrafusion'] };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} picked '${r.model}'`).toEqual({ model: standard[0], source: 'fallback' });
   });
 });

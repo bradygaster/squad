@@ -574,6 +574,37 @@ describe('Agent Lifecycle Manager — persistent model preference + provenance (
       source: 'fallback', omitModel: true, fallbackFrom: { model: last, source: 'session' },
     });
   });
+
+  it('unavailable session hydrafusion under a lightweight session ceiling omits the model key instead of an over-ceiling fallback', async () => {
+    const spawn = { agentName: 'pref-agent', task: 'Work', taskType: 'code' as const, sessionModel: 'hydrafusion', sessionCostPolicy: { maxCategory: 'lightweight' as const }, unavailableModels: ['hydrafusion'] };
+    const handle = await manager.spawnAgent(spawn);
+    const config = sessionConfigs[0]!;
+    expect(
+      Object.prototype.hasOwnProperty.call(config, 'model'),
+      `spawnAgent(${JSON.stringify(spawn)}) with ceiling lightweight passed createSession model '${String(config.model)}'; no in-ceiling fallback exists, so 'model' must be omitted`,
+    ).toBe(false);
+    expect(handle.modelResolution, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toMatchObject({
+      source: 'fallback', omitModel: true, fallbackFrom: { model: 'hydrafusion', source: 'session' },
+    });
+  });
+
+  it('unavailable session hydrafusion under a versatile config ceiling passes only an allowed fallback to createSession', async () => {
+    const cappedManager = new AgentLifecycleManager({
+      client: mockClient, teamRoot: tempDir, defaultIdleTimeout: 60_000, costPolicy: { maxCategory: 'versatile' },
+    });
+    try {
+      const unavailable = ['hydrafusion', 'gpt-5.6-terra', 'claude-sonnet-5', 'claude-sonnet-4.6'];
+      const spawn = { agentName: 'pref-agent', task: 'Work', taskType: 'code' as const, sessionModel: 'hydrafusion', unavailableModels: unavailable };
+      const handle = await cappedManager.spawnAgent(spawn);
+      expect(
+        sessionConfigs[0]?.model,
+        `spawnAgent(${JSON.stringify(spawn)}) with config ceiling versatile passed createSession model '${String(sessionConfigs[0]?.model)}'; powerful 'gpt-5.5' must be skipped`,
+      ).toBe('claude-sonnet-4.5');
+      expect(handle.modelResolution).toMatchObject({ source: 'fallback', fallbackFrom: { model: 'hydrafusion', source: 'session' } });
+    } finally {
+      await cappedManager.shutdown();
+    }
+  });
 });
 
 // --- Mock Client ---
