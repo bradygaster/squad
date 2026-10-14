@@ -1,0 +1,23 @@
+{
+  "universe_usage_history": [
+    {
+      "assignment_id": "initial-assignment",
+      "repository": "example-repo",
+      "team_root": "D:\\example\\repo",
+      "universe": "Example",
+      "created_at": "2026-03-10T14:34:25.614Z"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "initial-assignment": {
+      "repository": "example-repo",
+      "team_root": "D:\\example\\repo",
+      "universe": "Example",
+      "created_at": "2026-03-10T14:34:25.614Z",
+      "members": [
+        { "persistent_name": "Alpha", "folder": "alpha", "role": "Lead" },
+        { "persistent_name": "Beta", "folder": "beta", "role": "Engineer" }
+      ]
+    }
+  }
+}

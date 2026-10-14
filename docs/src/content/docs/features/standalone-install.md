@@ -173,16 +173,28 @@ inside the container write a registry-independent MCP spec.
 ## The squad_state MCP server
 
 `squad init` writes a `squad_state` MCP entry into `.mcp.json` so Copilot can
-reach Squad's state tools. A bundle install writes the local executable directly:
+reach Squad's state tools. Shared project configuration uses the installed
+executable on each host's `PATH`, not the initiating user's installation path.
+On macOS and Linux:
 
 ```json
-{ "command": "/opt/squad/squad", "args": ["state-mcp"] }
+{ "command": "squad", "args": ["state-mcp"] }
 ```
 
 The launcher exports `SQUAD_STANDALONE_HOME`, and the resolver checks it
 *before* probing the npm registry, so a firewalled machine makes no registry
-call at all. The path is absolute because Copilot spawns the MCP server in its
-own environment, where neither `PATH` nor that variable is guaranteed.
+call at all. On Windows, the shared entry uses `"command": "squad.exe"` so MCP
+subprocess spawning selects the real executable rather than a PowerShell or CMD
+shim. Each teammate must install Squad and expose that executable in the
+**MCP host's PATH**; restart the host after changing PATH. Moving a project
+between Windows and Unix requires rerunning `squad upgrade` to select the host's
+portable executable name. Missing PATH setup fails visibly when the host starts
+the server; no teammate's absolute installation path is written into the repo.
+
+Machine-local launch resolution still uses the detected absolute bundle path.
+Npm installations keep their portable, version-pinned `npx` specification.
+Upgrade preserves other MCP servers, user environment settings, tool
+restrictions, and custom fields on the managed entry.
 
 ## Building a bundle yourself
 
