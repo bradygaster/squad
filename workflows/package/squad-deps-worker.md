@@ -10,6 +10,8 @@ safe-outputs:
       needs: safe_outputs
       if: needs.safe_outputs.result == 'success'
       permissions:
+        actions: read
+        contents: read
         issues: write
         pull-requests: write
       max: 1
@@ -20,13 +22,47 @@ safe-outputs:
           required: true
           type: string
       steps:
+        - name: Checkout immutable research writer
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+          with:
+            ref: ${{ github.workflow_sha }}
+            persist-credentials: false
+            path: .squad-evidence-trusted-base
+        - name: Determine installed evidence provider
+          id: research-evidence-required
+          uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+          with:
+            script: |
+              const { join } = require('node:path');
+              const { pathToFileURL } = require('node:url');
+              const root = join(process.env.GITHUB_WORKSPACE, '.squad-evidence-trusted-base');
+              const evidence = await import(pathToFileURL(join(root,
+                '.github/workflows/shared/squad-evidence-provider.mjs')).href);
+              core.setOutput('enabled', Boolean(evidence.readProvider(root)));
+        - name: Restore immutable research evidence
+          if: steps.research-evidence-required.outputs.enabled == 'true'
+          uses: actions/download-artifact@v8.0.1
+          with:
+            name: squad-cao-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+            path: /tmp/squad-writer-evidence
         - name: Upsert Squad research artifact
           uses: actions/github-script@v9
           env:
             ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || github.event.inputs.issue_number }}
+            SQUAD_ISSUE_NUMBER: ${{ github.event.inputs.issue_number || github.event.issue.number || github.event.pull_request.number }}
+            SQUAD_WORKFLOW_SHA: ${{ github.workflow_sha }}
           with:
             script: |
               const { readFileSync } = await import("node:fs");
+              const { join } = await import("node:path");
+              const { pathToFileURL } = await import("node:url");
+              const root = join(process.env.GITHUB_WORKSPACE, '.squad-evidence-trusted-base');
+              const evidence = await import(pathToFileURL(join(root,
+                '.github/workflows/shared/squad-evidence-provider.mjs')).href);
+              const wave = evidence.readProvider(root)
+                ? evidence.verifyProviderBundle(root, '/tmp/squad-writer-evidence',
+                  { ...evidence.runContext(), ...evidence.policyDigests(root) })
+                : null;
               const issueNumber = Number(process.env.ISSUE_NUMBER);
               if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
                 core.setFailed("A valid issue or pull request number is required.");
@@ -81,14 +117,21 @@ safe-outputs:
                 core.setFailed("Research body must omit structured data.");
                 return;
               }
+              if (wave && (/\bsquad_evidence\b/i.test(body) ||
+                  /^#{1,6}\s+Evidence provenance\b/im.test(body))) {
+                core.setFailed("Research provenance is reserved for the trusted writer.");
+                return;
+              }
 
               const data = JSON.stringify({
                 squad_artifact: "research",
                 schema_version: "1",
                 origin_issue: issueNumber,
                 phases: [],
+                ...(wave ? { evidence: evidence.provenance(wave) } : {}),
               });
-              const finalBody = `${body}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
+              const lineage = wave ? evidence.provenanceMarkdown(wave) : '';
+              const finalBody = `${body}${lineage}\n\nStructured data:\n\n\`\`\`json\n${data}\n\`\`\``;
               const comments = await github.paginate(github.rest.issues.listComments, {
                 ...context.repo,
                 issue_number: issueNumber,

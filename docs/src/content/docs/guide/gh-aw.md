@@ -556,7 +556,7 @@ rm -f .github/skills/agentic-workflows/SKILL.md
 
 The nested `workflows/aw.yml` is the canonical package registration. Its
 package boundary prevents unrelated repository skills or agents from being
-auto-discovered. It installs exactly eight agentic workflows, twenty runtime
+auto-discovered. It installs exactly eight agentic workflows, twenty-one runtime
 resources, one integrity manifest, and one enlistment skill from the same
 resolved commit. The installed top-level workflow set is:
 
@@ -569,7 +569,7 @@ resolved commit. The installed top-level workflow set is:
 - `squad-bootstrap.md` and `squad-bootstrap.lock.yml`
 - `squad-command-router.md` and `squad-command-router.lock.yml`
 
-The install must also contain these twenty executable, documentation, and
+The install must also contain these twenty-one executable, documentation, and
 schema runtime resources (manifest-backed — see
 `workflows/squad-workflows.manifest.json`'s `shared_runtime` list for the
 authoritative source of truth):
@@ -584,6 +584,7 @@ authoritative source of truth):
 - `shared/squad-retro-provenance.mjs`
 - `shared/squad-review-guard.mjs`
 - `shared/squad-command-contract.mjs`
+- `shared/squad-evidence-provider.mjs`
 - `shared/squad-install-verifier.mjs`
 - `shared/squad-implementation-provenance.mjs`
 - `shared/squad.md`
@@ -600,9 +601,9 @@ allow JavaScript guards under `.github/workflows/shared/` but not Markdown or
 JSON at that destination, nor native workflow YAML destinations, the package
 stores those remaining exact bytes under `.github/aw/squad/runtime/`. The verifier materializes them to their runtime
 paths and rejects any digest mismatch before the bootstrap PR can be opened.
-Nineteen resources materialize under `.github/workflows/shared/`; the native
+Twenty resources materialize under `.github/workflows/shared/`; the native
 binding checker materializes at `.github/workflows/squad-agent-binding-check.yml`.
-All twenty are verified against the same contract.
+All twenty-one are verified against the same contract.
 A differing pre-existing native checker is preserved and blocks materialization;
 resolve that file conflict before opening the bootstrap PR.
 
@@ -701,7 +702,7 @@ absent. Do not suppress warnings or use `--approve` to bypass this gate.
 
 Verify the complete source/lock surface. Prefer the manifest-backed verifier
 over a hand-maintained file list, since it checks every one of the eight
-workflows, twenty runtime resources, the integrity manifest, and the
+workflows, twenty-one runtime resources, the integrity manifest, and the
 enlistment skill against `workflows/squad-workflows.manifest.json`:
 
 ```bash

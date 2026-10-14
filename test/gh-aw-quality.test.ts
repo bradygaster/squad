@@ -751,6 +751,7 @@ describe('gh-aw: shared component imports', () => {
       'shared/squad-activation.mjs',
       'shared/check-agent-binding.mjs',
       'shared/squad-command-contract.mjs',
+      'shared/squad-evidence-provider.mjs',
       'shared/squad-cast-validator.mjs',
       'shared/squad-bootstrap-validator.mjs',
       'shared/squad-improvement-gate.mjs',
@@ -846,6 +847,7 @@ describe('gh-aw: clean install runtime resource closure', () => {
     'shared/squad-bootstrap-validator.mjs',
     'shared/squad-cast-validator.mjs',
     'shared/squad-command-contract.mjs',
+    'shared/squad-evidence-provider.mjs',
     'shared/squad-implementation-provenance.mjs',
     'shared/squad-improvement-gate.mjs',
     'shared/squad-install-verifier.mjs',
@@ -4087,12 +4089,12 @@ describe('gh-aw: canonical package integrity contract', () => {
     expect(contract.workflows.map((entry: { name: string }) => entry.name)).toEqual(WORKFLOW_NAMES);
     expect(contract.workflows).toHaveLength(8);
     expect(contract.shared_runtime).toHaveLength(RUNTIME_TUPLES.length);
-    expect(contract.shared_runtime).toHaveLength(20);
+    expect(contract.shared_runtime).toHaveLength(21);
     const sharedResources = contract.shared_runtime.filter((entry: { destination: string }) =>
       entry.destination.startsWith('.github/workflows/shared/'));
     expect(ciRuntimeCount?.[1], 'strict compile CI shared-directory count must match materialized destinations')
       .toBe(String(sharedResources.length));
-    expect(sharedResources).toHaveLength(19);
+    expect(sharedResources).toHaveLength(20);
     expect(ci).toContain('test -f .github/workflows/squad-agent-binding-check.yml');
     const seedStart = ci.indexOf('mkdir -p .github/workflows');
     const addStart = ci.indexOf('gh aw add --force "$GITHUB_WORKSPACE/workflows"');

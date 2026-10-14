@@ -92,6 +92,16 @@ impl_accepted → activated
 
 **Revision:** `/squad plan revise <feedback>` may be issued from any planning state (program_planning, implementation_planning, or validating). It revises the most recent plan artifact and resets validation if present.
 
+**Farm evidence lineage (opt-in provider only):** Research's trusted structured
+`evidence` reference identifies one immutable run/attempt, manifest hash and
+enrollment. The pre-agent gate restores exactly that wave for triage and draft
+planning; it revalidates current enrollment, document hashes and freshness.
+Use the referenced findings and bundle together, and carry that reference in
+readable downstream lineage. Never mix waves or use install-time `farm/` as
+current evidence. If the referenced bundle is missing, expired or outside current
+enrollment, stop and request ordinary `/squad research`, not a snapshot update,
+refresh PR, manual merge or a different artifact selected by the model.
+
 ---
 
 ## 3. Artifact Schemas

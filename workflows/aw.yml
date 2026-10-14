@@ -35,6 +35,8 @@ resources:
     destination: .github/workflows/shared/squad-install-verifier.mjs
   - source: shared/squad-command-contract.mjs
     destination: .github/workflows/shared/squad-command-contract.mjs
+  - source: shared/squad-evidence-provider.mjs
+    destination: .github/workflows/shared/squad-evidence-provider.mjs
   - source: shared/squad-cast-validator.mjs
     destination: .github/workflows/shared/squad-cast-validator.mjs
   - source: shared/squad-bootstrap-validator.mjs

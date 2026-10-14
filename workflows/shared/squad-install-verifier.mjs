@@ -23,7 +23,7 @@ export const PACKAGE_MANIFEST = 'workflows/aw.yml';
 export const CONTRACT_SOURCE = 'workflows/squad-workflows.manifest.json';
 export const CONTRACT_DESTINATION = '.github/aw/squad-workflows.manifest.json';
 export const MIN_GH_AW_VERSION = 'v0.91.5';
-export const OWNERSHIP_ENTRY_COUNT = 29;
+export const OWNERSHIP_ENTRY_COUNT = 30;
 export const OWNERSHIP_DESTINATION =
   '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json';
 export const UNOWNED_MUTABLE_ROUTER_SKILL =
@@ -67,6 +67,7 @@ export const RUNTIME_TUPLES = deepFreeze([
   ['shared/squad-review-guard.mjs', 'workflows/shared/squad-review-guard.mjs', '.github/workflows/shared/squad-review-guard.mjs', '.github/workflows/shared/squad-review-guard.mjs', 'manifest'],
   ['shared/squad-install-verifier.mjs', 'workflows/shared/squad-install-verifier.mjs', '.github/workflows/shared/squad-install-verifier.mjs', '.github/workflows/shared/squad-install-verifier.mjs', 'manifest'],
   ['shared/squad-command-contract.mjs', 'workflows/shared/squad-command-contract.mjs', '.github/workflows/shared/squad-command-contract.mjs', '.github/workflows/shared/squad-command-contract.mjs', 'manifest'],
+  ['shared/squad-evidence-provider.mjs', 'workflows/shared/squad-evidence-provider.mjs', '.github/workflows/shared/squad-evidence-provider.mjs', '.github/workflows/shared/squad-evidence-provider.mjs', 'manifest'],
   ['shared/squad-cast-validator.mjs', 'workflows/shared/squad-cast-validator.mjs', '.github/workflows/shared/squad-cast-validator.mjs', '.github/workflows/shared/squad-cast-validator.mjs', 'manifest'],
   ['shared/squad-bootstrap-validator.mjs', 'workflows/shared/squad-bootstrap-validator.mjs', '.github/workflows/shared/squad-bootstrap-validator.mjs', '.github/workflows/shared/squad-bootstrap-validator.mjs', 'manifest'],
   ['shared/squad-improvement-gate.mjs', 'workflows/shared/squad-improvement-gate.mjs', '.github/workflows/shared/squad-improvement-gate.mjs', '.github/workflows/shared/squad-improvement-gate.mjs', 'manifest'],
@@ -95,12 +96,14 @@ const TOP_LEVEL_KEYS = deepFreeze([
   'manifest',
   'minimum_gh_aw_version',
   'revision_policy',
+  'evidence_provider_schema',
   'workflows',
   'lock_variants',
   'shared_runtime',
   'skills',
   'bootstrap',
 ]);
+const EVIDENCE_PROVIDER_SCHEMA = 'squad-evidence-provider/v1';
 const REVISION_POLICY = deepFreeze({
   kind: 'immutable-git-commit',
   pattern: '^[0-9a-f]{40}$',
@@ -168,6 +171,9 @@ export function validateContract(contract) {
   }
   if (JSON.stringify(contract.revision_policy) !== JSON.stringify(REVISION_POLICY)) {
     throw new Error('Integrity contract revision_policy does not match the trusted policy.');
+  }
+  if (contract.evidence_provider_schema !== EVIDENCE_PROVIDER_SCHEMA) {
+    throw new Error(`Integrity contract evidence_provider_schema must be ${EVIDENCE_PROVIDER_SCHEMA}.`);
   }
 
   assertArray(contract.workflows, WORKFLOW_TUPLES.length, 'Integrity contract workflows');
@@ -513,6 +519,7 @@ export function buildContract(root) {
     manifest: PACKAGE_MANIFEST,
     minimum_gh_aw_version: MIN_GH_AW_VERSION,
     revision_policy: { ...REVISION_POLICY },
+    evidence_provider_schema: EVIDENCE_PROVIDER_SCHEMA,
     workflows: WORKFLOW_TUPLES.map(([name, , destination, lock]) => {
       const source = packageWorkflowSource(root, name);
       const content = renderedWorkflows.get(name);
