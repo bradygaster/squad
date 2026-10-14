@@ -1,0 +1,10 @@
+{
+  "assignments": [
+    {
+      "assignment_id": "example-onboarding-001",
+      "universe": "descriptive",
+      "created_at": "2024-02-03",
+      "agents": ["Example Member 01", "Example Member 02", "Example Member 03", "Example Member 04", "Example Member 05", "Example Member 06", "Example Member 07", "Example Member 08", "Example Member 09", "Example Member 10", "Example Member 11", "Example Member 12"]
+    }
+  ]
+}

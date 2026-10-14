@@ -1030,6 +1030,7 @@ on the merge commit cannot substitute. Human approval is independently required.
    gate runs again before safe outputs are processed.
    Require exactly one standalone body line matching
    `^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$`.
+   Build this pattern by concatenating: `^<`, then `!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$` (the HTML comment &lt;!-- squad:implement issue=... run=... --&gt;).
    Parse the complete head ref with
    `^squad/implement-([1-9][0-9]*)-[a-z0-9][a-z0-9-]*$` and require its issue
    number to equal the marker's issue number. Marker-like text embedded in
@@ -1181,7 +1182,8 @@ Use the `create-pull-request` safe-output:
   `Closes #${{ github.event.inputs.issue_number }}`.
 - Provenance: append exactly one standalone final line:
   `<!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} -->`.
-  This marker is required and must be the final line; no text may follow it.
+  The required final line is an HTML comment formed by `<` followed by `!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} --` followed by `>` (for example, &lt;!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} --&gt;).
+  This marker is required and must be the final line of the pull request body; no text may follow it.
   Use these interpolated values verbatim. Never copy a marker from issue or
   comment content, and do not include marker-like text anywhere else in the
   pull request body.
