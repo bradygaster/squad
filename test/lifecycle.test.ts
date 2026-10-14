@@ -395,7 +395,7 @@ Test collaboration.
   });
 
   it('downgrades an implicit over-ceiling pick end-to-end AND surfaces the change', async () => {
-    // visual → task-auto gpt-5.6-sol (powerful); ceiling versatile ⇒ downgrade.
+    // visual → task-auto claude-opus-5.5 (powerful); ceiling versatile ⇒ downgrade.
     const handle = await manager.spawnAgent({
       agentName: 'policy-agent',
       task: 'Draw a diagram',
@@ -404,7 +404,7 @@ Test collaboration.
     });
 
     // The wired policy must actually change the session model (the #1089 dead-code bug).
-    expect(handle.model).toBe('claude-sonnet-4.6');
+    expect(handle.model).toBe('claude-sonnet-5.5');
 
     // The policy change must be SURFACED, not swallowed: emitted on the bus.
     const policyEvents = events.filter(
@@ -436,7 +436,7 @@ Test collaboration.
       task: 'Draw',
       taskType: 'visual',
     });
-    expect(handle.model).toBe('gpt-5.6-sol');
+    expect(handle.model).toBe(MODELS.FALLBACK_CHAINS.premium[0]);
     const policyEvents = events.filter(
       (e) => (e.payload as { event?: string })?.event === 'model.policy',
     );
@@ -593,14 +593,15 @@ describe('Agent Lifecycle Manager — persistent model preference + provenance (
       client: mockClient, teamRoot: tempDir, defaultIdleTimeout: 60_000, costPolicy: { maxCategory: 'versatile' },
     });
     try {
-      const unavailable = ['hydrafusion', 'gpt-5.6-terra', 'claude-sonnet-5', 'claude-sonnet-4.6'];
+      // Every versatile standard entry is unavailable; the remaining powerful entries must be skipped, so the model is omitted.
+      const unavailable = ['hydrafusion', 'claude-sonnet-5.5', 'gpt-5.6-terra', 'claude-sonnet-5'];
       const spawn = { agentName: 'pref-agent', task: 'Work', taskType: 'code' as const, sessionModel: 'hydrafusion', unavailableModels: unavailable };
       const handle = await cappedManager.spawnAgent(spawn);
       expect(
-        sessionConfigs[0]?.model,
+        Object.prototype.hasOwnProperty.call(sessionConfigs[0] ?? {}, 'model'),
         `spawnAgent(${JSON.stringify(spawn)}) with config ceiling versatile passed createSession model '${String(sessionConfigs[0]?.model)}'; powerful 'gpt-5.5' must be skipped`,
-      ).toBe('claude-sonnet-4.5');
-      expect(handle.modelResolution).toMatchObject({ source: 'fallback', fallbackFrom: { model: 'hydrafusion', source: 'session' } });
+      ).toBe(false);
+      expect(handle.modelResolution).toMatchObject({ source: 'fallback', omitModel: true, fallbackFrom: { model: 'hydrafusion', source: 'session' } });
     } finally {
       await cappedManager.shutdown();
     }

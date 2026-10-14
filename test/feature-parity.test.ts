@@ -931,7 +931,7 @@ describe('Feature Parity: Model Registry', () => {
 
   it('looks up model info by ID', () => {
     const registry = new ModelRegistry();
-    const info = registry.getModelInfo('claude-sonnet-4.5');
+    const info = registry.getModelInfo('claude-sonnet-5.5');
     expect(info).toBeDefined();
     expect(info!.tier).toBe('standard');
     expect(info!.provider).toBe('anthropic');

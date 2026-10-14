@@ -24,15 +24,15 @@ import type { GitHubModelCategory } from '@bradygaster/squad-sdk/config';
 describe('cost policy — resolveModel integration', () => {
   it('AC5: implicit over-ceiling selection is downgraded deterministically', () => {
     const resolved = resolveModel({
-      taskType: 'visual', // task-auto → gpt-5.6-sol (powerful, premium)
+      taskType: 'visual', // task-auto → claude-opus-5.5 (powerful, premium)
       sessionCostPolicy: { maxCategory: 'versatile' },
     });
 
     expect(resolved.policy).toBeDefined();
     expect(resolved.policy!.action).toBe('downgraded-to-ceiling');
-    expect(resolved.policy!.originalModel).toBe('gpt-5.6-sol');
-    expect(resolved.policy!.finalModel).toBe('claude-sonnet-4.6');
-    expect(resolved.model).toBe('claude-sonnet-4.6');
+    expect(resolved.policy!.originalModel).toBe('claude-opus-5.5');
+    expect(resolved.policy!.finalModel).toBe('claude-sonnet-5.5');
+    expect(resolved.model).toBe('claude-sonnet-5.5');
     // pruned chain must not contain any powerful model
     const catMap = buildCatalogCategoryMap();
     for (const id of resolved.fallbackChain) {
@@ -68,7 +68,7 @@ describe('cost policy — resolveModel integration', () => {
 
   it('no policy configured ⇒ behaves exactly as today (no policy field)', () => {
     const resolved = resolveModel({ taskType: 'visual' });
-    expect(resolved.model).toBe('gpt-5.6-sol');
+    expect(resolved.model).toBe('claude-opus-5.5');
     expect(resolved.policy).toBeUndefined();
   });
 });

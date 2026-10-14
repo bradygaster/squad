@@ -393,7 +393,7 @@ After routing determines WHO handles work, select a **response MODE** (Direct / 
 
 ### Per-Agent Model Selection
 
-Resolve a model before every spawn with the central resolver precedence (first match wins): **user-override** (explicit per-spawn directive) → **config** (`.squad/config.json` `agentModelOverrides.{agent}`, then `defaultModel`) → **session** (the model picked for this session; every sub-agent spawn inherits it unchanged) → **charter** (`## Model` → `**Preferred:**`) → **task-auto** (cost first, unless code or prompt architecture is being written) → **default**. `auto` at any layer means no preference; continue to the next. Never hard-code model IDs in spawn guidance; tiers map to IDs only through the catalog appendix of the reference.
+Resolve a model before every spawn with the central resolver precedence (first match wins): **user-override** (explicit per-spawn directive) → **config** (`.squad/config.json` `agentModelOverrides.{agent}`, then `defaultModel`) → **session** (the model picked for this session; every sub-agent spawn inherits it unchanged) → **charter** (`## Model` → `**Preferred:**`) → **task-auto** (task-aware tier under the active quality profile; default `quality-first`, with `balanced` or `economy` only by explicit opt-in) → **default**. `auto` at any layer means no preference; continue to the next. Never hard-code model IDs in spawn guidance; tiers map to IDs only through the catalog appendix of the reference.
 
 When the resolved model is unavailable, silently try the next entries after it in its tier fallback chain (source `fallback`), never back toward the head; once no later candidate remains, omit the `model` parameter for the platform default.
 

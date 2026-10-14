@@ -12,8 +12,8 @@ Spawn guidance never names a model ID. It reasons in sources and tiers (`premium
 | 2 | `config` | Persistent `.squad/config.json`: `agentModelOverrides.{agentName}`, otherwise `defaultModel` |
 | 3 | `session` | The model picked for this session (by the user or the session itself); inherited by every sub-agent spawn |
 | 4 | `charter` | The agent charter's `## Model` → `**Preferred:**` value, unless it is `auto` |
-| 5 | `task-auto` | Task-aware tier selection (cost first, unless code is being written) |
-| 6 | `default` | Nothing else matched |
+| 5 | `task-auto` | Task-aware tier selection under the active quality profile (default `quality-first`) |
+| 6 | `default` | Nothing else matched (head of the standard tier; fast tier only under the `economy` profile) |
 | — | `fallback` | Not a layer: replaces the chosen model only after it is known to be unavailable |
 
 `auto` at any layer (any letter case) means "no preference here"; continue to the next layer. This includes a per-spawn directive, the persistent config fields, the session model and the charter.
@@ -30,36 +30,55 @@ Spawn guidance never names a model ID. It reasons in sources and tiers (`premium
 
 **`charter` — charter preference:** Does the agent's charter have a `## Model` section with `**Preferred:**` set to a specific model (not `auto`)? If yes, use that model.
 
-**`task-auto` — task-aware auto-selection:** Use the governing principle: **cost first, unless code is being written.** Match the agent's task to its output type, select the tier, and use the head of that tier's fallback chain (Appendix A):
+**Quality profile:** Task-aware selection runs under one of three profiles. The profile changes only `task-auto` and `default`; it never replaces a `user-override`, `config`, `session` or `charter` model, and never replaces an explicit opt-in model such as one the user picked for the session.
 
-| Task Output | Tier | Rule |
-|-------------|------|------|
-| Writing code (implementation, refactoring, test code, bug fixes) | Standard | Quality and accuracy matter for code. |
-| Writing prompts or agent designs (structured text that functions like code) | Standard | Prompts are executable — treat like code. |
-| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | Fast | Cost first. |
-| Visual/design work requiring image analysis | Premium | Vision capability required. Overrides cost rule. |
+| Profile | When it is active | Intent |
+|---------|-------------------|--------|
+| `quality-first` | Default when nothing else is set | Pick the tier that gives the best result for the task; avoid reruns caused by an underpowered model |
+| `balanced` | Explicit opt-in | Keep premium for quality-sensitive gates; research and language-heavy work stay standard rather than automatically cheap |
+| `economy` | Explicit opt-in (`economyMode: true` or `modelProfile: "economy"`) | Cost first; then apply the economy map. Always visible: the rationale says `(economy profile)` |
 
-**Role-to-tier mapping** (applying the cost-first principle):
+Profile precedence: session profile ("use the balanced profile for this session") → `economyMode: true` → persistent `modelProfile` in `.squad/config.json` → `quality-first`. An explicit `economyMode: false` cancels a persisted `economy` profile. Cost ceilings (`maxCategory`) still apply under every profile.
+
+- **When user says "use the {profile} profile" / "always use {profile}":** Write `modelProfile` to `.squad/config.json` (`quality-first`, `balanced` or `economy`). Acknowledge: `✅ Model profile saved: {profile}`.
+- **When user says "use {profile} for this session":** Treat it as the session profile; do not write config.
+
+**`task-auto` — task-aware auto-selection:** Match the agent's task to its type, look up the tier for the active profile, and use the head of that tier's fallback chain (Appendix A):
+
+| Task type | `quality-first` | `balanced` | `economy` |
+|-----------|-----------------|------------|-----------|
+| Architecture, verification, review, security, design, visual | Premium | Premium | Premium → economy map |
+| Research | Premium | Standard | Fast |
+| Writing code, prompts or agent designs | Standard | Standard | Standard → economy map |
+| Docs, writing | Standard | Standard | Fast |
+| Planning, triage | Standard | Fast | Fast |
+| Mechanical ops (Scribe, git, release, changelogs, version bumps) | Fast | Fast | Fast |
+
+Quality-sensitive work that is not code (architecture, research, verification, reviewer gates, security, design) can use the premium tier. Mechanical work stays fast under every profile.
+
+**Role-to-tier mapping** (under `quality-first`):
 
 | Role | Default Tier | Why | Override When |
 |------|--------------|-----|---------------|
 | Core Dev / Backend / Frontend | Standard | Writes code — quality first | Heavy code gen → code specialist |
-| Tester / QA | Standard | Writes test code — quality first | Simple test scaffolding → fast |
-| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → fast |
-| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → standard; research/analysis → fast |
-| Copilot SDK Expert | Standard | Technical analysis that often touches code | Pure research → fast |
+| Tester / QA | Standard | Writes test code; verification gates → premium | Simple test scaffolding → fast |
+| Lead / Architect | auto (per-task) | Architecture and review are quality-sensitive | Architecture proposals, reviewer gates → premium; triage/planning → standard |
+| Prompt Engineer | auto (per-task) | Prompt design is executable, like code | Prompt architecture → standard; research → premium |
+| Copilot SDK Expert | Standard | Technical analysis that often touches code | Deep research → premium |
 | Designer / Visual | Premium | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
-| DevRel / Writer | Fast | Docs and writing — not code | — |
-| Scribe / Logger | Fast | Mechanical file ops — cheapest possible | — (never bump Scribe) |
+| DevRel / Writer | Standard | Language-heavy work benefits from a stronger model | Economy profile → fast |
+| Scribe / Logger | Fast | Mechanical file ops | — (never bump Scribe) |
 | Git / Release | Fast | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
 
 **Task complexity adjustments** (apply at most ONE — no cascading):
-- **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
+- **Bump UP to premium:** multi-agent coordination (output feeds 3+ agents)
 - **Bump DOWN to fast:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
 - **Switch to the code specialist (Appendix A):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
 - **Switch to the analytical-diversity model (Appendix A):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
 
-**`default`:** If nothing else matched, use the head of the fast tier chain. Cost wins when in doubt, unless code is being produced.
+**Live availability:** When the runtime supplies a live model list (`availableModels`) or a list of unavailable models, it is authoritative for availability. A recommended model missing from the live list falls forward to the next listed candidate; an explicitly chosen model missing from it falls back visibly (source `fallback`, rationale names it). Recommendations and defaults come only from the public GA catalog in Appendix A; a model that is merely exposed by a tool schema is not a recommendation.
+
+**`default`:** If nothing else matched, use the head of the standard tier chain. Under the `economy` profile, use the economy default from the fast tier instead.
 
 **`fallback` — when a model is unavailable:**
 
@@ -106,18 +125,22 @@ Every spawn acknowledgment names the resolved model, its source and a short rati
 
 This appendix is catalog data, not spawn guidance. It mirrors `MODELS.FALLBACK_CHAINS` and `MODEL_CATALOG` in the SDK and is maintained with the model catalog. The guidance above refers only to tiers and sources; these lists turn a tier into model IDs.
 
+Source of truth for public availability: the GitHub Copilot supported-models table (https://docs.github.com/en/copilot/reference/ai-models/supported-models), verified 2026-10-14. Only public GA models are listed; internal and preview models are never recommended. Tiers place models by their Copilot `model_picker_category` (`powerful`, `versatile`, `lightweight`), not by guessed pricing. An opt-in model the user names explicitly is still passed through unchanged.
+
 **Fallback chains:**
 
 ```
-Premium:  gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
-Standard: gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro → (omit model param)
-Fast:     gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
+Premium:  claude-opus-5.5 → gpt-6.1-sol → claude-opus-5 → gpt-6-sol → claude-opus-4.8 → gpt-5.6-sol → (omit model param)
+Standard: claude-sonnet-5.5 → gpt-5.6-terra → claude-sonnet-5 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → (omit model param)
+Fast:     claude-haiku-5.5 → gpt-6-luna → gpt-5.6-luna → gemini-3.8-flash → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
 ```
 
-**Specialists:** code specialist `gpt-5.3-codex` (standard); analytical diversity `gemini-3.1-pro` (standard).
+**Economy default:** `gpt-5.6-luna`. The economy map moves premium to standard (`claude-opus-5.5` → `claude-sonnet-5.5`; `claude-opus-5`, `claude-opus-4.8` → `claude-sonnet-5`; GPT Sol models → `gpt-5.6-terra`) and standard or fast Anthropic/Terra models to `gpt-5.6-luna`.
 
-**Valid models (current platform catalog):**
+**Specialists:** code specialists `gpt-5.3-codex` (powerful) and `mai-code-1.1-flash` (lightweight); analytical diversity `gemini-4-argon` (powerful), `grok-4.7` and `grok-4.6` (versatile).
 
-Premium: `gpt-5.6-sol`, `claude-opus-5`, `claude-opus-4.8`, `claude-opus-4.7`, `claude-opus-4.6`
-Standard: `gpt-5.6-terra`, `claude-sonnet-5`, `claude-sonnet-4.6`, `claude-sonnet-4.5`, `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`, `gemini-3.1-pro`
-Fast/Cheap: `gpt-5.6-luna`, `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5-mini`
+**Valid models (public GA catalog):**
+
+Premium (powerful): `claude-opus-5.5`, `gpt-6.1-sol`, `claude-opus-5`, `gpt-6-sol`, `claude-opus-4.8`, `gpt-5.6-sol`, `gemini-4-argon`
+Standard: `claude-sonnet-5.5`, `gpt-5.6-terra`, `claude-sonnet-5`, `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`, `grok-4.7`, `grok-4.6`
+Fast: `claude-haiku-5.5`, `gpt-6-luna`, `gpt-5.6-luna`, `gemini-3.8-flash`, `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5-mini`, `mai-code-1.1-flash`

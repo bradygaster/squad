@@ -45,9 +45,9 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
     expect(visitedSet).toEqual(chainSet);
   });
 
-  it('premium chain starts with GPT Sol and walks through all premium options', () => {
+  it('premium chain starts with Claude Opus 5.5 and walks through all premium options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.premium;
-    expect(chain[0]).toBe('gpt-5.6-sol');
+    expect(chain[0]).toBe('claude-opus-5.5');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -68,7 +68,7 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
 
   it('fast chain walks through all fast options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.fast;
-    expect(chain[0]).toBe('gpt-5.6-luna');
+    expect(chain[0]).toBe('claude-haiku-5.5');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -149,7 +149,7 @@ describe('Provider preference — Claude family preference', () => {
   const registry = new ModelRegistry();
 
   it('getFallbackChain with preferSameProvider starts with same provider', () => {
-    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-4.5');
+    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-5.5');
 
     // First models should be Anthropic (Claude family)
     const firstTwo = chain.slice(0, 2);
@@ -160,7 +160,7 @@ describe('Provider preference — Claude family preference', () => {
   });
 
   it('prefer Claude: all anthropic models come before other providers', () => {
-    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-4.5');
+    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-5.5');
     const standardAnthropicCount = MODEL_CATALOG.filter(
       m => m.tier === 'standard' && m.provider === 'anthropic'
     ).length;
@@ -260,8 +260,8 @@ describe('Model fallback — edge cases', () => {
 
   it('getNextFallback with empty attempted set returns second in chain', () => {
     const next = registry.getNextFallback('claude-opus-4.8', 'premium');
-    // With no attempted set, it should return the next in chain after current
-    expect(next).toBe('claude-opus-5');
+    // With no attempted set, it returns the first same-provider entry other than current
+    expect(next).toBe('claude-opus-5.5');
   });
 
   it('getNextFallback for unknown model returns null', () => {

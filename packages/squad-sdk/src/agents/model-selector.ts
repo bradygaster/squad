@@ -5,7 +5,10 @@
 import { MODELS } from '../runtime/constants.js';
 import {
   applyEconomyMode,
+  DEFAULT_MODEL_SELECTION_PROFILE,
+  isModelSelectionProfile,
   MODEL_CATALOG,
+  type ModelSelectionProfile,
   CATEGORY_ORDER,
   type GitHubModelCategory,
   type CostPolicyConfig,
@@ -14,10 +17,33 @@ import {
 } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
 
+export {
+  DEFAULT_MODEL_SELECTION_PROFILE,
+  MODEL_SELECTION_PROFILES,
+  isModelSelectionProfile,
+  type ModelSelectionProfile,
+} from '../config/models.js';
+
 /**
- * Task types that influence model selection.
+ * Task types that influence model selection. Quality-sensitive non-code work
+ * (architecture, research, verification, review, security, design) is
+ * distinguished from language work (docs, writing, planning) and mechanical
+ * work (Scribe, git, release bookkeeping).
  */
-export type TaskType = 'code' | 'prompt' | 'docs' | 'visual' | 'planning' | 'mechanical';
+export type TaskType =
+  | 'code'
+  | 'prompt'
+  | 'docs'
+  | 'visual'
+  | 'planning'
+  | 'mechanical'
+  | 'architecture'
+  | 'research'
+  | 'verification'
+  | 'review'
+  | 'security'
+  | 'design'
+  | 'writing';
 
 /**
  * Model tier classification.
@@ -84,8 +110,18 @@ export interface ModelResolutionOptions {
   taskModel?: string;
   /** Agent role (for context) */
   agentRole?: string;
-  /** When true, apply economy mode substitution at Layer 3/4 */
+  /**
+   * Legacy economy switch. `true` selects the `economy` profile unless a
+   * session profile is set.
+   */
   economyMode?: boolean;
+  /**
+   * Persistent quality profile (`.squad/config.json` `modelProfile`). Defaults
+   * to `quality-first`. Only automatic layers (task-auto, default) use it.
+   */
+  profile?: ModelSelectionProfile;
+  /** Quality profile chosen for the current session; wins over `profile` and `economyMode`. */
+  sessionProfile?: ModelSelectionProfile;
   /**
    * Persistent config carrying an optional cost policy (cost-ceiling axis).
    * When present with a `maxCategory`, resolution is finalized against it.
@@ -102,6 +138,13 @@ export interface ModelResolutionOptions {
    * no candidate remains, `omitModel` is set.
    */
   unavailableModels?: Iterable<string>;
+  /**
+   * Live model list supplied by the runtime (for example the session's model
+   * enum). When present it is authoritative for availability: any id not in
+   * it is treated as unavailable, for every source, and handled like
+   * {@link unavailableModels}. Omit when no live list is known.
+   */
+  availableModels?: Iterable<string>;
 }
 
 /**
@@ -124,6 +167,8 @@ export interface ResolvedModel {
    * consumer-constructed values stay valid.
    */
   rationale?: string;
+  /** Quality profile in effect for this resolution (set by {@link resolveModel}). */
+  profile?: ModelSelectionProfile;
   /** Model and source that were preferred before an availability fallback. */
   fallbackFrom?: { model: string; source: ModelResolutionSource };
   /**
@@ -153,13 +198,41 @@ export interface EffectiveCostPolicy {
  * @returns Resolved model with tier, source, rationale, fallback chain, and optional policy outcome
  */
 export function resolveModel(options: ModelResolutionOptions): ModelResolution {
-  const base = resolveBaseModel(options);
+  const profile = resolveModelProfile(options);
+  const base = resolveBaseModel(options, profile);
   const policy = buildEffectiveCostPolicy(options.config, options.sessionCostPolicy);
   const catalogMap = policy ? buildCatalogCategoryMap() : undefined;
   const finalized = policy && catalogMap ? finalizeResolvedModel(base, policy, catalogMap) : base;
   const ceiling = policy && catalogMap ? { maxCategory: policy.maxCategory, catalogMap } : undefined;
-  const resolved = applyAvailabilityFallback(finalized, options.unavailableModels, ceiling);
-  return { ...resolved, rationale: resolved.rationale ?? resolved.source };
+  const isUnavailable = buildAvailabilityCheck(options.unavailableModels, options.availableModels);
+  const resolved = applyAvailabilityFallback(finalized, isUnavailable, ceiling);
+  return { ...resolved, profile, rationale: resolved.rationale ?? resolved.source };
+}
+
+/**
+ * Effective quality profile: session profile, then legacy `economyMode: true`,
+ * then the persistent profile, then `quality-first`. Unknown values are ignored.
+ */
+export function resolveModelProfile(
+  options: Pick<ModelResolutionOptions, 'profile' | 'sessionProfile' | 'economyMode'>,
+): ModelSelectionProfile {
+  if (isModelSelectionProfile(options.sessionProfile)) return options.sessionProfile;
+  if (options.economyMode === true) return 'economy';
+  if (isModelSelectionProfile(options.profile)) return options.profile;
+  return DEFAULT_MODEL_SELECTION_PROFILE;
+}
+
+function buildAvailabilityCheck(
+  unavailableModels?: Iterable<string>,
+  availableModels?: Iterable<string>,
+): ((id: string) => boolean) | undefined {
+  if (!unavailableModels && !availableModels) return undefined;
+  const unavailable = new Set(Array.from(unavailableModels ?? [], (id) => id.toLowerCase()));
+  const available = availableModels ? new Set(Array.from(availableModels, (id) => id.toLowerCase())) : undefined;
+  return (id: string) => {
+    const key = id.toLowerCase();
+    return unavailable.has(key) || (available !== undefined && !available.has(key));
+  };
 }
 
 /**
@@ -220,10 +293,11 @@ function explicitModel(model: string, source: ModelResolutionSource, rationale: 
 
 /**
  * Layered base resolution. Explicit layers (user-override, config, session,
- * charter) are never altered by economy mode.
+ * charter) are never altered by the quality profile or economy mode.
  */
-function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
-  const { taskType, taskModel, economyMode } = options;
+function resolveBaseModel(options: ModelResolutionOptions, profile: ModelSelectionProfile): ResolvedModel {
+  const { taskType, taskModel } = options;
+  const economyMode = profile === 'economy';
   const userOverride = options.userOverride?.trim();
   const configModel = options.configModel?.trim();
   const sessionModel = options.sessionModel?.trim();
@@ -245,28 +319,29 @@ function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
     return explicitModel(charterPreference, 'charter', `charter preference selected '${charterPreference}'`);
   }
 
-  // Layer 3: Task-Aware Auto-Selection (economy mode applies)
+  // Layer 3: Task-Aware Auto-Selection (profile applies)
   const autoSelected = isModelPreference(taskModel)
     ? selectTaskModel(taskModel.trim(), economyMode)
     : taskType
-      ? selectModelForTask(taskType, economyMode)
+      ? selectModelForTask(taskType, profile)
       : undefined;
   if (autoSelected) {
     return autoSelected;
   }
 
-  // Layer 4: Default (economy mode applies)
+  // Layer 4: Default (profile applies). Economy keeps the cost-first default;
+  // quality-first and balanced use the standard chain head.
   const defaultModel = economyMode
     ? applyEconomyMode(MODELS.SELECTOR_DEFAULT)
-    : MODELS.SELECTOR_DEFAULT;
+    : MODELS.FALLBACK_CHAINS.standard[0];
   const defaultTier = inferTierFromModel(defaultModel);
   return {
     model: defaultModel,
     tier: defaultTier,
     source: 'default',
     fallbackChain: [...MODELS.FALLBACK_CHAINS[defaultTier]],
-    rationale: `no override, session, charter, or task match; default '${defaultModel}'` +
-      (economyMode ? ' (economy mode)' : ''),
+    rationale: `${profile}: no override, session, charter, or task match; default '${defaultModel}'` +
+      (economyMode ? ' (economy profile)' : ''),
   };
 }
 
@@ -281,12 +356,10 @@ function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
  */
 function applyAvailabilityFallback(
   resolved: ResolvedModel,
-  unavailableModels?: Iterable<string>,
+  isUnavailable?: (id: string) => boolean,
   ceiling?: { maxCategory: GitHubModelCategory; catalogMap: Map<string, GitHubModelCategory> },
 ): ResolvedModel {
-  if (!unavailableModels) return resolved;
-  const unavailable = new Set(Array.from(unavailableModels, (id) => id.toLowerCase()));
-  if (!unavailable.has(resolved.model.toLowerCase())) return resolved;
+  if (!isUnavailable || !isUnavailable(resolved.model)) return resolved;
 
   const fallbackFrom = { model: resolved.model, source: resolved.source };
   const position = resolved.fallbackChain.findIndex((id) => id.toLowerCase() === resolved.model.toLowerCase());
@@ -297,7 +370,7 @@ function applyAvailabilityFallback(
     return cat === undefined || CATEGORY_ORDER[cat] <= CATEGORY_ORDER[ceiling.maxCategory];
   };
   const index = resolved.fallbackChain.findIndex(
-    (id, i) => i >= start && !unavailable.has(id.toLowerCase()) && withinCeiling(id),
+    (id, i) => i >= start && !isUnavailable(id) && withinCeiling(id),
   );
   const next = index >= 0 ? resolved.fallbackChain[index] : undefined;
   const ceilingNote = ceiling ? ` within cost ceiling '${ceiling.maxCategory}'` : '';
@@ -324,15 +397,17 @@ function applyAvailabilityFallback(
 }
 
 /**
- * Select model based on task type, with optional economy mode substitution.
+ * Select model based on task type and quality profile. The economy profile
+ * also applies economy substitution.
  *
  * @param taskType - Type of task being performed
- * @param economyMode - When true, downgrade model to cheaper alternative
+ * @param profile - Effective quality profile
  * @returns Resolved model or undefined if no match
  */
-function selectModelForTask(taskType: TaskType, economyMode?: boolean): ResolvedModel | undefined {
-  const taskTier = TASK_TIERS[taskType];
+function selectModelForTask(taskType: TaskType, profile: ModelSelectionProfile): ResolvedModel | undefined {
+  const taskTier = PROFILE_TASK_TIERS[profile][taskType];
   if (!taskTier) return undefined;
+  const economyMode = profile === 'economy';
 
   // Task-aware picks are the head of the tier's fallback chain, so the
   // catalog in runtime constants stays the single source of model ids.
@@ -349,7 +424,7 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
     tier,
     source: 'task-auto',
     fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
-    rationale: `${taskType} task → ${taskTier} tier '${model}'` + (economyMode ? ' (economy mode)' : ''),
+    rationale: `${profile}: ${taskType} task → ${taskTier} tier '${model}'` + (economyMode ? ' (economy profile)' : ''),
   };
 }
 
@@ -362,17 +437,62 @@ function selectTaskModel(taskModel: string, economyMode?: boolean): ResolvedMode
     tier,
     source: 'task-auto',
     fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
-    rationale: `task-aware model '${model}'` + (economyMode ? ' (economy mode)' : ''),
+    rationale: `task-aware model '${model}'` + (economyMode ? ' (economy profile)' : ''),
   };
 }
 
-const TASK_TIERS: Record<TaskType, ModelTier> = {
-  code: 'standard',
-  prompt: 'standard',
-  visual: 'premium',
-  docs: 'fast',
-  planning: 'fast',
-  mechanical: 'fast',
+/**
+ * Task → tier per quality profile (#1598). quality-first sends
+ * quality-sensitive non-code work to premium even when no code is written;
+ * economy keeps the historical cost-first table and then substitutes via
+ * {@link applyEconomyMode}.
+ */
+export const PROFILE_TASK_TIERS: Readonly<Record<ModelSelectionProfile, Readonly<Record<TaskType, ModelTier>>>> = {
+  'quality-first': {
+    architecture: 'premium',
+    research: 'premium',
+    verification: 'premium',
+    review: 'premium',
+    security: 'premium',
+    design: 'premium',
+    visual: 'premium',
+    code: 'standard',
+    prompt: 'standard',
+    docs: 'standard',
+    writing: 'standard',
+    planning: 'standard',
+    mechanical: 'fast',
+  },
+  balanced: {
+    architecture: 'premium',
+    verification: 'premium',
+    review: 'premium',
+    security: 'premium',
+    design: 'premium',
+    visual: 'premium',
+    research: 'standard',
+    code: 'standard',
+    prompt: 'standard',
+    docs: 'standard',
+    writing: 'standard',
+    planning: 'fast',
+    mechanical: 'fast',
+  },
+  economy: {
+    architecture: 'premium',
+    verification: 'premium',
+    review: 'premium',
+    security: 'premium',
+    design: 'premium',
+    visual: 'premium',
+    code: 'standard',
+    prompt: 'standard',
+    research: 'fast',
+    docs: 'fast',
+    writing: 'fast',
+    planning: 'fast',
+    mechanical: 'fast',
+  },
 };
 
 export function inferTierFromModel(model: string): ModelTier {

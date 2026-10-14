@@ -244,8 +244,8 @@ describe('writeAgentModelOverrides', () => {
 // ============================================================================
 
 describe('resolveModel', () => {
-  it('Layer 4: returns default Luna when nothing is set', () => {
-    expect(resolveModel({})).toBe('gpt-5.6-luna');
+  it('Layer 4: returns the quality-first standard default when nothing is set', () => {
+    expect(resolveModel({})).toBe(MODELS.FALLBACK_CHAINS.standard[0]);
   });
 
   it('Layer 3: task model wins over default', () => {
@@ -1130,9 +1130,9 @@ describe('central resolver: config, session, fallback sources + rationale (#1720
   });
 
   it('task-auto and default results carry a rationale', () => {
-    const task = expectResolution({ taskType: 'docs' }, MODELS.FALLBACK_CHAINS.fast[0], 'task-auto');
-    expect(task.rationale, `task-auto rationale should name the task type: '${task.rationale}'`).toMatch(/docs task/);
-    const def = expectResolution({}, MODELS.FALLBACK_CHAINS.fast[0], 'default');
+    const task = expectResolution({ taskType: 'mechanical' }, MODELS.FALLBACK_CHAINS.fast[0], 'task-auto');
+    expect(task.rationale, `task-auto rationale should name the task type: '${task.rationale}'`).toMatch(/mechanical task/);
+    const def = expectResolution({}, MODELS.FALLBACK_CHAINS.standard[0], 'default');
     expect(def.rationale, `default rationale should say nothing matched: '${def.rationale}'`).toMatch(/default/);
   });
 
@@ -1151,7 +1151,7 @@ describe('central resolver: config, session, fallback sources + rationale (#1720
 
   it('fallback source: an exhausted chain asks the caller to omit the model parameter', () => {
     const chain = MODELS.FALLBACK_CHAINS.fast;
-    const opts: Opts = { taskType: 'docs', unavailableModels: [...chain] };
+    const opts: Opts = { taskType: 'mechanical', unavailableModels: [...chain] };
     const r = resolveAgentModel(opts);
     expect(
       { source: r.source, omitModel: r.omitModel, model: r.model },
@@ -1220,7 +1220,7 @@ describe("central resolver: 'auto' sentinel at every layer (#1720)", () => {
       configModel: 'Auto',
       sessionModel: 'auto ',
       charterPreference: 'AUTO',
-      taskType: 'docs',
+      taskType: 'mechanical',
     };
     const r = resolveAgentModel(opts);
     expect(
@@ -1280,10 +1280,12 @@ describe('cost policy composes with forward-only availability fallback (#1720)',
     const r = resolveAgentModel(opts);
     const earlier = chain.slice(0, chain.indexOf('gpt-5.4'));
     expect(earlier, `${JSON.stringify(opts)} chose '${r.model}', which precedes 'gpt-5.4' in ${JSON.stringify(chain)}`).not.toContain(r.model);
+    // Every entry after 'gpt-5.4' is over the versatile ceiling, so the forward
+    // search exhausts and omits the model rather than stepping back to the head.
     expect(
-      { model: r.model, source: r.source, fallbackFrom: r.fallbackFrom },
-      `${JSON.stringify(opts)} must fall forward to the next in-ceiling entry after 'gpt-5.4'`,
-    ).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback', fallbackFrom: { model: 'gpt-5.4', source: 'user-override' } });
+      { model: r.model, source: r.source, omitModel: r.omitModel, fallbackFrom: r.fallbackFrom },
+      `${JSON.stringify(opts)} must not wrap back past 'gpt-5.4' in ${JSON.stringify(chain)}`,
+    ).toEqual({ model: '', source: 'fallback', omitModel: true, fallbackFrom: { model: 'gpt-5.4', source: 'user-override' } });
     expect(r.policy?.action).toBe('warn-allow-explicit');
   });
 
@@ -1300,13 +1302,18 @@ describe('cost policy composes with forward-only availability fallback (#1720)',
       sessionModel: 'gpt-5.5', sessionCostPolicy: { maxCategory: 'versatile' }, unavailableModels: ['gpt-5.5'],
     };
     const r = resolveAgentModel(opts);
-    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
+    const earlier = chain.slice(0, chain.indexOf('gpt-5.5'));
+    expect(earlier, `${JSON.stringify(opts)} chose '${r.model}', which precedes 'gpt-5.5'`).not.toContain(r.model);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: '', source: 'fallback' });
   });
 
   it('within-ceiling pick that is unavailable moves forward over pruned entries', () => {
-    const opts: ModelResolutionOptions = { userOverride: 'claude-sonnet-4.6', config: versatile, unavailableModels: ['claude-sonnet-4.6'] };
+    // gemini-3.8-flash (versatile) follows gpt-5.6-luna in the fast chain and is pruned by a lightweight ceiling.
+    const opts: ModelResolutionOptions = {
+      userOverride: 'gpt-5.6-luna', config: { costPolicy: { maxCategory: 'lightweight' } }, unavailableModels: ['gpt-5.6-luna'],
+    };
     const r = resolveAgentModel(opts);
-    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-haiku-4.5', source: 'fallback' });
   });
 });
 
@@ -1347,20 +1354,20 @@ describe('availability fallback respects the active cost ceiling (#1720)', () =>
     });
 
     it(`[${label}] unavailable explicit out-of-catalog pick skips over-ceiling entries and lands on an allowed later entry`, () => {
-      // versatile ceiling: gpt-5.5 (powerful) must be skipped, not chosen, after the versatile entries are unavailable.
-      const unavailable = ['hydrafusion', ...standard.slice(0, standard.indexOf('gpt-5.5'))];
+      // lightweight ceiling: gemini-3.8-flash (versatile) must be skipped, not chosen, after the earlier lightweight entries are unavailable.
+      const unavailable = ['custom-mini', ...fast.slice(0, fast.indexOf('gemini-3.8-flash'))];
       const opts: ModelResolutionOptions = {
-        userOverride: 'hydrafusion', taskType: 'code', unavailableModels: unavailable, ...policy('versatile'),
+        userOverride: 'custom-mini', unavailableModels: unavailable, ...policy('lightweight'),
       };
       const r = resolveAgentModel(opts);
       const picked = categories.get(r.model);
       expect(
         { model: r.model, source: r.source },
-        `${JSON.stringify(opts)} (ceiling versatile via ${label}) picked '${r.model}' (category ${picked ?? 'none'})`,
-      ).toEqual({ model: 'claude-sonnet-4.5', source: 'fallback' });
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (category ${picked ?? 'none'})`,
+      ).toEqual({ model: 'claude-haiku-4.5', source: 'fallback' });
       expect(
-        overCeiling(r.fallbackChain, 'versatile'),
-        `${JSON.stringify(opts)} (ceiling versatile via ${label}) left over-ceiling entries in fallbackChain ${JSON.stringify(r.fallbackChain)}`,
+        overCeiling(r.fallbackChain, 'lightweight'),
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) left over-ceiling entries in fallbackChain ${JSON.stringify(r.fallbackChain)}`,
       ).toEqual([]);
     });
 

@@ -100,9 +100,9 @@ export const DEFAULT_CONFIG: SquadConfig = {
     default: 'gpt-5.6-terra',
     defaultTier: 'standard',
     tiers: {
-      premium: ['gpt-5.6-sol', 'claude-opus-5', 'claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6'],
-      standard: ['gpt-5.6-terra', 'claude-sonnet-5', 'claude-sonnet-4.6', 'gpt-5.5', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-3.1-pro'],
-      fast: ['gpt-5.6-luna', 'claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
+      premium: ['claude-opus-5.5', 'gpt-6.1-sol', 'claude-opus-5', 'gpt-6-sol', 'claude-opus-4.8', 'gpt-5.6-sol'],
+      standard: ['claude-sonnet-5.5', 'gpt-5.6-terra', 'claude-sonnet-5', 'gpt-5.5', 'gpt-5.4', 'gpt-5.3-codex'],
+      fast: ['claude-haiku-5.5', 'gpt-6-luna', 'gpt-5.6-luna', 'gemini-3.8-flash', 'claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
     },
   },
   agents: [],

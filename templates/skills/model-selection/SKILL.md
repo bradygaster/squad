@@ -36,8 +36,8 @@ Resolution is **first-match-wins** — the highest layer with a value wins.
 | **0b** | Global Config | `.squad/config.json` → `defaultModel` | Persistent (survives sessions) |
 | **1** | Session Directive | User said "use X" in current session | Session-only |
 | **2** | Charter Preference | Agent's `charter.md` → `## Model` section | Persistent (in charter) |
-| **3** | Task-Aware Auto | Code/prompts → Terra, docs → Luna, visual → Sol | Computed per-spawn |
-| **4** | Default | `gpt-5.6-luna` | Hardcoded fallback |
+| **3** | Task-Aware Auto | Task type → tier under the active quality profile (default `quality-first`) | Computed per-spawn |
+| **4** | Default | Head of the standard chain (`claude-sonnet-5.5`); `gpt-5.6-luna` under the `economy` profile | Hardcoded fallback |
 
 **Key principle:** Layer 0 (persistent config) beats everything. If the user said "always use opus" and it was saved to config.json, every agent gets opus regardless of role or task type. This is intentional — the user explicitly chose quality over cost.
 
@@ -56,12 +56,13 @@ Resolution is **first-match-wins** — the highest layer with a value wins.
 2. CHECK Layer 0b: Is there a `defaultModel` in config.json? → Use it.
 3. CHECK Layer 1: Did the user give a session directive? → Use it.
 4. CHECK Layer 2: Does the agent's charter have a `## Model` section? → Use it.
-5. CHECK Layer 3: Determine task type:
-- Code (implementation, tests, refactoring, bug fixes) → `gpt-5.6-terra`
-- Prompts, agent designs → `gpt-5.6-terra`
-- Visual/design with image analysis → `gpt-5.6-sol`
-- Non-code (docs, planning, triage, changelogs) → `gpt-5.6-luna`
-6. FALLBACK Layer 4: `gpt-5.6-luna`
+5. CHECK Layer 3: Determine task type and use the head of its tier chain for the active profile (`quality-first` unless the session or `.squad/config.json` `modelProfile` says `balanced` or `economy`, or `economyMode` is on):
+- Architecture, research, verification, reviewer gates, security, design, visual → premium (`claude-opus-5.5`); `balanced` and `economy` move research down
+- Code (implementation, tests, refactoring, bug fixes), prompts, agent designs → standard (`claude-sonnet-5.5`)
+- Docs, writing, planning, triage → standard under `quality-first`; fast under `economy` (and planning under `balanced`)
+- Mechanical (Scribe, git, release, changelogs, version bumps) → fast (`claude-haiku-5.5`)
+- `economy` then applies the economy map (premium → standard, standard → `gpt-5.6-luna`) and says so in the rationale
+6. FALLBACK Layer 4: head of the standard chain; `gpt-5.6-luna` under `economy`
 7. INCLUDE model in spawn acknowledgment: `🔧 {Name} ({resolved_model}) — {task}`
 
 ### When User Sets a Preference
@@ -77,6 +78,13 @@ Resolution is **first-match-wins** — the highest layer with a value wins.
 1. VALIDATE model ID
 2. WRITE to `agentModelOverrides.{agent}` in `.squad/config.json`
 3. ACKNOWLEDGE: `✅ {Agent} will always use {model} — saved to config.`
+
+**Profile trigger:** "use the {quality-first|balanced|economy} profile" / "always use economy"
+
+1. WRITE `modelProfile` to `.squad/config.json` (merge, don't overwrite); for "this session" only, keep it in session context instead
+2. ACKNOWLEDGE: `✅ Model profile saved: {profile}`
+
+A profile never replaces an explicit model (config, session, charter or per-spawn), including an opt-in model the user chose.
 
 ### When User Clears a Preference
 
@@ -100,26 +108,30 @@ After resolving the model and including it in the spawn template, this skill is 
 ```json
 {
   "version": 1,
-  "defaultModel": "claude-opus-4.6",
+  "defaultModel": "claude-opus-5.5",
+  "modelProfile": "balanced",
   "agentModelOverrides": {
-    "agent-alpha": "claude-sonnet-4.6",
-    "agent-beta": "claude-haiku-4.5"
+    "agent-alpha": "claude-sonnet-5.5",
+    "agent-beta": "claude-haiku-5.5"
   }
 }
 ```
 
 - `defaultModel` — applies to ALL agents unless overridden by `agentModelOverrides`
 - `agentModelOverrides` — per-agent overrides that take priority over `defaultModel`
-- Both fields are optional. When absent, Layers 1-4 apply normally.
+- `modelProfile` — `quality-first` (default), `balanced` or `economy`; affects only Layers 3-4
+- All fields are optional. When absent, Layers 1-4 apply normally.
 
 ## Fallback Chains
 
 If a model is unavailable (rate limit, plan restriction), retry within the same tier:
 
 ```
-Premium:  gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
-Standard: gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro → (omit model param)
-Fast:     gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
+Premium:  claude-opus-5.5 → gpt-6.1-sol → claude-opus-5 → gpt-6-sol → claude-opus-4.8 → gpt-5.6-sol → (omit model param)
+Standard: claude-sonnet-5.5 → gpt-5.6-terra → claude-sonnet-5 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → (omit model param)
+Fast:     claude-haiku-5.5 → gpt-6-luna → gpt-5.6-luna → gemini-3.8-flash → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
 ```
+
+Chains list only public GA models (https://docs.github.com/en/copilot/reference/ai-models/supported-models, verified 2026-10-14). When the runtime supplies a live model list, it decides availability.
 
 **Never fall UP in tier.** A fast task won't land on a premium model via fallback.

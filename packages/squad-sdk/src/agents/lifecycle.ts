@@ -18,7 +18,7 @@ import {
   type ModelResolutionSource,
   type TaskType,
 } from './model-selector.js';
-import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS } from '../config/models.js';
+import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS, isModelSelectionProfile, type ModelSelectionProfile } from '../config/models.js';
 import type { CostPolicyConfig, SessionCostPolicyOverride } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
@@ -77,6 +77,8 @@ export interface AgentModelResolution {
   source: ModelResolutionSource;
   /** Human-readable explanation from the central resolver. */
   rationale: string;
+  /** Quality profile in effect for the resolution. */
+  profile?: ModelSelectionProfile;
   /** Model and source preferred before an availability fallback. */
   fallbackFrom?: { model: string; source: ModelResolutionSource };
   /** True when the model parameter was omitted so the platform default applies. */
@@ -112,6 +114,20 @@ export interface SpawnAgentOptions {
    * session config so the platform default applies.
    */
   unavailableModels?: Iterable<string>;
+
+  /**
+   * Live model list from the runtime (for example the session model enum).
+   * Authoritative for availability: ids not listed are skipped with visible
+   * fallback provenance. Omit when no live list is known.
+   */
+  availableModels?: Iterable<string>;
+
+  /**
+   * Quality profile for this session; wins over `.squad/config.json`
+   * `modelProfile` and legacy `economyMode`. Explicit model choices are never
+   * changed by a profile.
+   */
+  sessionProfile?: ModelSelectionProfile;
 
   /** User-specified reasoning effort override */
   reasoningEffortOverride?: SquadReasoningEffort;
@@ -220,6 +236,8 @@ export class AgentLifecycleManager {
       modelOverride,
       sessionModel,
       unavailableModels,
+      availableModels,
+      sessionProfile,
       reasoningEffortOverride,
       contextTierOverride,
       sessionCostPolicy,
@@ -274,6 +292,8 @@ export class AgentLifecycleManager {
         configModel: persistentConfigModel(persistent, agentName),
         sessionModel,
         economyMode: persistent?.economyMode === true,
+        profile: isModelSelectionProfile(persistent?.modelProfile) ? persistent.modelProfile : undefined,
+        sessionProfile,
         charterPreference: agentConfig.resolvedModel !== undefined
           ? agentConfig.resolvedModel
           : this.extractModelPreference(charterContent),
@@ -282,11 +302,13 @@ export class AgentLifecycleManager {
         config: this.costPolicy ? { costPolicy: this.costPolicy } : undefined,
         sessionCostPolicy,
         unavailableModels,
+        availableModels,
       };
       
       const resolvedModel = resolveModel(modelOptions);
       span.setAttribute('model.id', resolvedModel.model);
       span.setAttribute('model.source', resolvedModel.source);
+      if (resolvedModel.profile) span.setAttribute('model.profile', resolvedModel.profile);
       await this.emitModelResolved(agentName, resolvedModel);
       
       // Surface the cost-policy outcome — this was the #1089 bug: the policy
@@ -331,6 +353,7 @@ export class AgentLifecycleManager {
         modelResolution: {
           source: resolvedModel.source,
           rationale: resolvedModel.rationale,
+          ...(resolvedModel.profile ? { profile: resolvedModel.profile } : {}),
           ...(resolvedModel.fallbackFrom ? { fallbackFrom: resolvedModel.fallbackFrom } : {}),
           ...(resolvedModel.omitModel ? { omitModel: true } : {}),
         },
@@ -461,7 +484,9 @@ export class AgentLifecycleManager {
    */
   private async readPersistentModelConfig(
     squadDir: string,
-  ): Promise<{ defaultModel?: unknown; agentModelOverrides?: unknown; economyMode?: unknown } | undefined> {
+  ): Promise<
+    { defaultModel?: unknown; agentModelOverrides?: unknown; economyMode?: unknown; modelProfile?: unknown } | undefined
+  > {
     const raw = await this.storage.read(path.join(squadDir, 'config.json'));
     if (raw === undefined) return undefined;
     try {
@@ -487,6 +512,7 @@ export class AgentLifecycleManager {
         model: resolved.model,
         source: resolved.source,
         rationale: resolved.rationale,
+        ...(resolved.profile ? { profile: resolved.profile } : {}),
         ...(resolved.fallbackFrom ? { fallbackFrom: resolved.fallbackFrom } : {}),
         ...(resolved.omitModel ? { omitModel: true } : {}),
       },
