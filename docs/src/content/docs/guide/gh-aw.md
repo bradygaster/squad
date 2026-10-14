@@ -196,6 +196,39 @@ The review uses only the native GitHub Actions/gh-aw runtime identity; it does
 not require a reviewer PAT, GitHub App, private key, secret, environment, or
 external service.
 
+The native CAO farm snapshot has a separate, narrowly base-controlled review
+exception; it must not fabricate `.squad-review.json` or cast authorship.
+Only a genuine HTTP 404 for that file at the PR head permits this exception.
+The PR must be authored by `github-actions[bot]`, have the exact title
+`[squad-advisory:farm-snapshot] Farm snapshot for the control repository Squad`,
+and carry both `squad-advisory` and `squad-advisory:farm-snapshot` labels
+(additional labels are allowed). Its complete, nonempty changed-file list,
+including previous rename paths, must contain only `farm/**/*.md`, including
+root `farm/*.md`.
+
+After CRLF normalization, the body must contain exactly one standalone
+`<!-- squad:farm-snapshot run={positive-run-id} -->` line and no other occurrence
+of `squad:farm-snapshot`; summary prose and the generated footer remain allowed.
+GitHub API evidence must bind that run to the same repository's exact installed
+`.github/workflows/squad-advisory-farm-snapshot.lock.yml`, `workflow_dispatch`,
+and default branch. The producer SHA must equal or be a verified ancestor of
+the current PR base. gh-aw chooses the PR head branch; no branch name grants
+or restricts this exception.
+
+The guard assigns `@squad/base-controlled-farm-snapshot` as author and
+`@squad/base-controlled-review` as reviewer, while preserving exact current
+base/head and independent review-run provenance. It loads only from the PR
+base. CAO opens the snapshot as a draft; a human maintainer marks it ready to
+trigger the existing automatic review. Eligibility depends on the PR author,
+not the triggering actor, and does not reject draft status.
+As with bootstrap, review output may precede producer completion, but
+the required check clears only after producer `completed`/`success`.
+A rerun of the existing automatic PR review after producer completion creates
+a fresh verdict for the new attempt and rechecks that success; this exception
+does not add an automatic retry scheduler, dispatch trigger, or timing bypass.
+Ordinary human/Copilot attribution, bootstrap, malformed or non-404 evidence,
+and all other fail-closed paths remain unchanged.
+
 Step 2 deliberately checks Issues before creating the bootstrap branch or
 installing any workflow. Squad commands are issue comments, and the merged
 bootstrap creates a research/proposals issue; without Issues, the installation

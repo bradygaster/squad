@@ -53,6 +53,7 @@ function fixture(relay = false) {
   };
   const pr = {
     number: 42, state: relay ? 'closed' : 'open', merged: relay, merged_at: MERGED,
+    labels: [] as { name: string }[], changed_files: 0,
     title: 'Implementation', created_at: START,
     body: '<!-- squad:implement issue=9 run=7 -->',
     user: { login: 'human', type: 'User' },
@@ -211,6 +212,168 @@ function makeBootstrap(f: ReturnType<typeof fixture>) {
   f.verdict.reviewer_agent = '@squad/base-controlled-review';
   f.sync();
 }
+
+function makeFarmSnapshot(f: ReturnType<typeof fixture>) {
+  f.state.missingManifest = true;
+  Object.assign(f.pr, {
+    title: '[squad-advisory:farm-snapshot] Farm snapshot for the control repository Squad',
+    body: 'Snapshot summary\r\n<!-- gh-aw-workflow-id: squad-advisory-farm-snapshot -->\r\n<!-- squad:farm-snapshot run=31 -->\r\nGenerated footer',
+    user: { login: 'github-actions[bot]', type: 'Bot' },
+    labels: [{ name: 'squad-advisory' }, { name: 'squad-advisory:farm-snapshot' }],
+    changed_files: 2,
+  });
+  f.pr.head.ref = 'gh-aw/safe-output-farm-snapshot';
+  const files = [
+    { filename: 'farm/index.md', status: 'modified' },
+    { filename: 'farm/frontend/README.md', status: 'renamed', previous_filename: 'farm/frontend/old.md' },
+  ];
+  const producer = {
+    id: 31, event: 'workflow_dispatch',
+    path: '.github/workflows/squad-advisory-farm-snapshot.lock.yml',
+    repository: { full_name: REPOSITORY }, head_branch: 'dev', head_sha: BASE,
+    status: 'completed', conclusion: 'success' as string | null,
+  };
+  f.state.extraRuns.set('31', producer);
+  f.verdict.author_agent = '@squad/base-controlled-farm-snapshot';
+  f.verdict.reviewer_agent = '@squad/base-controlled-review';
+  f.sync();
+  const get = async (route: string, fields?: Record<string, unknown>) => {
+    if (route.endsWith('/pulls/42/files')) {
+      return fields?.page === 1 ? files : [];
+    }
+    return f.get(route, fields);
+  };
+  return { ...f, files, producer, get };
+}
+
+describe('base-controlled farm snapshot review', () => {
+  it('accepts a native farm snapshot without fabricated cast attribution or branch binding', async () => {
+    const f = makeFarmSnapshot(fixture());
+    const env = { ...f.env, GITHUB_ACTOR: 'maintainer' };
+    Object.assign(f.pr, { draft: true });
+    await expect(reviewTarget(env, f.get)).resolves.toMatchObject({
+      author_agent: '@squad/base-controlled-farm-snapshot',
+      reviewer_agent: '@squad/base-controlled-review',
+      base_sha: BASE, head_sha: HEAD,
+    });
+    Object.assign(f.pr, { draft: false });
+    await expect(assertClearingReview(env, f.get)).resolves.toBeDefined();
+    expect(f.state.calls).not.toContain(`repos/${REPOSITORY}/contents/.squad/casting/registry.json`);
+  });
+
+  it('uses the existing completion gate and clears on a fresh review attempt after producer success', async () => {
+    const f = makeFarmSnapshot(fixture());
+    f.producer.status = 'in_progress';
+    f.producer.conclusion = null;
+    f.state.reviews = [];
+    const workspace = mkdtempSync(join(tmpdir(), 'squad-review-farm-'));
+    workspaces.push(workspace);
+    const path = join(workspace, 'output.json');
+    writeFileSync(path, JSON.stringify({ items: [{
+      type: 'submit_pull_request_review', event: 'COMMENT', body: 'Snapshot reviewed.',
+    }] }));
+    await enforceReviewOutputs({ ...f.env, GH_AW_AGENT_OUTPUT: path }, f.get);
+    expect(JSON.parse(readFileSync(path, 'utf8')).items[0].body)
+      .toContain('"author_agent":"@squad/base-controlled-farm-snapshot"');
+    await expect(assertClearingReview(f.env, f.get))
+      .rejects.toThrow('base-controlled farm snapshot run did not complete successfully');
+    f.producer.status = 'completed';
+    f.producer.conclusion = 'failure';
+    await expect(assertClearingReview(f.env, f.get))
+      .rejects.toThrow('base-controlled farm snapshot run did not complete successfully');
+    f.producer.conclusion = 'success';
+    f.run.run_attempt = 2;
+    f.env.GITHUB_RUN_ATTEMPT = '2';
+    f.verdict.run_attempt = 2;
+    f.state.reviews = [f.review];
+    f.sync();
+    await expect(assertClearingReview(f.env, f.get)).resolves.toBeDefined();
+  });
+
+  it('accepts an ancestor producer SHA but rejects incompatible or unreadable ancestry', async () => {
+    const f = makeFarmSnapshot(fixture());
+    f.producer.head_sha = 'c'.repeat(40);
+    f.state.compareStatus = 'ahead';
+    await expect(reviewTarget(f.env, f.get)).resolves.toBeDefined();
+    f.state.compareStatus = 'diverged';
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('not an ancestor');
+    f.state.compareThrows = 403;
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('API error');
+  });
+
+  it.each([
+    ['author', (f) => { f.pr.user.login = 'copilot-swe-agent[bot]'; }],
+    ['title', (f) => { f.pr.title += ' extra'; }],
+    ['labels', (f) => { f.pr.labels.pop(); }],
+    ['duplicate marker', (f) => { f.pr.body += '\nsquad:farm-snapshot'; }],
+    ['embedded marker', (f) => { f.pr.body = 'text <!-- squad:farm-snapshot run=31 -->'; }],
+    ['malformed run', (f) => { f.pr.body = '<!-- squad:farm-snapshot run=031 -->'; }],
+    ['unsafe run', (f) => { f.pr.body = '<!-- squad:farm-snapshot run=9007199254740992 -->'; }],
+    ['empty diff', (f) => { f.files.splice(0); f.pr.changed_files = 0; }],
+    ['incomplete enumeration', (f) => { f.pr.changed_files = 3; }],
+    ['duplicate files', (f) => { f.files[1].filename = f.files[0].filename; }],
+    ['non-Markdown', (f) => { f.files[0].filename = 'farm/data.json'; }],
+    ['outside farm', (f) => { f.files[0].filename = 'src/farm/readme.md'; }],
+    ['traversal', (f) => { f.files[0].filename = 'farm/../policy.md'; }],
+    ['rename source', (f) => { f.files[1].previous_filename = '.github/workflows/policy.md'; }],
+    ['missing rename source', (f) => { delete f.files[1].previous_filename; }],
+    ['workflow impersonation', (f) => { f.producer.path = '.github/workflows/evil-squad-advisory-farm-snapshot.lock.yml'; }],
+    ['noncanonical workflow directory', (f) => { f.producer.path = 'other/squad-advisory-farm-snapshot.lock.yml'; }],
+    ['run ID', (f) => { f.producer.id = 32; }],
+    ['repository', (f) => { f.producer.repository.full_name = 'other/example'; }],
+    ['event', (f) => { f.producer.event = 'push'; }],
+    ['default branch', (f) => { f.producer.head_branch = 'attacker'; }],
+    ['current head', (f) => { f.env.SQUAD_REVIEW_HEAD = BASE; }],
+    ['workflow base', (f) => { f.env.SQUAD_REVIEW_WORKFLOW_SHA = HEAD; }],
+  ] satisfies [string, (f: ReturnType<typeof makeFarmSnapshot>) => void][])(
+    'refuses mutated %s evidence', async (_name, mutate) => {
+      const f = makeFarmSnapshot(fixture());
+      mutate(f);
+      await expect(reviewTarget(f.env, f.get)).rejects.toThrow();
+    },
+  );
+
+  it('requires complete paginated file enumeration', async () => {
+    const f = makeFarmSnapshot(fixture());
+    const files = Array.from({ length: 101 }, (_, i) => ({ filename: `farm/${i}.md` }));
+    f.pr.changed_files = files.length;
+    const pages: number[] = [];
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route.endsWith('/pulls/42/files')) {
+        const page = Number(fields?.page);
+        pages.push(page);
+        return files.slice((page - 1) * 100, page * 100);
+      }
+      return f.get(route, fields);
+    };
+    await expect(reviewTarget(f.env, get)).resolves.toBeDefined();
+    expect(pages).toEqual([1, 2]);
+    files[100].filename = 'policy.md';
+    await expect(reviewTarget(f.env, get)).rejects.toThrow();
+  });
+
+  it('never rescues present invalid attribution, non-404 failures, or unavailable producer evidence', async () => {
+    const f = makeFarmSnapshot(fixture());
+    f.state.missingManifest = false;
+    f.attribution.author_agent = 'unknown';
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('unknown, inactive');
+    for (const status of [403, 500]) {
+      const get = async (route: string, fields?: Record<string, unknown>) => {
+        if (route.endsWith('/contents/.squad-review.json') || route.endsWith('/actions/runs/31')) {
+          throw Object.assign(new Error('Unavailable evidence'), { status });
+        }
+        return f.get(route, fields);
+      };
+      await expect(reviewTarget(f.env, get)).rejects.toThrow('Unavailable evidence');
+      f.state.missingManifest = true;
+      const runGet = async (route: string, fields?: Record<string, unknown>) => {
+        if (route.endsWith('/actions/runs/31')) throw Object.assign(new Error('Unavailable run'), { status });
+        return f.get(route, fields);
+      };
+      await expect(reviewTarget(f.env, runGet)).rejects.toThrow('Unavailable run');
+    }
+  });
+});
 
 type BootstrapPrFallbackIssueOptions = {
   headBranch: string;

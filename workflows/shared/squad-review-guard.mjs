@@ -25,6 +25,10 @@ const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
 const BOOTSTRAP_AUTHOR = '@squad/base-controlled-bootstrap';
 const BOOTSTRAP_REVIEWER = '@squad/base-controlled-review';
 const BOOTSTRAP_PREFIX = '<' + '!-- squad:bootstrap-provenance ';
+const FARM_SNAPSHOT_TITLE =
+  '[squad-advisory:farm-snapshot] Farm snapshot for the control repository Squad';
+const FARM_SNAPSHOT_WORKFLOW = '.github/workflows/squad-advisory-farm-snapshot.lock.yml';
+const FARM_SNAPSHOT_AUTHOR = '@squad/base-controlled-farm-snapshot';
 
 function requireThat(condition, message) {
   if (!condition) throw new Error(`Squad review refused: ${message}`);
@@ -382,6 +386,61 @@ async function validateBootstrapAttribution(get, repository, pr, requireRunSucce
   };
 }
 
+function farmMarkdownPath(path) {
+  return typeof path === 'string' && /^farm\/(?:[^/]+\/)*[^/]+\.md$/.test(path) &&
+    !/[\\\x00-\x1f\x7f]/.test(path) &&
+    path.split('/').every(segment => segment !== '.' && segment !== '..');
+}
+
+async function validateFarmSnapshotAttribution(get, repository, pr, requireRunSuccess) {
+  requireThat(pr.user?.login === BOT && pr.user?.type === 'Bot' &&
+    pr.title === FARM_SNAPSHOT_TITLE &&
+    Array.isArray(pr.labels) &&
+    ['squad-advisory', 'squad-advisory:farm-snapshot']
+      .every(label => pr.labels.some(value => value?.name === label)),
+  'invalid base-controlled farm snapshot pull request');
+  const body = String(pr.body ?? '').replace(/\r\n/g, '\n');
+  const markers = body.split('\n')
+    .map(line => /^<!-- squad:farm-snapshot run=([1-9][0-9]*) -->$/.exec(line))
+    .filter(Boolean);
+  requireThat(body.split('squad:farm-snapshot').length === 2 && markers.length === 1,
+    'missing, malformed, or duplicate farm snapshot provenance');
+  const runId = Number(markers[0][1]);
+  requireThat(Number.isSafeInteger(runId) && runId > 0, 'invalid farm snapshot run ID');
+  // GitHub's files endpoint exposes at most 3,000 files. Compare the complete,
+  // paginated enumeration with the live PR count; truncation is not permission.
+  requireThat(Number.isSafeInteger(pr.changed_files) &&
+    pr.changed_files > 0 && pr.changed_files <= 3000,
+  'empty or unenumerable farm snapshot diff');
+  const files = await list(get, `repos/${repository}/pulls/${pr.number}/files`);
+  requireThat(files.length === pr.changed_files &&
+    new Set(files.map(file => file?.filename)).size === files.length &&
+    files.every(file => farmMarkdownPath(file?.filename) &&
+      (file?.status !== 'renamed' || farmMarkdownPath(file.previous_filename)) &&
+      (file?.previous_filename === undefined || farmMarkdownPath(file.previous_filename))),
+  'farm snapshot diff is incomplete or changes paths outside farm Markdown');
+  const run = await get(`repos/${repository}/actions/runs/${runId}`);
+  requireThat(run?.id === runId && run.path === FARM_SNAPSHOT_WORKFLOW &&
+    run.repository?.full_name === repository && run.event === 'workflow_dispatch' &&
+    run.head_branch === pr.base.ref,
+  'farm snapshot provenance is not bound to the base-controlled workflow run');
+  await requireRecordedBaseAncestor(
+    get, repository, run.head_sha, pr.base.sha,
+    'farm snapshot producer commit is not an ancestor of the pull request base',
+  );
+  // Reuse the bootstrap gate's two phases: output may precede producer
+  // completion, but only completed success can clear the required review.
+  requireThat(!requireRunSuccess || (run.status === 'completed' && run.conclusion === 'success'),
+    'base-controlled farm snapshot run did not complete successfully');
+  return {
+    schema: 'squad-review-author/v1',
+    repository,
+    issue: pr.number,
+    author_agent: FARM_SNAPSHOT_AUTHOR,
+    reviewer_agent: BOOTSTRAP_REVIEWER,
+  };
+}
+
 export async function reviewTarget(
   env,
   get,
@@ -434,9 +493,13 @@ export async function reviewTarget(
   if (value === undefined) {
     requireThat(relay === false && env.GITHUB_EVENT_NAME === 'pull_request_target',
       'missing committed attribution outside base-controlled bootstrap activation');
-    attribution = pr.head.ref.startsWith(BOOTSTRAP_BRANCH) && pr.user?.type !== 'Bot'
-      ? await validateBootstrapPrFallbackAttribution(env, get, repository, pr, requireBootstrapRunSuccess)
-      : await validateBootstrapAttribution(get, repository, pr, requireBootstrapRunSuccess);
+    if (pr.title === FARM_SNAPSHOT_TITLE) {
+      attribution = await validateFarmSnapshotAttribution(get, repository, pr, requireBootstrapRunSuccess);
+    } else {
+      attribution = pr.head.ref.startsWith(BOOTSTRAP_BRANCH) && pr.user?.type !== 'Bot'
+        ? await validateBootstrapPrFallbackAttribution(env, get, repository, pr, requireBootstrapRunSuccess)
+        : await validateBootstrapAttribution(get, repository, pr, requireBootstrapRunSuccess);
+    }
   } else {
     const registry = await committedJson(
       get,

@@ -169,7 +169,8 @@ Read `.squad-review.json` at the exact PR head SHA and the committed
 `author_agent`, and `reviewer_agent`. Both IDs must be active canonical
 `persistent_name` entries in that registry, and must differ. Act as that
 `reviewer_agent`, reading its base-commit charter. Missing or malformed
-attribution is a refusal, never a fallback to a display name or GitHub login.
+attribution is a refusal except for the two narrow base-controlled workflow
+roles documented below, never a fallback to a display name or GitHub login.
 The deterministic output guard and final job repeat these checks. GitHub
 publishes the native job result as the stable `Squad Review / review` required
 status context. The job uses `if: always()` and fails unless the agent, safe
@@ -184,7 +185,7 @@ human review of the generated package.
 
 Trusted review starts on the automatic post-merge Cast PR. The guard is then
 loaded only from the exact PR base commit, where the installed manifest also
-exists. That base-controlled guard permits missing `.squad-review.json` only
+exists. That base-controlled guard permits missing `.squad-review.json`
 for the exact `squad/bootstrap-cast` PR created by the base-controlled bootstrap
 workflow. It verifies the GitHub Actions bot author, canonical title and branch,
 matching provenance in the PR body and a durable bot-authored PR comment, exact
@@ -198,6 +199,47 @@ It binds the reserved roles
 `@squad/base-controlled-bootstrap` and `@squad/base-controlled-review`; the
 clearing gate additionally requires that bootstrap run to finish successfully.
 All other missing, malformed, or non-404 attribution evidence is refused.
+
+### Native farm snapshot exception
+
+Only a genuine HTTP 404 for `.squad-review.json` at the exact PR head may also
+enter the native farm-snapshot exception. Present attribution, including
+malformed attribution, always uses the ordinary cast-identity gate. Require
+all of the following live GitHub API evidence; title, labels, or PR prose alone
+never authorize this path:
+
+- Author `github-actions[bot]` (type `Bot`), title exactly
+  `[squad-advisory:farm-snapshot] Farm snapshot for the control repository Squad`,
+  and both `squad-advisory` and `squad-advisory:farm-snapshot` labels.
+  Additional labels are allowed.
+- A nonempty, complete paginated changed-file list equal to the PR's
+  `changed_files` count. Every current path and every rename's previous path
+  must match `farm/**/*.md`, including root `farm/*.md`; truncated enumeration,
+  duplicate paths, traversal, and out-of-scope rename sources fail closed.
+- After CRLF normalization, exactly one standalone body line
+  `<!-- squad:farm-snapshot run={positive-run-id} -->` and no other occurrence
+  of `squad:farm-snapshot`. Other body text and the generated footer are allowed.
+- The referenced same-repository run has the exact installed workflow path
+  `.github/workflows/squad-advisory-farm-snapshot.lock.yml`, event
+  `workflow_dispatch`, and `head_branch` equal to the repository default branch.
+  Its `head_sha` must equal the current PR base SHA or be an API-verified
+  ancestor of it. A generic suffix match or unreadable comparison is refused.
+
+Use reserved roles `@squad/base-controlled-farm-snapshot` and
+`@squad/base-controlled-review`, not fabricated cast authorship or an invented
+linked issue. The reviewer role is this base-controlled workflow, not a
+PR-supplied charter. There is deliberately no head-branch binding: gh-aw
+chooses the safe-output branch. Exact current PR base/head and review-run
+provenance checks remain unchanged, and the guard and manifest still load
+only from the exact PR base.
+
+This uses exactly the existing bootstrap completion gate: review output can
+be emitted while the producer is in progress, but the final required job
+cannot clear until that producer is `completed` with conclusion `success`.
+If the initial review raced producer completion, a rerun of the existing
+automatic PR review must emit a fresh verdict for its new attempt; it then
+rechecks producer success and all current provenance. This exception adds
+neither a dispatch trigger nor a timing bypass or automatic retry scheduler.
 
 ## Provenance decision tree
 
@@ -228,7 +270,9 @@ or branch-mismatched marker evidence is invalid provenance. Fail closed with
 This classification is descriptive only. Every same-repository PR (including
 human and Copilot PRs) needs the committed stable-agent attribution above to
 clear the check. `Unattributed` is not permission to skip the gate or fabricate
-an identity. Malformed marker text remains a refusal on both trigger paths.
+an identity. Only the validated bootstrap and native farm-snapshot exceptions
+use reserved workflow roles. Malformed marker text remains a refusal on both
+trigger paths.
 
 ## Run-attempt evidence
 
