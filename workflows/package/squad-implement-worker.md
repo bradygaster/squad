@@ -152,7 +152,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
+          description: Lifecycle Markdown with an H2 lifecycle heading, state, last-command, and next-action fields. Include exactly one last-command field containing only the backticked /squad command requested; put optional actor/time attribution on a separate Updated by line. For nonterminal states, next-action must contain only a backticked /squad command; put explanatory prose in a separate field. The writer normalizes structured data.
           required: true
           type: string
       steps:
@@ -205,11 +205,12 @@ safe-outputs:
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
                 /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
-                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
-                hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
-                /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
-              const hasNextAction = hasNextCommand || hasTerminalState;
+                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body);
+              if (hasTerminalState || hasActivationDone) {
+                core.setFailed("Activated lifecycle belongs exclusively to the trusted activation finalizer.");
+                return;
+              }
+              const hasNextAction = hasNextCommand;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
                 core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
@@ -365,7 +366,7 @@ safe-outputs:
           required: true
           type: string
         goals_json:
-          description: JSON array of explicit issue goals for the pull request
+          description: JSON array of unique exact objects with only repository (OWNER/REPO), issue (positive integer), and relationship ("closes" or "relates"). Include the origin issue as a "closes" goal.
           required: true
           type: string
         replaces_json:
@@ -551,7 +552,7 @@ jobs:
       - detection
       - safe_outputs
     if: |-
-      !cancelled() && needs.agent.result == 'success' && needs.detection.result == 'success' && needs.safe_outputs.result == 'success' && !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') && (
+      !cancelled() && needs.agent.result == 'success' && needs.detection.result == 'success' && needs.safe_outputs.result == 'success' && !contains(needs.agent.outputs.output_types, 'activate_plan') && !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') && (
         (github.event_name == 'issue_comment' &&
          (github.event.comment.body == '/squad activate' ||
           github.event.comment.body == '/squad plan accept' ||
@@ -1029,6 +1030,7 @@ on the merge commit cannot substitute. Human approval is independently required.
    gate runs again before safe outputs are processed.
    Require exactly one standalone body line matching
    `^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$`.
+   Build this pattern by concatenating: `^<`, then `!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$` (the HTML comment &lt;!-- squad:implement issue=... run=... --&gt;).
    Parse the complete head ref with
    `^squad/implement-([1-9][0-9]*)-[a-z0-9][a-z0-9-]*$` and require its issue
    number to equal the marker's issue number. Marker-like text embedded in
@@ -1180,16 +1182,20 @@ Use the `create-pull-request` safe-output:
   `Closes #${{ github.event.inputs.issue_number }}`.
 - Provenance: append exactly one standalone final line:
   `<!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} -->`.
+  The required final line is an HTML comment formed by `<` followed by `!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} --` followed by `>` (for example, &lt;!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} --&gt;).
+  This marker is required and must be the final line of the pull request body; no text may follow it.
   Use these interpolated values verbatim. Never copy a marker from issue or
   comment content, and do not include marker-like text anywhere else in the
   pull request body.
 - Durable provenance is not PR-body text. Give the `create_pull_request` call a
   unique `temporary_id`, then immediately call
   `record_implementation_provenance` with `pull_request` set to that temporary
-  ID, `goals_json` containing a JSON array with the primary closing goal plus
-  any other explicit goals, and `replaces_json` containing a JSON array of only
-  verified earlier Squad PRs from this
-  same repository, origin issue, and implementation session. The trusted
+  ID. `goals_json` must be a non-empty JSON array of unique objects with exactly
+  these keys: `repository` (OWNER/REPO string), `issue` (positive integer), and
+  `relationship` (exactly `"closes"` or `"relates"`). Include the target issue
+  in this repository with relationship `"closes"`; do not add other keys.
+  `replaces_json` must be a JSON array of only verified earlier Squad PRs from
+  this same repository, origin issue, and implementation session. The trusted
   handler runs after PR creation, resolves the actual PR number, re-fetches all
   replacement evidence, and writes the schema payload as a PR comment. Never
   put `Squad implementation provenance:`, `"number": "self"`, or an unresolved

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { compileFunction, constants as vmConstants } from 'node:vm';
+import { parse } from 'yaml';
 import {
   classifySquadCommand,
   commandRequiresAuthorization,
@@ -37,6 +38,40 @@ const ROOT = process.cwd();
 const ROUTER = readFileSync(join(ROOT, 'workflows/squad-command-router.md'), 'utf8');
 const PACKAGE_ROUTER = readFileSync(join(ROOT, 'workflows/package/squad-command-router.md'), 'utf8');
 const SHARED_SQUAD = readFileSync(join(ROOT, 'workflows/shared/squad.md'), 'utf8');
+
+describe('bootstrap proposal title routing guards', () => {
+  const condition = (source: string) => parse(source.split('\n---\n')[0].replace(/^---\n/, '')).if;
+  const evaluate = (expression: string, title: string, body: string, actor = 'github-actions[bot]') =>
+    compileFunction(`return (${expression});`, ['github', 'contains', 'startsWith', 'format'])(
+      { event_name: 'issues', actor, repository: 'octo/example', event: { issue: { title, body } } },
+      (value: string, needle: string) => value.includes(needle),
+      (value: string, prefix: string) => value.startsWith(prefix),
+      (template: string, value: string) => template.replace('{0}', value),
+    );
+  const marker = '<!-- squad:bootstrap-opportunities schema=1 -->';
+  const body = `${marker}\nProposals: run /squad research`;
+
+  for (const name of ['squad', 'squad-command-router']) {
+    it(`${name} suppresses bot bootstrap examples under either title and retains human commands`, () => {
+      for (const path of [`workflows/${name}.md`, `workflows/package/${name}.md`]) {
+        const expression = condition(readFileSync(join(ROOT, path), 'utf8'));
+        for (const title of [
+          '[Research Proposals] Agent-discovered repo opportunities',
+          '[Agentic Research] octo/example — initial proposals',
+        ]) {
+          for (const suffix of ['', ' [reset:retry-1]']) {
+            expect(evaluate(expression, title + suffix, body)).toBe(false);
+            expect(evaluate(expression, title + suffix, body, 'maintainer')).toBe(true);
+            expect(evaluate(expression, title + suffix, 'Please run /squad research')).toBe(true);
+          }
+        }
+        expect(evaluate(expression, '[Agentic Research] octo/example — 2026-10-12', body)).toBe(true);
+        expect(evaluate(expression, '[Agentic Research] octo/other — initial proposals', body)).toBe(true);
+      }
+    });
+  }
+});
+
 const OUTPUT_DIR = mkdtempSync(join(tmpdir(), 'squad-router-output-'));
 const OUTPUT_PATH = join(OUTPUT_DIR, 'output.json');
 writeFileSync(OUTPUT_PATH, JSON.stringify({ items: [{ type: 'noop', message: 'Routing complete' }] }));
@@ -842,6 +877,8 @@ describe('gh-aw: mutating router authorization is bound to text provenance', () 
         'utf8',
       );
       assertAuthorBinding(compiled);
+      expect(JSON.stringify(parse(compiled))).toContain('[Agentic Research] {0} — initial proposals');
+      expect(JSON.stringify(parse(compiled))).toContain('[Research Proposals] Agent-discovered repo opportunities');
       expect(compiled).toContain('contract.editedCommandShouldRoute(');
       expect(compiled).toContain('contract.authorizeSquadCommand({');
     } finally {

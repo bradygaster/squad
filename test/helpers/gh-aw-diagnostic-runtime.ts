@@ -12,9 +12,9 @@ const entrypoints = [
 ];
 
 /** Fetch the real pinned handler closure, including its templates, without executing network clients. */
-export async function fetchDiagnosticRuntime() {
+export async function fetchDiagnosticRuntime(extraEntrypoints: string[] = []) {
   const sources = new Map<string, string>();
-  let pending = entrypoints.map(name => `js/${name}`);
+  let pending = [...entrypoints, ...extraEntrypoints].map(name => `js/${name}`);
   while (pending.length) {
     const batch = [...new Set(pending)].filter(name => !sources.has(name));
     pending = [];
@@ -65,6 +65,7 @@ export function diagnosticRuntime(
     debug: (text: string) => logs.push(text), error: (text: string) => logs.push(text),
     setFailed: (text: string) => failures.push(text), setOutput: () => {},
     startGroup: () => {}, endGroup: () => {}, summary,
+    exportVariable: (name: string, value: string) => { runtimeEnv[name] = value; },
   };
   const api = (method: string) => async (params: Record<string, unknown> = {}) => {
     calls.push(method);
@@ -102,7 +103,7 @@ export function diagnosticRuntime(
     rest, request: (method: string, params: Record<string, unknown>) => api(method)(params),
     hook: { before: () => {} },
   };
-  const runtimeEnv = {
+  const runtimeEnv: Record<string, string> = {
     GITHUB_REPOSITORY: 'owner/repo', RUNNER_TEMP: scratch, GITHUB_WORKSPACE: scratch,
     GH_AW_WORKFLOW_NAME: 'Squad', GH_AW_RUN_URL: 'https://github.com/owner/repo/actions/runs/1',
     GH_AW_JOB_RESULTS: JSON.stringify({ upsert_lifecycle_state: { result: 'failure' } }),
@@ -114,14 +115,20 @@ export function diagnosticRuntime(
     payload: { issue: { number: 42 }, repository: { default_branch: 'dev' } },
   };
   const sandbox = createContext({
-    core, github, context, console, Buffer, URL, TextDecoder, TextEncoder,
-    process: { env: runtimeEnv, cwd: () => scratch },
+    core, github, context, console, Buffer, URL, TextDecoder, TextEncoder, structuredClone,
+    process: { env: runtimeEnv, cwd: () => scratch,
+      stdout: { write: (text: string) => logs.push(text) },
+      stderr: { write: (text: string) => logs.push(text) } },
   });
   sandbox.global = sandbox;
   const modules = new Map<string, { exports: Record<string, any> }>();
+  // Runner paths (including the collector's fixed path) are virtual, never host IO.
+  const files = new Map<string, string>();
   const filesystem = {
-    existsSync: (path: string) => path === outputPath,
+    existsSync: (path: string) => files.has(path) || path === outputPath,
     readFileSync: (path: string) => {
+      if (files.has(path)) return files.get(path);
+      if (sources.has(path)) return sources.get(path);
       if (path === outputPath) return readFileSync(outputPath, 'utf8');
       const template = sources.get(`prompts/${String(path).split('/prompts/')[1]}`);
       if (template !== undefined) return template;
@@ -130,20 +137,23 @@ export function diagnosticRuntime(
     },
     readdirSync: () => [],
     mkdirSync: () => {},
-    writeFileSync: () => {},
-    appendFileSync: () => {},
+    writeFileSync: (path: string, value: string) => { files.set(path, value); },
+    appendFileSync: (path: string, value: string) => { files.set(path, (files.get(path) || '') + value); },
   };
   const load = (name: string): Record<string, any> => {
     if (modules.has(name)) return modules.get(name)!.exports;
     const source = sources.get(name);
     if (!source) throw new Error(`Unfetched pinned runtime dependency: ${name}`);
+    if (name.endsWith('.json')) return JSON.parse(source);
     const module = { exports: {} };
     modules.set(name, module);
     const require = (request: string): any => {
       if (request.startsWith('.')) return load(posix.normalize(posix.join(posix.dirname(name), request)));
+      if (sources.has(request)) return load(request);
       if (request === 'fs' || request === 'node:fs') return filesystem;
       if (request === 'os' || request === 'node:os') return { ...requireNode(request), tmpdir: () => scratch };
-      if (['path', 'node:path', 'crypto', 'node:crypto', 'util', 'node:util', 'vm', 'node:vm'].includes(request)) return requireNode(request);
+      if (['path', 'node:path', 'crypto', 'node:crypto', 'util', 'node:util', 'vm', 'node:vm',
+        'buffer', 'events', 'string_decoder'].includes(request)) return requireNode(request);
       if (['https', 'http', 'child_process'].includes(request)) return new Proxy({}, {
         get: (_target, method: string) => (command: string) => {
           if (request === 'child_process' && method === 'execSync' && command === 'git rev-parse --abbrev-ref HEAD') return 'dev\n';
@@ -158,7 +168,19 @@ export function diagnosticRuntime(
     return module.exports;
   };
   return {
-    logs, failures, writes, calls, ioErrors,
+    logs, failures, writes, calls, ioErrors, files, load,
+    runScript: async (script: string) => compileFunction(
+      `return (async () => { ${script} })();`,
+      ['core', 'github', 'context', 'exec', 'io', 'getOctokit', 'require'],
+      { parsingContext: sandbox },
+    )(core, github, context, {}, {}, () => github,
+      (request: string) => {
+        if (request.startsWith(`${scratch}/gh-aw/actions/`)) {
+          return load(`js/${request.slice(`${scratch}/gh-aw/actions/`.length)}`);
+        }
+        if (request === 'path' || request === 'node:path') return requireNode(request);
+        throw new Error(`Forbidden compiled-script dependency: ${request}`);
+      }),
     run: async (name: string) => {
       load('js/setup_globals.cjs').setupGlobals(core, github, context, {}, {}, () => github);
       return load(`js/${name}`).main();

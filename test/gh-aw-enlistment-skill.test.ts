@@ -343,7 +343,7 @@ describe('gh-aw-enlistment skill', () => {
       expect(content).toMatch(/auto-?merge/i);
       expect(content).toMatch(/never merge|do not merge|human-reviewed|human approval/i);
       expect(content).toContain('squad-bootstrap');
-      expect(content).toContain('[Research Proposals] Agent-discovered repo opportunities');
+      expect(content).toContain('[Agentic Research] owner/repo — initial proposals');
     });
 
     it('pins and verifies the package-capable gh-aw compiler', () => {

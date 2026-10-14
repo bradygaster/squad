@@ -1,0 +1,13 @@
+{
+  "assignment_cast_snapshots": {
+    "descriptive-2026-08-08T01:16:24.000Z": {
+      "assigned_at": "2026-08-08T01:16:24.000Z",
+      "agents": ["analyst", "designer", "planner", "tester", "reviewer", "critic", "recorder"],
+      "agent_count": 7,
+      "universe": "none (descriptive naming)"
+    }
+  },
+  "universe_usage_history": [
+    {"universe":"none (descriptive naming)","assigned_at":"2026-08-08T01:16:24.000Z","agent_count":7}
+  ]
+}

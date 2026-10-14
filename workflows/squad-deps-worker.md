@@ -149,7 +149,10 @@ safe-outputs:
           required: true
           type: string
         goals_json:
-          description: JSON array of explicit issue goals for the pull request
+          description: >-
+            JSON array of unique exact objects with only repository (OWNER/REPO),
+            issue (positive integer), and relationship ("closes" or "relates").
+            Include the origin issue as a "closes" goal.
           required: true
           type: string
         replaces_json:
@@ -344,10 +347,12 @@ Use the `create-pull-request` safe-output:
 - Durable provenance is not PR-body text. Give the `create_pull_request` call a
   unique `temporary_id`, then immediately call
   `record_implementation_provenance` with `pull_request` set to that temporary
-  ID, `goals_json` containing a JSON array with the primary closing goal plus
-  any other explicit goals, and `replaces_json` containing a JSON array of only
-  verified earlier Squad PRs from this
-  same repository, origin issue, and implementation session. The trusted
+  ID. `goals_json` must be a non-empty JSON array of unique objects with exactly
+  these keys: `repository` (OWNER/REPO string), `issue` (positive integer), and
+  `relationship` (exactly `"closes"` or `"relates"`). Include the target issue
+  in this repository with relationship `"closes"`; do not add other keys.
+  `replaces_json` must be a JSON array of only verified earlier Squad PRs from
+  this same repository, origin issue, and implementation session. The trusted
   handler runs after PR creation, resolves the actual PR number, re-fetches all
   replacement evidence, and writes the schema payload as a PR comment. Never
   put `Squad implementation provenance:`, `"number": "self"`, or an unresolved

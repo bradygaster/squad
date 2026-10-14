@@ -134,6 +134,21 @@ describe('#1608 — cast lifecycle regenerates the agent file', () => {
     expect(doc).toContain('| Pipelines | Nori |');
   });
 
+  it('preserves CRLF around and inside refreshed capability blocks and leaves repeat sync unchanged', () => {
+    seed(teamMd('| Nori | Data Engineer |'), routingMd('| Pipelines | Nori |'));
+    storage.writeSync(AGENT_FILE, AGENT_DOC.replace(/\n/g, '\r\n'));
+    expect(syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage }).updated).toBe(true);
+    const first = storage.readSync(AGENT_FILE)!;
+    expect(first).toContain('\r\n');
+    expect(first).not.toMatch(/(?<!\r)\n/);
+    expect(syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage }).updated).toBe(false);
+    expect(storage.readSync(AGENT_FILE)).toBe(first);
+    storage.writeSync(`${SQUAD_DIR}/team.md`, teamMd('| Nori | Data Engineer |\n| Saffron | Security |'));
+    expect(syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage }).updated).toBe(true);
+    expect(storage.readSync(AGENT_FILE)).toContain('Saffron');
+    expect(storage.readSync(AGENT_FILE)).not.toMatch(/(?<!\r)\n/);
+  });
+
   it('rewrites the block when a member is added to the cast', () => {
     seed(teamMd('| Nori | Data Engineer |'), routingMd('| Pipelines | Nori |'));
     syncTeamCapabilities({ squadDir: SQUAD_DIR, agentFile: AGENT_FILE, storage });

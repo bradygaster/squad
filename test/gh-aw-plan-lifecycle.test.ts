@@ -11,9 +11,13 @@
  * regression produces a single failing criterion.
  */
 
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  createActivation, digest, finalizeActivation, parseActivationPlan, prepareActivation,
+} from '../workflows/shared/squad-activation.mjs';
+import { parseStructuredData } from '../workflows/shared/check-agent-binding.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
@@ -109,6 +113,127 @@ const team = [
   '## End',
 ].join('\n');
 const guide = readText(GH_AW_GUIDE);
+
+const lifecycleWorkspace = join(process.cwd(), '.test-workspaces-plan-lifecycle');
+afterAll(() => rmSync(lifecycleWorkspace, { recursive: true, force: true }));
+const stamp = '2026-01-01T00:00:00Z';
+const frozenRegistry = {
+  schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1,
+  generated_at: stamp, transaction_id: 'lifecycle-fixture',
+  agents: Object.fromEntries(['Architect', 'Builder', 'Writer'].map(name => [name.toLowerCase(), {
+    display_name: name, persistent_name: name, role: 'Engineer', universe: 'synthetic',
+    status: 'active', created_at: stamp, updated_at: stamp,
+  }])),
+};
+const structured = (kind: string, phases: number[] = []) =>
+  `Structured data:\n\`\`\`json\n${JSON.stringify({
+    squad_artifact: kind, schema_version: '1', origin_issue: 42, phases,
+  })}\n\`\`\``;
+function taskTable(rows = [
+  '| 1 | Same title | Builder | builder | None |',
+  '| 2 | Same title | Architect | architect | 1 |',
+], granular = false) {
+  return [
+    `| # | Title | ${granular ? 'Agent' : 'Owner'} | Agent ID | Depends On |${granular ? ' Epic |' : ''}`,
+    `|---|---|---|---|---|${granular ? '---|' : ''}`, ...rows,
+  ].join('\n');
+}
+
+/** API doubles copy snapshots so changing current state never changes a frozen capture. */
+function activationFixture(body = taskTable(), command = 'activate', kind = 'plan') {
+  mkdirSync(lifecycleWorkspace, { recursive: true });
+  const root = mkdtempSync(join(lifecycleWorkspace, 'runtime-'));
+  mkdirSync(join(root, '.squad/casting'), { recursive: true });
+  const registryRaw = JSON.stringify(frozenRegistry);
+  const historyRaw = JSON.stringify({
+    transaction_id: frozenRegistry.transaction_id, registry_revision: 1,
+    assignment_cast_snapshots: { genesis: {
+      created_at: stamp, agents: ['architect', 'builder', 'writer'], universe: 'synthetic',
+    } },
+    universe_usage_history: [{ universe: 'synthetic', used_at: stamp }],
+  });
+  writeFileSync(join(root, '.squad/casting/registry.json'), registryRaw);
+  writeFileSync(join(root, '.squad/casting/history.json'), historyRaw);
+  writeFileSync(join(root, '.squad/casting/registry-history.commit.json'), JSON.stringify({
+    transaction_id: frozenRegistry.transaction_id, registry_revision: 1,
+    registry_sha256: digest(registryRaw), history_sha256: digest(historyRaw),
+  }));
+  writeFileSync(join(root, '.squad/team.md'), team);
+  const outputPath = join(root, 'request.json');
+  writeFileSync(outputPath, JSON.stringify({ items: [{ type: 'activate_plan', plan_comment_id: '10' }] }));
+  const bot = { id: 41898282, login: 'github-actions[bot]', type: 'Bot' };
+  const operator = { id: 700, login: 'operator', type: 'User' };
+  const context = {
+    repo: { owner: 'owner', repo: 'repo' }, actor: operator.login,
+    payload: { action: 'created', sender: operator, issue: { number: 42, user: operator },
+      comment: { id: 9, body: `/squad ${command}`, user: operator } },
+  };
+  const env = { GITHUB_EVENT_NAME: 'issue_comment', GITHUB_RUN_ID: '900', GITHUB_RUN_ATTEMPT: '1',
+    SQUAD_WORKFLOW_SHA: 'a'.repeat(40) };
+  const comment = (id: number, text: string) => ({
+    id, body: text, user: bot, created_at: stamp, updated_at: stamp,
+    issue_url: 'https://api.github.com/repos/owner/repo/issues/42',
+    html_url: `https://github.com/owner/repo/issues/42#issuecomment-${id}`,
+  });
+  const comments = new Map([[10, comment(10, `${body}\n${structured(kind)}`)]]);
+  const issue = (number: number, fields: Record<string, any> = {}) => ({
+    number, id: number + 1000, node_id: `I_${number}`, body: '', labels: [],
+    url: `https://api.github.com/repos/owner/repo/issues/${number}`,
+    html_url: `https://github.com/owner/repo/issues/${number}`, ...fields,
+  });
+  const issues = new Map<number, any>([[42, issue(42)]]);
+  const parents = new Map<number, number>();
+  const rest = {
+    repos: { getCollaboratorPermissionLevel: vi.fn(async () => ({ data: { permission: 'admin' } })) },
+    issues: {
+      get: vi.fn(async ({ issue_number }: any) => ({ data: structuredClone(issues.get(issue_number)) })),
+      getComment: vi.fn(async ({ comment_id }: any) => ({ data: structuredClone(comments.get(comment_id)) })),
+      listComments: vi.fn(async () => ({ data: structuredClone([...comments.values()]) })),
+      getLabel: vi.fn(async () => ({ data: {} })),
+      createLabel: vi.fn(async () => ({ data: {} })),
+      addSubIssue: vi.fn(async ({ issue_number, sub_issue_id }: any) => {
+        const child = [...issues.values()].find(issue => issue.id === sub_issue_id);
+        if (!child) throw new Error('Unknown child issue');
+        parents.set(child.number, issue_number);
+        return { data: {} };
+      }),
+      getParent: vi.fn(async ({ issue_number }: any) => {
+        const parent = parents.get(issue_number);
+        if (parent === undefined) throw Object.assign(new Error('Parent unavailable'), { status: 404 });
+        return { data: structuredClone(issues.get(parent)) };
+      }),
+      createComment: vi.fn(async ({ body }: any) => {
+        const created = comment(1000 + comments.size, body);
+        comments.set(created.id, created);
+        return { data: structuredClone(created) };
+      }),
+      updateComment: vi.fn(async ({ comment_id, body }: any) => {
+        comments.get(comment_id)!.body = body;
+        return { data: structuredClone(comments.get(comment_id)) };
+      }),
+    },
+  };
+  const github = { rest, paginate: vi.fn(async (method: any, params: any) => (await method(params)).data) };
+  const createIssue = vi.fn(async (params: any) => {
+    const created = issue(100 + issues.size, params);
+    issues.set(created.number, structuredClone(created));
+    return { staged: false, issue: created };
+  });
+  const prepare = () => prepareActivation({
+    github, context, env, root, outputPath, capturePath: join(root, 'capture.json'),
+  });
+  const create = (capture: any) => createActivation({
+    github, context, env, root, capture, createIssue, captureArtifactId: 800,
+    journalPath: join(root, 'receipts.json'), sanitizeContent: (text: string) => text,
+    formatIssueBody: (value: string) => value,
+  });
+  const finalize = (capture: any, journal: any) => finalizeActivation({
+    github, context, env, root, capture, journal, receiptArtifactId: 801,
+  });
+  const artifacts = (kind: string) => [...comments.values()].filter(item =>
+    parseStructuredData(item.body)?.squad_artifact === kind);
+  return { prepare, create, finalize, artifacts, comments, comment, issues, createIssue, github, context };
+}
 
 // ---------------------------------------------------------------------------
 // team.md parsing — Name column vs Role column
@@ -226,10 +351,13 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     expect(block).toMatch(/every work item `Owner` MUST match one certified name/i);
   });
 
-  it('squad-plan-accept mints squad:{owner} from the cast Name, not a role', () => {
-    const block = skillBlock(squad, 'squad-plan-accept');
-    expect(block).toMatch(/certified\s+active roster name/i);
-    expect(block).toContain('`squad:{owner}`');
+  it('trusted acceptance mints squad:{owner} from the cast Name, not a role', () => {
+    const plan = parseActivationPlan(taskTable(), 'plan', frozenRegistry, team);
+    expect(plan.tasks.map((task: any) => [task.agent, task.agent_id, task.label])).toEqual([
+      ['Builder', 'builder', 'squad:builder'], ['Architect', 'architect', 'squad:architect'],
+    ]);
+    expect(() => parseActivationPlan(taskTable().replace('Builder | builder', 'lead | -'),
+      'plan', frozenRegistry, team)).toThrow(/unknown non-roster owner/);
   });
 
   it('squad-plan-implementation binds the Agent column to the cast Name', () => {
@@ -242,7 +370,6 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
 
 describe('#1903: fast-path planning binds certified roster owners end to end', () => {
   const plan = skillBlock(squad, 'squad-plan');
-  const accept = skillBlock(squad, 'squad-plan-accept');
 
   it('requires every fast-path Owner to be certified before posting', () => {
     const gate = plan.match(/3\. Use the `ROSTER_MEMBER:`[\s\S]*?(?=\n4\.)/)?.[0] ?? '';
@@ -256,45 +383,67 @@ describe('#1903: fast-path planning binds certified roster owners end to end', (
     expect(finalCheck).toMatch(/Copy each row's `Depends On` value unchanged/i);
   });
 
-  it('freezes each accepted row and derives its lowercase member label without remapping', () => {
-    const preflight = accept.match(/Before any `create-issue` call[\s\S]*?(?=\nFor each work item)/)?.[0] ?? '';
-    expect(preflight, 'squad-plan-accept must validate bindings before mutation').not.toBe('');
-    expect(preflight).toMatch(/original `Owner` and `Depends On` values/i);
-    expect(preflight).toMatch(/stop before mutation/i);
-    expect(preflight).toMatch(/never\s+substitute, re-route, or fall back/i);
-
-    const labelRule = accept.match(/^- Labels:.*$/m)?.[0] ?? '';
-    expect(labelRule).toMatch(/frozen row `Owner` lowercased/i);
-    expect(labelRule).toMatch(/only from that task's certified binding/i);
+  it('freezes each accepted row and derives its lowercase member label without remapping', async () => {
+    const f = activationFixture();
+    const capture = await f.prepare();
+    expect(capture.plan.tasks.map((task: any) => [task.id, task.agent, task.dependencies, task.label]))
+      .toEqual([['1', 'Builder', [], 'squad:builder'], ['2', 'Architect', ['1'], 'squad:architect']]);
+    f.comments.get(10)!.body = f.comments.get(10)!.body.replace('Builder | builder', 'Writer | writer');
+    await expect(f.create(capture)).rejects.toThrow(/plan changed after capture/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
   });
 
-  it('creates only the planned tasks under the origin issue for a flat plan', () => {
-    expect(accept).toMatch(/origin issue is always the root/i);
-    expect(accept).toMatch(/flat plan, create exactly one issue per[\s\S]*work-item row/i);
-    expect(accept).toMatch(/every task's parent to the origin issue/i);
-    expect(accept).toMatch(/Do not\s+create an additional epic, summary, root, or phase issue/i);
+  it('creates only the planned tasks under the origin issue for a flat plan', async () => {
+    const f = activationFixture();
+    const capture = await f.prepare();
+    expect(capture.operations.map((operation: any) => operation.id)).toEqual(['task:1', 'task:2']);
+    await f.create(capture);
+    expect(f.createIssue).toHaveBeenCalledTimes(2);
+    expect(f.github.rest.issues.addSubIssue.mock.calls.map(([params]) => params.issue_number)).toEqual([42, 42]);
+    expect(f.issues.get(42).labels).toEqual([]);
+    for (const [params] of f.createIssue.mock.calls) expect(params.body).toContain('**Parent:** #42');
   });
 
   it('resolves fast-plan hierarchy only from explicit phase headings', () => {
     expect(plan).toMatch(/single `### Phase 1` heading makes the plan phased/i);
     expect(plan).toMatch(/flat plan MUST use one[\s\S]*no `### Phase \{N\}` headings/i);
-    expect(accept).toMatch(/Determine hierarchy only from the latest plan artifact's headings/i);
-    expect(accept).toMatch(/Any heading[\s\S]*`### Phase \{N\}` makes the plan explicitly phased/i);
-    expect(accept).toMatch(/Do not infer hierarchy from prose, task\s+count, dependency shape, or personal preference/i);
+    const flat = parseActivationPlan(`This prose describes Phase 1.\n${taskTable()}`, 'plan', frozenRegistry, team);
+    expect(flat.phased).toBe(false);
+    expect(flat.epics).toEqual([]);
+    const phased = parseActivationPlan(`### Phase 1\n${taskTable()}`, 'plan', frozenRegistry, team);
+    expect(phased.phased).toBe(true);
+    expect(phased.epics).toEqual(['phase-1']);
+    expect(phased.tasks.map((task: any) => task.epic)).toEqual(['phase-1', 'phase-1']);
   });
 
-  it('preserves every declared dependency through the safe-output capability', () => {
-    expect(accept).toMatch(/Copy every frozen `Depends On` value into the created issue body/i);
-    expect(accept).toMatch(/Do not\s+infer, drop, or reorder dependencies/i);
-    expect(accept).toMatch(/native `blockedBy` relationships only when[\s\S]*safe-output[\s\S]*explicitly exposes/i);
-    expect(accept).toMatch(/Do not bypass safe outputs with\s+a direct write API call/i);
-    expect(accept).toMatch(/body references are\s+the expected fallback/i);
+  it('preserves every declared dependency through the trusted body-reference fallback', async () => {
+    const f = activationFixture(taskTable([
+      '| 3 | Consumer | Writer | writer | 2, 1 |',
+      '| 1 | First | Builder | builder | None |',
+      '| 2 | Second | Architect | architect | 1 |',
+    ]));
+    const capture = await f.prepare();
+    expect(capture.plan.tasks.map((task: any) => task.id)).toEqual(['1', '2', '3']);
+    await f.create(capture);
+    expect(f.createIssue.mock.calls.map(([params]) =>
+      params.body.match(/^\*\*Depends On:\*\* (.*)$/m)?.[1])).toEqual(['None', '#101', '#102, #101']);
+    expect(f.createIssue.mock.calls.map(([params]) => params.labels)).toEqual([
+      ['squad', 'squad:builder'], ['squad', 'squad:architect'], ['squad', 'squad:writer'],
+    ]);
   });
 
-  it('reports the created hierarchy and dependency mode without overclaiming', () => {
-    expect(accept).toMatch(/Report the exact number of created task issues/i);
-    expect(accept).toMatch(/whether dependencies use native edges or the body-reference fallback/i);
-    expect(accept).toMatch(/Never\s+claim an epic, phase issue, sub-issue relationship, or native dependency edge/i);
+  it('reports the created hierarchy and dependency mode without overclaiming', async () => {
+    const f = activationFixture();
+    f.github.rest.issues.addSubIssue.mockRejectedValue(Object.assign(new Error('Unavailable'), { status: 404 }));
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const body = f.artifacts('plan-accepted')[0].body;
+    expect(body).toContain('2 task issues have complete actual-ID bindings.');
+    expect(body).toContain('no native dependency-edge claim');
+    expect(body).toContain('parent body references are the recorded fallback');
+    expect(parseStructuredData(body).bindings.map((binding: any) => binding.epic_issue)).toEqual(['#42', '#42']);
   });
 });
 
@@ -323,9 +472,8 @@ describe('/squad activate reuses the fast-path acceptance lifecycle', () => {
   it('prefers activate in fast-plan next steps while retaining the legacy alias', () => {
     expect(plan).toMatch(/Next Steps \(`\/squad activate` preferred/);
     expect(plan).toContain('`/squad plan accept` remains a supported legacy alias');
-    expect(accept).toContain('`/squad activate` [phase {N}] (recommended)');
-    expect(accept).toContain('`/squad plan accept` [phase {N}]');
-    expect(accept).toContain('(supported legacy alias)');
+    expect(accept).toContain('`/squad activate [phase N]` and `/squad plan accept [phase N]` use the same');
+    expect(accept).toContain('trusted activation writer');
   });
 
   it('documents the recommended three-step lifecycle and both compatibility paths', () => {
@@ -417,35 +565,55 @@ describe('#1784: squad-plan-validate treats the Name column as sole truth', () =
 // ---------------------------------------------------------------------------
 
 describe('#1758.1: squad-plan-accept routes granular plans before failing', () => {
-  const block = skillBlock(squad, 'squad-plan-accept');
+  const implementation = taskTable(['| 1 | Granular task | Builder | builder | None | epic1 |'], true);
 
-  it('Step 1 checks program/implementation before replying "No plan found"', () => {
-    const step1 = block.match(/##### Step 1: Find Plan and Route([\s\S]*?)#####/)?.[1] ?? '';
-    expect(step1, 'Step 1 must be a routing step').not.toBe('');
-
-    const programIdx = step1.indexOf('`program`');
-    const noPlanIdx = step1.indexOf('No plan found');
-    expect(programIdx).toBeGreaterThan(-1);
-    expect(noPlanIdx).toBeGreaterThan(-1);
-    // The hard-fail must come AFTER the program/implementation routing check,
-    // so the routing note is reachable rather than dead code.
-    expect(programIdx).toBeLessThan(noPlanIdx);
+  it('recognizes an implementation artifact before refusing its missing prerequisite', async () => {
+    const f = activationFixture(implementation, 'activate', 'implementation');
+    await expect(f.prepare()).rejects.toThrow(/granular activation requires existing scope-accepted/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
   });
 
-  it('routes to Accept Scope -> Accept Implementation -> Activate when granular artifacts exist', () => {
-    const step1 = block.match(/##### Step 1: Find Plan and Route([\s\S]*?)#####/)?.[1] ?? '';
-    const scopeIdx = step1.indexOf('Accept Scope');
-    const implIdx = step1.indexOf('Accept Implementation');
-    const activateIdx = step1.indexOf('Activate');
-    expect(scopeIdx).toBeGreaterThan(-1);
-    expect(implIdx).toBeGreaterThan(scopeIdx);
-    expect(activateIdx).toBeGreaterThan(implIdx);
+  it('requires Accept Scope then Accept Implementation before granular activation', async () => {
+    const f = activationFixture(implementation, 'plan accept', 'implementation');
+    f.comments.set(7, f.comment(7, structured('scope-accepted')));
+    await expect(f.prepare()).rejects.toThrow(/granular activation requires existing impl-accepted/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+    f.comments.set(8, f.comment(8, structured('impl-accepted')));
+    const capture = await f.prepare();
+    expect(capture.plan.kind).toBe('implementation');
+    expect(capture.operations.map((operation: any) => operation.id)).toEqual(['epic:epic1', 'task:1']);
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    expect(f.artifacts('activated')).toHaveLength(1);
   });
 
-  it('only replies "No plan found" when none of plan/program/implementation exist', () => {
-    expect(block).toMatch(
-      /none of `program`, `implementation`, or `plan` exist, reply "No plan found/,
-    );
+  it('fails closed without a supported task plan and never turns a program into invented tasks', async () => {
+    for (const kind of ['program', 'research']) {
+      const f = activationFixture('No implementation task table exists.', 'activate', kind);
+      const original = f.comments.get(10)!.body;
+      const failure = await f.prepare().then(() => null, (error: Error) => error);
+      expect(failure).toBeInstanceOf(Error);
+      if (kind === 'program') {
+        expect(failure!.message).toContain('only a program plan exists');
+        expect(failure!.message.match(/\/squad plan (?:accept scope|implementation|validate|accept implementation|activate)/g))
+          .toEqual([
+            '/squad plan accept scope',
+            '/squad plan implementation',
+            '/squad plan validate',
+            '/squad plan accept implementation',
+            '/squad plan activate',
+          ]);
+      } else {
+        expect(failure!.message).toContain('latest supported plan comment');
+      }
+      expect(f.comments.get(10)!.body).toBe(original);
+      expect(f.createIssue).not.toHaveBeenCalled();
+      expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
+      expect(f.github.rest.issues.updateComment).not.toHaveBeenCalled();
+      expect(f.github.rest.issues.createLabel).not.toHaveBeenCalled();
+      expect(f.github.rest.issues.addSubIssue).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -465,7 +633,10 @@ describe('#1758.2: Implement dispatches leaf tasks, not epics', () => {
     const dispatch = squad.match(/##### Epic Dispatch([\s\S]*?)## skill:/)?.[1] ?? '';
     expect(dispatch).toContain('For each open leaf task');
     expect(dispatch).toContain('squad/implement-{leaf-number}-');
-    expect(dispatch).toContain('"issue_number": "{leaf-issue-number}"');
+    expect(dispatch).toContain('dispatch_implementation_workers');
+    expect(dispatch).toContain('"issue_number": 123');
+    expect(dispatch).toContain('"worker": "squad-implement-worker"');
+    expect(dispatch).not.toContain('implementation_session_id');
     // The immediate-children language that caused the bug must be gone.
     expect(dispatch).not.toContain('For each open child issue');
   });
@@ -1013,7 +1184,6 @@ describe('#1914: research creates the planning lifecycle state', () => {
 describe('#1916: fast-path commands maintain the planning lifecycle state', () => {
   const plan = skillBlock(squad, 'squad-plan');
   const revise = skillBlock(squad, 'squad-plan-revise');
-  const activate = skillBlock(squad, 'squad-plan-accept');
   const lifecycleUpsert =
     'Call `upsert_lifecycle_state` once with the complete lifecycle body.';
 
@@ -1036,29 +1206,78 @@ describe('#1916: fast-path commands maintain the planning lifecycle state', () =
     expect(revise).toContain('next = `/squad activate`');
   });
 
-  it('records phase progress or terminal activation after fast-path acceptance', () => {
-    const lifecycle =
-      activate.match(/Step 5: Update Fast-Path Lifecycle([\s\S]*)$/)?.[1] ?? '';
-
-    expect(lifecycle).toContain(lifecycleUpsert);
-    expect(lifecycle).toContain('record phase `{N}` activated');
-    expect(lifecycle).toContain('point next to the next unactivated phase');
-    expect(lifecycle).toContain('Activation = `✅ Done`');
-    expect(lifecycle).toContain('state =\n  Activated');
-    expect(lifecycle).toContain('This is terminal');
-    expect(lifecycle).toContain('explicit terminal prose');
+  it('records phase progress or terminal activation only after trusted finalization', async () => {
+    const body = [
+      '### Phase 1', taskTable(['| 1 | First task | Builder | builder | None |']),
+      '### Phase 2', taskTable(['| 2 | Next task | Architect | architect | 1 |']),
+    ].join('\n');
+    for (const command of ['activate phase 1', 'activate']) {
+      const f = activationFixture(body, command);
+      const capture = await f.prepare();
+      const journal = await f.create(capture);
+      expect(f.artifacts('lifecycle-state')).toHaveLength(0);
+      await f.finalize(capture, journal);
+      const lifecycle = f.artifacts('lifecycle-state')[0];
+      expect(lifecycle).toBeDefined();
+      if (command.endsWith('phase 1')) {
+        expect(parseStructuredData(lifecycle.body).phases).toEqual([1]);
+        expect(lifecycle.body).toContain('Partially activated');
+        expect(lifecycle.body).toContain('/squad activate phase 2');
+        expect(f.createIssue).toHaveBeenCalledTimes(2);
+      } else {
+        expect(lifecycle.body).toContain('Activated');
+        expect(lifecycle.body).toContain('no further planning action is required');
+        expect(f.createIssue).toHaveBeenCalledTimes(4);
+      }
+    }
   });
 
-  it('repairs stale lifecycle state on an idempotent activate rerun', () => {
-    expect(activate).toContain('**Whole-plan idempotency:**');
-    expect(activate).toContain('create no issues and post no acceptance');
-    expect(activate).toContain('inspect the newest lifecycle state');
-    expect(activate).toContain(
-      'call `upsert_lifecycle_state` exactly once with',
-    );
-    expect(activate).toContain(
-      'Return `noop` only when that lifecycle state',
-    );
+  it('repairs stale lifecycle state on a verified no-create rerun without rewriting acceptance', async () => {
+    const f = activationFixture();
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const acceptance = f.artifacts('plan-accepted')[0];
+    const original = acceptance.body;
+    const lifecycle = f.artifacts('lifecycle-state')[0];
+    const expectedLifecycle = lifecycle.body;
+    lifecycle.body = `## Squad lifecycle\n**State:** Planned\n${structured('lifecycle-state')}`;
+    f.github.rest.issues.createComment.mockClear();
+    await expect(f.prepare()).resolves.toEqual({ existingAcceptanceId: acceptance.id });
+    expect(f.createIssue).toHaveBeenCalledTimes(2);
+    expect(acceptance.body).toBe(original);
+    expect(lifecycle.body).toBe(expectedLifecycle);
+    expect(f.github.rest.issues.updateComment).toHaveBeenCalledTimes(1);
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
+    await f.prepare();
+    expect(f.github.rest.issues.updateComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a later phase without an explicit current-state mapping bridge, even for independent tasks', async () => {
+    const body = [
+      '### Phase 1', taskTable(['| 1 | First task | Builder | builder | None |']),
+      '### Phase 2', taskTable(['| 2 | Independent task | Architect | architect | None |']),
+    ].join('\n');
+    const f = activationFixture(body, 'activate phase 2');
+    await expect(f.prepare()).rejects.toThrow(/prior-phase mapping bridge/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  it('never repairs invalid acceptance by rerunning creates or relabeling current issues', async () => {
+    const f = activationFixture();
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const acceptance = f.artifacts('plan-accepted')[0];
+    const original = acceptance.body;
+    f.issues.get(101).labels = ['squad'];
+    f.github.rest.issues.createComment.mockClear();
+    await expect(f.prepare()).rejects.toThrow(/expected squad:builder/);
+    expect(f.createIssue).toHaveBeenCalledTimes(2);
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
+    expect(f.github.rest.issues.updateComment).not.toHaveBeenCalled();
+    expect(acceptance.body).toBe(original);
   });
 });
 

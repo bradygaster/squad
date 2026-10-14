@@ -14,6 +14,7 @@ import {
   PROVENANCE_LABEL,
   PROVENANCE_SCHEMA,
   RECORD_TYPE,
+  dispatchImplementationWorkers,
   emitImplementationProvenanceComment,
   enforceImplementationProvenanceSafeOutputs,
   evaluateImplementationProvenanceItems,
@@ -120,6 +121,16 @@ function recordItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function compileWorkflow(workflowId: string, cwd: string): void {
+  const binary = process.env.SQUAD_GH_AW_BIN || 'gh';
+  const prefix = process.env.SQUAD_GH_AW_BIN ? [] : ['aw'];
+  execFileSync(
+    binary,
+    [...prefix, 'compile', workflowId, '--strict', '--no-check-update'],
+    { cwd, stdio: 'pipe', timeout: 60_000 },
+  );
+}
+
 function provenanceCommentItem(
   body: string,
   overrides: Record<string, unknown> = {},
@@ -139,8 +150,11 @@ describe('Squad implementation provenance v1', () => {
   );
   const schema = readJson('workflows/shared/implementation-provenance-v1.schema.json');
   const implementWorker = read('workflows/squad-implement-worker.md');
+  const packageImplementWorker = read('workflows/package/squad-implement-worker.md');
   const dependencyWorker = read('workflows/squad-deps-worker.md');
+  const packageDependencyWorker = read('workflows/package/squad-deps-worker.md');
   const dispatcher = read('workflows/squad.md');
+  const packageDispatcher = read('workflows/package/squad.md');
 
   it('publishes only actual PR numbers and rejects unresolved sentinels', () => {
     expect(schema.$id).toBe(PROVENANCE_SCHEMA);
@@ -196,6 +210,44 @@ describe('Squad implementation provenance v1', () => {
       requireLegacyMarker: true,
     });
     expect(valid).toMatchObject({ ok: true, enforced: true, violations: [] });
+
+    expect(evaluateImplementationProvenanceItems({
+      items: [pullItem(), recordItem({
+        goals_json: JSON.stringify([{
+          repository: 'octo/example',
+          issue: 42,
+          relationship: 'closes',
+          extra: true,
+        }]),
+      })],
+      repository: 'octo/example',
+      issueNumber: 42,
+      namespace: 'implement',
+      runId: 70001,
+      requireLegacyMarker: true,
+    }).violations).toContainEqual({
+      kind: 'implementation-provenance-goals-invalid',
+    });
+
+    expect(evaluateImplementationProvenanceItems({
+      items: [pullItem(`${pullItem().body}\nextra text`), recordItem()],
+      repository: 'octo/example',
+      issueNumber: 42,
+      namespace: 'implement',
+      runId: 70001,
+      requireLegacyMarker: true,
+    }).violations).toContainEqual({
+      kind: 'implementation-provenance-legacy-marker-invalid',
+    });
+
+    expect(evaluateImplementationProvenanceItems({
+      items: [pullItem(`${pullItem().body}\n`), recordItem()],
+      repository: 'octo/example',
+      issueNumber: 42,
+      namespace: 'implement',
+      runId: 70001,
+      requireLegacyMarker: true,
+    }).ok).toBe(true);
 
     expect(evaluateImplementationProvenanceItems({
       items: [pullItem()],
@@ -322,6 +374,105 @@ describe('Squad implementation provenance v1', () => {
       ok: false,
       violations: [{ kind: 'implementation-provenance-dispatch-receipt-unproven' }],
     });
+  });
+
+  it('writes a verified target receipt before native dispatch and admits that worker identity', async () => {
+    const repository = 'octo/example';
+    const comments = new Map<number, Array<Record<string, unknown>>>();
+    const dispatches: Array<{
+      workflowId: number;
+      ref: string;
+      inputs: Record<string, string>;
+    }> = [];
+    const fetchJson = async (route: string) => {
+      const commentMatch = /\/issues\/([1-9][0-9]*)\/comments$/.exec(route);
+      if (commentMatch) return comments.get(Number(commentMatch[1])) || [];
+      if (route.endsWith('/actions/workflows/squad-implement-worker.lock.yml')) {
+        return {
+          id: 9001,
+          path: '.github/workflows/squad-implement-worker.lock.yml',
+          state: 'active',
+        };
+      }
+      if (route.endsWith('/actions/runs/67890')) {
+        return {
+          id: 67890,
+          run_attempt: 1,
+          path: '.github/workflows/squad.lock.yml@refs/heads/dev',
+          repository: { full_name: repository },
+        };
+      }
+      const issueMatch = /\/issues\/([1-9][0-9]*)$/.exec(route);
+      if (issueMatch) {
+        return { number: Number(issueMatch[1]), state: 'open' };
+      }
+      throw new Error(`Unexpected route ${route}`);
+    };
+    const createComment = async (
+      targetRepository: string,
+      issueNumber: number,
+      body: string,
+    ) => {
+      expect(targetRepository).toBe(repository);
+      comments.set(issueNumber, [
+        ...(comments.get(issueNumber) || []),
+        { user: { login: 'github-actions[bot]', type: 'Bot' }, body },
+      ]);
+    };
+
+    await expect(dispatchImplementationWorkers({
+      requests: [{ issue_number: 42, worker: 'squad-implement-worker' }],
+      repository,
+      repositoryId: '12345',
+      defaultBranch: 'dev',
+      runId: '67890',
+      runAttempt: '1',
+      fetchJson,
+      createComment,
+      dispatchWorkflow: async (dispatch: {
+        workflowId: number;
+        ref: string;
+        inputs: Record<string, string>;
+      }) => {
+        dispatches.push(dispatch);
+        const workerEnv = env({
+          GITHUB_REPOSITORY: repository,
+          GITHUB_REPOSITORY_ID: '12345',
+          SQUAD_IMPLEMENT_ISSUE_NUMBER: dispatch.inputs.issue_number,
+          SQUAD_IMPLEMENT_SESSION_ID: dispatch.inputs.implementation_session_id,
+          SQUAD_IMPLEMENT_DISPATCHER_WORKFLOW:
+            dispatch.inputs.implementation_session_origin_workflow,
+          SQUAD_IMPLEMENT_DISPATCHER_RUN_ID:
+            dispatch.inputs.implementation_session_origin_run_id,
+          SQUAD_IMPLEMENT_DISPATCHER_RUN_ATTEMPT:
+            dispatch.inputs.implementation_session_origin_run_attempt,
+        });
+        await expect(validateWorkerIdentity(workerEnv, { fetchJson }))
+          .resolves.toMatchObject({
+            ok: true,
+            sessionId: 'squad-implementation-session/v1/12345/67890',
+            dispatcherWorkflow: '.github/workflows/squad.lock.yml',
+          });
+      },
+    })).resolves.toEqual([{
+      issue_number: 42,
+      worker: 'squad-implement-worker',
+      workflow: '.github/workflows/squad-implement-worker.lock.yml',
+      session_id: 'squad-implementation-session/v1/12345/67890',
+    }]);
+
+    expect(dispatches).toEqual([{
+      workflowId: 9001,
+      ref: 'dev',
+      inputs: {
+        issue_number: '42',
+        implementation_session_id: 'squad-implementation-session/v1/12345/67890',
+        implementation_session_origin_workflow: '.github/workflows/squad.lock.yml',
+        implementation_session_origin_run_id: '67890',
+        implementation_session_origin_run_attempt: '1',
+      },
+    }]);
+    expect(comments.get(42)).toEqual([receiptComment()]);
   });
 
   it('accepts merge continuation evidence only from the trusted bot boundary', async () => {
@@ -533,24 +684,51 @@ describe('Squad implementation provenance v1', () => {
   });
 
   it('compiles both handler paths and fails production-shaped comment candidates closed', async () => {
-    for (const source of [implementWorker, dependencyWorker]) {
+    for (const source of [
+      implementWorker,
+      packageImplementWorker,
+      dependencyWorker,
+      packageDependencyWorker,
+    ]) {
       expect(source).toContain('ref: ${{ github.workflow_sha }}');
       expect(source).toContain('record-implementation-provenance:');
       expect(source).toContain('require-temporary-id: true');
+      expect(source).toContain('relationship');
+      expect(source).toContain('"relates"');
+    }
+    for (const source of [implementWorker, packageImplementWorker]) {
+      expect(source).toContain('must be the final line');
     }
     expect(dispatcher).toContain('Dispatcher-Workflow: .github/workflows/squad.lock.yml');
+    for (const source of [dispatcher, packageDispatcher]) {
+      expect(source).toContain('dispatch-implementation-workers:');
+      expect(source).toContain('dispatch_implementation_workers');
+      const dispatchPolicy = source.match(
+        /^  dispatch-workflow:\n([\s\S]*?)(?=^---$)/m,
+      )?.[1];
+      expect(dispatchPolicy).toContain('squad-retro');
+      expect(dispatchPolicy).toContain('squad-improvement-worker');
+      expect(dispatchPolicy).not.toContain('squad-implement-worker');
+      expect(dispatchPolicy).not.toContain('squad-deps-worker');
+    }
 
     const workspace = scratch();
     const workflowDir = resolve(workspace, '.github', 'workflows');
     mkdirSync(workflowDir, { recursive: true });
     cpSync(resolve(ROOT, 'workflows'), workflowDir, { recursive: true });
     execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    compileWorkflow('squad', workspace);
+    const dispatcherLock = readFileSync(
+      resolve(workflowDir, 'squad.lock.yml'),
+      'utf8',
+    );
+    expect(dispatcherLock).toContain('dispatchImplementationWorkers');
+    expect(dispatcherLock).toContain('actions: write');
+    expect(dispatcherLock).toContain(
+      'Checkout the executing workflow commit for dispatch provenance',
+    );
     for (const workflowId of ['squad-implement-worker', 'squad-deps-worker']) {
-      execFileSync(
-        'gh',
-        ['aw', 'compile', workflowId, '--strict', '--no-check-update'],
-        { cwd: workspace, stdio: 'pipe', timeout: 60_000 },
-      );
+      compileWorkflow(workflowId, workspace);
       const lock = readFileSync(resolve(workflowDir, `${workflowId}.lock.yml`), 'utf8');
       const guard = lock.indexOf(
         workflowId === 'squad-implement-worker'
@@ -626,12 +804,8 @@ describe('Squad implementation provenance v1', () => {
       sourcePath,
       readFileSync(sourcePath, 'utf8').replace('    require-temporary-id: true\n', ''),
     );
-    execFileSync(
-      'gh',
-      ['aw', 'compile', 'squad-implement-worker', '--strict', '--no-check-update'],
-      { cwd: workspace, stdio: 'pipe', timeout: 60_000 },
-    );
+    compileWorkflow('squad-implement-worker', workspace);
     const mutated = readFileSync(lockPath, 'utf8');
     expect(mutated).not.toContain('require_temporary_id');
-  }, 120_000);
+  }, 240_000);
 });

@@ -510,14 +510,21 @@ export async function enforceReviewOutputs(env, get, options = {}) {
 }
 
 function runMatchesTarget(run, target, runId) {
+  // REST run.head_sha can describe the PR head, not the trusted workflow source.
+  // That form requires explicit base/head linkage; a title cannot supply the base.
+  const links = run?.pull_requests;
+  const linked = Array.isArray(links) && links.some(pr =>
+    pr.number === target.pull_request && pr.head?.sha === target.head_sha &&
+    pr.base?.sha === target.base_sha && pr.base?.repo?.name === target.pr.base.repo.name);
+  const sourceBound = run?.head_sha === target.base_sha
+    ? Array.isArray(links) && (links.length === 0 || linked)
+    : run?.head_sha === target.head_sha && linked;
   return run?.id === runId &&
     run.event === 'pull_request_target' && run.path === WORKFLOW &&
-    run.repository?.full_name === target.repository && run.head_sha === target.base_sha &&
+    run.repository?.full_name === target.repository &&
+    target.workflow_sha === target.base_sha && sourceBound &&
     run.display_title === `Squad review \u2014 PR #${target.pull_request}` &&
-    Array.isArray(run.pull_requests) &&
-    (run.pull_requests.length === 0 || run.pull_requests.some(pr =>
-      pr.number === target.pull_request && pr.head?.sha === target.head_sha &&
-      pr.base?.repo?.name === target.pr.base.repo.name));
+    Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0;
 }
 
 async function latestRelayAttempt(target, get, cutoff) {

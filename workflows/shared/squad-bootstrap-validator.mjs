@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { validateCastTree } from './squad-cast-validator.mjs';
 export const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
 export const BOOTSTRAP_PR_TITLE = '[squad] Cast your Squad';
+// Retain the unscoped identity for installed legacy generations and PR-only callers.
 export const BOOTSTRAP_ISSUE_TITLE = '[Research Proposals] Agent-discovered repo opportunities';
 export const BOOTSTRAP_ISSUE_MARKER = '<!-- squad:bootstrap-opportunities schema=1 -->';
 export const BOOTSTRAP_RESET_PATH = '.squad/bootstrap-reset.json';
@@ -43,13 +44,29 @@ export function readBootstrapReset(root) {
     { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))) : null;
 }
 
-export function bootstrapIdentity(reset = null) {
+export function bootstrapIdentity(reset = null, repository) {
+  if (repository !== undefined &&
+      (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))) {
+    throw new Error('Bootstrap research title requires an owner/repo scope.');
+  }
   const suffix = reset ? ` [reset:${parseBootstrapReset(reset).id}]` : '';
   return {
     BOOTSTRAP_BRANCH: BOOTSTRAP_BRANCH + (reset ? `-${reset.id}` : ''),
     BOOTSTRAP_PR_TITLE: BOOTSTRAP_PR_TITLE + suffix,
-    BOOTSTRAP_ISSUE_TITLE: BOOTSTRAP_ISSUE_TITLE + suffix,
+    BOOTSTRAP_ISSUE_TITLE: (repository
+      ? `[Agentic Research] ${repository} — initial proposals`
+      : BOOTSTRAP_ISSUE_TITLE) + suffix,
   };
+}
+
+function matchesBootstrapIssueTitle(title, reset, repository) {
+  return title === bootstrapIdentity(reset).BOOTSTRAP_ISSUE_TITLE ||
+    title === bootstrapIdentity(reset, repository).BOOTSTRAP_ISSUE_TITLE;
+}
+
+function hasBootstrapIssueAuthor(issue) {
+  return !issue?.title?.startsWith('[Agentic Research] ') ||
+    (issue.user?.login === 'github-actions[bot]' && issue.user?.type === 'Bot');
 }
 
 export function hasCommittedBootstrapTeam(root) {
@@ -633,7 +650,7 @@ export function classifyBootstrapState({
     throw new Error('Bootstrap state requires pullRequests, issues, and defaultBranch.');
   }
 
-  const identity = bootstrapIdentity(reset);
+  const identity = bootstrapIdentity(reset, repository);
   const canonicalPull = pull => {
     const head = pullHead(pull);
     const suffix = head?.slice(BOOTSTRAP_BRANCH.length);
@@ -656,13 +673,14 @@ export function classifyBootstrapState({
     for (const number of reset.archived_issues) {
       const matches = issues.filter(issue => issue.number === number);
       const issue = matches[0];
-      const research = issue && (issue.title === BOOTSTRAP_ISSUE_TITLE ||
-        /^\[Research Proposals\] Agent-discovered repo opportunities \[reset:[a-z][a-z0-9-]{0,31}\]$/.test(issue.title)) &&
+      const titleWithoutReset = issue?.title?.replace(/ \[reset:[a-z][a-z0-9-]{0,31}\]$/, '');
+      const research = issue && matchesBootstrapIssueTitle(titleWithoutReset, null, repository) &&
+        hasBootstrapIssueAuthor(issue) &&
         occurrences(issueBody(issue), BOOTSTRAP_ISSUE_MARKER) === 1;
       const fallback = issue?.title === BOOTSTRAP_PR_FALLBACK_ISSUE_TITLE &&
         parseBootstrapPrFallbackProvenance(issueBody(issue))?.repository === repository;
       if (matches.length !== 1 || issue.state !== 'closed' || (!research && !fallback) ||
-          issue.title === identity.BOOTSTRAP_ISSUE_TITLE) {
+          matchesBootstrapIssueTitle(issue.title, reset, repository)) {
         throw new Error(`Unsafe bootstrap reset archive issue #${number}.`);
       }
     }
@@ -694,16 +712,18 @@ export function classifyBootstrapState({
     (issue) =>
       !reset?.archived_issues.includes(issue.number) &&
       (issue?.title?.startsWith(BOOTSTRAP_ISSUE_TITLE) ||
+      issue?.title?.startsWith(bootstrapIdentity(null, repository).BOOTSTRAP_ISSUE_TITLE) ||
       issueBody(issue).includes(BOOTSTRAP_ISSUE_MARKER)),
   );
   const malformedIssue = relevantIssues.find(
     (issue) =>
-      issue?.title !== identity.BOOTSTRAP_ISSUE_TITLE ||
+      !matchesBootstrapIssueTitle(issue?.title, reset, repository) ||
+      !hasBootstrapIssueAuthor(issue) ||
       occurrences(issueBody(issue), BOOTSTRAP_ISSUE_MARKER) !== 1,
   );
   if (malformedIssue) {
     throw new Error(
-      `Ambiguous bootstrap issue #${malformedIssue.number}: expected exact title and durable marker.`,
+      `Ambiguous bootstrap issue #${malformedIssue.number}: expected exact title and durable marker; Agentic Research requires the GitHub Actions bot author.`,
     );
   }
   if (relevantIssues.length > 1) {
@@ -948,7 +968,7 @@ export function validateBootstrapPayload({
   }
   let identity;
   try {
-    identity = bootstrapIdentity(readBootstrapReset(gitRoot));
+    identity = bootstrapIdentity(readBootstrapReset(gitRoot), repository);
   } catch (error) {
     return [`payload: committed bootstrap identity unavailable (${error.message})`];
   }

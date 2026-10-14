@@ -2,6 +2,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 const NO_ARGUMENT_COMMANDS = new Map([
   ['cast', 'cast'],
@@ -77,6 +78,7 @@ export const VALID_COMMANDS = Object.freeze([
   '/squad plan accept implementation [phase N]',
   '/squad plan activate [phase N]',
   '/squad implement',
+  '/squad reconcile activation <request-comment-id> <request-sha256>',
 ]);
 
 function normalizeNewlines(value) {
@@ -104,6 +106,31 @@ function sourceFromPayload(payload, eventName) {
   return { source: 'none', text: '' };
 }
 
+/** Blank code regions without joining the surrounding Markdown blocks. */
+export function markdownContentLines(text) {
+  let fence = null;
+  return normalizeNewlines(text).split('\n').map(originalLine => {
+    if (fence) {
+      const closingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (closingFence
+        && closingFence[1][0] === fence.delimiter
+        && closingFence[1].length >= fence.length) {
+        fence = null;
+      }
+      return '';
+    }
+    const openingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (openingFence) {
+      fence = {
+        delimiter: openingFence[1][0],
+        length: openingFence[1].length,
+      };
+      return '';
+    }
+    return /^(?: {4}| {0,3}\t)/.test(originalLine) ? '' : originalLine;
+  });
+}
+
 function extractInvocation(source, text) {
   if (source === 'workflow_dispatch') {
     if (!text) return null;
@@ -115,26 +142,7 @@ function extractInvocation(source, text) {
     };
   }
 
-  let fence = null;
-  for (const originalLine of normalizeNewlines(text).split('\n')) {
-    if (fence) {
-      const closingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
-      if (closingFence
-        && closingFence[1][0] === fence.delimiter
-        && closingFence[1].length >= fence.length) {
-        fence = null;
-      }
-      continue;
-    }
-    const openingFence = originalLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-    if (openingFence) {
-      fence = {
-        delimiter: openingFence[1][0],
-        length: openingFence[1].length,
-      };
-      continue;
-    }
-    if (/^(?: {4}| {0,3}\t)/.test(originalLine)) continue;
+  for (const originalLine of markdownContentLines(text)) {
     const line = originalLine.replace(/`+[^`]*`+/g, '').trim();
     if (!/^\/squad/i.test(line)) continue;
     const slash = line.match(/^\/squad(?:\s|$)/);
@@ -168,6 +176,10 @@ function classifyArgument(argumentText) {
 
   const normalized = argumentText.replace(/[ \t]+/g, ' ').trim();
   const lowered = normalized.toLowerCase();
+
+  if (/^reconcile activation [1-9]\d* [a-f0-9]{64}$/.test(normalized)) {
+    return accepted('reconcile activation', normalized);
+  }
 
   const exact = NO_ARGUMENT_COMMANDS.get(lowered);
   if (exact) return accepted(exact, normalized);
@@ -333,6 +345,24 @@ export async function authorizeSquadCommand({ payload, eventName, actor, resolve
   }
 }
 
+function serializedPlanBody(body, data) {
+  // gh-aw v0.91.5 appends this suffix in safe_output_type_validator.cjs.
+  // Validate, rather than rewrite, so the writer retains the planning artifact.
+  const match = /(?:^|\n\n)Structured data:\n```json\n([\s\S]*?)\n```$/.exec(body);
+  let envelope;
+  try {
+    envelope = match && JSON.parse(match[1]);
+  } catch {
+    // Malformed data is rejected along with missing or mismatching envelopes.
+  }
+  if (!match || !isDeepStrictEqual(envelope, data) ||
+      // Draft data has exactly four flat properties; reject duplicate JSON keys.
+      (match[1].match(/"(?:[^"\\]|\\.)*"\s*:/g) || []).length !== 4) {
+    throw new Error('Squad serialized plan comment requires one matching structured data envelope.');
+  }
+  return body.slice(0, match.index);
+}
+
 function validateOpenModeOutputs(result, payload, items) {
   const issueNumber = Number(result.source === 'workflow_dispatch'
     ? payload?.inputs?.issue_number : payload?.issue?.number);
@@ -348,7 +378,7 @@ function validateOpenModeOutputs(result, payload, items) {
       throw new Error('Squad open-mode output requires a valid originating issue.');
     }
     const keys = item.type === 'add_comment'
-      ? ['type', 'body', 'item_number', 'data']
+      ? ['type', 'body', 'item_number', 'data', 'temporary_id']
       : ['type', 'body'];
     if (Object.keys(item).some(key => !keys.includes(key))) {
       throw new Error('Squad open-mode output contains unsupported mutation fields.');
@@ -357,21 +387,30 @@ function validateOpenModeOutputs(result, payload, items) {
         String(item.item_number) !== String(issueNumber)) {
       throw new Error('Squad open-mode comments must target the originating issue.');
     }
-    // Inspect the complete body: gh-aw preserves HTML comments in code regions,
-    // and downstream lifecycle readers parse their envelopes as ordinary text.
-    if (typeof item.body !== 'string' ||
-        /structured\s+data\s*:|[`~]{3,}\s*json|"squad_artifact"\s*:/i.test(item.body)) {
-      throw new Error('Squad open-mode body must not supply a structured artifact envelope.');
+    const serializedComment = Object.hasOwn(item, 'temporary_id');
+    // The pinned add_comment adapter emits bare IDs: generated eight-character
+    // IDs or normalized caller IDs accepted by temporary_id.cjs (3–12 characters).
+    if (serializedComment && (typeof item.temporary_id !== 'string' ||
+        !/^aw_[A-Za-z0-9_]{3,12}$/.test(item.temporary_id))) {
+      throw new Error('Squad open-mode comment has invalid serializer metadata.');
     }
     if (item.data !== undefined) {
       const data = item.data;
-      if (result.mode !== 'plan' || !data || typeof data !== 'object' ||
+      if (result.mode !== 'plan' || !data || typeof data !== 'object' || Array.isArray(data) ||
           Object.keys(data).sort().join(',') !== 'origin_issue,phases,schema_version,squad_artifact' ||
           !['plan', 'program', 'implementation', 'validation'].includes(data.squad_artifact) ||
           data.schema_version !== '1' || data.origin_issue !== issueNumber ||
           !Array.isArray(data.phases) || data.phases.length !== 0) {
         throw new Error('Squad open mode cannot emit acceptance, activation, or unrelated artifacts.');
       }
+    }
+    // Inspect all prose, including hidden/code regions. Only a serializer suffix
+    // matching separately validated draft data is exempt; metadata grants no authority.
+    const body = typeof item.body === 'string' && serializedComment && item.data !== undefined
+      ? serializedPlanBody(normalizeNewlines(item.body), item.data) : item.body;
+    if (typeof body !== 'string' ||
+        /structured\s+data\s*:|[`~]{3,}\s*json|"squad_artifact"\s*:/i.test(body)) {
+      throw new Error('Squad open-mode body must not supply a structured artifact envelope.');
     }
     if (item.type === 'upsert_lifecycle_state') {
       const expected = result.mode === 'research' ? 'Researched' : 'Planned';
@@ -409,6 +448,45 @@ export async function enforceSquadCommandContract({
     await authorizeSquadCommand({ payload, eventName, actor, resolvePermission, result });
     const items = readOutputItems(agentOutputPath);
     if (!commandRequiresAuthorization(result)) validateOpenModeOutputs(result, payload, items);
+    const activationArtifacts = new Set(['plan-accepted', 'phases-accepted', 'activated', 'phases-activated', 'activation-reconciled']);
+    for (const item of items) {
+      if (!item || typeof item !== 'object') throw new Error('Squad output item is malformed.');
+      const rawBody = typeof item.body === 'string' ? item.body : '';
+      // Readers can see fenced HTML comments; also inspect the normalized view
+      // so comment-split lifecycle text cannot bypass the trusted writer boundary.
+      const bodies = [rawBody, rawBody.replace(/<!--[\s\S]*?-->/g, '')];
+      if (activationArtifacts.has(item.data?.squad_artifact) ||
+          bodies.some(body => /Activation (?:bindings|reconciliation):/i.test(body) ||
+          /squad-activation-(?:pending|finalization)\/v1/.test(body) ||
+          (item.type === 'upsert_lifecycle_state' &&
+            (/^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) ||
+             /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+(?:✅\s+)?Done\b/im.test(body) ||
+             /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b/im.test(body))) ||
+          [...body.matchAll(/Structured data:\s*```json\s*([\s\S]*?)```/gi)].some(match => {
+            try { return activationArtifacts.has(JSON.parse(match[1])?.squad_artifact); }
+            catch { return true; }
+          })) ||
+          (result.mode.startsWith('plan') && item.type === 'create_issue')) {
+        throw new Error('Activation acceptance, bindings and terminal lifecycle belong exclusively to the trusted writer.');
+      }
+    }
+    if (['activate', 'plan accept', 'plan activate'].includes(result.mode) ||
+        (result.mode === 'plan accept implementation' && result.phase !== null)) {
+      if (items.length !== 1 || items[0]?.type !== 'activate_plan' ||
+          typeof items[0].plan_comment_id !== 'string' ||
+          !/^[1-9]\d*$/.test(items[0].plan_comment_id) ||
+          !Number.isSafeInteger(Number(items[0].plan_comment_id)) ||
+          Object.keys(items[0]).some(key => !['type', 'plan_comment_id'].includes(key))) {
+        throw new Error('Activation requires one activate_plan request with plan_comment_id; native issue creation and model acceptance/lifecycle outputs are forbidden.');
+      }
+    }
+    if (result.mode === 'reconcile activation') {
+      if (items.length !== 1 || items[0]?.type !== 'reconcile_activation' ||
+          items[0].action !== 'reconcile' ||
+          Object.keys(items[0]).some(key => !['type', 'action'].includes(key))) {
+        throw new Error('Reconciliation requires exactly one reconcile_activation request with no model-supplied mappings.');
+      }
+    }
     return result;
   }
   if (result.status === 'none') throw new Error('No explicit Squad command; refusing all safe outputs.');

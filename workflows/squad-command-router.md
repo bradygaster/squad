@@ -16,7 +16,8 @@ if: >-
       startsWith(github.event.issue.body, '/squad\r') ||
       github.event.issue.body == '/squad') &&
     !(github.actor == 'github-actions[bot]' &&
-      github.event.issue.title == '[Research Proposals] Agent-discovered repo opportunities' &&
+      (startsWith(github.event.issue.title, '[Research Proposals] Agent-discovered repo opportunities') ||
+        startsWith(github.event.issue.title, format('[Agentic Research] {0} — initial proposals', github.repository))) &&
       contains(github.event.issue.body, '<!-- squad:bootstrap-opportunities schema=1 -->'))
   ) || (
     github.event_name == 'issue_comment' &&

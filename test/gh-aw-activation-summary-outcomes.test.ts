@@ -1,416 +1,439 @@
 /**
- * Activation summaries report actual accepted label-operation outcomes (#1963).
- *
- * Parent: #1957. Stacks on #1962 (`gh-aw-activation-temporary-ids.test.ts`, temporary-ID
- * targeting for `/squad plan activate`) and #1959
- * (`gh-aw-activate-fast-path-label-provisioning.test.ts`, the `/squad activate` fast path's
- * own `add_labels` provisioning). Those two made the label *operations* correct. They did
- * not make the *summary* correct.
- *
- * Two defects remained, one per activation path, plus a latent data-contract bug:
- *
- *   1. Over-claim by attribution. Both paths permitted naming a `squad:{agent}` label once
- *      `create-issue` "returned successfully carrying it". `create-issue`'s `labels:` field
- *      cannot land a label GitHub does not already have — the exact failure #1959 fixed —
- *      so that sentence licensed reporting labels that were never applied. A label is now
- *      reportable only when an accepted `add_labels` call carried it for that same issue.
- *
- *   2. Invalid `Activation bindings:` JSON. The block required bare `{created task issue
- *      number}` / `{created epic issue number}`. The agent cannot know a created issue's
- *      real number during its turn, and gh-aw's temporary-ID substitution is a plain text
- *      replacement over the whole comment body that does *not* skip fenced code blocks and
- *      *keeps* the `#`. A bare `"issue":#aw_task1` therefore becomes `"issue":#42` —
- *      invalid JSON that fails the entire block. Verified empirically against the pinned
- *      runtime (`github/gh-aw-actions@v0.87.2`, `setup/js/temporary_id.cjs`). Quoting is
- *      the narrowest correct fix: `"issue":"#aw_task1"` → `"issue":"#42"`, which parses.
- *
- *   3. Unresolved references were undefined behavior. An `#aw_…` surviving substitution
- *      means that `create-issue` never landed. The checker now fails closed on it instead
- *      of coercing, skipping, or repairing it.
- *
- * The runtime limitation this suite deliberately encodes: safe outputs are applied in a
- * post-agent job, so an activation run has evidence only that a call was *accepted for a
- * specific target* — never the GitHub API result. "Accepted" is the strongest honest claim.
- * These tests fail on any summary language that claims verification the runtime cannot
- * provide, in either direction (over-claim or silent under-claim).
- *
- * Out of scope: operation-capacity policy (#1961) beyond compatibility, the broad
- * behavioral contract suite (#1960), checker distribution, post-activation implementation,
- * and E4 (#1958).
+ * #1963: summaries describe actual per-issue outcomes. The model cannot observe
+ * queued native writes; the trusted synchronous writer can, and must validate
+ * live labels plus actual receipts before publishing acceptance.
  */
-
-import { afterAll, describe, it, expect } from 'vitest';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { afterAll, describe, it, expect, vi } from 'vitest';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { parseRoster, validateBindings } from '../scripts/check-agent-binding.mjs';
+import { parse as parseYaml } from 'yaml';
+import {
+  activationRequest, createActivation, digest, finalizeActivation, prepareActivation,
+  validateCreateReceipt,
+} from '../workflows/shared/squad-activation.mjs';
+import { parseRoster, parseStructuredData, validateBindings } from '../scripts/check-agent-binding.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
-const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
-const ONTOLOGY = join(WORKFLOWS_DIR, 'shared', 'squad-planning-ontology.md');
 const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces-activation-summary');
+afterAll(() => rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true }));
 
-afterAll(() => {
-  rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
-});
+function workspace(prefix: string) {
+  mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
+  return mkdtempSync(join(TEST_WORKSPACES_DIR, prefix));
+}
+const readText = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+const workflow = readText(join(WORKFLOWS_DIR, 'squad.md'));
+const ontology = readText(join(WORKFLOWS_DIR, 'shared', 'squad-planning-ontology.md')).replace(/\s+/g, ' ');
+const block = (heading: string, value: unknown) => `${heading}:\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\``;
+const timestamp = '2026-01-01T00:00:00Z';
+const bot = { id: 41898282, login: 'github-actions[bot]', type: 'Bot' };
+const operator = { id: 700, login: 'operator', type: 'User' };
+const paths = ['activate', 'plan accept', 'plan activate'] as const;
 
-/** Read a text file with line endings normalized to LF (Windows checkouts materialize CRLF). */
-function readText(filePath: string): string {
-  return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+function fixture(command: string = 'activate', secondOwner = 'Kint') {
+  const root = workspace('runtime-');
+  mkdirSync(join(root, '.squad/casting'), { recursive: true });
+  const registry = {
+    schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1,
+    generated_at: timestamp, transaction_id: 'summary-fixture',
+    agents: Object.fromEntries(['Kint', 'McManus'].map(name => [name.toLowerCase(), {
+      display_name: name, persistent_name: name, role: 'Engineer', universe: 'synthetic',
+      status: 'active', created_at: timestamp, updated_at: timestamp,
+    }])),
+  };
+  const history = {
+    transaction_id: registry.transaction_id, registry_revision: 1,
+    assignment_cast_snapshots: { genesis: { created_at: timestamp, agents: ['kint', 'mcmanus'], universe: 'synthetic' } },
+    universe_usage_history: [{ universe: 'synthetic', used_at: timestamp }],
+  };
+  const registryRaw = JSON.stringify(registry);
+  const historyRaw = JSON.stringify(history);
+  writeFileSync(join(root, '.squad/casting/registry.json'), registryRaw);
+  writeFileSync(join(root, '.squad/casting/history.json'), historyRaw);
+  writeFileSync(join(root, '.squad/casting/registry-history.commit.json'), JSON.stringify({
+    transaction_id: registry.transaction_id, registry_revision: 1,
+    registry_sha256: digest(registryRaw), history_sha256: digest(historyRaw),
+  }));
+  writeFileSync(join(root, '.squad/team.md'),
+    '## Members\n| Name | Role |\n|---|---|\n| Kint | Lead |\n| McManus | Engineer |\n');
+  const outputPath = join(root, 'request.json');
+  writeFileSync(outputPath, JSON.stringify({ items: [{ type: 'activate_plan', plan_comment_id: '10' }] }));
+  const context = {
+    repo: { owner: 'owner', repo: 'repo' }, actor: operator.login,
+    payload: { action: 'created', sender: operator, issue: { number: 42, user: operator },
+      comment: { id: 9, body: `/squad ${command}`, user: operator } },
+  };
+  const env = { GITHUB_EVENT_NAME: 'issue_comment', GITHUB_RUN_ID: '900', GITHUB_RUN_ATTEMPT: '1',
+    SQUAD_WORKFLOW_SHA: 'a'.repeat(40) };
+  const granular = command === 'plan activate';
+  const envelope = (kind: string) => ({ squad_artifact: kind, schema_version: '1', origin_issue: 42, phases: [] });
+  const comment = (id: number, body: string) => ({
+    id, body, user: bot, created_at: timestamp, updated_at: timestamp,
+    issue_url: 'https://api.github.com/repos/owner/repo/issues/42',
+    html_url: `https://github.com/owner/repo/issues/42#issuecomment-${id}`,
+  });
+  const planBody = [
+    `| # | Title | ${granular ? 'Agent' : 'Owner'} | Agent ID | Depends On |${granular ? ' Epic |' : ''}`,
+    `|---|---|---|---|---|${granular ? '---|' : ''}`,
+    `| 1 | Same title | Kint | kint | None |${granular ? ' epic1 |' : ''}`,
+    `| 2 | Same title | ${secondOwner} | ${secondOwner === '@copilot' ? '-' : secondOwner.toLowerCase()} | 1 |${granular ? ' epic1 |' : ''}`,
+    block('Structured data', envelope(granular ? 'implementation' : 'plan')),
+  ].join('\n');
+  const comments = new Map([[10, comment(10, planBody)]]);
+  if (granular) {
+    comments.set(7, comment(7, block('Structured data', envelope('scope-accepted'))));
+    comments.set(8, comment(8, block('Structured data', envelope('impl-accepted'))));
+  }
+  const issue = (number: number, values: Record<string, any> = {}) => ({
+    number, id: number + 1000, node_id: `I_${number}`, body: '', labels: [],
+    url: `https://api.github.com/repos/owner/repo/issues/${number}`,
+    html_url: `https://github.com/owner/repo/issues/${number}`, ...values,
+  });
+  const issues = new Map<number, any>([[42, issue(42)]]);
+  const parents = new Map<number, number>();
+  const events: string[] = [];
+  const rest = {
+    repos: { getCollaboratorPermissionLevel: vi.fn(async () => ({ data: { permission: 'admin' } })) },
+    issues: {
+      get: vi.fn(async ({ issue_number }: any) => {
+        events.push(`read:${issue_number}`);
+        return { data: structuredClone(issues.get(issue_number)) };
+      }),
+      getComment: vi.fn(async ({ comment_id }: any) => ({ data: structuredClone(comments.get(comment_id)) })),
+      listComments: vi.fn(async () => ({ data: structuredClone([...comments.values()]) })),
+      getLabel: vi.fn(async () => { throw Object.assign(new Error('Missing'), { status: 404 }); }),
+      createLabel: vi.fn(async () => ({ data: {} })),
+      addSubIssue: vi.fn(async ({ issue_number, sub_issue_id }: any) => {
+        const child = [...issues.values()].find(issue => issue.id === sub_issue_id);
+        if (!child) throw new Error('Unknown child issue');
+        parents.set(child.number, issue_number);
+        return { data: {} };
+      }),
+      getParent: vi.fn(async ({ issue_number }: any) => {
+        const parent = parents.get(issue_number);
+        if (parent === undefined) throw Object.assign(new Error('Parent unavailable'), { status: 404 });
+        return { data: structuredClone(issues.get(parent)) };
+      }),
+      createComment: vi.fn(async ({ body }: any) => {
+        const value = comment(1000 + comments.size, body);
+        events.push(`publish:${parseStructuredData(body)?.squad_artifact ?? 'pending'}`);
+        comments.set(value.id, value);
+        return { data: structuredClone(value) };
+      }),
+      updateComment: vi.fn(async ({ comment_id, body }: any) => {
+        comments.get(comment_id)!.body = body;
+        return { data: structuredClone(comments.get(comment_id)) };
+      }),
+    },
+  };
+  const github = { rest, paginate: vi.fn(async (method: any, params: any) => (await method(params)).data) };
+  const createIssue = vi.fn(async (params: any) => {
+    const value = issue(100 + issues.size, params);
+    events.push(`create:${value.number}`);
+    issues.set(value.number, structuredClone(value));
+    return { staged: false, issue: value };
+  });
+  const prepare = () => prepareActivation({ github, context, env, root, outputPath, capturePath: join(root, 'capture.json') });
+  const create = (capture: any) => createActivation({
+    github, context, env, root, capture, captureArtifactId: 800, createIssue,
+    journalPath: join(root, 'journal.json'), sanitizeContent: (value: string) => value,
+    formatIssueBody: (value: string) => value,
+  });
+  const finalize = (capture: any, journal: any, receiptArtifactId = 801) =>
+    finalizeActivation({ github, context, env, root, capture, journal, receiptArtifactId });
+  const accepted = () => [...comments.values()].find(item =>
+    ['plan-accepted', 'activated'].includes(parseStructuredData(item.body)?.squad_artifact));
+  return { prepare, create, finalize, accepted, comments, issues, events, github, createIssue };
 }
 
-const workflow = readText(SQUAD_WORKFLOW);
-const ontologyProse = readText(ONTOLOGY).replace(/\s+/g, ' ');
-
-/** `squad-plan-activate` — the `/squad plan activate` path. Has an explicit end marker. */
-const ACTIVATE_START = workflow.indexOf('## skill: `squad-plan-activate`');
-const ACTIVATE_END = workflow.indexOf('## end skill: `squad-plan-activate`');
-expect(ACTIVATE_START, '"## skill: `squad-plan-activate`" is missing from workflows/squad.md').toBeGreaterThan(-1);
-expect(ACTIVATE_END, '"## end skill: `squad-plan-activate`" is missing').toBeGreaterThan(ACTIVATE_START);
-const activateSkill = workflow.slice(ACTIVATE_START, ACTIVATE_END);
-const activateProse = activateSkill.replace(/\s+/g, ' ');
-
-/**
- * `squad-plan-accept` — the recommended `/squad activate` fast path. It has no
- * `## end skill:` marker, so its body runs to the next `## skill:` heading.
- */
-const ACCEPT_START = workflow.indexOf('## skill: `squad-plan-accept`');
-const ACCEPT_END = workflow.indexOf('## skill: `squad-plan-revise`');
-expect(ACCEPT_START, '"## skill: `squad-plan-accept`" is missing from workflows/squad.md').toBeGreaterThan(-1);
-expect(ACCEPT_END, '"## skill: `squad-plan-revise`" is missing from workflows/squad.md').toBeGreaterThan(ACCEPT_START);
-const acceptSkill = workflow.slice(ACCEPT_START, ACCEPT_END);
-const acceptProse = acceptSkill.replace(/\s+/g, ' ');
-
-/** Both activation paths, so parity assertions cannot pass by covering only one. */
-const BOTH_PATHS: ReadonlyArray<readonly [string, string]> = [
-  ['/squad plan activate (squad-plan-activate)', activateProse],
-  ['/squad activate fast path (squad-plan-accept)', acceptProse],
-];
-
-describe('gh-aw: activation summaries report accepted outcomes, not intent (#1963)', () => {
-  it('routes both activation commands to the two skills this suite inspects', () => {
-    // If routing moves, every parity assertion below is inspecting the wrong prose.
+describe('gh-aw: trusted summaries report live outcomes, not intent (#1963)', () => {
+  it('routes both public activation skills and the compatibility alias to one exact request', () => {
     expect(workflow).toContain('| `activate` | `squad-plan-accept` |');
     expect(workflow).toContain('| `plan activate` | `squad-plan-activate` |');
+    expect(activationRequest([{ type: 'activate_plan', plan_comment_id: '10' }])).toBe(10);
+    for (const type of ['create_issue', 'add_labels', 'add_comment', 'upsert_lifecycle_state']) {
+      expect(() => activationRequest([
+        { type: 'activate_plan', plan_comment_id: '10' }, { type },
+      ])).toThrow(/exactly one activate_plan/);
+    }
   });
 
-  it.each(BOTH_PATHS)(
-    '%s: refuses to treat a successful create-issue as label evidence',
-    (_path, prose) => {
-      expect(
-        prose,
-        'A summary that credits create-issue for a label reports work that may never have ' +
-          'happened: create-issue silently drops label names the repository lacks (#1959). ' +
-          'Each path must state that create-issue is not evidence.',
-      ).toMatch(/A successful `create-issue` is \*\*not\*\* evidence/);
-      expect(prose).toMatch(/`labels:` field cannot land a label on a fresh repository/);
-    },
-  );
-
-  it.each(BOTH_PATHS)(
-    '%s: conditions every reported label on an accepted add_labels call for that same issue',
-    (_path, prose) => {
-      expect(
-        prose,
-        'The reportable condition must be an accepted add_labels operation targeting the ' +
-          'same issue — not a computed value, not another item\'s call.',
-      ).toMatch(/`add_labels` call (?:that )?carr(?:ied|ying) that label(?: and targeting| and targeted)? that same issue|`add_labels` call carrying that label was accepted for that same issue/);
-      expect(
-        prose,
-        'Targeting must name both forms: temporary ID for a created issue, verified real ' +
-          'number for a reused one.',
-      ).toMatch(/by its own `temporary_id`, or by its verified real number for a reused issue/);
-    },
-  );
-
-  it('removes the create-issue attribution that Label Pre-flight Step 8 used to license', () => {
-    // The exact pre-#1963 sentence. Its survival anywhere means the over-claim is still
-    // reachable, regardless of what was added elsewhere.
-    expect(
-      activateProse,
-      'Label Pre-flight Step 8 previously allowed naming a label once "that issue\'s ' +
-        'create-issue call returned successfully carrying it". That is the root over-claim.',
-    ).not.toMatch(/`create-issue` call returned\s*successfully carrying it/);
-    expect(activateProse).not.toMatch(/create-issue` call returned successfully carrying it/);
+  it.each(paths)('%s: a successful create is not evidence that its requested labels landed', async command => {
+    const f = fixture(command);
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    f.issues.get(journal.receipts.at(-1).number).labels = ['squad'];
+    await expect(f.finalize(capture, journal)).rejects.toThrow(/expected squad:kint/);
+    expect(f.accepted()).toBeUndefined();
   });
 
-  it.each(BOTH_PATHS)(
-    '%s: claims acceptance only, never verification the runtime cannot provide',
-    (_path, prose) => {
-      expect(
-        prose,
-        'Safe outputs are applied after the agent turn. A run that says it verified or ' +
-          'confirmed a label on the issue is claiming observability gh-aw does not offer.',
-      ).toMatch(/never write that a label was (?:"verified", "confirmed on the issue", or\s*"checked"|verified, confirmed, or checked)/);
-      expect(prose).toMatch(/nothing here reads labels back/);
-    },
-  );
-
-  it.each(BOTH_PATHS)('%s: rejects under-claiming as well as over-claiming', (_path, prose) => {
-    expect(
-      prose,
-      'Reporting an omission for an item whose add_labels call was accepted manufactures a ' +
-        'defect that did not occur — the mirror image of the over-claim, equally wrong.',
-    ).toMatch(/never (?:report an accepted operation as an omission|emit the heading for an owner that\s*\*did\* become an accepted label)/);
+  it.each(paths)('%s: checks the same issue, not another operation with the right label', async command => {
+    const f = fixture(command, 'McManus');
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    const tasks = journal.receipts.filter((receipt: any) => receipt.operation_id.startsWith('task:'));
+    f.issues.get(tasks[0].number).labels = ['squad', 'squad:mcmanus'];
+    f.issues.get(tasks[1].number).labels = ['squad', 'squad:kint'];
+    await expect(f.finalize(capture, journal)).rejects.toThrow(/expected squad:kint/);
+    expect(f.accepted()).toBeUndefined();
   });
 
-  it.each(BOTH_PATHS)(
-    '%s: still requires the Non-roster agent values heading when an owner got no label',
-    (_path, prose) => {
-      // Preserved from the base stack. #1963 must not weaken it while tightening the
-      // positive direction.
-      expect(prose).toMatch(/`Non-roster agent values` heading is \*\*required\*\*/);
-      expect(prose).toMatch(/naming the value and\s*the issue it applied to|naming the value\s*and the issue it applied to/);
-      expect(prose).toMatch(/reports a\s*clean run that did not happen/);
-    },
-  );
+  it('never accepts the old create-returned-successfully attribution without live readback', async () => {
+    const f = fixture();
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    f.github.rest.issues.get.mockRejectedValueOnce(new Error('API read unavailable'));
+    await expect(f.finalize(capture, journal)).rejects.toThrow('API read unavailable');
+    expect(f.accepted()).toBeUndefined();
+  });
+
+  it.each(paths)('%s: publishes only after every live label is read back', async command => {
+    const f = fixture(command);
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    f.events.length = 0;
+    const evidence = await f.finalize(capture, journal);
+    expect(evidence.basis).toBe('current-trusted-execution');
+    const publication = f.events.findIndex(event => /^publish:(?:activated|plan-accepted)$/.test(event));
+    expect(publication).toBeGreaterThan(-1);
+    for (const receipt of journal.receipts) {
+      expect(f.events.indexOf(`read:${receipt.number}`)).toBeGreaterThan(-1);
+      expect(f.events.indexOf(`read:${receipt.number}`)).toBeLessThan(publication);
+    }
+  });
+
+  it.each(paths)('%s: does not under-report a successfully observed owner label', async command => {
+    const f = fixture(command);
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const artifact = parseStructuredData(f.accepted()!.body);
+    expect(artifact.bindings).toHaveLength(2);
+    for (const binding of artifact.bindings) {
+      expect(binding.label).toBe('squad:kint');
+      expect(binding.omission_reason).toBeUndefined();
+    }
+  });
+
+  it.each(paths)('%s: reports external identity omissions against the exact task', async command => {
+    const f = fixture(command, '@copilot');
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const bindings = parseStructuredData(f.accepted()!.body).bindings;
+    expect(bindings[1]).toMatchObject({
+      task: '2', agent: '@copilot', agent_id: null,
+      identity_omission_reason: 'external-agent', label: 'squad:copilot',
+    });
+    expect(bindings[0].identity_omission_reason).toBeUndefined();
+    if (command === 'plan activate') {
+      expect(bindings[1]).toMatchObject({ epic_label: null, epic_omission_reason: 'multi-owner' });
+    }
+  });
+
+  it.each(paths)('%s: rejects unknown owners before mutation rather than silently omitting their labels', async command => {
+    const f = fixture(command, 'Visitor');
+    await expect(f.prepare()).rejects.toThrow(/unknown non-roster owner/);
+    expect(f.createIssue).not.toHaveBeenCalled();
+    expect(f.github.rest.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  it('makes an intentionally omitted multi-owner epic label visible in the human summary', async () => {
+    const f = fixture('plan activate', 'McManus');
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const body = f.accepted()!.body;
+    const omissionSection = body.match(/^#{2,6} Non-roster agent values\s*\n([\s\S]*?)(?=^#{2,6} |\nActivation bindings:|$)/m)?.[1];
+    expect(omissionSection, '#1860: machine omission metadata must not replace the required human-visible explanation')
+      .toBeDefined();
+    expect(omissionSection).toContain('#101');
+    expect(omissionSection?.toLowerCase()).toContain('kint');
+    expect(omissionSection?.toLowerCase()).toContain('mcmanus');
+  });
+
+  it('withholds acceptance when durable receipts have not been uploaded', async () => {
+    const f = fixture();
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await expect(f.finalize(capture, journal, 0)).rejects.toThrow(/durable receipt artifact upload is missing/);
+    expect(f.accepted()).toBeUndefined();
+  });
 });
 
-describe('gh-aw: Activation bindings carry resolvable issue references (#1963)', () => {
-  it('replaces the bare created-issue-number placeholders that produced invalid JSON', () => {
-    expect(
-      workflow,
-      'A bare number placeholder cannot be satisfied: the agent never learns a created ' +
-        "issue's real number during its turn.",
-    ).not.toContain('"issue":{created task issue number}');
+describe('gh-aw: Activation bindings contain actual API issue references (#1963)', () => {
+  it('rejects model-provided maps and bare-number placeholders at the request boundary', () => {
+    for (const issue of ['#aw_task1', 'aw_task1', 101]) {
+      expect(() => activationRequest([{ type: 'activate_plan', plan_comment_id: '10', issue }]))
+        .toThrow(/exact numeric plan_comment_id/);
+    }
+    expect(workflow).not.toContain('"issue":{created task issue number}');
     expect(workflow).not.toContain('"epic_issue":{created epic issue number}');
   });
 
-  it('specifies both binding references as quoted JSON strings', () => {
-    expect(activateSkill).toContain('"issue":"{task issue reference}"');
-    expect(activateSkill).toContain('"epic_issue":"{epic issue reference}"');
-    expect(activateProse).toMatch(/`issue` and `epic_issue` are \*\*JSON strings\*\*, never bare numbers/);
+  it('serializes both task and epic actual references as valid quoted JSON', async () => {
+    const f = fixture('plan activate');
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const body = f.accepted()!.body;
+    const bindings = parseStructuredData(body).bindings;
+    expect(body).toContain('"issue":"#102"');
+    expect(body).toContain('"epic_issue":"#101"');
+    expect(bindings.map((binding: any) => binding.issue)).toEqual(['#102', '#103']);
+    expect(body).not.toMatch(/#?aw_/);
   });
 
-  it('names invalid JSON as the reason quoting is mandatory, not style', () => {
-    expect(
-      activateProse,
-      'Without the reason stated, a future edit "simplifies" the quotes away and silently ' +
-        'breaks every bindings block.',
-    ).toMatch(/\*\*The quoting is load-bearing\.\*\*/);
-    expect(activateProse).toMatch(/it does not skip fenced code blocks/);
-    expect(activateProse).toMatch(/`"issue":#aw_task1` becomes `"issue":#42`, which is invalid JSON/);
-    expect(activateProse).toMatch(/`"issue":"#aw_task1"` becomes `"issue":"#42"`, which parses/);
+  it('does not rely on text substitution, which can produce invalid JSON for bare tokens', () => {
+    expect(() => JSON.parse('{"issue":#42}')).toThrow();
+    expect(JSON.parse('{"issue":"#42"}')).toEqual({ issue: '#42' });
+    expect(() => validateCreateReceipt({ staged: true, issue: { number: '#aw_task1' } },
+      { id: 'task:1' }, { repository: 'owner/repo' })).toThrow(/actual issue/);
   });
 
-  it('uses temporary IDs for created items and verified real numbers for reused ones', () => {
-    expect(activateProse).toMatch(/\*\*Created this run:\*\* that item's own `temporary_id`, quoted/);
-    expect(activateProse).toMatch(/\*\*Reused or pre-existing\*\*[^.]*its verified real\s*number in the same quoted form/);
-    expect(
-      activateProse,
-      'Inventing a number for a created issue is the failure mode this whole design avoids.',
-    ).toMatch(/never a real number\s*for an issue this run created/);
-    expect(activateProse).toMatch(/never infer an issue number/);
+  it('preserves actual IDs on reruns rather than creating or guessing replacements by title', async () => {
+    const f = fixture();
+    const capture = await f.prepare();
+    const journal = await f.create(capture);
+    await f.finalize(capture, journal);
+    const original = f.accepted()!;
+    const bytes = original.body;
+    expect(await f.prepare()).toEqual({ existingAcceptanceId: original.id });
+    expect(f.createIssue).toHaveBeenCalledTimes(2);
+    expect(f.accepted()!.body).toBe(bytes);
   });
 
-  it('treats a surviving temporary ID as a failure rather than repairing it', () => {
-    expect(activateProse).toMatch(/was never resolved — that `create-issue` did\s*not land/);
-    expect(activateProse).toMatch(/Leave it rather than repairing it by hand/);
+  it('withholds acceptance for unresolved task or epic IDs in actual receipt journals', async () => {
+    for (const index of [0, 1]) {
+      const f = fixture('plan activate');
+      const capture = await f.prepare();
+      const journal = await f.create(capture);
+      journal.receipts[index].number = '#aw_unresolved';
+      await expect(f.finalize(capture, journal)).rejects.toThrow(/identities are missing or malformed/);
+      expect(f.accepted()).toBeUndefined();
+    }
   });
 
-  it('documents the same reference and label contract in the shared ontology', () => {
-    // The ontology is the artifact contract the deterministic checker consumes; a rule
-    // stated only in the skill body is invisible to that consumer's spec.
-    expect(ontologyProse).toMatch(/\*\*Issue references are quoted strings, never bare numbers\.\*\*/);
-    expect(ontologyProse).toMatch(/it does not skip fenced code\s*blocks/);
-    expect(ontologyProse).toMatch(/\*\*Reported labels mean accepted label operations\.\*\*/);
-    expect(ontologyProse).toMatch(/It does not assert the label was\s*observed on the issue/);
-    expect(ontologyProse).toMatch(/consumers MUST treat it as a failure rather than skipping or repairing it/);
+  it('documents current live-label evidence separately from legacy queued-operation records', () => {
+    expect(ontology).toContain('Issue references are quoted, actual numeric references.');
+    expect(ontology).toContain('Older records\' labels mean accepted operations, not proof that those operations landed.');
+    expect(ontology).toContain('New finalization also checks the live result.');
+    expect(ontology).toContain('Neither bare nor `#`-prefixed `aw_` tokens are valid consumable references.');
   });
 
-  it('never lets the ontology describe bindings as recording labels that were applied', () => {
-    // Regression guard for a real drift caught in review on this PR: the `Activation
-    // bindings:` paragraph said bindings record "epic labels reported as applied" while
-    // the paragraph directly below it correctly defined reported labels as *accepted*
-    // operations. The ontology is the file most likely to be read standalone, so the
-    // strong claim there silently re-introduced the exact defect this change removes —
-    // one consistently-wrong place became two inconsistently-wrong ones.
-    //
-    // This is deliberately a narrow, shape-targeted negative rather than a ban on the
-    // word "applied". The same file legitimately says safe outputs "are applied after
-    // the agent turn" — that sentence is the *justification* for the weaker claim, so a
-    // blanket match would forbid the correct prose along with the incorrect prose.
-    expect(
-      ontologyProse,
-      'The ontology must not say bindings record labels "reported as applied". Reported ' +
-        'labels assert an accepted add_labels operation, never observed application.',
-    ).not.toMatch(/(?:reported|recorded|listed)\s+as\s+applied/i);
-    expect(
-      ontologyProse,
-      'No binding field may be described as a label already applied to, or present on, the issue.',
-    ).not.toMatch(/labels?\s+(?:already\s+)?(?:applied\s+to|present\s+on)\s+the\s+issue/i);
-
-    // Positive half: the binding paragraph must state the accepted-operation semantics
-    // and point a standalone reader at the definition, so the fix cannot be reverted to
-    // a vaguer wording that merely dodges the negatives above.
-    expect(ontologyProse).toMatch(
-      /epic labels reported as accepted label operations \(defined below\)/,
-    );
+  it('never upgrades an operator-authorized current-state supplement into historical attestation', () => {
+    expect(ontology).toContain('basis: current-state-authorized');
+    expect(ontology).toContain('supplement never claims historical attestation');
+    expect(ontology).toContain('Only independently verified request evidence may authorize reader selection');
   });
 });
 
 describe('post-activation checker resolves binding references and fails closed (#1963)', () => {
-  const roster = parseRoster(`
-## Members
-| Name | Role |
-|------|------|
-| Kint | Lead |
-`);
-
-  function binding(issue: unknown, epicIssue: unknown) {
-    return {
-      task: '1',
-      issue,
-      epic: '2.1',
-      epic_issue: epicIssue,
-      agent: 'Kint',
-      epic_agents: ['kint'],
-      label: 'squad:kint',
-      epic_label: 'squad:kint',
-    };
-  }
-
-  function activated(bindings: object[]) {
-    return {
-      squad_artifact: 'activated',
-      schema_version: '1',
-      origin_issue: 1,
-      phases: [],
-      bindings,
-    };
-  }
-
-  const presentLabels = new Map([
-    [42, new Set(['squad', 'squad:kint'])],
-    [43, new Set(['squad', 'squad:kint'])],
-  ]);
-
-  it('accepts the resolved quoted form gh-aw substitution produces', () => {
-    // '"issue":"#aw_task1"' becomes '"issue":"#42"' after substitution — the shape the
-    // checker actually receives in production.
-    const result = validateBindings(activated([binding('#42', '#43')]), roster, presentLabels);
-    expect(result).toMatchObject({ skipped: false, checked: 1, epics: 1 });
+  const roster = parseRoster('## Members\n| Name | Role |\n|---|---|\n| Kint | Lead |\n');
+  const binding = (issue: unknown, epicIssue: unknown) => ({
+    task: '1', issue, epic: '2.1', epic_issue: epicIssue, agent: 'Kint',
+    epic_agents: ['kint'], label: 'squad:kint', epic_label: 'squad:kint',
   });
-
-  it('still accepts bare integers, so artifacts written before this contract validate', () => {
-    const result = validateBindings(activated([binding(42, 43)]), roster, presentLabels);
-    expect(result).toMatchObject({ skipped: false, checked: 1 });
+  const activated = (bindings: object[]) => ({
+    squad_artifact: 'activated', schema_version: '1', origin_issue: 1, phases: [], bindings,
   });
+  const labels = new Map([[42, new Set(['squad', 'squad:kint'])], [43, new Set(['squad', 'squad:kint'])]]);
 
-  it('fails closed on an unresolved temporary ID instead of skipping or coercing it', () => {
-    expect(
-      () => validateBindings(activated([binding('#aw_task1', '#43')]), roster, presentLabels),
-      'A surviving temporary ID means that create-issue never landed. Silently skipping it ' +
-        'would report a clean activation for an issue that does not exist.',
-    ).toThrow('unresolved temporary ID');
+  it('accepts resolved quoted references, including legacy substituted records', () => {
+    expect(validateBindings(activated([binding('#42', '#43')]), roster, labels))
+      .toMatchObject({ skipped: false, checked: 1, epics: 1 });
   });
-
+  it('continues to accept bare integers in pre-contract artifacts', () => {
+    expect(validateBindings(activated([binding(42, 43)]), roster, labels))
+      .toMatchObject({ skipped: false, checked: 1 });
+  });
+  it.each(['#aw_task1', 'aw_task1'])('fails closed on unresolved task reference %s', reference => {
+    expect(() => validateBindings(activated([binding(reference, '#43')]), roster, labels))
+      .toThrow(/unresolved temporary ID/);
+  });
   it('fails closed on an unresolved epic reference too', () => {
-    expect(() => validateBindings(activated([binding('#42', '#aw_epic1')]), roster, presentLabels))
+    expect(() => validateBindings(activated([binding('#42', '#aw_epic1')]), roster, labels))
       .toThrow('unresolved temporary ID');
   });
-
-  it('rejects a reference that is neither a number nor a resolvable reference', () => {
-    // Cross-repo substitution yields `owner/repo#42`; Squad activates same-repo only, so
-    // that form means something went wrong upstream. Reject rather than parse loosely.
-    expect(() => validateBindings(activated([binding('other/repo#42', '#43')]), roster, presentLabels))
-      .toThrow('binding has no valid issue number');
-    expect(() => validateBindings(activated([binding('', '#43')]), roster, presentLabels))
+  it.each(['other/repo#42', ''])('rejects invalid or cross-repository reference %j', reference => {
+    expect(() => validateBindings(activated([binding(reference, '#43')]), roster, labels))
       .toThrow('binding has no valid issue number');
   });
-
   it('keeps per-item correspondence across resolved references', () => {
-    // Two tasks in one epic, distinct issues: a checker that resolved references sloppily
-    // could collapse them and pass a duplicate.
-    const two = [
-      { ...binding('#42', '#43'), task: '1' },
-      { ...binding('#42', '#43'), task: '2' },
-    ];
-    expect(() => validateBindings(activated(two), roster, presentLabels))
-      .toThrow('duplicate binding');
+    expect(() => validateBindings(activated([
+      binding('#42', '#43'), { ...binding('#42', '#43'), task: '2' },
+    ]), roster, labels)).toThrow('duplicate binding');
   });
 });
 
-// ---------------------------------------------------------------------------
-// Compiled-artifact verification
-// ---------------------------------------------------------------------------
-//
-// The prose assertions above lock the reporting contract. This section proves the
-// workflow carrying it still strict-compiles and that the safe outputs the contract
-// depends on stay wired. Fails closed (never skips) per this repo's #1833/#1834
-// convention: an unmeasured contract is indistinguishable from a violated one.
-
-const GH_AW_INSTALL_HINT =
-  '`gh aw` is required to compile the workflow this gate inspects. Install it with ' +
-  '`gh extension install --pin v0.87.10 github/gh-aw` (the same pin ' +
-  '.github/workflows/squad-ci.yml uses, so local strict-compile and lock output match ' +
-  'CI). This gate fails closed rather than skipping: an unmeasured contract is ' +
-  'indistinguishable from a violated one (#1834).';
-
-describe('gh-aw: the activation summary contract compiles in strict mode (#1963)', () => {
-  let compiledLock: string | null = null;
-
-  function lockText(): string {
-    if (compiledLock !== null) return compiledLock;
-
-    const versionProbe = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' });
-    if (versionProbe.status !== 0) {
-      throw new Error(`gh aw --version failed. ${GH_AW_INSTALL_HINT}`);
-    }
-
-    mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
-    const workspace = mkdtempSync(join(TEST_WORKSPACES_DIR, 'activation-summary-'));
-    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-    // gh-aw resolves cross-workflow references against a `.github/workflows/` directory
-    // relative to the compiled file. This repo ships gh-aw *source* from a top-level
-    // `workflows/` dir; consumers install it via `gh aw add`. Mirror that layout.
-    cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
-    execFileSync(
-      'gh',
-      ['aw', 'compile', '.github/workflows/squad.md', '--strict', '--approve', '--no-check-update'],
-      { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
-    );
-
-    const lockPath = join(workspace, '.github', 'workflows', 'squad.lock.yml');
-    if (!existsSync(lockPath)) {
-      throw new Error(
-        'gh aw compile produced no squad.lock.yml — the compiled artifact this gate ' +
-          `inspects is absent, so the contract is unmeasured. ${GH_AW_INSTALL_HINT}`,
-      );
-    }
-    compiledLock = readText(lockPath);
-    return compiledLock;
+describe('gh-aw: activation summary contract strict-compiles at the trusted boundary (#1963)', () => {
+  let compiled: any;
+  function compile(source = workflow) {
+    const root = workspace('compile-');
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    cpSync(WORKFLOWS_DIR, join(root, '.github/workflows'), { recursive: true });
+    writeFileSync(join(root, '.github/workflows/squad.md'), source);
+    const binary = process.env.SQUAD_GH_AW_BIN ?? 'gh';
+    const prefix = process.env.SQUAD_GH_AW_BIN ? [] : ['aw'];
+    execFileSync(binary, [...prefix, 'compile', '.github/workflows/squad.md', '--strict', '--approve', '--no-check-update'],
+      { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+    return parseYaml(readText(join(root, '.github/workflows/squad.lock.yml')));
   }
-
-  it('strict-compiles the workflow carrying the reporting contract', () => {
-    expect(lockText().length).toBeGreaterThan(0);
+  function lock() {
+    compiled ??= compile();
+    return compiled;
+  }
+  function writer(document = lock()) {
+    const jobs = Object.values(document.jobs) as any[];
+    const matches = jobs.filter(job => job.steps?.some((step: any) =>
+      step.with?.script?.includes('activation.finalizeActivation(')));
+    expect(matches, 'compiled workflow must have exactly one trusted finalizer').toHaveLength(1);
+    return matches[0];
+  }
+  function requireFinalizer(document: any) {
+    const job = writer(document);
+    const scripts = job.steps.map((step: any) => step.with?.script ?? '').join('\n');
+    expect(scripts).toContain('createIssue, sanitizeContent,');
+    expect(scripts).toContain('await activation.createActivation(');
+    expect(scripts).toContain('await activation.finalizeActivation(');
+    expect(scripts.indexOf('await activation.createActivation('))
+      .toBeLessThan(scripts.indexOf('await activation.finalizeActivation('));
+  }
+  it('strict-compiles the workflow carrying the summary contract without skipping unavailable tools', () => {
+    expect(lock().jobs.agent).toBeDefined();
+    requireFinalizer(lock());
   });
-
-  it('keeps add_labels callable — the only operation a reported label may cite', () => {
-    expect(lockText()).toMatch(/"tools":\[[^\]]*"add_labels"[^\]]*\]/);
+  it('exposes one trusted activate_plan request rather than a label-acceptance summary producer', () => {
+    const job = writer();
+    expect(job.permissions.issues).toBe('write');
+    expect(job.needs).toContain('safe_outputs');
+    expect(job.if).toContain("contains(needs.agent.outputs.output_types, 'activate_plan')");
+    const prepare = job.steps.find((step: any) => step.with?.script?.includes('activation.prepareActivation('));
+    expect(prepare.with.script).toContain('outputPath: process.env.GH_AW_AGENT_OUTPUT');
+    expect(prepare.env.GH_AW_AGENT_OUTPUT).toContain('agent_output.json');
   });
-
-  it('keeps temporary-ID substitution reachable for the quoted binding references', () => {
-    // Quoted `#aw_…` references only resolve because create_issue requires a temporary ID
-    // and gh-aw rewrites references to it. Without this, every binding stays unresolved.
-    const compiled = lockText().replace(/\\"/g, '"');
-    expect(compiled).toMatch(/"create_issue":\{[^}]*"require_temporary_id":true/);
+  it('persists actual capture and receipts before the trusted finalizer publishes bindings', () => {
+    const steps = writer().steps;
+    const uploads = steps.map((step: any, index: number) => ({ step, index }))
+      .filter(({ step }: any) => step.uses?.startsWith('actions/upload-artifact@'));
+    expect(uploads).toHaveLength(2);
+    const finalizer = steps.findIndex((step: any) => step.with?.script?.includes('activation.finalizeActivation('));
+    expect(uploads.every(({ index }: any) => index < finalizer)).toBe(true);
+    expect(uploads[1].step.if).toContain('always()');
+    expect(steps[finalizer].env.RECEIPT_ARTIFACT_ID).toContain('artifact-id');
   });
-
-  it('leaves label writes in the safe-output job, which is why "accepted" is the honest claim', () => {
-    // The agent job holds only `issues: read`; a separate post-agent job performs the
-    // write. That job boundary is precisely why no summary may claim a verified GitHub
-    // result — the agent turn ends before any label is applied.
-    const compiled = lockText();
-    const agentJobAt = compiled.indexOf('\n  agent:\n');
-    const safeOutputsJobAt = compiled.indexOf('\n  safe_outputs:\n');
-    expect(agentJobAt, '"agent:" job is missing from the compiled lock file').toBeGreaterThan(-1);
-    expect(safeOutputsJobAt, '"safe_outputs:" job is missing from the compiled lock file').toBeGreaterThan(agentJobAt);
-
-    const permsMatch = compiled.slice(agentJobAt, safeOutputsJobAt).match(/permissions:\n((?:\s{6}\S.*\n)+)/);
-    expect(permsMatch, 'agent job permissions block not found').not.toBeNull();
-    const permsBlock = permsMatch ? permsMatch[1] : '';
-    expect(permsBlock).toContain('issues: read');
-    expect(permsBlock).not.toContain('issues: write');
+  it('retains read-only model permissions while granting writes only to the trusted job', () => {
+    expect(lock().jobs.agent.permissions.issues).toBe('read');
+    expect(writer().permissions.issues).toBe('write');
+  });
+  it('strict-compiles a real source mutation and detects the missing finalizer despite unchanged summary prose', () => {
+    const source = workflow.replace(
+      /        - name: Validate actual bindings before publishing acceptance\n[\s\S]*?(?=    cast-failure:)/,
+      '',
+    );
+    expect(source).not.toBe(workflow);
+    const mutant = compile(source);
+    expect(() => requireFinalizer(mutant)).toThrow(/exactly one trusted finalizer/);
   });
 });

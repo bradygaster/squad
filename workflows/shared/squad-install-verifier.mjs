@@ -23,7 +23,7 @@ export const PACKAGE_MANIFEST = 'workflows/aw.yml';
 export const CONTRACT_SOURCE = 'workflows/squad-workflows.manifest.json';
 export const CONTRACT_DESTINATION = '.github/aw/squad-workflows.manifest.json';
 export const MIN_GH_AW_VERSION = 'v0.91.5';
-export const OWNERSHIP_ENTRY_COUNT = 26;
+export const OWNERSHIP_ENTRY_COUNT = 29;
 export const OWNERSHIP_DESTINATION =
   '.github/aw/packages/bradygaster-squad-workflows-3632054824e8.json';
 export const UNOWNED_MUTABLE_ROUTER_SKILL =
@@ -61,6 +61,9 @@ export const WORKFLOW_TUPLES = deepFreeze([
 ]);
 
 export const RUNTIME_TUPLES = deepFreeze([
+  ['shared/squad-agent-binding-check.yml', 'workflows/shared/squad-agent-binding-check.yml', '.github/aw/squad/runtime/shared/squad-agent-binding-check.yml', '.github/workflows/squad-agent-binding-check.yml', 'manifest'],
+  ['shared/squad-activation.mjs', 'workflows/shared/squad-activation.mjs', '.github/workflows/shared/squad-activation.mjs', '.github/workflows/shared/squad-activation.mjs', 'manifest'],
+  ['shared/check-agent-binding.mjs', 'workflows/shared/check-agent-binding.mjs', '.github/workflows/shared/check-agent-binding.mjs', '.github/workflows/shared/check-agent-binding.mjs', 'manifest'],
   ['shared/squad-review-guard.mjs', 'workflows/shared/squad-review-guard.mjs', '.github/workflows/shared/squad-review-guard.mjs', '.github/workflows/shared/squad-review-guard.mjs', 'manifest'],
   ['shared/squad-install-verifier.mjs', 'workflows/shared/squad-install-verifier.mjs', '.github/workflows/shared/squad-install-verifier.mjs', '.github/workflows/shared/squad-install-verifier.mjs', 'manifest'],
   ['shared/squad-command-contract.mjs', 'workflows/shared/squad-command-contract.mjs', '.github/workflows/shared/squad-command-contract.mjs', '.github/workflows/shared/squad-command-contract.mjs', 'manifest'],
@@ -1070,6 +1073,10 @@ export function materializeRuntime(root) {
       throw new Error(`Package-owned runtime digest mismatch for ${entry.package_destination}.`);
     }
     if (entry.package_destination === entry.destination) continue;
+    if (entry.destination === '.github/workflows/squad-agent-binding-check.yml' &&
+        existsSync(safePath(root, entry.destination)) && fileDigest(root, entry.destination) !== entry.sha256) {
+      throw new Error(`Existing native checker differs from the approved package; refusing to overwrite ${entry.destination}.`);
+    }
     writePath(root, entry.destination, content);
     if (fileDigest(root, entry.destination) !== entry.sha256) {
       throw new Error(`Materialized runtime digest mismatch for ${entry.destination}.`);

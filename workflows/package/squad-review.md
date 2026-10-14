@@ -79,6 +79,9 @@ safe-outputs:
       - REQUEST_CHANGES
     commit-id: ${{ github.event.pull_request.head.sha }}
 jobs:
+  safe_outputs:
+    permissions:
+      actions: read
   review:
     name: review
     if: always()

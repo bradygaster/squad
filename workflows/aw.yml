@@ -23,6 +23,12 @@ includes:
     destination: .github/workflows/squad-command-router.md
   - skills/gh-aw-enlistment
 resources:
+  - source: shared/squad-agent-binding-check.yml
+    destination: .github/aw/squad/runtime/shared/squad-agent-binding-check.yml
+  - source: shared/squad-activation.mjs
+    destination: .github/workflows/shared/squad-activation.mjs
+  - source: shared/check-agent-binding.mjs
+    destination: .github/workflows/shared/check-agent-binding.mjs
   - source: shared/squad-review-guard.mjs
     destination: .github/workflows/shared/squad-review-guard.mjs
   - source: shared/squad-install-verifier.mjs

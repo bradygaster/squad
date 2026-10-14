@@ -160,9 +160,9 @@ pre-agent-steps:
         node --check "$path" >/dev/null
       }
       # BEGIN GENERATED RESOURCE DIGESTS
-      check_hash "$install_verifier" "ce387c5f0c9826a91d4132188f67a50e6996b3d4aa996ad0e5ad79dcf8acb132"
-      check_hash "$cast_validator" "c6d0b92aac71dc6f6d5727cac418a323b0bc9c12047400faa12d96150d548ada"
-      check_hash "$bootstrap_validator" "8462546aa0d2efa37a52ea1df9ffa1b1f0cb7df4e4b17a64e98a11f05cb9d449"
+      check_hash "$install_verifier" "a8b8fedd8b2804a061c367f6c67113979aa9d792526e8d052a2f01f697bf3642"
+      check_hash "$cast_validator" "15f0d47917d269b5b967dc2a782a0eb761c39af7a92ddb64fed687a427070760"
+      check_hash "$bootstrap_validator" "d552d041f006249bfaa67b10a75877f813796b7698c718ac7eb7cf16f3a72e31"
       # END GENERATED RESOURCE DIGESTS
       node "$bootstrap_validator" \
         --encode-payload "${GITHUB_WORKSPACE:?}/.github/workflows/squad-bootstrap-payload.json" \
@@ -258,7 +258,9 @@ safe-outputs:
                 '.github/workflows/shared/squad-bootstrap-validator.mjs',
               )).href);
               const reset = bootstrapModule.readBootstrapReset(checkout);
-              const stateModule = { ...bootstrapModule, ...bootstrapModule.bootstrapIdentity(reset) };
+              const stateModule = { ...bootstrapModule, ...bootstrapModule.bootstrapIdentity(
+                reset, process.env.SQUAD_BOOTSTRAP_REPOSITORY,
+              ) };
               const resetAuthorized = await stateModule.authorizeBootstrapReset({
                 reset, input: process.env.SQUAD_BOOTSTRAP_FRESH_START, context, github,
               });
@@ -788,18 +790,37 @@ Generate the same final tree and formats as `/squad cast`:
 The registry contains active specialists only. The routing table uses the exact
 header `Work Type | Route To | Examples` and exact active `persistent_name`
 values. The team has separate `## Members` and `## Built-in Support Agents`
-sections. The coordinator has concrete Cast-source paths and one synchronized,
+sections. Also include exactly one `## Coordinator` section with a table row
+whose Name is `Squad` and Role is `Coordinator`, and exactly one `## Coding Agent`
+section with a table row whose Name is `@copilot`, Role is `Coding Agent`, and
+final Status cell is exactly `🤖 Coding Agent` (the native CLI detection marker).
+Keep both out of `## Members`. Inside `## Coding Agent`, emit exactly one
+standalone line `<!-- copilot-auto-assign: false -->` (without backticks in the
+file), not an inline table annotation. These sections and the disabled marker
+are validated before the Cast can be published.
+The coordinator has concrete Cast-source paths and one synchronized,
 nonzero Team Capabilities block. Remove bootstrap specialist directories not
 selected by this Cast, but never remove or rewrite the four built-ins.
+
+In the coordinator and team introduction, describe Scribe as silently merging
+accepted durable decisions only, never session or orchestration logs. The
+canonical support charters govern when support agents run.
+Document `squad:{member}` labels as specialist assignment, using exact active
+registry names and `.squad/routing.md`. The bare `squad` label is a tracking marker,
+not specialist assignment. A name mention alone does not dispatch a native
+workflow; use documented `/squad` commands with their prerequisites.
 
 ## Shared payload
 
 Write `.github/workflows/squad-bootstrap-payload.json` with this exact shape:
 
-For a committed reset, use the exact `identity.BOOTSTRAP_BRANCH`,
+Always use the exact `identity.BOOTSTRAP_BRANCH`,
 `identity.BOOTSTRAP_PR_TITLE`, and `identity.BOOTSTRAP_ISSUE_TITLE` from the
-deterministic state file instead of the legacy values shown below. The writer
-and validator independently load this identity from committed Git history;
+deterministic state file. The research issue category is `Agentic Research`;
+its subject uses the runtime `owner/repo` scope and says `initial proposals`,
+not completed research. There is no farm display-name configuration. The writer
+and validator independently derive the repository scope from runtime metadata
+and any reset suffix from committed Git history;
 never choose or edit the reset ID, record, archived numbers, or output names.
 
 ```json
@@ -810,7 +831,7 @@ never choose or edit the reset ID, record, archived numbers, or output names.
   "branch": "squad/bootstrap-cast",
   "pr_title": "[squad] Cast your Squad",
   "pr_body": "complete Cast summary",
-  "issue_title": "[Research Proposals] Agent-discovered repo opportunities",
+  "issue_title": "[Agentic Research] ${{ github.repository }} — initial proposals",
   "issue_body": "complete issue body",
   "files": [
     {

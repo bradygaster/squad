@@ -438,8 +438,13 @@ the workflow installation is merged and the post-merge Cast canary succeeds.
 - Make the two-PR flow explicit to the user: after the workflow-installation PR
   reaches the default branch, `squad-bootstrap` normally creates one **draft,
   human-reviewed Cast PR** and one linked
-  `[Research Proposals] Agent-discovered repo opportunities` issue from the
-  same validated repository analysis. If `can_approve_pull_request_reviews`
+  `[Agentic Research] owner/repo — initial proposals` issue (using the runtime
+  repository and retaining any committed reset suffix) from the
+  same validated repository analysis. This is a proposal agenda, not completed
+  research. Update and verify the complete package before optionally renaming
+  an existing bootstrap issue; legacy exact titles remain recognized, and
+  completed bootstrap does not auto-rename them. Preserve its reset suffix,
+  body, comments, and provenance. If `can_approve_pull_request_reviews`
   is `false` (the recommended, least-privilege setting from step 4),
   `GITHUB_TOKEN` cannot open that PR either; `squad-bootstrap` instead opens a
   **bot-authored fallback issue** carrying a signed provenance record and a

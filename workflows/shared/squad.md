@@ -188,7 +188,7 @@ safe-outputs:
       output: Lifecycle state updated.
       inputs:
         body:
-          description: Complete lifecycle Markdown with an H2 lifecycle heading plus state, last-command, and next-action fields. For a nonterminal state, the next-action value must consist of a backticked /squad command; put explanatory prose in a separate field. Structured data is normalized by the writer.
+          description: Lifecycle Markdown with an H2 lifecycle heading, state, last-command, and next-action fields. Include exactly one last-command field containing only the backticked /squad command requested; put optional actor/time attribution on a separate Updated by line. For nonterminal states, next-action must contain only a backticked /squad command; put explanatory prose in a separate field. The writer normalizes structured data.
           required: true
           type: string
       steps:
@@ -241,11 +241,12 @@ safe-outputs:
                 /^(?:[-*]\s+)?(?:\*\*)?Activation:(?:\*\*)?\s+✅\s+Done\b/im.test(body) ||
                 /^\|\s*Activat(?:e|ion|ed)\s*\|\s*✅\s+Done\b[^|]*\|/im.test(body);
               const hasTerminalState =
-                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body) &&
-                hasActivationDone &&
-                /^(?:[-*]\s+)?\*\*Last command:\*\*\s+`\/squad (?:activate|plan accept|plan activate)(?: phase \d+)?`(?:\s+.*)?$/im.test(body) &&
-                /^(?:[-*]\s+)?\*\*Next (?:action|command|recommended):\*\*\s+\S.+$/im.test(body);
-              const hasNextAction = hasNextCommand || hasTerminalState;
+                /^(?:[-*]\s+)?\*\*(?:Current state|State):\*\*\s+Activated\s*$/im.test(body);
+              if (hasTerminalState || hasActivationDone) {
+                core.setFailed("Activated lifecycle belongs exclusively to the trusted activation finalizer.");
+                return;
+              }
+              const hasNextAction = hasNextCommand;
               if (!hasLifecycleHeading || !hasState || !hasLastCommand || !hasNextAction) {
                 core.setFailed("Lifecycle body must include an H2 lifecycle heading plus state, last-command, and a nonterminal next-action value consisting of a backticked /squad command.");
                 return;
@@ -303,6 +304,7 @@ jobs:
       needs.agent.result == 'success' &&
       needs.detection.result == 'success' &&
       needs.safe_outputs.result == 'success' &&
+      !contains(needs.agent.outputs.output_types, 'activate_plan') &&
       !contains(needs.agent.outputs.output_types, 'upsert_lifecycle_state') &&
       (
         (github.event_name == 'issue_comment' &&

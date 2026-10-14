@@ -226,13 +226,37 @@ under Profile B, opens the Cast PR directly:
 - a draft Cast PR on `squad/bootstrap-cast` (opened automatically under
   Profile B, or by you from the fallback issue's compare URL under Profile A);
   and
-- `[Research Proposals] Agent-discovered repo opportunities` — **not**
+- `[Agentic Research] owner/repo — initial proposals` — **not**
   created by this run under Profile A. No automatic trigger re-runs
   `squad-bootstrap` when you open or merge the fallback-issue PR, so after you
   open (or merge) the Cast PR you must manually dispatch **Squad Bootstrap**
   again (**Actions → Squad Bootstrap → Run workflow**). That rerun
   deterministically detects the Cast PR, whether still open or already merged,
   and creates the linked research-proposals issue at that point.
+
+The shared issue category is **Agentic Research**; the subject names the scope.
+Native bootstrap uses the runtime `owner/repo`, not a configured farm display
+name, and appends the exact `[reset:<id>]` suffix for a committed reset.
+Bootstrap proposes opportunities; it does not claim to have completed research.
+For a separately initiated later research wave, a title such as
+`[Agentic Research] owner/example — 2026-10-12` distinguishes the subject and date.
+That example does not schedule or create waves, rename existing issues, or change
+`/squad research` artifact replacement behavior. A farm name, when relevant to a manually
+created research issue, belongs in its subject, not the shared category.
+
+**Existing installations:** update and verify the complete package from one
+approved immutable revision before renaming a bootstrap issue. Older validators
+require the legacy title `[Research Proposals] Agent-discovered repo opportunities`
+(plus its reset suffix) even after the Cast PR is merged. The updated validator
+accepts either that exact legacy title or the exact repository-scoped new title,
+with the same generation suffix and exactly one durable bootstrap marker.
+New-title recognition additionally requires the original GitHub Actions bot
+author. It does not authorize an arbitrary subject, another repository, or a
+date-based bootstrap title. Existing completed bootstrap remains a no-op and
+does not rename the issue automatically. After the compatible update lands, a
+maintainer may make a title-only rename to the exact new title; leave the body,
+research comments, Cast branch, and provenance untouched. Validated partial
+recovery writes the new title when it already needs to update the proposal issue.
 
 Bootstrap submits the shared payload through one authenticated command. Runtime
 code assembles and validates its bounded chunks, then passes JSON directly to
@@ -261,6 +285,22 @@ malformed file. The scope only narrows focus; it never changes outputs or
 permissions.
 
 ### Explicit fresh bootstrap after a failed attempt
+
+Signed Cast provenance binds the exact generated head commit (`cast_sha`).
+Before publication, the Cast validator requires separate `## Coordinator`
+(`Squad` / `Coordinator`) and `## Coding Agent` (`@copilot` / `Coding Agent`)
+table sections in `team.md`, outside the specialist `## Members` roster. The
+Coding Agent row must end with Status `🤖 Coding Agent`, which the native CLI
+uses to recognize that the section already exists. Its section must contain exactly one standalone
+`<!-- copilot-auto-assign: false -->` line. Inline prose is not the native
+configuration marker; automatic assignment remains disabled.
+
+Do not amend that branch or rewrite provenance to fix review findings. Correct
+the generation guidance in the trusted package, then use the reviewed fresh
+generation procedure below. The replacement Cast receives new provenance and
+still requires independent review and human approval. An automatic review
+infrastructure failure does not authorize bypassing the guard or merging the
+original Cast.
 
 Closing an unmerged Cast PR still means **opt out**. Ordinary pushes, blank
 manual runs, renaming that PR, or deleting its branch do not undo that decision.
@@ -516,7 +556,7 @@ rm -f .github/skills/agentic-workflows/SKILL.md
 
 The nested `workflows/aw.yml` is the canonical package registration. Its
 package boundary prevents unrelated repository skills or agents from being
-auto-discovered. It installs exactly eight workflows, seventeen runtime
+auto-discovered. It installs exactly eight agentic workflows, twenty runtime
 resources, one integrity manifest, and one enlistment skill from the same
 resolved commit. The installed top-level workflow set is:
 
@@ -529,11 +569,14 @@ resolved commit. The installed top-level workflow set is:
 - `squad-bootstrap.md` and `squad-bootstrap.lock.yml`
 - `squad-command-router.md` and `squad-command-router.lock.yml`
 
-The install must also contain these seventeen executable, documentation, and
+The install must also contain these twenty executable, documentation, and
 schema runtime resources (manifest-backed — see
 `workflows/squad-workflows.manifest.json`'s `shared_runtime` list for the
 authoritative source of truth):
 
+- `squad-agent-binding-check.yml`
+- `shared/squad-activation.mjs`
+- `shared/check-agent-binding.mjs`
 - `shared/squad-cast-validator.mjs`
 - `shared/squad-bootstrap-validator.mjs`
 - `shared/squad-improvement-gate.mjs`
@@ -554,9 +597,14 @@ authoritative source of truth):
 
 The package owns every runtime resource. Because native gh-aw package resources
 allow JavaScript guards under `.github/workflows/shared/` but not Markdown or
-JSON at that destination, the package stores those remaining exact bytes under
-`.github/aw/squad/runtime/`. The verifier materializes them to their runtime
+JSON at that destination, nor native workflow YAML destinations, the package
+stores those remaining exact bytes under `.github/aw/squad/runtime/`. The verifier materializes them to their runtime
 paths and rejects any digest mismatch before the bootstrap PR can be opened.
+Nineteen resources materialize under `.github/workflows/shared/`; the native
+binding checker materializes at `.github/workflows/squad-agent-binding-check.yml`.
+All twenty are verified against the same contract.
+A differing pre-existing native checker is preserved and blocks materialization;
+resolve that file conflict before opening the bootstrap PR.
 
 `squad-improvement-worker` is part of this standard install, not a separate
 add-on — it stays dormant until a maintainer approves a governance-scoped
@@ -653,7 +701,7 @@ absent. Do not suppress warnings or use `--approve` to bypass this gate.
 
 Verify the complete source/lock surface. Prefer the manifest-backed verifier
 over a hand-maintained file list, since it checks every one of the eight
-workflows, seventeen runtime resources, the integrity manifest, and the
+workflows, twenty runtime resources, the integrity manifest, and the
 enlistment skill against `workflows/squad-workflows.manifest.json`:
 
 ```bash
@@ -800,8 +848,8 @@ Use this checklist for the initial bootstrap and after any workflow update:
 | Research backlog | Follow the proposal issue through research, triage, plan, and activate | The journey ends with assignable implementation issues; `/squad implement` is used only on those generated tasks |
 | Cast checks | Open the linked Cast PR and inspect its checks; if application CI is `action_required`, approve that workflow run and wait for it to finish | Copilot review and the repository's normal build, test, lint, and security checks complete before merge |
 | Handoffs | Run `/squad implement` on a ready issue, then review its PR | The dispatcher starts the appropriate isolated worker; automatic PR review supplies the independent current-head verdict; `/squad review` explains how to rerun that exact automatic check |
-| Rerun | Repeat the same command after a cancellation or uncertain result | Existing Cast and implementation PRs are detected instead of duplicated; an unchanged reviewed head is not reviewed twice |
-| Recovery | Fix the named failing activation step, then use **Re-run failed jobs**; for an interrupted command, rerun the identical `/squad` command | Activation uploads no partial state artifact, and command-specific idempotency resumes from GitHub's committed PR, issue, comment, and review state |
+| Rerun | Repeat Cast, implementation, or review commands after checking their existing durable outputs; do not rerun an ambiguous activation to fill missing issues | Existing Cast and implementation PRs are detected instead of duplicated; an unchanged reviewed head is not reviewed twice |
+| Recovery | Inspect activation receipts, the durable pending comment, and current issue state; use [explicit current-state reconciliation](#deterministic-activation-and-no-create-recovery) for interrupted or ambiguous creation | Recovery validates explicitly mapped existing issues without creating replacements or matching titles; a pending reservation blocks another create batch |
 
 If a work command auto-opens a Cast PR because no committed team exists, merge
 that PR and rerun the original command. Do not start a second Cast command.
@@ -959,6 +1007,25 @@ in the tool's `data` field, not JSON fences or `Structured data:` blocks in the
 comment body. This restriction includes HTML comments and quoted/code regions:
 gh-aw preserves HTML comments inside code fences, and lifecycle readers inspect
 the complete posted text rather than its rendered visibility.
+
+This tool-input rule is distinct from serialized output. The pinned gh-aw
+v0.91.5 `add_comment` adapter adds a `temporary_id`; its collector appends the
+`Structured data:` JSON suffix while retaining `data`. The guard accepts only
+a string ID in the adapter's bare `aw_` format (3–12 alphanumeric or underscore
+characters), not other mutation fields. For serialized plan comments, it first
+validates the exact draft-data schema, originating issue, empty phases, and
+allowed artifact kind (`plan`, `program`, `implementation`, or `validation`),
+then requires exactly one terminal envelope semantically equal to that data.
+Missing, malformed, duplicate, mismatching, or extra-field envelopes fail
+closed. All remaining prose still receives the full body check. The envelope
+and `data` are preserved for downstream planning readers, not stripped from
+the output. Neither metadata nor markers grant authority.
+
+Raw Markdown-only comments without serializer metadata remain valid, with an
+optional independently validated plan `data` field. Do not hand-author the
+serialized suffix or rely on a `temporary_id` to authorize a comment. Custom
+research and lifecycle tools continue to accept only their declared Markdown
+body; they do not gain this built-in comment serialization exception.
 
 The guard validates the entire emitted batch before the built-in handlers run.
 Research/lifecycle custom jobs and terminal lifecycle repair require a successful
@@ -1318,6 +1385,278 @@ To activate one phase at a time, use `/squad activate phase {N}`. The existing
 `/squad plan accept` and `/squad plan accept phase {N}` commands remain supported
 as legacy aliases with identical behavior.
 
+### Deterministic activation and no-create recovery
+
+The model submits only the exact plan-comment ID. A trusted job freezes the API
+comment and committed casting registry, validates the plan, and records a durable
+pending reservation **before any issue creation**. It receives actual issue IDs
+from the pinned synchronous runtime API. Only its finalizer can publish acceptance
+and Activated lifecycle output, after all operations, IDs, dependencies, owners
+and live labels validate. A green run or pending marker is not acceptance.
+Retry-safe label setup and exact authenticated phase-approval reuse precede
+reservation; admission is rechecked afterward. Rendered issue-body limits are
+validated before reservation. The durable pending marker and started-operation
+journal still precede every issue create. Ambiguous create/crash outcomes remain
+no-create: empty receipts or an error never release a started reservation.
+Finalization and downstream verification also check current API parent links.
+A per-operation body-reference fallback is allowed only when recorded after the
+native parent write returned 404/422 and the parent read remains unavailable
+with 404/422. An available, contradictory parent always rejects the binding.
+
+Current-run completion is checked **inside the trusted writer job**: the exact
+synchronous comment-publication response must identify the expected repository,
+origin, workflow bot and body. Its exact API readback, live bindings and sole
+history head are checked before lifecycle publication and successful completion.
+Reconciliation predecessors are fetched through their explicit ID/hash links as
+dependencies, never counted as this run's output. Missing or ambiguous publication
+responses fail even if another run published valid output at the same time.
+Run IDs asserted in comment bodies, time windows, artifact names and logs grant
+no completion authority. Existing validated acceptance/reconciliation retries
+remain explicit unchanged/no-create operations, not new publication claims.
+The native **Squad Agent Binding Check** is a separate historical current-state
+audit, including old predecessors. After each Squad completion (also Squad CI in
+this repository), automatic discovery reads comments updated since 24 hours before
+the triggering run's completion timestamp. This timestamp and comment contents
+are candidate-selection hints only, never current-run attribution or coverage
+proof. Discovery permits at most five pages of 100 comments and five candidate
+origins. Each selected origin is fetched without a time filter, up to ten pages of
+100 comments, and its complete required chain is verified by the canonical checks.
+Automatic collection plus verification share a hard budget of 250 API reads,
+including ancestry, permissions, issue labels and hierarchy reads. Pagination or
+candidate overflow, exhausted budgets, malformed discovery, and missing required
+evidence fail the audit explicitly as incomplete; they are not reported as no
+candidates or successful partial coverage. A complete discovery with no candidates
+is distinct and reports no historical artifact in this limited scope.
+
+Use **Actions → Squad Agent Binding Check → Run workflow** for the manual
+full-history audit: it has no discovery time filter or automatic page/origin/API
+caps and may require substantial API quota. API failures still fail the audit.
+Automatic success is not a repository-wide historical coverage claim. Its success (including
+an empty history) does **not** prove that the triggering run produced output.
+These are point-in-time API checks, not a transaction or a guarantee against
+later edits; changed historical state can fail a subsequent audit.
+Authorized dispatch and the existing `github.workflow_sha` trusted-code boundary
+are unchanged; no default-branch-only restriction or additional permission is imposed.
+
+Supported tables have unique stable `#`, `Title`, `Owner`, `Agent ID`, and
+`Depends On` columns. Granular implementation tables use `Agent` instead of
+`Owner` and additionally require `Epic`. Use comma-separated stable task IDs for
+dependencies, or `None`/`-`; use `### Phase N` headings for phases. Missing columns,
+unknown identities, duplicate IDs and cycles are rejected, not inferred.
+The applicable `max_issues` policy applies per invocation, with a hard ceiling
+of 50 including new epics. Issue identity never comes from a title match.
+
+If a runner fails after reserving or starting an operation, do not rerun creation
+to fill missing receipts. The API write might have succeeded. Partial output
+remains explicitly non-consumable. Run/attempt-qualified capture and receipt
+artifacts retain diagnostics, but their IDs/digests alone are **not historical
+producer attestation**. Missing authenticated historical receipts or frozen
+snapshots cannot be reconstructed from model logs.
+
+An eligible operator with write, maintain or admin permission may instead approve
+a **new current-state reconciliation**, under their existing repair authority.
+Post one request comment with this shape, then invoke
+`/squad reconcile activation <request-comment-id> <request-sha256>`:
+
+````markdown
+Activation reconciliation request:
+```json
+{
+  "schema": "squad-activation-reconciliation-request/v1",
+  "repository": "owner/repo",
+  "origin_issue": 42,
+  "original": {"comment_id": 200, "sha256": "<original-body-sha256>"},
+  "plan": {"comment_id": 100, "sha256": "<current-plan-body-sha256>"},
+  "registry": {"revision": 1, "sha256": "<registry-json-sha256>"},
+  "tasks": [
+    {"task": "1", "issue": 101, "temporary_id": "aw_wi1"},
+    {"task": "2", "issue": 102, "temporary_id": "aw_wi2"}
+  ],
+  "epics": []
+}
+```
+````
+
+All hashes are lowercase SHA-256: exact raw comment text for comments, and
+`JSON.stringify(registry)` for the registry. Supply every task and non-origin
+epic; use `temporary_id: null` when no token correction is needed. The model may
+not supply or widen these mappings. The writer verifies current API identities,
+hierarchy, labels, dependencies and the freshly frozen plan/registry.
+
+The only permitted issue-body correction replaces explicitly mapped backtick
+tokens in the single standalone `**Depends On:**` field. For example,
+``Task 1 (`aw_wi1`) — Prepare example inputs`` changes only its token to `#101`;
+the task label and trailing prose remain unchanged. Titles, scope, owners,
+labels, hierarchy and the original acceptance remain untouched. Before/after
+body hashes, fresh reads and post-write checks detect conflicts and make retries
+idempotent. **GitHub offers no atomic body compare-and-swap**: workflow concurrency
+serializes this origin's runs, but operators must avoid simultaneous external
+edits. An intervening edit or partial failure withholds reconciliation.
+
+Success creates immutable `activation-reconciled` output with
+`basis: current-state-authorized` and the original comment ID/hash. It makes no
+historical creation claim. The packaged checker and SDK selector require
+independently verified request evidence; actor flags or embedded hashes alone
+do not authorize selection. Malformed originals remain rejected by legacy readers.
+New readers skip one only after validating its explicit supplement, never by
+selecting the newest comment.
+
+The SDK accepts an explicitly supplied reconciliation chain only when every
+supplement has matching independent verifier evidence. It rejects forks,
+missing predecessors, cycles and changed prior mappings. A native continuation
+without its own reconciliation is not authenticated merely by passing it to the
+SDK: the packaged checker separately verifies its current API record, prior
+request evidence and unique history head. Standalone legacy parsing is not
+historical attestation.
+Legacy records remain readable and unchanged, but promotion requires independently
+provable correspondence. Missing proof requires explicit current-state reconciliation.
+
+An interrupted run that created issues but never published acceptance may use
+`"source_kind": "pending"` in this same request. `original` must then identify the
+exact workflow-bot pending comment and body hash. Its repository, origin, frozen
+plan/registry hashes and complete phase coverage must match the newly authorized
+request. The reservation is only the source being superseded: it proves neither
+authority nor successful creation. Supply every existing numeric task/epic mapping;
+missing or partial maps cannot become full acceptance or authorize creation of
+missing work. The supplement records `supersedes_kind: "pending"`. A stale or
+forged reservation fails closed, as does incomplete current API evidence.
+
+For safe phase continuation, include ascending `"phases": [1, 2]` in a request
+covering **all previously activated phases** and their complete mappings. This
+must match the exact source artifact's phase coverage. Omitting `phases` is
+equivalent to `"phases": []`, and is valid only for a whole-plan source with
+empty phase coverage; neither form widens a phase-scoped source. After reconciliation,
+`/squad activate phase 3` creates only Phase 3 work, reusing validated prior
+issues and shared epics. Missing, stale or competing mappings fail closed for
+that invocation. Shared-epic labels use the full frozen plan's owner set, not
+just the currently selected phase.
+
+`/squad plan accept implementation phase N` keeps its combined acceptance and
+activation behavior through this same guarded writer, not a second create path.
+It requires the current scope acceptance and a frozen validation comment containing
+exactly one `RESULT: PASS`, the exact `**Implementation plan:**` comment URL and
+`**Implementation SHA-256:**` body hash, all sixteen passing rows in a
+`Check | Status | Details` table, and complete `Task | Size | Traces to` coverage
+with sizes XS/S/M/L. These inputs are rechecked during execution. Whole-plan
+implementation acceptance remains acceptance-only. Missing prior-phase mappings
+still require the explicit bridge above.
+
+Activation updates the existing lifecycle tracker only after validated acceptance.
+Intermediate phases show remaining work rather than terminal success. If acceptance
+was published but the lifecycle write failed, an identical activation rerun validates
+the existing record and repairs only the lifecycle; it does not duplicate issues
+or acceptance. Reconciliation similarly retries its lifecycle update idempotently.
+
+### Reading activation records with the SDK
+
+The public `@bradygaster/squad-sdk/casting` subpath exports
+`selectActivationRecord(records, registry, context)`. It is a synchronous reader,
+not a GitHub API verifier. Supply `ActivationRecord` entries with the exact comment
+`id` and `body`, the independently frozen `AgentProvenanceRegistry`, and an
+`ActivationSelectionContext` containing `repository`, `originIssue`,
+`reconciliations`, and the full frozen plan's `epicAssignments` (`EpicAssignment[]`).
+Include the exact source and predecessor records needed by the reconciliation
+pair or complete chain, not just the newest comment.
+
+**Establish trust before calling the selector.** A trusted API verifier must
+authenticate the reconciliation request actor and their current authorization,
+freeze the plan and committed registry, and check the current issue mappings.
+Supply its independently obtained `ReconciliationEvidence` for every supplement.
+Copying hashes or actor IDs from a comment, constructing matching evidence fields,
+or asserting an `authorized` flag is not proof. The selector does not authenticate
+comment authors, fetch current GitHub state, or attest that a historical run
+created issues. Native continuations still need the packaged checker's separate
+current-API and history-head verification described above.
+
+This consumer-side fragment shows the public import and result handling. Its
+arguments must come from that trusted integration; it does not implement a verifier:
+
+```typescript
+import {
+  AgentProvenanceError,
+  selectActivationRecord,
+  type ActivationRecord,
+  type ActivationSelectionContext,
+  type AgentProvenanceRegistry,
+  type SelectedActivationRecord,
+} from '@bradygaster/squad-sdk/casting';
+
+function inspectActivation(
+  records: readonly ActivationRecord[],
+  registry: AgentProvenanceRegistry,
+  context: ActivationSelectionContext,
+): SelectedActivationRecord | undefined {
+  try {
+    const selected = selectActivationRecord(records, registry, context);
+    if (selected === undefined) {
+      console.info('No activation selected; do not dispatch work.');
+      return undefined;
+    }
+    console.info(selected.id, selected.artifact, selected.bindings);
+    return selected;
+  } catch (error) {
+    if (error instanceof AgentProvenanceError) {
+      console.error('Activation rejected:', error.message, error.diagnostics);
+    }
+    throw error;
+  }
+}
+```
+
+A selected result contains the comment `id`, `artifact` kind and validated
+`bindings`, not a new authorization grant. `undefined` means no activation
+candidate was selected; an empty or pending-only history is not acceptance.
+Malformed, conflicting or incompletely evidenced histories throw rather than
+returning `undefined`. Fail closed on errors: do not fall back to the newest
+comment, ignore a missing proof, or dispatch partial bindings.
+
+#### Run the existing executable example
+
+The repository's
+[activation finalization integration fixture](https://github.com/bradygaster/squad/blob/dev/test/gh-aw-activation-finalization.test.ts)
+is the executable producer/consumer example. In
+`continues after a later-phase pending-source recovery and validates the complete transitive reader chain`,
+it obtains proofs through the real workflow `verifyReconciliationRequest`,
+projects them with `selectionEvidence`, supplies `frozenAssignments`, and calls
+both the SDK selector and canonical checker. These helpers belong to
+`workflows/shared/squad-activation.mjs`; they are **not** public `/casting` verifier
+exports. The `trusted synchronous publication completion (source and strict-compiled jobs)`
+group also executes emitted job scripts and the pinned issue-creation API adapter.
+The companion [selector contract tests](https://github.com/bradygaster/squad/blob/dev/test/agent-provenance.test.ts)
+cover selection, no-record results and rejection cases; their hand-built evidence
+is test data, not production authorization.
+
+Run from a Squad repository checkout with Node.js **22.5.0 or newer**, npm, Git,
+GitHub CLI, and the repository's npm dependencies already installed. Install the
+exact compiler once with `gh extension install --pin v0.91.5 github/gh-aw`.
+If a different gh-aw version is installed, remove that extension with
+`gh extension remove gh-aw` before the pinned installation; v0.89.22 is unsupported
+for this fixture. Before **either compiler path below**, build the current
+checkout's SDK so public `/casting` imports use freshly generated `dist` output:
+
+```bash
+npm run build -w packages/squad-sdk
+```
+
+With the pinned extension available, run:
+
+```bash
+test "$(gh aw --version | awk 'END {print $NF}')" = "v0.91.5" &&
+npm test -- test/gh-aw-activation-finalization.test.ts test/agent-provenance.test.ts
+```
+
+Alternatively, set `SQUAD_GH_AW_BIN` to an **absolute path** to an already obtained
+v0.91.5 executable when running that same `npm test` command. The fixture checks
+the exact compiler version, strict-compiles an isolated package installation,
+and validates immutable action pins. Outbound HTTPS access to
+`raw.githubusercontent.com` is required to fetch the runtime closure at
+`github/gh-aw-actions` commit `16b430146d5d5646eccef5a1ceb72152333b18b9`.
+GitHub issue APIs are synthetic and writes stay local: this example neither
+creates live issues nor demonstrates hosted credentials or permissions.
+A missing compiler, mismatched pin, failed runtime download or failed assertion
+is a failed run, not permission to skip coverage. A passing local run demonstrates
+the integration contract, not production trust for caller-supplied evidence.
+
 ### Granular lifecycle
 
 ```
@@ -1337,12 +1676,22 @@ Each step is user-initiated — Squad proposes, you review and approve.
 After each command, Squad posts (or updates) a **lifecycle state comment** on the
 issue. This comment shows where you are, what just happened, and what to do next:
 
-```
+```markdown
+## Planning Lifecycle
+
 **Current state:** Triaged
-**Last command:** `/squad triage` by @user at 2026-08-10
-**Next action:** `/squad plan program` — create a program plan from triage dispositions
+**Last command:** `/squad triage`
+**Updated by:** @user at 2026-08-10
+**Next action:** `/squad plan program`
+**Guidance:** Create a program plan from triage dispositions.
 **Also available:** `/squad triage revise <feedback>` — adjust triage before planning
 ```
+
+Use exactly one `Last command` field with only the requested backticked command.
+Keep actor/time attribution on the separate `Updated by` line. Open research and
+plan commands report `Researched` and `Planned`, respectively, never acceptance
+or activation. For nonterminal states, `Next action` is also command-only; use
+`Guidance` for explanatory prose.
 
 The `Next action` field tells you (or any agent reading the issue) the primary
 next command. `Also available` shows alternative valid commands at this point in
@@ -1505,108 +1854,53 @@ After this, the plan is ready to activate.
 Creates GitHub issues from the accepted plan with Squad labels (`squad`,
 `squad:{agent-name}`), acceptance criteria, dependency references, and phase
 assignments. Flat plans create one child issue per planned task directly under
-the originating issue; they do not add a duplicate epic. Dependencies use native
-`blockedBy` edges when the installed safe-output tool supports them, otherwise
-they remain explicit `Depends On` references in each issue body.
+the originating issue; they do not add a duplicate epic. Dependencies are explicit
+numeric `Depends On` references in each issue body. This activation writer makes
+no native dependency-edge claim. Native parent links are requested; supported
+404/422 failures are recorded as body-reference fallbacks.
 
 #### Labels are created automatically
 
-You do not need to pre-create any label. Activation applies labels through the
-`add-labels` safe output, which is configured with `allowed: [squad, "squad:*"]`
-and `create-if-missing: true`, so `squad` and each `squad:{agent}` label is
-created the first time a run needs it. A fresh repository with zero Squad labels
-requires no manual label setup.
+You do not need to pre-create labels. The trusted writer looks up each permitted
+`squad`/roster-derived `squad:{agent}` label and creates missing names before
+issuing any issue create. It supplies the exact per-operation labels to the
+synchronous create API, then reads each actual issue's labels before accepting.
+Existing label descriptions and colors are untouched. Newly provisioned labels
+use color `9B8FCC` and an empty description.
 
-> **Two names, one operation.** `add-labels` (hyphenated) is the *configuration
-> key* in the workflow's `safe-outputs` block — that is the spelling to search for
-> in `squad.md` and the one the caps below apply to. `add_labels` (underscored) is
-> the *tool call* the agent makes at run time, and it is the spelling that appears
-> in activation summaries and incomplete reports. They refer to the same
-> operation; this page uses whichever form matches the surface being described.
-
-A label created this way receives gh-aw's deterministic color and an **empty
-description**. That is expected on a fresh repository, not a failure. Labels that
-already exist are left as they are, and re-applying a label on a rerun is a no-op.
-
-#### "Accepted" in an activation summary does not mean "applied"
-
-Activation summaries report **accepted operations**, and that word is exact.
-Issue creation and labeling are gh-aw *safe outputs*: during the agent's turn the
-run can only queue an operation against a target and observe that it was
-accepted. gh-aw applies the queued operations afterward, in a separate post-agent
-job. Nothing in the run reads labels back from GitHub.
-
-So a correct summary says a label operation was **accepted**. It must not claim a
-label was applied, landed, verified, confirmed, or checked on the issue.
-
-This vocabulary exists for a concrete reason. Labels do not ride along with issue
-creation: a label reaches an activated issue through exactly one route, an
-accepted `add_labels` operation targeting that issue. `create-issue`'s own
-`labels:` field never lands a label the activation run can claim, so it is never
-evidence that a label arrived. Labels therefore travel as separate `add_labels`
-calls, and "accepted" is the strongest thing the run can truthfully say about one.
-
-Practical consequence: an accepted summary is strong evidence, not proof. To
-confirm what actually landed, read the issues themselves:
-
-```bash
-gh issue list --label squad --json number,title,labels
-```
+The model's native `create_issue`/`add_labels` path is not used for activation.
+Queued calls or a successful issue create alone are not proof that labels landed:
+the finalizer checks their actual per-issue correspondence. Other command modes
+retain their native safe-output configuration.
 
 #### Activation is capped, and shortfalls are reported
 
-A single activation run is bounded. **The user-facing ceiling is 50 issues per
-activation run.** Plan for that number.
+A single activation invocation must fit its frozen planning-policy limit:
+default 20, lean 10, enterprise 50, or spike 5, subject to explicit supported
+overrides and a hard ceiling of 50. New epics count; validated reused epics do
+not. Oversized batches fail before creation, rather than silently truncating.
+Before reserving a batch, the writer also checks every sanitized issue body with
+the pinned runtime's attribution formatter and its 65,536 UTF-16-code-unit bound,
+including supplementary Unicode and worst-case numeric reference widths.
 
-The two underlying safe-output caps are set above that ceiling on purpose, so
-they are headroom rather than the limit you should size against:
-
-| Safe output | Cap | Derivation |
-|-------------|-----|------------|
-| `create-issue` | 75 | 50 worst-case issues plus 25 bounded margin |
-| `add-labels` | 110 | Covers both readings of the worst case — 50 calls (one per issue) and 100 label names (two each) |
-
-`max` counts safe-output **items (tool calls)**, not label names, and it is
-enforced at invocation and collection — neither enforcement fails the run.
-
-Two different shortfalls are checked separately, and they are not
-interchangeable — the trigger, the wording, and the remedy differ:
-
-| Shortfall | Trigger | What the report says |
-|-----------|---------|----------------------|
-| Issues not created | Created count is below the plan's declared total | `N of M issues created so far — rerun the identical activation command to continue.` |
-| Labels not applied | An activated issue had no `add_labels` call accepted | `{labeled} of {activated} activated issues had a label operation accepted` |
-
-Either one calls `report_incomplete`. With pinned gh-aw v0.91.5, **this fails the
-conclusion step** and records the reason in the Actions logs. The dispatcher
-does not create or update a separate tracking issue. Inspect the run and the
-guarded activation summary on the originating issue:
+If any create outcome is ambiguous, a label check fails, or a receipt is missing,
+the job fails and acceptance is withheld. The durable pending comment blocks
+recreation. Inspect the failure and use the explicitly authorized
+[no-create recovery contract](#deterministic-activation-and-no-create-recovery):
 
 ```bash
 gh run view <run-id> --log-failed
 ```
 
-If a cap was actually reached, the report names which cap and lists the work
-items that did not fit, and recommends `/squad plan activate phase {N}` to
-continue in smaller batches. A cap is named only when it was *observed* — the
-workflow forbids offering a cap as a guessed explanation, so an incomplete report
-will not always attribute the shortfall to one.
-
-Work items created in the same run are identified in that report by the temporary
-IDs the run minted — `#aw_epic{K}` and `#aw_task{N}` on the hierarchical path,
-`#aw_ph{N}` for a fast-path phase issue and `#aw_wi{N}` for a fast-path work item
-— rather than by issue number, because at that point creation is still deferred
-and no real number exists yet.
-
-Do not read a green run as proof of complete activation: an omitted
-`report_incomplete` signal cannot be detected by that handler. Check the
-activation summary and verify the resulting issues and labels.
+Do not retry an interrupted batch to fill missing issues, infer identity from
+titles, or manually repair acceptance. A green run is not consumer authority;
+use the validated binding record and current issue state.
 
 #### Verifying an activation: the bindings block
 
 Every phase and full activation artifact includes an `Activation bindings:`
-fenced JSON block — one entry per created or recognized task, built only from
-accepted operations. This is the most directly checkable surface Squad emits: a
+fenced JSON block — one entry per created or explicitly mapped task, built from
+actual IDs and validated frozen assignments. This is the most directly checkable surface Squad emits: a
 deterministic post-activation checker compares those bindings against the labels
 actually present on the issues.
 
@@ -1628,11 +1922,13 @@ gh issue list --label squad --json number,title,labels
 A binding whose `label` does not match the labels actually on that issue is the
 discrepancy the checker exists to catch.
 
-Where an owner did not become a `squad:{agent}` label — a multi-owner epic, or an
-owner matching no roster name — the summary carries a required `Non-roster agent
-values` heading naming the value and the issue, and the matching binding records
-an omission reason. An omission is always reported explicitly, never left for you
-to infer.
+Multi-owner epics carry base `squad` plus explicit `multi-owner` omission metadata
+instead of a fabricated sole-owner label. The retained `Non-roster agent values`
+section names each affected epic and its owners, explaining that omission.
+Non-roster plan owners fail before
+creation; the supported external `@copilot` owner carries explicit identity
+omission metadata and `squad:copilot`. Missing expected labels cannot be converted
+into an omission to obtain acceptance.
 
 ### Incremental phase acceptance
 
@@ -1644,14 +1940,15 @@ phase at a time:
 ```
 
 This accepts Phase 1 **and automatically creates its GitHub issues** in a single
-step. After completing Phase 1 work, continue with:
+step. Before continuing, reconcile the complete prior-phase mapping against the
+same frozen plan and registry as described above. Then continue with:
 
 ```
 /squad plan accept implementation phase 2
 ```
 
 The accept command automatically activates the phase (creates issues) when all
-prior phases are already activated. This means you don't need a separate
+prior phases have a validated explicit mapping bridge. This means you don't need a separate
 `/squad plan activate phase N` command in the common case — accept does it all.
 
 If you need to activate a phase separately (e.g., you accepted it earlier but
@@ -1666,12 +1963,13 @@ skipped auto-activation), use:
 - Phases must be activated in order (Phase 2 requires Phase 1 to be activated first)
 - Accept automatically activates when prior phases are ready (no separate activate needed)
 - Each acceptance/activation posts a summary showing created issues and remaining phases
-- Dependencies in later phases automatically reference issue numbers from earlier phases
+- Dependencies in later phases use the explicit validated prior-phase numeric mappings
 - `/squad plan accept implementation` with no phase arg still accepts everything (backward compatible)
 - `/squad plan activate` with no phase arg still activates everything (backward compatible)
 - The same pattern works for the legacy fast path: `/squad plan accept phase {N}`
 
-This is useful for large projects where you want to review and iterate between phases — ship Phase 1, learn from it, then decide whether to adjust Phase 2's plan before accepting it.
+This supports bounded sequential delivery. A changed plan or registry invalidates
+the existing bridge; do not silently reuse its old mapping against new inputs.
 
 ### Plan revise
 
@@ -1912,6 +2210,16 @@ Exactly one current-head record is required. The legacy
 Per-PR concurrency cancels stale runs; both output and final gate re-fetch the
 live PR head. Missing, duplicate, malformed, stale, or equal-identity evidence
 fails closed. An unchanged head reuses its validated record, not arbitrary text.
+
+GitHub's workflow-run API can report the PR head in `head_sha` for a
+`pull_request_target` run. This is not the workflow source SHA. In that form,
+the guard requires explicit run-to-PR linkage with the exact PR number, head
+SHA, base SHA, and base repository name, alongside the trusted event, workflow
+path, repository, run title, run ID, and attempt. The verdict's `workflow_sha`
+must still equal the exact base commit. Missing PR linkage is accepted only for
+the existing base-SHA metadata form; a PR-head SHA and title alone never
+establish trusted workflow-source evidence. The final review and post-merge
+relay apply the same binding checks.
 
 ### Enforced verdicts and reviewer independence
 
@@ -2288,14 +2596,14 @@ other refs.
 | `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile --strict`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
-| Plan activation creates fewer issues than the accepted plan declares | The run ended early, or it reached the `create-issue` (75) or `add-labels` (110) safe-output cap | Inspect the Actions logs and originating issue's activation summary for the shortfall and any cap reached. Re-run the identical activation command (title matching resumes without duplicating existing issues), or activate one phase at a time with `/squad plan activate phase {N}` |
-| Activation run is green but some issues are missing or unlabeled | The agent may have omitted `report_incomplete`, which would fail the conclusion step if emitted | A green run is not proof of a complete activation. Check the activation summary and Actions logs, then verify with `gh issue list --label squad`; automatic tracking-issue reporting is disabled |
+| Plan activation creates fewer issues than the frozen plan declares | Creation was interrupted or an actual create result could not be verified; oversized batches fail before creation under the planning-policy limit (default 20, lean 10, enterprise 50, spike 5; hard ceiling 50, counting new epics) | Inspect Actions logs, receipts, the pending reservation, and current issues. Use [explicit current-state reconciliation](#deterministic-activation-and-no-create-recovery) with exact existing issue mappings and source phase coverage; never resume by title or rerun to create missing issues. Plan smaller phases before starting a fresh activation, not as a bypass for a pending batch |
+| Activation run is green but some issues are missing or unlabeled | Workflow status alone is not consumer authority; current state may differ from the validated publication | Inspect the trusted publication receipt/readback, validated bindings, current labels, and hierarchy. Missing receipts or failed validation withhold acceptance; reconcile ambiguous history explicitly without creating issues. Do not rely on agent-emitted `report_incomplete` or a title/label search as proof |
 | A Squad label has no description and an unexpected color | It was auto-created on a fresh repo by `create-if-missing` | Expected, not a failure. Edit the label if you want a description or a specific color |
 | `/squad implement` cannot create a PR | Expected under Profile A (recommended); Actions is not allowed to create pull requests and there is no automatic fallback for this workflow | Push the worker's branch and open the PR manually, or switch to [Profile B](#profile-b-opt-in-automatic-pr-creation) if you accept its repository-wide self-approval tradeoff |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
 | Standalone activation fails before init | Latest stable release lookup, bundle download, or mandatory checksum verification failed | Inspect installer diagnostics and restore complete, valid release assets, then use **Re-run failed jobs** |
 | Squad health fails | Initialization or committed team state is incomplete | Inspect the `Run Squad health check` JSON, correct the reported state, and rerun; no `squad-state` artifact is uploaded on failure |
-| A command run was cancelled or its result is uncertain | The run stopped before a durable output was confirmed | Rerun the identical `/squad` command; Cast, implementation, activation, and review paths check existing GitHub state before creating output |
+| A command run was cancelled or its result is uncertain | The run stopped before a durable output was confirmed | Check existing durable outputs before repeating Cast, implementation, or review commands. For activation, inspect the pending reservation and receipts and use explicit no-create current-state reconciliation; do not retry an interrupted batch to fill missing issues |
 
 ---
 
