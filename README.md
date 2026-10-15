@@ -430,6 +430,8 @@ When agents finish, the coordinator records follow-up work and leaves a breadcru
 
 **And it's all in git.** Anyone who clones your repo gets the team — with all their accumulated knowledge.
 
+**Each agent gets the right model.** Squad picks models quality-first by default: premium for architecture, research and review, standard for code and docs, fast for mechanical work. Opt in to the `balanced` or `economy` profile, or to the `hydrafusion` research preview with `"modelProfile": "hydrafusion"` in `.squad/config.json`. Per-agent selection works in the Copilot CLI and app; VS Code runs every agent on the one session model. See [Model Selection](https://bradygaster.github.io/squad/docs/features/model-selection/).
+
 ---
 
 ## What Gets Created
