@@ -24,18 +24,18 @@
       "source": "workflows/package/squad-implement-worker.md",
       "destination": ".github/workflows/squad-implement-worker.md",
       "lock": ".github/workflows/squad-implement-worker.lock.yml",
-      "source_sha256": "85c7354a6efd5c03932ad295b55d1753fa00edd981d7e6c540aa7516c6a77fdf",
-      "lock_sha256": "990e3764936c89f81e568d77a3dff8a7ef7ac5e72ae04065fd7833b53bbe803d",
-      "package_lock_sha256": "57d5ceb70e3ca5e9bca049a112269da3d28948900bd09ea84cf2ad3c686d3158"
+      "source_sha256": "d392e9621ee98b037fdc97a4a1bbf58dc4ecd7985ff78b42a6b61803708d11dd",
+      "lock_sha256": "517a10cc46009c00ac19d127d072e181915d2b73de44985509ae9659131f279c",
+      "package_lock_sha256": "714891d8345de2fe59792dc0bafa19258b0005799434ec962bafc09087096b0a"
     },
     {
       "name": "squad-review",
       "source": "workflows/package/squad-review.md",
       "destination": ".github/workflows/squad-review.md",
       "lock": ".github/workflows/squad-review.lock.yml",
-      "source_sha256": "c40f55a6aaf5cb0137ae975a44f7da746265be7cf4bf90d6334ba161462d6cad",
-      "lock_sha256": "91a7006c62f3bc8d14996657e6360e0239a4f76591dd39c410b0a0da1ab14fe5",
-      "package_lock_sha256": "8ae7a69928487acc8f87d5b0dc68972e4381817507c71ba228b99cb3e2f97571"
+      "source_sha256": "f29537a1904b79ff8db7a13ba3eeae2d555c030cf860d60a6f04e9080732adfb",
+      "lock_sha256": "804c413c3132be1f33b07edad65214b1d11e01d9e9c1749f556f835a36cc5b00",
+      "package_lock_sha256": "a75ccff19c150a2b4f92f65a742d444d7de8a02c988c665c51030d368a1b8891"
     },
     {
       "name": "squad-deps-worker",
@@ -94,13 +94,13 @@
         },
         {
           "name": "squad-implement-worker",
-          "lock_sha256": "f09b593133665e766a885c931fdd5fbb81af13abcb8b7f5597e2af58bda1e806",
-          "package_lock_sha256": "79a673fd9dbddaf9bc7f2ae888f339e647b3fcb4a53d438c7d596de3659164ca"
+          "lock_sha256": "fd7fc4a1c0d3fabda8a6e9b143a30b68586d8ecac38dc0c299afd06d7b159b9d",
+          "package_lock_sha256": "9bca116907c861bdc9bc9fc31cfbb4159836c8e8a6bd4a4266d0ced28ac9d4be"
         },
         {
           "name": "squad-review",
-          "lock_sha256": "b512b55ea945d6e224c27a0e6c31f059b2032f4bb1948fe1bbb8407ab98e47f0",
-          "package_lock_sha256": "08fc06a57485541b25cffcb96da7cddbd2b045d2723ca1e6e3617e646c5ab733"
+          "lock_sha256": "4357bea87480cf024abbed64ec30352547a9d471e3c6c41a18d4627f35b5bbfe",
+          "package_lock_sha256": "04d53b305f566606d3c516208622090d4f5079cf05cb03cea2c726eec6a123b4"
         },
         {
           "name": "squad-deps-worker",
@@ -161,7 +161,7 @@
       "package_destination": ".github/workflows/shared/squad-review-guard.mjs",
       "destination": ".github/workflows/shared/squad-review-guard.mjs",
       "ownership": "manifest",
-      "sha256": "9a6d867acf6906b6578826f83bbe165a1b4ffa975963ddbcbdceaaaf278b605d"
+      "sha256": "0b28e1419db8a0e85996718a16321425e505d7282011675c017ed254a4d1561e"
     },
     {
       "path": "shared/squad-install-verifier.mjs",

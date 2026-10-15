@@ -30,6 +30,8 @@ afterEach(() => {
   for (const workspace of workspaces.splice(0)) rmSync(workspace, { recursive: true, force: true });
 });
 
+type Fx = ReturnType<typeof fixture>;
+
 function fixture(relay = false) {
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
   const env = {
@@ -47,8 +49,8 @@ function fixture(relay = false) {
   const registry = {
     schema: 'squad-agent-provenance/v1', schema_version: 1,
     agents: {
-      implementer: { persistent_name: 'implementer', status: 'active' },
-      reviewer: { persistent_name: 'reviewer', status: 'active' },
+      implementer: { display_name: 'Implementer', persistent_name: 'Implementer', status: 'active' },
+      reviewer: { display_name: 'Reviewer', persistent_name: 'Reviewer', status: 'active' },
     },
   };
   const pr = {
@@ -1010,9 +1012,52 @@ describe('independent Squad review guard', () => {
     }
     f.registry.agents.reviewer.persistent_name = 'implementer';
     expect(() => validateAttribution(f.attribution, f.registry, REPOSITORY, 9)).toThrow();
-    f.registry.agents.reviewer.persistent_name = 'reviewer';
+    f.registry.agents.reviewer.persistent_name = 'Reviewer';
     f.registry.agents.reviewer.status = 'retired';
     expect(() => validateAttribution(f.attribution, f.registry, REPOSITORY, 9)).toThrow();
+  });
+
+  it('accepts the committed squad-agent-provenance/v1 cast where keys are IDs and persistent_name equals display_name', () => {
+    const registry = {
+      schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1,
+      generated_at: '2026-10-14T15:28:23.000Z',
+      agents: Object.fromEntries(['Lead', 'Backend', 'Frontend', 'Messaging', 'Quality'].map(name => [
+        name.toLowerCase(),
+        {
+          display_name: name, persistent_name: name, role: name, universe: 'zava-social-farm',
+          status: 'active', created_at: '2026-10-14T15:28:23.000Z', updated_at: '2026-10-14T15:28:23.000Z',
+        },
+      ])),
+    };
+    const repository = 'octodemo/zava-social-cao-ops-20261014152823';
+    const attribution = {
+      schema: 'squad-review-author/v1', repository, issue: 10,
+      author_agent: 'lead', reviewer_agent: 'quality',
+    };
+    expect(validateAttribution(attribution, registry, repository, 10),
+      'live cast lead/quality with persistent_name Lead/Quality must be accepted').toEqual(attribution);
+  });
+
+  it.each([
+    ['display-name lookup', (f: Fx) => { f.attribution.reviewer_agent = 'Reviewer'; }],
+    ['persistent_name diverging from display_name', (f: Fx) => { f.registry.agents.reviewer.persistent_name = 'Other'; }],
+    ['missing display_name', (f: Fx) => { delete (f.registry.agents.reviewer as Record<string, unknown>).display_name; }],
+    ['display name aliasing another ID', (f: Fx) => {
+      f.registry.agents.reviewer.display_name = 'Implementer';
+      f.registry.agents.reviewer.persistent_name = 'Implementer';
+    }],
+    ['display name equal to another stable ID', (f: Fx) => {
+      f.registry.agents.reviewer.display_name = 'IMPLEMENTER';
+      f.registry.agents.reviewer.persistent_name = 'IMPLEMENTER';
+      f.registry.agents.implementer.display_name = 'Builder';
+      f.registry.agents.implementer.persistent_name = 'Builder';
+    }],
+    ['non-object agents map', (f: Fx) => { (f.registry as Record<string, unknown>).agents = []; }],
+  ])('refuses aliased or malformed identity: %s', (label, mutate) => {
+    const f = fixture();
+    mutate(f);
+    expect(() => validateAttribution(f.attribution, f.registry, REPOSITORY, 9),
+      `expected refusal for ${label}`).toThrow(/stable agent ID|invalid committed agent registry/);
   });
 
   it.each([

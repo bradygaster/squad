@@ -18,7 +18,7 @@ const WORKFLOW_RUNS = 'actions/workflows/squad-review.lock.yml/runs';
 const AUTHORITY_JOB = 'review';
 const BOOTSTRAP_WORKFLOW = '.github/workflows/squad-bootstrap.lock.yml';
 const SHA = /^[0-9a-f]{40}$/;
-const ID = /^[a-z][a-z0-9-]*$/;
+const AGENT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const BOT = 'github-actions[bot]';
 const BOT_ID = 41898282;
 const BOOTSTRAP_BRANCH = 'squad/bootstrap-cast';
@@ -60,11 +60,27 @@ export function validateAttribution(value, registry, repository, issue) {
     Number.isSafeInteger(value.issue) && value.issue > 0 && value.issue === issue,
   'missing or malformed committed .squad-review.json');
   requireThat(registry?.schema === 'squad-agent-provenance/v1' && registry.schema_version === 1 &&
-    registry.agents && typeof registry.agents === 'object', 'invalid committed agent registry');
+    registry.agents && typeof registry.agents === 'object' && !Array.isArray(registry.agents),
+  'invalid committed agent registry');
+  // squad-agent-provenance/v1: the object key is the stable ID; persistent_name is a
+  // compatibility alias that must equal display_name. Names never resolve identity.
+  const names = new Map();
+  for (const [key, entry] of Object.entries(registry.agents)) {
+    const name = typeof entry?.display_name === 'string' ? entry.display_name.trim() : '';
+    if (name) names.set(key, name.toLowerCase());
+  }
   for (const id of [value.author_agent, value.reviewer_agent]) {
-    requireThat(typeof id === 'string' && ID.test(id) &&
-      Object.hasOwn(registry.agents, id) && registry.agents[id].status === 'active' &&
-      registry.agents[id].persistent_name === id, 'unknown, inactive, or aliased stable agent ID');
+    const entry = typeof id === 'string' && AGENT_ID.test(id) && Object.hasOwn(registry.agents, id)
+      ? registry.agents[id] : undefined;
+    const name = names.get(id);
+    requireThat(entry && typeof entry === 'object' && !Array.isArray(entry) &&
+      entry.status === 'active' && name !== undefined &&
+      entry.persistent_name === entry.display_name.trim(),
+    'unknown, inactive, or aliased stable agent ID');
+    for (const [other, otherName] of names) {
+      requireThat(other === id || (other !== name && otherName !== name),
+        'unknown, inactive, or aliased stable agent ID');
+    }
   }
   requireThat(value.author_agent !== value.reviewer_agent, 'author and reviewer must be distinct');
   return value;

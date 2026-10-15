@@ -157,7 +157,8 @@ Read `.squad-review.json` at the exact PR head SHA and the committed
 `.squad/casting/registry.json` at the PR base SHA. The attribution schema is
 `squad-review-author/v1` with `repository`, positive integer `issue`,
 `author_agent`, and `reviewer_agent`. Both IDs must be active canonical
-`persistent_name` entries in that registry, and must differ. Act as that
+stable agent IDs (exact `agents` object keys, not `display_name` or
+`persistent_name` values) in that registry, and must differ. Act as that
 `reviewer_agent`, reading its base-commit charter. Missing or malformed
 attribution is a refusal, never a fallback to a display name or GitHub login.
 The deterministic output guard and final job repeat these checks. GitHub

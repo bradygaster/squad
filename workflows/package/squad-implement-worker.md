@@ -1180,8 +1180,8 @@ The remaining instructions apply only to `workflow_dispatch`.
    to this change. Commit `.squad-review.json` at the repository root with
    exactly `schema: "squad-review-author/v1"`, `repository` (owner/repo),
    `issue` (this issue's numeric ID), `author_agent`, and `reviewer_agent` as
-   JSON fields. These are stable registry keys whose `persistent_name` equals
-   the key, not display names or GitHub accounts. Replace an earlier PR's
+   JSON fields. These are exact lowercase stable registry keys (for example
+   `lead`), never `display_name`/`persistent_name` values or GitHub accounts. Replace an earlier PR's
    attribution rather than inheriting it. Do not alter the protected registry.
    If no independent registered reviewer exists, stop and report the blocker.
 
