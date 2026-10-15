@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseImplementMergeProvenance } from './squad-retro-provenance.mjs';
 
 export const PROVENANCE_LABEL = 'Squad implementation provenance:';
 export const PROVENANCE_SCHEMA =
@@ -326,6 +327,7 @@ export function evaluateImplementationProvenanceItems({
   namespace,
   runId,
   requireLegacyMarker = false,
+  requireFinalMarker = true,
 } = {}) {
   const pulls = items.filter(item => item.type === 'create_pull_request');
   const records = items.filter(item => item.type === RECORD_TYPE);
@@ -370,18 +372,18 @@ export function evaluateImplementationProvenanceItems({
     violations.push(...validateGoals(record.goals, repository, Number(issueNumber)));
     violations.push(...validateReplacements(record.replaces));
     if (requireLegacyMarker) {
-      const marker = `<!-- squad:implement issue=${issueNumber} run=${runId || '[1-9][0-9]*'} -->`;
+      // The legacy env/config name now requires a compatibility body marker.
+      // A sanitized-away HTML comment is never permission to skip provenance.
+      // Match the shared downstream parser AND the trusted runtime run ID;
+      // missing IDs must not degrade to an arbitrary agent-supplied run.
       const body = normalizeText(pull.body);
-      const lines = body.split('\n');
-      const exact = runId
-        ? lines.filter(line => line === marker).length === 1
-        : lines.filter(line => new RegExp(`^<!-- squad:implement issue=${issueNumber} run=[1-9][0-9]* -->$`).test(line)).length === 1;
+      const provenance = parseImplementMergeProvenance(body, pull.branch);
       const finalLine = body.replace(/\n+$/, '').split('\n').at(-1);
-      const finalMarker = runId
-        ? finalLine === marker
-        : new RegExp(`^<!-- squad:implement issue=${issueNumber} run=[1-9][0-9]* -->$`).test(finalLine || '');
-      if (!exact || !finalMarker ||
-          (body.match(/<!-- squad:implement\b/g) || []).length !== 1) {
+      const marker = `squad:implement issue=${issueNumber} run=${runId}`;
+      if (!numericText(runId) || !provenance.ok ||
+          provenance.issue_number !== Number(issueNumber) ||
+          provenance.run_id !== Number(runId) ||
+          (requireFinalMarker && finalLine !== marker && finalLine !== `<!-- ${marker} -->`)) {
         violations.push({ kind: 'implementation-provenance-legacy-marker-invalid' });
       }
     }
@@ -801,6 +803,10 @@ export async function emitImplementationProvenanceComment({
     namespace: env.SQUAD_IMPLEMENT_NAMESPACE,
     runId: Number(env.GITHUB_RUN_ID),
     requireLegacyMarker: env.SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER === 'true',
+    // The trusted gh-aw handler appends footer/workflow metadata after the
+    // agent-authored body. Still require the unique standalone marker and
+    // exact runtime issue/run; only its final-line position is pre-create-only.
+    requireFinalMarker: false,
   });
   if (!itemCheck.ok) {
     throw new Error(describeImplementationProvenanceViolations(itemCheck.violations).join('; '));

@@ -15,6 +15,9 @@ export const FINGERPRINT = /^(?:fail|review):[0-9a-f]{16}$/;
 export const TEMPORARY_ID = /^#?aw_[A-Za-z0-9_]{3,12}$/i;
 export const NUMERIC_ID = /^[1-9][0-9]*$/;
 export const IMPLEMENT_PULL_MARKER = /^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$/;
+// Visible transport survives gh-aw safe-output sanitization. Keep the legacy
+// parser for PRs created before this transport changed, never as weaker evidence.
+export const IMPLEMENT_PULL_VISIBLE_MARKER = /^squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*)$/;
 export const IMPLEMENT_PULL_BRANCH = /^squad\/implement-([1-9][0-9]*)-[a-z0-9][a-z0-9-]*$/;
 export const DISPATCH_INPUT_KEYS = Object.freeze([
   'issue_number',
@@ -193,7 +196,7 @@ export function parseImplementMergeProvenance(body, headRef) {
   if (violations.length) return { ok: false, enforced: true, origin: 'merge-continuation', violations };
 
   const text = normalizeText(body);
-  const markerPattern = new RegExp(`<${'!--'} squad:implement\\b`, 'g');
+  const markerPattern = /squad:implement/g;
   const markerOccurrences = text.match(markerPattern) || [];
   const matches = [];
   let fence = null;
@@ -207,7 +210,7 @@ export function parseImplementMergeProvenance(body, headRef) {
       fence = opening;
       continue;
     }
-    const match = IMPLEMENT_PULL_MARKER.exec(line);
+    const match = IMPLEMENT_PULL_VISIBLE_MARKER.exec(line) || IMPLEMENT_PULL_MARKER.exec(line);
     if (match) matches.push(match);
   }
 

@@ -202,12 +202,16 @@ priority evidence.
 | 3 | Login `copilot-swe-agent[bot]` or `copilot/*` head branch with no marker-like text | Copilot-authored |
 | 4 | None of the above | Unattributed |
 
-The durable marker schema from the implement worker is exactly one standalone
-body line. Build its exact regular expression by concatenating these three
+The compatibility marker schema from the implement worker is exactly one
+standalone visible body line matching
+`^squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*)$`.
+For existing PRs, also accept the legacy HTML-comment form.
+Build its exact regular expression by concatenating these three
 fragments with no added whitespace: `^<`, then
 `!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$`.
 Normalize CRLF to LF before testing lines. Marker-like text means any occurrence
-of `squad:implement` anywhere in the body.
+of `squad:implement` anywhere in the body, counting both forms together.
+Markers in prose, quotes or code fences are not standalone evidence.
 
 For priority 1, require exactly one marker-like occurrence, exactly one exact
 marker line, and a head ref matching

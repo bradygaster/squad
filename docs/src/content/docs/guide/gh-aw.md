@@ -933,9 +933,20 @@ the created PR and replacement evidence, constructs the authoritative payload
 from GitHub runtime context, and posts the comment as `github-actions[bot]`.
 Consumers and merge-continuation/replacement checks accept provenance only
 from that bot-authored boundary. No `"self"` or unresolved temporary identifier
-is durable evidence. The general worker also keeps the existing standalone
-`<!-- squad:implement issue={issue} run={run} -->` marker unchanged for
-backward compatibility.
+is durable evidence. The general worker also appends one visible, standalone
+final line `squad:implement issue={issue} run={run}`. The pre-creation gate
+requires the issue and run to match trusted runtime context; it never accepts
+an arbitrary run ID or waives the check when the marker is missing.
+The line must end the submitted body. After creation, gh-aw appends its own
+footer/metadata; the post-create gate still requires the same unique standalone
+issue/run marker, but not a final-line position after the handler's footer.
+gh-aw v0.91.5 removes HTML comments from safe-output bodies during collection,
+before this gate runs. The visible line survives that sanitization.
+Downstream review and merge-continuation parsers also accept the legacy
+HTML-comment form for existing PRs, but reject mixed/duplicate, fenced,
+embedded or branch-mismatched markers. Merge continuation still verifies the
+same-repository successful worker run and PR creation window through Actions;
+neither marker form alone is authorization.
 
 The dispatcher posts a bot-authored receipt before each worker dispatch. The
 worker verifies that receipt, the dispatcher Actions run, repository, run
@@ -2171,7 +2182,8 @@ instructions for opening the existing base-controlled run and using GitHub's
 
 The reviewer classifies provenance in this priority order:
 
-1. One validated `<!-- squad:implement issue=... run=... -->` worker marker and
+1. One validated visible `squad:implement issue=... run=...` worker marker
+   (or the legacy HTML-comment form for an existing PR) and
    its matching `squad/implement-*` branch
 2. A `squad/implement-*` branch when no marker-like text is present
 3. Author `copilot-swe-agent[bot]` or a `copilot/*` branch when no marker-like

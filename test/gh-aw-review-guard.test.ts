@@ -388,6 +388,30 @@ describe('generation-bound fresh bootstrap review', () => {
 });
 
 describe('independent Squad review guard', () => {
+  it.each([
+    'squad:implement issue=9 run=7',
+    '<!-- squad:implement issue=9 run=7 -->',
+  ])('binds visible and legacy body hints to committed attribution: %s', async marker => {
+    const f = fixture();
+    f.pr.body = `Closes #9\n\n${marker}\n\n<!-- gh-aw-workflow-id: squad-implement-worker -->`;
+    await expect(reviewTarget(f.env, f.get)).resolves.toMatchObject({
+      author_agent: 'implementer', reviewer_agent: 'reviewer',
+    });
+    f.pr.body += '\nsquad:implement issue=9 run=8';
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('malformed or duplicate');
+  });
+
+  it.each([
+    'squad:implement issue=10 run=7',
+    'prose squad:implement issue=9 run=7',
+    '```text\nsquad:implement issue=9 run=7\n```',
+    'squad:implement issue=9 run=9007199254740992',
+  ])('refuses hostile visible hints without branch fallback: %s', async marker => {
+    const f = fixture();
+    f.pr.body = marker;
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('malformed or duplicate');
+  });
+
   it('uses reserved workflow roles only for the base-controlled post-install bootstrap PR', async () => {
     const f = fixture();
     makeBootstrap(f);

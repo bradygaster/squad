@@ -195,7 +195,7 @@ describe('gh-aw implement workflows', () => {
     );
     expect(worker).toContain("startsWith(github.event.pull_request.head.ref, 'squad/implement-')");
     expect(workerFrontmatter).toContain(
-      "contains(github.event.pull_request.body, '<!-- squad:implement issue=')",
+      "contains(github.event.pull_request.body, 'squad:implement')",
     );
     expect(listInBlock(workerDispatch, 'workflows')).toContain('squad');
     expect(scalarInBlock(workerDispatch, 'target-ref')).toContain('github.event.repository.default_branch');
@@ -217,22 +217,41 @@ describe('gh-aw implement workflows', () => {
 
   it('emits one parseable provenance marker on the only PR creation path', () => {
     const openPullRequest = worker.match(/## Open Pull Request([\s\S]*?)If the repository already satisfies/)?.[1];
-    const marker = openPullRequest?.match(/`(<!-- squad:implement issue=.*? -->)`/)?.[1];
+    const marker = openPullRequest?.match(/`(squad:implement issue=.*?)`/)?.[1];
 
     expect(marker).toBe(
-      '<!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} -->',
+      'squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }}',
     );
     expect(openPullRequest).toContain('append exactly one standalone final line');
     expect(openPullRequest).toContain('Never copy a marker from issue or');
     expect(worker.match(/Use the `create-pull-request` safe-output:/g)).toHaveLength(1);
     expect(continuationSection(worker)).toContain('Require exactly one standalone body line matching');
     expect(continuationSection(worker)).toContain(
-      '^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$',
+      '^squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*)$',
     );
     expect(continuationSection(worker)).toMatch(
       /issue\s+number to equal the marker's issue number/,
     );
   });
+
+  it('strict-compiles the visible-marker trigger with both trusted provenance boundaries', () => {
+    const lock = compiledWorkerLock();
+    expect(lock).toContain("contains(github.event.pull_request.body, 'squad:implement')");
+    // gh-aw v0.91.5 resolves this prompt from the installed source at runtime.
+    expect(lock).toContain('{{#runtime-import .github/workflows/squad-implement-worker.md}}');
+    const steps = parse(lock).jobs.safe_outputs.steps;
+    const gate = steps.findIndex((step: any) =>
+      step.name === 'Enforce implement provenance before any output');
+    const handlers = steps.findIndex((step: any) => step.name === 'Configure Safe Output Scripts');
+    expect(gate).toBeGreaterThanOrEqual(0);
+    expect(handlers).toBeGreaterThan(gate);
+    expect(steps[gate].env.SQUAD_IMPLEMENT_REQUIRE_LEGACY_MARKER).toBe('true');
+    expect(steps[gate].env.SQUAD_IMPLEMENT_ISSUE_NUMBER).toContain('github.event.inputs.issue_number');
+    expect(steps[gate].with.script).toContain('enforceImplementationProvenanceSafeOutputs');
+    expect(steps[handlers].run).toContain('emitImplementationProvenanceComment');
+    expect(steps[handlers].run).toContain('resolvedTemporaryIds');
+    expect(steps[handlers].run).toContain("'.squad-trusted-base'");
+  }, 20000);
 
   it('strict-compiles relay correlation into the dispatch contract', () => {
     const safeOutputs = compiledWorkerSafeOutputs();
@@ -452,12 +471,15 @@ describe('gh-aw implement worker: retro-origin provenance enforcement', () => {
     expect(kinds(result)).toContain('merge-provenance-issue-mismatch');
   });
 
-  it('binds merge continuation to a successful same-repository implement run', async () => {
+  it.each([
+    'squad:implement issue=42 run=7',
+    '<!-- squad:implement issue=42 run=7 -->',
+  ])('binds merge continuation to a successful same-repository implement run: %s', async marker => {
     const env = {
       GITHUB_REPOSITORY: REPO,
       SQUAD_IMPLEMENT_DEFAULT_BRANCH: BRANCH,
       SQUAD_IMPLEMENT_EVENT_NAME: 'pull_request',
-      SQUAD_IMPLEMENT_PULL_BODY: '<!-- squad:implement issue=42 run=7 -->',
+      SQUAD_IMPLEMENT_PULL_BODY: marker,
       SQUAD_IMPLEMENT_PULL_HEAD_REF: 'squad/implement-42-fix',
       SQUAD_IMPLEMENT_PULL_HEAD_REPOSITORY: REPO,
       SQUAD_IMPLEMENT_PULL_CREATED_AT: '2026-09-14T18:00:30Z',

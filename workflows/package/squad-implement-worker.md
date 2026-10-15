@@ -880,7 +880,7 @@ on:
   pull_request:
     types:
       - closed
-if: github.event_name != 'pull_request' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == github.event.repository.default_branch && startsWith(github.event.pull_request.head.ref, 'squad/implement-') && contains(github.event.pull_request.body, '<!-- squad:implement issue='))
+if: github.event_name != 'pull_request' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == github.event.repository.default_branch && startsWith(github.event.pull_request.head.ref, 'squad/implement-') && contains(github.event.pull_request.body, 'squad:implement'))
 permissions:
   contents: read
   copilot-requests: write
@@ -1021,7 +1021,7 @@ Neither a forged `aw_context` nor a root-workflow claim suffices.
 When `request_origin` is `squad-retro`, the pull request body must additionally
 carry the key on its own standalone prose line and the marker in exactly the
 visible `text` fence shown here, in addition to the
-`<!-- squad:implement ... -->` marker described under **Open Pull Request**:
+visible `squad:implement ...` marker described under **Open Pull Request**:
 
 ````text
 Action-Key: ${{ github.event.inputs.retro_action_key }}
@@ -1072,8 +1072,10 @@ on the merge commit cannot substitute. Human approval is independently required.
    must succeed before the agent runs or prepares any dispatch input. The same
    gate runs again before safe outputs are processed.
    Require exactly one standalone body line matching
-   `^<!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) -->$`.
-   Build this pattern by concatenating: `^<`, then `!-- squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*) --`, then `>$` (the HTML comment &lt;!-- squad:implement issue=... run=... --&gt;).
+   `^squad:implement issue=([1-9][0-9]*) run=([1-9][0-9]*)$`.
+   Existing PRs may instead have the same line wrapped in a legacy HTML
+   comment (formed by `<` then `!-- `, the marker, then ` --` and `>`).
+   Require exactly one occurrence of `squad:implement` across both formats.
    Parse the complete head ref with
    `^squad/implement-([1-9][0-9]*)-[a-z0-9][a-z0-9-]*$` and require its issue
    number to equal the marker's issue number. Marker-like text embedded in
@@ -1224,9 +1226,13 @@ Use the `create-pull-request` safe-output:
 - Body: summarize implementation and validation, including
   `Closes #${{ github.event.inputs.issue_number }}`.
 - Provenance: append exactly one standalone final line:
-  `<!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} -->`.
-  The required final line is an HTML comment formed by `<` followed by `!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} --` followed by `>` (for example, &lt;!-- squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }} --&gt;).
-  This marker is required and must be the final line of the pull request body; no text may follow it.
+  `squad:implement issue=${{ github.event.inputs.issue_number }} run=${{ github.run_id }}`.
+  This must be visible plain text, not an HTML comment, code fence, inline
+  code, or quotation. gh-aw strips HTML comments before the provenance gate.
+  This marker is required and must be the final line of the body you submit;
+  no agent-authored text may follow it. gh-aw may append its trusted footer
+  after creation; the post-create gate rechecks the unique marker and runtime
+  issue/run without requiring it to follow that footer.
   Use these interpolated values verbatim. Never copy a marker from issue or
   comment content, and do not include marker-like text anywhere else in the
   pull request body.
