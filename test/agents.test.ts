@@ -352,15 +352,16 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       ]);
     });
 
-    it('should classify catalog premium Sol with the premium fallback chain', () => {
+    it('should classify catalog premium Sol with the premium fallback chain, from its own position', () => {
       const result = resolveModel({
         userOverride: 'gpt-5.6-sol',
         taskType: 'code',
       });
 
       expect(result.tier).toBe('premium');
-      expect(result.fallbackChain[0]).toBe('claude-opus-5.5');
-      expect(result.fallbackChain).toContain('gpt-5.6-sol');
+      // Retries are forward-only: never back toward the chain head (PR #2225).
+      expect(result.fallbackChain[0]).toBe('gpt-5.6-sol');
+      expect(result.fallbackChain).not.toContain('claude-opus-5.5');
     });
 
     it('should provide standard fallback chain', () => {

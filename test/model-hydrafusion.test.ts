@@ -11,7 +11,7 @@
  * @module test/model-hydrafusion
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -21,6 +21,7 @@ import {
   DEFAULT_FALLBACK_CHAINS,
   DEFAULT_CONFIG,
   ECONOMY_MODEL_MAP,
+  ModelRegistry,
   readModelProfile,
   writeModelProfile,
   resolveModel as adapterResolveModel,
@@ -36,6 +37,7 @@ import {
 } from '@bradygaster/squad-sdk/agents';
 import { MODELS } from '@bradygaster/squad-sdk/runtime/constants';
 import type { SquadClientWithPool } from '@bradygaster/squad-sdk/client';
+import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
 
 const HF = 'hydrafusion';
 const HF_MAX = 'hydrafusion-max';
@@ -92,6 +94,25 @@ describe('HydraFusion catalog entries are preview / opt-in (#2014)', () => {
       for (const id of PREVIEW_IDS) expect(ids, `${surface} contains '${id}'`).not.toContain(id);
     });
   }
+});
+
+describe('ModelRegistry recommendations never include preview ids (#2014)', () => {
+  const registry = new ModelRegistry();
+  const useCases = [...new Set(MODEL_CATALOG.flatMap((m) => m.useCases ?? []))];
+  for (const useCase of useCases) {
+    it(`getRecommendedModels('${useCase}') contains no preview id`, () => {
+      const ids = registry.getRecommendedModels(useCase).map((m) => m.id);
+      expect(ids.filter((id) => PREVIEW_IDS.includes(id)), `getRecommendedModels('${useCase}') → ${JSON.stringify(ids)}`).toEqual([]);
+      const premium = registry.getRecommendedModels(useCase, 'premium').map((m) => m.id);
+      expect(premium.filter((id) => PREVIEW_IDS.includes(id)), `getRecommendedModels('${useCase}', 'premium') → ${JSON.stringify(premium)}`).toEqual([]);
+    });
+  }
+
+  it('preview ids stay available through explicit catalog lookup', () => {
+    for (const id of PREVIEW_IDS) {
+      expect(registry.getModelInfo(id)?.preview, `getModelInfo('${id}')`).toBe(true);
+    }
+  });
 });
 
 describe('HydraFusion is never auto-selected under GA profiles (#2014)', () => {
@@ -280,8 +301,78 @@ describe('spawns through AgentLifecycleManager.createSession (#2014)', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await manager.shutdown();
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  describe('hydrafusion profile but hydrafusion not available to the user (org policy / preview off)', () => {
+    const premiumNext = MODELS.FALLBACK_CHAINS.premium[0];
+    let warnings: string[];
+    let notices: Array<Record<string, unknown>>;
+
+    function rejectingClient(rejected: string): SquadClientWithPool {
+      return {
+        async createSession(config: Record<string, unknown>) {
+          sessionConfigs.push(config);
+          if (config.model === rejected) throw new Error(`Model '${rejected}' is not enabled by your organization's policy`);
+          return { sessionId: `s-${sessionConfigs.length}`, async sendMessage() {}, async close() {}, on() {}, off() {} };
+        },
+        async deleteSession() {},
+      } as unknown as SquadClientWithPool;
+    }
+
+    beforeEach(async () => {
+      warnings = [];
+      notices = [];
+      vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warnings.push(args.map(String).join(' ')); });
+      await fs.writeFile(path.join(squadDir, 'config.json'), JSON.stringify({ version: 1, modelProfile: HF }), 'utf-8');
+    });
+
+    async function managerWith(client: SquadClientWithPool): Promise<AgentLifecycleManager> {
+      await manager.shutdown();
+      const eventBus = new EventBus();
+      eventBus.subscribe('agent:milestone', (event) => {
+        if ((event.payload as Record<string, unknown>)?.event === 'model.unavailable') notices.push(event.payload as Record<string, unknown>);
+      });
+      manager = new AgentLifecycleManager({ client, teamRoot: tempDir, defaultIdleTimeout: 60_000, eventBus });
+      return manager;
+    }
+
+    it('createSession rejecting hydrafusion: spawn succeeds on the next premium-chain model, user told once', async () => {
+      const m = await managerWith(rejectingClient(HF));
+      const first = await m.spawnAgent({ agentName: 'auto-agent', task: 'Review', taskType: 'review' });
+      const second = await m.spawnAgent({ agentName: 'auto-agent', task: 'Audit', taskType: 'security' });
+      const label = `createSession calls ${JSON.stringify(sessionConfigs.map((c) => c.model))}; warnings ${JSON.stringify(warnings)}`;
+      expect(sessionConfigs.map((c) => c.model), label).toEqual([HF, premiumNext, HF, premiumNext]);
+      expect(first.model, label).toBe(premiumNext);
+      expect(second.model, label).toBe(premiumNext);
+      expect(first.modelResolution?.fallbackFrom, label).toEqual({ model: HF, source: 'task-auto' });
+      expect(warnings.filter((w) => w.includes(HF)), label).toHaveLength(1);
+      expect(warnings.find((w) => w.includes(HF)), label).toContain(premiumNext);
+      expect(notices, label).toHaveLength(1);
+      expect(notices[0], label).toMatchObject({ model: HF, replacement: premiumNext });
+    });
+
+    it('hydrafusion missing from the live model list: next premium-chain model, user told once', async () => {
+      const m = await managerWith(rejectingClient(HF));
+      const live = [...MODELS.FALLBACK_CHAINS.premium, ...MODELS.FALLBACK_CHAINS.fast];
+      await m.spawnAgent({ agentName: 'auto-agent', task: 'Review', taskType: 'review', availableModels: live });
+      await m.spawnAgent({ agentName: 'auto-agent', task: 'Design', taskType: 'design', availableModels: live });
+      const label = `createSession calls ${JSON.stringify(sessionConfigs.map((c) => c.model))}; warnings ${JSON.stringify(warnings)}`;
+      expect(sessionConfigs.map((c) => c.model), label).toEqual([premiumNext, premiumNext]);
+      expect(warnings.filter((w) => w.includes(HF)), label).toHaveLength(1);
+      expect(notices, label).toHaveLength(1);
+    });
+
+    it('an explicit model rejected by createSession still fails the spawn (no silent swap)', async () => {
+      const m = await managerWith(rejectingClient(HF_MAX));
+      await expect(
+        m.spawnAgent({ agentName: 'auto-agent', task: 'Review', taskType: 'review', modelOverride: HF_MAX }),
+        `explicit modelOverride '${HF_MAX}' rejected by createSession`,
+      ).rejects.toThrow(HF_MAX);
+      expect(sessionConfigs.map((c) => c.model)).toEqual([HF_MAX]);
+    });
   });
 
   it('a session model of hydrafusion is inherited by every spawn, including Scribe', async () => {

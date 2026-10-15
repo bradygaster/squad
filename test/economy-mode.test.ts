@@ -154,6 +154,34 @@ describe('writeEconomyMode', () => {
     writeEconomyMode(squadDir, false);
     expect(readEconomyMode(squadDir)).toBe(false);
   });
+
+  it("reports enabled for a persisted modelProfile 'economy' without economyMode", () => {
+    const config = { version: 1, modelProfile: 'economy' };
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify(config));
+    expect(readEconomyMode(squadDir), `readEconomyMode(${JSON.stringify(config)})`).toBe(true);
+  });
+
+  it("economy off clears a persisted modelProfile 'economy' so selection leaves economy", () => {
+    const config = { version: 1, modelProfile: 'economy', defaultModel: 'auto' };
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify(config));
+    writeEconomyMode(squadDir, false);
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
+    const label = `after writeEconomyMode(false) on ${JSON.stringify(config)} → ${JSON.stringify(raw)}`;
+    expect(raw.modelProfile, label).toBeUndefined();
+    expect(raw.defaultModel, label).toBe('auto');
+    expect(readEconomyMode(squadDir), label).toBe(false);
+    expect(resolveModel({ squadDir }), label).toBe(sdkResolveModel({}).model);
+  });
+
+  it('economy off keeps a non-economy modelProfile', () => {
+    const config = { version: 1, economyMode: true, modelProfile: 'balanced' };
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify(config));
+    writeEconomyMode(squadDir, false);
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
+    const label = `after writeEconomyMode(false) on ${JSON.stringify(config)} → ${JSON.stringify(raw)}`;
+    expect(raw.modelProfile, label).toBe('balanced');
+    expect(raw.economyMode, label).toBeUndefined();
+  });
 });
 
 // ============================================================================

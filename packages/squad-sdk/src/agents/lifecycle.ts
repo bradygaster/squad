@@ -18,7 +18,7 @@ import {
   type ModelResolutionSource,
   type TaskType,
 } from './model-selector.js';
-import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS, isModelSelectionProfile, type ModelSelectionProfile } from '../config/models.js';
+import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS, isModelSelectionProfile, isPreviewModel, type ModelSelectionProfile } from '../config/models.js';
 import type { CostPolicyConfig, SessionCostPolicyOverride } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
@@ -197,6 +197,8 @@ export class AgentLifecycleManager {
   private costPolicy?: CostPolicyConfig;
   private eventBus?: EventBus;
   private agents: Map<string, AgentHandleImpl> = new Map();
+  /** Preview models already reported as unavailable (one notice per model). */
+  private unavailablePreviewNotified: Set<string> = new Set();
   private idleCheckTimer: NodeJS.Timeout | null = null;
   
   constructor(config: LifecycleManagerConfig) {
@@ -305,11 +307,14 @@ export class AgentLifecycleManager {
         availableModels,
       };
       
-      const resolvedModel = resolveModel(modelOptions);
+      let resolvedModel = resolveModel(modelOptions);
       span.setAttribute('model.id', resolvedModel.model);
       span.setAttribute('model.source', resolvedModel.source);
       if (resolvedModel.profile) span.setAttribute('model.profile', resolvedModel.profile);
       await this.emitModelResolved(agentName, resolvedModel);
+      if (resolvedModel.fallbackFrom && isPreviewModel(resolvedModel.fallbackFrom.model)) {
+        await this.noticePreviewUnavailable(agentName, resolvedModel.fallbackFrom.model, resolvedModel);
+      }
       
       // Surface the cost-policy outcome — this was the #1089 bug: the policy
       // result was computed but never wired/emitted. Never swallow it.
@@ -334,16 +339,35 @@ export class AgentLifecycleManager {
       const validTier = rawTier && rawTier !== 'auto' && (VALID_CONTEXT_TIERS as readonly string[]).includes(rawTier)
         ? rawTier as SquadContextTier
         : undefined;
-      const sessionConfig: SquadSessionConfig = {
-        ...(resolvedModel.omitModel ? {} : { model: resolvedModel.model }),
+      const buildSessionConfig = (resolved: ModelResolution): SquadSessionConfig => ({
+        ...(resolved.omitModel ? {} : { model: resolved.model }),
         systemMessage: {
           content: agentConfig.prompt,
         },
         ...(validEffort ? { reasoningEffort: validEffort } : {}),
         ...(validTier ? { contextTier: validTier } : {}),
-      };
+      });
       
-      const session = await this.client.createSession(sessionConfig);
+      let session: SquadSession;
+      try {
+        session = await this.client.createSession(buildSessionConfig(resolvedModel));
+      } catch (createError) {
+        // A profile-picked preview model can be rejected at session creation
+        // (org policy, preview features off). Fall forward along its chain
+        // once instead of failing the spawn; explicit picks are not retried.
+        const rejected = resolvedModel.model;
+        if (resolvedModel.omitModel || resolvedModel.source !== 'task-auto' || !isPreviewModel(rejected)) {
+          throw createError;
+        }
+        resolvedModel = resolveModel({
+          ...modelOptions,
+          unavailableModels: [...(unavailableModels ?? []), rejected],
+        });
+        span.setAttribute('model.id', resolvedModel.model);
+        await this.emitModelResolved(agentName, resolvedModel);
+        await this.noticePreviewUnavailable(agentName, rejected, resolvedModel);
+        session = await this.client.createSession(buildSessionConfig(resolvedModel));
+      }
       
       // Step 5: Create handle with event handlers
       const handle = new AgentHandleImpl({
@@ -518,6 +542,40 @@ export class AgentLifecycleManager {
       },
       timestamp: new Date(),
     });
+  }
+
+  /**
+   * Tell the user, once per preview model per manager, that an opt-in preview
+   * model is unavailable and which model is used instead. Logged via
+   * console.warn and emitted as `agent:milestone` (`event: 'model.unavailable'`).
+   * @private
+   */
+  private async noticePreviewUnavailable(
+    agentName: string,
+    previewModel: string,
+    resolved: ModelResolution,
+  ): Promise<void> {
+    const key = previewModel.toLowerCase();
+    if (this.unavailablePreviewNotified.has(key)) return;
+    this.unavailablePreviewNotified.add(key);
+    const replacement = resolved.omitModel ? 'the platform default model' : `'${resolved.model}'`;
+    const message =
+      `Preview model '${previewModel}' is not available (plan, org policy, or preview features); ` +
+      `using ${replacement} instead. This notice is shown once.`;
+    console.warn(`[squad:model] ${message}`);
+    if (this.eventBus) {
+      await this.eventBus.emit({
+        type: 'agent:milestone',
+        agentName,
+        payload: {
+          event: 'model.unavailable',
+          model: previewModel,
+          replacement: resolved.omitModel ? null : resolved.model,
+          message,
+        },
+        timestamp: new Date(),
+      });
+    }
   }
 
   /**

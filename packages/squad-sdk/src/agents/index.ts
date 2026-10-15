@@ -90,6 +90,7 @@ export {
   type ModelTier,
   type ModelResolutionSource,
   type FallbackExecutorConfig,
+  type FallbackExecuteOptions,
   type FallbackAttempt,
   type FallbackResult,
 } from './model-selector.js';

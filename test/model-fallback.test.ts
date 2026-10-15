@@ -13,6 +13,12 @@ import {
   MODEL_CATALOG,
   DEFAULT_FALLBACK_CHAINS,
 } from '@bradygaster/squad-sdk/config';
+import {
+  resolveAgentModel,
+  ModelFallbackExecutor,
+  type ModelResolutionOptions,
+} from '@bradygaster/squad-sdk/agents';
+import { MODELS } from '@bradygaster/squad-sdk/runtime/constants';
 
 // ============================================================================
 // Cross-tier fallback: standard chain tries all models in order
@@ -291,5 +297,81 @@ describe('Model fallback — edge cases', () => {
         expect(registry.getModelInfo(modelId)).not.toBeNull();
       }
     }
+  });
+});
+
+// ============================================================================
+// Resolver → executor: retry chain is availability-filtered and forward-only
+// (PR #2225 review)
+// ============================================================================
+
+async function attemptedModels(options: ModelResolutionOptions): Promise<{ tried: Array<string | undefined>; label: string }> {
+  const resolved = resolveAgentModel(options);
+  const tried: Array<string | undefined> = [];
+  await new ModelFallbackExecutor({ allowCrossTier: true })
+    .execute(resolved, 'agent', async (model) => {
+      tried.push(model);
+      throw new Error(`fail ${model}`);
+    })
+    .catch(() => undefined);
+  return { tried, label: `resolveAgentModel(${JSON.stringify(options)}) → ${JSON.stringify(resolved)}; tried ${JSON.stringify(tried)}` };
+}
+
+describe('Resolver → ModelFallbackExecutor retry chain (PR #2225)', () => {
+  const standard = MODELS.FALLBACK_CHAINS.standard;
+
+  it('only available entries are retried (no unavailable middle-chain model)', async () => {
+    const options = { taskType: 'code' as const, availableModels: ['claude-sonnet-5.5', 'claude-sonnet-5'] };
+    const resolved = resolveAgentModel(options);
+    const { tried, label } = await attemptedModels(options);
+    expect(resolved.fallbackChain, label).toEqual(['claude-sonnet-5.5', 'claude-sonnet-5']);
+    expect(tried, label).toEqual(['claude-sonnet-5.5', 'claude-sonnet-5']);
+  });
+
+  it('a middle-chain selection never retries earlier chain entries', async () => {
+    const options = { userOverride: standard[2] };
+    const { tried, label } = await attemptedModels(options);
+    expect(tried, label).toEqual(standard.slice(2));
+  });
+
+  it('a middle-chain selection with a live list retries only available later entries', async () => {
+    const options = { userOverride: standard[2], availableModels: [standard[0], standard[2], standard[4]] };
+    const { tried, label } = await attemptedModels(options);
+    expect(tried, label).toEqual([standard[2], standard[4]]);
+  });
+
+  it('an out-of-chain selection keeps head-first fallback over available entries', async () => {
+    const options = { userOverride: 'my-custom-model', availableModels: ['my-custom-model', standard[0], standard[3]] };
+    const { tried, label } = await attemptedModels(options);
+    expect(tried, label).toEqual(['my-custom-model', standard[0], standard[3]]);
+  });
+});
+
+describe('Resolver → ModelFallbackExecutor exhausted chain (omitModel, PR #2225)', () => {
+  const options: ModelResolutionOptions = { taskType: 'code', availableModels: ['not-a-chain-model'] };
+
+  it('runs the platform-default callback instead of calling fn with an empty model id', async () => {
+    const resolved = resolveAgentModel(options);
+    const tried: string[] = [];
+    let platformCalls = 0;
+    const result = await new ModelFallbackExecutor().execute(
+      resolved,
+      'agent',
+      async (model) => { tried.push(model); return `model:${model}`; },
+      { platformDefault: async () => { platformCalls++; return 'platform-default'; } },
+    );
+    const label = `resolveAgentModel(${JSON.stringify(options)}) → ${JSON.stringify(resolved)}; fn got ${JSON.stringify(tried)}`;
+    expect(resolved.omitModel, label).toBe(true);
+    expect(tried, label).toEqual([]);
+    expect(platformCalls, label).toBe(1);
+    expect(result, label).toMatchObject({ value: 'platform-default', model: '', omitModel: true, didFallback: false });
+  });
+
+  it('without a platform-default callback it rejects and never calls fn with an empty model id', async () => {
+    const resolved = resolveAgentModel(options);
+    const tried: string[] = [];
+    const run = new ModelFallbackExecutor().execute(resolved, 'agent', async (model) => { tried.push(model); return model; });
+    await expect(run, `execute(${JSON.stringify(resolved)})`).rejects.toThrow(/omitModel/);
+    expect(tried, `fn calls for ${JSON.stringify(resolved)}`).toEqual([]);
   });
 });

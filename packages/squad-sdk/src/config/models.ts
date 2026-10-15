@@ -599,9 +599,12 @@ export class ModelRegistry {
    */
   getRecommendedModels(useCase: string, tier?: ModelTier): ModelInfo[] {
     const useCaseLower = useCase.toLowerCase();
-    const candidates = tier
+    // Preview entries are opt-in only (#2014): never recommended implicitly,
+    // but still available through explicit catalog lookup.
+    const candidates = (tier
       ? this.getModelsByTier(tier)
-      : Array.from(this.catalog.values());
+      : Array.from(this.catalog.values())
+    ).filter(model => model.preview !== true);
 
     // Score models by use case match
     const scored = candidates
@@ -783,7 +786,7 @@ export interface ModelPreferenceConfig {
  * Reads the economy mode setting from `.squad/config.json`.
  *
  * @param squadDir - Path to the `.squad/` directory
- * @returns True if economyMode is enabled, false otherwise
+ * @returns True if `economyMode` is enabled or `modelProfile` is `economy`, false otherwise
  */
 export function readEconomyMode(squadDir: string, storage: StorageProvider = new FSStorageProvider()): boolean {
   const configPath = join(squadDir, 'config.json');
@@ -796,7 +799,7 @@ export function readEconomyMode(squadDir: string, storage: StorageProvider = new
     const parsed = JSON.parse(raw);
     return parsed !== null &&
       typeof parsed === 'object' &&
-      parsed.economyMode === true;
+      (parsed.economyMode === true || parsed.modelProfile === 'economy');
   } catch {
     return false;
   }
@@ -827,6 +830,8 @@ export function writeEconomyMode(squadDir: string, enabled: boolean, storage: St
     config.economyMode = true;
   } else {
     delete config.economyMode;
+    // A persisted economy profile also selects economy; other profiles stay.
+    if (config.modelProfile === 'economy') delete config.modelProfile;
   }
 
   storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');

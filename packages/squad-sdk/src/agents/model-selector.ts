@@ -207,8 +207,24 @@ export function resolveModel(options: ModelResolutionOptions): ModelResolution {
   const finalized = policy && catalogMap ? finalizeResolvedModel(base, policy, catalogMap) : base;
   const ceiling = policy && catalogMap ? { maxCategory: policy.maxCategory, catalogMap } : undefined;
   const isUnavailable = buildAvailabilityCheck(options.unavailableModels, options.availableModels);
-  const resolved = applyAvailabilityFallback(finalized, isUnavailable, ceiling);
+  const resolved = normalizeFallbackChain(applyAvailabilityFallback(finalized, isUnavailable, ceiling), isUnavailable);
   return { ...resolved, profile, rationale: resolved.rationale ?? resolved.source };
+}
+
+/**
+ * Make the returned chain safe to retry in order: drop entries known to be
+ * unavailable and, when the selected model is in its chain, start the chain
+ * at that model so retries never move back toward the head. A model outside
+ * its chain keeps head-first fallback.
+ */
+function normalizeFallbackChain(resolved: ResolvedModel, isUnavailable?: (id: string) => boolean): ResolvedModel {
+  if (resolved.omitModel) return resolved;
+  const key = resolved.model.toLowerCase();
+  const position = resolved.fallbackChain.findIndex((id) => id.toLowerCase() === key);
+  const forward = position > 0 ? resolved.fallbackChain.slice(position) : resolved.fallbackChain;
+  const fallbackChain = isUnavailable ? forward.filter((id) => !isUnavailable(id)) : forward;
+  if (position <= 0 && fallbackChain.length === resolved.fallbackChain.length) return resolved;
+  return { ...resolved, fallbackChain };
 }
 
 /**
@@ -759,15 +775,28 @@ export interface FallbackAttempt {
 
 export interface FallbackResult<T> {
   value: T;
+  /** Model that succeeded; empty when the platform default was used. */
   model: string;
   tier: ModelTier;
   attempts: FallbackAttempt[];
   didFallback: boolean;
+  /** True when the request ran without a `model` parameter (platform default). */
+  omitModel?: boolean;
 }
 
 export interface FallbackExecutorConfig {
   allowCrossTier?: boolean;
   eventBus?: EventBus;
+}
+
+/** Per-call options for {@link ModelFallbackExecutor.execute}. */
+export interface FallbackExecuteOptions<T> {
+  /**
+   * Runs the request without a `model` parameter so the platform picks its
+   * default. Called instead of the model callback when the resolution has
+   * `omitModel` (every fallback candidate was unavailable).
+   */
+  platformDefault?: () => Promise<T>;
 }
 
 export class ModelFallbackExecutor {
@@ -784,9 +813,21 @@ export class ModelFallbackExecutor {
     resolved: ResolvedModel,
     agentName: string,
     fn: (model: string) => Promise<T>,
+    options: FallbackExecuteOptions<T> = {},
   ): Promise<FallbackResult<T>> {
     const attempts: FallbackAttempt[] = [];
     const originalTier = resolved.tier;
+    if (resolved.omitModel) {
+      // Never send an empty model id: run model-less, or fail before calling fn.
+      if (!options.platformDefault) {
+        throw new Error(
+          `No available model for agent '${agentName}' (resolution has omitModel); ` +
+          `pass a platformDefault callback to run without a model parameter.`,
+        );
+      }
+      const value = await options.platformDefault();
+      return { value, model: '', tier: originalTier, attempts, didFallback: false, omitModel: true };
+    }
     const candidates = this.buildCandidateList(resolved);
 
     for (const candidate of candidates) {
@@ -825,8 +866,8 @@ export class ModelFallbackExecutor {
     const seen = new Set<string>();
     const result: string[] = [];
     const add = (m: string) => { if (!seen.has(m)) { seen.add(m); result.push(m); } };
-    add(resolved.model);
-    for (const fb of resolved.fallbackChain) add(fb);
+    if (resolved.model) add(resolved.model);
+    for (const fb of resolved.fallbackChain) if (fb) add(fb);
     return result;
   }
 
