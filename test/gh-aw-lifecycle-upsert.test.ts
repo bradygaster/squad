@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compileFunction, constants as vmConstants } from 'node:vm';
@@ -94,6 +94,11 @@ async function runLifecycleUpsert(items: unknown[], comments: Comment[] = []) {
 async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
   const directory = mkdtempSync(join(tmpdir(), 'squad-research-'));
   tempDirectories.push(directory);
+  const shared = join(directory, '.squad-evidence-trusted-base/.github/workflows/shared');
+  mkdirSync(shared, { recursive: true });
+  for (const name of ['squad-evidence-provider.mjs', 'squad-command-contract.mjs']) {
+    cpSync(join('workflows/shared', name), join(shared, name));
+  }
   const outputPath = join(directory, 'agent-output.json');
   writeFileSync(outputPath, JSON.stringify({ items }));
 
@@ -115,8 +120,10 @@ async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
   const context = { repo: { owner: 'octodemo', repo: 'consumer' } };
   const previousOutput = process.env.GH_AW_AGENT_OUTPUT;
   const previousIssue = process.env.ISSUE_NUMBER;
+  const previousWorkspace = process.env.GITHUB_WORKSPACE;
   process.env.GH_AW_AGENT_OUTPUT = outputPath;
   process.env.ISSUE_NUMBER = '5';
+  process.env.GITHUB_WORKSPACE = directory;
 
   try {
     const compiled = compileFunction(
@@ -130,6 +137,8 @@ async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
     else process.env.GH_AW_AGENT_OUTPUT = previousOutput;
     if (previousIssue === undefined) delete process.env.ISSUE_NUMBER;
     else process.env.ISSUE_NUMBER = previousIssue;
+    if (previousWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = previousWorkspace;
   }
 
   return { created, updated, deleted, failures };
