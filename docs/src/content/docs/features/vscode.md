@@ -50,7 +50,7 @@ When you assign work to an agent, the coordinator spawns that agent as a sub-age
 
 ### No Per-Spawn Model Selection
 
-VS Code accepts the session model (your Copilot model picker). No per-spawn dynamic selection. Cost optimization deferred — use Haiku via model picker for cheaper runs.
+VS Code uses the session model selected in the Copilot model picker. Per-spawn model selection isn't available; choose a different session model in the picker when needed.
 
 ### Sub-Agents Run Sync (But Parallel)
 
@@ -96,7 +96,7 @@ Use single-root workspaces (multi-root has path resolution bugs).
 
 Accept file modification approval once — subsequent writes are automatic.
 
-For initial setup, heavy parallel work (5+ agents), SQL workflows, or cost optimization (per-spawn model selection) → use CLI.
+For initial setup, heavy parallel work (5+ agents), SQL workflows, or per-spawn model selection → use CLI.
 
 Check the model picker at top of chat if agents seem slow or expensive — switch to Haiku for cost savings.
 
@@ -240,6 +240,6 @@ const decision = await coordinator.route(userTask, {
 
 - [Getting Started](../get-started/installation.md) — Installation and setup guide
 - [Parallel Execution](parallel-execution.md) — How Squadron fan-outs agents
-- [Model Selection](model-selection.md) — Cost-first routing strategy
+- [Model Selection](model-selection.md) — Per-agent selection and the session model picker
 - [CLI Reference](../reference/cli.md) — Shell commands and features
 - [SDK API Reference](../reference/api-reference.md) — Full SDK type and function reference

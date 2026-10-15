@@ -375,3 +375,63 @@ describe('Resolver → ModelFallbackExecutor exhausted chain (omitModel, PR #222
     expect(tried, `fn calls for ${JSON.stringify(resolved)}`).toEqual([]);
   });
 });
+
+describe('Economy-profile runtime fallback', () => {
+  it('retries an available cheaper tier with default executor settings', async () => {
+    const resolved = resolveAgentModel({
+      taskType: 'visual',
+      profile: 'economy',
+      availableModels: ['claude-sonnet-5.5', 'gpt-5.6-luna'],
+    });
+    const tried: string[] = [];
+
+    await new ModelFallbackExecutor()
+      .execute(resolved, 'agent', async (model) => {
+        tried.push(model);
+        throw new Error(`fail ${model}`);
+      })
+      .catch(() => undefined);
+
+    expect(resolved.model).toBe('claude-sonnet-5.5');
+    expect(tried).toEqual(['claude-sonnet-5.5', 'gpt-5.6-luna']);
+    expect(resolved.fallbackChain).toEqual(['claude-sonnet-5.5', 'gpt-5.6-luna']);
+  });
+
+  it('does not add cheaper-tier retries for explicit model preferences', async () => {
+    const resolved = resolveAgentModel({
+      userOverride: 'claude-sonnet-5.5',
+      profile: 'economy',
+      availableModels: ['claude-sonnet-5.5', 'gpt-5.6-luna'],
+    });
+    const tried: string[] = [];
+
+    await new ModelFallbackExecutor()
+      .execute(resolved, 'agent', async (model) => {
+        tried.push(model);
+        throw new Error(`fail ${model}`);
+      })
+      .catch(() => undefined);
+
+    expect(resolved.fallbackChain).not.toContain('gpt-5.6-luna');
+    expect(tried).toEqual(['claude-sonnet-5.5']);
+  });
+
+  it('keeps non-economy fallback chains within the selected tier', async () => {
+    const resolved = resolveAgentModel({
+      taskType: 'visual',
+      profile: 'quality-first',
+      availableModels: ['claude-opus-5.5', 'claude-sonnet-5.5'],
+    });
+    const tried: string[] = [];
+
+    await new ModelFallbackExecutor()
+      .execute(resolved, 'agent', async (model) => {
+        tried.push(model);
+        throw new Error(`fail ${model}`);
+      })
+      .catch(() => undefined);
+
+    expect(resolved.fallbackChain).not.toContain('claude-sonnet-5.5');
+    expect(tried).toEqual(['claude-opus-5.5']);
+  });
+});

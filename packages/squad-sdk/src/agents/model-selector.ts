@@ -357,7 +357,7 @@ function resolveBaseModel(options: ModelResolutionOptions, profile: ModelSelecti
     model: defaultModel,
     tier: defaultTier,
     source: 'default',
-    fallbackChain: [...MODELS.FALLBACK_CHAINS[defaultTier]],
+    fallbackChain: getFallbackChain(defaultTier, economyMode),
     rationale: `${profile}: no override, session, charter, or task match; default '${defaultModel}'` +
       (economyMode ? ' (economy profile)' : ''),
   };
@@ -451,7 +451,7 @@ function selectModelForTask(taskType: TaskType, profile: ModelSelectionProfile):
     model,
     tier,
     source: 'task-auto',
-    fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
+    fallbackChain: getFallbackChain(tier, economyMode === true),
     rationale: `${profile}: ${taskType} task → ${taskTier} tier '${model}'` + (economyMode ? ' (economy profile)' : ''),
   };
 }
@@ -464,9 +464,21 @@ function selectTaskModel(taskModel: string, economyMode?: boolean): ResolvedMode
     model,
     tier,
     source: 'task-auto',
-    fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
+    fallbackChain: getFallbackChain(tier, economyMode === true),
     rationale: `task-aware model '${model}'` + (economyMode ? ' (economy profile)' : ''),
   };
+}
+
+function getFallbackChain(tier: ModelTier, includeCheaperTiers: boolean): string[] {
+  const chain = [...MODELS.FALLBACK_CHAINS[tier]];
+  if (!includeCheaperTiers) return chain;
+
+  for (const cheaperTier of Object.keys(TIER_ORDER) as ModelTier[]) {
+    if (TIER_ORDER[cheaperTier] > TIER_ORDER[tier]) {
+      chain.push(...MODELS.FALLBACK_CHAINS[cheaperTier]);
+    }
+  }
+  return chain;
 }
 
 /** quality-first task → tier table, shared by the opt-in `hydrafusion` profile. */
@@ -817,6 +829,9 @@ export class ModelFallbackExecutor {
   ): Promise<FallbackResult<T>> {
     const attempts: FallbackAttempt[] = [];
     const originalTier = resolved.tier;
+    const economyAutoResolution =
+      resolved.profile === 'economy' &&
+      isAutomaticModelResolution(resolved);
     if (resolved.omitModel) {
       // Never send an empty model id: run model-less, or fail before calling fn.
       if (!options.platformDefault) {
@@ -832,7 +847,13 @@ export class ModelFallbackExecutor {
 
     for (const candidate of candidates) {
       const candidateTier = inferTierFromModel(candidate);
-      if (!isTierFallbackAllowed(originalTier, candidateTier, this.allowCrossTier)) {
+      const allowedByEconomyProfile =
+        economyAutoResolution &&
+        TIER_ORDER[candidateTier] >= TIER_ORDER[originalTier];
+      const tierAllowed = economyAutoResolution
+        ? allowedByEconomyProfile
+        : isTierFallbackAllowed(originalTier, candidateTier, this.allowCrossTier);
+      if (!tierAllowed) {
         continue;
       }
       try {
@@ -875,4 +896,9 @@ export class ModelFallbackExecutor {
     if (!this.eventBus) return;
     await this.eventBus.emit({ type: type as any, payload, timestamp: new Date() });
   }
+}
+
+function isAutomaticModelResolution(resolved: ResolvedModel): boolean {
+  const source = resolved.source === 'fallback' ? resolved.fallbackFrom?.source : resolved.source;
+  return source === 'task-auto' || source === 'default';
 }

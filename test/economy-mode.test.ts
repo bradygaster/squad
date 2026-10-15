@@ -7,8 +7,8 @@
  *   - config.json read/write round-trips correctly
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
@@ -21,6 +21,7 @@ import {
 import {
   resolveModel as sdkResolveModel,
 } from '@bradygaster/squad-sdk/agents';
+import { runEconomy } from '../packages/squad-cli/src/cli/commands/economy.js';
 
 let squadDir: string;
 
@@ -58,6 +59,33 @@ describe('ECONOMY_MODEL_MAP', () => {
   it('maps haiku to cheapest fast', () => {
     expect(ECONOMY_MODEL_MAP['claude-haiku-5.5']).toBe('gpt-5.6-luna');
     expect(ECONOMY_MODEL_MAP['claude-haiku-4.5']).toBe('gpt-5.6-luna');
+  });
+});
+
+describe('squad economy status', () => {
+  it('shows current economy substitutions and preserves the explicit override notice', async () => {
+    const teamDir = join(squadDir, '.squad');
+    mkdirSync(teamDir);
+    writeFileSync(join(teamDir, 'config.json'), JSON.stringify({ version: 1, economyMode: true }));
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runEconomy(squadDir, []);
+      const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
+
+      expect(output).toContain('claude-opus-5.5  → claude-sonnet-5.5');
+      expect(output).toContain('gpt-6.1-sol      → gpt-5.6-terra');
+      expect(output).toContain('gpt-5.6-terra    → gpt-5.6-luna');
+      expect(output).toContain('claude-haiku-5.5 → gpt-5.6-luna');
+      expect(output).toContain('Explicit overrides (config.json, charter) are never changed.');
+
+      expect(ECONOMY_MODEL_MAP['claude-opus-5.5']).toBe('claude-sonnet-5.5');
+      expect(ECONOMY_MODEL_MAP['gpt-6.1-sol']).toBe('gpt-5.6-terra');
+      expect(ECONOMY_MODEL_MAP['gpt-5.6-terra']).toBe('gpt-5.6-luna');
+      expect(ECONOMY_MODEL_MAP['claude-haiku-5.5']).toBe('gpt-5.6-luna');
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 
