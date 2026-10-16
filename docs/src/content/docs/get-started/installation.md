@@ -152,6 +152,8 @@ npm install @bradygaster/squad-sdk
 import { defineConfig, loadConfig, resolveSquad } from '@bradygaster/squad-sdk';
 ```
 
+The SDK remains supported for programmatic integrations. The separate `squad.config.ts` file-authoring mode created by `squad init --sdk` is deprecated; use markdown-first `squad init` for new teams.
+
 See the [SDK Reference](../reference/sdk.md) for the typed configuration,
 routing, and agent lifecycle APIs.
 

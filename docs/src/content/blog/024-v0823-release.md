@@ -10,6 +10,8 @@ hero: "v0.8.23 fixes a critical crash when running `squad init` on Node.js 24+ a
 # v0.8.23 Release: Node 24+ Compatibility, Squad RC Docs, and Critical Fixes
 > _v0.8.23 is a critical hotfix addressing a crash when running `squad init` on Node.js 24+ and GitHub Codespaces. It ships comprehensive Squad RC documentation, introduces lazy module loading for faster CLI startup, and includes a postinstall patch for ESM import issues. 2 issues closed, 3 PRs merged, 3,811 tests passing._
 
+> ⚠️ **Historical release note.** SDK-first initialization was deprecated after this release and will be removed in v2. Use markdown-first `squad init` for new teams.
+
 ---
 ## What Shipped
 ### 1. SDK-First Mode (Phase 1) — The Headline Feature
@@ -408,12 +410,13 @@ If you've had issues with `npx @bradygaster/squad-cli` on fresh machines, v0.8.2
 npx @bradygaster/squad-cli@latest doctor
 # Now works reliably without dependency resolution errors
 ```
-### To Migrate to SDK-First (Optional)
+### Historical SDK-First Migration Steps (Legacy Compatibility Only)
+Do not adopt SDK-First mode for a new team; use markdown-first `squad init` instead. The steps below are preserved for teams maintaining legacy SDK-first configurations and should be read only as release-era migration context.
 1. Create `squad.config.ts` with builder functions
 2. Run `squad build --dry-run` to preview generated files
 3. Run `squad build` to generate `.squad/` markdown
 4. Commit the config, version control the generated files, and sync your team
-Alternatively, keep your markdown-first squad — both modes will coexist indefinitely.
+At the time of this release, both modes were expected to coexist indefinitely. SDK-First mode is now deprecated and scheduled for removal in v2; keep markdown as the source of truth for new teams.
 
 ---
 ## Getting Started with v0.8.22
@@ -424,7 +427,8 @@ npm install -g @bradygaster/squad-cli@latest
 npx squad doctor
 npx squad start
 ```
-### Option 2: Try SDK-First Mode (New)
+### Historical Option 2: SDK-First Mode (Now Deprecated)
+The following commands are preserved as release-history context, not as current adoption guidance. Do not use SDK-First mode for new teams.
 ```bash
 npm install -g @bradygaster/squad-cli@latest
 mkdir my-sdk-squad && cd my-sdk-squad
@@ -475,19 +479,13 @@ This release was shipped by the Squad core team with community contributions:
 Thanks to all early SDK-First adopters for feedback.
 
 ---
-## Try It Now
+## Start a New Team with Markdown-First Initialization
+For current releases, create new teams with markdown as the source of truth:
 ```bash
 npm install -g @bradygaster/squad-cli@latest
-mkdir my-sdk-squad && cd my-sdk-squad
+mkdir my-squad && cd my-squad
 git init
-# Create squad.config.ts with builders
-# (see quick start above, or copy from samples/azure-function-squad/)
-# Build your squad
-npx squad build
-# See the generated markdown
-cat .squad/team.md
-# Run agents (same CLI, same experience)
-npx squad start
+squad init
 ```
 
 ---
@@ -510,4 +508,4 @@ npx squad start
 - #231 — Migration command feedback
 
 ---
-_This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try SDK-First Mode →](../sdk-first-mode.md)_
+_This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Legacy SDK-First Mode compatibility guide →](../sdk-first-mode.md)_
