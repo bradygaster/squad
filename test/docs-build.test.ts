@@ -33,6 +33,7 @@ const EXPECTED_SCENARIOS = [
   'aspire-dashboard',
   'ci-cd-integration',
   'client-compatibility',
+  'using-squad-across-clients',
   'cross-org-auth',
   'disaster-recovery',
   'existing-repo',
@@ -101,7 +102,7 @@ const EXPECTED_FEATURES = [
   'worktrees',
 ];
 
-const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
+const EXPECTED_CONCEPTS = ['architecture', 'squad-2-0-architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
 
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
