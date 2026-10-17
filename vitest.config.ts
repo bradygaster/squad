@@ -1,7 +1,16 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
+
+const sdkSrc = path.resolve(__dirname, 'packages/squad-sdk/src');
 
 export default defineConfig({
   resolve: {
+    // Resolve the Squad 2.0 SDK entrypoints from source so tests run without a built dist.
+    alias: [
+      { find: /^@bradygaster\/squad-sdk\/clients$/, replacement: path.join(sdkSrc, 'clients/index.ts') },
+      { find: /^@bradygaster\/squad-sdk\/backend$/, replacement: path.join(sdkSrc, 'backend/index.ts') },
+      { find: /^@bradygaster\/squad-sdk$/, replacement: path.join(sdkSrc, 'index.ts') },
+    ],
     // Force vitest to resolve @bradygaster/squad-sdk from the workspace root,
     // not from a duplicate copy under packages/squad-cli/node_modules/.
     // Without this, vi.mock('@bradygaster/squad-sdk') targets the root copy
