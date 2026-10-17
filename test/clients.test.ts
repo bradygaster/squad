@@ -1,0 +1,352 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  CLIENT_IDS,
+  CLIENT_ADAPTERS,
+  CAPABILITIES,
+  resolveEffectiveCapabilities,
+  normalizeClientIds,
+  assertPortableClients,
+  applyProjection,
+  buildCoordinatorInstructions,
+  installClients,
+  parseClients,
+  projectClients,
+  upsertBlock,
+  BLOCK_BEGIN,
+  type ClientContext,
+} from '../packages/squad-sdk/src/clients/index.js';
+import {
+  parseRoster,
+  persistClients,
+  readClientFlag,
+  readConfiguredClients,
+  syncClients,
+} from '../packages/squad-cli/src/cli/core/clients.js';
+
+let root: string;
+const mcp = { command: 'squad', args: ['state-mcp'] };
+const ctx = (over: Partial<ClientContext> = {}): ClientContext => ({ root, mcp, ...over });
+const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
+const readJson = (p: string) => JSON.parse(read(p));
+const exists = (p: string) => fs.existsSync(path.join(root, p));
+
+beforeEach(() => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-clients-'));
+});
+afterEach(() => {
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe('parseClients', () => {
+  it('parses comma lists in canonical order, deduped', () => {
+    expect(parseClients('cursor, claude,claude')).toEqual(['claude', 'cursor']);
+  });
+  it('expands all', () => {
+    expect(parseClients('all')).toEqual([...CLIENT_IDS]);
+  });
+  it('rejects unknown and empty values', () => {
+    expect(() => parseClients('vim')).toThrow(/Unknown client "vim"/);
+    expect(() => parseClients(' , ')).toThrow(/No client/);
+  });
+});
+
+describe('coordinator instructions', () => {
+  it.each(CLIENT_IDS)('%s includes core protocol and its own dispatch section only', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    expect(text).toContain('Core protocol (host-agnostic)');
+    expect(text).toContain('squad_state');
+    expect(text).toContain(CLIENT_ADAPTERS[id].dispatch.section);
+    for (const other of CLIENT_IDS.filter((c) => c !== id)) {
+      expect(text).not.toContain(CLIENT_ADAPTERS[other].dispatch.section);
+    }
+  });
+  it('mentions the host-specific spawn primitive', () => {
+    expect(buildCoordinatorInstructions('copilot')).toMatch(/runSubagent/);
+    expect(buildCoordinatorInstructions('claude')).toMatch(/`Task`/);
+    expect(buildCoordinatorInstructions('opencode')).toMatch(/@agent/);
+  });
+});
+
+describe('client capabilities', () => {
+  it.each(CLIENT_IDS)('%s declares complete capabilities', (id) => {
+    const caps = CLIENT_ADAPTERS[id].capabilities;
+    expect(caps).toBe(CAPABILITIES[id]);
+    for (const k of ['supportsSubagents', 'supportsMcpTransport', 'supportsNativeHooks', 'supportsSteeringFiles'] as const) {
+      expect(typeof caps[k]).toBe('boolean');
+    }
+    expect(caps.transportModes.length).toBeGreaterThan(0);
+    for (const m of caps.transportModes) expect(['mcp-bridge', 'http-backend', 'in-process']).toContain(m);
+    expect(new Set(caps.transportModes).size).toBe(caps.transportModes.length);
+  });
+  it('every MCP-capable host offers mcp-bridge and a direct http-backend path', () => {
+    for (const id of CLIENT_IDS) {
+      const caps = CLIENT_ADAPTERS[id].capabilities;
+      if (caps.supportsMcpTransport) expect(caps.transportModes).toContain('mcp-bridge');
+      expect(caps.transportModes).toContain('http-backend');
+    }
+  });
+  it.each(CLIENT_IDS)('%s prompt frames MCP as a transport bridge over the backend contract', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    expect(text).toMatch(/Backend contract vs\. transport/);
+    expect(text).toMatch(/SquadBackend/);
+    expect(text).toMatch(/transport bridge/);
+    expect(text).toContain('connects to the backend via: ' + CLIENT_ADAPTERS[id].capabilities.transportModes.join(', '));
+  });
+});
+
+describe('copilot adapter', () => {
+  it('projects only .mcp.json with squad_state', () => {
+    installClients(['copilot'], ctx());
+    expect(readJson('.mcp.json').mcpServers.squad_state).toEqual({
+      command: 'squad', args: ['state-mcp'], env: {}, tools: ['*'],
+    });
+    expect(exists('.github/agents/squad.agent.md')).toBe(false);
+  });
+});
+
+describe('claude adapter', () => {
+  it('projects agent, members, .mcp.json and CLAUDE.md block', () => {
+    installClients(['claude'], ctx({ members: [{ name: 'Data', role: 'Framework Expert' }] }));
+    const agent = read('.claude/agents/squad.md');
+    expect(agent).toMatch(/^---\nname: squad\ndescription: ".*"\ntools: .*Task.*mcp__squad_state\n---/);
+    const member = read('.claude/agents/squad-data.md');
+    expect(member).toContain('name: squad-data');
+    expect(member).toContain('.squad/agents/data/charter.md');
+    expect(readJson('.mcp.json').mcpServers.squad_state.command).toBe('squad');
+    expect(read('CLAUDE.md')).toContain(BLOCK_BEGIN);
+  });
+  it('preserves user CLAUDE.md content and replaces the block in place', () => {
+    fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Mine\n\nrules\n');
+    installClients(['claude'], ctx());
+    installClients(['claude'], ctx({ squadDir: '.team' }));
+    const md = read('CLAUDE.md');
+    expect(md.startsWith('# Mine\n\nrules\n')).toBe(true);
+    expect(md.match(/squad:begin/g)).toHaveLength(1);
+    expect(md).toContain('.team/team.md');
+  });
+});
+
+describe('kiro adapter', () => {
+  it('projects steering, agent json and settings/mcp.json', () => {
+    installClients(['kiro'], ctx());
+    expect(read('.kiro/steering/squad.md')).toMatch(/^---\ninclusion: always\n---/);
+    const agent = readJson('.kiro/agents/squad.json');
+    expect(agent.name).toBe('squad');
+    expect(agent.includeMcpJson).toBe(true);
+    expect(readJson('.kiro/settings/mcp.json').mcpServers.squad_state).toMatchObject({
+      command: 'squad', args: ['state-mcp'], disabled: false,
+    });
+  });
+});
+
+describe('opencode adapter', () => {
+  it('projects primary agent and opencode.json mcp entry', () => {
+    installClients(['opencode'], ctx());
+    expect(read('.opencode/agent/squad.md')).toMatch(/mode: primary/);
+    const cfg = readJson('opencode.json');
+    expect(cfg.$schema).toBe('https://opencode.ai/config.json');
+    expect(cfg.mcp.squad_state).toEqual({ type: 'local', command: ['squad', 'state-mcp'], enabled: true });
+  });
+});
+
+describe('cursor adapter', () => {
+  it('projects rule, agent and mcp.json', () => {
+    installClients(['cursor'], ctx());
+    expect(read('.cursor/rules/squad.mdc')).toMatch(/alwaysApply: true/);
+    expect(read('.cursor/agents/squad.md')).toMatch(/name: squad/);
+    expect(readJson('.cursor/mcp.json').mcpServers.squad_state.command).toBe('squad');
+  });
+});
+
+describe('config merging', () => {
+  it('preserves user servers, env and custom fields; refreshes launch spec', () => {
+    const file = path.join(root, '.kiro/settings/mcp.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      other: 1,
+      mcpServers: {
+        mine: { command: 'x' },
+        squad_state: { command: 'old', args: ['old'], env: { HTTP_PROXY: 'p' }, autoApprove: ['squad_state_read'] },
+      },
+    }));
+    installClients(['kiro'], ctx());
+    const cfg = readJson('.kiro/settings/mcp.json');
+    expect(cfg.other).toBe(1);
+    expect(cfg.mcpServers.mine).toEqual({ command: 'x' });
+    expect(cfg.mcpServers.squad_state).toMatchObject({
+      command: 'squad', args: ['state-mcp'], env: { HTTP_PROXY: 'p' }, autoApprove: ['squad_state_read'],
+    });
+  });
+
+  it('keeps existing opencode.json settings', () => {
+    fs.writeFileSync(path.join(root, 'opencode.json'), JSON.stringify({ model: 'm', mcp: { mine: { type: 'remote', url: 'u' } } }));
+    installClients(['opencode'], ctx());
+    const cfg = readJson('opencode.json');
+    expect(cfg.model).toBe('m');
+    expect(cfg.mcp.mine).toEqual({ type: 'remote', url: 'u' });
+    expect(cfg.mcp.squad_state.type).toBe('local');
+  });
+
+  it('shares .mcp.json between copilot and claude without duplicating', () => {
+    installClients(['copilot', 'claude'], ctx());
+    expect(Object.keys(readJson('.mcp.json').mcpServers)).toEqual(['squad_state']);
+  });
+
+  it('is idempotent', () => {
+    installClients(['claude', 'kiro', 'opencode', 'cursor', 'copilot'], ctx());
+    const second = installClients(['claude', 'kiro', 'opencode', 'cursor', 'copilot'], ctx());
+    expect(second.every((r) => r.action === 'unchanged')).toBe(true);
+  });
+
+  it('refuses malformed JSON, leaves it intact, and still writes other files', () => {
+    fs.writeFileSync(path.join(root, '.cursor-bad'), '');
+    fs.mkdirSync(path.join(root, '.cursor'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.cursor/mcp.json'), '{ // comment');
+    const results = installClients(['cursor'], ctx());
+    expect(results.find((r) => r.path === '.cursor/mcp.json')?.action).toBe('error');
+    expect(read('.cursor/mcp.json')).toBe('{ // comment');
+    expect(exists('.cursor/rules/squad.mdc')).toBe(true);
+  });
+
+  it('upsertBlock appends with spacing', () => {
+    expect(upsertBlock('a', 'x')).toBe(`a\n\n${BLOCK_BEGIN}\nx\n<!-- squad:end -->\n`);
+  });
+
+  it('applyProjection reports created then updated', () => {
+    const files = projectClients(['cursor'], ctx());
+    expect(applyProjection(root, files).every((r) => r.action === 'created')).toBe(true);
+    fs.writeFileSync(path.join(root, '.cursor/rules/squad.mdc'), 'edited');
+    const again = applyProjection(root, files);
+    expect(again.find((r) => r.path === '.cursor/rules/squad.mdc')?.action).toBe('updated');
+  });
+});
+
+describe('CLI --client handling', () => {
+  it('reads --client forms', () => {
+    expect(readClientFlag(['init'])).toBeUndefined();
+    expect(readClientFlag(['init', '--client', 'claude,kiro'])).toEqual(['claude', 'kiro']);
+    expect(readClientFlag(['init', '--client=all'])).toEqual([...CLIENT_IDS]);
+    expect(() => readClientFlag(['init', '--client'])).toThrow(/requires a value/);
+    expect(() => readClientFlag(['init', '--client', '--force'])).toThrow(/requires a value/);
+    expect(() => readClientFlag(['init', '--client', 'nope'])).toThrow(/Unknown client/);
+  });
+
+  it('parses roster tables', () => {
+    const md = '| Name | Role | Charter | Status |\n|---|---|---|---|\n| Data | Framework Expert | c | ✅ |\n| Worf | Security | c | ✅ |\n';
+    expect(parseRoster(md)).toEqual([
+      { name: 'Data', role: 'Framework Expert' },
+      { name: 'Worf', role: 'Security' },
+    ]);
+  });
+
+  it('persists clients in config.json preserving other keys', () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    fs.writeFileSync(path.join(sq, 'config.json'), JSON.stringify({ stateBackend: 'local' }));
+    persistClients(sq, ['claude', 'cursor']);
+    expect(JSON.parse(fs.readFileSync(path.join(sq, 'config.json'), 'utf8'))).toEqual({
+      stateBackend: 'local', clients: ['claude', 'cursor'],
+    });
+    expect(readConfiguredClients(sq)).toEqual(['claude', 'cursor']);
+  });
+
+  it('syncClients adds requested clients to configured set and refreshes all', async () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    fs.writeFileSync(path.join(sq, 'team.md'), '| Name | Role |\n|---|---|\n| Data | Expert |\n');
+    const prev = process.env['SQUAD_STANDALONE_HOME'];
+    delete process.env['SQUAD_STANDALONE_HOME'];
+    try {
+      const first = await syncClients(root, sq, { clients: ['claude'], version: '0.0.0' });
+      expect(first.clients).toEqual(['claude']);
+      const second = await syncClients(root, sq, { clients: ['kiro'], version: '0.0.0' });
+      expect(second.clients).toEqual(['claude', 'kiro']);
+      expect(readConfiguredClients(sq)).toEqual(['claude', 'kiro']);
+      expect(exists('.claude/agents/squad-data.md')).toBe(true);
+      expect(exists('.kiro/steering/squad.md')).toBe(true);
+      const bare = await syncClients(root, sq, { version: '0.0.0' });
+      expect(bare.clients).toEqual(['claude', 'kiro']);
+      expect(readJson('.mcp.json').mcpServers.squad_state.args.at(-1)).toBe('state-mcp');
+    } finally {
+      if (prev !== undefined) process.env['SQUAD_STANDALONE_HOME'] = prev;
+    }
+  });
+
+  it('syncClients is a no-op with nothing configured', async () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    expect(await syncClients(root, sq)).toEqual({ clients: [], results: [] });
+  });
+});
+
+describe('resolveEffectiveCapabilities', () => {
+  const client = CAPABILITIES.copilot;
+  it('returns the client declaration when backend and policy are silent', () => {
+    expect(resolveEffectiveCapabilities(client)).toEqual(client);
+    expect(resolveEffectiveCapabilities(client)).not.toBe(client);
+  });
+  it('backend or policy false removes a flag; neither can grant beyond the client', () => {
+    const eff = resolveEffectiveCapabilities(client, { supportsSubagents: false }, { supportsNativeHooks: false });
+    expect(eff.supportsSubagents).toBe(false);
+    expect(eff.supportsNativeHooks).toBe(false);
+    expect(eff.supportsSteeringFiles).toBe(true);
+    const cursor = CAPABILITIES.cursor;
+    expect(resolveEffectiveCapabilities(cursor, { supportsNativeHooks: true }, { supportsNativeHooks: true }).supportsNativeHooks).toBe(false);
+  });
+  it('intersects transport modes from client, backend and policy', () => {
+    const eff = resolveEffectiveCapabilities(client, { transportModes: ['mcp-bridge', 'http-backend'] }, { transportModes: ['http-backend', 'in-process'] });
+    expect(eff.transportModes).toEqual(['http-backend']);
+    expect(resolveEffectiveCapabilities(CAPABILITIES.claude, { transportModes: ['in-process'] }).transportModes).toEqual([]);
+  });
+  it('drops mcp-bridge when MCP transport is not effectively supported', () => {
+    const eff = resolveEffectiveCapabilities(client, { supportsMcpTransport: false });
+    expect(eff.supportsMcpTransport).toBe(false);
+    expect(eff.transportModes).not.toContain('mcp-bridge');
+    expect(eff.transportModes).toContain('http-backend');
+  });
+  it('does not mutate inputs', () => {
+    const before = JSON.stringify(client);
+    resolveEffectiveCapabilities(client, { transportModes: [] });
+    expect(JSON.stringify(client)).toBe(before);
+  });
+});
+
+describe('portable clients[] hygiene', () => {
+  it('keeps canonical ids in canonical order, deduped and case-normalized', () => {
+    expect(normalizeClientIds(['Cursor', 'claude', 'claude']).clients).toEqual(['claude', 'cursor']);
+  });
+  it('strips and classifies credentials, paths, thread ids, leases and checkpoints without echoing them', () => {
+    const bad = [
+      'ghp_token=abc123', 'C:\\Users\\me\\repo', '/home/me/.claude', 'https://x/y', 'thread_19:abc@thread.v2',
+      'lease-42', 'checkpoint-7', 'a@b.com', 42, { k: 1 }, 'vim',
+    ];
+    const { clients, rejected } = normalizeClientIds(['kiro', ...bad]);
+    expect(clients).toEqual(['kiro']);
+    expect(rejected).toHaveLength(bad.length);
+    expect(JSON.stringify(rejected)).not.toMatch(/ghp_|abc123|Users|thread_19|lease-42|a@b/);
+    expect(rejected.find((r) => r.value === 'vim')?.reason).toBe('unknown');
+    expect(rejected.filter((r) => r.reason === 'sensitive').length).toBeGreaterThanOrEqual(7);
+  });
+  it('treats non-arrays as empty', () => {
+    expect(normalizeClientIds('claude').clients).toEqual([]);
+    expect(normalizeClientIds(undefined).clients).toEqual([]);
+  });
+  it('assertPortableClients rejects anything non-canonical without leaking values', () => {
+    expect(assertPortableClients(['claude', 'kiro'])).toEqual(['claude', 'kiro']);
+    expect(() => assertPortableClients(['claude', 'claude'])).toThrow(/canonical/);
+    expect(() => assertPortableClients(['C:\\secret\\token'])).toThrow(/rejected 1/);
+    try { assertPortableClients(['sk-secret-token']); } catch (e) { expect(String(e)).not.toContain('sk-secret'); }
+    expect(() => assertPortableClients('claude')).toThrow(/array/);
+  });
+  it('config persistence/reading drops non-portable entries', () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    fs.writeFileSync(path.join(sq, 'config.json'), JSON.stringify({ clients: ['cursor', 'C:\\x', 'token=1', 'claude'] }));
+    expect(readConfiguredClients(sq)).toEqual(['claude', 'cursor']);
+    persistClients(sq, ['kiro', '/etc/passwd' as never, 'lease-1' as never]);
+    expect(JSON.parse(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')).clients).toEqual(['kiro']);
+  });
+});
