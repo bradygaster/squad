@@ -181,3 +181,6 @@ export type {
   DecisionEntry,
   GitRunner,
 } from './state/io/index.js';
+
+// Squad 2.0 decoupled backend + harness SPI
+export * from './backend/index.js';
