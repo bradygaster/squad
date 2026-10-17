@@ -5,6 +5,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { resolveSquadState } from '@bradygaster/squad-sdk';
 import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
 import { getPackageVersion } from '../core/version.js';
+import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from './backend-mcp.js';
 
 export type JsonRpcRequest = {
   jsonrpc?: string;
@@ -103,6 +104,9 @@ export function createStateMcpSession(
     return { mcpName, runtimeName, tool };
   });
   const toolMap = new Map(tools.map(entry => [entry.mcpName, entry]));
+  let backend: ReturnType<typeof createMcpBackend> | undefined;
+  const backendTools = createBackendMcpTools(() => (backend ??= createMcpBackend(startDir)));
+  const backendToolMap = new Map(backendTools.map(t => [t.name, t]));
 
   async function handleRequest(request: JsonRpcRequest): Promise<void> {
     try {
@@ -120,17 +124,22 @@ export function createStateMcpSession(
 
         case 'tools/list':
           write({ jsonrpc: '2.0', id: request.id ?? null, result: {
-            tools: tools.map(tool => ({
+            tools: [...tools.map(tool => ({
               name: tool.mcpName,
               description: tool.tool.description,
               inputSchema: tool.tool.parameters,
-            })),
+            })), ...backendTools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))],
           } });
           break;
 
         case 'tools/call': {
           const params = parseObject(request.params);
           const name = typeof params['name'] === 'string' ? params['name'] : '';
+          const backendTool = backendToolMap.get(name);
+          if (backendTool) {
+            write({ jsonrpc: '2.0', id: request.id ?? null, result: await callBackendMcpTool(backendTool, parseObject(params['arguments'])) });
+            break;
+          }
           const entry = toolMap.get(name);
           if (!entry) {
             write({ jsonrpc: '2.0', id: request.id ?? null, error: { code: -32602, message: `Unknown Squad state tool: ${name}` } });
@@ -180,6 +189,10 @@ export async function runStateMcp(startDir = process.cwd()): Promise<void> {
     return registry;
   }
 
+  let backend: ReturnType<typeof createMcpBackend> | undefined;
+  const backendTools = createBackendMcpTools(() => (backend ??= createMcpBackend(startDir)));
+  const backendToolMap = new Map(backendTools.map(t => [t.name, t]));
+
   const server = new Server(SERVER_INFO, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, () => {
@@ -191,7 +204,7 @@ export async function runStateMcp(startDir = process.cwd()): Promise<void> {
       return { mcpName, runtimeName, tool };
     });
     return {
-      tools: tools.map(tool => ({
+      tools: [...tools.map(tool => ({
         name: tool.mcpName,
         description: tool.tool.description,
         inputSchema: tool.tool.parameters as {
@@ -199,11 +212,13 @@ export async function runStateMcp(startDir = process.cwd()): Promise<void> {
           properties?: Record<string, object>;
           required?: string[];
         },
-      })),
+      })), ...backendTools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))],
     };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async request => {
+    const backendTool = backendToolMap.get(request.params.name);
+    if (backendTool) return callBackendMcpTool(backendTool, parseObject(request.params.arguments));
     const reg = getRegistry();
     const runtimeTools = new Map(reg.getTools().map(tool => [tool.name, tool]));
     const tools = Object.entries(MCP_TOOL_ALIASES).map(([mcpName, runtimeName]) => {
@@ -237,7 +252,7 @@ export function printStateMcpHelp(): void {
     'Usage: squad state-mcp',
     '',
     'This command is intended to be launched by GitHub Copilot CLI through',
-    '.copilot/mcp-config.json. It exposes squad_decide and state.* tools',
+    '.copilot/mcp-config.json. It exposes squad_decide, squad_state_*, and squad_backend_* tools',
     'backed by the configured Squad state backend.',
     '',
   ].join('\n'));
