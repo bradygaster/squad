@@ -41,6 +41,12 @@ export interface SkillDefinition {
 
 // --- Frontmatter Parser ---
 
+/** Strip one pair of matching surrounding quotes from a scalar. */
+function unquote(value: string): string {
+  const m = value.match(/^(["'])(.*)\1$/);
+  return m ? m[2]! : value;
+}
+
 /**
  * Parse simple YAML-like frontmatter from a SKILL.md string.
  * Returns the parsed fields and the remaining body content.
@@ -58,19 +64,29 @@ export function parseFrontmatter(
   const frontmatter = match[1]!;
   body = match[2]!.trim();
 
-  for (const line of frontmatter.split('\n')) {
+  const lines = frontmatter.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     const colonIdx = line.indexOf(':');
     if (colonIdx === -1) continue;
 
     const key = line.slice(0, colonIdx).trim();
-    let value = line.slice(colonIdx + 1).trim();
+    const value = line.slice(colonIdx + 1).trim();
 
     // Parse inline arrays: [a, b, c]
     const arrayMatch = value.match(/^\[(.+)\]$/);
     if (arrayMatch) {
-      meta[key] = arrayMatch[1]!.split(',').map((s) => s.trim()).filter(Boolean);
+      meta[key] = arrayMatch[1]!.split(',').map((s) => unquote(s.trim())).filter(Boolean);
+    } else if (value === '' && /^\s*-\s+/.test(lines[i + 1] ?? '')) {
+      // Parse block sequences: following "  - item" lines
+      const items: string[] = [];
+      while (i + 1 < lines.length && /^\s*-\s+/.test(lines[i + 1]!)) {
+        i++;
+        items.push(unquote(lines[i]!.replace(/^\s*-\s+/, '').trim()));
+      }
+      meta[key] = items.filter(Boolean);
     } else {
-      meta[key] = value;
+      meta[key] = unquote(value);
     }
   }
 
