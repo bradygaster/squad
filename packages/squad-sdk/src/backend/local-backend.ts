@@ -114,7 +114,7 @@ export class LocalSquadBackend implements SquadBackend {
       metadata: options.metadata,
     };
     const conv: StoredConversation = { info, transcript: [], turns: [], events: [] };
-    this.emit(conv, 'control', 'conversation.created', { conversationId: id, epoch: 1 });
+    this.emit(conv, 'control', 'conversation.created', { conversationId: id });
     this.save(conv);
     return info;
   }
@@ -244,7 +244,8 @@ export class LocalSquadBackend implements SquadBackend {
     const server = new Set(this.harnesses.list().flatMap(h => h.capabilities.extensionNamespaces));
     const wanted = hello.extensionNamespaces;
     const effective = intersectCapabilities(BACKEND_CAPABILITIES, hello.capabilities, hello.policyCapabilities);
-    const parts = (hello.contentParts ?? ALL_CONTENT_PART_TYPES).filter(p => effective.includes(`content:${p}`));
+    const typed = effective.includes('typed-content-parts');
+    const parts = (hello.contentParts ?? ALL_CONTENT_PART_TYPES).filter(p => typed || p === 'text');
     return {
       protocol: BACKEND_PROTOCOL_VERSION,
       clientCapabilities: hello.capabilities ? [...hello.capabilities] : [...BACKEND_CAPABILITIES],
@@ -253,9 +254,9 @@ export class LocalSquadBackend implements SquadBackend {
       effectiveCapabilities: effective,
       contentParts: ALL_CONTENT_PART_TYPES.filter(p => parts.includes(p)),
       extensionNamespaces: [...server].filter(ns => !wanted || wanted.includes(ns)),
-      streams: (['control', 'execution'] as const).filter(s => effective.includes(`stream:${s}`)),
+      streams: ['control', 'execution'],
       atLeastOnce: true,
-      resume: effective.includes('resume'),
+      resume: effective.includes('cursor-reconnect'),
       approvals: effective.includes('approvals'),
       harnesses: this.harnesses.list().map(h => h.id),
     };
@@ -263,7 +264,7 @@ export class LocalSquadBackend implements SquadBackend {
   async readEvents(conversationId: string, options: ReadEventsOptions = {}): Promise<BackendEventPage> {
     const conv = this.load(conversationId);
     const tail = conv.events?.[conv.events.length - 1]?.sequence ?? 0;
-    const lastAcceptedSeq = conv.turns.reduce((m, t) => Math.max(m, t.seq), 0);
+    const lastAcceptedSeq = tail;
     const after = options.after === undefined ? 0 : decodeCursor(options.after, conversationId);
     if (after > tail) {
       return { events: [], nextCursor: encodeCursor(conversationId, tail), lastAcceptedSeq, resumable: false };

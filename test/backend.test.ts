@@ -335,14 +335,16 @@ describe('squad 2.0 wire lock-in', () => {
     const b = new LocalSquadBackend();
     const caps = await b.negotiate({
       protocols: [BACKEND_PROTOCOL_VERSION],
-      capabilities: ['approvals', 'resume', 'content:text', 'content:data', 'telepathy'],
-      policyCapabilities: ['approvals', 'content:text', 'cancel:run'],
+      capabilities: ['approvals', 'cursor-reconnect', 'typed-content-parts', 'telepathy'],
+      policyCapabilities: ['approvals', 'typed-content-parts', 'cancel-run'],
     });
-    expect(caps.effectiveCapabilities).toEqual(['approvals', 'content:text']);
+    expect(caps.effectiveCapabilities).toEqual(['approvals', 'typed-content-parts']);
     expect(caps.clientCapabilities).toContain('telepathy');
     expect(caps.backendCapabilities).not.toContain('telepathy');
-    expect(caps.policyCapabilities).toEqual(['approvals', 'content:text', 'cancel:run']);
-    expect(caps).toMatchObject({ approvals: true, resume: false, contentParts: ['text'], streams: [] });
+    expect(caps.policyCapabilities).toEqual(['approvals', 'typed-content-parts', 'cancel-run']);
+    expect(caps).toMatchObject({ approvals: true, resume: false, streams: ['control', 'execution'] });
+    const noTyped = await new LocalSquadBackend().negotiate({ protocols: [BACKEND_PROTOCOL_VERSION], capabilities: ['approvals'] });
+    expect(noTyped.contentParts).toEqual(['text']);
     const open = await b.negotiate({ protocols: [BACKEND_PROTOCOL_VERSION] });
     expect(open.effectiveCapabilities).toEqual(open.backendCapabilities);
   });
@@ -369,7 +371,7 @@ describe('squad 2.0 wire lock-in', () => {
     await b.createConversation({ conversationId: 'c' });
     await b.sendMessage('c', msg('r', 4));
     const page = await b.readEvents('c');
-    expect(page).toMatchObject({ lastAcceptedSeq: 4, resumable: true });
+    expect(page).toMatchObject({ lastAcceptedSeq: 2, resumable: true });
     const other = new LocalSquadBackend();
     await other.createConversation({ conversationId: 'c' });
     await other.sendMessage('c', msg('r', 1));
@@ -378,7 +380,7 @@ describe('squad 2.0 wire lock-in', () => {
     const fresh = new LocalSquadBackend();
     await fresh.createConversation({ conversationId: 'c' });
     const stale = await fresh.readEvents('c', { after: ahead.nextCursor });
-    expect(stale).toMatchObject({ resumable: false, events: [], lastAcceptedSeq: 0 });
+    expect(stale).toMatchObject({ resumable: false, events: [], lastAcceptedSeq: 1 });
   });
 
   describe('golden trace', () => {

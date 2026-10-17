@@ -40,6 +40,13 @@ function num(args: Record<string, unknown>, key: string): number {
  * Backend selection: SQUAD_BACKEND_URL (+ SQUAD_BACKEND_TOKEN) → durable-http,
  * otherwise the local backend over the repo's .squad directory.
  */
+/** content is optional when typed parts are supplied. */
+function sendContent(args: Record<string, unknown>): string {
+  if (typeof args['content'] === 'string') return args['content'];
+  if (Array.isArray(args['parts']) && args['parts'].length > 0) return '';
+  throw new BackendError('invalid-request', "'content' or 'parts' is required", 400);
+}
+
 export function createMcpBackend(startDir: string, env: NodeJS.ProcessEnv = process.env): SquadBackend {
   if (env['SQUAD_BACKEND_URL']) {
     return createSquadBackend({ kind: 'durable-http', baseUrl: env['SQUAD_BACKEND_URL'], token: env['SQUAD_BACKEND_TOKEN'] });
@@ -75,12 +82,12 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
         correlationId: { type: 'string' }, causationId: { type: 'string' },
         epoch: { type: 'integer' }, harness: { type: 'string' },
         extensions: { type: 'object', description: 'Keys must be x-<harness>.*' },
-      }, required: ['conversationId', 'runId', 'seq', 'content'] },
+      }, required: ['conversationId', 'runId', 'seq'] },
       call: a => getBackend().sendMessage(str(a, 'conversationId'), {
         runId: str(a, 'runId'),
         seq: num(a, 'seq'),
         role: (a['role'] as 'user' | undefined) ?? 'user',
-        content: str(a, 'content'),
+        content: sendContent(a),
         parts: Array.isArray(a['parts']) ? a['parts'] as BackendContentPart[] : undefined,
         correlationId: typeof a['correlationId'] === 'string' ? a['correlationId'] : undefined,
         causationId: typeof a['causationId'] === 'string' ? a['causationId'] : undefined,

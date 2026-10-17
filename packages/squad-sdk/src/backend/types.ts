@@ -111,7 +111,7 @@ export interface BackendEventPage {
   events: BackendEnvelope[];
   /** Cursor to resume from; equals the input cursor when there are no new events. */
   nextCursor: BackendCursor;
-  /** Highest message `seq` the backend has accepted for this conversation (client resume state). */
+  /** Sequence of the last event the backend has accepted for this conversation (client resume state). */
   lastAcceptedSeq: number;
   /** alse when the supplied cursor is ahead of the log and the client must re-sync from the transcript. */
   resumable: boolean;
@@ -134,8 +134,7 @@ export interface ProtocolHello {
 export type CapabilityFlag = string;
 
 export const BACKEND_CAPABILITIES: readonly CapabilityFlag[] = [
-  'stream:control', 'stream:execution', 'resume', 'approvals', 'cancel:run', 'cancel:turn',
-  'content:text', 'content:data', 'content:resource', 'content:tool-call', 'content:tool-result',
+  'approvals', 'background-runs', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts',
 ];
 
 /** Effective capabilities = client ∩ backend ∩ policy (undefined sides are unrestricted). */
