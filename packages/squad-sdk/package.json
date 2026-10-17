@@ -18,6 +18,10 @@
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
     },
+    "./clients": {
+      "types": "./dist/clients/index.d.ts",
+      "import": "./dist/clients/index.js"
+    },
     "./config": {
       "types": "./dist/config/index.d.ts",
       "import": "./dist/config/index.js"
