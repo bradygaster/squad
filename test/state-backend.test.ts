@@ -535,6 +535,19 @@ describe('StateBackendStorageAdapter', () => {
     expect(entries).toContain('picard.md');
   });
 
+  it('listSync/list/isDirectory accept the squad root; root deleteDir and readSync still reject', async () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    adapter.writeSync('team.md', '# Team');
+    expect(adapter.listSync(squadDir())).toContain('team.md');
+    expect(await adapter.list(squadDir())).toContain('team.md');
+    expect(adapter.isDirectorySync(squadDir())).toBe(true);
+    expect(await adapter.isDirectory(squadDir())).toBe(true);
+    expect(() => adapter.deleteDirSync(squadDir())).toThrow(/\. or \.\./);
+    expect(() => adapter.readSync(squadDir())).toThrow(/\. or \.\./);
+    expect(() => adapter.listSync('..')).toThrow(/\. or \.\./);
+  });
+
   it('appendSync via adapter', () => {
     const backend = new GitNotesBackend(TMP);
     const adapter = new StateBackendStorageAdapter(backend, squadDir());

@@ -1116,7 +1116,7 @@ export class StateBackendStorageAdapter implements StorageProvider {
     return this.backend.exists(this.toRelative(filePath));
   }
   async list(dirPath: string): Promise<string[]> {
-    return this.backend.list(this.toRelative(dirPath));
+    return this.backend.list(this.toRelativeDir(dirPath));
   }
   async delete(filePath: string): Promise<void> {
     this.backend.delete(this.toRelative(filePath));
@@ -1125,7 +1125,7 @@ export class StateBackendStorageAdapter implements StorageProvider {
     this.deleteDirRecursive(this.toRelative(dirPath));
   }
   async isDirectory(targetPath: string): Promise<boolean> {
-    return this.backend.list(this.toRelative(targetPath)).length > 0;
+    return this.backend.list(this.toRelativeDir(targetPath)).length > 0;
   }
   async mkdir(_dirPath: string, _options?: { recursive?: boolean }): Promise<void> { /* no-op for git backends */ }
   async rename(oldPath: string, newPath: string): Promise<void> {
@@ -1147,13 +1147,13 @@ export class StateBackendStorageAdapter implements StorageProvider {
   writeSync(filePath: string, data: string): void { this.backend.write(this.toRelative(filePath), data); }
   appendSync(filePath: string, data: string): void { this.backend.append(this.toRelative(filePath), data); }
   existsSync(filePath: string): boolean { return this.backend.exists(this.toRelative(filePath)); }
-  listSync(dirPath: string): string[] { return this.backend.list(this.toRelative(dirPath)); }
+  listSync(dirPath: string): string[] { return this.backend.list(this.toRelativeDir(dirPath)); }
   deleteSync(filePath: string): void { this.backend.delete(this.toRelative(filePath)); }
   deleteDirSync(dirPath: string): void {
     this.deleteDirRecursive(this.toRelative(dirPath));
   }
   isDirectorySync(targetPath: string): boolean {
-    return this.backend.list(this.toRelative(targetPath)).length > 0;
+    return this.backend.list(this.toRelativeDir(targetPath)).length > 0;
   }
   /**
    * Delete every key under `rel`, including nested subtrees. A single-level
@@ -1182,6 +1182,16 @@ export class StateBackendStorageAdapter implements StorageProvider {
     const content = this.backend.read(this.toRelative(targetPath));
     if (content === undefined) return undefined;
     return { size: content.length, mtimeMs: Date.now(), isDirectory: false };
+  }
+
+  /**
+   * Like toRelative(), but maps the squad root to "" (the root sentinel that
+   * backend list() accepts). Only for list-shaped reads — file ops and
+   * deleteDir keep "." so they are still rejected by validateStateKey.
+   */
+  private toRelativeDir(p: string): string {
+    const rel = this.toRelative(p);
+    return rel === '.' ? '' : rel;
   }
 
   /** Convert absolute path to relative path for the backend. */
