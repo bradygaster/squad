@@ -861,6 +861,8 @@ Do not pause for permission between work items when Ralph is active.
 
 **On-demand reference:** Read `.squad/templates/ralph-reference.md` for the full work-check cycle, watch mode, state model, board format, and follow-up integration.
 
+**User-owned rules:** If `{TEAM_ROOT}/.squad/ralph-instructions.md` exists, read it and follow it before selecting or dispatching any issue work (same precedence as `squad watch --execute`). `squad upgrade` never overwrites this file.
+
 ### Connecting to a Repo
 
 **On-demand reference:** Read `.squad/templates/issue-lifecycle.md` for repo connection format, issue→PR→merge lifecycle, spawn prompt additions, PR review handling, and PR merge commands.
