@@ -2,17 +2,17 @@
 
 **Status:** Working Draft
 
-**Document class:** Non-normative requirements draft
+**Document class:** Normative experimental evidence schema; transition profile
+requirements remain non-claimable
 
 **Profile identifier:** `squad-governance-review/v0.1`
 
-**Maturity:** Requirements draft; non-claimable
+**Maturity:** Experimental schema; non-claimable
 
 **Claimable capabilities:** None
 
-**Implementation status:** A reference evidence schema, example record, and
-TypeScript implementation checks exist. They do not establish portable
-governance conformance.
+**Implementation status:** The shared evidence schema validates representative
+governance transitions. No executable transition manifest is registered.
 
 **Known deviations:** The rejected baseline allowed owner self-revision in
 repository governance and lacked one machine-readable transition contract.
@@ -26,16 +26,15 @@ repository governance and lacked one machine-readable transition contract.
 
 **Section status:** Informative overview.
 
-This draft collects proposed accountable ownership, reviewer independence,
-blocking-verdict evidence, rejection lockout, reassignment, escalation,
-approval, and completion requirements. It does not define code-review style,
-preferred feedback wording, repository merge policy, or who is authorized by a
-provider.
+This profile defines accountable ownership, reviewer independence, blocking
+verdict evidence, rejection lockout, reassignment, escalation, approval, and
+completion transitions. It does not define code-review style, preferred
+feedback wording, repository merge policy, or who is authorized by a provider.
 
 ## 2. Roles and vocabulary
 
-**Section status:** Informative vocabulary used by the reference schema and
-implementation checks.
+**Section status:** Normative vocabulary for the experimental schema and suite
+relationship checks.
 
 The **accountable owner** owns the requirement and final handoff. The **current
 revision author** produced the revision receiving the represented verdict. A
@@ -46,21 +45,21 @@ policy disputes.
 
 ## 3. Evidence record
 
-**Section status:** Informative reference shape.
+**Section status:** Experimental normative contract enforced by the shared
+schema and suite tests.
 
-The reference fixture uses the shared evidence envelope in
-`test-fixtures/spec/suite-v0.1/evidence.schema.json`. Its governance data
-represents prior and current state, reviewed subject UID and revision,
-accountable owner, current revision author, successor revision author,
-reviewer, blockers and dispositions, lockout and eligible-author sets,
+Every represented transition MUST use the shared evidence envelope conforming to
+`test-fixtures/spec/suite-v0.1/evidence.schema.json`. Governance data includes
+prior and current state, reviewed subject UID and revision, accountable owner,
+current revision author, successor revision author, independent reviewer,
+blockers and dispositions, lockout and eligible-author sets,
 escalation/deadlock status, replay disposition, gate result, actor, timestamp,
-idempotency key, replay key, expected revision, and result revision. Schema
-acceptance proves only that represented fields match this draft shape.
+idempotency key, replay key, expected revision, and result revision.
 
 ## 4. State machine
 
-**Section status:** Informative transition design exercised by reference schema
-checks.
+**Section status:** Experimental normative transition contract enforced by the
+schema's transition pairs.
 
 The deterministic states are:
 
@@ -74,36 +73,36 @@ Escalation uses:
 
 `rejected|reassignment-required -> escalated -> dispositioned`
 
-The intended design allows only an approved review subject with applicable
-external checks to become completed. Completion does not imply provider merge
-unless a future binding says so.
+Only an approved review subject with applicable external checks may become completed.
+Completion does not imply provider merge unless a binding says so.
 
 ## 5. Blocking verdict contract
 
-**Section status:** Informative promotion requirements.
+**Section status:** Experimental normative rejection contract enforced by
+transition conditionals and mutation tests.
 
-A future portable rejection contract is expected to identify review-subject
-location, violated requirement or invariant, reproducible evidence or concrete
-failure scenario, and the minimum clearing condition. Preference-only feedback
-is expected to remain advisory and not trigger lockout.
+A rejection MUST identify review-subject location, violated requirement or invariant,
+reproducible evidence or concrete failure scenario, and the minimum clearing
+condition. Preference-only feedback MUST be advisory and MUST NOT trigger
+lockout.
 
 ## 6. Reviewer independence and lockout state machine
 
-**Section status:** Informative relationship requirements. Current TypeScript
-checks are reference-implementation checks, not portable conformance evidence.
+**Section status:** Experimental normative relationship contract enforced by
+suite relationship and mutation tests.
 
-The proposed design keeps the blocking reviewer distinct from the current
-revision author. After a rejection, it adds the current revision author to the
-review-subject revision-cycle lockout set and excludes that author from
-authoring, co-authoring, pairing on, or directing the next revision. It also
-excludes the reviewer from becoming the successor revision author and selects a
-successor from the eligible set outside the lockout set.
+The blocking reviewer MUST differ from the current revision author. After a
+rejection, the current revision author is added to the review-subject
+revision-cycle lockout set and MUST NOT author, co-author, pair on, or direct
+the next revision. The reviewer MAY clarify the blocker but MUST NOT become the
+successor revision author for the same cycle. The coordinator MUST select a
+successor revision author from the eligible set and outside the lockout set.
 
 Lockout is scoped to the review subject and persists until a later revision is
 approved or an authority records an explicit override. A rejected revision
 adds its current revision author to the set. If no eligible successor revision
-author remains, the proposed coordinator behavior records a deadlocked
-escalation rather than silently readmitting a locked-out author.
+author remains, the coordinator MUST record a deadlocked escalation rather than
+silently readmit a locked-out author.
 
 The separately testable lockout states are `clear`, `author-locked`,
 `revision-assigned`, `revision-submitted`, `cleared`, and `deadlocked`.
@@ -114,23 +113,26 @@ known draft-policy incompatibility, not a published conformance verdict.
 
 ## 7. Approval and reassignment
 
-**Section status:** Informative promotion requirements.
+**Section status:** Experimental normative contract enforced by transition
+conditionals and mutation tests.
 
-A future portable approval contract is expected to identify the reviewed
-revision and blocker disposition, reject self-approval, and distinguish
-successor reassignment from accountable ownership transfer.
+Approval MUST identify the reviewed revision and blocker disposition. A
+reviewer MUST NOT approve a revision they authored. Reassignment changes the
+successor revision author, not the accountable owner, unless an authority
+separately records ownership transfer.
 
 ## 8. Failure, idempotency, and concurrency
 
-**Section status:** Informative promotion requirements. Current schema and
-TypeScript checks cover selected shapes and relationships only.
+**Section status:** Invalid transitions, self-review, locked-out successor
+revision authors, and missing rejection evidence are experimental normative
+contracts enforced by the schema or suite tests. Retry, storage, and
+concurrency behavior remain informative future-profile requirements.
 
-A future portable validator is expected to reject invalid transitions,
-self-review, locked-out successor revision authors, and missing blocker
-evidence. Future execution profiles should fail closed for stale
-reviewed-subject revisions and duplicate event IDs, return the original result
-for a repeated idempotency key, and use the prior event ID plus reviewed-subject
-revision as compare-and-swap conditions.
+Invalid transitions, self-review, locked-out successor revision authors, and
+missing blocker evidence MUST fail validation. Future execution profiles should
+fail closed for stale reviewed-subject revisions and duplicate event IDs,
+return the original result for a repeated idempotency key, and use the prior
+event ID plus reviewed-subject revision as compare-and-swap conditions.
 
 ## 9. Versioning and extensions
 
@@ -153,10 +155,8 @@ or personal data.
 
 ## 11. Promotion criteria
 
-Define language-neutral relational invariants and stable diagnostic codes, then
-publish a transition manifest with positive and negative cases for approval,
-advisory feedback, rejection, reviewer independence, lockout, repeated
-rejection, successor eligibility, reassignment, escalation, deadlock, stale
-CAS, replay links, blocker disposition, and external-check gating. The current
-rejection JSON and TypeScript relationship checks are reference artifacts, not
-portable conformance evidence.
+Publish a transition manifest with positive and negative cases for approval,
+advisory feedback, rejection, lockout, repeated rejection, reassignment,
+eligible successor revision authors, escalation, deadlock, stale CAS, duplicate replay,
+blocker disposition, and external-check gating. The registered rejection JSON
+is an example fixture, not a conformance manifest.

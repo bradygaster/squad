@@ -46,17 +46,6 @@ appear in all capitals, as shown here.
 
 ## 3. Terms and conformance classes
 
-- **Squad:** a selected Squad root and the artifacts interpreted under
-  explicitly identified profiles. The term does not imply support for every
-  known profile.
-- **Implementation:** software that performs one or more declared profile
-  operations.
-- **Profile:** an independently versioned contract for a defined artifact or
-  evidence surface.
-- **Capability:** one exact `<profile-id>/<operation>` identifier.
-- **Conformance claim:** a statement binding an implementation and version to
-  exact immutable specification and evidence revisions, capability identifiers,
-  and an applicable conformance class.
 - **Squad root:** the `.squad/` directory selected by an implementation.
 - **Artifact:** a file or directory beneath the Squad root described by a
   profile.
@@ -69,12 +58,6 @@ appear in all capitals, as shown here.
 An implementation MUST declare exact operational capability identifiers.
 Supporting one profile operation MUST NOT be represented as support for every
 operation in that profile or for every Squad artifact.
-
-### 3.1 Informative composition guidance
-
-Profile dependencies establish an interpretation order. They do not confer
-transitive capabilities or conformance: an implementation claiming a dependent
-profile still declares and evidences each supported capability independently.
 
 ## 4. Root discovery, paths, and containment
 
@@ -121,21 +104,6 @@ consumer MAY expose raw bytes without interpreting them.
 
 Core version, profile version, implementation version, and mutable state
 revision are independent. None implies another.
-
-### 6.1 Conformance revision binding
-
-Every conformance claim MUST identify both the exact specification revision and
-the exact evidence revision against which conformance was established. Each
-revision MUST use an immutable, machine-readable identifier whose derivation is
-defined by the applicable profile. A content digest is an immutable revision
-identifier when the profile defines the hashed bytes or canonical projection.
-
-Mutable branch names, pull request numbers, human-readable draft labels, and
-nullable publication metadata MUST NOT be used as either revision identifier.
-A working draft MAY be claimable when its profile supplies valid immutable
-specification and evidence revisions; working-draft status does not relax this
-requirement. Publication status, maturity, claimability, and claim revision are
-independent.
 
 ## 7. Common representation rules
 

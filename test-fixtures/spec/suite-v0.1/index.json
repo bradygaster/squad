@@ -315,6 +315,44 @@
       "knownDeviations": ["No backend-neutral CAS, recovery, migration, privacy, or deletion corpus exists."],
       "promotionCriteria": ["Meet the independently listed state-authority and memory-classification promotion gates."],
       "entryPoint": "Read state authority separately from memory classification."
+    },
+    {
+      "id": "squad-client-backend-decoupling/v0.2",
+      "maturity": "requirements-draft",
+      "documentClass": "requirements",
+      "spec": "docs/specification/client-backend-decoupling-v0.2.md",
+      "revision": null,
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-coordination-handoff/v0.1", "squad-state-memory-requirements/v0.1"],
+      "conformanceClasses": [],
+      "implementationRoles": ["producer", "consumer", "validator", "executor"],
+      "capabilities": [],
+      "manifest": null,
+      "manifestSchema": null,
+      "fixtures": [],
+      "implementationStatus": "Local, MCP, and remote durable conversation backends exist, but they do not yet share one portable client-facing contract.",
+      "knownDeviations": ["Admission, approval replay protection, lease fencing, and transcript paging differ across backend families."],
+      "promotionCriteria": ["Add shared contract tests plus sanitized local, MCP, and remote transcript traces for admission, leases, approvals, and replay handling."],
+      "entryPoint": "Read after coordination and state-authority requirements."
+    },
+    {
+      "id": "squad-client-harness-adapters/v0.2",
+      "maturity": "requirements-draft",
+      "documentClass": "requirements",
+      "spec": "docs/specification/client-harness-adapters-v0.2.md",
+      "revision": null,
+      "dialect": "requirements-only",
+      "dependencies": ["squad-core/v0.1", "squad-interop/v0.1", "squad-client-backend-decoupling/v0.2"],
+      "conformanceClasses": [],
+      "implementationRoles": ["producer", "consumer", "validator", "executor"],
+      "capabilities": [],
+      "manifest": null,
+      "manifestSchema": null,
+      "fixtures": [],
+      "implementationStatus": "GitHub Copilot projections exist today, while other host projections are specified but not yet unified in one SDK adapter seam.",
+      "knownDeviations": ["Host file projection, approvals, background execution, and MCP wiring differ by client family."],
+      "promotionCriteria": ["Add host projection fixtures and contract tests for GitHub Copilot plus at least one non-Copilot adapter family."],
+      "entryPoint": "Read after the client/backend contract."
     }
   ]
 }

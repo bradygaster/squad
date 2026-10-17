@@ -19,6 +19,8 @@ const requirementsDocuments = [
   'coordination-handoff-v0.1.md',
   'automation-v0.1.md',
   'state-memory-requirements-v0.1.md',
+  'client-backend-decoupling-v0.2.md',
+  'client-harness-adapters-v0.2.md',
 ] as const;
 
 async function readJson(file: string): Promise<unknown> {
