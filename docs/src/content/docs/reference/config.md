@@ -78,6 +78,8 @@ Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates 
 └── orchestration-log/   # Coordinator state
 ```
 
+`.squad/config.json` may also carry `clients`: the portable list of host projections to keep fresh (`copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`). It never holds credentials, paths, URLs or session ids. See [Using Squad across clients](../scenarios/using-squad-across-clients.md).
+
 Commit this directory. It's your team's brain. Anyone who clones the repo gets the full team with all their knowledge.
 
 ---

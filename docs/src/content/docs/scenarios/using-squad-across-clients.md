@@ -1,6 +1,6 @@
 ---
 title: Using Squad across clients
-description: Step-by-step guidance for projecting one Squad team into Copilot, Claude Code, Kiro, OpenCode, and Cursor with the new --client adapters.
+description: Step-by-step guidance for projecting one Squad team into Copilot, Claude Code, Kiro, OpenCode, Cursor, OpenAI Codex, and Google Antigravity with the --client adapters.
 ---
 
 # Using Squad across clients
@@ -16,6 +16,8 @@ npx squad init --client claude
 npx squad init --client kiro
 npx squad init --client opencode
 npx squad init --client cursor
+npx squad init --client codex
+npx squad init --client antigravity
 npx squad init --client all
 ```
 
@@ -29,11 +31,15 @@ npx squad upgrade --client copilot,claude,cursor
 
 | Client | Generated files |
 |---|---|
-| Claude Code | `.claude/agents/squad.md`, optional `.claude/agents/squad-<member>.md`, `.mcp.json`, `CLAUDE.md` managed block |
+| Claude Code | `.claude/agents/squad.md`, `.mcp.json`, `CLAUDE.md` managed block, `.gitignore` block for `.claude/worktrees/` |
 | Kiro | `.kiro/steering/squad.md`, `.kiro/agents/squad.json`, `.kiro/settings/mcp.json` |
 | OpenCode | `.opencode/agent/squad.md`, `opencode.json` |
 | Cursor | `.cursor/rules/squad.mdc`, `.cursor/agents/squad.md`, `.cursor/mcp.json` |
+| OpenAI Codex | `AGENTS.md` managed block, `.codex/config.toml` (`mcp_servers.squad_state`) |
+| Google Antigravity | `.agents/agents/squad.md` (with the `squad_state` MCP server in its frontmatter), `GEMINI.md` managed block |
 | Copilot | `.github/agents/squad.agent.md` plus `.mcp.json` |
+
+Every host gets one coordinator file. Team members are not projected as separate host agents: the coordinator spawns each specialist as a generic subagent with that member's `.squad/agents/<name>/charter.md` inlined, exactly as Copilot does.
 
 ## Claude Code walkthrough
 
@@ -41,7 +47,7 @@ npx squad upgrade --client copilot,claude,cursor
 2. Open `.claude/agents/squad.md` to inspect the coordinator prompt.
 3. Confirm `.mcp.json` contains `squad_state`.
 4. Check `CLAUDE.md` for the managed Squad marker block.
-5. Run `claude --agent squad` or delegate to the `squad` subagent.
+5. Run `claude --agent squad --mcp-config .mcp.json` or delegate to the `squad` subagent. Interactive Claude Code does not load project-scoped `.mcp.json` servers until they are approved, so pass the config explicitly.
 
 ## Kiro walkthrough
 
@@ -63,6 +69,27 @@ npx squad upgrade --client copilot,claude,cursor
 2. Verify `.cursor/rules/squad.mdc`, `.cursor/agents/squad.md`, and `.cursor/mcp.json` exist.
 3. Open Cursor and select the `squad` agent.
 4. Let the coordinator route work from there.
+
+## Codex walkthrough
+
+1. Run `npx squad init --client codex`.
+2. Check `AGENTS.md` for the managed Squad block and `.codex/config.toml` for `[mcp_servers.squad_state]`.
+3. Mark the project trusted in your Codex home config (use the full path, not an 8.3 short path).
+4. Start `codex` in the repo; the coordinator spawns one Codex agent per specialist.
+
+## Antigravity walkthrough
+
+1. Run `npx squad init --client antigravity`.
+2. Verify `.agents/agents/squad.md` and the `GEMINI.md` block.
+3. Run `agy --agent squad` (dismiss the first-run verbosity banner with Esc).
+4. Quota is per model: if one model is exhausted, start with another via `--model`.
+
+## Troubleshooting
+
+- **`squad cast --name` writes nothing:** an old published `squad` is first on `PATH`. Put the current build first.
+- **Team files appear in your personal squad folder:** `squad init` links a repo to an existing personal squad; set `SQUAD_NO_PERSONAL=1` to skip that.
+- **Cursor:** run `cursor-agent mcp enable squad_state` once so the generated MCP server is approved.
+- **Models:** each host needs its own model access (a Copilot license covers Copilot and, through the GitHub Copilot provider, OpenCode; Kiro, Antigravity and Cursor need their own sign-in).
 
 ## Polyglot repo walkthrough
 

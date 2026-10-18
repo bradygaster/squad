@@ -340,6 +340,15 @@ Every accepted sample is also emitted as a typed `context:utilization` event and
 
 The root package also exports cost tracking, offline mode, runtime events, OpenTelemetry metrics, and internationalization helpers.
 
+## Client host adapters
+
+`@bradygaster/squad-sdk/client` (and the deprecated alias `@bradygaster/squad-sdk/clients`) projects the host-agnostic Squad coordinator into the files each AI host loads natively.
+
+- `HostProjection` is a pure workspace projection (`project(ctx)`) for `copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex` and `antigravity`. Get one with `getHostProjection(id)`; apply with `installClients(ids, ctx)`.
+- `createClientAdapter({ host, ctx, runtime? })` returns the spec-level `ClientAdapter` facade: `describe()`, `projectWorkspace()` and `getCapabilities()` work locally; `submit`, `subscribe`, `cancel` and `respondApproval` delegate to a bound `RuntimeBinding` and otherwise throw `AdapterUnboundError`.
+- Capabilities are canonical string tokens (`CAPABILITY_TOKENS_BY_HOST`); the boolean `ClientCapabilities` flags are a derived view, and passing conflicting flags throws. Advertised capabilities stay separate from negotiated `effectiveCapabilities` (client ∩ backend ∩ policy).
+- JSON and TOML config merges only touch Squad's own keys; `normalizeClientIds()` / `assertPortableClients()` keep `clients[]` free of credentials and paths.
+
 ## Other Public Modules
 
 The root package exports or re-exports APIs for:

@@ -30,6 +30,7 @@ prerequisites, all supported methods, and update commands.
 | `squad` | **Deprecated** — Enter interactive shell (no args). Use `copilot --agent squad` instead. | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --state-backend <type>` | Initialize with a specific state backend (`local`, `orphan`, `two-layer`) | No |
+| `squad init --client <list>` | Also project Squad into other AI hosts: comma-separated `copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`, or `all`; persisted in `.squad/config.json` `clients[]` | No |
 | `squad init --global` | Create a personal squad in your platform-specific directory | No |
 | `squad init --no-vscode-default` | Skip writing `chat.newSession.defaultMode` to `.vscode/settings.json` | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
@@ -41,6 +42,7 @@ prerequisites, all supported methods, and update commands.
 | `squad status` | Show which squad is active and why | Yes |
 | `squad doctor` | Validate squad setup integrity and diagnose issues (alias: `heartbeat`) | Yes |
 | `squad upgrade` | Upgrade Squad-owned files to latest version; locally customized files are saved as `<file>.local-backup` | Yes |
+| `squad upgrade --client <list>` | Add hosts to the configured set and refresh every configured host projection; user settings in `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json` and `.codex/config.toml` are preserved | Yes |
 | `squad upgrade --state-backend <type>` | Migrate state backend (`orphan`, `two-layer`); installs git hooks automatically | Yes |
 | `squad upgrade --migrate-directory` | Rename legacy `.ai-team/` directory to `.squad/` | Yes |
 | `squad triage` | Auto-triage issues and assign to team (primary name; `watch` is an alias) | Yes |

@@ -8,7 +8,7 @@ The headline feature is the new `--client` flag on `squad init` and `squad upgra
 
 - a repo with Squad available through `npx squad` or a global `squad` install;
 - a normal `.squad/` team directory;
-- one or more target clients: Copilot, Claude Code, Kiro, OpenCode, or Cursor.
+- one or more target clients: Copilot, Claude Code, Kiro, OpenCode, Cursor, OpenAI Codex, or Google Antigravity.
 
 If you already have Squad in the repo, use `upgrade`. If this is a fresh repo, use `init`.
 
@@ -54,7 +54,7 @@ Squad does **not** take over the whole file. It updates only the managed block:
 <!-- squad:begin (managed by Squad; do not edit between markers) -->
 ## Squad
 
-This project uses Squad. Run `claude --agent squad` ...
+This project uses Squad. Run `claude --agent squad --mcp-config .mcp.json` ...
 <!-- squad:end -->
 ```
 
@@ -65,7 +65,7 @@ That means your own project notes above or below the block stay yours.
 Use either of these patterns:
 
 ```text
-claude --agent squad
+claude --agent squad --mcp-config .mcp.json
 ```
 
 Or, inside Claude Code, delegate to the `squad` subagent and let it route work from there.
@@ -211,7 +211,27 @@ The dispatch adapter tells Cursor to prefer subagents when available and to inli
 
 ---
 
-## Tutorial 5: one repo, multiple clients
+## Tutorial 5: OpenAI Codex
+
+```bash
+npx squad init --client codex
+```
+
+Squad writes an `AGENTS.md` managed block (Codex has no separate main-agent file) and merges `[mcp_servers.squad_state]` into `.codex/config.toml` without touching your other settings. Start `codex` in the repo; the coordinator spawns one agent per specialist and waits for them.
+
+---
+
+## Tutorial 6: Google Antigravity
+
+```bash
+npx squad init --client antigravity
+```
+
+Squad writes `.agents/agents/squad.md` (the `squad_state` MCP server is declared in its frontmatter, because Antigravity has no project-level MCP file) and a `GEMINI.md` managed block. Run `agy --agent squad`.
+
+---
+
+## Tutorial 7: one repo, multiple clients
 
 This is where Squad 2.0 gets fun.
 
