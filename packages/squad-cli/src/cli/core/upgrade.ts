@@ -1227,6 +1227,20 @@ async function refreshClients(dest: string, squadDir: string, options: UpgradeOp
   }
 }
 
+/** True when history.json records any assignment snapshot or universe usage (i.e. real cast history exists). */
+function hasCastHistory(castingDir: string): boolean {
+  const raw = storage.readSync(path.join(castingDir, 'history.json'));
+  if (raw === undefined) return false;
+  try {
+    const history = JSON.parse(raw) as Record<string, unknown>;
+    const snapshots = history['assignment_cast_snapshots'];
+    const usage = history['universe_usage_history'];
+    const hasSnapshots = !!snapshots && typeof snapshots === 'object' && Object.keys(snapshots).length > 0;
+    return hasSnapshots || (Array.isArray(usage) && usage.length > 0);
+  } catch {
+    return true; // unreadable history: do not guess, fail closed
+  }
+}
 /**
  * Run the upgrade command
  */
@@ -1259,9 +1273,13 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   const projectType = detectProjectType(dest);
 
-  // repair a handwritten registry BEFORE the strict preflight, which would otherwise reject it and make the
-  // repair in ensureCastingDefaults unreachable
-  if (!options.dryRun) repairHandwrittenCastingRegistry(path.join(squadDirInfo.path, 'casting'));
+  // A handwritten registry (model wrote registry.json itself over the empty init pair) is repaired BEFORE the
+  // strict preflight, which would otherwise reject it and make the repair in ensureCastingDefaults unreachable.
+  // Only when there is no cast history to contradict: registries with real history keep failing closed.
+  if (!options.dryRun) {
+    const castingDir = path.join(squadDirInfo.path, 'casting');
+    if (!hasCastHistory(castingDir)) repairHandwrittenCastingRegistry(castingDir);
+  }
   const castingMigrated = preflightCastingRegistryPair(
     path.join(squadDirInfo.path, 'casting'),
     options.dryRun ?? false,
