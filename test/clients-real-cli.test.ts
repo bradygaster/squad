@@ -14,6 +14,8 @@ const withKiro = { ...process.env, PATH: `${process.env['PATH']}${path.delimiter
 function run(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) {
   return spawnSync(cmd, args, { cwd, env, encoding: 'utf8', shell: process.platform === 'win32', timeout: 120_000 });
 }
+const CODEX = path.join(process.env['ProgramData'] ?? '', 'global-npm', 'node_modules', '@openai', 'codex', 'vendor', 'x86_64-pc-windows-msvc', 'bin', 'codex.exe');
+const hasCodex = fs.existsSync(CODEX);
 const has = (cmd: string, env: NodeJS.ProcessEnv = process.env) => run(cmd, ['--version'], os.tmpdir(), env).status === 0;
 
 let root: string;
@@ -23,7 +25,7 @@ beforeAll(() => {
   const squad = path.join(root, '.squad');
   fs.mkdirSync(squad);
   fs.writeFileSync(path.join(squad, 'team.md'), '| Name | Role | Charter | Status |\n|---|---|---|---|\n| Data | Expert | c | ok |\n');
-  const results = installClients(['claude', 'opencode', 'kiro'], {
+  const results = installClients(['claude', 'opencode', 'kiro', 'codex', 'antigravity'], {
     root,
     mcp: { command: 'node', args: ['-e', '0'] },
     members: [{ name: 'Data', role: 'Expert' }],
@@ -56,5 +58,22 @@ describe('real CLIs load Squad projections', () => {
     const list = run('kiro-cli', ['agent', 'list'], root, withKiro);
     const out = `${list.stdout}${list.stderr}`.replace(/\u001b\[[0-9;]*m/g, '');
     expect(out).toMatch(/squad\s+Workspace/);
+  });
+  it.skipIf(!hasCodex)('codex loads the project config (trusted) and sees the squad_state server', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
+    const key = fs.realpathSync.native(root).replace(/\\/g, '\\\\');
+    fs.writeFileSync(path.join(home, 'config.toml'), `[projects."${key}"]\ntrust_level = "trusted"\n`);
+    try {
+      const r = run(`"${CODEX}"`, ['mcp', 'get', 'squad_state'], root, { ...process.env, CODEX_HOME: home });
+      expect(r.stdout).toMatch(/enabled: true/);
+      expect(r.stdout).toMatch(/transport: stdio/);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!has('agy'))('antigravity discovers the squad agent', () => {
+    const r = run('agy', ['--agent', 'nonexistent-zzz', '-p', 'hi'], root);
+    expect(`${r.stdout}${r.stderr}`).toMatch(/available:.*\bsquad\b/);
   });
 });

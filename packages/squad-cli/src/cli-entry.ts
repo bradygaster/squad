@@ -161,7 +161,7 @@ async function main(): Promise<void> {
     console.log(`                    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
-    console.log(`                    --client <list> (copilot,claude,kiro,opencode,cursor|all)`);
+    console.log(`                    --client <list> (copilot,claude,kiro,opencode,cursor,codex,antigravity|all)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);

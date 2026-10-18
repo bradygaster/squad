@@ -7,7 +7,8 @@ export const CAPABILITIES: Record<ClientId, ClientCapabilities> = {
   kiro: { supportsSubagents: true, supportsMcpTransport: true, supportsNativeHooks: true, supportsSteeringFiles: true, transportModes: ['mcp-bridge', 'http-backend'] },
   opencode: { supportsSubagents: true, supportsMcpTransport: true, supportsNativeHooks: true, supportsSteeringFiles: false, transportModes: ['mcp-bridge', 'http-backend'] },
   cursor: { supportsSubagents: true, supportsMcpTransport: true, supportsNativeHooks: false, supportsSteeringFiles: true, transportModes: ['mcp-bridge', 'http-backend'] },
-};
+  codex: { supportsSubagents: true, supportsMcpTransport: true, supportsNativeHooks: true, supportsSteeringFiles: true, transportModes: ['mcp-bridge', 'http-backend'] },
+  antigravity: { supportsSubagents: true, supportsMcpTransport: true, supportsNativeHooks: false, supportsSteeringFiles: true, transportModes: ['mcp-bridge', 'http-backend'] },};
 
 type CapabilityKey = Exclude<keyof ClientCapabilities, 'transportModes'>;
 const FLAGS: CapabilityKey[] = ['supportsSubagents', 'supportsMcpTransport', 'supportsNativeHooks', 'supportsSteeringFiles'];

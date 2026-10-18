@@ -8,7 +8,7 @@
  * @module clients/types
  */
 
-export const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor'] as const;
+export const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 'antigravity'] as const;
 export type ClientId = (typeof CLIENT_IDS)[number];
 
 /** Launch spec for the `squad_state` MCP server. */
@@ -40,7 +40,9 @@ export type ProjectionFile =
   /** Read-modify-write of a user-shared JSON config; only Squad keys are touched. */
   | { kind: 'json'; path: string; update: (existing: Record<string, unknown>) => Record<string, unknown> }
   /** Marker-delimited block inside a user-owned text file. */
-  | { kind: 'block'; path: string; content: string };
+  | { kind: 'block'; path: string; content: string; id?: string }
+  /** Read-modify-write of a user-shared text file (e.g. TOML) where only Squad's part changes. */
+  | { kind: 'text'; path: string; update: (existing: string) => string };
 
 export type DispatchStrategy = {
   /** Host-native way the coordinator spawns a specialist. */
