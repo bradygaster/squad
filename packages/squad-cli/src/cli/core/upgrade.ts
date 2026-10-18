@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
-import { ensureCastingRegistryPair, preflightCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
+import { backfillCastingRegistryFromTeam, ensureCastingRegistryPair, preflightCastingRegistryPair, repairHandwrittenCastingRegistry } from '@bradygaster/squad-sdk/casting';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -526,6 +526,9 @@ const GITIGNORE_ENTRIES = [
   '.squad/sessions/',
   '.squad/.cache/',
   '.squad-workstream',
+  // Claude Code creates embedded-repo worktrees here, and Windows shells can leave a stray reserved `NUL` file
+  '.claude/worktrees/',
+  'NUL',
 ];
 
 const ENSURE_DIRECTORIES = [
@@ -598,7 +601,8 @@ export function ensureGitignore(dest: string): string[] {
   const existingLines = content.split('\n');
   const added: string[] = [];
   for (const entry of GITIGNORE_ENTRIES) {
-    if (content.includes(entry)) continue;
+    // NUL is short enough to appear inside other words, so match it as a whole line
+    if (entry === 'NUL' ? existingLines.some((l) => l.trim() === 'NUL') : content.includes(entry)) continue;
     if (isAlreadyCoveredByParent(entry, existingLines)) continue;
     added.push(entry);
   }
@@ -653,6 +657,12 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
   const created: string[] = [];
   try {
     storage.mkdirSync(castingDir, { recursive: true });
+    // LLM-handwritten registries (role keys, agents arrays, no schema) are normalized instead of crashing upgrade
+    const repair = repairHandwrittenCastingRegistry(castingDir);
+    if (repair.repaired) {
+      warn('Normalized a handwritten .squad/casting/registry.json (original kept as registry.json.handwritten.bak)');
+      created.push(...repair.files.map((f) => `.squad/casting/${f}`));
+    }
     const pair = ensureCastingRegistryPair(
       castingDir,
       templateContent(
@@ -667,6 +677,12 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
     );
     if (pair.created) {
       created.push('.squad/casting/registry.json', '.squad/casting/history.json');
+    }
+    // team.md + charters written directly by a model on an older CLI leave the registry empty: backfill it from the roster
+    const backfill = backfillCastingRegistryFromTeam(castingDir, path.join(dest, '.squad', 'team.md'));
+    if (backfill.repaired) {
+      warn('Backfilled .squad/casting/registry.json from .squad/team.md (previous files kept as *.handwritten.bak)');
+      created.push(...backfill.files.map((f) => `.squad/casting/${f}`).filter((f) => !created.includes(f)));
     }
 
     const policyPath = path.join(castingDir, 'policy.json');

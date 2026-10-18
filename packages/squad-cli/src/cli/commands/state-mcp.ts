@@ -5,7 +5,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { resolveSquadState } from '@bradygaster/squad-sdk';
 import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
 import { getPackageVersion } from '../core/version.js';
-import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from './backend-mcp.js';
+import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../core/backend-mcp.js';
 
 export type JsonRpcRequest = {
   jsonrpc?: string;

@@ -1417,6 +1417,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/sessions/',
     '.squad/.scratch/',
     '.squad/.cache/',
+    '.claude/worktrees/',
+    'NUL',
   ];
 
   let existingIgnore = '';
@@ -1424,7 +1426,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     existingIgnore = storage.readSync(gitignorePath) ?? '';
   }
 
-  const missingIgnore = ignoreEntries.filter(entry => !existingIgnore.includes(entry));
+  const ignoreLines = existingIgnore.split(/\r?\n/).map(l => l.trim());
+  const missingIgnore = ignoreEntries.filter(entry => (entry === 'NUL' ? !ignoreLines.includes('NUL') : !existingIgnore.includes(entry)));
   if (missingIgnore.length > 0) {
     const block = (existingIgnore && !existingIgnore.endsWith('\n') ? '\n' : '')
       + '# Squad: ignore runtime state (logs, inbox, sessions)\n'

@@ -7,7 +7,9 @@ export default defineConfig({
   resolve: {
     // Resolve the Squad 2.0 SDK entrypoints from source so tests run without a built dist.
     alias: [
+      { find: /^@bradygaster\/squad-sdk\/client$/, replacement: path.join(sdkSrc, 'client/index.ts') },
       { find: /^@bradygaster\/squad-sdk\/clients$/, replacement: path.join(sdkSrc, 'clients/index.ts') },
+      { find: /^@bradygaster\/squad-sdk\/casting$/, replacement: path.join(sdkSrc, 'casting/index.ts') },
       { find: /^@bradygaster\/squad-sdk\/backend$/, replacement: path.join(sdkSrc, 'backend/index.ts') },
       { find: /^@bradygaster\/squad-sdk$/, replacement: path.join(sdkSrc, 'index.ts') },
     ],

@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-vi.mock('@bradygaster/squad-sdk', async () => ({
-  ...(await import('../packages/squad-sdk/src/backend/index.js')),
+// keep the real SDK (squad upgrade code imports much of it); only resolveSquadState is stubbed
+vi.mock('@bradygaster/squad-sdk', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveSquadState: vi.fn(),
 }));
 
@@ -38,7 +39,18 @@ import {
   type ClientContext,
   type ClientId,
 } from '../packages/squad-sdk/src/clients/index.js';
-import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../packages/squad-cli/src/cli/commands/backend-mcp.js';
+import {
+  backfillCastingRegistryFromTeam,
+  ensureCastingRegistryPair,
+  normalizeHandwrittenCastingRegistry,
+  parseTeamRoster,
+  parseAgentProvenanceRegistry,
+  readCastingRegistryPair,
+  repairHandwrittenCastingRegistry,
+} from '../packages/squad-sdk/src/casting/index.js';
+import { ensureCastingDefaults, ensureGitignore } from '../packages/squad-cli/src/cli/core/upgrade.js';
+import { isInteractiveSession, runInit } from '../packages/squad-cli/src/cli/core/init.js';
+import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../packages/squad-cli/src/cli/core/backend-mcp.js';
 // Clean-room (exit criterion 3) code is typed strictly against the public subpath barrel.
 import type {
   BackendEnvelope as CREnvelope,
@@ -196,7 +208,9 @@ describe('Scenario 1: client projections and --client', () => {
       '.opencode/agent/squad.md', 'opencode.json',
       '.cursor/rules/squad.mdc', '.cursor/agents/squad.md', '.cursor/mcp.json',
     ]) expect(fs.existsSync(path.join(root, rel)), rel).toBe(true);
-    expect(fs.existsSync(path.join(root, '.claude/agents/squad-data.md'))).toBe(false);
+    // members live in the shared .squad/agents/<name>/charter.md path (like Copilot): no per-member client files by default
+    expect(fs.readdirSync(path.join(root, '.claude/agents'))).toEqual(['squad.md']);
+    expect(fs.existsSync(path.join(root, '.opencode/agent/data.md'))).toBe(false);
   });
 
   it('merges shared JSON configs without clobbering user entries', () => {
@@ -1206,5 +1220,368 @@ describe('coordinator prompt (found with real models)', () => {
     expect(text).toMatch(/Static team config is the exception/);
     for (const f of ['team.md', 'routing.md', 'config.json', 'charter.md']) expect(text).toContain(f);
     expect(text).toMatch(/state tools? reject|reject writes/i);
+  });
+});
+describe('field findings from the live demo: Init Mode, scratch files, casting registry', () => {
+  it.each(CLIENT_IDS)('%s: non-interactive Init Mode casts immediately and registers the roster with squad cast --name', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    // live finding: `claude -p "... proceed ..."` still paused to ask for confirmation
+    expect(text).toMatch(/Auto-confirm \(default\)/);
+    expect(text).toMatch(/Do NOT stop to ask questions in Init Mode/);
+    expect(text).toMatch(/SAME turn/);
+    expect(text).toMatch(/headless/);
+    // members are cast into the shared .squad/agents path and registered with the CLI, not projected per client
+    expect(text).toMatch(/tell the user to upgrade the squad CLI instead of hand-writing the team/);
+    expect(text).toMatch(/`npx squad cast --name <Name> --role/);
+  });
+
+  it.each(CLIENT_IDS)('%s: keeps scratch files inside the workspace', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    // live finding: OpenCode rejected a subagent call that touched OS %TEMP%
+    expect(text).toMatch(/Scratch space/);
+    expect(text).toMatch(/never write outside the workspace directory/);
+    expect(text).toMatch(/external-directory access/);
+  });
+
+  it.each(CLIENT_IDS)('%s: casts through the CLI and forbids hand-written casting files', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    // live finding: LLM-handwritten casting/registry.json broke `squad upgrade`
+    expect(text).toMatch(/npx squad cast --name <Name> --role/);
+    expect(text).toMatch(/NEVER hand-write or edit anything under .{0,20}casting\//);
+    expect(text).toContain('registry-history.commit.json');
+  });
+  describe('handwritten casting/registry.json is repaired instead of crashing squad upgrade', () => {
+    const shapes: Record<string, unknown> = {
+      'role-keyed entries without a wrapper': {
+        lead: { name: 'Avery', status: 'active' },
+        backend: { name: 'Nova', role: 'Backend Developer' },
+        tester: 'Quinn',
+      },
+      'agents as an array': { universe: 'Star Trek', agents: [{ name: 'Data', role: 'Expert' }, { name: "B'Elanna", role: 'Engineer', status: 'ACTIVE' }] },
+      'simplified object with version and name/role/status': {
+        version: 1, universe: 'Squad', agents: { avery: { name: 'Avery', role: 'Lead', status: 'active' }, nova: { name: 'Nova', role: 'Dev', status: 'weird' } },
+      },
+      'bare array': [{ name: 'Ada', role: 'Core' }, { name: 'Linus', role: 'CLI' }],
+    };
+    let castingDir: string;
+    beforeEach(() => { castingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-casting-')); });
+    afterEach(() => { fs.rmSync(castingDir, { recursive: true, force: true }); });
+    const write = (name: string, body: unknown) =>
+      fs.writeFileSync(path.join(castingDir, name), typeof body === 'string' ? body : JSON.stringify(body, null, 2));
+
+    it.each(Object.keys(shapes))('normalizes: %s', (name) => {
+      const reg = normalizeHandwrittenCastingRegistry(shapes[name], '2026-10-18T00:00:00.000Z')!;
+      expect(reg).toBeDefined();
+      const parsed = parseAgentProvenanceRegistry(reg);
+      expect(parsed.completeness).toBe('complete');
+      for (const [id, rec] of Object.entries(reg.agents)) {
+        expect(id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+        expect(rec.persistent_name).toBe(rec.display_name);
+        expect(['active', 'inactive', 'retired']).toContain(rec.status);
+      }
+    });
+
+    it('maps role keys and names to canonical ids, roles and statuses', () => {
+      const reg = normalizeHandwrittenCastingRegistry(shapes['role-keyed entries without a wrapper'])!;
+      expect(Object.keys(reg.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
+      expect(reg.agents['avery']).toMatchObject({ display_name: 'Avery', role: 'lead', status: 'active' });
+      expect(reg.agents['nova']).toMatchObject({ role: 'Backend Developer' });
+      expect(reg.agents['quinn']).toMatchObject({ display_name: 'Quinn', role: 'tester' });
+      const belanna = normalizeHandwrittenCastingRegistry(shapes['agents as an array'])!;
+      expect(Object.keys(belanna.agents)).toEqual(['data', 'b-elanna']);
+      expect(belanna.agents['b-elanna']!.status).toBe('active');
+      expect(normalizeHandwrittenCastingRegistry(shapes['simplified object with version and name/role/status'])!.agents['nova']!.status).toBe('active');
+    });
+
+    it.each(Object.keys(shapes))('repairs on disk, keeps a backup, creates history and is then readable: %s', (name) => {
+      write('registry.json', shapes[name]);
+      const original = fs.readFileSync(path.join(castingDir, 'registry.json'), 'utf8');
+      const result = repairHandwrittenCastingRegistry(castingDir);
+      expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json'] });
+      expect(fs.readFileSync(path.join(castingDir, 'registry.json.handwritten.bak'), 'utf8')).toBe(original);
+      const pair = readCastingRegistryPair(castingDir);
+      expect(Object.keys(pair.registry.agents).length).toBeGreaterThan(0);
+      expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
+    });
+
+    it('does not touch canonical registries, absent registries or unrecoverable content', () => {
+      expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
+      const canonical = normalizeHandwrittenCastingRegistry(shapes['bare array'])!;
+      write('registry.json', canonical);
+      write('history.json', { universe_usage_history: [], assignment_cast_snapshots: {} });
+      const before = fs.readFileSync(path.join(castingDir, 'registry.json'), 'utf8');
+      expect(repairHandwrittenCastingRegistry(castingDir).repaired).toBe(false);
+      expect(fs.readFileSync(path.join(castingDir, 'registry.json'), 'utf8')).toBe(before);
+
+      write('registry.json', '{ not json');
+      expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: false, reason: expect.stringMatching(/not valid JSON/) });
+      write('registry.json', { agents: {}, note: 'empty' });
+      expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: false, reason: expect.stringMatching(/no recoverable agents/) });
+      expect(fs.existsSync(path.join(castingDir, 'registry.json.handwritten.bak'))).toBe(false);
+    });
+
+    describe('after `squad init` wrote a registry-history.commit.json', () => {
+      const MANIFEST = 'registry-history.commit.json';
+      const initPair = () => {
+        const reg = JSON.stringify({ schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1, generated_at: '1970-01-01T00:00:00.000Z', agents: {} });
+        const hist = JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} });
+        ensureCastingRegistryPair(castingDir, reg, hist, 'test init');
+        expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(true);
+        expect(() => readCastingRegistryPair(castingDir)).not.toThrow();
+      };
+
+      it('reproduces the original failure: a hand-edited registry makes the pair unreadable', () => {
+        initPair();
+        write('registry.json', shapes['role-keyed entries without a wrapper']);
+        expect(() => readCastingRegistryPair(castingDir)).toThrow(/consistent casting registry\/history pair/);
+      });
+
+      it('repair backs up and removes the stale manifest so the pair reads again', () => {
+        initPair();
+        write('registry.json', shapes['role-keyed entries without a wrapper']);
+        const manifestBytes = fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8');
+        const result = repairHandwrittenCastingRegistry(castingDir);
+        expect(result).toMatchObject({ repaired: true, removed: [MANIFEST] });
+        expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(false);
+        expect(fs.readFileSync(path.join(castingDir, `${MANIFEST}.handwritten.bak`), 'utf8')).toBe(manifestBytes);
+        expect(Object.keys(readCastingRegistryPair(castingDir).registry.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
+        expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
+      });
+
+      it('also repairs a well-formed canonical edit that no longer matches the manifest, keeping its agents', () => {
+        initPair();
+        const edited = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }, { name: 'Linus', role: 'CLI' }] })!;
+        write('registry.json', edited);
+        expect(() => readCastingRegistryPair(castingDir)).toThrow(/commit manifest/);
+        expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: true, removed: [MANIFEST] });
+        expect(Object.keys(readCastingRegistryPair(castingDir).registry.agents).sort()).toEqual(['ada', 'linus']);
+      });
+
+      it('leaves an untouched init pair and its manifest alone', () => {
+        initPair();
+        const before = fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8');
+        expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
+        expect(fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8')).toBe(before);
+      });
+
+      it('squad upgrade (ensureCastingDefaults) survives a stale manifest', () => {
+        const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-upgrade-manifest-'));
+        try {
+          const dir = path.join(dest, '.squad', 'casting');
+          fs.mkdirSync(dir, { recursive: true });
+          const reg = JSON.stringify({ schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1, generated_at: '1970-01-01T00:00:00.000Z', agents: {} });
+          ensureCastingRegistryPair(dir, reg, JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }), 'test init');
+          fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify(shapes['agents as an array']));
+          const created = ensureCastingDefaults(dest);
+          expect(created).toEqual(expect.arrayContaining(['.squad/casting/registry.json']));
+          expect(Object.keys(readCastingRegistryPair(dir).registry.agents).sort()).toEqual(['b-elanna', 'data']);
+        } finally {
+          fs.rmSync(dest, { recursive: true, force: true });
+        }
+      });
+    });
+
+    it('squad upgrade (ensureCastingDefaults) no longer crashes on a handwritten registry', () => {
+      const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-upgrade-casting-'));
+      try {
+        const dir = path.join(dest, '.squad', 'casting');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify(shapes['role-keyed entries without a wrapper']));
+        const created = ensureCastingDefaults(dest);
+        expect(created).toEqual(expect.arrayContaining(['.squad/casting/registry.json', '.squad/casting/history.json']));
+        expect(Object.keys(readCastingRegistryPair(dir).registry.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
+        expect(fs.existsSync(path.join(dir, 'policy.json'))).toBe(true);
+        expect(ensureCastingDefaults(dest)).toEqual([]);
+      } finally {
+        fs.rmSync(dest, { recursive: true, force: true });
+      }
+    });
+  });
+});
+describe('field findings from the multi-client demos: process hygiene, .gitignore, non-TTY init, registry backfill', () => {
+  it.each(CLIENT_IDS)('%s: forbids killing processes by image name', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    // live finding: a subagent ran `taskkill /IM node.exe` and killed its own proxy mid-run
+    expect(text).toMatch(/Process hygiene/);
+    for (const cmd of ['taskkill /IM', 'Stop-Process -Name', 'pkill', 'killall']) expect(text, cmd).toContain(cmd);
+    expect(text).toMatch(/NEVER kill processes by image or name/);
+    expect(text).toMatch(/exact PID you started yourself/);
+  });
+
+  describe('.gitignore scaffolding', () => {
+    let dest: string;
+    beforeEach(() => { dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-gitignore-')); });
+    afterEach(() => { fs.rmSync(dest, { recursive: true, force: true }); });
+    const lines = () => fs.readFileSync(path.join(dest, '.gitignore'), 'utf8').split(/\r?\n/);
+
+    it('adds .claude/worktrees/ and NUL on upgrade, idempotently', () => {
+      const added = ensureGitignore(dest);
+      expect(added).toEqual(expect.arrayContaining(['.claude/worktrees/', 'NUL']));
+      expect(lines()).toEqual(expect.arrayContaining(['.claude/worktrees/', 'NUL']));
+      expect(ensureGitignore(dest)).toEqual([]);
+      expect(lines().filter(l => l === 'NUL')).toHaveLength(1);
+    });
+
+    it('matches NUL as a whole line only and respects existing entries / parent coverage', () => {
+      fs.writeFileSync(path.join(dest, '.gitignore'), 'NULLABLE.md\nnode_modules/\n');
+      expect(ensureGitignore(dest)).toContain('NUL');
+      expect(lines()).toEqual(expect.arrayContaining(['NULLABLE.md', 'NUL']));
+
+      const dest2 = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-gitignore2-'));
+      try {
+        fs.writeFileSync(path.join(dest2, '.gitignore'), 'NUL\n.claude/\n');
+        const added = ensureGitignore(dest2);
+        expect(added).not.toContain('NUL');
+        expect(added).not.toContain('.claude/worktrees/'); // covered by the .claude/ parent
+      } finally {
+        fs.rmSync(dest2, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('squad init never blocks on stdin when non-interactive', () => {
+    const tty = { isTTY: true };
+    const pipe = { isTTY: undefined };
+    it('isInteractiveSession needs a TTY on stdin and stdout and no CI / opt-out', () => {
+      expect(isInteractiveSession({}, tty, tty)).toBe(true);
+      expect(isInteractiveSession({}, pipe, tty)).toBe(false);
+      expect(isInteractiveSession({}, tty, pipe)).toBe(false);
+      expect(isInteractiveSession({}, pipe, pipe)).toBe(false);
+      expect(isInteractiveSession({ CI: 'true' }, tty, tty)).toBe(false);
+      expect(isInteractiveSession({ CI: '1' }, tty, tty)).toBe(false);
+      expect(isInteractiveSession({ CI: '0' }, tty, tty)).toBe(true);
+      expect(isInteractiveSession({ CI: 'false' }, tty, tty)).toBe(true);
+      expect(isInteractiveSession({ SQUAD_NONINTERACTIVE: '1' }, tty, tty)).toBe(false);
+    });
+
+    it('runInit completes without stdin (non-TTY) and scaffolds .gitignore entries', async () => {
+      const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-init-'));
+      const savedStdin = process.stdin.isTTY;
+      try {
+        (process.stdin as { isTTY?: boolean }).isTTY = undefined;
+        const quiet = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        try {
+          await Promise.race([
+            runInit(dest, { includeWorkflows: false } as never),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('runInit blocked waiting for stdin')), 60_000)),
+          ]);
+        } finally {
+          quiet.mockRestore();
+          write.mockRestore();
+        }
+        expect(fs.existsSync(path.join(dest, '.squad'))).toBe(true);
+        const ignore = fs.readFileSync(path.join(dest, '.gitignore'), 'utf8').split(/\r?\n/);
+        expect(ignore).toEqual(expect.arrayContaining(['.claude/worktrees/', 'NUL']));
+      } finally {
+        (process.stdin as { isTTY?: boolean }).isTTY = savedStdin;
+        fs.rmSync(dest, { recursive: true, force: true });
+      }
+    }, 90_000);
+  });
+
+  describe('casting registry backfill from team.md (older CLI without `squad cast --name`)', () => {
+    const TEAM = [
+      '# Squad Team', '', '**Universe:** Star Trek', '',
+      '## Coordinator', '| Name | Role |', '|---|---|', '| Squad | Coordinator |', '',
+      '## Members', '',
+      '| Name | Role | Charter | Status |', '|------|------|---------|--------|',
+      "| Data | Framework Expert | .squad/agents/data/charter.md | ✅ Active |",
+      "| B'Elanna | Durable Systems | .squad/agents/belanna/charter.md | ✅ Active |",
+      '| Pat | Human reviewer | - | human |', '',
+      '## Built-in Support Agents', '| Name | Role |', '|---|---|', '| Scribe | Session Logger |', '| Ralph | Work Monitor |', '',
+    ].join('\n');
+    let dest: string;
+    beforeEach(() => { dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-backfill-')); fs.mkdirSync(path.join(dest, '.squad'), { recursive: true }); });
+    afterEach(() => { fs.rmSync(dest, { recursive: true, force: true }); });
+
+    it('parses only routable specialists (no coordinator, built-ins, humans) and the universe', () => {
+      const { members, universe } = parseTeamRoster(TEAM);
+      expect(members).toEqual([{ name: 'Data', role: 'Framework Expert' }, { name: "B'Elanna", role: 'Durable Systems' }]);
+      expect(universe).toBe('Star Trek');
+      expect(parseTeamRoster('| Name | Role |\n|---|---|\n| Ada | Core |\n').members).toEqual([{ name: 'Ada', role: 'Core' }]);
+      expect(parseTeamRoster('no table here').members).toEqual([]);
+    });
+
+    it('squad upgrade backfills an empty registry from team.md and the pair is readable', () => {
+      fs.writeFileSync(path.join(dest, '.squad', 'team.md'), TEAM);
+      const created = ensureCastingDefaults(dest);
+      expect(created).toEqual(expect.arrayContaining(['.squad/casting/registry.json', '.squad/casting/history.json']));
+      const dir = path.join(dest, '.squad', 'casting');
+      const pair = readCastingRegistryPair(dir);
+      expect(Object.keys(pair.registry.agents).sort()).toEqual(['b-elanna', 'data']);
+      expect(pair.registry.agents['data']).toMatchObject({ display_name: 'Data', role: 'Framework Expert', universe: 'Star Trek', status: 'active' });
+      expect(fs.existsSync(path.join(dir, 'registry-history.commit.json'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'registry.json.handwritten.bak'))).toBe(true);
+      // a second upgrade creates nothing, keeps the same roster, and never backfills again
+      expect(ensureCastingDefaults(dest)).toEqual([]);
+      const again = readCastingRegistryPair(dir);
+      expect(Object.keys(again.registry.agents).sort()).toEqual(['b-elanna', 'data']);
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
+    });
+
+    it('leaves populated registries, missing team.md and empty rosters alone', () => {
+      const dir = path.join(dest, '.squad', 'casting');
+      fs.mkdirSync(dir, { recursive: true });
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
+      ensureCastingDefaults(dest); // empty registry, no team.md
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
+      fs.writeFileSync(path.join(dest, '.squad', 'team.md'), '# Team\n\n## Members\n\n| Name | Role |\n|---|---|\n| Scribe | Logger |\n');
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toMatchObject({ repaired: false, reason: expect.stringMatching(/no specialist members/) });
+
+      // a registry that already has agents is never overwritten
+      fs.writeFileSync(path.join(dest, '.squad', 'team.md'), TEAM);
+      const populated = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }] })!;
+      fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify(populated));
+      fs.rmSync(path.join(dir, 'registry-history.commit.json'), { force: true });
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
+      expect(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'registry.json'), 'utf8')).agents)).toEqual(['ada']);
+    });
+  });
+});
+describe('claude .gitignore marker block is projected and rolled back', () => {
+  let root: string;
+  beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-claude-ignore-')); });
+  afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+  const ctx = (): ClientContext => ({ root, mcp: { command: 'node', args: ['-e', '0'] }, members: [{ name: 'Data', role: 'Expert' }] });
+
+  it('adds .claude/worktrees/ inside an id-scoped block, keeps user lines, and removal restores the file exactly', () => {
+    fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\ndist/\n');
+    installClients(['claude'], ctx());
+    const withBlock = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+    expect(withBlock.startsWith('node_modules/\ndist/\n')).toBe(true);
+    expect(withBlock).toContain('.claude/worktrees/');
+    expect(withBlock).toMatch(/squad:begin:claude/);
+    expect(installClients(['claude'], ctx()).every(r => r.action === 'unchanged')).toBe(true);
+
+    uninstallClients(['claude'], ctx());
+    expect(fs.readFileSync(path.join(root, '.gitignore'), 'utf8')).toBe('node_modules/\ndist/\n');
+  });
+
+  it('deletes a .gitignore that Squad created itself', () => {
+    installClients(['claude'], ctx());
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(true);
+    uninstallClients(['claude'], ctx());
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
+  });
+});
+describe('client adapter contract is exposed canonically and through the deprecated /clients alias', () => {
+  it('@bradygaster/squad-sdk/client and /clients export the same adapter symbols', async () => {
+    const canonical = await import('@bradygaster/squad-sdk/client');
+    const alias = await import('@bradygaster/squad-sdk/clients');
+    for (const name of ['createClientAdapter', 'AdapterUnboundError', 'CAPABILITY_TOKENS_BY_HOST', 'capabilityFlagsFromTokens', 'resolveEffectiveCapabilityTokens',
+      'getClientAdapter', 'installClients', 'CLIENT_IDS']) {
+      expect(canonical, name).toHaveProperty(name);
+      expect((alias as Record<string, unknown>)[name], name).toBe((canonical as Record<string, unknown>)[name]);
+    }
+  });
+
+  it('every host declares tokens that map onto the capability flags consistently', async () => {
+    const { CAPABILITY_TOKENS_BY_HOST, capabilityFlagsFromTokens } = await import('@bradygaster/squad-sdk/client');
+    expect(Object.keys(CAPABILITY_TOKENS_BY_HOST).sort()).toEqual([...CLIENT_IDS].sort());
+    for (const id of CLIENT_IDS) {
+      const flags = capabilityFlagsFromTokens(CAPABILITY_TOKENS_BY_HOST[id], getClientAdapter(id).capabilities.transportModes);
+      expect(flags.supportsSubagents, id).toBe(getClientAdapter(id).capabilities.supportsSubagents);
+    }
   });
 });

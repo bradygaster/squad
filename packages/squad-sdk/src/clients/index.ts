@@ -4,5 +4,6 @@
  *
  * @module clients
  */
+export * from '../client/adapter-contract.js';
 export * from '../client/adapters/index.js';
 

@@ -12,11 +12,11 @@
 
 **Implementation status:** GitHub Copilot projections exist today, and the
 repository already carries portable agent, rules, and MCP artifacts, but the
-host-specific adapter seam is not yet codified as one SDK surface.
+full seven-host projection model is still being locked into one SDK surface.
 
-**Known deviations:** Host discovery, approvals, session spawning, and MCP
-config projection vary across Copilot, Claude Code, Kiro, OpenCode, and
-Cursor.
+**Known deviations:** Host discovery, approvals, session spawning, MCP config
+projection, and rollback behavior vary across Copilot, Claude Code, Kiro,
+OpenCode, Cursor, Codex, and Antigravity.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`,
 `squad-client-backend-decoupling/v0.2`
@@ -45,13 +45,17 @@ Two related adapters project the same portable conversation model:
 
 | Adapter | Plane boundary | Responsibility |
 |---|---|---|
-| `ClientAdapter` | client plane to broker plane | translates host turns, approvals, and transcript subscriptions into backend calls |
+| `HostProjection` | workspace projection only | writes, updates, and removes host-owned files without runtime or backend dependencies |
+| `ClientAdapter` | client plane to broker plane | composes `HostProjection` with runtime bindings and translates host turns, approvals, and transcript subscriptions into backend calls |
 | `HarnessAdapter` | broker plane to execution plane | translates portable run and task operations into the host's agent execution primitive |
 
-The client adapter is closest to the end-user surface. The harness adapter is
-closest to spawned work, subagents, sessions, or durable workers. Some hosts
-can implement both in one package, but the interfaces remain separate so local
-UI behavior does not leak into execution orchestration.
+`HostProjection` is pure workspace projection. It owns file creation, merge,
+upgrade, and byte-preserving rollback for host artifacts, and it has zero
+runtime or backend dependency. The client adapter is closest to the end-user
+surface. The harness adapter is closest to spawned work, subagents, sessions,
+or durable workers. Some hosts can implement all three in one package, but the
+interfaces remain separate so local UI behavior does not leak into execution
+or backend semantics.
 
 The client adapter therefore ends at the host capability boundary: auth,
 session bootstrap, user-visible event rendering, approval affordances, and
@@ -70,15 +74,12 @@ export interface AdapterDescription {
     | 'claude-code'
     | 'kiro'
     | 'opencode'
-    | 'cursor';
+    | 'cursor'
+    | 'codex'
+    | 'antigravity';
   hostVariant?: string;
   displayName: string;
-  capabilities: {
-    approvals: boolean;
-    backgroundRuns: boolean;
-    mcpConfig: boolean;
-    subagents: boolean;
-  };
+  capabilities: string[];
   projectedFiles: string[];
 }
 
@@ -97,6 +98,22 @@ export interface ProjectWorkspaceProjection {
   squadAgentPath: string;
   mcpConfigPath?: string;
   supportFiles: string[];
+}
+
+export interface HostProjection {
+  describe(): Promise<{
+    hostKind:
+      | 'github-copilot'
+      | 'claude-code'
+      | 'kiro'
+      | 'opencode'
+      | 'cursor'
+      | 'codex'
+      | 'antigravity';
+    projectedFiles: string[];
+  }>;
+  projectWorkspace(): Promise<ProjectWorkspaceProjection>;
+  removeProjection(input?: { rollback: 'byte-preserving' | 'managed-only' }): Promise<void>;
 }
 
 export interface AdapterSubmission {
@@ -148,6 +165,10 @@ The method set is intentionally identical. `describe` and `projectWorkspace`
 let the broker reason about host capabilities and file projection without
 special-casing each client in coordinator logic.
 
+`ClientAdapter` is a composition facade: it combines a pure `HostProjection`
+for `describe`, `projectWorkspace`, and `removeProjection` with runtime
+bindings to `HarnessAdapter` and `SquadBackend`.
+
 Adapters translate host-native events and commands into canonical envelopes.
 They do not redefine turn ordering, causation, correlation, cancellation,
 artifact semantics, resumability, or canonical error classes.
@@ -163,6 +184,8 @@ Every host projection publishes the same minimum facts:
 - the authoritative Squad agent file path for that host;
 - the authoritative MCP configuration path for that host, if the host supports
   MCP;
+- the companion files the host requires and whether Squad owns them fully or
+  only through marker blocks;
 - the host execution primitive used for `submit`;
 - the workspace root and working directory used for `projectWorkspace`;
 - whether approvals and background work are supported directly or must be
@@ -180,15 +203,25 @@ entries in `.squad/config.json` are for workspace projection and host wiring,
 not for authority. They exclude credentials, provider thread ids, machine
 paths, leases, checkpoints, and any other mutable runtime state.
 
+Canonical capability tokens are authoritative. The current baseline tokens are
+`approvals`, `background-runs`, `cancel-run`, `cursor-reconnect`,
+`mcp-bridge`, `subagents`, and `typed-content-parts`. Any boolean
+`ClientCapabilities` flags are derived views only. If an adapter receives both
+token lists and boolean flags as conflicting inputs, the projection rejects the
+configuration instead of guessing. Advertised adapter capabilities remain
+distinct from negotiated `effectiveCapabilities`.
+
 ## 5. Canonical file paths and execution primitives
 
 | Host | Agent anchor | MCP config | Support files | `submit` projection |
 |---|---|---|---|---|
 | GitHub Copilot | `.github/agents/squad.agent.md` | `.mcp.json` | `.github/copilot-instructions.md` when present | `create_session`, `task`, or `runSubagent` depending on surface |
 | Claude Code | `.claude/agents/squad.md` | `.mcp.json` | `CLAUDE.md` | Claude `Task` subagent tool |
-| Kiro | `.kiro/steering/squad.md` | `.kiro/settings/mcp.json` | Kiro spec and steering hooks | Kiro agent or spec execution hook |
+| Kiro | `.kiro/steering/squad.md` | `.kiro/settings/mcp.json` | `.kiro/agents/squad.json`, Kiro spec and steering hooks | Kiro agent or spec execution hook |
 | OpenCode | `.opencode/agent/squad.md` | `opencode.json` | host agent and MCP definition blocks in `opencode.json` | OpenCode agent execution entry declared in `opencode.json` |
 | Cursor | `.cursor/agents/squad.md` | `.cursor/mcp.json` | `.cursor/rules/squad.mdc` | Cursor agent dispatch or inline agent run with projected rules |
+| Codex | `AGENTS.md` marker block | `.codex/config.toml` | `AGENTS.md` managed marker block | Codex agent execution surface |
+| Antigravity | `.agents/agents/squad.md` | None | `GEMINI.md` marker block | Antigravity agent execution surface |
 
 These file paths are the portable contract. A host-specific installer may
 write additional generated files, but it may not move the canonical anchor
@@ -203,6 +236,15 @@ model. `clientCapabilities` come from the adapter, `backendCapabilities` come
 from the shared service, `policyCapabilities` come from authorization policy,
 and `effectiveCapabilities` are the only capabilities a projected client can
 actually exercise.
+
+Projection updates follow exact ownership rules:
+
+- fully Squad-owned generated files are upgraded in place and removed by
+  `removeProjection`;
+- marker-block integrations preserve non-Squad bytes outside the managed
+  region and use byte-preserving rollback when projection is removed;
+- merge and upgrade routines operate only on the host's declared companion
+  files and keep unrelated host configuration untouched.
 
 ## 6. GitHub Copilot projection
 
@@ -265,8 +307,13 @@ the projected host files are in sync with the portable Squad contract.
 
 - agent anchor: `.kiro/steering/squad.md`
 - MCP config: `.kiro/settings/mcp.json`
-- support files: any Kiro spec hook definitions that import the Squad steering
-  file
+- support files: `.kiro/agents/squad.json` plus any Kiro spec hook
+  definitions that import the Squad steering file
+
+`.kiro/agents/squad.json` carries workspace-root `file://.squad/team.md`
+resource URIs while its `prompt` path remains relative to `.kiro/agents/`.
+That split is part of the canonical projection and must survive upgrade and
+rollback unchanged.
 
 ### 8.2 `submit`
 
@@ -277,8 +324,9 @@ does not require Kiro to expose the same tool names as Copilot.
 ### 8.3 `projectWorkspace`
 
 The workspace projection always returns `.kiro/steering/squad.md` as the
-authoritative Squad steering file and `.kiro/settings/mcp.json` as the MCP
-config anchor for state and broker tools.
+authoritative Squad steering file, `.kiro/agents/squad.json` as the agent
+descriptor, and `.kiro/settings/mcp.json` as the MCP config anchor for state
+and broker tools.
 
 ## 9. OpenCode projection
 
@@ -323,7 +371,66 @@ submission payload but records `backgroundRuns: false` in `describe`.
 because it carries the host-specific behavioral glue that accompanies the agent
 prompt.
 
-## 11. SDK file layout
+## 11. Codex projection
+
+### 11.1 Canonical files
+
+- agent anchor: `AGENTS.md` managed marker block
+- MCP config: `.codex/config.toml`
+- support files: `AGENTS.md` only outside the generated TOML entry
+
+Codex is currently a compatibility-tier projection. Squad owns only its marker
+block inside `AGENTS.md`, leaving all other bytes intact.
+
+### 11.2 `projectWorkspace`
+
+The projection reports the `AGENTS.md` marker block as the agent anchor and
+the `[mcp_servers.squad_state]` table inside `.codex/config.toml` as the MCP
+anchor.
+
+### 11.3 Rollback
+
+`removeProjection` deletes only the managed marker block in `AGENTS.md` and
+the Squad-owned TOML table, preserving all surrounding bytes verbatim.
+
+## 12. Antigravity projection
+
+### 12.1 Canonical files
+
+- agent anchor: `.agents/agents/squad.md`
+- MCP config: None
+- support files: `GEMINI.md` managed marker block
+
+Antigravity is currently an experimental-tier projection. Its companion
+`GEMINI.md` integration is marker-scoped rather than full-file ownership.
+
+### 12.2 `projectWorkspace`
+
+The projection reports `.agents/agents/squad.md` as the prompt anchor and the
+`GEMINI.md` marker block as the companion integration surface.
+
+### 12.3 Rollback
+
+Rollback removes only Squad-managed bytes and restores the preexisting file
+verbatim outside the marker block.
+
+## 13. Upgrade and rollback rules
+
+Companion-file ownership is explicit:
+
+- `.kiro/steering/squad.md`, `.kiro/agents/squad.json`, and
+  `.kiro/settings/mcp.json` are fully Squad-managed once projected;
+- `.claude/worktrees/` integration uses Squad-owned ID-scoped `.gitignore`
+  marker blocks with `<!-- SQUAD:claude:START -->` and
+  `<!-- SQUAD:claude:END -->`;
+- `AGENTS.md` and `GEMINI.md` integrations are marker-scoped and therefore use
+  byte-preserving rollback outside those managed regions.
+
+Merge and upgrade behavior follows the same rule: full ownership allows
+replacement with the current projection version, while marker-scoped ownership
+updates only the managed block and keeps surrounding bytes untouched.
+
+## 14. SDK file layout
 
 The reference SDK should keep the portable adapter contracts in a host-neutral
 module and keep host projections in one sibling folder per host family.
@@ -335,6 +442,7 @@ module and keep host projections in one sibling folder per host family.
 | host projection implementations | `packages/squad-sdk/src/client/adapters/` |
 | backend implementations | `packages/squad-sdk/src/client/backends/` |
 | public exports | `packages/squad-sdk/src/client/index.ts` |
+| deprecated alias | `@bradygaster/squad-sdk/clients` via `src/clients/index.ts` |
 
 This profile fixes the contract locations so backend work, client work, and
 contract validation can proceed in parallel without rediscovering file layout.
@@ -344,24 +452,30 @@ Those files also enforce the architectural boundary:
 - `backend-contract.ts` owns conversation, participant, turn, task, artifact,
   lease, cancellation, resumability, observability, and canonical error
   semantics;
-- `adapter-contract.ts` owns host capability description, workspace
-  projection, and translation hooks only.
+- `adapter-contract.ts` owns `HostProjection`, `ClientAdapter`,
+  `HarnessAdapter`, host capability description, workspace projection, and
+  translation hooks only;
+- `src/clients/index.ts` remains a deprecated re-export alias and must not
+  become the canonical contract location again.
 
-## 12. Promotion criteria
+## 15. Promotion criteria
 
 Promote this draft only after the suite has:
 
 1. contract tests that run the same `ClientAdapter` and `HarnessAdapter`
    assertions against at least GitHub Copilot plus one non-Copilot host;
-2. fixtures that verify the canonical file-path projection for all five host
+2. fixtures that verify the canonical file-path projection for all seven host
    families;
 3. approval and cancellation traces that demonstrate host-specific UI behavior
    still round-trips through the same portable response envelope;
 4. MCP projection tests that prove `.mcp.json`, `.kiro/settings/mcp.json`,
-   `opencode.json`, and `.cursor/mcp.json` are emitted with stable semantics;
+   `opencode.json`, `.cursor/mcp.json`, and `.codex/config.toml` are emitted
+   with stable semantics;
 5. broker-to-harness replay tests showing that the chosen host primitive
    preserves run identity, transcript ordering, and background capability
    reporting;
 6. golden-trace validation proving that adapters survive disconnect and
    reconnect without losing unknown events, durable approval versions, or
-   stable `runId` cancellation targeting.
+   stable `runId` cancellation targeting;
+7. rollback tests proving that marker-scoped integrations restore surrounding
+   bytes unchanged.

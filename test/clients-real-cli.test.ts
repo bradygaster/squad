@@ -31,7 +31,14 @@ beforeAll(() => {
   });
   expect(results.filter((r) => r.action === 'error')).toEqual([]);
 });
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+afterAll(() => {
+  // real CLIs (e.g. opencode's background server) can still hold the cwd on Windows: retry, then ignore
+  try {
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch {
+    // best-effort cleanup of an OS temp dir
+  }
+});
 
 describe('real CLIs load Squad projections', () => {
   it.skipIf(!has('claude'))('claude discovers the squad subagents and parses .mcp.json', () => {
