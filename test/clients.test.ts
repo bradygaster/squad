@@ -222,6 +222,7 @@ describe('coordinator behavioral-contract parity', () => {
     ['GitHub Issues + PRD Mode', [/GitHub Issues mode/, /gh issue list/, /squad\/\{issue-number\}-\{slug\}/, /PRD mode/, /decompose/]],
     ['Cross-Squad', [/Cross-squad delegation/, /peer Squad install/, /ad-hoc subagent/]],
     ['Human + @copilot', [/Human members and the @copilot coding agent/, /Coding Agent/]],
+    ['Process safety', [/Never kill processes by image name/]],
     ['Ralph', [/Ralph mode/, /squad:<member>/, /board clear/]],
     ['Init Mode guards', [/NEVER with glob\/grep\/search tools/, /Auto-confirm \(default\)/, /npx squad upgrade/, /npx squad cast --name/, /NEVER hand-write or edit anything under/, /checksummed pair/, /\.squad\/scratch\//, /never write outside the workspace/, /STOP and report the roster/]],
   ];
@@ -264,6 +265,7 @@ describe('claude adapter', () => {
     expect(member).toContain('.squad/agents/data/charter.md');
     expect(readJson('.mcp.json').mcpServers.squad_state.command).toBe('squad');
     expect(read('CLAUDE.md')).toContain(BLOCK_BEGIN);
+    expect(read('.gitignore')).toContain('.claude/worktrees/');
   });
   it('preserves user CLAUDE.md content and replaces the block in place', () => {
     fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Mine\n\nrules\n');
