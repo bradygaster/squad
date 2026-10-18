@@ -59,8 +59,9 @@ describe('LocalSquadBackend', () => {
     const b = new LocalSquadBackend();
     await b.createConversation({ conversationId: 'c' });
     await b.sendMessage('c', msg('r1', 1));
-    const dup = await b.sendMessage('c', msg('r1', 1, { content: 'changed' }));
+    const dup = await b.sendMessage('c', msg('r1', 1));
     expect(dup.duplicate).toBe(true);
+    expect(await rejectCode(b.sendMessage('c', msg('r1', 1, { content: 'changed' })))).toBe('conflict');
     await b.sendMessage('c', msg('r2', 1));
     const t = await b.getTranscript('c');
     expect(t).toHaveLength(2);
@@ -895,5 +896,141 @@ describe('PR #2238 final hardening', () => {
     expect(used.length).toBeGreaterThanOrEqual(3);
     expect(new Set(used).size).toBe(1);
     expect(used[0]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+describe('PR review round 3 (Brady re-review of 6451747d)', () => {
+  const mk = (h = new FakeHarness()) => {
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    return { h, harnesses, state: new MemoryStateStore() };
+  };
+  const ask = (runId = 'r', id = 'a1') => ({ type: 'approval-requested' as const, runId, seq: 1, request: { approvalId: id, turnSeq: 1, action: 'x', hash: 'h' } });
+
+  it('P1 legacy outbox entries (id, no operationId): acknowledging one never drops another', async () => {
+    const { h, harnesses, state } = mk();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r1', 1, { harness: 'copilot' }));
+    await b.sendMessage('c', msg('r2', 1, { harness: 'copilot' }));
+    const key = 'backend/conversations/c.json';
+    const doc = JSON.parse(state.read(key)!);
+    doc.turns.forEach((t: { state: string }) => { t.state = 'cancelled'; });
+    doc.deliveries = [{ id: 'L1', kind: 'cancel', runId: 'r1', seq: 1 }, { kind: 'cancel', runId: 'r2', seq: 1 }, { kind: 'cancel', runId: 'r1', seq: 1 }];
+    state.write(key, JSON.stringify(doc));
+    h.cancel = async (_c: string, runId: string, seq: number) => { if (runId === 'r2') throw new Error('down'); h.cancelled.push(seq); };
+    expect(await rejectCode(new LocalSquadBackend({ state, harnesses }).cancelTurn('c', 1))).toBe('unavailable');
+    const left = JSON.parse(state.read(key)!).deliveries as Array<{ operationId: string; runId: string }>;
+    expect(left.map(d => d.runId)).toEqual(['r2', 'r1']);
+    expect(new Set(left.map(d => d.operationId)).size).toBe(2);
+    expect(left.every(d => !!d.operationId && !('id' in d))).toBe(true);
+  });
+
+  it('P1 a missing harness keeps the durable delivery and reports a retryable error', async () => {
+    const { h, harnesses, state } = mk();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask());
+    const bare = new LocalSquadBackend({ state, harnesses: new DefaultHarnessRegistry() });
+    const err = await bare.cancelRun('c', 'r').catch(e => e);
+    expect(err).toMatchObject({ code: 'unavailable', retryable: true });
+    expect(JSON.parse(state.read('backend/conversations/c.json')!).deliveries).toHaveLength(1);
+    await new LocalSquadBackend({ state, harnesses }).cancelRun('c', 'r');
+    expect(h.cancelled).toEqual([1]);
+    expect(JSON.parse(state.read('backend/conversations/c.json')!).deliveries ?? []).toHaveLength(0);
+  });
+
+  it('P1 an admission retry returns the ORIGINAL admission cursor so unseen events are replayed', async () => {
+    const { h, harnesses, state } = mk();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    const first = await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask());
+    h.emit({ type: 'task', runId: 'r', seq: 1, id: 't1', state: 'running' } as never);
+    const retry = await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    expect(retry.duplicate).toBe(true);
+    expect(retry.cursor).toBe(first.cursor);
+    const replay = await b.readEvents('c', { after: retry.cursor });
+    expect(replay.events.map(e => e.type)).toContain('approval.requested');
+  });
+
+  it('P2 the same (runId, seq) with a different payload is a conflict, an identical one a duplicate', async () => {
+    const b = new LocalSquadBackend();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1));
+    expect((await b.sendMessage('c', msg('r', 1, { correlationId: 'other' }))).duplicate).toBe(true);
+    for (const changed of [{ content: 'different' }, { role: 'assistant' as const }, { parts: [{ type: 'text' as const, text: 'p' }], content: 'm1' }]) {
+      expect(await b.sendMessage('c', msg('r', 1, changed)).catch(e => e)).toMatchObject({ code: 'conflict', status: 409 });
+    }
+    expect(await b.getTranscript('c')).toHaveLength(1);
+  });
+
+  it('P2 synchronous replay during restart recovery does not re-enter load() or deadlock the lock', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-replay-'));
+    try {
+      let subscribes = 0;
+      const replay: HarnessEventEnvelope[] = [ask() as never];
+      class ReplayHarness extends FakeHarness {
+        override subscribe(c: string, l: (e: HarnessEventEnvelope) => void) {
+          subscribes++;
+          replay.forEach(e => l(e)); // synchronous replay before the subscription is returned
+          return super.subscribe(c, l);
+        }
+      }
+      const h = new ReplayHarness();
+      const harnesses = new DefaultHarnessRegistry();
+      harnesses.register(h);
+      const store = () => createFileStateStore(dir, { lockTimeoutMs: 400 });
+      const first = new LocalSquadBackend({ state: store(), harnesses: (() => { const r = new DefaultHarnessRegistry(); r.register(new FakeHarness()); return r; })() });
+      await first.createConversation({ conversationId: 'c' });
+      await first.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+      subscribes = 0;
+      const restarted = new LocalSquadBackend({ state: store(), harnesses });
+      const approvals = await restarted.getApprovals('c');
+      expect(approvals.map(a => a.approvalId)).toEqual(['a1']);
+      expect(subscribes).toBe(1);
+      await new Promise(r => setTimeout(r, 20)); // the post-load persistence of the replayed event
+      expect((await new LocalSquadBackend({ state: store(), harnesses }).getApprovals('c')).map(a => a.approvalId)).toEqual(['a1']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('P1 overlapping stale-lock recovery (A observes, B takes over, C waits) never yields two owners', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-abc-'));
+    try {
+      const lockPath = path.join(dir, 'backend', 'locks', 'k.lock');
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      fs.writeFileSync(lockPath, 'crashed:T1');
+      const old = new Date(Date.now() - 60_000);
+      fs.utimesSync(lockPath, old, old);
+      let armed = true;
+      const storeA = createFileStateStore(dir, {
+        staleLockMs: 5_000, lockTimeoutMs: 300,
+        // B recovers the stale lock and acquires it right after A observed the stale T1 but before A recovers
+        beforeStaleRecovery: (lp) => { if (armed) { armed = false; fs.rmSync(lp); fs.writeFileSync(lp, 'B:live'); } },
+      });
+      expect(() => storeA.lock!('backend/locks/k')).toThrow(/Timed out/); // A must not steal B's live lock
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe('B:live');
+      const storeC = createFileStateStore(dir, { staleLockMs: 5_000, lockTimeoutMs: 300 });
+      expect(() => storeC.lock!('backend/locks/k')).toThrow(/Timed out/); // nor can C acquire it
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe('B:live');
+      expect(fs.readdirSync(path.dirname(lockPath)).filter(n => n.endsWith('.recover'))).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('P2 an HTTP body-read failure is retried like any other transient failure', async () => {
+    let calls = 0;
+    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', retryDelayMs: 1, fetch: (async () => {
+      calls++;
+      if (calls === 1) return { ok: true, status: 200, headers: new Headers(), text: async () => { throw new TypeError('terminated'); } } as unknown as Response;
+      return new Response(JSON.stringify({ runId: 'r', seq: 1, duplicate: false, state: 'queued' }), { status: 200 });
+    }) as never });
+    expect((await b.sendMessage('c', msg('r', 1))).runId).toBe('r');
+    expect(calls).toBe(2);
   });
 });

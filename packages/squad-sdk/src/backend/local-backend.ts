@@ -74,10 +74,40 @@ const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 
 /** File-system store rooted at a `.squad` directory. Never follows symlinks/junctions below the root. */
+/**
+ * Remove an abandoned lock under an exclusive `.recover` mutex. While holding it the lock is re-read: it is
+ * only removed if it is still byte-for-byte (and mtime-for-mtime) the stale lock that was observed, so a lock
+ * a faster waiter has since re-acquired is never touched and two waiters can never both own the lock.
+ */
+function recoverStaleLock(lockPath: string, observed: string, observedMtime: number, staleLockMs: number): boolean {
+  const mutex = `${lockPath}.recover`;
+  let fd: number;
+  try {
+    fd = fs.openSync(mutex, 'wx');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    // a crashed recoverer must not wedge recovery forever
+    try { if (Date.now() - fs.statSync(mutex).mtimeMs > staleLockMs) fs.rmSync(mutex, { force: true }); } catch { /* raced */ }
+    return false;
+  }
+  try {
+    let current: string;
+    let mtime: number;
+    try { current = fs.readFileSync(lockPath, 'utf8'); mtime = fs.statSync(lockPath).mtimeMs; } catch { return true; } // already gone
+    if (current !== observed || mtime !== observedMtime || Date.now() - mtime <= staleLockMs) return true; // replaced by a live holder
+    fs.rmSync(lockPath, { force: true });
+    return true;
+  } finally {
+    fs.closeSync(fd);
+    fs.rmSync(mutex, { force: true });
+  }
+}
 export interface FileStateStoreOptions {
   /** A lock file untouched for longer than this is treated as abandoned by a crashed holder. */
   staleLockMs?: number;
   lockTimeoutMs?: number;
+  /** Test seam: runs after a stale lock was observed and before recovery starts. */
+  beforeStaleRecovery?: (lockPath: string) => void;
 }
 
 export function createFileStateStore(squadDir: string, options: FileStateStoreOptions = {}): BackendStateStore {
@@ -119,14 +149,11 @@ export function createFileStateStore(squadDir: string, options: FileStateStoreOp
           // The claimed file is re-checked; if it turns out to be a live holder's lock it is put back untouched.
           try {
             const observed = fs.readFileSync(lockPath, 'utf8');
-            if (Date.now() - fs.statSync(lockPath).mtimeMs > staleLockMs) {
-              const claimed = `${lockPath}.stale.${process.pid}.${randomUUID()}`;
-              fs.renameSync(lockPath, claimed);
-              let still = false;
-              try { still = fs.readFileSync(claimed, 'utf8') === observed && Date.now() - fs.statSync(claimed).mtimeMs > staleLockMs; } catch { /* gone */ }
-              if (still) { fs.rmSync(claimed, { force: true }); continue; }
-              try { fs.linkSync(claimed, lockPath); } catch { /* a newer holder exists; ours was already replaced */ }
-              fs.rmSync(claimed, { force: true });
+            const observedMtime = fs.statSync(lockPath).mtimeMs;
+            if (Date.now() - observedMtime > staleLockMs) {
+              options.beforeStaleRecovery?.(lockPath);
+              if (recoverStaleLock(lockPath, observed, observedMtime, staleLockMs)) continue;
+              sleepSync(10);
               continue;
             }
           } catch { continue; }
@@ -173,6 +200,8 @@ export class LocalSquadBackend implements SquadBackend {
   private readonly state: BackendStateStore;
   readonly harnesses: HarnessRegistry;
   private readonly subscriptions = new Map<string, () => void>();
+  private readonly loading = new Map<string, StoredConversation>();
+  private readonly txActive = new Set<string>();
 
   constructor(options: LocalSquadBackendOptions = {}) {
     this.kind = options.kind ?? 'local';
@@ -214,11 +243,18 @@ export class LocalSquadBackend implements SquadBackend {
       this.checkEpoch(conv, msg.epoch);
       const dup = conv.turns.find(t => t.runId === msg.runId && t.seq === msg.seq);
       if (dup) {
+        // (runId, seq) is an idempotency key: the same key with a different payload is a client bug, not a retry
+        const original = dup.messages[0];
+        if (original && !sameMessagePayload(original, msg)) {
+          throw new BackendError('conflict', `Idempotency key (${msg.runId}, ${msg.seq}) was reused with a different message payload`, 409);
+        }
         return {
           duplicate: true as const,
           admission: {
             protocol: BACKEND_PROTOCOL_VERSION, conversationId, runId: dup.runId, seq: dup.seq, duplicate: true,
-            state: dup.state, epoch: conv.info.epoch, correlationId: msg.correlationId, cursor: this.tailCursor(conv),
+            state: dup.state, epoch: conv.info.epoch, correlationId: msg.correlationId,
+            // the cursor at the ORIGINAL admission, so a client that lost the first response replays everything after it
+            cursor: this.admissionCursor(conv, dup),
           } satisfies BackendAdmission,
         };
       }
@@ -341,7 +377,7 @@ export class LocalSquadBackend implements SquadBackend {
       }
       this.emit(conv, 'control', 'approval.resolved',
         { runId: turn.runId, seq: turn.seq, approvalId: response.approvalId, decision: response.decision, version: record?.version ?? 2, state: turn.state });
-      if (this.adapterFor(turn)) {
+      if (turn.messages[0]?.harness) {
         (conv.deliveries ??= []).push({ operationId: randomUUID(), kind: 'approval', runId: turn.runId, seq: turn.seq, response });
       }
       return { runId: turn.runId, seq: turn.seq };
@@ -410,12 +446,14 @@ export class LocalSquadBackend implements SquadBackend {
   private tx<T>(conversationId: string, fn: (conv: StoredConversation) => T): T {
     this.assertId(conversationId);
     const release = this.state.lock?.(`${LOCKS}/${conversationId}`);
+    this.txActive.add(conversationId);
     try {
       const conv = this.load(conversationId);
       const result = fn(conv);
       this.save(conv);
       return result;
     } finally {
+      this.txActive.delete(conversationId);
       release?.();
     }
   }
@@ -440,6 +478,13 @@ export class LocalSquadBackend implements SquadBackend {
     };
     conv.events.push(env);
     return env;
+  }
+
+  private admissionCursor(conv: StoredConversation, turn: BackendTurn): BackendCursor {
+    const accepted = (conv.events ?? []).find(e => e.type === 'message.accepted'
+      && (e.payload as { runId?: string; seq?: number }).runId === turn.runId
+      && (e.payload as { runId?: string; seq?: number }).seq === turn.seq);
+    return accepted?.cursor ?? this.tailCursor(conv);
   }
 
   private tailCursor(conv: StoredConversation): BackendCursor {
@@ -468,7 +513,7 @@ export class LocalSquadBackend implements SquadBackend {
     turn.state = 'cancelled';
     const requested = this.emit(conv, 'control', 'cancellation.requested', { runId: turn.runId, seq: turn.seq, reason });
     this.emit(conv, 'control', 'turn.state', { runId: turn.runId, seq: turn.seq, state: 'cancelled' }, undefined, requested.id);
-    if (this.adapterFor(turn)) {
+    if (turn.messages[0]?.harness) {
       (conv.deliveries ??= []).push({ operationId: randomUUID(), kind: 'cancel', runId: turn.runId, seq: turn.seq });
     }
   }
@@ -484,7 +529,13 @@ export class LocalSquadBackend implements SquadBackend {
       const next = conv.deliveries?.[0];
       if (!next) return;
       const turn = this.findTurn(conv, next.runId, next.seq);
-      const adapter = turn ? this.adapterFor(turn) : undefined;
+      const harness = turn?.messages[0]?.harness;
+      const adapter = harness ? this.harnesses.get(harness) : undefined;
+      if (harness && !adapter) {
+        // never discard a durable delivery because the harness is not registered (yet): keep it for a retry
+        throw new BackendError('unavailable',
+          `Harness '${harness}' is not registered; the ${next.kind} delivery stays queued and will be retried`, 503);
+      }
       try {
         if (adapter) {
           if (next.kind === 'cancel') await adapter.cancel(conversationId, next.runId, next.seq, next.operationId);
@@ -519,10 +570,26 @@ export class LocalSquadBackend implements SquadBackend {
     const key = `${conversationId}\u0000${harnessId}`;
     if (this.subscriptions.has(key)) return;
     const adapter = this.harnesses.get(harnessId)!;
-    this.subscriptions.set(key, adapter.subscribe(conversationId, ev => this.applyEvent(conversationId, ev)));
+    // track BEFORE subscribing: an adapter that replays synchronously must not re-enter rehydration
+    this.subscriptions.set(key, () => undefined);
+    try {
+      this.subscriptions.set(key, adapter.subscribe(conversationId, ev => this.applyEvent(conversationId, ev)));
+    } catch (err) {
+      this.subscriptions.delete(key);
+      throw err;
+    }
   }
 
   private applyEvent(conversationId: string, incoming: HarnessEventEnvelope): void {
+    const loading = this.loading.get(conversationId);
+    if (loading) {
+      // synchronous replay while this conversation is being loaded: apply to the in-memory state instead of
+      // re-entering load() (and the non-reentrant lock). Persisted by the enclosing tx, or re-applied
+      // (idempotently) right after the load when there is none.
+      this.applyEventLocked(loading, incoming);
+      if (!this.txActive.has(conversationId)) queueMicrotask(() => this.applyEvent(conversationId, incoming));
+      return;
+    }
     try {
       this.tx(conversationId, conv => this.applyEventLocked(conv, incoming));
     } catch (err) {
@@ -627,13 +694,44 @@ export class LocalSquadBackend implements SquadBackend {
       return undefined;
     }
     const conv = JSON.parse(raw) as StoredConversation;
-    this.rehydrate(conv);
+    normalizeDeliveries(conv);
+    this.loading.set(id, conv);
+    try {
+      this.rehydrate(conv);
+    } finally {
+      this.loading.delete(id);
+    }
     return conv;
   }
 
   private save(conv: StoredConversation): void {
     this.state.write(`${ROOT}/${conv.info.conversationId}.json`, JSON.stringify(conv, null, 2));
   }
+}
+
+/** Compare the idempotency-relevant payload of an accepted message with a retried one. */
+function sameMessagePayload(a: BackendMessage, b: BackendMessage): boolean {
+  return a.role === b.role
+    && a.content === b.content
+    && JSON.stringify(a.parts ?? null) === JSON.stringify(b.parts ?? null)
+    && JSON.stringify(a.extensions ?? null) === JSON.stringify(b.extensions ?? null);
+}
+
+/**
+ * Outbox entries persisted by earlier versions carry `id` (or nothing) instead of `operationId`. Normalize them
+ * deterministically so each entry is individually addressable: acknowledging one must never drop another.
+ */
+function normalizeDeliveries(conv: StoredConversation): void {
+  if (!conv.deliveries?.length) return;
+  const seen = new Set<string>();
+  conv.deliveries.forEach((d, i) => {
+    const legacy = d as PendingDelivery & { id?: string };
+    let op = legacy.operationId || legacy.id || `legacy:${d.kind}:${d.runId}:${d.seq}:${i}`;
+    if (seen.has(op)) op = `${op}:${i}`;
+    seen.add(op);
+    legacy.operationId = op;
+    delete legacy.id;
+  });
 }
 
 function encodeCursor(conversationId: string, sequence: number): BackendCursor {

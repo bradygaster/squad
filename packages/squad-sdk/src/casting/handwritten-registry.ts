@@ -13,7 +13,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { readCastingRegistryPair } from './durable-registry.js';
+import {
+  acquireCastingRegistryLock,
+  commitCastingRegistryPair,
+  readCastingRegistryPair,
+} from './durable-registry.js';
 import {
   AGENT_PROVENANCE_SCHEMA,
   AGENT_PROVENANCE_VERSION,
@@ -30,6 +34,10 @@ const STATUSES: readonly AgentProvenanceStatus[] = ['active', 'inactive', 'retir
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+function normalizeStatus(v: unknown): AgentProvenanceStatus {
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return (STATUSES as readonly string[]).includes(s) ? (s as AgentProvenanceStatus) : 'active';
+}
 const isTs = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && !Number.isNaN(Date.parse(v));
 
 export function toAgentId(value: string): string {
@@ -92,7 +100,9 @@ export function normalizeHandwrittenCastingRegistry(value: unknown, now = new Da
       persistent_name: name,
       role: role ?? id,
       universe,
-      status: 'active',
+      // preserve a recorded lifecycle status: a retired agent must not be silently resurrected
+      status: normalizeStatus(rec['status']),
+      ...(normalizeStatus(rec['status']) === 'retired' ? { retired_at: isTs(rec['retired_at']) ? rec['retired_at'] : generatedAt } : {}),
       created_at: generatedAt,
       updated_at: generatedAt,
     };
@@ -159,6 +169,11 @@ export function repairHandwrittenCastingRegistry(castingDir: string, now = new D
   // a hand-edited registry that is still well-formed can nevertheless disagree with the checksummed commit manifest
   const manifestMismatch = hasManifest && isAcceptable(parsed) && commitManifestMismatch(castingDir);
   if (isAcceptable(parsed) && !manifestMismatch) return { repaired: false, files: [] };
+  // a well-formed registry that only disagrees with the manifest keeps its revision and history: just re-commit
+  // the same pair through the canonical writer so the manifest matches again
+  if (manifestMismatch && recommitExistingPair(castingDir)) {
+    return { repaired: true, files: ['registry.json', 'history.json', COMMIT_MANIFEST] };
+  }
   const normalized = normalizeHandwrittenCastingRegistry(parsed, now);
   if (!normalized) return { repaired: false, files: [], reason: 'registry.json has no recoverable agents' };
 
@@ -166,45 +181,77 @@ export function repairHandwrittenCastingRegistry(castingDir: string, now = new D
 }
 
 /**
- * Write `normalized` as a genesis registry plus the matching history, backing up whatever
- * was there. History must describe the same genesis cast or the durable reader rejects
- * the pair as mixed-generation; a commit manifest pins old bytes, so it is backed up and removed.
+ * Re-commit an existing, individually valid registry/history pair so a stale commit manifest is replaced by a
+ * canonical one. Returns false (leaving everything untouched) when the pair is not self-consistent, in which
+ * case the caller rebuilds it from the registry's agents instead.
+ */
+function recommitExistingPair(castingDir: string): boolean {
+  const registryPath = path.join(castingDir, 'registry.json');
+  const historyPath = path.join(castingDir, 'history.json');
+  if (!fs.existsSync(historyPath)) return false;
+  const registryRaw = fs.readFileSync(registryPath, 'utf8');
+  const historyRaw = fs.readFileSync(historyPath, 'utf8');
+  let registry: unknown;
+  let history: unknown;
+  try { registry = JSON.parse(registryRaw); history = JSON.parse(historyRaw); } catch { return false; }
+  if (!isRecord(registry) || !isRecord(history) || typeof registry['revision'] !== 'number') return false;
+  const { transaction_id: _rt, ...reg } = registry;
+  const { transaction_id: _ht, registry_revision: _hr, ...hist } = history;
+  void _rt; void _ht; void _hr;
+  for (const f of [registryPath, historyPath, path.join(castingDir, COMMIT_MANIFEST)]) {
+    if (fs.existsSync(f) && !fs.existsSync(`${f}.handwritten.bak`)) fs.copyFileSync(f, `${f}.handwritten.bak`);
+  }
+  const release = acquireCastingRegistryLock(castingDir, 'casting manifest repair');
+  try {
+    commitCastingRegistryPair(castingDir, registryRaw, reg, historyRaw, hist, registry['revision']);
+    readCastingRegistryPair(castingDir);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    release();
+  }
+}
+/**
+ * Write `normalized` as a repaired registry + history through the SDK's canonical commit writer, so the pair
+ * carries a valid `registry-history.commit.json` manifest and passes `readCastingRegistryPair`. Whatever was
+ * there is backed up as `*.handwritten.bak` first.
+ *
+ * History describes the same cast (one genesis snapshot listing every agent) or the durable reader rejects the
+ * pair as mixed-generation. Recorded `retired` / `inactive` statuses are kept as-is (a retired agent gets a
+ * `retired_at`), never silently reactivated.
  */
 function writeGenesisPair(castingDir: string, normalized: AgentProvenanceRegistry): { files: string[]; removed?: string[] } {
   const registryPath = path.join(castingDir, 'registry.json');
-  const files: string[] = [];
-  const removed: string[] = [];
-  const backup = `${registryPath}.handwritten.bak`;
-  if (fs.existsSync(registryPath) && !fs.existsSync(backup)) fs.copyFileSync(registryPath, backup);
-  fs.writeFileSync(registryPath, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
-  files.push('registry.json');
   const historyPath = path.join(castingDir, 'history.json');
-  if (fs.existsSync(historyPath) && !fs.existsSync(`${historyPath}.handwritten.bak`)) {
-    fs.copyFileSync(historyPath, `${historyPath}.handwritten.bak`);
+  const manifestPath = path.join(castingDir, COMMIT_MANIFEST);
+  for (const f of [registryPath, historyPath, manifestPath]) {
+    if (fs.existsSync(f) && !fs.existsSync(`${f}.handwritten.bak`)) fs.copyFileSync(f, `${f}.handwritten.bak`);
   }
-  const firstAgent = Object.values(normalized.agents)[0]!;
-  const history = {
-    universe_usage_history: [{ universe: firstAgent.universe, used_at: normalized.generated_at }],
+  const agents = Object.values(normalized.agents);
+  const universe = agents[0]!.universe;
+  const history: Record<string, unknown> = {
+    universe_usage_history: [{ universe, used_at: normalized.generated_at }],
     assignment_cast_snapshots: {
       'handwritten-cast-import': {
-        universe: firstAgent.universe,
+        universe,
         created_at: normalized.generated_at,
         agents: Object.keys(normalized.agents),
       },
     },
   };
-  fs.writeFileSync(historyPath, JSON.stringify(history, null, 2) + '\n', 'utf8');
-  files.push('history.json');
-  const manifestPath = path.join(castingDir, COMMIT_MANIFEST);
-  if (fs.existsSync(manifestPath)) {
-    const manifestBackup = `${manifestPath}.handwritten.bak`;
-    if (!fs.existsSync(manifestBackup)) fs.copyFileSync(manifestPath, manifestBackup);
-    fs.rmSync(manifestPath);
-    removed.push(COMMIT_MANIFEST);
+  const { transaction_id: _t, ...registry } = normalized as unknown as Record<string, unknown>;
+  void _t;
+  const release = acquireCastingRegistryLock(castingDir, 'handwritten registry repair');
+  try {
+    const previousRegistryRaw = fs.existsSync(registryPath) ? fs.readFileSync(registryPath, 'utf8') : undefined;
+    const previousHistoryRaw = fs.existsSync(historyPath) ? fs.readFileSync(historyPath, 'utf8') : undefined;
+    commitCastingRegistryPair(castingDir, previousRegistryRaw, registry, previousHistoryRaw, history, normalized.revision);
+  } finally {
+    release();
   }
-  return { files, ...(removed.length > 0 ? { removed } : {}) };
+  return { files: ['registry.json', 'history.json', COMMIT_MANIFEST] };
 }
-
 // ── backfill from team.md ───────────────────────────────────────────
 
 const BUILTIN_NAMES = new Set(['scribe', 'ralph', 'rai', 'fact checker', 'fact-checker', 'squad', 'coordinator', 'copilot', '@copilot']);

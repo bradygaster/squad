@@ -605,3 +605,45 @@ describe('review hardening (Copilot review on #2238)', () => {
     expect(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')).toBe('{ not json');
   });
 });
+
+describe('TOML array-of-tables and quoted keys (PR review round 3)', () => {
+  const doc = [
+    '[mcp_servers.squad_state]',
+    '"command" = "old"',
+    "'cwd' = \"/x\"",
+    'args = ["a"]',
+    '',
+    '[[skills.config]]',
+    'path = "/skills/one"',
+    '',
+    '[[skills.config]]',
+    'path = "/skills/two"',
+    '',
+  ].join('\n');
+
+  it('upsertTomlTable stops at [[array_table]] and rewrites quoted managed keys in place', () => {
+    const out = upsertTomlTable(doc, 'mcp_servers.squad_state', { command: '"squad"', args: '["state-mcp"]' });
+    expect(out.match(/command\s*=/g)).toHaveLength(1);
+    expect(out).toContain('command = "squad"');
+    expect(out).toContain("'cwd' = \"/x\"");
+    expect(out).toContain('args = ["state-mcp"]');
+    expect(out.match(/\[\[skills\.config\]\]/g)).toHaveLength(2);
+    expect(out).toContain('path = "/skills/one"');
+    expect(out).toContain('path = "/skills/two"');
+    // the managed block did not swallow the array tables: they still follow it
+    expect(out.indexOf('[[skills.config]]')).toBeGreaterThan(out.indexOf('args = ["state-mcp"]'));
+  });
+
+  it('inserts a missing key before the next [[array_table]], not after it', () => {
+    const out = upsertTomlTable('[t]\nk = 1\n\n[[arr]]\nv = 2\n', 't', { added: '"x"' });
+    expect(out.indexOf('added = "x"')).toBeLessThan(out.indexOf('[[arr]]'));
+    expect(out).toContain('[[arr]]\nv = 2');
+  });
+
+  it('removeTomlTable removes only the managed table and keeps the array tables', () => {
+    const out = removeTomlTable(doc, 'mcp_servers.squad_state');
+    expect(out).not.toContain('squad_state');
+    expect(out.match(/\[\[skills\.config\]\]/g)).toHaveLength(2);
+    expect(out).toContain('path = "/skills/two"');
+  });
+});

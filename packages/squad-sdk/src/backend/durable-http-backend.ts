@@ -180,19 +180,19 @@ export class DurableHttpSquadBackend implements SquadBackend {
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       if (attempt > 0) await delay(this.retryDelayMs * 2 ** (attempt - 1));
       let res: Response;
+      let text: string;
       try {
         res = await this.doFetch(`${this.base}${route}`, {
           method, headers, body: body === undefined ? undefined : JSON.stringify(body),
         });
+        // the body is part of the attempt: a stream failing after the headers arrived is retried like any network error
+        text = await res.text();
       } catch (err) {
         lastError = new BackendError('unavailable', `Network error: ${err instanceof Error ? err.message : String(err)}`);
         continue;
       }
-      if (res.ok) {
-        const text = await res.text();
-        return (text ? JSON.parse(text) : {}) as T;
-      }
-      const err = await toError(res);
+      if (res.ok) return (text ? JSON.parse(text) : {}) as T;
+      const err = toError(res, text);
       if (err.retryable || RETRYABLE_STATUS.has(res.status)) { lastError = err; continue; }
       throw err;
     }
@@ -203,14 +203,14 @@ export class DurableHttpSquadBackend implements SquadBackend {
 const enc = encodeURIComponent;
 const delay = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
-async function toError(res: Response): Promise<BackendError> {
+function toError(res: Response, text: string): BackendError {
   let detail = '';
   let code: BackendErrorCode | undefined;
   let details: Record<string, unknown> | undefined;
   let correlationId = res.headers.get('x-correlation-id') ?? undefined;
   try {
     // Canonical shape is { error: { code, message, retryable, details } }; flat bodies are tolerated.
-    const body = JSON.parse(await res.text()) as Record<string, unknown>;
+    const body = JSON.parse(text) as Record<string, unknown>;
     const e = (body['error'] && typeof body['error'] === 'object' ? body['error'] : body) as Record<string, unknown>;
     detail = String(e['message'] ?? (typeof body['error'] === 'string' ? body['error'] : '') ?? '');
     if (typeof e['code'] === 'string' && isCode(e['code'])) code = e['code'];

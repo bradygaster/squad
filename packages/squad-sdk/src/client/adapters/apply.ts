@@ -34,13 +34,27 @@ export function upsertBlock(existing: string, content: string, id?: string): str
   return `${existing}${sep}${block}\n`;
 }
 
-/** Normalized dotted key of a `[table]` header line (quotes/whitespace tolerant), or undefined. */
-function tableHeaderKey(line: string): string | undefined {
-  const m = /^\s*\[(?!\[)([^\]]+)\]\s*(?:#.*)?$/.exec(line);
-  if (!m) return undefined;
-  return m[1]!.split('.').map((s) => s.trim().replace(/^["']|["']$/g, '')).join('.');
+const SECTION_RE = /^\s*(\[\[?)\s*([^\]\r\n]+?)\s*(\]\]?)\s*(?:#.*)?$/;
+
+/** A TOML section boundary: `[table]` or `[[array_table]]` (quotes/whitespace tolerant). */
+function sectionHeader(line: string): { key: string; array: boolean } | undefined {
+  const m = SECTION_RE.exec(line);
+  if (!m || m[1]!.length !== m[3]!.length) return undefined;
+  const key = m[2]!.split('.').map((s) => s.trim().replace(/^["']|["']$/g, '')).join('.');
+  return { key, array: m[1]!.length === 2 };
 }
 
+/** Normalized dotted key of a `[table]` header line, or undefined (including for `[[array]]` headers). */
+function tableHeaderKey(line: string): string | undefined {
+  const h = sectionHeader(line);
+  return h && !h.array ? h.key : undefined;
+}
+
+/** Unquoted key of a `key = value` line (bare, "basic" or 'literal'), or undefined. */
+function assignmentKey(line: string): string | undefined {
+  const m = /^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=/.exec(line);
+  return m ? (m[1] ?? m[2] ?? m[3]) : undefined;
+}
 /** Index of the last line of the assignment starting at `i` (handles multiline arrays). */
 function assignmentEnd(lines: string[], i: number): number {
   const first = lines[i]!;
@@ -72,8 +86,8 @@ function findTable(lines: string[], table: string, from = 0): [number, number] |
     if (tableHeaderKey(lines[i]!) !== want) continue;
     let end = lines.length;
     for (let j = i + 1; j < lines.length; j++) {
-      if (/^\s*\[/.test(lines[j]!) && tableHeaderKey(lines[j]!) !== undefined) { end = j; break; }
-      if (/^\s*[A-Za-z0-9_"'-]+\s*=/.test(lines[j]!)) j = assignmentEnd(lines, j);
+      if (sectionHeader(lines[j]!) !== undefined) { end = j; break; }
+      if (assignmentKey(lines[j]!) !== undefined) j = assignmentEnd(lines, j);
     }
     return [i, end];
   }
@@ -107,9 +121,8 @@ export function upsertTomlTable(
   const defaultsLeft = { ...defaults };
   for (let i = start + 1; i < end; i++) {
     const line = lines[i]!;
-    const m = /^\s*([A-Za-z0-9_-]+)\s*=/.exec(line);
-    if (!m) { rewritten.push(line); continue; }
-    const k = m[1]!;
+    const k = assignmentKey(line);
+    if (k === undefined) { rewritten.push(line); continue; }
     const last = assignmentEnd(lines, i);
     present.add(k);
     if (k in remaining) {
@@ -240,16 +253,19 @@ export function removeBlock(existing: string, id?: string): string {
 export function removeTomlTable(existing: string, table: string): string {
   const nl = existing.includes('\r\n') ? '\r\n' : '\n';
   let lines = existing.split(/\r?\n/);
-  const isOurs = (key: string | undefined) => key !== undefined && (key === table || key.startsWith(`${table}.`));
+  const isOurs = (line: string) => {
+    const h = sectionHeader(line);
+    return h !== undefined && (h.key === table || h.key.startsWith(`${table}.`)) && (!h.array || h.key !== table);
+  };
   let changed = false;
   for (;;) {
     let start = -1;
-    for (let i = 0; i < lines.length; i++) if (isOurs(tableHeaderKey(lines[i]!))) { start = i; break; }
+    for (let i = 0; i < lines.length; i++) if (isOurs(lines[i]!)) { start = i; break; }
     if (start === -1) break;
     let end = lines.length;
     for (let j = start + 1; j < lines.length; j++) {
-      if (/^\s*\[/.test(lines[j]!) && tableHeaderKey(lines[j]!) !== undefined) { end = j; break; }
-      if (/^\s*[A-Za-z0-9_"'-]+\s*=/.test(lines[j]!)) j = assignmentEnd(lines, j);
+      if (sectionHeader(lines[j]!) !== undefined) { end = j; break; }
+      if (assignmentKey(lines[j]!) !== undefined) j = assignmentEnd(lines, j);
     }
     const before = lines.slice(0, start);
     while (before.length > 0 && before[before.length - 1]!.trim() === '') before.pop();

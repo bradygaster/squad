@@ -56,17 +56,37 @@ export function assertConsistentCapabilities(tokens: readonly string[], flags: P
   }
 }
 
-/** Declared (not probed) host capability tokens; keep conservative. Advertised, not negotiated. */
-export const CAPABILITY_TOKENS_BY_HOST: Record<ClientId, readonly ClientCapabilityToken[]> = {
-  copilot: ['approvals', 'background-runs', 'mcp-bridge', 'subagents', 'native-hooks', 'steering-files'],
-  claude: ['approvals', 'background-runs', 'mcp-bridge', 'subagents', 'native-hooks', 'steering-files'],
-  kiro: ['approvals', 'mcp-bridge', 'subagents', 'native-hooks', 'steering-files'],
-  opencode: ['approvals', 'mcp-bridge', 'subagents', 'native-hooks'],
-  cursor: ['approvals', 'mcp-bridge', 'subagents', 'steering-files'],
-  codex: ['approvals', 'background-runs', 'mcp-bridge', 'subagents', 'native-hooks', 'steering-files'],
-  antigravity: ['approvals', 'mcp-bridge', 'subagents', 'steering-files'],
+/**
+ * The runtime/transport baseline every host declares, 1:1 with
+ * `test-fixtures/spec/suite-v0.2/capability-matrix.json` (`clientCapabilities`). The negotiated set is the
+ * intersection of this with the backend grant and policy, so omitting a token here silently negotiates the
+ * feature away (resume, typed parts, cancellation).
+ */
+const RUNTIME_TOKENS: Record<ClientId, readonly ClientCapabilityToken[]> = {
+  copilot: ['approvals', 'background-runs', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  claude: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  kiro: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  opencode: ['approvals', 'background-runs', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  cursor: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  codex: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  antigravity: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
 };
 
+/** Projection-level tokens (what the host can be given as files), additional to the runtime baseline. */
+const PROJECTION_TOKENS: Record<ClientId, readonly ClientCapabilityToken[]> = {
+  copilot: ['native-hooks', 'steering-files'],
+  claude: ['native-hooks', 'steering-files'],
+  kiro: ['native-hooks', 'steering-files'],
+  opencode: ['native-hooks'],
+  cursor: ['steering-files'],
+  codex: ['native-hooks', 'steering-files'],
+  antigravity: ['steering-files'],
+};
+
+/** Declared (not probed) host capability tokens: runtime baseline plus projection tokens. Advertised, not negotiated. */
+export const CAPABILITY_TOKENS_BY_HOST: Record<ClientId, readonly ClientCapabilityToken[]> = Object.fromEntries(
+  (Object.keys(RUNTIME_TOKENS) as ClientId[]).map((id) => [id, [...RUNTIME_TOKENS[id], ...PROJECTION_TOKENS[id]]]),
+) as unknown as Record<ClientId, readonly ClientCapabilityToken[]>;
 const TRANSPORTS: Record<ClientId, TransportMode[]> = {
   copilot: ['mcp-bridge', 'http-backend', 'in-process'],
   claude: ['mcp-bridge', 'http-backend'],

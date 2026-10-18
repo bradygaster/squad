@@ -22,7 +22,7 @@ import {
   type HarnessAdapter,
   type HarnessEventEnvelope,
   type SquadBackend,
-} from '../packages/squad-sdk/src/backend/index.js';
+} from '@bradygaster/squad-sdk';
 import {
   BLOCK_BEGIN,
   CLIENT_IDS,
@@ -38,7 +38,7 @@ import {
   resolveEffectiveCapabilities,
   type ClientContext,
   type ClientId,
-} from '../packages/squad-sdk/src/clients/index.js';
+} from '@bradygaster/squad-sdk/clients';
 import {
   backfillCastingRegistryFromTeam,
   ensureCastingRegistryPair,
@@ -47,7 +47,7 @@ import {
   parseAgentProvenanceRegistry,
   readCastingRegistryPair,
   repairHandwrittenCastingRegistry,
-} from '../packages/squad-sdk/src/casting/index.js';
+} from '@bradygaster/squad-sdk/casting';
 import { ensureCastingDefaults, ensureGitignore } from '../packages/squad-cli/src/cli/core/upgrade.js';
 import { isInteractiveSession, runInit } from '../packages/squad-cli/src/cli/core/init.js';
 import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../packages/squad-cli/src/cli/core/backend-mcp.js';
@@ -358,8 +358,9 @@ describe('Scenario 3: LocalSquadBackend + HarnessRegistry (5 harnesses)', () => 
     const b = new LocalSquadBackend({ harnesses: registry });
     await b.createConversation({ conversationId: 'c' });
     await b.sendMessage('c', msg('r', 1, { harness: 'kiro', epoch: 2 }));
-    const dup = await b.sendMessage('c', msg('r', 1, { harness: 'kiro', epoch: 2, content: 'retry' }));
+    const dup = await b.sendMessage('c', msg('r', 1, { harness: 'kiro', epoch: 2 }));
     expect(dup.duplicate).toBe(true);
+    expect(await errorOf(b.sendMessage('c', msg('r', 1, { harness: 'kiro', epoch: 2, content: 'changed' })))).toMatchObject({ code: 'conflict', status: 409 });
     expect(harnesses.kiro.submitted).toHaveLength(1);
     expect((await b.sendMessage('c', msg('r2', 1, { harness: 'kiro', epoch: 2 }))).duplicate).toBe(false);
     const stale = await errorOf(b.sendMessage('c', msg('r', 2, { epoch: 1 })));
@@ -535,7 +536,9 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
       parts: [{ type: 'text', text: 'hi' }], extensions: { 'x-claude.mode': 'plan' },
     });
     expect(sent.body).toMatchObject({ runId: 'r', seq: 1, duplicate: false, correlationId: 'k1' });
-    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 1, content: 'again' })).body.duplicate).toBe(true);
+    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 1, content: '', harness: 'claude',
+      parts: [{ type: 'text', text: 'hi' }], extensions: { 'x-claude.mode': 'plan' } })).body.duplicate).toBe(true);
+    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 1, content: 'again' })).body.error).toMatchObject({ code: 'conflict' });
     expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 9, content: 'x', extensions: { bad: 1 } })).body.error.code).toBe('invalid-request');
     expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', seq: 1, content: 'x' })).isError).toBe(true);
 
@@ -572,6 +575,28 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
     await drive(mkHttp(server), harnesses.claude);
   });
 
+  it('R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-mcp-orphan-'));
+    try {
+      const files = new Map<string, string>();
+      const orphan = {
+        name: 'orphan',
+        read: (p: string) => files.get(p),
+        write: (p: string, c: string) => { files.set(p, c); },
+        exists: (p: string) => files.has(p),
+        list: (d: string) => [...files.keys()].filter(k => k.startsWith(`${d}/`)).map(k => k.slice(d.length + 1)),
+      };
+      const backend = createMcpBackend('.', {}, () => ({ paths: { teamSquadDir: dir }, backend: orphan }) as never);
+      await backend.createConversation({ conversationId: 'c' });
+      await backend.sendMessage('c', msg('r', 1));
+      expect([...files.keys()]).toContain('backend/conversations/c.json');
+      expect(fs.existsSync(path.join(dir, 'backend'))).toBe(false);
+      expect((await createMcpBackend('.', {}, () => ({ paths: { teamSquadDir: dir }, backend: orphan }) as never).getTranscript('c'))).toHaveLength(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('createMcpBackend selects durable-http via SQUAD_BACKEND_URL, else local over .squad', async () => {
     const server = createMockDurableSquad(new LocalSquadBackend());
     vi.stubGlobal('fetch', server.fetch);
@@ -585,7 +610,7 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
     }
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-mcp-'));
     try {
-      vi.mocked(resolveSquadState).mockReturnValue({ paths: { teamSquadDir: dir } } as never);
+      vi.mocked(resolveSquadState).mockReturnValue({ paths: { teamSquadDir: dir }, backend: { name: 'local' } } as never);
       const local = createMcpBackend('.', {});
       expect(local.kind).toBe('mcp');
       await local.createConversation({ conversationId: 'c' });
@@ -1298,13 +1323,49 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
       write('registry.json', shapes[name]);
       const original = fs.readFileSync(path.join(castingDir, 'registry.json'), 'utf8');
       const result = repairHandwrittenCastingRegistry(castingDir);
-      expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json'] });
+      expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', 'registry-history.commit.json'] });
       expect(fs.readFileSync(path.join(castingDir, 'registry.json.handwritten.bak'), 'utf8')).toBe(original);
       const pair = readCastingRegistryPair(castingDir);
       expect(Object.keys(pair.registry.agents).length).toBeGreaterThan(0);
       expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
     });
 
+    it('R3-13: preserves retired agents, keeps a valid history and commits a canonical manifest', () => {
+      const MANIFEST = 'registry-history.commit.json';
+      write('registry.json', { universe: 'Star Trek', agents: [
+        { name: 'Data', role: 'Expert', status: 'active' },
+        { name: 'Tuvok', role: 'Security', status: 'retired' },
+        { name: 'Neelix', role: 'Morale', status: 'inactive' },
+      ] });
+      const result = repairHandwrittenCastingRegistry(castingDir);
+      expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', MANIFEST] });
+      const pair = readCastingRegistryPair(castingDir);
+      expect(pair.registry.agents['tuvok']!.status).toBe('retired');
+      expect(pair.registry.agents['neelix']!.status).toBe('inactive');
+      expect(pair.registry.agents['data']!.status).toBe('active');
+      const manifest = JSON.parse(fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8'));
+      expect(manifest).toMatchObject({ registry_revision: 1, transaction_id: expect.any(String) });
+      expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
+    });
+
+    it('R3-13: a manifest-only mismatch keeps the existing history and revision', () => {
+      const MANIFEST = 'registry-history.commit.json';
+      write('registry.json', shapes['agents as an array']);
+      repairHandwrittenCastingRegistry(castingDir);
+      const before = readCastingRegistryPair(castingDir);
+      const historyBefore = JSON.parse(fs.readFileSync(path.join(castingDir, 'history.json'), 'utf8'));
+      // semantically identical registry, different bytes: only the commit manifest disagrees now
+      fs.writeFileSync(path.join(castingDir, 'registry.json'), JSON.stringify(before.registry));
+      expect(() => readCastingRegistryPair(castingDir)).toThrow(/commit manifest/);
+      expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: true });
+      const after = readCastingRegistryPair(castingDir);
+      expect(after.registry.revision).toBe(before.registry.revision);
+      expect(Object.keys(after.registry.agents)).toEqual(Object.keys(before.registry.agents));
+      const historyAfter = JSON.parse(fs.readFileSync(path.join(castingDir, 'history.json'), 'utf8'));
+      expect(historyAfter.assignment_cast_snapshots).toEqual(historyBefore.assignment_cast_snapshots);
+      expect(historyAfter.universe_usage_history).toEqual(historyBefore.universe_usage_history);
+      expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(true);
+    });
     it('does not touch canonical registries, absent registries or unrecoverable content', () => {
       expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
       const canonical = normalizeHandwrittenCastingRegistry(shapes['bare array'])!;
@@ -1337,13 +1398,14 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
         expect(() => readCastingRegistryPair(castingDir)).toThrow(/consistent casting registry\/history pair/);
       });
 
-      it('repair backs up and removes the stale manifest so the pair reads again', () => {
+      it('repair backs up the stale manifest and commits a valid one so the pair reads again', () => {
         initPair();
         write('registry.json', shapes['role-keyed entries without a wrapper']);
         const manifestBytes = fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8');
         const result = repairHandwrittenCastingRegistry(castingDir);
-        expect(result).toMatchObject({ repaired: true, removed: [MANIFEST] });
-        expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(false);
+        expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', MANIFEST] });
+        expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(true);
+        expect(fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8')).not.toBe(manifestBytes);
         expect(fs.readFileSync(path.join(castingDir, `${MANIFEST}.handwritten.bak`), 'utf8')).toBe(manifestBytes);
         expect(Object.keys(readCastingRegistryPair(castingDir).registry.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
         expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
@@ -1354,8 +1416,9 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
         const edited = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }, { name: 'Linus', role: 'CLI' }] })!;
         write('registry.json', edited);
         expect(() => readCastingRegistryPair(castingDir)).toThrow(/commit manifest/);
-        expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: true, removed: [MANIFEST] });
+        expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: true });
         expect(Object.keys(readCastingRegistryPair(castingDir).registry.agents).sort()).toEqual(['ada', 'linus']);
+        expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(true);
       });
 
       it('leaves an untouched init pair and its manifest alone', () => {
@@ -1512,7 +1575,7 @@ describe('field findings from the multi-client demos: process hygiene, .gitignor
       const pair = readCastingRegistryPair(dir);
       expect(Object.keys(pair.registry.agents).sort()).toEqual(['b-elanna', 'data']);
       expect(pair.registry.agents['data']).toMatchObject({ display_name: 'Data', role: 'Framework Expert', universe: 'Star Trek', status: 'active' });
-      expect(fs.existsSync(path.join(dir, 'registry-history.commit.json'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'registry-history.commit.json'))).toBe(true);
       expect(fs.existsSync(path.join(dir, 'registry.json.handwritten.bak'))).toBe(true);
       // a second upgrade creates nothing, keeps the same roster, and never backfills again
       expect(ensureCastingDefaults(dest)).toEqual([]);
@@ -1575,6 +1638,22 @@ describe('client adapter contract is exposed canonically and through the depreca
       expect(canonical, name).toHaveProperty(name);
       expect((alias as Record<string, unknown>)[name], name).toBe((canonical as Record<string, unknown>)[name]);
     }
+  });
+
+  it('R3-12: CAPABILITY_TOKENS_BY_HOST carries the full capability-matrix baseline for all 7 hosts', async () => {
+    const { CAPABILITY_TOKENS_BY_HOST, resolveEffectiveCapabilityTokens } = await import('@bradygaster/squad-sdk/client');
+    const projection = new Set(['native-hooks', 'steering-files']);
+    for (const id of CLIENT_IDS) {
+      const declared = CAPABILITY_TOKENS_BY_HOST[id];
+      const runtime = declared.filter(t => !projection.has(t)).sort();
+      expect(runtime, id).toEqual([...matrix.clients[id]!.clientCapabilities].sort());
+      for (const t of ['cancel-run', 'cursor-reconnect', 'typed-content-parts']) expect(declared, `${id}:${t}`).toContain(t);
+      expect(resolveEffectiveCapabilityTokens(declared, matrix.backendCapabilities, matrix.policyCapabilities).sort(), id)
+        .toEqual([...matrix.clients[id]!.effectiveCapabilities].sort());
+    }
+    expect(CAPABILITY_TOKENS_BY_HOST.copilot).toContain('background-runs');
+    expect(CAPABILITY_TOKENS_BY_HOST.opencode).toContain('background-runs');
+    expect(CAPABILITY_TOKENS_BY_HOST.claude).not.toContain('background-runs');
   });
 
   it('every host declares tokens that map onto the capability flags consistently', async () => {

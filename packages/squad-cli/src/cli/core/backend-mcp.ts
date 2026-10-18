@@ -1,6 +1,7 @@
 import {
   BackendError,
   createSquadBackend,
+  createStateBackendStore,
   resolveSquadState,
   type BackendContentPart,
   type ProtocolHello,
@@ -47,13 +48,20 @@ function sendContent(args: Record<string, unknown>): string {
   throw new BackendError('invalid-request', "'content' or 'parts' is required", 400);
 }
 
-export function createMcpBackend(startDir: string, env: NodeJS.ProcessEnv = process.env): SquadBackend {
+export function createMcpBackend(
+  startDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+  resolveState: (dir: string) => Pick<NonNullable<ReturnType<typeof resolveSquadState>>, 'paths' | 'backend'> | null = resolveSquadState,
+): SquadBackend {
   if (env['SQUAD_BACKEND_URL']) {
     return createSquadBackend({ kind: 'durable-http', baseUrl: env['SQUAD_BACKEND_URL'], token: env['SQUAD_BACKEND_TOKEN'] });
   }
-  const context = resolveSquadState(startDir);
+  const context = resolveState(startDir);
   if (!context) throw new Error(`No .squad directory found from ${startDir}`);
-  return createSquadBackend({ kind: 'mcp', squadDir: context.paths.teamSquadDir });
+  // honor the project's configured state backend (git-notes, orphan, ...); the local backend keeps the
+  // lock-protected, symlink-guarded file store over the team .squad directory
+  const state = context.backend.name === 'local' ? undefined : createStateBackendStore(context.backend);
+  return createSquadBackend({ kind: 'mcp', squadDir: context.paths.teamSquadDir, state });
 }
 
 export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMcpTool[] {

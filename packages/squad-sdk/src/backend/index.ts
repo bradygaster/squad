@@ -5,7 +5,9 @@ import type { BackendConfig, SquadBackend } from './types.js';
 export * from './types.js';
 export * from './harness-registry.js';
 export { LocalSquadBackend, MemoryStateStore, createFileStateStore } from './local-backend.js';
-export type { LocalSquadBackendOptions } from './local-backend.js';
+export type { LocalSquadBackendOptions, FileStateStoreOptions } from './local-backend.js';
+export { createStateBackendStore } from './state-backend-store.js';
+export type { StateBackendLike } from './state-backend-store.js';
 export { DurableHttpSquadBackend } from './durable-http-backend.js';
 export type { DurableHttpOptions } from './durable-http-backend.js';
 

@@ -161,7 +161,7 @@ async function main(): Promise<void> {
     console.log(`                    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
-    console.log(`                    --client <list> (copilot,claude,kiro,opencode,cursor,codex,antigravity|all)`);
+    console.log(`                    --client <list> (client hosts to project, or "all")`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -170,7 +170,7 @@ async function main(): Promise<void> {
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
-    console.log(`                    --client <list> (add client hosts; configured clients always refresh)`);
+    console.log(`                    --client <list> (add client hosts; refresh configured)`);
     console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
     console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);

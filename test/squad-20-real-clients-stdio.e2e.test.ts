@@ -328,7 +328,10 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
       parts: [{ type: 'text', text: 'hello from a real client' }, { type: 'resource', uri: 'file:///README.md', title: 'README' }],
     });
     expect(sent.json).toMatchObject({ runId: `${client}-run`, seq: 1, duplicate: false, state: 'queued', correlationId: 'corr-real' });
-    const dup = await server!.call('squad_backend_send_message', { conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, content: 'retry' });
+    const dup = await server!.call('squad_backend_send_message', {
+      conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, correlationId: 'corr-real',
+      parts: [{ type: 'text', text: 'hello from a real client' }, { type: 'resource', uri: 'file:///README.md', title: 'README' }],
+    });
     expect(dup.json.duplicate).toBe(true);
 
     const transcript = await server!.call('squad_backend_get_transcript', { conversationId: `${client}-conv` });
@@ -359,11 +362,13 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
     expect(tampered.json.error.code).toBe('approval-hash-mismatch');
 
     const ok = await server!.call('squad_backend_respond_approval', { conversationId: 'seeded', approvalId: 'appr-1', hash: 'sha256:deploy-v1', decision: 'approve' });
-    expect(ok.isError).toBe(false);
-    expect(ok.json).toMatchObject({ runId: 'seed-run', state: 'running' });
+    // the seeding harness ('copilot') is not registered in this server process: the decision is durable but its
+    // delivery stays queued and is reported as retryable instead of being silently discarded
+    expect(ok.isError).toBe(true);
+    expect(ok.json.error).toMatchObject({ code: 'unavailable', retryable: true });
     expect((await server!.call('squad_backend_get_approvals', { conversationId: 'seeded' })).json[0]).toMatchObject({ version: 2, state: 'approved' });
     const again = await server!.call('squad_backend_respond_approval', { conversationId: 'seeded', approvalId: 'appr-1', hash: 'sha256:deploy-v1', decision: 'approve' });
-    expect(again.json.error.code).toBe('approval-not-pending');
+    expect(again.json.error).toMatchObject({ code: 'unavailable', retryable: true });
   });
 
   it('reports backend health', async () => {
@@ -387,7 +392,8 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
     expect(seqs).toEqual(seqs.map((_: number, i: number) => i + 1));
     expect(resumed.json.events.map((e: { sequence: number }) => e.sequence)).toEqual(seqs.slice(2));
     expect((await server.call('squad_backend_get_approvals', { conversationId: 'seeded' })).json[0].version).toBe(2);
-    expect((await server.call('squad_backend_send_message', { conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, content: 'again' })).json.duplicate).toBe(true);
+    expect((await server.call('squad_backend_send_message', { conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, correlationId: 'corr-real',
+      parts: [{ type: 'text', text: 'hello from a real client' }, { type: 'resource', uri: 'file:///README.md', title: 'README' }] })).json.duplicate).toBe(true);
   }, 120_000);
 });
 
