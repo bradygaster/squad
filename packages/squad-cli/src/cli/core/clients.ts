@@ -40,6 +40,29 @@ export function readConfiguredClients(squadDir: string): ClientId[] {
   return [];
 }
 
+/** `.squad/config.json` `clientModels`: `{ <client>: { <member-slug | "*">: "<model id>" } }`; non-string entries are ignored. */
+export function readClientModels(squadDir: string): Partial<Record<ClientId, Record<string, string>>> {
+  const out: Partial<Record<ClientId, Record<string, string>>> = {};
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(squadDir, 'config.json'), 'utf8')) as { clientModels?: unknown };
+    const cm = cfg.clientModels;
+    if (cm && typeof cm === 'object' && !Array.isArray(cm)) {
+      for (const id of CLIENT_IDS) {
+        const per = (cm as Record<string, unknown>)[id];
+        if (!per || typeof per !== 'object' || Array.isArray(per)) continue;
+        const clean: Record<string, string> = {};
+        for (const [k, v] of Object.entries(per as Record<string, unknown>)) {
+          if (typeof v === 'string' && /^[A-Za-z0-9._:/@\[\]+-]+$/.test(v)) clean[k.toLowerCase()] = v;
+        }
+        if (Object.keys(clean).length > 0) out[id] = clean;
+      }
+    }
+  } catch {
+    // no config or malformed: inherit models
+  }
+  return out;
+}
+
 export function persistClients(squadDir: string, clients: readonly ClientId[]): void {
   const file = path.join(squadDir, 'config.json');
   let cfg: Record<string, unknown> = {};
@@ -110,6 +133,7 @@ export async function syncClients(
     // no roster yet
   }
   const results = installClients(clients, {
+    memberModels: readClientModels(squadDir),
     root: dest,
     mcp: { command: spec.command, args: spec.args },
     members,

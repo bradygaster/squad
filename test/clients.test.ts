@@ -23,6 +23,7 @@ import {
   parseRoster,
   persistClients,
   readClientFlag,
+  readClientModels,
   readConfiguredClients,
   syncClients,
 } from '../packages/squad-cli/src/cli/core/clients.js';
@@ -67,7 +68,7 @@ describe('coordinator instructions', () => {
   it('mentions the host-specific spawn primitive', () => {
     expect(buildCoordinatorInstructions('copilot')).toMatch(/runSubagent/);
     expect(buildCoordinatorInstructions('claude')).toMatch(/`Task`/);
-    expect(buildCoordinatorInstructions('opencode')).toMatch(/@agent/);
+    expect(buildCoordinatorInstructions('opencode')).toMatch(/@squad-<member>/);
   });
 });
 
@@ -168,6 +169,43 @@ describe('shared files and TOML helper', () => {
   it('all expands to every client including codex and antigravity', () => {
     expect(parseClients('all')).toEqual(expect.arrayContaining(['codex', 'antigravity']));
     expect(parseClients('codex,antigravity')).toEqual(['codex', 'antigravity']);
+  });
+});
+
+describe('per-member agents and models', () => {
+  const members = [{ name: 'Data', role: 'Expert' }, { name: 'Worf', role: 'Reviewer' }];
+  it('opencode projects a subagent per member, pinning model only when configured', () => {
+    installClients(['opencode'], ctx({ members, memberModels: { opencode: { worf: 'github-copilot/claude-opus-4.5' } } }));
+    const data = read('.opencode/agent/squad-data.md');
+    expect(data).toMatch(/mode: subagent/);
+    expect(data).not.toMatch(/^model:/m);
+    expect(read('.opencode/agent/squad-worf.md')).toMatch(/^model: github-copilot\/claude-opus-4\.5$/m);
+  });
+  it('wildcard model applies to all members, specific wins, other clients unaffected', () => {
+    installClients(['claude', 'codex', 'antigravity'], ctx({ members, memberModels: { claude: { '*': 'sonnet', worf: 'opus' }, codex: { '*': 'gpt-5.5' }, antigravity: { data: 'flash' } } }));
+    expect(read('.claude/agents/squad-data.md')).toMatch(/^model: sonnet$/m);
+    expect(read('.claude/agents/squad-worf.md')).toMatch(/^model: opus$/m);
+    expect(read('.codex/agents/squad-data.toml')).toContain('model = "gpt-5.5"');
+    expect(read('.agents/agents/squad-data.md')).toMatch(/^model: flash$/m);
+    expect(read('.agents/agents/squad-worf.md')).not.toMatch(/^model:/m);
+  });
+  it('rejects model ids with unsafe characters', () => {
+    installClients(['claude'], ctx({ members, memberModels: { claude: { data: 'x\nname: evil' } } }));
+    expect(read('.claude/agents/squad-data.md')).not.toContain('evil');
+  });
+  it('readClientModels reads and sanitizes config.json clientModels', () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    fs.writeFileSync(path.join(sq, 'config.json'), JSON.stringify({ clientModels: { opencode: { Worf: 'a/b', bad: 'x y', n: 3 }, vim: { a: 'b' } } }));
+    expect(readClientModels(sq)).toEqual({ opencode: { worf: 'a/b' } });
+  });
+  it('coordinator prompt includes host-agnostic Ralph mode driven by the coordinator', () => {
+    for (const id of CLIENT_IDS) {
+      const t = buildCoordinatorInstructions(id);
+      expect(t).toMatch(/Ralph mode/);
+      expect(t).toMatch(/squad:<member>/);
+      expect(t).toMatch(/subagents cannot spawn subagents/);
+    }
   });
 });
 

@@ -23,6 +23,7 @@ You are the Squad coordinator. You route work to a team of specialists and keep 
 6. **Parallelize independent work**; serialize work with dependencies. Summarize results to the user concisely and say who did what.
 7. **Backend contract vs. transport.** Conversation semantics, routing, durable state and authorization belong to the shared Squad backend contract (SquadBackend / DurableHttpSquadBackend), never to this host. The squad_state MCP server is only a local tool-transport bridge to that contract, not the contract itself; a host may reach the same backend over MCP or directly over HTTP. Host adapters only handle bootstrap, native dispatch/UI translation and local lifecycle.
 8. **Honor user-owned files.** Never overwrite user-authored configuration; Squad only manages its own marked sections and keys.
+9. **Ralph mode (work monitor).** When the user says "Ralph, go" (or asks you to work the backlog / keep the board moving), YOU run the monitor loop yourself (subagents cannot spawn subagents, so never delegate the loop itself). Loop: (a) **Scan** with the \`gh\` CLI, in priority order: open issues labelled \`squad\` (untriaged) or \`squad:<member>\`, draft/open PRs with review feedback, failing CI, approved merge-ready PRs; (b) **Act**: route each item to the member named by its \`squad:<member>\` label (or by \`routing.md\` and add the label), spawn that specialist with the issue as context, have them work on a branch \`squad/<issue-number>-<slug>\` (ideally an isolated git worktree), commit referencing the issue, push and open a PR with \`gh pr create\`; run the reviewer gate before merging; comment progress on the issue; (c) **Rescan** immediately after work lands; (d) **Report** a compact board status. Do not stop to ask permission between items. Stop when the board is clear (say "board clear, Ralph idling") or the user says stop/idle. Never modify product files yourself while in Ralph mode; route them. If \`gh\` is unauthenticated or no repository is connected, say so and stop.
 `;
 }
 
@@ -49,7 +50,7 @@ Kiro loads this file as steering (\`inclusion: always\`). Delegate each speciali
     summary: '@agent mention / task tool, MCP backend',
     section: `## Dispatch adapter: OpenCode
 
-Invoke specialists with the \`task\` tool (or an \`@agent\` mention for agents defined in \`.opencode/agent/\`), inlining the member charter in the prompt. Independent tasks may run in parallel. The \`squad_state\` MCP server is configured under \`mcp.squad_state\` in \`opencode.json\`; its tools appear as \`squad_state_*\`.`,
+Invoke specialists with the \`task\` tool using the matching subagent \`squad-<member>\` from \`.opencode/agent/squad-<member>.md\` (each runs as its own child session and can pin its own \`model\` via \`clientModels\` in \`.squad/config.json\`); if a member file is missing, use the \`general\` subagent with the member charter inlined. You can also \`@squad-<member>\` mention. Independent tasks may run in parallel. The \`squad_state\` MCP server is configured under \`mcp.squad_state\` in \`opencode.json\`; its tools appear as \`squad_state_*\`.`,
   },
   cursor: {
     summary: 'Cursor subagent / composer, MCP backend',
