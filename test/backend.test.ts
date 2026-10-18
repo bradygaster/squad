@@ -647,3 +647,145 @@ describe('PR #2238 review regressions (durable-http)', () => {
     expect(epochs).toEqual([null, '7', null]);
   });
 });
+describe('PR #2238 race/fault matrix', () => {
+  const mk = () => {
+    const h = new FakeHarness();
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    const state = new MemoryStateStore();
+    return { h, harnesses, state, make: () => new LocalSquadBackend({ state, harnesses }) };
+  };
+  const ask = (runId: string) => ({ type: 'approval-requested' as const, runId, seq: 1, request: { approvalId: 'a1', turnSeq: 1, action: 'x', hash: 'h' } });
+  const done = (runId: string) => ({ type: 'state' as const, state: 'completed' as const, runId, seq: 1 });
+  const approve = (b: LocalSquadBackend) => b.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve' });
+
+  it('2. a missing leaf under a symlinked parent cannot escape, and a swapped parent is caught', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-swap-'));
+    try {
+      const root = path.join(base, 'squad'); const outside = path.join(base, 'outside');
+      fs.mkdirSync(path.join(root, 'backend', 'conversations'), { recursive: true }); fs.mkdirSync(outside);
+      const store = createFileStateStore(root);
+      store.write('backend/conversations/ok.json', '{}');
+      fs.rmSync(path.join(root, 'backend', 'conversations'), { recursive: true });
+      fs.symlinkSync(outside, path.join(root, 'backend', 'conversations'), 'junction');
+      expect(() => store.write('backend/conversations/new/leaf.json', '{}')).toThrow(/symbolic link|escapes/);
+      expect(() => store.read('backend/conversations/ok.json')).toThrow(/symbolic link/);
+      expect(fs.readdirSync(outside)).toEqual([]);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  it('1. interleaved writers from two instances serialize without lost updates', async () => {
+    const { make, h } = mk();
+    const a = make(); const b = make();
+    await a.createConversation({ conversationId: 'c' });
+    await Promise.all([a.sendMessage('c', msg('r1', 1, { harness: 'copilot' })), b.sendMessage('c', msg('r2', 1, { harness: 'copilot' }))]);
+    h.emit(ask('r1'));
+    await Promise.all([a.cancelRun('c', 'r1'), b.cancelRun('c', 'r2')]);
+    expect((await a.getTurn('c', 1)).runId).toBeDefined();
+    expect((await a.getTranscript('c')).map(m => m.runId).sort()).toEqual(['r1', 'r2']);
+    expect((await b.getApprovals('c'))[0]).toMatchObject({ state: 'cancelled', version: 2 });
+  });
+
+  it('3. stale or missing epoch fails closed for mutations and harness events', async () => {
+    const { make, h } = mk();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot', epoch: 4 }));
+    h.emit(ask('r'));
+    expect(await rejectCode(b.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve', epoch: 3 }))).toBe('stale-epoch');
+    h.emit({ ...done('r'), epoch: 3 });
+    expect((await b.getTurn('c', 1)).state).not.toBe('completed');
+    expect(await rejectCode(b.cancelTurn('c', 1, 2))).toBe('stale-epoch');
+  });
+
+  it('5. cancel / approval / terminal event in every order never revives a terminal turn', async () => {
+    const orders: Array<Array<'cancel' | 'approve' | 'terminal'>> = [
+      ['cancel', 'approve', 'terminal'], ['cancel', 'terminal', 'approve'], ['approve', 'cancel', 'terminal'],
+      ['approve', 'terminal', 'cancel'], ['terminal', 'cancel', 'approve'], ['terminal', 'approve', 'cancel'],
+    ];
+    for (const order of orders) {
+      const { make, h } = mk();
+      const b = make();
+      await b.createConversation({ conversationId: 'c' });
+      await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+      h.emit(ask('r'));
+      for (const step of order) {
+        if (step === 'cancel') await b.cancelRun('c', 'r');
+        else if (step === 'terminal') h.emit(done('r'));
+        else await approve(b).catch(() => undefined);
+      }
+      const turn = await b.getTurn('c', 1);
+      const [ap] = await b.getApprovals('c');
+      expect(['running', 'queued', 'awaiting-approval'], order.join('>')).not.toContain(turn.state);
+      expect(ap!.state, order.join('>')).not.toBe('pending');
+      expect(ap!.version, order.join('>')).toBeGreaterThanOrEqual(2);
+      expect(ap!.decidedAt, order.join('>')).toBeDefined();
+    }
+  });
+
+  it('6. restart preserves (runId, seq), approval version and terminal state', async () => {
+    const { make, h, state, harnesses } = mk();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r1', 1, { harness: 'copilot' }));
+    await b.sendMessage('c', msg('r2', 1, { harness: 'copilot' }));
+    h.emit(ask('r2'));
+    await b.cancelRun('c', 'r2');
+    h.emit(done('r1'));
+    const re = new LocalSquadBackend({ state, harnesses });
+    expect((await re.getApprovals('c'))[0]).toMatchObject({ runId: 'r2', state: 'cancelled', version: 2 });
+    expect(await re.cancelRun('c', 'r2')).toMatchObject({ runId: 'r2', seq: 1, state: 'cancelled' });
+    expect(await re.cancelRun('c', 'r1')).toMatchObject({ runId: 'r1', seq: 1 });
+    expect((await re.sendMessage('c', msg('r1', 1, { harness: 'copilot' }))).duplicate).toBe(true);
+  });
+
+  it('4. a failed delivery rolls forward as retryable and the decision is not final until acknowledged', async () => {
+    const { make, h } = mk();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask('r'));
+    const orig = h.respondApproval.bind(h);
+    let fail = true;
+    h.respondApproval = async (c: string, r: { approvalId: string }) => { if (fail) throw new Error('down'); return orig(c, r); };
+    expect(await rejectCode(approve(b))).toBe('unavailable');
+    expect(h.approvals).toEqual([]);
+    fail = false;
+    expect((await approve(b)).state).toBe('running');
+    expect(h.approvals).toEqual(['a1']);
+  });
+
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  it('7. createConversation keeps one Idempotency-Key when the response is lost', async () => {
+    const keys: Array<string | null> = []; const ids: string[] = [];
+    let n = 0;
+    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', token: 't', retryDelayMs: 1, fetch: (async (_u: string, init: RequestInit) => {
+      keys.push(new Headers(init.headers as HeadersInit).get('Idempotency-Key'));
+      const body = JSON.parse(String(init.body)); ids.push(body.conversationId);
+      if (++n < 3) throw new TypeError('connection reset');
+      return json(200, { conversationId: body.conversationId, epoch: 1, createdAt: 't' });
+    }) as never });
+    await b.createConversation();
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(1);
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it('8. two conversations advance independent epochs without cross-talk', async () => {
+    const sent: Record<string, Array<string | null>> = { a: [], b: [] };
+    const next: Record<string, number> = { a: 5, b: 2 };
+    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', token: 't', retryDelayMs: 1, fetch: (async (u: string, init: RequestInit) => {
+      const id = /conversations\/([^/]+)/.exec(u)![1]!;
+      sent[id]!.push(new Headers(init.headers as HeadersInit).get('X-Lease-Epoch'));
+      return json(200, { runId: 'r', seq: 1, duplicate: false, state: 'queued', epoch: next[id] });
+    }) as never });
+    await b.sendMessage('a', msg('r', 1)); await b.sendMessage('b', msg('r', 1));
+    next['a'] = 6;
+    await b.sendMessage('a', msg('r', 2)); await b.sendMessage('b', msg('r', 2));
+    expect(sent).toEqual({ a: [null, '5'], b: [null, '2'] });
+  });
+});
