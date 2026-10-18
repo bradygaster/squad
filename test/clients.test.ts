@@ -286,6 +286,7 @@ describe('claude adapter', () => {
     expect(readJson('.mcp.json').mcpServers.squad_state.command).toBe('squad');
     expect(read('CLAUDE.md')).toContain(BLOCK_BEGIN);
     expect(read('.gitignore')).toContain('.claude/worktrees/');
+    expect(read('CLAUDE.md')).toContain('--mcp-config .mcp.json');
   });
   it('preserves user CLAUDE.md content and replaces the block in place', () => {
     fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Mine\n\nrules\n');

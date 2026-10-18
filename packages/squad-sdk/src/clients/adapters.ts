@@ -129,7 +129,7 @@ const claude: ClientAdapter = {
     {
       kind: 'block',
       path: 'CLAUDE.md',
-      content: `## Squad\n\nThis project uses Squad. Run \`claude --agent squad\` (or delegate to the \`squad\` subagent) to work with the team defined in \`${ctx.squadDir ?? '.squad'}/team.md\`. Shared state is served by the \`squad_state\` MCP server in \`.mcp.json\`.`,
+      content: `## Squad\n\nThis project uses Squad. Run \`claude --agent squad --mcp-config .mcp.json\` (interactive Claude Code does not load project-scoped \`.mcp.json\` servers until approved, so pass the config explicitly; or delegate to the \`squad\` subagent) to work with the team defined in \`${ctx.squadDir ?? '.squad'}/team.md\`. Shared state is served by the \`squad_state\` MCP server in \`.mcp.json\`.`,
     },
     // Claude Code creates embedded git worktrees here for isolated subagents.
     { kind: 'block', path: '.gitignore', id: 'claude', content: '.claude/worktrees/' },
