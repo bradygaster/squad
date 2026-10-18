@@ -63,6 +63,27 @@ export function readClientModels(squadDir: string): Partial<Record<ClientId, Rec
   return out;
 }
 
+export function readMemberAgentsConfig(squadDir: string): boolean {
+  try {
+    return (JSON.parse(fs.readFileSync(path.join(squadDir, 'config.json'), 'utf8')) as { memberAgents?: unknown }).memberAgents === true;
+  } catch {
+    return false;
+  }
+}
+
+export function persistMemberAgents(squadDir: string, on: boolean): void {
+  const file = path.join(squadDir, 'config.json');
+  let cfg: Record<string, unknown> = {};
+  try {
+    const p = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
+    if (p && typeof p === 'object' && !Array.isArray(p)) cfg = p as Record<string, unknown>;
+  } catch {
+    // start fresh
+  }
+  cfg['memberAgents'] = on;
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+}
+
 export function persistClients(squadDir: string, clients: readonly ClientId[]): void {
   const file = path.join(squadDir, 'config.json');
   let cfg: Record<string, unknown> = {};
@@ -118,6 +139,8 @@ export function ensureBuiltinMembers(members: TeamMember[]): TeamMember[] {
 export interface SyncClientsOptions {
   /** Explicit set from `--client`; when omitted, configured clients are refreshed. */
   clients?: readonly ClientId[];
+  /** Project per-member subagent files (opt-in; also on when config.json memberAgents is true or clientModels is set). */
+  memberAgents?: boolean;
   version?: string;
 }
 
@@ -139,20 +162,23 @@ export async function syncClients(
 
   const version = options.version ?? getPackageVersion();
   const spec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(version));
+  const models = readClientModels(squadDir);
+  const wantMembers = options.memberAgents ?? (readMemberAgentsConfig(squadDir) || Object.keys(models).length > 0);
   let members: TeamMember[] = [];
   try {
-    members = ensureBuiltinMembers(parseRoster(fs.readFileSync(path.join(squadDir, 'team.md'), 'utf8')));
+    if (wantMembers) members = ensureBuiltinMembers(parseRoster(fs.readFileSync(path.join(squadDir, 'team.md'), 'utf8')));
   } catch {
     // no roster yet
   }
   const results = installClients(clients, {
-    memberModels: readClientModels(squadDir),
+    memberModels: models,
     root: dest,
     mcp: { command: spec.command, args: spec.args },
     members,
     squadDir: path.relative(dest, squadDir).split(path.sep).join('/') || '.squad',
   });
   persistClients(squadDir, clients);
+  if (options.memberAgents !== undefined) persistMemberAgents(squadDir, options.memberAgents);
   return { clients, results };
 }
 

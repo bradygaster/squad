@@ -440,7 +440,7 @@ describe('CLI --client handling', () => {
     const prev = process.env['SQUAD_STANDALONE_HOME'];
     delete process.env['SQUAD_STANDALONE_HOME'];
     try {
-      const first = await syncClients(root, sq, { clients: ['claude'], version: '0.0.0' });
+      const first = await syncClients(root, sq, { clients: ['claude'], memberAgents: true, version: '0.0.0' });
       expect(first.clients).toEqual(['claude']);
       const second = await syncClients(root, sq, { clients: ['kiro'], version: '0.0.0' });
       expect(second.clients).toEqual(['claude', 'kiro']);
@@ -454,6 +454,21 @@ describe('CLI --client handling', () => {
     } finally {
       if (prev !== undefined) process.env['SQUAD_STANDALONE_HOME'] = prev;
     }
+  });
+
+  it('member subagent files are opt-in (coordinator only by default)', async () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    fs.writeFileSync(path.join(sq, 'team.md'), '| Name | Role |\n|---|---|\n| Data | Expert |\n');
+    await syncClients(root, sq, { clients: ['claude', 'opencode'], version: '0.0.0' });
+    expect(exists('.claude/agents/squad.md')).toBe(true);
+    expect(exists('.claude/agents/squad-data.md')).toBe(false);
+    expect(exists('.opencode/agent/squad-scribe.md')).toBe(false);
+    await syncClients(root, sq, { memberAgents: true, version: '0.0.0' });
+    expect(exists('.claude/agents/squad-data.md')).toBe(true);
+    expect(exists('.claude/agents/squad-scribe.md')).toBe(true);
+    await syncClients(root, sq, { version: '0.0.0' });
+    expect(JSON.parse(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')).memberAgents).toBe(true);
   });
 
   it('syncClients is a no-op with nothing configured', async () => {

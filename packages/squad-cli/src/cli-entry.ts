@@ -162,6 +162,7 @@ async function main(): Promise<void> {
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`                    --client <list> (copilot,claude,kiro,opencode,cursor,codex,antigravity|all)`);
+    console.log(`                    --member-agents (also project one subagent file per team member)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -376,7 +377,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, clients: initClients, includeVscodeDefault: !noVscodeDefault }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, clients: initClients, memberAgents: args.includes('--member-agents') ? true : undefined, includeVscodeDefault: !noVscodeDefault }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
@@ -496,6 +497,7 @@ async function main(): Promise<void> {
         force: forceUpgrade,
         dryRun,
         clients: upgradeClients,
+        memberAgents: args.includes('--member-agents') ? true : undefined,
       });
     }
 

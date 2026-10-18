@@ -159,6 +159,8 @@ export interface UpgradeOptions {
   dryRun?: boolean;
   /** Add these client hosts to the configured set; configured clients are always refreshed. */
   clients?: ClientId[];
+  /** Also project per-member subagent files for hosts that support them. */
+  memberAgents?: boolean;
 }
 
 export interface UpdateInfo {
@@ -1202,7 +1204,7 @@ export function ensureUserOwnedTemplates(dest: string, templatesDir: string): st
 /** Refresh configured (plus any newly requested) client projections. */
 async function refreshClients(dest: string, squadDir: string, options: UpgradeOptions, filesUpdated: string[]): Promise<void> {
   try {
-    const synced = await syncClients(dest, squadDir, { clients: options.clients });
+    const synced = await syncClients(dest, squadDir, { clients: options.clients, memberAgents: options.memberAgents });
     if (synced.clients.length === 0) return;
     reportClientResults(synced.results, (m) => (m.startsWith('⚠') ? warn(m.slice(2)) : success(m.slice(2))));
     filesUpdated.push(`clients (${synced.clients.join(', ')})`);
