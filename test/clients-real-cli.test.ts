@@ -25,7 +25,7 @@ beforeAll(() => {
   const squad = path.join(root, '.squad');
   fs.mkdirSync(squad);
   fs.writeFileSync(path.join(squad, 'team.md'), '| Name | Role | Charter | Status |\n|---|---|---|---|\n| Data | Expert | c | ok |\n');
-  const results = installClients(['claude', 'opencode', 'kiro', 'codex', 'antigravity'], {
+  const results = installClients(['claude', 'opencode', 'kiro', 'codex', 'antigravity', 'cursor'], {
     root,
     mcp: { command: 'node', args: ['-e', '0'] },
   });
@@ -73,5 +73,11 @@ describe('real CLIs load Squad projections', () => {
   it.skipIf(!has('agy'))('antigravity discovers the squad agent', () => {
     const r = run('agy', ['--agent', 'nonexistent-zzz', '-p', 'hi'], root);
     expect(`${r.stdout}${r.stderr}`).toMatch(/available:.*\bsquad\b/);
+  });
+
+  it.skipIf(!has('cursor-agent'))('cursor-agent loads .cursor/mcp.json and starts the squad_state server', () => {
+    run('cursor-agent', ['mcp', 'enable', 'squad_state'], root);
+    const list = run('cursor-agent', ['mcp', 'list'], root);
+    expect(`${list.stdout}${list.stderr}`).toMatch(/squad_state/);
   });
 });
