@@ -74,7 +74,7 @@ export interface ClientAdapter {
   project(ctx: ClientContext): ProjectionFile[];
 }
 
-export type ApplyAction = 'created' | 'updated' | 'unchanged' | 'error';
+export type ApplyAction = 'created' | 'updated' | 'unchanged' | 'removed' | 'error';
 
 export interface ApplyResult {
   path: string;

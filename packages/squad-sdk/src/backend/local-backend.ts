@@ -330,6 +330,16 @@ export class LocalSquadBackend implements SquadBackend {
     return harness ? this.harnesses.get(harness) : undefined;
   }
 
+  /** After a broker restart, re-attach to harnesses of in-flight turns so their events keep flowing. */
+  private rehydrate(conv: StoredConversation): void {
+    for (const turn of conv.turns) {
+      const harness = turn.messages[0]?.harness;
+      if (harness && !TERMINAL_RUN_STATES.includes(turn.state) && this.harnesses.get(harness)) {
+        this.ensureSubscribed(conv.info.conversationId, harness);
+      }
+    }
+  }
+
   private ensureSubscribed(conversationId: string, harnessId: string): void {
     const key = `${conversationId}\u0000${harnessId}`;
     if (this.subscriptions.has(key)) return;
@@ -346,16 +356,20 @@ export class LocalSquadBackend implements SquadBackend {
     if (!turn || TERMINAL_RUN_STATES.includes(turn.state)) return;
     switch (ev.type) {
       case 'message':
+        if (turn.messages.some(m => m.runId === ev.message.runId && m.seq === ev.message.seq && m.role === ev.message.role && m.content === ev.message.content)) return;
         turn.messages.push(ev.message);
         conv.transcript.push(ev.message);
         break;
       case 'task': {
         const task = turn.tasks.find(t => t.id === ev.id);
+        if (task && task.state === ev.state && (ev.title === undefined || ev.title === task.title)) return;
         if (task) { task.state = ev.state; task.title = ev.title ?? task.title; }
         else turn.tasks.push({ id: ev.id, state: ev.state, title: ev.title });
         break;
       }
       case 'approval-requested': {
+        // harness delivery is at-least-once: a redelivered request must not create a second approval
+        if ((conv.approvals ?? []).some(a => a.approvalId === ev.request.approvalId)) return;
         const request: ApprovalRequest = {
           ...ev.request, version: 1, scope: ev.request.scope ?? { kind: 'turn', runId: turn.runId, seq: turn.seq },
         };
@@ -368,6 +382,8 @@ export class LocalSquadBackend implements SquadBackend {
         break;
       }
       case 'state':
+        if (turn.state === ev.state) return;
+        if (turn.pendingApproval && !TERMINAL_RUN_STATES.includes(ev.state)) return; // only a decision resumes an awaiting turn
         turn.state = ev.state;
         if (ev.error) turn.error = ev.error;
         break;
@@ -412,7 +428,9 @@ export class LocalSquadBackend implements SquadBackend {
       if (required) throw new BackendError('not-found', `Conversation '${id}' not found`, 404);
       return undefined;
     }
-    return JSON.parse(raw) as StoredConversation;
+    const conv = JSON.parse(raw) as StoredConversation;
+    this.rehydrate(conv);
+    return conv;
   }
 
   private save(conv: StoredConversation): void {

@@ -30,6 +30,7 @@ import {
   getClientAdapter,
   slugifyMember,
   installClients,
+  uninstallClients,
   normalizeClientIds,
   parseClients,
   projectClients,
@@ -38,6 +39,13 @@ import {
   type ClientId,
 } from '../packages/squad-sdk/src/clients/index.js';
 import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../packages/squad-cli/src/cli/commands/backend-mcp.js';
+// Clean-room (exit criterion 3) code is typed strictly against the public subpath barrel.
+import type {
+  BackendEnvelope as CREnvelope,
+  HarnessAdapter as CRHarness,
+  HarnessEventEnvelope as CRHarnessEvent,
+  SquadBackend as CRBackend,
+} from '@bradygaster/squad-sdk/backend';
 
 const SUITE = path.resolve(__dirname, '..', 'test-fixtures', 'spec', 'suite-v0.2');
 const matrix = JSON.parse(fs.readFileSync(path.join(SUITE, 'capability-matrix.json'), 'utf8')) as {
@@ -701,5 +709,481 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
     expect(canonical(remote.finalPage.events)).toEqual(canonical(local.finalPage.events));
     expect(remote.finalPage.lastAcceptedSeq).toBe(local.finalPage.lastAcceptedSeq);
     expect(remote.approvals.map(a => a.version)).toEqual(local.approvals.map(a => a.version));
+  });
+});
+
+// ── RC1 → stable exit criterion 1: upgrade / rollback from v0.1 ─────
+
+describe('RC1→stable exit 1: upgrade and rollback from a v0.1 workspace', () => {
+  let root: string;
+  beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-upgrade-')); });
+  afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+  const write = (rel: string, body: string) => {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root, rel), body);
+  };
+  const walk = (dir: string, base = ''): string[] =>
+    fs.readdirSync(path.join(dir, base), { withFileTypes: true }).flatMap(d =>
+      d.isDirectory() ? walk(dir, path.posix.join(base, d.name)) : [path.posix.join(base, d.name)]);
+  /** Byte snapshot of the workspace; JSON compared semantically. */
+  const snapshot = () => new Map(walk(root).sort().map(rel => {
+    const text = fs.readFileSync(path.join(root, rel), 'utf8');
+    return [rel, rel.endsWith('.json') ? JSON.stringify(JSON.parse(text)) : text] as const;
+  }));
+  const ctx = (): ClientContext => ({
+    root,
+    mcp: { command: 'npx', args: ['-y', '@bradygaster/squad-cli', 'state-mcp'] },
+    members: [{ name: 'Data', role: 'Framework Expert' }],
+  });
+  const readJson = (rel: string) => JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
+
+  const customServers = {
+    custom: { command: 'node', args: ['server.js'], env: { TOKEN_REF: 'from-env' } },
+    remote: { url: 'https://example.test/mcp' },
+  };
+
+  function seedV01() {
+    write('.squad/config.json', JSON.stringify({ version: '0.1', stateBackend: 'local' }, null, 2) + '\n');
+    write('.squad/team.md', '# Team\n\n| Name | Role |\n|---|---|\n| Data | Framework Expert |\n');
+    write('.squad/decisions.md', '# Decisions\n\n- keep this\n');
+    write('.squad/agents/data/charter.md', '# Data\n');
+    write('.squad/agents/data/history.md', '# History\n\n- learned things\n');
+    write('.mcp.json', JSON.stringify({ mcpServers: customServers }, null, 2) + '\n');
+    write('.cursor/mcp.json', JSON.stringify({ mcpServers: { custom: customServers.custom } }, null, 2) + '\n');
+    write('.kiro/settings/mcp.json', JSON.stringify({ mcpServers: { remote: customServers.remote } }, null, 2) + '\n');
+    write('opencode.json', JSON.stringify({ model: 'my-model', mcp: { custom: { type: 'local', command: ['node', 'x.js'] } } }, null, 2) + '\n');
+    write('CLAUDE.md', '# My project\n\nHand-written notes.\n');
+  }
+
+  const upgrade = () => {
+    const results = installClients([...CLIENT_IDS], ctx());
+    const cfgPath = path.join(root, '.squad/config.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    cfg.clients = normalizeClientIds([...CLIENT_IDS]).clients;
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+    return results;
+  };
+  const rollback = (clients: readonly ClientId[] = CLIENT_IDS) => uninstallClients(clients, ctx());
+
+  it('upgrades v0.1 to all five client projections without touching .squad state or custom servers', () => {
+    seedV01();
+    const before = snapshot();
+    expect(readJson('.squad/config.json').clients).toBeUndefined();
+    expect(normalizeClientIds(readJson('.squad/config.json').clients).clients).toEqual([]);
+
+    expect(upgrade().every(r => r.action !== 'error')).toBe(true);
+    const after = snapshot();
+    for (const [rel, body] of before) {
+      if (rel.startsWith('.squad/') && rel !== '.squad/config.json') expect(after.get(rel), rel).toBe(body);
+    }
+    expect(readJson('.squad/config.json')).toMatchObject({ version: '0.1', stateBackend: 'local', clients: [...CLIENT_IDS] });
+    for (const f of projectClients([...CLIENT_IDS], ctx())) expect(fs.existsSync(path.join(root, f.path)), f.path).toBe(true);
+
+    expect(readJson('.mcp.json').mcpServers).toMatchObject({ ...customServers, [SQUAD_STATE_KEY]: expect.anything() });
+    expect(readJson('.cursor/mcp.json').mcpServers.custom).toEqual(customServers.custom);
+    expect(readJson('.kiro/settings/mcp.json').mcpServers.remote).toEqual(customServers.remote);
+    expect(readJson('opencode.json').model).toBe('my-model');
+    expect(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8').startsWith('# My project\n\nHand-written notes.\n')).toBe(true);
+
+    expect(upgrade().map(r => r.action)).toEqual(installClients([...CLIENT_IDS], ctx()).map(() => 'unchanged'));
+  });
+
+  it('rolls back to the exact pre-upgrade workspace', () => {
+    seedV01();
+    const before = snapshot();
+    upgrade();
+    const results = rollback();
+    expect(results.some(r => r.action === 'error')).toBe(false);
+
+    const cfgPath = path.join(root, '.squad/config.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    delete cfg.clients;
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+
+    expect(snapshot()).toEqual(before);
+    expect(readJson('.mcp.json').mcpServers).toEqual(customServers);
+    expect(fs.existsSync(path.join(root, '.claude'))).toBe(false);
+    expect(fs.existsSync(path.join(root, '.kiro/steering'))).toBe(false);
+    expect(rollback().every(r => r.action === 'unchanged')).toBe(true); // idempotent
+  });
+
+  it('rolls back a single client and leaves the others intact', () => {
+    seedV01();
+    upgrade();
+    rollback(['claude']);
+    expect(fs.existsSync(path.join(root, '.claude'))).toBe(false);
+    expect(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8')).toBe('# My project\n\nHand-written notes.\n');
+    expect(readJson('.mcp.json').mcpServers).toEqual(customServers);
+    expect(fs.existsSync(path.join(root, '.kiro/agents/squad.json'))).toBe(true);
+    expect(readJson('.cursor/mcp.json').mcpServers[SQUAD_STATE_KEY]).toBeDefined();
+    expect(fs.existsSync(path.join(root, '.squad/agents/data/history.md'))).toBe(true);
+  });
+
+  it('removes files the upgrade created from scratch and never deletes user files', () => {
+    write('.squad/config.json', '{}\n');
+    write('notes.txt', 'mine\n');
+    const before = snapshot();
+    installClients([...CLIENT_IDS], ctx());
+    expect(fs.existsSync(path.join(root, '.mcp.json'))).toBe(true);
+    rollback();
+    expect(snapshot()).toEqual(before);
+  });
+
+  it('refuses to rewrite malformed user JSON during rollback', () => {
+    seedV01();
+    upgrade();
+    fs.writeFileSync(path.join(root, '.mcp.json'), '{ broken');
+    const results = rollback(['claude']);
+    expect(results.find(r => r.path === '.mcp.json')!.action).toBe('error');
+    expect(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8')).toBe('{ broken');
+  });
+});
+
+// ── RC1 → stable exit criterion 2: restart and partial-delivery faults ──
+
+describe('RC1→stable exit 2: restart and partial-delivery fault injection', () => {
+  /** Client-side reassembly: dedupe by id, order by sequence, require contiguity from 1. */
+  const reassemble = (events: BackendEnvelope[]) => {
+    const byId = new Map(events.map(e => [e.id, e]));
+    const list = [...byId.values()].sort((a, b) => a.sequence! - b.sequence!);
+    list.forEach((e, i) => expect(e.sequence, `gap or duplicate at index ${i}`).toBe(i + 1));
+    return list;
+  };
+
+  /** Drain with partial pages, returning every page for later replay/shuffling. */
+  async function drain(client: SquadBackend, id: string, limit: number, after?: string) {
+    const pages: BackendEnvelope[][] = [];
+    let cursor = after;
+    for (;;) {
+      const page = await client.readEvents(id, { after: cursor, limit });
+      expect(page.events.length).toBeLessThanOrEqual(limit);
+      if (page.events.length === 0) return { pages, cursor, last: page };
+      pages.push(page.events);
+      cursor = page.nextCursor;
+    }
+  }
+
+  const snapshotStore = (state: MemoryStateStore): MemoryStateStore => {
+    const copy = new MemoryStateStore();
+    for (const name of state.list('backend/conversations')) {
+      const rel = `backend/conversations/${name}`;
+      copy.write(rel, JSON.stringify(JSON.parse(state.read(rel)!)));
+    }
+    return copy;
+  };
+
+  it('keeps sequence continuity under partial pages, duplicate and out-of-order redelivery', async () => {
+    const { registry, harnesses } = makeRegistry();
+    const h = harnesses.copilot;
+    const b = new LocalSquadBackend({ harnesses: registry });
+    await b.createConversation({ conversationId: 'c' });
+    for (const [run, seq] of [['r1', 1], ['r2', 2], ['r3', 3]] as const) await b.sendMessage('c', msg(run, seq, { harness: 'copilot' }));
+
+    // duplicate command delivery, concurrently
+    const dups = await Promise.all([1, 2, 3].map(() => b.sendMessage('c', msg('r1', 1, { harness: 'copilot' }))));
+    expect(dups.every(d => d.duplicate)).toBe(true);
+    expect(h.submitted).toEqual([{ runId: 'r1', seq: 1 }, { runId: 'r2', seq: 2 }, { runId: 'r3', seq: 3 }]);
+
+    // at-least-once harness delivery: every event twice, approval three times
+    const approval = { type: 'approval-requested' as const, runId: 'r1', seq: 1, request: { approvalId: 'a1', turnSeq: 1, action: 'x', hash: 'h1' } };
+    h.emit(approval); h.emit(approval); h.emit(approval);
+    const reply = { type: 'message' as const, runId: 'r2', seq: 2, message: { runId: 'r2', seq: 20, role: 'assistant' as const, content: 'partial' } };
+    h.emit(reply); h.emit(reply);
+    const task = { type: 'task' as const, runId: 'r3', seq: 3, id: 't1', state: 'running' as const, title: 'T' };
+    h.emit(task); h.emit(task);
+    h.emit({ type: 'state', runId: 'r2', seq: 2, state: 'completed' });
+    h.emit({ type: 'state', runId: 'r2', seq: 2, state: 'completed' });
+    // out of order: late events for a terminal turn, and a stale 'running' for an awaiting turn
+    h.emit({ type: 'message', runId: 'r2', seq: 2, message: { runId: 'r2', seq: 21, role: 'assistant', content: 'too late' } });
+    h.emit({ type: 'state', runId: 'r1', seq: 1, state: 'running' });
+
+    expect(await b.getApprovals('c')).toHaveLength(1);
+    expect((await b.getTurn('c', 1)).state).toBe('awaiting-approval');
+    expect((await b.getTranscript('c')).filter(m => m.content === 'partial')).toHaveLength(1);
+    expect((await b.getTranscript('c')).some(m => m.content === 'too late')).toBe(false);
+
+    const full = (await b.readEvents('c')).events;
+    const types = full.map(e => e.type);
+    expect(types.filter(t => t === 'approval.requested')).toHaveLength(1);
+    expect(types.filter(t => t === 'turn.state')).toHaveLength(1);
+
+    // partial pages (limit 2) reassemble to the same canonical history
+    const { pages } = await drain(b, 'c', 2);
+    expect(pages.every(p => p.length <= 2)).toBe(true);
+    expect(pages.length).toBeGreaterThan(2);
+    expect(canonical(reassemble(pages.flat()))).toEqual(canonical(full));
+
+    // duplicate + reversed + shuffled delivery of those pages still reassembles identically
+    const delivered = [...pages.slice().reverse().map(p => p.slice().reverse()), ...pages, pages[0]!];
+    expect(canonical(reassemble(delivered.flat()))).toEqual(canonical(full));
+
+    // decisions retried after the approval resolves are not applied twice
+    await b.respondApproval('c', { approvalId: 'a1', hash: 'h1', decision: 'approve' });
+    expect((await errorOf(b.respondApproval('c', { approvalId: 'a1', hash: 'h1', decision: 'approve' })))?.code).toBe('approval-not-pending');
+    expect(h.approvals).toEqual(['a1']);
+  });
+
+  it('survives a broker restart with an approval in flight', async () => {
+    const stateA = new MemoryStateStore();
+    const a = makeRegistry();
+    const brokerA = new LocalSquadBackend({ state: stateA, harnesses: a.registry });
+    await brokerA.createConversation({ conversationId: 'c' });
+    await brokerA.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    a.harnesses.copilot.emit({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a1', turnSeq: 1, action: 'deploy', hash: 'hh' } });
+
+    // client has consumed only part of the stream before the crash
+    const firstPage = await brokerA.readEvents('c', { limit: 2 });
+    expect(firstPage.events.map(e => e.sequence)).toEqual([1, 2]);
+    const heldCursor = firstPage.nextCursor;
+
+    // restart: fresh broker rehydrated from the persisted snapshot; harness reconnects as a new process
+    const b = makeRegistry();
+    const brokerB = new LocalSquadBackend({ state: snapshotStore(stateA), harnesses: b.registry });
+    const resumed = await brokerB.readEvents('c', { after: heldCursor, limit: 10 });
+    expect(resumed.resumable).toBe(true);
+    expect(resumed.events.map(e => e.sequence)).toEqual([3]);
+    expect(resumed.events[0]!.type).toBe('approval.requested');
+    expect(resumed.lastAcceptedSeq).toBe(3);
+    expect(canonical(reassemble([...firstPage.events, ...resumed.events]))).toEqual(canonical((await brokerA.readEvents('c')).events));
+
+    // approval survived the restart as a durable resource; nothing was resubmitted
+    expect(await brokerB.getApprovals('c')).toMatchObject([{ approvalId: 'a1', version: 1, state: 'pending', hash: 'hh' }]);
+    expect((await brokerB.getTurn('c', 1)).state).toBe('awaiting-approval');
+    expect((await brokerB.sendMessage('c', msg('r', 1, { harness: 'copilot' }))).duplicate).toBe(true);
+    expect(b.harnesses.copilot.submitted).toEqual([]);
+
+    // decision after restart reaches the NEW harness exactly once; tampering is still rejected
+    expect((await errorOf(brokerB.respondApproval('c', { approvalId: 'a1', hash: 'bad', decision: 'approve' })))?.code).toBe('approval-hash-mismatch');
+    await brokerB.respondApproval('c', { approvalId: 'a1', hash: 'hh', decision: 'approve' });
+    expect((await errorOf(brokerB.respondApproval('c', { approvalId: 'a1', hash: 'hh', decision: 'approve' })))?.code).toBe('approval-not-pending');
+    expect(b.harnesses.copilot.approvals).toEqual(['a1']);
+    expect(a.harnesses.copilot.approvals).toEqual([]);
+
+    // the reconnected harness keeps streaming into the rehydrated broker, duplicates included
+    const done = { type: 'message' as const, runId: 'r', seq: 1, message: { runId: 'r', seq: 2, role: 'assistant' as const, content: 'shipped' } };
+    b.harnesses.copilot.emit(done); b.harnesses.copilot.emit(done);
+    b.harnesses.copilot.emit({ type: 'state', runId: 'r', seq: 1, state: 'completed' });
+    // the dead broker's harness cannot corrupt the new store
+    a.harnesses.copilot.emit({ type: 'state', runId: 'r', seq: 1, state: 'failed' });
+
+    const finalEvents = reassemble((await brokerB.readEvents('c')).events);
+    expect(finalEvents.map(e => e.type)).toEqual([
+      'conversation.created', 'message.accepted', 'approval.requested', 'approval.resolved', 'harness.message', 'turn.state',
+    ]);
+    expect(finalEvents.slice(0, 3).map(e => e.id)).toEqual((await brokerA.readEvents('c')).events.slice(0, 3).map(e => e.id));
+    expect((await brokerB.getTurn('c', 1)).state).toBe('completed');
+    expect((await brokerB.getApprovals('c'))[0]).toMatchObject({ version: 2, state: 'approved' });
+    expect((await brokerB.getTranscript('c')).filter(m => m.content === 'shipped')).toHaveLength(1);
+  });
+
+  it('recovers a lost response and transient 503s mid-stream over durable-http without duplicate effects', async () => {
+    const { registry, harnesses } = makeRegistry();
+    const local = new LocalSquadBackend({ harnesses: registry });
+    const server = createMockDurableSquad(local);
+    let dropNext = true;
+    const lossy = (async (url: string, init?: RequestInit) => {
+      const res = await server.fetch(url, init as RequestInit);
+      if (dropNext && init?.method === 'POST' && url.endsWith('/messages')) {
+        dropNext = false;
+        throw new TypeError('connection reset after server processed the request');
+      }
+      return res;
+    }) as unknown as typeof fetch;
+    const client = mkHttp(server, { fetch: lossy });
+
+    await client.createConversation({ conversationId: 'c' });
+    const adm = await client.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    expect(adm.duplicate).toBe(true); // the retry hit the server's idempotency record
+    expect(harnesses.copilot.submitted).toEqual([{ runId: 'r', seq: 1 }]);
+    expect(await client.getTranscript('c')).toHaveLength(1);
+    expect(server.calls.filter(c => c.path.endsWith('/messages')).map(c => c.headers['Idempotency-Key'])).toEqual(['r:1', 'r:1']);
+
+    harnesses.copilot.emit({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a1', turnSeq: 1, action: 'x', hash: 'h' } });
+    server.failures.set('GET /v1/conversations/c/events', { status: 503, remaining: 2 });
+    const { pages } = await drain(client, 'c', 2);
+    expect(pages.every(p => p.length <= 2)).toBe(true);
+    const events = reassemble(pages.flat());
+    expect(events.map(e => e.type)).toEqual(['conversation.created', 'message.accepted', 'approval.requested']);
+
+    // a fresh client (new connection) resumes from a mid-stream cursor with identical results
+    const reconnect = mkHttp(server);
+    const tail = await reconnect.readEvents('c', { after: pages[0]!.at(-1)!.cursor });
+    expect(tail.events.map(e => e.sequence)).toEqual([3]);
+    expect(tail).toMatchObject({ resumable: true, lastAcceptedSeq: 3 });
+  });
+});
+
+// ── RC1 → stable exit criterion 3: clean-room client + harness ──────
+
+describe('RC1→stable exit 3: clean-room client and harness against the public contract', () => {
+  /** Harness written only against the public HarnessAdapter type. */
+  class CleanRoomHarness implements CRHarness {
+    readonly id = 'cleanroom';
+    readonly capabilities = { streaming: true, approvals: true, cancellation: true, tools: false, extensionNamespaces: ['x-cleanroom'] };
+    effects = { submits: 0, approvals: [] as string[], cancels: 0 };
+    private listeners = new Set<(e: CRHarnessEvent) => void>();
+    constructor(private readonly approval: { approvalId: string; hash: string }) {}
+    async submit(s: { runId: string; seq: number }) {
+      this.effects.submits++;
+      for (const l of this.listeners) {
+        l({ type: 'approval-requested', runId: s.runId, seq: s.seq, request: { approvalId: this.approval.approvalId, turnSeq: s.seq, action: 'clean-room', hash: this.approval.hash } });
+      }
+    }
+    subscribe(_conversationId: string, listener: (e: CRHarnessEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+    async cancel() { this.effects.cancels++; }
+    async respondApproval(_c: string, r: { approvalId: string }) { this.effects.approvals.push(r.approvalId); }
+    describe() { return { id: this.id, capabilities: this.capabilities }; }
+  }
+
+  /** Client that drives a recorded conformance trace using nothing but SquadBackend. */
+  async function runFixture(connect: () => CRBackend, trace: typeof golden) {
+    const seen = new Map<string, CREnvelope>();
+    let cursor: string | undefined;
+    const pull = async (c: CRBackend) => {
+      let last = { resumable: false, lastAcceptedSeq: 0 };
+      for (;;) {
+        const page = await c.readEvents(trace.conversationId, { after: cursor, limit: 2 });
+        last = { resumable: page.resumable, lastAcceptedSeq: page.lastAcceptedSeq };
+        if (page.events.length === 0) return last;
+        page.events.forEach(e => seen.set(e.id, e));
+        cursor = page.nextCursor;
+      }
+    };
+    const maxSeq = () => Math.max(0, ...[...seen.values()].map(e => e.sequence ?? 0));
+    let client: CRBackend | null = connect();
+    const reconnects: Array<{ resumable: boolean; lastAcceptedSeq: number; seenBefore: number }> = [];
+    let beforeDrop = 0;
+    let terminal = '';
+    for (const e of trace.events) {
+      switch (e.event) {
+        case 'TurnAccepted': {
+          await client!.createConversation({ conversationId: trace.conversationId });
+          const adm = await client!.sendMessage(trace.conversationId, {
+            runId: e['runId'] as string, seq: e['turnSeq'] as number, role: 'user', content: 'go', harness: 'cleanroom',
+            extensions: { 'x-cleanroom.trace': trace.runId },
+          });
+          expect(adm.duplicate).toBe(false);
+          await pull(client!);
+          break;
+        }
+        case 'ApprovalRequested':
+          await pull(client!);
+          break;
+        case 'Disconnected':
+          beforeDrop = maxSeq();
+          client = null;
+          break;
+        case 'Reconnected': {
+          client = connect();
+          const meta = await pull(client);
+          reconnects.push({ ...meta, seenBefore: beforeDrop });
+          break;
+        }
+        case 'ApprovalDecided':
+          await client!.respondApproval(trace.conversationId, { approvalId: e['approvalId'] as string, hash: e['payloadHash'] as string, decision: 'approve' });
+          await pull(client!);
+          break;
+        case 'CancellationRequested':
+          await client!.cancelRun(trace.conversationId, e['runId'] as string, e['reason'] as string);
+          await pull(client!);
+          break;
+        case 'RunTerminal': {
+          const turn = await client!.getTurn(trace.conversationId, (trace.events[0]!['turnSeq'] as number));
+          terminal = turn.state;
+          await pull(client!);
+          break;
+        }
+      }
+    }
+    const events = [...seen.values()].sort((a, b) => a.sequence! - b.sequence!);
+    events.forEach((e, i) => expect(e.sequence).toBe(i + 1));
+    const approvals = await client!.getApprovals(trace.conversationId);
+    return { events, reconnects, terminal, approvals };
+  }
+
+  const ev = (name: string) => golden.events.find(e => e.event === name)!;
+  const NAME_OF: Record<string, string> = {
+    'message.accepted': 'TurnAccepted', 'approval.requested': 'ApprovalRequested', 'approval.resolved': 'ApprovalDecided',
+    'cancellation.requested': 'CancellationRequested', 'turn.state': 'RunTerminal',
+  };
+
+  it('exposes the required runtime surface through the public package exports', async () => {
+    const backendPkg = await import('@bradygaster/squad-sdk/backend');
+    const clientsPkg = await import('@bradygaster/squad-sdk/clients');
+    for (const name of ['createSquadBackend', 'LocalSquadBackend', 'DurableHttpSquadBackend', 'DefaultHarnessRegistry', 'BackendError',
+      'BACKEND_PROTOCOL_VERSION', 'BACKEND_CAPABILITIES', 'intersectCapabilities', 'validateExtensions']) {
+      expect(backendPkg, name).toHaveProperty(name);
+    }
+    for (const name of ['CLIENT_IDS', 'getClientAdapter', 'installClients', 'uninstallClients', 'resolveEffectiveCapabilities', 'normalizeClientIds', 'parseClients']) {
+      expect(clientsPkg, name).toHaveProperty(name);
+    }
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'packages/squad-sdk/package.json'), 'utf8'));
+    expect(pkg.exports['./backend'].import).toBe('./dist/backend/index.js');
+    expect(pkg.exports['./clients'].import).toBe('./dist/clients/index.js');
+  });
+
+  it('declares capabilities per matrix and negotiates the expected intersection for all five clients', async () => {
+    const { createSquadBackend: create } = await import('@bradygaster/squad-sdk/backend');
+    const { getClientAdapter: adapterOf, CLIENT_IDS: ids } = await import('@bradygaster/squad-sdk/clients');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-cleanroom-caps-'));
+    try {
+      const backend = create({ kind: 'local', squadDir: dir });
+      for (const id of ids) {
+        const declared = matrix.clients[id]!.clientCapabilities;
+        const neg = await backend.negotiate({ protocols: ['2.0'], clientName: adapterOf(id).label, capabilities: declared, policyCapabilities: matrix.policyCapabilities });
+        expect(neg.effectiveCapabilities).toEqual(matrix.clients[id]!.effectiveCapabilities);
+        expect(neg.backendCapabilities).toEqual(matrix.backendCapabilities);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['file-backed local', 'durable-http'] as const)('executes golden-trace.json end to end (%s)', async (mode) => {
+    const { createSquadBackend: create, DefaultHarnessRegistry: Registry } = await import('@bradygaster/squad-sdk/backend');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-cleanroom-'));
+    try {
+      const approval = ev('ApprovalRequested');
+      const harness = new CleanRoomHarness({ approvalId: approval['approvalId'] as string, hash: approval['payloadHash'] as string });
+      const harnesses = new Registry();
+      harnesses.register(harness);
+      let connect: () => CRBackend;
+      if (mode === 'file-backed local') {
+        connect = () => create({ kind: 'local', squadDir: dir, harnesses });
+      } else {
+        const server = createMockDurableSquad(create({ kind: 'local', squadDir: dir, harnesses }) as LocalSquadBackend);
+        connect = () => mkHttp(server);
+      }
+      const r = await runFixture(connect, golden);
+
+      // the canonical history is exactly the fixture's, in order (client-side Disconnected/Reconnected aside)
+      const expectedNames = golden.events.map(e => e.event).filter(n => n !== 'Disconnected' && n !== 'Reconnected');
+      expect(r.events.map(e => NAME_OF[e.type]).filter(Boolean)).toEqual(expectedNames);
+      const by = (name: string) => r.events.find(e => NAME_OF[e.type] === name)!;
+      const requested = ev('ApprovalRequested');
+      const decided = ev('ApprovalDecided');
+      expect((by('ApprovalRequested').payload as any).request).toMatchObject({
+        approvalId: requested['approvalId'], version: requested['version'], hash: requested['payloadHash'], scope: { kind: requested['scope'] },
+      });
+      expect(by('ApprovalDecided').payload).toMatchObject({ approvalId: decided['approvalId'], version: decided['version'], decision: 'approve' });
+      expect(r.approvals).toHaveLength(1);
+      expect(r.approvals[0]).toMatchObject({ version: decided['version'], state: 'approved' });
+      expect(by('CancellationRequested').payload).toMatchObject({ runId: golden.runId, reason: ev('CancellationRequested')['reason'] });
+      expect(r.terminal).toBe(golden.expectedTerminalState);
+      expect(by('RunTerminal').payload).toMatchObject({ runId: golden.runId, state: golden.expectedTerminalState });
+
+      // Reconnected semantics from the fixture
+      const reconnected = ev('Reconnected');
+      expect(r.reconnects).toHaveLength(1);
+      expect(r.reconnects[0]!.resumable).toBe(reconnected['resumable']);
+      expect(r.reconnects[0]!.seenBefore).toBe(by('ApprovalRequested').sequence);
+
+      // each side effect happened exactly once, and nothing internal leaked
+      expect(harness.effects).toEqual({ submits: 1, approvals: [decided['approvalId']], cancels: 1 });
+      expect(JSON.stringify(r.events)).not.toMatch(/lease|checkpoint|epoch/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

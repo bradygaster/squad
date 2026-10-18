@@ -6,7 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { getClientAdapter } from './adapters.js';
+import { SQUAD_STATE_KEY, getClientAdapter } from './adapters.js';
 import type { ApplyResult, ClientContext, ClientId, ProjectionFile } from './types.js';
 
 export const BLOCK_BEGIN = '<!-- squad:begin (managed by Squad; do not edit between markers) -->';
@@ -102,4 +102,106 @@ export function applyProjection(root: string, files: readonly ProjectionFile[]):
 /** Project and apply the given clients in one step. */
 export function installClients(clients: readonly ClientId[], ctx: ClientContext): ApplyResult[] {
   return applyProjection(ctx.root, projectClients(clients, ctx));
+}
+
+/** Remove the Squad-managed block; collapses the separator that `upsertBlock` added. */
+export function removeBlock(existing: string): string {
+  const start = existing.indexOf(BLOCK_BEGIN);
+  const end = existing.indexOf(BLOCK_END);
+  if (start === -1 || end < start) return existing;
+  const before = existing.slice(0, start).replace(/\n{2,}$/, '\n');
+  const after = existing.slice(end + BLOCK_END.length).replace(/^\n/, '');
+  return before + after;
+}
+
+const MCP_CONTAINERS = ['mcpServers', 'mcp', 'servers'];
+
+const OPENCODE_SCHEMA = 'https://opencode.ai/config.json';
+
+function removeServerEntry(obj: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...obj };
+  const touched = MCP_CONTAINERS.some(k => {
+    const c = out[k];
+    return !!c && typeof c === 'object' && !Array.isArray(c) && SQUAD_STATE_KEY in c;
+  });
+  // the OpenCode projection adds its $schema; drop it together with the Squad entry
+  if (touched && out['$schema'] === OPENCODE_SCHEMA) delete out['$schema'];
+  for (const key of MCP_CONTAINERS) {
+    const container = out[key];
+    if (container && typeof container === 'object' && !Array.isArray(container) && SQUAD_STATE_KEY in container) {
+      const { [SQUAD_STATE_KEY]: _removed, ...rest } = container as Record<string, unknown>;
+      if (Object.keys(rest).length === 0) delete out[key];
+      else out[key] = rest;
+    }
+  }
+  return out;
+}
+
+function pruneEmptyDirs(root: string, rel: string): void {
+  let dir = path.dirname(path.join(root, rel));
+  const stop = path.resolve(root);
+  while (path.resolve(dir).startsWith(stop + path.sep)) {
+    try {
+      if (fs.readdirSync(dir).length > 0) return;
+      fs.rmdirSync(dir);
+    } catch {
+      return;
+    }
+    dir = path.dirname(dir);
+  }
+}
+
+/**
+ * Roll back a projection: deletes Squad-owned files, removes only the
+ * `squad_state` MCP entry from shared JSON configs (user servers and settings
+ * stay), and strips the marker block from user text files. `.squad/` state is
+ * never touched. Files left empty by the removal are deleted.
+ */
+export function removeProjection(root: string, files: readonly ProjectionFile[]): ApplyResult[] {
+  const results: ApplyResult[] = [];
+  const seen = new Set<string>();
+  for (const f of files) {
+    if (seen.has(f.path)) continue;
+    seen.add(f.path);
+    const abs = path.join(root, f.path);
+    try {
+      if (!fs.existsSync(abs)) {
+        results.push({ path: f.path, action: 'unchanged' });
+        continue;
+      }
+      if (f.kind === 'managed') {
+        fs.rmSync(abs);
+        results.push({ path: f.path, action: 'removed' });
+      } else if (f.kind === 'json') {
+        const current = readJsonObject(abs);
+        const next = removeServerEntry(current);
+        if (JSON.stringify(next) === JSON.stringify(current)) {
+          results.push({ path: f.path, action: 'unchanged' });
+          continue;
+        }
+        if (Object.keys(next).length === 0) fs.rmSync(abs);
+        else fs.writeFileSync(abs, JSON.stringify(next, null, 2) + '\n', 'utf8');
+        results.push({ path: f.path, action: Object.keys(next).length === 0 ? 'removed' : 'updated' });
+      } else {
+        const text = fs.readFileSync(abs, 'utf8');
+        const next = removeBlock(text);
+        if (next === text) {
+          results.push({ path: f.path, action: 'unchanged' });
+          continue;
+        }
+        if (next.trim() === '') fs.rmSync(abs);
+        else fs.writeFileSync(abs, next, 'utf8');
+        results.push({ path: f.path, action: next.trim() === '' ? 'removed' : 'updated' });
+      }
+      pruneEmptyDirs(root, f.path);
+    } catch (err) {
+      results.push({ path: f.path, action: 'error', error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return results;
+}
+
+/** Roll back the given clients' projections (inverse of {@link installClients}). */
+export function uninstallClients(clients: readonly ClientId[], ctx: ClientContext): ApplyResult[] {
+  return removeProjection(ctx.root, projectClients(clients, ctx));
 }
