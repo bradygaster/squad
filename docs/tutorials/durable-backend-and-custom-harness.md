@@ -355,16 +355,14 @@ TurnAccepted(runId, seq)
 
 ### Practical commands
 
-If you have the sibling worktrees checked out, these are the fastest validation passes:
+These are the fastest validation passes from the repo root:
 
 ```bash
-cd ..\squad-20-backend
 npm test -- test/backend.test.ts
 ```
 
 ```bash
-cd ..\squad-20-validation
-npm test -- packages/squad-sdk/test/squad-20-security-contracts.test.ts
+npm test -- test/squad-20-security-contracts.test.ts
 ```
 
 ### What to look for in the validation suite

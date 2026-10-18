@@ -34,7 +34,7 @@ It does not standardize LLM prompts, UI layout, GitHub-specific session tools,
 token minting, transport codecs, storage engines, or the internal scheduler of
 any execution fabric.
 
-This split follows the Q and Bubu convergence rule from the Squad 2.0 kickoff:
+This split follows the client/backend convergence rule agreed for Squad 2.0:
 host adapters stop at host capabilities and transport translation. Conversation
 semantics, ordering, idempotency, routing, leases, cancellation, durable
 artifacts, checkpoints, observability joins, and authorization boundaries

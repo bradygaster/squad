@@ -1,7 +1,7 @@
 # Squad 2.0 — Security, Threat Model & Isolation Gates
 
 **Status:** Proposal · **Owner:** Worf (Security & Reliability) · **Scope:** Client/Backend decoupling and multi-client projections (Claude Code, Kiro, OpenCode, Cursor, GitHub Copilot) plus the `DurableSquad` remote backend.
-**Executable contract:** `packages/squad-sdk/test/squad-20-security-contracts.test.ts`
+**Executable contract:** `test/squad-20-security-contracts.test.ts`
 
 ## 1. Trust model
 

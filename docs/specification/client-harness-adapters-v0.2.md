@@ -33,7 +33,7 @@ It does not standardize the internal tool catalog of any host, the visual
 presentation of approvals, extension packaging, or provider-specific pricing
 and authentication.
 
-This profile follows the same Q and Bubu convergence rule: adapters own native
+This profile follows the same convergence rule: adapters own native
 host bootstrap, transport mechanics, event parsing, tool registration, UI
 rendering, and translation to canonical envelopes. They do not own
 conversation semantics, routing, durable state, authorization policy, or the
