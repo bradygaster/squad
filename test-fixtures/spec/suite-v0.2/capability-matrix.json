@@ -114,6 +114,42 @@
         "subagents",
         "typed-content-parts"
       ]
+    },
+    "codex": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "antigravity": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
     }
   }
 }

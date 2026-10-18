@@ -179,9 +179,10 @@ describe('Scenario 1: client projections and --client', () => {
     const first = installClients(clients, ctx());
     expect(first.every(r => r.action === 'created' || r.action === 'updated')).toBe(true);
     for (const f of files) expect(fs.existsSync(path.join(root, f.path)), f.path).toBe(true);
-    const mcpFiles = files.filter(f => f.kind === 'json');
-    expect(mcpFiles.length).toBeGreaterThan(0);
-    for (const f of mcpFiles) {
+    // every client wires the squad_state MCP server somewhere (JSON config, TOML table or agent frontmatter)
+    const wired = files.filter(f => fs.readFileSync(path.join(root, f.path), 'utf8').includes(SQUAD_STATE_KEY));
+    expect(wired.length).toBeGreaterThan(0);
+    for (const f of files.filter(f => f.kind === 'json')) {
       expect(JSON.stringify(JSON.parse(fs.readFileSync(path.join(root, f.path), 'utf8')))).toContain(SQUAD_STATE_KEY);
     }
 

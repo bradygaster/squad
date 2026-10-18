@@ -148,13 +148,31 @@ export function installClients(clients: readonly ClientId[], ctx: ClientContext)
 }
 
 /** Remove the Squad-managed block; collapses the separator that `upsertBlock` added. */
-export function removeBlock(existing: string): string {
-  const start = existing.indexOf(BLOCK_BEGIN);
-  const end = existing.indexOf(BLOCK_END);
+export function removeBlock(existing: string, id?: string): string {
+  const { begin, end: endMarker } = markers(id);
+  const start = existing.indexOf(begin);
+  const end = existing.indexOf(endMarker);
   if (start === -1 || end < start) return existing;
   const before = existing.slice(0, start).replace(/\n{2,}$/, '\n');
-  const after = existing.slice(end + BLOCK_END.length).replace(/^\n/, '');
+  const after = existing.slice(end + endMarker.length).replace(/^\n/, '');
   return before + after;
+}
+
+/** Remove a whole `[table]` (up to the next table header) from TOML text; other tables are untouched. */
+export function removeTomlTable(existing: string, table: string): string {
+  const nl = existing.includes('\r\n') ? '\r\n' : '\n';
+  const lines = existing.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim() === `[${table}]`);
+  if (start === -1) return existing;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\s*\[/.test(lines[i]!)) { end = i; break; }
+  }
+  const before = lines.slice(0, start);
+  while (before.length > 0 && before[before.length - 1]!.trim() === '') before.pop();
+  const after = lines.slice(end);
+  const joined = [...before, ...(before.length > 0 && after.length > 0 ? [''] : []), ...after].join(nl);
+  return joined.trim() === '' ? '' : joined.replace(/(\r?\n)*$/, nl);
 }
 
 const MCP_CONTAINERS = ['mcpServers', 'mcp', 'servers'];
@@ -216,7 +234,7 @@ export function removeProjection(root: string, files: readonly ProjectionFile[])
         fs.rmSync(abs);
         results.push({ path: f.path, action: 'removed' });
       } else if (f.kind === 'json') {
-        const current = readJsonObject(abs);
+        const current = parseJsonObject(abs, fs.readFileSync(abs, 'utf8'));
         const next = removeServerEntry(current);
         if (JSON.stringify(next) === JSON.stringify(current)) {
           results.push({ path: f.path, action: 'unchanged' });
@@ -227,7 +245,7 @@ export function removeProjection(root: string, files: readonly ProjectionFile[])
         results.push({ path: f.path, action: Object.keys(next).length === 0 ? 'removed' : 'updated' });
       } else {
         const text = fs.readFileSync(abs, 'utf8');
-        const next = removeBlock(text);
+        const next = f.kind === 'text' ? removeTomlTable(text, `mcp_servers.${SQUAD_STATE_KEY}`) : removeBlock(text, f.id);
         if (next === text) {
           results.push({ path: f.path, action: 'unchanged' });
           continue;
