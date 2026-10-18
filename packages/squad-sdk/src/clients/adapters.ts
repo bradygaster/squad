@@ -149,8 +149,8 @@ const kiro: ClientAdapter = {
             tools: ['*'],
             includeMcpJson: true,
             resources: [
-              `file://../../${ctx.squadDir ?? '.squad'}/team.md`,
-              `file://../../${ctx.squadDir ?? '.squad'}/routing.md`,
+              `file://${ctx.squadDir ?? '.squad'}/team.md`,
+              `file://${ctx.squadDir ?? '.squad'}/routing.md`,
             ],
           },
           null,

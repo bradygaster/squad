@@ -136,6 +136,9 @@ describe('kiro adapter', () => {
     const agent = readJson('.kiro/agents/squad.json');
     expect(agent.name).toBe('squad');
     expect(agent.includeMcpJson).toBe(true);
+    // Kiro resolves resources against the workspace root but prompt against the config file.
+    expect(agent.prompt).toBe('file://../steering/squad.md');
+    expect(agent.resources).toEqual(['file://.squad/team.md', 'file://.squad/routing.md']);
     expect(readJson('.kiro/settings/mcp.json').mcpServers.squad_state).toMatchObject({
       command: 'squad', args: ['state-mcp'], disabled: false,
     });
@@ -232,6 +235,11 @@ describe('CLI --client handling', () => {
     expect(() => readClientFlag(['init', '--client'])).toThrow(/requires a value/);
     expect(() => readClientFlag(['init', '--client', '--force'])).toThrow(/requires a value/);
     expect(() => readClientFlag(['init', '--client', 'nope'])).toThrow(/Unknown client/);
+  });
+
+  it('roster parsing skips the coordinator row', () => {
+    const md = '| Name | Role | Notes |\n|---|---|---|\n| Squad | Coordinator | x |\n\n| Name | Role | Charter | Status |\n|---|---|---|---|\n| Data | Expert | c | ok |\n';
+    expect(parseRoster(md)).toEqual([{ name: 'Data', role: 'Expert' }]);
   });
 
   it('parses roster tables', () => {
