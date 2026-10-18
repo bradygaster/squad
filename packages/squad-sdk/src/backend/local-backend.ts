@@ -73,21 +73,25 @@ function sleepSync(ms: number): void {
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 
-/** File-system store rooted at a `.squad` directory. Never follows symlinks/junctions below the root. */
 /**
  * Remove an abandoned lock under an exclusive `.recover` mutex. While holding it the lock is re-read: it is
  * only removed if it is still byte-for-byte (and mtime-for-mtime) the stale lock that was observed, so a lock
  * a faster waiter has since re-acquired is never touched and two waiters can never both own the lock.
+ *
+ * The mutex itself is protected against a reclaimer that dies while holding it: it carries an owner token and
+ * is only held for microseconds, so once it is older than `recoverStaleMs` it is claimed by atomic rename
+ * (one winner), re-verified against the token that was observed, and discarded. A live mutex is never taken.
  */
-function recoverStaleLock(lockPath: string, observed: string, observedMtime: number, staleLockMs: number): boolean {
+function recoverStaleLock(lockPath: string, observed: string, observedMtime: number, staleLockMs: number, recoverStaleMs: number): boolean {
   const mutex = `${lockPath}.recover`;
+  const token = `${process.pid}:${randomUUID()}`;
   let fd: number;
   try {
     fd = fs.openSync(mutex, 'wx');
+    fs.writeSync(fd, token);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-    // a crashed recoverer must not wedge recovery forever
-    try { if (Date.now() - fs.statSync(mutex).mtimeMs > staleLockMs) fs.rmSync(mutex, { force: true }); } catch { /* raced */ }
+    reclaimAbandonedMutex(mutex, recoverStaleMs);
     return false;
   }
   try {
@@ -99,13 +103,33 @@ function recoverStaleLock(lockPath: string, observed: string, observedMtime: num
     return true;
   } finally {
     fs.closeSync(fd);
-    fs.rmSync(mutex, { force: true });
+    try { if (fs.readFileSync(mutex, 'utf8') === token) fs.rmSync(mutex, { force: true }); } catch { /* already reclaimed */ }
   }
 }
+
+function reclaimAbandonedMutex(mutex: string, recoverStaleMs: number): void {
+  let observed: string;
+  try {
+    if (Date.now() - fs.statSync(mutex).mtimeMs <= recoverStaleMs) return; // held by a live reclaimer
+    observed = fs.readFileSync(mutex, 'utf8');
+  } catch { return; }
+  const dead = `${mutex}.dead.${process.pid}.${randomUUID()}`;
+  try { fs.renameSync(mutex, dead); } catch { return; } // another waiter claimed it first
+  let claimed: string | undefined;
+  try { claimed = fs.readFileSync(dead, 'utf8'); } catch { /* unreadable: treat as the abandoned one */ }
+  if (claimed !== undefined && claimed !== observed) {
+    // we raced a fresh mutex: put it back (no-op if a newer one already exists)
+    try { fs.linkSync(dead, mutex); } catch { /* newer owner present */ }
+  }
+  fs.rmSync(dead, { force: true });
+}
+/** File-system store rooted at a `.squad` directory. Never follows symlinks/junctions below the root. */
 export interface FileStateStoreOptions {
   /** A lock file untouched for longer than this is treated as abandoned by a crashed holder. */
   staleLockMs?: number;
   lockTimeoutMs?: number;
+  /** An abandoned .recover mutex (its holder died) older than this is reclaimed. Defaults to min(staleLockMs, 2s). */
+  recoverStaleMs?: number;
   /** Test seam: runs after a stale lock was observed and before recovery starts. */
   beforeStaleRecovery?: (lockPath: string) => void;
 }
@@ -113,6 +137,7 @@ export interface FileStateStoreOptions {
 export function createFileStateStore(squadDir: string, options: FileStateStoreOptions = {}): BackendStateStore {
   const staleLockMs = options.staleLockMs ?? LOCK_STALE_MS;
   const lockTimeoutMs = options.lockTimeoutMs ?? LOCK_TIMEOUT_MS;
+  const recoverStaleMs = options.recoverStaleMs ?? Math.min(staleLockMs, 2_000);
   const root = path.resolve(squadDir);
   const resolve = (rel: string): string => {
     const full = path.resolve(root, rel);
@@ -147,16 +172,17 @@ export function createFileStateStore(squadDir: string, options: FileStateStoreOp
           if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
           // Crash recovery: an abandoned lock is claimed by atomic rename, so exactly one waiter wins it.
           // The claimed file is re-checked; if it turns out to be a live holder's lock it is put back untouched.
+          let recoveryBusy = false;
           try {
             const observed = fs.readFileSync(lockPath, 'utf8');
             const observedMtime = fs.statSync(lockPath).mtimeMs;
             if (Date.now() - observedMtime > staleLockMs) {
               options.beforeStaleRecovery?.(lockPath);
-              if (recoverStaleLock(lockPath, observed, observedMtime, staleLockMs)) continue;
-              sleepSync(10);
-              continue;
+              if (recoverStaleLock(lockPath, observed, observedMtime, staleLockMs, recoverStaleMs)) continue;
+              recoveryBusy = true;
             }
           } catch { continue; }
+          if (recoveryBusy && Date.now() <= deadline) { sleepSync(10); continue; }
           if (Date.now() > deadline) throw new BackendError('unavailable', 'Timed out waiting for the conversation lock', 503);
           sleepSync(10);
         }
@@ -524,6 +550,9 @@ export class LocalSquadBackend implements SquadBackend {
    * `respondApproval` as idempotent. Failure surfaces as a retryable `unavailable` error.
    */
   private async flushDeliveries(conversationId: string): Promise<void> {
+    // Legacy entries (`id`, or no `operationId`) are normalized deterministically on load; write that back under
+    // the lock BEFORE any external delivery so a crash mid-delivery restarts with the very same operationId.
+    if (this.outboxNeedsWriteThrough(conversationId)) this.tx(conversationId, () => undefined);
     for (;;) {
       const conv = this.load(conversationId);
       const next = conv.deliveries?.[0];
@@ -548,6 +577,16 @@ export class LocalSquadBackend implements SquadBackend {
       this.tx(conversationId, (fresh) => {
         fresh.deliveries = (fresh.deliveries ?? []).filter(d => d.operationId !== next.operationId);
       });
+    }
+  }
+
+  private outboxNeedsWriteThrough(conversationId: string): boolean {
+    try {
+      const raw = this.state.read(`${ROOT}/${conversationId}.json`);
+      const deliveries = raw ? (JSON.parse(raw) as { deliveries?: Array<Record<string, unknown>> }).deliveries : undefined;
+      return !!deliveries?.some(d => !d['operationId'] || 'id' in d);
+    } catch {
+      return false;
     }
   }
 

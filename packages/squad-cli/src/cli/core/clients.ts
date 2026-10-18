@@ -9,7 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLIENT_IDS, installClients, normalizeClientIds, parseClients, type ApplyResult, type ClientId } from '@bradygaster/squad-sdk/clients';
+import { CLIENT_IDS, installClients, normalizeClientIds, parseClients, resolveInsideRoot, type ApplyResult, type ClientId } from '@bradygaster/squad-sdk/clients';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { getPackageVersion } from './version.js';
 
@@ -41,7 +41,8 @@ export function readConfiguredClients(squadDir: string): ClientId[] {
 }
 
 export function persistClients(squadDir: string, clients: readonly ClientId[]): void {
-  const file = path.join(squadDir, 'config.json');
+  // never follow a symlink/junction at (or above) config.json: the write must stay inside the squad directory
+  const file = resolveInsideRoot(squadDir, 'config.json');
   let cfg: Record<string, unknown> = {};
   if (fs.existsSync(file)) {
     let parsed: unknown;

@@ -17,6 +17,7 @@ import {
   DurableHttpSquadBackend,
   LocalSquadBackend,
   MemoryStateStore,
+  createFileStateStore,
   createSquadBackend,
   type BackendEnvelope,
   type HarnessAdapter,
@@ -30,6 +31,7 @@ import {
   assertPortableClients,
   getClientAdapter,
   buildCoordinatorInstructions,
+  createClientAdapter,
   installClients,
   uninstallClients,
   normalizeClientIds,
@@ -38,6 +40,7 @@ import {
   resolveEffectiveCapabilities,
   type ClientContext,
   type ClientId,
+  type RuntimeBinding,
 } from '@bradygaster/squad-sdk/clients';
 import {
   backfillCastingRegistryFromTeam,
@@ -48,8 +51,9 @@ import {
   readCastingRegistryPair,
   repairHandwrittenCastingRegistry,
 } from '@bradygaster/squad-sdk/casting';
-import { ensureCastingDefaults, ensureGitignore } from '../packages/squad-cli/src/cli/core/upgrade.js';
+import { ensureCastingDefaults, ensureGitignore, runUpgrade } from '../packages/squad-cli/src/cli/core/upgrade.js';
 import { isInteractiveSession, runInit } from '../packages/squad-cli/src/cli/core/init.js';
+import { persistClients } from '../packages/squad-cli/src/cli/core/clients.js';
 import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../packages/squad-cli/src/cli/core/backend-mcp.js';
 // Clean-room (exit criterion 3) code is typed strictly against the public subpath barrel.
 import type {
@@ -1663,5 +1667,313 @@ describe('client adapter contract is exposed canonically and through the depreca
       const flags = capabilityFlagsFromTokens(CAPABILITY_TOKENS_BY_HOST[id], getClientAdapter(id).capabilities.transportModes);
       expect(flags.supportsSubagents, id).toBe(getClientAdapter(id).capabilities.supportsSubagents);
     }
+  });
+});
+
+// ── Journey and Brady re-review repros ──────────────────────────────
+
+describe('Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect', () => {
+  type Broker = { client: () => SquadBackend; restart: () => void; harness: () => TestHarness };
+
+  /** An MCP client facade: every call goes through the backend-mcp.ts tool surface as JSON, like a real MCP host. */
+  function mcpFacade(getBackend: () => SquadBackend): SquadBackend {
+    const tools = new Map(createBackendMcpTools(getBackend).map(t => [t.name, t]));
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const res = await callBackendMcpTool(tools.get(name)!, args);
+      const body = JSON.parse(res.content[0]!.text);
+      if (res.isError) throw new BackendError(body.error.code, body.error.message, body.error.status ?? 500);
+      return body;
+    };
+    return {
+      kind: 'mcp-client',
+      createConversation: o => call('squad_backend_create_conversation', { ...o }),
+      sendMessage: (c, m) => call('squad_backend_send_message', { conversationId: c, ...m }),
+      readEvents: (c, o) => call('squad_backend_read_events', { conversationId: c, ...o }),
+      respondApproval: (c, r) => call('squad_backend_respond_approval', { conversationId: c, ...r }),
+      cancelRun: (c, runId, reason) => call('squad_backend_cancel_run', { conversationId: c, runId, reason }),
+      getApprovals: c => call('squad_backend_get_approvals', { conversationId: c }),
+      negotiate: h => call('squad_backend_negotiate', { ...h }),
+    } as unknown as SquadBackend;
+  }
+
+  const brokers: Record<string, (dir: string) => Broker> = {
+    'MCP broker (state-mcp tools over a file store)': (dir) => {
+      let harness!: TestHarness; let local!: LocalSquadBackend;
+      const start = () => {
+        harness = new TestHarness('copilot');
+        const registry = new DefaultHarnessRegistry(); registry.register(harness);
+        local = new LocalSquadBackend({ state: createFileStateStore(dir), harnesses: registry });
+      };
+      start();
+      return { client: () => mcpFacade(() => local), restart: start, harness: () => harness };
+    },
+    'HTTP broker (DurableSquad /v1 surface over a file store)': (dir) => {
+      let harness!: TestHarness; let server!: ReturnType<typeof createMockDurableSquad>;
+      const start = () => {
+        harness = new TestHarness('copilot');
+        const registry = new DefaultHarnessRegistry(); registry.register(harness);
+        server = createMockDurableSquad(new LocalSquadBackend({ state: createFileStateStore(dir), harnesses: registry }));
+      };
+      start();
+      // a reconnecting host persists its lease epoch (a fresh client without one is fenced out)
+      return { client: () => mkHttp(server, { epoch: 1 }), restart: start, harness: () => harness };
+    },
+  };
+
+  it.each(Object.keys(brokers))('%s', async (name) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-journey-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-journey-ws-'));
+    try {
+      const broker = brokers[name]!(dir);
+      const ctx: ClientContext = { root, mcp: { command: 'squad', args: ['state-mcp'] }, members: [{ name: 'Data', role: 'Expert' }] };
+      installClients(['claude'], ctx);
+      expect(fs.existsSync(path.join(root, '.mcp.json'))).toBe(true);
+
+      // the host adapter speaks only the adapter contract; its runtime is the broker client (no direct backend access)
+      let client = broker.client();
+      let runCounter = 0;
+      const runtimeFor = (c: () => SquadBackend): RuntimeBinding => ({
+        submit: async ({ conversationId, prompt }) => {
+          const runId = `run-${++runCounter}`;
+          const adm = await c().sendMessage(conversationId, { runId, seq: 1, role: 'user', content: prompt, harness: 'copilot' });
+          return { admissionId: adm.cursor ?? runId, runId };
+        },
+        subscribe: async ({ conversationId, cursor }, onEvent) => {
+          const page = await c().readEvents(conversationId, cursor ? { after: cursor } : {});
+          for (const e of page.events) await onEvent({ ...e, resumable: page.resumable, nextCursor: page.nextCursor });
+          return async () => undefined;
+        },
+        cancel: async (conversationId, runId, reason) => { await c().cancelRun(conversationId, runId, reason); },
+        respondApproval: async (conversationId, r) => {
+          await c().respondApproval(conversationId, { approvalId: r.approvalId, hash: r.requestHash, decision: r.decision === 'approved' ? 'approve' : 'deny' });
+        },
+        backendCapabilities: async () => matrix.backendCapabilities,
+        policyCapabilities: async () => matrix.policyCapabilities,
+      });
+      const adapter = createClientAdapter({ host: 'claude', ctx, runtime: runtimeFor(() => client) });
+      expect((await adapter.describe()).projectedFiles.length).toBeGreaterThan(0);
+      expect((await adapter.getCapabilities('j')).effectiveCapabilities).toEqual(matrix.clients['claude']!.effectiveCapabilities);
+
+      await client.createConversation({ conversationId: 'j' });
+      const { runId } = await adapter.submit({ conversationId: 'j', prompt: 'deploy to prod?' });
+      expect(broker.harness().submitted).toEqual([{ runId, seq: 1 }]);
+
+      // harness execution asks for approval
+      broker.harness().emit({ type: 'approval-requested', runId, seq: 1, request: { approvalId: 'appr-j', turnSeq: 1, action: 'deploy', hash: 'sha256:j' } });
+      const seen: Array<Record<string, unknown>> = [];
+      await adapter.subscribe({ conversationId: 'j' }, e => { seen.push(e); });
+      const requested = seen.find(e => e['type'] === 'approval.requested');
+      expect(requested).toBeDefined();
+      const cursor = seen.at(-1)!['nextCursor'] as string;
+
+      // hash binding is enforced through the whole stack, then the real decision reaches the harness
+      expect((await errorOf(adapter.respondApproval('j', { approvalId: 'appr-j', requestHash: 'sha256:evil', decision: 'approved' })))?.code).toBe('approval-hash-mismatch');
+      await adapter.respondApproval('j', { approvalId: 'appr-j', requestHash: 'sha256:j', decision: 'approved' });
+      expect(broker.harness().approvals).toEqual(['appr-j']);
+
+      // broker restart: new process state, same durable store; the host reconnects with its saved cursor
+      broker.restart();
+      client = broker.client();
+      const afterRestart: Array<Record<string, unknown>> = [];
+      await adapter.subscribe({ conversationId: 'j', cursor }, e => { afterRestart.push(e); });
+      expect(afterRestart.every(e => (e['sequence'] as number) > (seen.at(-1)!['sequence'] as number))).toBe(true);
+      expect(afterRestart.some(e => e['type'] === 'approval.resolved')).toBe(true);
+      expect((await client.getApprovals('j'))[0]).toMatchObject({ approvalId: 'appr-j', state: 'approved', version: 2 });
+
+      // the re-attached harness finishes the run; the host sees it from its cursor, exactly once, in order
+      broker.harness().emit({ type: 'state', state: 'completed', runId, seq: 1 });
+      const tail: Array<Record<string, unknown>> = [];
+      await adapter.subscribe({ conversationId: 'j', cursor: afterRestart.at(-1)?.['nextCursor'] as string ?? cursor }, e => { tail.push(e); });
+      const all = (await client.readEvents('j')).events;
+      expect(all.map(e => e.sequence)).toEqual(all.map((_, i) => i + 1));
+      expect(all.some(e => e.type === 'turn.state' && (e.payload as { state?: string }).state === 'completed')).toBe(true);
+      expect((await client.sendMessage('j', msg(runId, 1, { harness: 'copilot', content: 'deploy to prod?' }))).duplicate).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Brady re-review 13 defect repros', () => {
+  const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-brady-'));
+  const reg = (h: TestHarness) => { const r = new DefaultHarnessRegistry(); r.register(h); return r; };
+
+  it('1. vitest.config.ts has no SDK source alias (no dual module instances)', () => {
+    const cfg = fs.readFileSync(path.resolve(__dirname, '..', 'vitest.config.ts'), 'utf8');
+    expect(cfg).not.toMatch(/find:\s*\/\^@bradygaster/);
+    expect(cfg).not.toMatch(/squad-sdk\/src/);
+  });
+
+  it('2. every --client help line fits 80 columns', () => {
+    for (const f of ['packages/squad-cli/src/cli-entry.ts', 'packages/squad-cli/src/cli/core/command-help.ts']) {
+      const lines = fs.readFileSync(path.resolve(__dirname, '..', f), 'utf8').split(/\r?\n/).filter(l => l.includes('console.log(`') && l.includes('--client'));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const l of lines) {
+        const visible = l.replace(/^\s*console\.log\(`/, '').replace(/`\);?\s*$/, '').replace(/\$\{[A-Z_]+\}/g, '');
+        expect(visible.length, visible).toBeLessThanOrEqual(80);
+      }
+    }
+  });
+
+  it('3. legacy outbox entries without operationId never drop each other', async () => {
+    const h = new TestHarness('copilot'); const state = new MemoryStateStore();
+    const b = new LocalSquadBackend({ state, harnesses: reg(h) });
+    await b.createConversation({ conversationId: 'c' });
+    for (const r of ['r1', 'r2']) await b.sendMessage('c', msg(r, 1, { harness: 'copilot' }));
+    const key = 'backend/conversations/c.json';
+    const doc = JSON.parse(state.read(key)!);
+    doc.turns.forEach((t: { state: string }) => { t.state = 'cancelled'; });
+    doc.deliveries = [{ kind: 'cancel', runId: 'r1', seq: 1 }, { kind: 'cancel', runId: 'r2', seq: 1 }];
+    state.write(key, JSON.stringify(doc));
+    h.cancel = async (_c: string, runId: string) => { if (runId === 'r2') throw new Error('down'); };
+    expect((await errorOf(new LocalSquadBackend({ state, harnesses: reg(h) }).cancelTurn('c', 1)))?.code).toBe('unavailable');
+    const left = JSON.parse(state.read(key)!).deliveries as Array<{ runId: string; operationId: string }>;
+    expect(left.map(d => d.runId)).toEqual(['r2']);
+    expect(left[0]!.operationId).toBeTruthy();
+  });
+
+  it('4. overlapping stale-lock reclaimers never produce two owners', () => {
+    const dir = tmp();
+    try {
+      const lockPath = path.join(dir, 'backend', 'locks', 'k.lock');
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      fs.writeFileSync(lockPath, 'crashed:T1');
+      const old = new Date(Date.now() - 60_000); fs.utimesSync(lockPath, old, old);
+      const o = { staleLockMs: 5_000, lockTimeoutMs: 250, recoverStaleMs: 100 };
+      let releaseB: (() => void) | undefined; let armed = true;
+      const a = createFileStateStore(dir, { ...o, beforeStaleRecovery: () => { if (armed) { armed = false; releaseB = createFileStateStore(dir, o).lock!('backend/locks/k'); } } });
+      expect(() => a.lock!('backend/locks/k')).toThrow(/Timed out/);
+      expect(() => createFileStateStore(dir, o).lock!('backend/locks/k')).toThrow(/Timed out/);
+      releaseB!();
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('5. an admission retry replays from the ORIGINAL cursor; 8. a different payload conflicts', async () => {
+    const h = new TestHarness('copilot');
+    const b = new LocalSquadBackend({ harnesses: reg(h) });
+    await b.createConversation({ conversationId: 'c' });
+    const first = await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a', turnSeq: 1, action: 'x', hash: 'h' } });
+    const retry = await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    expect(retry).toMatchObject({ duplicate: true, cursor: first.cursor });
+    expect((await b.readEvents('c', { after: retry.cursor })).events.map(e => e.type)).toContain('approval.requested');
+    expect((await errorOf(b.sendMessage('c', msg('r', 1, { harness: 'copilot', content: 'other' }))))?.code).toBe('conflict');
+  });
+
+  it('6. a missing harness keeps the durable delivery and fails retryably', async () => {
+    const h = new TestHarness('copilot'); const state = new MemoryStateStore();
+    const b = new LocalSquadBackend({ state, harnesses: reg(h) });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    const err = await errorOf(new LocalSquadBackend({ state }).cancelRun('c', 'r'));
+    expect(err).toMatchObject({ code: 'unavailable', retryable: true });
+    await new LocalSquadBackend({ state, harnesses: reg(h) }).cancelRun('c', 'r');
+    expect(h.cancelled).toEqual([{ runId: 'r', seq: 1 }]);
+  });
+
+  it('7. synchronous replay during rehydration neither recurses nor deadlocks', async () => {
+    const dir = tmp();
+    try {
+      const store = () => createFileStateStore(dir, { lockTimeoutMs: 400 });
+      const seed = new TestHarness('copilot');
+      const first = new LocalSquadBackend({ state: store(), harnesses: reg(seed) });
+      await first.createConversation({ conversationId: 'c' });
+      await first.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+      let subscribes = 0;
+      class Replay extends TestHarness {
+        override subscribe(c: string, l: (e: HarnessEventEnvelope) => void) {
+          subscribes++;
+          l({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a', turnSeq: 1, action: 'x', hash: 'h' } });
+          return super.subscribe(c, l);
+        }
+      }
+      const restarted = new LocalSquadBackend({ state: store(), harnesses: reg(new Replay('copilot')) });
+      expect((await restarted.getApprovals('c')).map(a => a.approvalId)).toEqual(['a']);
+      expect(subscribes).toBe(1);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('9. the MCP broker honors a configured state backend', async () => {
+    const files = new Map<string, string>();
+    const orphan = { name: 'orphan', read: (p: string) => files.get(p), write: (p: string, c: string) => { files.set(p, c); }, exists: (p: string) => files.has(p), list: () => [] as string[] };
+    const dir = tmp();
+    try {
+      const b = createMcpBackend('.', {}, () => ({ paths: { teamSquadDir: dir }, backend: orphan }) as never);
+      await b.createConversation({ conversationId: 'c' });
+      expect([...files.keys()]).toContain('backend/conversations/c.json');
+      expect(fs.existsSync(path.join(dir, 'backend'))).toBe(false);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('10. an HTTP body-read failure is retried', async () => {
+    let calls = 0;
+    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', retryDelayMs: 1, fetch: (async () => {
+      if (++calls === 1) return { ok: true, status: 200, headers: new Headers(), text: async () => { throw new TypeError('terminated'); } } as unknown as Response;
+      return json(200, { runId: 'r', seq: 1, duplicate: false, state: 'queued' });
+    }) as never });
+    expect((await b.sendMessage('c', msg('r', 1))).runId).toBe('r');
+    expect(calls).toBe(2);
+  });
+
+  it('11. TOML [[array_table]] boundaries and quoted keys survive upsert/remove', async () => {
+    const { upsertTomlTable, removeTomlTable } = await import('@bradygaster/squad-sdk/client');
+    const doc = '[mcp_servers.squad_state]\n"command" = "old"\n\n[[skills.config]]\npath = "/a"\n';
+    const out = upsertTomlTable(doc, 'mcp_servers.squad_state', { command: '"squad"' });
+    expect(out.match(/command\s*=/g)).toHaveLength(1);
+    expect(out).toContain('[[skills.config]]\npath = "/a"');
+    expect(removeTomlTable(doc, 'mcp_servers.squad_state')).toContain('[[skills.config]]');
+  });
+
+  it('12. capability tokens match capability-matrix.json for all 7 hosts', async () => {
+    const { CAPABILITY_TOKENS_BY_HOST } = await import('@bradygaster/squad-sdk/client');
+    for (const id of CLIENT_IDS) {
+      expect(CAPABILITY_TOKENS_BY_HOST[id].filter(t => !['native-hooks', 'steering-files'].includes(t)).sort()).toEqual([...matrix.clients[id]!.clientCapabilities].sort());
+    }
+  });
+
+  it('13. casting repair keeps retired agents and commits a valid manifest', () => {
+    const dir = tmp();
+    try {
+      fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify({ universe: 'Star Trek', agents: [{ name: 'Data', role: 'Expert' }, { name: 'Tuvok', role: 'Security', status: 'retired' }] }));
+      expect(repairHandwrittenCastingRegistry(dir)).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', 'registry-history.commit.json'] });
+      expect(readCastingRegistryPair(dir).registry.agents['tuvok']!.status).toBe('retired');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('Open review threads on #2239', () => {
+  it('runUpgrade repairs a handwritten casting registry instead of failing the strict preflight', async () => {
+    const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-upgrade-hw-'));
+    const quiet = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const savedStdin = process.stdin.isTTY;
+    try {
+      (process.stdin as { isTTY?: boolean }).isTTY = undefined;
+      await runInit(dest, { includeWorkflows: false } as never);
+      const dir = path.join(dest, '.squad', 'casting');
+      fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify({ universe: 'Star Trek', agents: [{ name: 'Data', role: 'Expert' }, { name: 'Tuvok', role: 'Security', status: 'retired' }] }));
+      await runUpgrade(dest, { force: true } as never);
+      const pair = readCastingRegistryPair(dir);
+      expect(Object.keys(pair.registry.agents).sort()).toEqual(['data', 'tuvok']);
+      expect(pair.registry.agents['tuvok']!.status).toBe('retired');
+    } finally {
+      (process.stdin as { isTTY?: boolean }).isTTY = savedStdin;
+      quiet.mockRestore();
+      write.mockRestore();
+      fs.rmSync(dest, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it('persistClients refuses to write through a symlinked config.json', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-cfg-'));
+    try {
+      const squadDir = path.join(base, '.squad'); const outside = path.join(base, 'outside.json');
+      fs.mkdirSync(squadDir);
+      fs.writeFileSync(outside, '{"keep":true}');
+      try { fs.symlinkSync(outside, path.join(squadDir, 'config.json'), 'file'); } catch { return; } // symlinks need privileges on Windows
+      expect(() => persistClients(squadDir, ['claude'])).toThrow(/symlink|symbolic link|outside/i);
+      expect(fs.readFileSync(outside, 'utf8')).toBe('{"keep":true}');
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 });

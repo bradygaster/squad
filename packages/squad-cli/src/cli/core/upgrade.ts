@@ -1259,6 +1259,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   const projectType = detectProjectType(dest);
 
+  // repair a handwritten registry BEFORE the strict preflight, which would otherwise reject it and make the
+  // repair in ensureCastingDefaults unreachable
+  if (!options.dryRun) repairHandwrittenCastingRegistry(path.join(squadDirInfo.path, 'casting'));
   const castingMigrated = preflightCastingRegistryPair(
     path.join(squadDirInfo.path, 'casting'),
     options.dryRun ?? false,

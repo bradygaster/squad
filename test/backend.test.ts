@@ -1034,3 +1034,110 @@ describe('PR review round 3 (Brady re-review of 6451747d)', () => {
     expect(calls).toBe(2);
   });
 });
+describe('PR review round 4: reclaimer death and outbox write-through', () => {
+  const tmp = async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-r4-'));
+    const lockPath = path.join(dir, 'backend', 'locks', 'k.lock');
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    const age = (p: string, ms: number) => { const t = new Date(Date.now() - ms); fs.utimesSync(p, t, t); };
+    return { fs, path, dir, lockPath, age };
+  };
+
+  it('A/B/C with a REAL second reclaimer: B recovers and holds, A and C never become owners', async () => {
+    const { fs, path, dir, lockPath, age } = await tmp();
+    try {
+      fs.writeFileSync(lockPath, 'crashed:T1');
+      age(lockPath, 60_000);
+      const opts = { staleLockMs: 5_000, lockTimeoutMs: 300, recoverStaleMs: 100 };
+      const storeB = createFileStateStore(dir, opts);
+      let releaseB: (() => void) | undefined;
+      let armed = true;
+      const storeA = createFileStateStore(dir, {
+        ...opts,
+        // A has observed the stale T1; B runs its entire recovery + acquisition before A starts recovering
+        beforeStaleRecovery: () => { if (armed) { armed = false; releaseB = storeB.lock!('backend/locks/k'); } },
+      });
+      expect(() => storeA.lock!('backend/locks/k')).toThrow(/Timed out/);
+      expect(releaseB).toBeDefined();
+      const holder = fs.readFileSync(lockPath, 'utf8');
+      expect(holder).not.toBe('crashed:T1');
+      expect(() => createFileStateStore(dir, opts).lock!('backend/locks/k')).toThrow(/Timed out/);
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe(holder); // still B's
+      releaseB!();
+      const releaseC = createFileStateStore(dir, opts).lock!('backend/locks/k');
+      releaseC();
+      expect(fs.readdirSync(path.dirname(lockPath)).filter(n => n.includes('.recover'))).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('a reclaimer that died while holding ${lockPath}.recover cannot wedge recovery forever', async () => {
+    const { fs, path, dir, lockPath, age } = await tmp();
+    try {
+      fs.writeFileSync(lockPath, 'crashed:T1');
+      age(lockPath, 60_000);
+      fs.writeFileSync(`${lockPath}.recover`, 'dead-reclaimer:1');
+      age(`${lockPath}.recover`, 60_000);
+      const store = createFileStateStore(dir, { staleLockMs: 5_000, lockTimeoutMs: 2_000, recoverStaleMs: 100 });
+      const release = store.lock!('backend/locks/k'); // abandoned mutex is reclaimed, then the stale lock
+      expect(fs.readFileSync(lockPath, 'utf8')).not.toBe('crashed:T1');
+      release();
+      expect(fs.readdirSync(path.dirname(lockPath)).filter(n => n.includes('.recover') || n.includes('.dead.'))).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('a LIVE ${lockPath}.recover mutex is never taken: single-winner exclusion holds', async () => {
+    const { fs, dir, lockPath, age } = await tmp();
+    try {
+      fs.writeFileSync(lockPath, 'crashed:T1');
+      age(lockPath, 60_000);
+      fs.writeFileSync(`${lockPath}.recover`, 'live-reclaimer:1'); // fresh mtime
+      const store = createFileStateStore(dir, { staleLockMs: 5_000, lockTimeoutMs: 300, recoverStaleMs: 5_000 });
+      expect(() => store.lock!('backend/locks/k')).toThrow(/Timed out/);
+      expect(fs.readFileSync(`${lockPath}.recover`, 'utf8')).toBe('live-reclaimer:1');
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe('crashed:T1');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('legacy outbox normalization is written through under the lock BEFORE harness delivery and stays stable across a crash', async () => {
+    const { fs, path, dir } = await tmp();
+    try {
+      const h = new FakeHarness();
+      const harnesses = new DefaultHarnessRegistry();
+      harnesses.register(h);
+      const make = () => new LocalSquadBackend({ state: createFileStateStore(dir, { lockTimeoutMs: 1_000 }), harnesses });
+      const b = make();
+      await b.createConversation({ conversationId: 'c' });
+      await b.sendMessage('c', msg('r1', 1, { harness: 'copilot' }));
+      await b.sendMessage('c', msg('r2', 1, { harness: 'copilot' }));
+      const file = path.join(dir, 'backend', 'conversations', 'c.json');
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      doc.turns.forEach((t: { state: string }) => { t.state = 'cancelled'; });
+      doc.deliveries = [{ id: 'legacy-1', kind: 'cancel', runId: 'r1', seq: 1 }, { kind: 'cancel', runId: 'r2', seq: 1 }];
+      fs.writeFileSync(file, JSON.stringify(doc));
+
+      const seen: Array<{ op?: string; onDisk: string[]; legacyIdsLeft: boolean }> = [];
+      h.cancel = (async (_c: string, _r: string, _s: number, op?: string) => {
+        const disk = JSON.parse(fs.readFileSync(file, 'utf8')).deliveries as Array<{ operationId?: string; id?: string }>;
+        seen.push({ op, onDisk: disk.map(d => d.operationId ?? ''), legacyIdsLeft: disk.some(d => 'id' in d) });
+        throw new Error('crash mid-delivery');
+      }) as never;
+
+      expect(await rejectCode(make().cancelTurn('c', 1))).toBe('unavailable');
+      expect(seen).toHaveLength(1);
+      // at the moment of delivery, every entry on disk already carried its final operationId and no legacy id
+      expect(seen[0]!.onDisk.every(Boolean)).toBe(true);
+      expect(seen[0]!.legacyIdsLeft).toBe(false);
+      expect(seen[0]!.op).toBe('legacy-1');
+      expect(seen[0]!.onDisk[0]).toBe(seen[0]!.op);
+      expect(new Set(seen[0]!.onDisk).size).toBe(2);
+
+      // restart: the same operationId is passed again (nothing regenerated)
+      expect(await rejectCode(make().cancelTurn('c', 1))).toBe('unavailable');
+      expect(seen[1]!.op).toBe(seen[0]!.op);
+      expect(seen[1]!.onDisk).toEqual(seen[0]!.onDisk);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
