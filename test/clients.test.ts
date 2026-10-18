@@ -209,6 +209,41 @@ describe('per-member agents and models', () => {
   });
 });
 
+describe('coordinator behavioral-contract parity', () => {
+  const sections: Array<[string, RegExp[]]> = [
+    ['Response Mode', [/Response Mode Selection/, /\*\*Direct\*\*/, /\*\*Lightweight\*\*/, /\*\*Standard\*\*/, /\*\*Full\*\*/]],
+    ['Scribe', [/Scribe spawn protocol and drop-box/, /decisions\/inbox\//, /orchestration-log\//, /\/log\//, /squad_state_health/]],
+    ['Reviewer Rejection', [/Reviewer rejection protocol and strict lockout/, /locked out/, /may not self-revise/]],
+    ['Rai', [/Rai \(RAI Reviewer\)/, /🟢 Green/, /🟡 Yellow/, /🔴 Red/, /blocks shipping/]],
+    ['Fact Checker', [/Fact Checker \(verification and devil's advocate\)/, /✅/, /⚠️/, /❌/, /🔍/, /steelmans/, /pre-mortem/]],
+    ['Ceremonies', [/Ceremonies\./, /ceremonies\.md/, /`before`/, /`after`/]],
+    ['Skill-Aware Routing', [/Skill-aware routing/, /\.squad\/skills\//, /\.copilot\/skills\//, /\.github\/skills\//, /\.claude\/skills\//, /\.agents\/skills\//]],
+    ['Memory/state handshake', [/Memory governance and state-backend handshake/, /squad_state_health/, /squad_decide/, /memory\.\*/]],
+    ['GitHub Issues + PRD Mode', [/GitHub Issues mode/, /gh issue list/, /squad\/\{issue-number\}-\{slug\}/, /PRD mode/, /decompose/]],
+    ['Cross-Squad', [/Cross-squad delegation/, /peer Squad install/, /ad-hoc subagent/]],
+    ['Human + @copilot', [/Human members and the @copilot coding agent/, /Coding Agent/]],
+    ['Ralph', [/Ralph mode/, /squad:<member>/, /board clear/]],
+    ['Init Mode guards', [/NEVER with glob\/grep\/search tools/, /Auto-confirm \(default\)/, /npx squad upgrade/, /npx squad cast --name/, /NEVER hand-write or edit anything under/, /checksummed pair/, /\.squad\/scratch\//, /never write outside the workspace/, /STOP and report the roster/]],
+  ];
+  for (const id of CLIENT_IDS) {
+    it(`${id} prompt carries the full coordinator contract`, () => {
+      const text = buildCoordinatorInstructions(id);
+      for (const [name, pats] of sections) {
+        for (const p of pats) expect(text, `${id}: ${name} ${p}`).toMatch(p);
+      }
+    });
+  }
+  it('stays under Antigravity\'s 24 KB per-rule-file limit', () => {
+    for (const id of CLIENT_IDS) expect(Buffer.byteLength(buildCoordinatorInstructions(id), 'utf8')).toBeLessThan(24_000);
+  });
+  it('honors a custom squad dir in every referenced path', () => {
+    const t = buildCoordinatorInstructions('claude', '.team');
+    expect(t).toContain('.team/skills/');
+    expect(t).toContain('.team/casting/');
+    expect(t).not.toContain('.squad/skills/');
+  });
+});
+
 describe('copilot adapter', () => {
   it('projects only .mcp.json with squad_state', () => {
     installClients(['copilot'], ctx());
