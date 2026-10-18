@@ -1,7 +1,7 @@
 /**
  * Host-agnostic coordinator protocol plus per-client dispatch sections.
  *
- * @module clients/coordinator
+ * @module client/adapters/coordinator
  */
 
 import { CAPABILITIES } from './capabilities.js';

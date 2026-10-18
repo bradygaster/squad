@@ -1,6 +1,8 @@
-export * from './types.js';
-export * from './coordinator.js';
-export * from './adapters.js';
-export * from './apply.js';
-export * from './capabilities.js';
-export * from './portable.js';
+/**
+ * @deprecated Canonical home is ../client/adapters (+ ../client/adapter-contract).
+ * Kept as a re-export of the exact same symbols for @bradygaster/squad-sdk/clients.
+ *
+ * @module clients
+ */
+export * from '../client/adapters/index.js';
+

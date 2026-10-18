@@ -1,13 +1,13 @@
 /**
  * The five client host adapters and shared config-merge helpers.
  *
- * @module clients/adapters
+ * @module client/adapters
  */
 
 import { CAPABILITIES } from './capabilities.js';
 import { upsertTomlTable } from './apply.js';
 import { buildCoordinatorInstructions, dispatchStrategy } from './coordinator.js';
-import type { ClientAdapter, ClientContext, ClientId, ProjectionFile } from './types.js';
+import type { HostProjection, ClientContext, ClientId, ProjectionFile } from './types.js';
 import { CLIENT_IDS } from './types.js';
 
 export const SQUAD_STATE_KEY = 'squad_state';
@@ -68,7 +68,7 @@ function mcpJson(ctx: ClientContext, withTools: boolean): ProjectionFile {
   };
 }
 
-const copilot: ClientAdapter = {
+const copilot: HostProjection = {
   id: 'copilot',
   capabilities: CAPABILITIES.copilot,
   label: 'GitHub Copilot',
@@ -78,7 +78,7 @@ const copilot: ClientAdapter = {
   project: (ctx) => [mcpJson(ctx, true)],
 };
 
-const claude: ClientAdapter = {
+const claude: HostProjection = {
   id: 'claude',
   capabilities: CAPABILITIES.claude,
   label: 'Claude Code',
@@ -106,7 +106,7 @@ const claude: ClientAdapter = {
   ],
 };
 
-const kiro: ClientAdapter = {
+const kiro: HostProjection = {
   id: 'kiro',
   capabilities: CAPABILITIES.kiro,
   label: 'Kiro',
@@ -153,7 +153,7 @@ const kiro: ClientAdapter = {
   ],
 };
 
-const opencode: ClientAdapter = {
+const opencode: HostProjection = {
   id: 'opencode',
   capabilities: CAPABILITIES.opencode,
   label: 'OpenCode',
@@ -183,7 +183,7 @@ const opencode: ClientAdapter = {
   ],
 };
 
-const cursor: ClientAdapter = {
+const cursor: HostProjection = {
   id: 'cursor',
   capabilities: CAPABILITIES.cursor,
   label: 'Cursor',
@@ -220,7 +220,7 @@ const cursor: ClientAdapter = {
 const tomlString = (s: string) => JSON.stringify(s);
 const tomlArray = (a: string[]) => `[${a.map(tomlString).join(', ')}]`;
 
-const codex: ClientAdapter = {
+const codex: HostProjection = {
   id: 'codex',
   capabilities: CAPABILITIES.codex,
   label: 'OpenAI Codex',
@@ -270,7 +270,7 @@ function antigravityAgent(
   return { kind: 'managed', path: `.agents/agents/${name}.md`, content: lines.join('\n') + '\n' };
 }
 
-const antigravity: ClientAdapter = {
+const antigravity: HostProjection = {
   id: 'antigravity',
   capabilities: CAPABILITIES.antigravity,
   label: 'Google Antigravity',
@@ -292,11 +292,17 @@ const antigravity: ClientAdapter = {
   },
 };
 
-export const CLIENT_ADAPTERS: Record<ClientId, ClientAdapter> = { copilot, claude, kiro, opencode, cursor, codex, antigravity };
+export const HOST_PROJECTIONS: Record<ClientId, HostProjection> = { copilot, claude, kiro, opencode, cursor, codex, antigravity };
 
-export function getClientAdapter(id: ClientId): ClientAdapter {
-  return CLIENT_ADAPTERS[id];
+/** @deprecated Use {@link HOST_PROJECTIONS}. Same object. */
+export const CLIENT_ADAPTERS = HOST_PROJECTIONS;
+
+export function getHostProjection(id: ClientId): HostProjection {
+  return HOST_PROJECTIONS[id];
 }
+
+/** @deprecated Use {@link getHostProjection}. */
+export const getClientAdapter = getHostProjection;
 
 /**
  * Parse a `--client` value: comma-separated ids or `all`. Returns unique ids in

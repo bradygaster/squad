@@ -245,3 +245,8 @@ export class SquadClientWithPool {
   }
 }
 
+
+// Host adapters (spec: client-harness-adapters/v0.2)
+export * from './adapter-contract.js';
+export * from './adapters/index.js';
+

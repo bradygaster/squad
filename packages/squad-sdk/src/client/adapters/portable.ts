@@ -3,7 +3,7 @@
  * client slugs, never credentials, provider thread ids, machine paths,
  * leases or checkpoints.
  *
- * @module clients/portable
+ * @module client/adapters/portable
  */
 
 import { CLIENT_IDS, type ClientId } from './types.js';

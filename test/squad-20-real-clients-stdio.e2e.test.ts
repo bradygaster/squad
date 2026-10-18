@@ -199,7 +199,6 @@ async function scaffold(client: RealClient): Promise<string> {
   const ctx: ClientContext = {
     root: ws,
     mcp: { command: process.execPath, args: ['--import', pathToFileURL(path.join(loaderDir, 'register.mjs')).href, path.join(loaderDir, 'entry.mjs')] },
-    members: [{ name: 'Data', role: 'Framework Expert' }],
   };
   const results = installClients([client], ctx);
   expect(results.filter(r => r.action === 'error')).toEqual([]);
@@ -252,7 +251,7 @@ afterAll(() => {
 describe('real client projections on disk', () => {
   it('writes the host config and agent files each client reads', () => {
     const expected: Record<RealClient, string[]> = {
-      claude: ['.mcp.json', '.claude/agents/squad.md', '.claude/agents/squad-data.md', 'CLAUDE.md'],
+      claude: ['.mcp.json', '.claude/agents/squad.md', 'CLAUDE.md'],
       opencode: ['opencode.json', '.opencode/agent/squad.md'],
       kiro: ['.kiro/settings/mcp.json', '.kiro/agents/squad.json', '.kiro/steering/squad.md'],
     };

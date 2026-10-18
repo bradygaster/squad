@@ -1,12 +1,12 @@
 /**
  * Applies client projections to disk without clobbering user-owned settings.
  *
- * @module clients/apply
+ * @module client/adapters/apply
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { SQUAD_STATE_KEY, getClientAdapter } from './adapters.js';
+import { SQUAD_STATE_KEY, getHostProjection } from './adapters.js';
 import type { ApplyResult, ClientContext, ClientId, ProjectionFile } from './types.js';
 
 export const BLOCK_BEGIN = '<!-- squad:begin (managed by Squad; do not edit between markers) -->';
@@ -78,7 +78,7 @@ export function upsertTomlTable(
 }
 /** Collect projection files for the given clients, in order. */
 export function projectClients(clients: readonly ClientId[], ctx: ClientContext): ProjectionFile[] {
-  return clients.flatMap((c) => getClientAdapter(c).project(ctx));
+  return clients.flatMap((c) => getHostProjection(c).project(ctx));
 }
 
 function parseJsonObject(file: string, raw: string | undefined): Record<string, unknown> {

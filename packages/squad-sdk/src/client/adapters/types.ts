@@ -2,10 +2,10 @@
  * Multi-client host adapter types.
  *
  * Squad's coordinator and its `squad_state` MCP backend are host-agnostic.
- * A {@link ClientAdapter} projects them into the files a specific client
+ * A {@link HostProjection} projects them into the files a specific client
  * host (Copilot, Claude Code, Kiro, OpenCode, Cursor) loads natively.
  *
- * @module clients/types
+ * @module client/adapters/types
  */
 
 export const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 'antigravity'] as const;
@@ -61,7 +61,11 @@ export interface ClientCapabilities {
   transportModes: TransportMode[];
 }
 
-export interface ClientAdapter {
+/**
+ * Pure workspace projection for one host: no backend or runtime dependency.
+ * The spec-level runtime `ClientAdapter` (see `client/adapter-contract`) composes this.
+ */
+export interface HostProjection {
   readonly id: ClientId;
   readonly label: string;
   readonly capabilities: ClientCapabilities;

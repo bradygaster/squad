@@ -28,7 +28,6 @@ import {
   SQUAD_STATE_KEY,
   assertPortableClients,
   getClientAdapter,
-  slugifyMember,
   buildCoordinatorInstructions,
   installClients,
   uninstallClients,
@@ -164,7 +163,6 @@ describe('Scenario 1: client projections and --client', () => {
   const ctx = (over: Partial<ClientContext> = {}): ClientContext => ({
     root,
     mcp: { command: 'npx', args: ['-y', '@bradygaster/squad-cli', 'state-mcp'] },
-    members: [{ name: 'Data', role: 'Framework Expert' }, { name: "B'Elanna", role: 'Durable Systems' }],
     ...over,
   });
   beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-clients-')); });
@@ -193,12 +191,12 @@ describe('Scenario 1: client projections and --client', () => {
   it('projects the host-specific files', () => {
     installClients([...CLIENT_IDS], ctx());
     for (const rel of [
-      '.claude/agents/squad.md', '.claude/agents/squad-data.md', 'CLAUDE.md',
+      '.claude/agents/squad.md', 'CLAUDE.md',
       '.kiro/steering/squad.md', '.kiro/agents/squad.json', '.kiro/settings/mcp.json',
       '.opencode/agent/squad.md', 'opencode.json',
       '.cursor/rules/squad.mdc', '.cursor/agents/squad.md', '.cursor/mcp.json',
     ]) expect(fs.existsSync(path.join(root, rel)), rel).toBe(true);
-    expect(fs.readFileSync(path.join(root, `.claude/agents/squad-${slugifyMember("B'Elanna")}.md`), 'utf8')).toContain("B'Elanna");
+    expect(fs.existsSync(path.join(root, '.claude/agents/squad-data.md'))).toBe(false);
   });
 
   it('merges shared JSON configs without clobbering user entries', () => {
@@ -233,7 +231,7 @@ describe('Scenario 1: client projections and --client', () => {
     fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# My project\n\nkeep me\n');
     installClients(['claude'], ctx());
     installClients(['claude'], ctx());
-    installClients(['claude'], ctx({ members: [{ name: 'Worf', role: 'Security' }] }));
+    installClients(['claude'], ctx());
     const text = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
     expect(text.startsWith('# My project\n\nkeep me\n')).toBe(true);
     expect(text.split(BLOCK_BEGIN)).toHaveLength(2);
@@ -736,7 +734,6 @@ describe('RC1→stable exit 1: upgrade and rollback from a v0.1 workspace', () =
   const ctx = (): ClientContext => ({
     root,
     mcp: { command: 'npx', args: ['-y', '@bradygaster/squad-cli', 'state-mcp'] },
-    members: [{ name: 'Data', role: 'Framework Expert' }],
   });
   const readJson = (rel: string) => JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
 
@@ -1198,7 +1195,7 @@ describe('coordinator prompt (found with real models)', () => {
     // real run: opencode's Glob skips dot-dirs, concluded "no team" and overwrote team.md
     expect(text).toMatch(/Init Mode \(only when there is truly no team\)/);
     expect(text).toMatch(/squad_state_read.{0,12} of .{0,3}team\.md/);
-    expect(text).toMatch(/NOT with glob\/search tools/);
+    expect(text).toMatch(/(NOT|NEVER) with glob\/(grep\/)?search tools/);
     expect(text).toMatch(/dot-directories/);
     expect(text).toMatch(/NEVER overwrite or re-cast/);
   });

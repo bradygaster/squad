@@ -26,6 +26,14 @@ import {
   syncClients,
 } from '../packages/squad-cli/src/cli/core/clients.js';
 
+import * as canonical from '../packages/squad-sdk/src/client/adapters/index.js';
+import * as deprecatedClients from '../packages/squad-sdk/src/clients/index.js';
+import {
+  AdapterUnboundError,
+  createClientAdapter,
+  type RuntimeBinding,
+} from '../packages/squad-sdk/src/client/adapter-contract.js';
+
 let root: string;
 const mcp = { command: 'squad', args: ['state-mcp'] };
 const ctx = (over: Partial<ClientContext> = {}): ClientContext => ({ root, mcp, ...over });
@@ -461,5 +469,73 @@ describe('portable clients[] hygiene', () => {
     expect(readConfiguredClients(sq)).toEqual(['claude', 'cursor']);
     persistClients(sq, ['kiro', '/etc/passwd' as never, 'lease-1' as never]);
     expect(JSON.parse(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')).clients).toEqual(['kiro']);
+  });
+});
+
+describe('HostProjection / ClientAdapter facade (spec v0.2)', () => {
+  it('deprecated ./clients re-exports the exact same symbols as client/adapters', () => {
+    for (const k of Object.keys(canonical)) expect((deprecatedClients as Record<string, unknown>)[k]).toBe((canonical as Record<string, unknown>)[k]);
+    expect(canonical.CLIENT_ADAPTERS).toBe(canonical.HOST_PROJECTIONS);
+    expect(canonical.getClientAdapter).toBe(canonical.getHostProjection);
+  });
+
+  it('capability tokens are authoritative; boolean flags are a derived view', () => {
+    for (const id of CLIENT_IDS) {
+      const tokens = canonical.CAPABILITY_TOKENS_BY_HOST[id];
+      expect(canonical.CAPABILITIES[id]).toEqual(canonical.capabilityFlagsFromTokens(tokens, canonical.CAPABILITIES[id].transportModes));
+    }
+    expect(canonical.capabilityTokensFromFlags({ supportsSubagents: true, supportsMcpTransport: false })).toEqual(['subagents']);
+  });
+
+  it('rejects conflicting token array and boolean flags', () => {
+    expect(() => createClientAdapter({ host: 'claude', ctx: ctx(), declaredFlags: { supportsSubagents: false } })).toThrow(/Conflicting capabilities/);
+    expect(() => createClientAdapter({ host: 'claude', ctx: ctx(), declaredFlags: { supportsSubagents: true } })).not.toThrow();
+  });
+
+  it('describe and projectWorkspace report spec anchors for every host', async () => {
+    const anchors: Record<string, [string, string | undefined]> = {
+      copilot: ['.github/agents/squad.agent.md', '.mcp.json'],
+      claude: ['.claude/agents/squad.md', '.mcp.json'],
+      kiro: ['.kiro/steering/squad.md', '.kiro/settings/mcp.json'],
+      opencode: ['.opencode/agent/squad.md', 'opencode.json'],
+      cursor: ['.cursor/agents/squad.md', '.cursor/mcp.json'],
+    };
+    for (const [id, [agent, mcp]] of Object.entries(anchors)) {
+      const a = createClientAdapter({ host: id as never, ctx: ctx() });
+      const ws = await a.projectWorkspace();
+      expect(ws.squadAgentPath).toBe(agent);
+      expect(ws.mcpConfigPath).toBe(mcp);
+      const d = await a.describe();
+      expect(d.capabilities.mcpConfig).toBe(true);
+      expect(d.projectedFiles).toContain(mcp);
+    }
+    const cursorWs = await createClientAdapter({ host: 'cursor', ctx: ctx() }).projectWorkspace();
+    expect(cursorWs.supportFiles).toContain('.cursor/rules/squad.mdc');
+    expect((await createClientAdapter({ host: 'claude', ctx: ctx() }).projectWorkspace()).supportFiles).toContain('CLAUDE.md');
+    expect((await createClientAdapter({ host: 'claude', ctx: ctx() }).describe()).hostKind).toBe('claude-code');
+  });
+
+  it('runtime calls need a bound runtime; with one they delegate and effective capabilities are the intersection', async () => {
+    const unbound = createClientAdapter({ host: 'opencode', ctx: ctx() });
+    await expect(unbound.submit({ conversationId: 'c', prompt: 'p' })).rejects.toBeInstanceOf(AdapterUnboundError);
+    expect((await unbound.getCapabilities()).effectiveCapabilities).toEqual(canonical.CAPABILITY_TOKENS_BY_HOST.opencode);
+
+    const calls: string[] = [];
+    const runtime: RuntimeBinding = {
+      submit: async (i) => (calls.push('submit:' + i.prompt), { admissionId: 'a', runId: 'r' }),
+      subscribe: async () => async () => undefined,
+      cancel: async (_c, runId) => void calls.push('cancel:' + runId),
+      respondApproval: async (_c, r) => void calls.push('approve:' + r.decision),
+      backendCapabilities: () => ['subagents', 'mcp-bridge', 'approvals'],
+      policyCapabilities: async () => ['subagents', 'mcp-bridge'],
+    };
+    const a = createClientAdapter({ host: 'opencode', ctx: ctx(), runtime });
+    expect(await a.submit({ conversationId: 'c', prompt: 'hi' })).toEqual({ admissionId: 'a', runId: 'r' });
+    await a.cancel('c', 'r');
+    await a.respondApproval('c', { approvalId: 'x', requestHash: 'h', decision: 'approved' });
+    expect(calls).toEqual(['submit:hi', 'cancel:r', 'approve:approved']);
+    const caps = await a.getCapabilities('c');
+    expect(caps.effectiveCapabilities).toEqual(['mcp-bridge', 'subagents']);
+    expect(caps.clientCapabilities).toContain('native-hooks');
   });
 });
