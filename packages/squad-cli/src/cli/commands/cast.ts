@@ -378,64 +378,6 @@ export async function runCastAdd(cwd: string, options: CastAddOptions): Promise<
 /**
  * Run the cast command — show merged session cast.
  */
-/**
- * Register members that already appear in team.md (e.g. hand-written by a host agent)
- * in the casting registry, without touching team.md/routing.md. Idempotent.
- */
-export async function runCastSync(cwd: string): Promise<{ registered: string[]; skipped: string[] }> {
-  const paths = resolveSquadPaths(cwd);
-  if (!paths) fatal('No squad found. Run "squad init" first.');
-  const externalSquadDir =
-    paths.config?.stateLocation === 'external' && paths.config.projectKey
-      ? resolveExternalStateDir(paths.config.projectKey, false)
-      : undefined;
-  const squadDir = externalSquadDir ?? paths.teamSquadDir;
-  const teamRoot = path.resolve(paths.projectDir, '..');
-  const teamMdPath = path.join(squadDir, 'team.md');
-  if (!storage.existsSync(teamMdPath)) fatal(`team.md not found in ${squadDir}`);
-  const builtins = new Set(['scribe', 'ralph', 'rai', 'fact-checker', 'fact checker', 'squad']);
-  const registryPath = path.join(squadDir, 'casting', 'registry.json');
-  let known = new Set<string>();
-  if (storage.existsSync(registryPath)) {
-    try {
-      known = new Set(Object.keys((JSON.parse(storage.readSync(registryPath) ?? '{}') as { agents?: Record<string, unknown> }).agents ?? {}));
-    } catch {
-      known = new Set();
-    }
-  }
-  const registered: string[] = [];
-  const skipped: string[] = [];
-  let nameCol = -1;
-  let roleCol = -1;
-  for (const line of (storage.readSync(teamMdPath) ?? '').split(/\r?\n/)) {
-    if (!line.trim().startsWith('|')) { nameCol = roleCol = -1; continue; }
-    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((x) => x.trim());
-    if (nameCol === -1) {
-      nameCol = cells.findIndex((x) => /^name$/i.test(x));
-      roleCol = cells.findIndex((x) => /^role$/i.test(x));
-      continue;
-    }
-    if (roleCol === -1 || cells.every((x) => /^:?-+:?$/.test(x))) continue;
-    const name = (cells[nameCol] ?? '').replace(/[*`]/g, '').trim();
-    const role = (cells[roleCol] ?? '').trim();
-    const slug = slugifyAgentName(name);
-    if (!name || !role || !slug || builtins.has(slug) || builtins.has(name.toLowerCase())) continue;
-    if (known.has(slug)) { skipped.push(slug); continue; }
-    const agentDir = path.join(squadDir, 'agents', slug);
-    storage.mkdirSync(agentDir, { recursive: true });
-    if (!storage.existsSync(path.join(agentDir, 'charter.md'))) storage.writeSync(path.join(agentDir, 'charter.md'), buildAgentCharter(name, role, slug));
-    if (!storage.existsSync(path.join(agentDir, 'history.md'))) {
-      storage.writeSync(path.join(agentDir, 'history.md'), `# ${name} — History\n\n## Core Context\n\n- **Role:** ${role}\n- **Joined:** ${new Date().toISOString().split('T')[0]}\n\n## Learnings\n\n<!-- Append new learnings below -->\n`);
-    }
-    await updateCastingStateWithAgent(squadDir, name, role, slug);
-    await addAgentToConfig(teamRoot, slug, role);
-    known.add(slug);
-    registered.push(slug);
-  }
-  success(registered.length ? `Registered ${registered.length} member(s) in the casting registry: ${registered.join(', ')}` : 'Casting registry already matches team.md');
-  return { registered, skipped };
-}
-
 export async function runCast(cwd: string): Promise<void> {
   // Resolve squad paths
   const paths = resolveSquadPaths(cwd);
