@@ -26,7 +26,8 @@ class FakeHarness implements HarnessAdapter {
   async submit(s: { runId: string; seq: number }) { this.submitted.push({ runId: s.runId, seq: s.seq }); }
   subscribe(_c: string, l: (e: HarnessEventEnvelope) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
   async cancel(_c: string, _r: string, seq: number) { this.cancelled.push(seq); }
-  async respondApproval(_c: string, r: { approvalId: string }) { this.approvals.push(r.approvalId); }
+  ops: Array<string | undefined> = [];
+  async respondApproval(_c: string, r: { approvalId: string }, op?: string) { this.approvals.push(r.approvalId); this.ops.push(op); }
   describe() { return { id: this.id, capabilities: this.capabilities }; }
   emit(e: HarnessEventEnvelope) { this.listeners.forEach(l => l(e)); }
 }
@@ -787,5 +788,112 @@ describe('PR #2238 race/fault matrix', () => {
     next['a'] = 6;
     await b.sendMessage('a', msg('r', 2)); await b.sendMessage('b', msg('r', 2));
     expect(sent).toEqual({ a: [null, '5'], b: [null, '2'] });
+  });
+});
+describe('PR #2238 final hardening', () => {
+  const mk = () => {
+    const h = new FakeHarness();
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    const state = new MemoryStateStore();
+    return { h, harnesses, state };
+  };
+  const ask = (id = 'a1') => ({ type: 'approval-requested' as const, runId: 'r', seq: 1, request: { approvalId: id, turnSeq: 1, action: 'x', hash: 'h' } });
+
+  it('lock: recovers an abandoned lock exactly once and never steals a live one', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-stale-'));
+    try {
+      const store = createFileStateStore(dir, { staleLockMs: 5_000, lockTimeoutMs: 300 });
+      const lockPath = path.join(dir, 'backend', 'locks', 'k.lock');
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+
+      // live lock inside the threshold: the waiter times out and the holder's file is untouched
+      const release = store.lock!('backend/locks/k');
+      expect(() => store.lock!('backend/locks/k')).toThrow(/Timed out/);
+      expect(fs.existsSync(lockPath)).toBe(true);
+      release();
+      expect(fs.existsSync(lockPath)).toBe(false);
+
+      // abandoned lock (crashed holder) older than the threshold is recovered
+      fs.writeFileSync(lockPath, 'crashed:holder');
+      const old = new Date(Date.now() - 60_000);
+      fs.utimesSync(lockPath, old, old);
+      const r2 = store.lock!('backend/locks/k');
+      expect(fs.readFileSync(lockPath, 'utf8')).not.toBe('crashed:holder');
+      // a second waiter cannot take the recovered (now live) lock
+      expect(() => store.lock!('backend/locks/k')).toThrow(/Timed out/);
+      r2();
+      expect(fs.readdirSync(path.dirname(lockPath)).filter(n => n.includes('.stale.'))).toEqual([]);
+
+      // a stale release by a superseded holder must not delete the new holder's lock
+      const a = store.lock!('backend/locks/k');
+      fs.writeFileSync(lockPath, 'someone-else');
+      a();
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe('someone-else');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('approval version is monotonic (prev + 1), not hardcoded', async () => {
+    const { h, harnesses, state } = mk();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask());
+    // simulate a record already advanced past v1 (e.g. an amended approval) before the decision
+    const key = 'backend/conversations/c.json';
+    const doc = JSON.parse(state.read(key)!);
+    doc.approvals[0].version = 4;
+    state.write(key, JSON.stringify(doc));
+    const fresh = new LocalSquadBackend({ state, harnesses });
+    await fresh.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve' });
+    expect((await fresh.getApprovals('c'))[0]!.version).toBe(5);
+
+    h.emit({ ...ask('a2'), runId: 'r2', seq: 1 } as never);
+    await b.sendMessage('c', msg('r2', 1, { harness: 'copilot' }));
+    h.emit({ ...ask('a2'), runId: 'r2' });
+    const doc2 = JSON.parse(state.read(key)!);
+    doc2.approvals.find((a: { approvalId: string }) => a.approvalId === 'a2').version = 7;
+    state.write(key, JSON.stringify(doc2));
+    await new LocalSquadBackend({ state, harnesses }).cancelRun('c', 'r2');
+    expect((await b.getApprovals('c')).find(a => a.approvalId === 'a2')!.version).toBe(8);
+  });
+
+  it('a stale-epoch harness event leaves an auditable control event', async () => {
+    const { h, harnesses, state } = mk();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot', epoch: 3 }));
+    h.emit({ type: 'state', state: 'completed', runId: 'r', seq: 1, epoch: 2 });
+    expect((await b.getTurn('c', 1)).state).not.toBe('completed');
+    const audit = (await b.readEvents('c')).events.filter(e => e.type === 'harness.epoch-rejected');
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ stream: 'control', payload: { runId: 'r', seq: 1, eventType: 'state', rejectedEpoch: 2, currentEpoch: 3 } });
+  });
+
+  it('approval outbox keeps one stable operationId across retries and restart', async () => {
+    const { h, harnesses, state } = mk();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask());
+    const orig = h.respondApproval.bind(h);
+    let fail = 2;
+    h.respondApproval = async (c: string, r: { approvalId: string }, op?: string) => {
+      h.ops.push(op);
+      if (fail-- > 0) throw new Error('down');
+      return orig(c, r, op);
+    };
+    const resp = { approvalId: 'a1', hash: 'h', decision: 'approve' as const };
+    expect(await rejectCode(b.respondApproval('c', resp))).toBe('unavailable');
+    const restarted = new LocalSquadBackend({ state, harnesses }); // outbox reloads from durable state
+    expect(await rejectCode(restarted.respondApproval('c', resp))).toBe('unavailable');
+    expect((await restarted.respondApproval('c', resp)).state).toBe('running');
+    const used = h.ops.filter(o => o !== undefined);
+    expect(used.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(used).size).toBe(1);
+    expect(used[0]).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

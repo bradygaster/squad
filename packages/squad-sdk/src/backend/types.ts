@@ -377,8 +377,10 @@ export interface HarnessAdapter {
   readonly capabilities: HarnessCapabilities;
   submit(submission: HarnessSubmission): Promise<void>;
   subscribe(conversationId: string, listener: (event: HarnessEventEnvelope) => void): () => void;
-  cancel(conversationId: string, runId: string, seq: number): Promise<void>;
-  respondApproval(conversationId: string, response: ApprovalResponse): Promise<void>;
+  /** Idempotent: deliveries are retried. operationId is stable across retries and restarts of one delivery. */
+  cancel(conversationId: string, runId: string, seq: number, operationId?: string): Promise<void>;
+  /** Idempotent: deliveries are retried. operationId is stable across retries and restarts of one delivery. */
+  respondApproval(conversationId: string, response: ApprovalResponse, operationId?: string): Promise<void>;
   describe(): HarnessDescriptor;
 }
 

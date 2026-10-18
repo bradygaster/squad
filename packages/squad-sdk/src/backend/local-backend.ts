@@ -36,8 +36,8 @@ import type {
 
 /** A harness call (cancel / approval) that was decided and persisted but not yet acknowledged. */
 type PendingDelivery =
-  | { id: string; kind: 'cancel'; runId: string; seq: number }
-  | { id: string; kind: 'approval'; runId: string; seq: number; response: ApprovalResponse };
+  | { operationId: string; kind: 'cancel'; runId: string; seq: number }
+  | { operationId: string; kind: 'approval'; runId: string; seq: number; response: ApprovalResponse };
 
 interface StoredConversation {
   info: BackendConversation;
@@ -74,7 +74,15 @@ const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 
 /** File-system store rooted at a `.squad` directory. Never follows symlinks/junctions below the root. */
-export function createFileStateStore(squadDir: string): BackendStateStore {
+export interface FileStateStoreOptions {
+  /** A lock file untouched for longer than this is treated as abandoned by a crashed holder. */
+  staleLockMs?: number;
+  lockTimeoutMs?: number;
+}
+
+export function createFileStateStore(squadDir: string, options: FileStateStoreOptions = {}): BackendStateStore {
+  const staleLockMs = options.staleLockMs ?? LOCK_STALE_MS;
+  const lockTimeoutMs = options.lockTimeoutMs ?? LOCK_TIMEOUT_MS;
   const root = path.resolve(squadDir);
   const resolve = (rel: string): string => {
     const full = path.resolve(root, rel);
@@ -97,23 +105,38 @@ export function createFileStateStore(squadDir: string): BackendStateStore {
     lock: key => {
       const lockPath = resolve(`${key}.lock`);
       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-      const deadline = Date.now() + LOCK_TIMEOUT_MS;
+      const deadline = Date.now() + lockTimeoutMs;
+      const token = `${process.pid}:${randomUUID()}`;
       for (;;) {
         try {
           const fd = fs.openSync(lockPath, 'wx');
-          fs.writeSync(fd, String(process.pid));
+          fs.writeSync(fd, token);
           fs.closeSync(fd);
           break;
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+          // Crash recovery: an abandoned lock is claimed by atomic rename, so exactly one waiter wins it.
+          // The claimed file is re-checked; if it turns out to be a live holder's lock it is put back untouched.
           try {
-            if (Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS) { fs.rmSync(lockPath, { force: true }); continue; }
+            const observed = fs.readFileSync(lockPath, 'utf8');
+            if (Date.now() - fs.statSync(lockPath).mtimeMs > staleLockMs) {
+              const claimed = `${lockPath}.stale.${process.pid}.${randomUUID()}`;
+              fs.renameSync(lockPath, claimed);
+              let still = false;
+              try { still = fs.readFileSync(claimed, 'utf8') === observed && Date.now() - fs.statSync(claimed).mtimeMs > staleLockMs; } catch { /* gone */ }
+              if (still) { fs.rmSync(claimed, { force: true }); continue; }
+              try { fs.linkSync(claimed, lockPath); } catch { /* a newer holder exists; ours was already replaced */ }
+              fs.rmSync(claimed, { force: true });
+              continue;
+            }
           } catch { continue; }
           if (Date.now() > deadline) throw new BackendError('unavailable', 'Timed out waiting for the conversation lock', 503);
           sleepSync(10);
         }
       }
-      return () => { try { fs.rmSync(lockPath, { force: true }); } catch { /* already gone */ } };
+      return () => {
+        try { if (fs.readFileSync(lockPath, 'utf8') === token) fs.rmSync(lockPath, { force: true }); } catch { /* already gone */ }
+      };
     },
     read: rel => {
       try { return fs.readFileSync(resolve(rel), 'utf8'); } catch (e) {
@@ -310,16 +333,16 @@ export class LocalSquadBackend implements SquadBackend {
       turn.state = response.decision === 'approve' ? 'running' : 'cancelled';
       const record = (conv.approvals ?? []).find(a => a.approvalId === response.approvalId);
       if (record) {
-        record.version = 2;
+        record.version = (record.version ?? 1) + 1;
         record.state = response.decision === 'approve' ? 'approved' : 'denied';
         record.decision = response.decision;
         record.reason = response.reason;
         record.decidedAt = new Date().toISOString();
       }
       this.emit(conv, 'control', 'approval.resolved',
-        { runId: turn.runId, seq: turn.seq, approvalId: response.approvalId, decision: response.decision, version: 2, state: turn.state });
+        { runId: turn.runId, seq: turn.seq, approvalId: response.approvalId, decision: response.decision, version: record?.version ?? 2, state: turn.state });
       if (this.adapterFor(turn)) {
-        (conv.deliveries ??= []).push({ id: randomUUID(), kind: 'approval', runId: turn.runId, seq: turn.seq, response });
+        (conv.deliveries ??= []).push({ operationId: randomUUID(), kind: 'approval', runId: turn.runId, seq: turn.seq, response });
       }
       return { runId: turn.runId, seq: turn.seq };
     });
@@ -430,10 +453,10 @@ export class LocalSquadBackend implements SquadBackend {
     const record = (conv.approvals ?? []).find(a => a.approvalId === approvalId);
     if (record && record.state === 'pending') {
       record.state = 'cancelled';
-      record.version = 2;
+      record.version = (record.version ?? 1) + 1;
       record.decidedAt = new Date().toISOString();
       this.emit(conv, 'control', 'approval.resolved',
-        { runId: turn.runId, seq: turn.seq, approvalId, version: 2, state: 'cancelled' });
+        { runId: turn.runId, seq: turn.seq, approvalId, version: record.version, state: 'cancelled' });
     }
     turn.pendingApproval = undefined;
   }
@@ -446,7 +469,7 @@ export class LocalSquadBackend implements SquadBackend {
     const requested = this.emit(conv, 'control', 'cancellation.requested', { runId: turn.runId, seq: turn.seq, reason });
     this.emit(conv, 'control', 'turn.state', { runId: turn.runId, seq: turn.seq, state: 'cancelled' }, undefined, requested.id);
     if (this.adapterFor(turn)) {
-      (conv.deliveries ??= []).push({ id: randomUUID(), kind: 'cancel', runId: turn.runId, seq: turn.seq });
+      (conv.deliveries ??= []).push({ operationId: randomUUID(), kind: 'cancel', runId: turn.runId, seq: turn.seq });
     }
   }
 
@@ -464,15 +487,15 @@ export class LocalSquadBackend implements SquadBackend {
       const adapter = turn ? this.adapterFor(turn) : undefined;
       try {
         if (adapter) {
-          if (next.kind === 'cancel') await adapter.cancel(conversationId, next.runId, next.seq);
-          else await adapter.respondApproval(conversationId, next.response);
+          if (next.kind === 'cancel') await adapter.cancel(conversationId, next.runId, next.seq, next.operationId);
+          else await adapter.respondApproval(conversationId, next.response, next.operationId);
         }
       } catch (err) {
         throw new BackendError('unavailable',
           `Harness ${next.kind} delivery failed and will be retried: ${err instanceof Error ? err.message : String(err)}`, 503);
       }
       this.tx(conversationId, (fresh) => {
-        fresh.deliveries = (fresh.deliveries ?? []).filter(d => d.id !== next.id);
+        fresh.deliveries = (fresh.deliveries ?? []).filter(d => d.operationId !== next.operationId);
       });
     }
   }
@@ -514,7 +537,11 @@ export class LocalSquadBackend implements SquadBackend {
     if (!turn || TERMINAL_RUN_STATES.includes(turn.state)) return;
     // fencing: output issued under an older lease than the conversation's current one is stale
     const eventEpoch = ev.epoch ?? turn.epoch ?? 1;
-    if (eventEpoch < conv.info.epoch) return;
+    if (eventEpoch < conv.info.epoch) {
+      this.emit(conv, 'control', 'harness.epoch-rejected',
+        { runId: turn.runId, seq: turn.seq, eventType: ev.type, rejectedEpoch: eventEpoch, currentEpoch: conv.info.epoch });
+      return;
+    }
     switch (ev.type) {
       case 'message':
         if (turn.messages.some(m => m.runId === ev.message.runId && m.seq === ev.message.seq && m.role === ev.message.role && m.content === ev.message.content)) return;
