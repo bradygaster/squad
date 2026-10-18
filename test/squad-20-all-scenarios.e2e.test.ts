@@ -29,6 +29,7 @@ import {
   assertPortableClients,
   getClientAdapter,
   slugifyMember,
+  buildCoordinatorInstructions,
   installClients,
   uninstallClients,
   normalizeClientIds,
@@ -1185,5 +1186,27 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── Real-model findings: coordinator prompt regressions ─────────────
+
+describe('coordinator prompt (found with real models)', () => {
+  it.each(CLIENT_IDS)('%s: Init Mode is guarded, state-tool based and never re-casts an existing team', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    // real run: opencode's Glob skips dot-dirs, concluded "no team" and overwrote team.md
+    expect(text).toMatch(/Init Mode \(only when there is truly no team\)/);
+    expect(text).toMatch(/squad_state_read.{0,12} of .{0,3}team\.md/);
+    expect(text).toMatch(/NOT with glob\/search tools/);
+    expect(text).toMatch(/dot-directories/);
+    expect(text).toMatch(/NEVER overwrite or re-cast/);
+  });
+
+  it.each(CLIENT_IDS)('%s: distinguishes mutable state from static team config', (id) => {
+    const text = buildCoordinatorInstructions(id);
+    // real run: models tried squad_state_write for team.md/routing.md/charters and were rejected
+    expect(text).toMatch(/Static team config is the exception/);
+    for (const f of ['team.md', 'routing.md', 'config.json', 'charter.md']) expect(text).toContain(f);
+    expect(text).toMatch(/state tools? reject|reject writes/i);
   });
 });
