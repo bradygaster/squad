@@ -73,7 +73,8 @@ export function parseRoster(teamMd: string): TeamMember[] {
     if (roleCol === -1 || cells.every((c) => /^:?-+:?$/.test(c))) continue;
     const name = cells[nameCol];
     const role = cells[roleCol];
-    if (name && role) members.push({ name, role });
+    // The coordinator is the host agent itself, not a dispatchable specialist.
+    if (name && role && !/^coordinator$/i.test(role)) members.push({ name, role });
   }
   return members;
 }
