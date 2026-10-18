@@ -9,7 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLIENT_IDS, installClients, normalizeClientIds, parseClients, type ApplyResult, type ClientId, type TeamMember } from '@bradygaster/squad-sdk/clients';
+import { CLIENT_IDS, installClients, normalizeClientIds, parseClients, type ApplyResult, type ClientId } from '@bradygaster/squad-sdk/clients';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { getPackageVersion } from './version.js';
 
@@ -40,50 +40,6 @@ export function readConfiguredClients(squadDir: string): ClientId[] {
   return [];
 }
 
-/** `.squad/config.json` `clientModels`: `{ <client>: { <member-slug | "*">: "<model id>" } }`; non-string entries are ignored. */
-export function readClientModels(squadDir: string): Partial<Record<ClientId, Record<string, string>>> {
-  const out: Partial<Record<ClientId, Record<string, string>>> = {};
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(squadDir, 'config.json'), 'utf8')) as { clientModels?: unknown };
-    const cm = cfg.clientModels;
-    if (cm && typeof cm === 'object' && !Array.isArray(cm)) {
-      for (const id of CLIENT_IDS) {
-        const per = (cm as Record<string, unknown>)[id];
-        if (!per || typeof per !== 'object' || Array.isArray(per)) continue;
-        const clean: Record<string, string> = {};
-        for (const [k, v] of Object.entries(per as Record<string, unknown>)) {
-          if (typeof v === 'string' && /^[A-Za-z0-9._:/@\[\]+-]+$/.test(v)) clean[k.toLowerCase()] = v;
-        }
-        if (Object.keys(clean).length > 0) out[id] = clean;
-      }
-    }
-  } catch {
-    // no config or malformed: inherit models
-  }
-  return out;
-}
-
-export function readMemberAgentsConfig(squadDir: string): boolean {
-  try {
-    return (JSON.parse(fs.readFileSync(path.join(squadDir, 'config.json'), 'utf8')) as { memberAgents?: unknown }).memberAgents === true;
-  } catch {
-    return false;
-  }
-}
-
-export function persistMemberAgents(squadDir: string, on: boolean): void {
-  const file = path.join(squadDir, 'config.json');
-  let cfg: Record<string, unknown> = {};
-  try {
-    const p = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
-    if (p && typeof p === 'object' && !Array.isArray(p)) cfg = p as Record<string, unknown>;
-  } catch {
-    // start fresh
-  }
-  cfg['memberAgents'] = on;
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
-}
-
 export function persistClients(squadDir: string, clients: readonly ClientId[]): void {
   const file = path.join(squadDir, 'config.json');
   let cfg: Record<string, unknown> = {};
@@ -98,49 +54,9 @@ export function persistClients(squadDir: string, clients: readonly ClientId[]): 
   fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
 }
 
-/** Parse roster rows (`| Name | Role | ... |`) from team.md. */
-export function parseRoster(teamMd: string): TeamMember[] {
-  const members: TeamMember[] = [];
-  let nameCol = -1;
-  let roleCol = -1;
-  for (const line of teamMd.split(/\r?\n/)) {
-    if (!line.trim().startsWith('|')) {
-      nameCol = roleCol = -1;
-      continue;
-    }
-    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
-    if (nameCol === -1) {
-      nameCol = cells.findIndex((c) => /^name$/i.test(c));
-      roleCol = cells.findIndex((c) => /^role$/i.test(c));
-      continue;
-    }
-    if (roleCol === -1 || cells.every((c) => /^:?-+:?$/.test(c))) continue;
-    const name = cells[nameCol];
-    const role = cells[roleCol];
-    // The coordinator is the host agent itself, not a dispatchable specialist.
-    if (name && role && !/^coordinator$/i.test(role)) members.push({ name, role });
-  }
-  return members;
-}
-
-const BUILTIN_MEMBERS: TeamMember[] = [
-  { name: 'Scribe', role: 'Decision Merger' },
-  { name: 'Ralph', role: 'Work Monitor' },
-  { name: 'Rai', role: 'RAI Reviewer' },
-  { name: 'Fact Checker', role: 'Verification & Devil\'s Advocate' },
-];
-
-/** Built-ins are always projected, even when a host agent rewrote team.md without them. */
-export function ensureBuiltinMembers(members: TeamMember[]): TeamMember[] {
-  const have = new Set(members.map((m) => m.name.toLowerCase()));
-  return [...members, ...BUILTIN_MEMBERS.filter((b) => !have.has(b.name.toLowerCase()))];
-}
-
 export interface SyncClientsOptions {
   /** Explicit set from `--client`; when omitted, configured clients are refreshed. */
   clients?: readonly ClientId[];
-  /** Project per-member subagent files (opt-in; also on when config.json memberAgents is true or clientModels is set). */
-  memberAgents?: boolean;
   version?: string;
 }
 
@@ -162,23 +78,12 @@ export async function syncClients(
 
   const version = options.version ?? getPackageVersion();
   const spec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(version));
-  const models = readClientModels(squadDir);
-  const wantMembers = options.memberAgents ?? (readMemberAgentsConfig(squadDir) || Object.keys(models).length > 0);
-  let members: TeamMember[] = [];
-  try {
-    if (wantMembers) members = ensureBuiltinMembers(parseRoster(fs.readFileSync(path.join(squadDir, 'team.md'), 'utf8')));
-  } catch {
-    // no roster yet
-  }
   const results = installClients(clients, {
-    memberModels: models,
     root: dest,
     mcp: { command: spec.command, args: spec.args },
-    members,
     squadDir: path.relative(dest, squadDir).split(path.sep).join('/') || '.squad',
   });
   persistClients(squadDir, clients);
-  if (options.memberAgents !== undefined) persistMemberAgents(squadDir, options.memberAgents);
   return { clients, results };
 }
 

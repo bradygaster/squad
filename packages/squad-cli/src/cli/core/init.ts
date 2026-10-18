@@ -169,8 +169,6 @@ export interface RunInitOptions {
   mcpFrontmatter?: boolean;
   /** Client hosts to project (copilot, claude, kiro, opencode, cursor) */
   clients?: ClientId[];
-  /** Also project per-member subagent files for hosts that support them. */
-  memberAgents?: boolean;
   /** If false, skip writing "chat.newSession.defaultMode": "Squad" to .vscode/settings.json (default: true) */
   includeVscodeDefault?: boolean;
 }
@@ -503,7 +501,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (options.clients && options.clients.length > 0 && !options.isGlobal) {
     try {
-      const synced = await syncClients(dest, squadDir, { clients: options.clients, memberAgents: options.memberAgents, version });
+      const synced = await syncClients(dest, squadDir, { clients: options.clients, version });
       reportClientResults(synced.results, (m) => console.log(m.startsWith('⚠') ? `${YELLOW}${m}${RESET}` : `${GREEN}${m}${RESET}`));
     } catch (err) {
       console.warn(`${YELLOW}⚠ Could not project client files: ${err instanceof Error ? err.message : err}${RESET}`);

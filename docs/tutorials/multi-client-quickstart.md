@@ -36,7 +36,6 @@ You should see these Claude-facing files:
 .claude/
   agents/
     squad.md
-    squad-<member>.md    # one per roster member when team.md already has named members
 .mcp.json
 CLAUDE.md
 ```
@@ -44,7 +43,6 @@ CLAUDE.md
 What each file does:
 
 - `.claude/agents/squad.md` is the coordinator entrypoint;
-- `.claude/agents/squad-<member>.md` are optional specialist wrappers that point back to each member's charter in `.squad/agents/<member>/charter.md`;
 - `.mcp.json` wires the `squad_state` MCP bridge;
 - `CLAUDE.md` gets a managed marker block instead of being fully overwritten.
 
@@ -74,7 +72,7 @@ Or, inside Claude Code, delegate to the `squad` subagent and let it route work f
 
 ### Step 5: what the coordinator does in Claude
 
-The Claude projection tells the coordinator to dispatch specialists with the `Task` tool and to prefer per-member `.claude/agents/squad-<member>.md` files when they exist.
+The Claude projection tells the coordinator to dispatch specialists with the `Task` tool and to inline each member's charter from `.squad/agents/<member>/charter.md` into the subagent prompt.
 
 ---
 
@@ -336,7 +334,7 @@ After any `init --client ...` or `upgrade --client ...` run:
 Use `npx squad upgrade --client ...` when:
 
 - you added a new client to an existing repo;
-- your `.squad/team.md` roster changed and you want fresh per-member projections;
+- your `.squad/team.md` roster changed and you want fresh client projections;
 - the generated adapter templates changed in a newer Squad build;
 - you want to refresh all previously configured client projections from `.squad/config.json`.
 

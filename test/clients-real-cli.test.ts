@@ -28,7 +28,6 @@ beforeAll(() => {
   const results = installClients(['claude', 'opencode', 'kiro', 'codex', 'antigravity'], {
     root,
     mcp: { command: 'node', args: ['-e', '0'] },
-    members: [{ name: 'Data', role: 'Expert' }],
   });
   expect(results.filter((r) => r.action === 'error')).toEqual([]);
 });
@@ -39,7 +38,6 @@ describe('real CLIs load Squad projections', () => {
     const agents = run('claude', ['-p', '--agent', 'nonexistent-zzz', 'hi'], root);
     const text = `${agents.stdout}${agents.stderr}`;
     expect(text).toMatch(/Available agents:.*\bsquad\b/);
-    expect(text).toMatch(/squad-data/);
     const mcp = run('claude', ['mcp', 'get', 'squad_state'], root);
     expect(mcp.stdout).toMatch(/Type: stdio/);
   });

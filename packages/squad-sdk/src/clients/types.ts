@@ -17,24 +17,11 @@ export interface McpLaunchSpec {
   args: string[];
 }
 
-export interface TeamMember {
-  name: string;
-  role: string;
-}
-
 export interface ClientContext {
   /** Project root the projection files are written under. */
   root: string;
   /** How hosts should launch the `squad_state` MCP backend. */
   mcp: McpLaunchSpec;
-  /** Roster used to project per-member subagent files (hosts that support them). */
-  members?: TeamMember[];
-  /**
-   * Per-client, per-member model overrides keyed by member slug (`*` = every member),
-   * e.g. `{ opencode: { reviewer: 'github-copilot/claude-opus-4.5' } }`. Model ids are
-   * client-specific, so they are never shared across clients. Unset = inherit.
-   */
-  memberModels?: Partial<Record<ClientId, Record<string, string>>>;
   /** Squad state directory name relative to root (default `.squad`). */
   squadDir?: string;
 }
