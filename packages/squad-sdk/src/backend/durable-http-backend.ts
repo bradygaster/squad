@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BACKEND_PROTOCOL_VERSION, BackendError } from './types.js';
 import type {
   ApprovalRecord,
@@ -35,7 +36,10 @@ export class DurableHttpSquadBackend implements SquadBackend {
   private readonly doFetch: typeof fetch;
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
-  private epoch: LeaseEpoch | undefined;
+  /** Initial epoch for conversations this client has not learned one for. */
+  private readonly defaultEpoch: LeaseEpoch | undefined;
+  /** Learned lease epoch per conversation: one conversation's epoch must never leak into another. */
+  private readonly epochs = new Map<string, LeaseEpoch>();
 
   constructor(private readonly options: DurableHttpOptions) {
     if (!options.baseUrl) throw new BackendError('invalid-request', 'baseUrl is required', 400);
@@ -43,7 +47,7 @@ export class DurableHttpSquadBackend implements SquadBackend {
     this.doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.maxRetries = options.maxRetries ?? 3;
     this.retryDelayMs = options.retryDelayMs ?? 200;
-    this.epoch = options.epoch;
+    this.defaultEpoch = options.epoch;
   }
 
   negotiate(hello: ProtocolHello): Promise<NegotiatedCapabilities> {
@@ -60,21 +64,25 @@ export class DurableHttpSquadBackend implements SquadBackend {
   }
 
   async createConversation(options: CreateConversationOptions = {}): Promise<BackendConversation> {
-    const conv = await this.request<BackendConversation>('POST', '/v1/conversations', options,
-      options.conversationId ? { 'Idempotency-Key': `create:${options.conversationId}` } : undefined);
-    if (typeof conv.epoch === 'number') this.epoch = Math.max(this.epoch ?? 0, conv.epoch);
+    // one id per call, reused by every retry attempt, so a lost response never creates a second conversation
+    const conversationId = options.conversationId ?? randomUUID();
+    const conv = await this.request<BackendConversation>('POST', '/v1/conversations', { ...options, conversationId },
+      { 'Idempotency-Key': `create:${conversationId}` });
+    this.learn(conv.conversationId ?? conversationId, conv.epoch);
     return conv;
   }
 
   async sendMessage(conversationId: string, message: BackendMessage): Promise<BackendAdmission> {
-    const epoch = message.epoch ?? this.epoch;
-    return this.request<BackendAdmission>(
+    const epoch = message.epoch ?? this.epochOf(conversationId);
+    const admission = await this.request<BackendAdmission>(
       'POST',
       `/v1/conversations/${enc(conversationId)}/messages`,
       { ...message, epoch },
       { ...(message.correlationId ? { 'X-Correlation-Id': message.correlationId } : {}), 'Idempotency-Key': `${message.runId}:${message.seq}` },
       epoch,
     );
+    this.learn(conversationId, admission.epoch);
+    return admission;
   }
 
   async getTranscript(conversationId: string): Promise<BackendMessage[]> {
@@ -87,17 +95,17 @@ export class DurableHttpSquadBackend implements SquadBackend {
     return this.request('GET', `/v1/conversations/${enc(conversationId)}/turns/${seq}`);
   }
 
-  cancelTurn(conversationId: string, seq: number): Promise<BackendTurn> {
-    return this.request('POST', `/v1/conversations/${enc(conversationId)}/turns/${seq}/cancel`, {}, undefined, this.epoch);
+  cancelTurn(conversationId: string, seq: number, epoch?: LeaseEpoch): Promise<BackendTurn> {
+    return this.request('POST', `/v1/conversations/${enc(conversationId)}/turns/${seq}/cancel`, {}, undefined, epoch ?? this.epochOf(conversationId));
   }
 
-  cancelRun(conversationId: string, runId: string, reason?: string): Promise<BackendTurn> {
+  cancelRun(conversationId: string, runId: string, reason?: string, epoch?: LeaseEpoch): Promise<BackendTurn> {
     return this.request(
       'POST',
       `/v1/conversations/${enc(conversationId)}/runs/${enc(runId)}/cancel`,
       { reason },
       { 'Idempotency-Key': `cancel:${runId}` },
-      this.epoch,
+      epoch ?? this.epochOf(conversationId),
     );
   }
 
@@ -108,7 +116,7 @@ export class DurableHttpSquadBackend implements SquadBackend {
   }
 
   respondApproval(conversationId: string, response: ApprovalResponse): Promise<BackendTurn> {
-    const epoch = response.epoch ?? this.epoch;
+    const epoch = response.epoch ?? this.epochOf(conversationId);
     return this.request(
       'POST',
       `/v1/conversations/${enc(conversationId)}/approvals/${enc(response.approvalId)}`,
@@ -119,6 +127,14 @@ export class DurableHttpSquadBackend implements SquadBackend {
   }
 
   /** Probes unversioned /health/live and /health/ready, falling back to /health. */
+  private epochOf(conversationId: string): LeaseEpoch | undefined {
+    return this.epochs.get(conversationId) ?? this.defaultEpoch;
+  }
+
+  private learn(conversationId: string, epoch: unknown): void {
+    if (typeof epoch === 'number') this.epochs.set(conversationId, Math.max(this.epochs.get(conversationId) ?? 0, epoch));
+  }
+
   async health(): Promise<BackendHealth> {
     const [live, ready] = await Promise.all([this.probe('/health/live'), this.probe('/health/ready')]);
     if (live.status === 'missing' && ready.status === 'missing') {

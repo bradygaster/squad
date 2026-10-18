@@ -111,14 +111,14 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
     {
       name: 'squad_backend_cancel_turn',
       description: 'Cancel a running turn.',
-      inputSchema: { type: 'object', properties: { conversationId: cid, seq }, required: ['conversationId', 'seq'] },
-      call: a => getBackend().cancelTurn(str(a, 'conversationId'), num(a, 'seq')),
+      inputSchema: { type: 'object', properties: { conversationId: cid, seq, epoch: { type: 'integer', description: 'Lease epoch; required once the conversation is fenced' } }, required: ['conversationId', 'seq'] },
+      call: a => getBackend().cancelTurn(str(a, 'conversationId'), num(a, 'seq'), typeof a['epoch'] === 'number' ? a['epoch'] : undefined),
     },
     {
       name: 'squad_backend_cancel_run',
       description: 'Cancel a run by its stable runId (distinct from turn seq).',
-      inputSchema: { type: 'object', properties: { conversationId: cid, runId: { type: 'string' }, reason: { type: 'string' } }, required: ['conversationId', 'runId'] },
-      call: a => getBackend().cancelRun(str(a, 'conversationId'), str(a, 'runId'), typeof a['reason'] === 'string' ? a['reason'] : undefined),
+      inputSchema: { type: 'object', properties: { conversationId: cid, runId: { type: 'string' }, reason: { type: 'string' }, epoch: { type: 'integer', description: 'Lease epoch; required once the conversation is fenced' } }, required: ['conversationId', 'runId'] },
+      call: a => getBackend().cancelRun(str(a, 'conversationId'), str(a, 'runId'), typeof a['reason'] === 'string' ? a['reason'] : undefined, typeof a['epoch'] === 'number' ? a['epoch'] : undefined),
     },
     {
       name: 'squad_backend_get_approvals',

@@ -34,7 +34,7 @@ import {
   type RuntimeBinding,
 } from '../packages/squad-sdk/src/client/adapter-contract.js';
 
-import { applyProjection, removeTomlTable, uninstallClients, upsertTomlTable } from '../packages/squad-sdk/src/client/adapters/index.js';
+import { removeTomlTable, uninstallClients } from '../packages/squad-sdk/src/client/adapters/index.js';
 
 let root: string;
 const mcp = { command: 'squad', args: ['state-mcp'] };

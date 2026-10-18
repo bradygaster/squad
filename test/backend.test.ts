@@ -6,6 +6,7 @@ import {
   DurableHttpSquadBackend,
   LocalSquadBackend,
   MemoryStateStore,
+  createFileStateStore,
   createSquadBackend,
   extensionNamespace,
   validateExtensions,
@@ -481,5 +482,168 @@ describe('createSquadBackend', () => {
     expect(createSquadBackend({ kind: 'local', squadDir: '.', state: new MemoryStateStore() }).kind).toBe('local');
     expect(createSquadBackend({ kind: 'mcp', squadDir: '.', state: new MemoryStateStore() }).kind).toBe('mcp');
     expect(createSquadBackend({ kind: 'durable-http', baseUrl: 'http://x' }).kind).toBe('durable-http');
+  });
+});
+
+describe('PR #2238 review regressions (local backend)', () => {
+  const setup = (opts: { failApprovals?: { n: number }; state?: MemoryStateStore } = {}) => {
+    const h = new FakeHarness();
+    const origApprove = h.respondApproval.bind(h);
+    h.respondApproval = async (c: string, r: { approvalId: string }) => {
+      if (opts.failApprovals && opts.failApprovals.n > 0) { opts.failApprovals.n--; throw new Error('harness down'); }
+      return origApprove(c, r);
+    };
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    const state = opts.state ?? new MemoryStateStore();
+    return { h, harnesses, state, make: () => new LocalSquadBackend({ state, harnesses }) };
+  };
+  const ask = (runId: string, seq: number, id = 'a1') =>
+    ({ type: 'approval-requested' as const, runId, seq, request: { approvalId: id, turnSeq: seq, action: 'x', hash: 'h' } });
+
+  it('1. rejects symlinked/junctioned state paths', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-sym-'));
+    try {
+      const root = path.join(base, 'squad'); const outside = path.join(base, 'outside');
+      fs.mkdirSync(root); fs.mkdirSync(outside);
+      fs.symlinkSync(outside, path.join(root, 'backend'), 'junction');
+      const b = new LocalSquadBackend({ state: createFileStateStore(root) });
+      expect(await rejectCode(b.createConversation({ conversationId: 'c' }))).toBe('invalid-request');
+      expect(fs.readdirSync(outside)).toEqual([]);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  it('2+6. concurrent writers on one file store never lose an update', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-lock-'));
+    try {
+      const a = new LocalSquadBackend({ state: createFileStateStore(dir) });
+      const b = new LocalSquadBackend({ state: createFileStateStore(dir) });
+      await a.createConversation({ conversationId: 'c' });
+      await Promise.all(Array.from({ length: 12 }, (_, i) => (i % 2 ? a : b).sendMessage('c', msg(`r${i}`, 1))));
+      await Promise.all([a.cancelRun('c', 'r0'), b.cancelRun('c', 'r1')]);
+      expect(await a.getTranscript('c')).toHaveLength(12);
+      expect((await b.getTurn('c', 1)).runId).toBeDefined();
+      expect((await a.readEvents('c')).events.filter(e => e.type === 'turn.cancelled' || /cancel/.test(e.type)).length).toBeGreaterThanOrEqual(2);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('3. a terminal harness event cancels the pending approval; a late approval cannot revive the turn', async () => {
+    const { h, make } = setup();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask('r', 1));
+    h.emit({ type: 'state', state: 'completed', runId: 'r', seq: 1 });
+    expect((await b.getApprovals('c'))[0]).toMatchObject({ state: 'cancelled', version: 2 });
+    expect(await rejectCode(b.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve' }))).toBe('approval-not-pending');
+    expect((await b.getTurn('c', 1)).state).toBe('completed');
+  });
+
+  it('4. harness events from a superseded epoch are dropped', async () => {
+    const { h, make } = setup();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot', epoch: 2 }));
+    h.emit({ type: 'state', state: 'completed', runId: 'r', seq: 1, epoch: 1 });
+    expect((await b.getTurn('c', 1)).state).not.toBe('completed');
+    h.emit({ type: 'state', state: 'completed', runId: 'r', seq: 1, epoch: 2 });
+    expect((await b.getTurn('c', 1)).state).toBe('completed');
+  });
+
+  it('5. omitting the epoch on a fenced conversation is rejected for every write', async () => {
+    const { make } = setup();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { epoch: 3 }));
+    expect(await rejectCode(b.sendMessage('c', msg('r', 2)))).toBe('stale-epoch');
+    expect(await rejectCode(b.cancelTurn('c', 1))).toBe('stale-epoch');
+    expect(await rejectCode(b.cancelRun('c', 'r'))).toBe('stale-epoch');
+    expect((await b.cancelRun('c', 'r', 'ok', 3)).state).toBe('cancelled');
+  });
+
+  it('7. a failed approval delivery is retryable and clears once the harness acknowledges', async () => {
+    const fail = { n: 1 };
+    const { h, make } = setup({ failApprovals: fail });
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask('r', 1));
+    const first = await b.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve' }).catch(e => e);
+    expect(first).toBeInstanceOf(BackendError);
+    expect(first).toMatchObject({ code: 'unavailable', retryable: true });
+    expect(h.approvals).toEqual([]);
+    const turn = await b.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve' });
+    expect(turn.state).toBe('running');
+    expect(h.approvals).toEqual(['a1']);
+    await b.respondApproval('c', { approvalId: 'a1', hash: 'h', decision: 'approve' }).catch(() => undefined);
+    expect(h.approvals).toEqual(['a1']);
+  });
+
+  it('8. run identity (runId, seq) survives reload and selects the right turn', async () => {
+    const { h, make, state } = setup();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r1', 1, { harness: 'copilot' }));
+    await b.sendMessage('c', msg('r2', 1, { harness: 'copilot' }));
+    h.emit(ask('r2', 1, 'a2'));
+    const reloaded = new LocalSquadBackend({ state, harnesses: setup().harnesses });
+    const turn = await reloaded.respondApproval('c', { approvalId: 'a2', hash: 'h', decision: 'deny' });
+    expect(turn).toMatchObject({ runId: 'r2', seq: 1 });
+    expect((await reloaded.cancelRun('c', 'r1')).runId).toBe('r1');
+  });
+
+  it('9. cancelling a pending approval bumps version and timestamp', async () => {
+    const { h, make } = setup();
+    const b = make();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit(ask('r', 1));
+    const before = (await b.getApprovals('c'))[0]!;
+    await b.cancelRun('c', 'r');
+    const after = (await b.getApprovals('c'))[0]!;
+    expect(before.version).toBe(1);
+    expect(after).toMatchObject({ state: 'cancelled', version: 2 });
+    expect(after.decidedAt).toBeDefined();
+  });
+});
+
+describe('PR #2238 review regressions (durable-http)', () => {
+  const mkClient = (handler: (url: string, init: RequestInit) => Promise<Response> | Response, extra: object = {}) =>
+    new DurableHttpSquadBackend({ baseUrl: 'http://d.test', token: 't', retryDelayMs: 1, fetch: (async (u: string, i: RequestInit) => handler(String(u), i ?? {})) as never, ...extra });
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  it('10. createConversation retries reuse one conversation id and idempotency key', async () => {
+    const seen: Array<{ key: string | null; id: string }> = [];
+    let n = 0;
+    const b = mkClient((_u, init) => {
+      const headers = new Headers(init.headers as HeadersInit);
+      const body = JSON.parse(String(init.body));
+      seen.push({ key: headers.get('Idempotency-Key'), id: body.conversationId });
+      return ++n === 1 ? json(503, { error: { code: 'unavailable', message: 'x', retryable: true } }) : json(200, { conversationId: body.conversationId, epoch: 1, createdAt: 't' });
+    });
+    await b.createConversation();
+    expect(seen).toHaveLength(2);
+    expect(seen[0]!.key).toBeTruthy();
+    expect(seen[1]).toEqual(seen[0]);
+    expect(seen[0]!.key).toContain(seen[0]!.id);
+  });
+
+  it('11. a learned epoch is scoped to its conversation', async () => {
+    const epochs: Array<string | null> = [];
+    const b = mkClient((u, init) => {
+      epochs.push(new Headers(init.headers as HeadersInit).get('X-Lease-Epoch'));
+      const id = /conversations\/([^/]+)/.exec(u)![1];
+      return json(200, { runId: 'r', seq: 1, duplicate: false, state: 'queued', epoch: id === 'a' ? 7 : undefined });
+    });
+    await b.sendMessage('a', msg('r', 1));
+    await b.sendMessage('a', msg('r', 2));
+    await b.sendMessage('b', msg('r', 1));
+    expect(epochs).toEqual([null, '7', null]);
   });
 });

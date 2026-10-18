@@ -120,6 +120,7 @@ function createMockDurableSquad(local: LocalSquadBackend) {
     const method = init.method ?? 'GET';
     const headers = (init.headers ?? {}) as Record<string, string>;
     const body = init.body ? JSON.parse(init.body as string) : undefined;
+    const leaseEpoch = headers['X-Lease-Epoch'] === undefined ? undefined : Number(headers['X-Lease-Epoch']);
     calls.push({ method, path: url.pathname + url.search, headers, body });
 
     const fail = failures.get(`${method} ${url.pathname}`);
@@ -148,8 +149,8 @@ function createMockDurableSquad(local: LocalSquadBackend) {
         }
         if (method === 'GET' && rest === 'approvals') return json(200, { approvals: await local.getApprovals(id) });
         if ((r = /^turns\/(\d+)$/.exec(rest)) && method === 'GET') return json(200, await local.getTurn(id, Number(r[1])));
-        if ((r = /^turns\/(\d+)\/cancel$/.exec(rest)) && method === 'POST') return json(200, await local.cancelTurn(id, Number(r[1])));
-        if ((r = /^runs\/([^/]+)\/cancel$/.exec(rest)) && method === 'POST') return json(200, await local.cancelRun(id, decodeURIComponent(r[1]!), body?.reason));
+        if ((r = /^turns\/(\d+)\/cancel$/.exec(rest)) && method === 'POST') return json(200, await local.cancelTurn(id, Number(r[1]), leaseEpoch));
+        if ((r = /^runs\/([^/]+)\/cancel$/.exec(rest)) && method === 'POST') return json(200, await local.cancelRun(id, decodeURIComponent(r[1]!), body?.reason, leaseEpoch));
         if ((r = /^approvals\/([^/]+)$/.exec(rest)) && method === 'POST') return json(200, await local.respondApproval(id, body));
       }
       return json(404, { error: { code: 'not-found', message: `no route ${method} ${url.pathname}`, retryable: false } });
@@ -626,7 +627,7 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
     const state = new MemoryStateStore();
     const local = new LocalSquadBackend({ state, harnesses: registry });
     const server = createMockDurableSquad(local);
-    const connect = (): SquadBackend => (mode === 'local' ? new LocalSquadBackend({ state, harnesses: registry }) : mkHttp(server));
+    const connect = (): SquadBackend => (mode === 'local' ? new LocalSquadBackend({ state, harnesses: registry }) : mkHttp(server, { epoch: 1 }));
     let client = connect();
     const { conversationId, runId } = golden;
     await client.createConversation({ conversationId });
@@ -1166,7 +1167,7 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
         connect = () => create({ kind: 'local', squadDir: dir, harnesses });
       } else {
         const server = createMockDurableSquad(create({ kind: 'local', squadDir: dir, harnesses }) as LocalSquadBackend);
-        connect = () => mkHttp(server);
+        connect = () => mkHttp(server, { epoch: 1 });
       }
       const r = await runFixture(connect, golden);
 

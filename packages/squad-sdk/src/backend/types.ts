@@ -276,6 +276,8 @@ export interface BackendTurn {
   pendingApproval?: ApprovalRequest;
   error?: string;
   extensions?: ExtensionBag;
+  /** Lease epoch the turn was admitted under; harness output is fenced against it. */
+  epoch?: LeaseEpoch;
 }
 
 export interface BackendConversation {
@@ -318,9 +320,9 @@ export interface SquadBackend {
   sendMessage(conversationId: string, message: BackendMessage): Promise<BackendAdmission>;
   getTranscript(conversationId: string): Promise<BackendMessage[]>;
   getTurn(conversationId: string, seq: number): Promise<BackendTurn>;
-  cancelTurn(conversationId: string, seq: number): Promise<BackendTurn>;
+  cancelTurn(conversationId: string, seq: number, epoch?: LeaseEpoch): Promise<BackendTurn>;
   /** Cancel by stable runId (distinct from turn seq). Idempotent. */
-  cancelRun(conversationId: string, runId: string, reason?: string): Promise<BackendTurn>;
+  cancelRun(conversationId: string, runId: string, reason?: string, epoch?: LeaseEpoch): Promise<BackendTurn>;
   /** Durable approval resources, in request order. */
   getApprovals(conversationId: string): Promise<ApprovalRecord[]>;
   respondApproval(conversationId: string, response: ApprovalResponse): Promise<BackendTurn>;
@@ -347,6 +349,8 @@ export interface HarnessSubmission {
   seq: number;
   messages: BackendMessage[];
   extensions?: ExtensionBag;
+  /** Lease epoch of the admission; echo it on every event for the run. */
+  epoch?: LeaseEpoch;
 }
 
 export type HarnessEvent =
@@ -355,7 +359,11 @@ export type HarnessEvent =
   | { type: 'approval-requested'; request: HarnessApprovalRequest }
   | { type: 'state'; state: RunState; error?: string };
 
-export type HarnessEventEnvelope = HarnessEvent & { runId: string; seq: number };
+/**
+ * Harness output for a run. `epoch` is the lease epoch the harness is acting under; when omitted the
+ * turn's admission epoch applies. Output whose epoch is older than the conversation's is fenced off.
+ */
+export type HarnessEventEnvelope = HarnessEvent & { runId: string; seq: number; epoch?: LeaseEpoch };
 
 export interface HarnessDescriptor {
   id: string;
@@ -395,6 +403,11 @@ export type BackendConfig =
 
 /** Minimal subset of the SDK `StateBackend` used for persistence. */
 export interface BackendStateStore {
+  /**
+   * Cross-process mutual exclusion for a read-modify-write of one key. Returns the release function.
+   * Stores shared between processes MUST implement it; single-process stores may omit it.
+   */
+  lock?(key: string): () => void;
   read(relativePath: string): string | undefined;
   write(relativePath: string, content: string): void;
   exists(relativePath: string): boolean;
