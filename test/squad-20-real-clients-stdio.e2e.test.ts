@@ -396,7 +396,9 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
 
 function which(...names: string[]): string | undefined {
   const exts = process.platform === 'win32' ? (process.env['PATHEXT'] ?? '.EXE;.CMD;.BAT').split(';') : [''];
-  for (const dir of (process.env['PATH'] ?? '').split(path.delimiter)) {
+  // well-known per-user install dirs for installers that do not update the inherited PATH
+  const extra = [process.env['LOCALAPPDATA'] && path.join(process.env['LOCALAPPDATA'], 'Kiro-Cli'), path.join(os.homedir(), '.local', 'bin')].filter((d): d is string => !!d);
+  for (const dir of [...(process.env['PATH'] ?? '').split(path.delimiter), ...extra]) {
     for (const name of names) {
       for (const ext of exts) {
         const full = path.join(dir, name + ext.toLowerCase());
