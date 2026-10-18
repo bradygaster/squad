@@ -229,6 +229,8 @@ describe('coordinator behavioral-contract parity', () => {
     ['Cross-Squad', [/Cross-squad delegation/, /peer Squad install/, /ad-hoc subagent/]],
     ['Human + @copilot', [/Human members and the @copilot coding agent/, /Coding Agent/]],
     ['Process safety', [/Never kill processes by image name/]],
+    ['Tool naming + dirs', [/Tool names are host-prefixed/, /squad_state_squad_state_read/, /EISDIR/, /for a directory/]],
+    ['Explicit fallback', [/Unknown or missing member/, /never silently swap owners/, /Built-in members/]],
     ['Ralph', [/Ralph mode/, /squad:<member>/, /board clear/]],
     ['Init Mode guards', [/NEVER with glob\/grep\/search tools/, /Auto-confirm \(default\)/, /npx squad upgrade/, /npx squad cast --name/, /NEVER hand-write or edit anything under/, /checksummed pair/, /squad cast --sync/, /\.squad\/scratch\//, /never write outside the workspace/, /STOP and report the roster/]],
   ];
@@ -445,6 +447,7 @@ describe('CLI --client handling', () => {
       expect(readConfiguredClients(sq)).toEqual(['claude', 'kiro']);
       expect(exists('.claude/agents/squad-data.md')).toBe(true);
       expect(exists('.kiro/steering/squad.md')).toBe(true);
+      for (const b of ['scribe', 'ralph', 'rai', 'fact-checker']) expect(exists('.claude/agents/squad-' + b + '.md')).toBe(true);
       const bare = await syncClients(root, sq, { version: '0.0.0' });
       expect(bare.clients).toEqual(['claude', 'kiro']);
       expect(readJson('.mcp.json').mcpServers.squad_state.args.at(-1)).toBe('state-mcp');

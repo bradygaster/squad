@@ -102,6 +102,19 @@ export function parseRoster(teamMd: string): TeamMember[] {
   return members;
 }
 
+const BUILTIN_MEMBERS: TeamMember[] = [
+  { name: 'Scribe', role: 'Decision Merger' },
+  { name: 'Ralph', role: 'Work Monitor' },
+  { name: 'Rai', role: 'RAI Reviewer' },
+  { name: 'Fact Checker', role: 'Verification & Devil\'s Advocate' },
+];
+
+/** Built-ins are always projected, even when a host agent rewrote team.md without them. */
+export function ensureBuiltinMembers(members: TeamMember[]): TeamMember[] {
+  const have = new Set(members.map((m) => m.name.toLowerCase()));
+  return [...members, ...BUILTIN_MEMBERS.filter((b) => !have.has(b.name.toLowerCase()))];
+}
+
 export interface SyncClientsOptions {
   /** Explicit set from `--client`; when omitted, configured clients are refreshed. */
   clients?: readonly ClientId[];
@@ -128,7 +141,7 @@ export async function syncClients(
   const spec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(version));
   let members: TeamMember[] = [];
   try {
-    members = parseRoster(fs.readFileSync(path.join(squadDir, 'team.md'), 'utf8'));
+    members = ensureBuiltinMembers(parseRoster(fs.readFileSync(path.join(squadDir, 'team.md'), 'utf8')));
   } catch {
     // no roster yet
   }
