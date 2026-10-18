@@ -103,5 +103,6 @@ export function dispatchStrategy(client: ClientId): DispatchStrategy {
 export function buildCoordinatorInstructions(client: ClientId, squadDir = '.squad'): string {
   const caps = CAPABILITIES[client];
   const transports = `## Transport\n\nThis host connects to the backend via: ${caps.transportModes.join(", ")} (subagents: ${caps.supportsSubagents ? "yes" : "no"}).\n`;
-  return `${coreCoordinatorProtocol(squadDir)}\n${STRATEGIES[client].section}\n\n${transports}`;
+  const dispatch = STRATEGIES[client].section.split('.squad/').join(`${squadDir}/`);
+  return `${coreCoordinatorProtocol(squadDir)}\n${dispatch}\n\n${transports}`;
 }

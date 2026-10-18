@@ -34,6 +34,8 @@ import {
   type RuntimeBinding,
 } from '../packages/squad-sdk/src/client/adapter-contract.js';
 
+import { applyProjection, removeTomlTable, uninstallClients, upsertTomlTable } from '../packages/squad-sdk/src/client/adapters/index.js';
+
 let root: string;
 const mcp = { command: 'squad', args: ['state-mcp'] };
 const ctx = (over: Partial<ClientContext> = {}): ClientContext => ({ root, mcp, ...over });
@@ -537,5 +539,69 @@ describe('HostProjection / ClientAdapter facade (spec v0.2)', () => {
     const caps = await a.getCapabilities('c');
     expect(caps.effectiveCapabilities).toEqual(['mcp-bridge', 'subagents']);
     expect(caps.clientCapabilities).toContain('native-hooks');
+  });
+});
+
+describe('review hardening (Copilot review on #2238)', () => {
+  it('rejects ../ and symlinked path components instead of writing outside the workspace', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-outside-'));
+    try {
+      const esc = applyProjection(root, [{ kind: 'managed', path: '../escape.txt', content: 'x' }]);
+      expect(esc[0]!.action).toBe('error');
+      expect(fs.existsSync(path.join(path.dirname(root), 'escape.txt'))).toBe(false);
+      fs.symlinkSync(outside, path.join(root, '.cursor'), 'junction');
+      const res = installClients(['cursor'], ctx());
+      expect(res.filter((r) => r.path.startsWith('.cursor/')).every((r) => r.action === 'error')).toBe(true);
+      expect(fs.readdirSync(outside)).toEqual([]);
+      const un = uninstallClients(['cursor'], ctx());
+      expect(un.filter((r) => r.path.startsWith('.cursor/')).every((r) => r.action !== 'removed')).toBe(true);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses wrong-typed MCP containers and squad_state entries per file', () => {
+    fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: [] }));
+    const res = installClients(['claude'], ctx());
+    expect(res.find((r) => r.path === '.mcp.json')!.action).toBe('error');
+    expect(readJson('.mcp.json')).toEqual({ mcpServers: [] });
+    fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: { squad_state: 'x' } }));
+    expect(installClients(['claude'], ctx()).find((r) => r.path === '.mcp.json')!.action).toBe('error');
+  });
+
+  it('TOML: replaces multiline arrays whole, tolerates header spacing, removes child tables', () => {
+    const src = '[ mcp_servers . squad_state ]\ncommand = "old"\nargs = [\n  "a",\n  "b",\n]\n\n[mcp_servers.squad_state.env]\nK = "v"\n\n[other]\nx = 1\n';
+    const out = upsertTomlTable(src, 'mcp_servers.squad_state', { command: '"squad"', args: '["state-mcp"]' });
+    expect(out).toContain('command = "squad"');
+    expect(out).toContain('args = ["state-mcp"]');
+    expect(out).not.toContain('"a"');
+    expect(out).not.toContain('"b"');
+    expect(out).toContain('[other]');
+    const gone = removeTomlTable(out, 'mcp_servers.squad_state');
+    expect(gone).not.toContain('squad_state');
+    expect(gone).not.toContain('K = "v"');
+    expect(gone).toContain('[other]');
+  });
+
+  it('uninstalling one host keeps the shared .mcp.json entry while another host still uses it', () => {
+    installClients(['copilot', 'claude'], ctx());
+    uninstallClients(['claude'], ctx(), ['copilot']);
+    expect(readJson('.mcp.json').mcpServers.squad_state).toBeDefined();
+    uninstallClients(['copilot'], ctx());
+    expect(exists('.mcp.json')).toBe(false);
+  });
+
+  it('applies a custom squadDir to the dispatch section too', () => {
+    const text = buildCoordinatorInstructions('claude', '.team');
+    expect(text).toContain('.team/agents/<member>/charter.md');
+    expect(text).not.toContain('.squad/agents');
+  });
+
+  it('persistClients refuses to overwrite a malformed config.json', () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    fs.writeFileSync(path.join(sq, 'config.json'), '{ not json');
+    expect(() => persistClients(sq, ['claude'])).toThrow(/Refusing to overwrite malformed/);
+    expect(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')).toBe('{ not json');
   });
 });

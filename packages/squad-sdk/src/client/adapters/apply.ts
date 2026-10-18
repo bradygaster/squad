@@ -34,9 +34,56 @@ export function upsertBlock(existing: string, content: string, id?: string): str
   return `${existing}${sep}${block}\n`;
 }
 
+/** Normalized dotted key of a `[table]` header line (quotes/whitespace tolerant), or undefined. */
+function tableHeaderKey(line: string): string | undefined {
+  const m = /^\s*\[(?!\[)([^\]]+)\]\s*(?:#.*)?$/.exec(line);
+  if (!m) return undefined;
+  return m[1]!.split('.').map((s) => s.trim().replace(/^["']|["']$/g, '')).join('.');
+}
+
+/** Index of the last line of the assignment starting at `i` (handles multiline arrays). */
+function assignmentEnd(lines: string[], i: number): number {
+  const first = lines[i]!;
+  const eq = first.indexOf('=');
+  if (eq === -1) return i;
+  let depth = 0;
+  let inStr: string | null = null;
+  for (let n = i; n < lines.length; n++) {
+    const text = n === i ? first.slice(eq + 1) : lines[n]!;
+    for (let k = 0; k < text.length; k++) {
+      const ch = text[k]!;
+      if (inStr) {
+        if (ch === '\\' && inStr === '"') k++;
+        else if (ch === inStr) inStr = null;
+      } else if (ch === '"' || ch === "'") inStr = ch;
+      else if (ch === '#') break;
+      else if (ch === '[') depth++;
+      else if (ch === ']') depth--;
+    }
+    if (depth <= 0) return n;
+  }
+  return lines.length - 1;
+}
+
+/** [start, end) of the table with key `table` (start at its header), or undefined. */
+function findTable(lines: string[], table: string, from = 0): [number, number] | undefined {
+  const want = table.split('.').join('.');
+  for (let i = from; i < lines.length; i++) {
+    if (tableHeaderKey(lines[i]!) !== want) continue;
+    let end = lines.length;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^\s*\[/.test(lines[j]!) && tableHeaderKey(lines[j]!) !== undefined) { end = j; break; }
+      if (/^\s*[A-Za-z0-9_"'-]+\s*=/.test(lines[j]!)) j = assignmentEnd(lines, j);
+    }
+    return [i, end];
+  }
+  return undefined;
+}
+
 /**
  * Upsert `[table]` in TOML text, setting only the given managed keys (values are
  * already TOML literals). Other keys, sub-tables and tables are left untouched.
+ * Multiline values (e.g. `args = [` arrays) are replaced as a whole.
  */
 export function upsertTomlTable(
   existing: string,
@@ -47,38 +94,69 @@ export function upsertTomlTable(
   const nl = existing.includes('\r\n') ? '\r\n' : '\n';
   const lines = existing === '' ? [] : existing.split(/\r?\n/);
   const header = `[${table}]`;
-  const start = lines.findIndex((l) => l.trim() === header);
-  if (start === -1) {
+  const span = findTable(lines, table);
+  if (!span) {
     const body = Object.entries({ ...managed, ...defaults }).map(([k, v]) => `${k} = ${v}`);
     const prefix = existing === '' ? '' : existing.replace(/(\r?\n)*$/, '') + nl + nl;
     return `${prefix}${[header, ...body].join(nl)}${nl}`;
   }
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^\s*\[/.test(lines[i]!)) { end = i; break; }
-  }
-  const section = lines.slice(start + 1, end);
-  const present = new Set(section.map((l) => /^\s*([A-Za-z0-9_-]+)\s*=/.exec(l)?.[1]).filter(Boolean));
+  const [start, end] = span;
+  const present = new Set<string>();
+  const rewritten: string[] = [];
   const remaining = { ...managed };
-  for (const [k, v] of Object.entries(defaults)) if (!present.has(k)) remaining[k] = v;
-  const rewritten = section.map((l) => {
-    const m = /^\s*([A-Za-z0-9_-]+)\s*=/.exec(l);
-    if (m && m[1]! in remaining) {
-      const k = m[1]!;
-      const v = remaining[k]!;
+  const defaultsLeft = { ...defaults };
+  for (let i = start + 1; i < end; i++) {
+    const line = lines[i]!;
+    const m = /^\s*([A-Za-z0-9_-]+)\s*=/.exec(line);
+    if (!m) { rewritten.push(line); continue; }
+    const k = m[1]!;
+    const last = assignmentEnd(lines, i);
+    present.add(k);
+    if (k in remaining) {
+      rewritten.push(`${k} = ${remaining[k]!}`);
       delete remaining[k];
-      return `${k} = ${v}`;
+    } else {
+      for (let n = i; n <= last; n++) rewritten.push(lines[n]!);
     }
-    return l;
-  });
+    i = last;
+  }
+  for (const k of Object.keys(defaultsLeft)) if (present.has(k)) delete defaultsLeft[k];
   let insertAt = rewritten.length;
   while (insertAt > 0 && rewritten[insertAt - 1]!.trim() === '') insertAt--;
-  rewritten.splice(insertAt, 0, ...Object.entries(remaining).map(([k, v]) => `${k} = ${v}`));
+  rewritten.splice(insertAt, 0, ...Object.entries({ ...remaining, ...defaultsLeft }).map(([k, v]) => `${k} = ${v}`));
   return [...lines.slice(0, start + 1), ...rewritten, ...lines.slice(end)].join(nl);
 }
+
 /** Collect projection files for the given clients, in order. */
 export function projectClients(clients: readonly ClientId[], ctx: ClientContext): ProjectionFile[] {
   return clients.flatMap((c) => getHostProjection(c).project(ctx));
+}
+
+/**
+ * Resolve `rel` under `root` and refuse anything that could escape it: absolute or
+ * `..` paths, and symlink/junction components on the way (existing ones are checked).
+ */
+export function resolveInsideRoot(root: string, rel: string): string {
+  if (path.isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) {
+    throw new Error(`Refusing path outside the workspace: ${rel}`);
+  }
+  const rootAbs = path.resolve(root);
+  const abs = path.resolve(rootAbs, rel);
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
+    throw new Error(`Refusing path outside the workspace: ${rel}`);
+  }
+  let cur = rootAbs;
+  for (const part of path.relative(rootAbs, abs).split(path.sep)) {
+    cur = path.join(cur, part);
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(cur);
+    } catch {
+      break;
+    }
+    if (st.isSymbolicLink()) throw new Error(`Refusing symlinked path component: ${path.relative(rootAbs, cur)}`);
+  }
+  return abs;
 }
 
 function parseJsonObject(file: string, raw: string | undefined): Record<string, unknown> {
@@ -131,8 +209,8 @@ export function applyProjection(root: string, files: readonly ProjectionFile[]):
   }
 
   for (const rel of order) {
-    const abs = path.join(root, rel);
     try {
+      const abs = resolveInsideRoot(root, rel);
       let text = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : undefined;
       for (const fn of transforms.get(rel)!) text = fn(text, abs);
       results.push({ path: rel, action: writeIfChanged(abs, text ?? '') });
@@ -158,20 +236,29 @@ export function removeBlock(existing: string, id?: string): string {
   return before + after;
 }
 
-/** Remove a whole `[table]` (up to the next table header) from TOML text; other tables are untouched. */
+/** Remove a whole `[table]` and its `[table.*]` sub-tables; other tables are untouched. */
 export function removeTomlTable(existing: string, table: string): string {
   const nl = existing.includes('\r\n') ? '\r\n' : '\n';
-  const lines = existing.split(/\r?\n/);
-  const start = lines.findIndex((l) => l.trim() === `[${table}]`);
-  if (start === -1) return existing;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^\s*\[/.test(lines[i]!)) { end = i; break; }
+  let lines = existing.split(/\r?\n/);
+  const isOurs = (key: string | undefined) => key !== undefined && (key === table || key.startsWith(`${table}.`));
+  let changed = false;
+  for (;;) {
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) if (isOurs(tableHeaderKey(lines[i]!))) { start = i; break; }
+    if (start === -1) break;
+    let end = lines.length;
+    for (let j = start + 1; j < lines.length; j++) {
+      if (/^\s*\[/.test(lines[j]!) && tableHeaderKey(lines[j]!) !== undefined) { end = j; break; }
+      if (/^\s*[A-Za-z0-9_"'-]+\s*=/.test(lines[j]!)) j = assignmentEnd(lines, j);
+    }
+    const before = lines.slice(0, start);
+    while (before.length > 0 && before[before.length - 1]!.trim() === '') before.pop();
+    const after = lines.slice(end);
+    lines = [...before, ...(before.length > 0 && after.length > 0 ? [''] : []), ...after];
+    changed = true;
   }
-  const before = lines.slice(0, start);
-  while (before.length > 0 && before[before.length - 1]!.trim() === '') before.pop();
-  const after = lines.slice(end);
-  const joined = [...before, ...(before.length > 0 && after.length > 0 ? [''] : []), ...after].join(nl);
+  if (!changed) return existing;
+  const joined = lines.join(nl);
   return joined.trim() === '' ? '' : joined.replace(/(\r?\n)*$/, nl);
 }
 
@@ -224,8 +311,8 @@ export function removeProjection(root: string, files: readonly ProjectionFile[])
   for (const f of files) {
     if (seen.has(f.path)) continue;
     seen.add(f.path);
-    const abs = path.join(root, f.path);
     try {
+      const abs = resolveInsideRoot(root, f.path);
       if (!fs.existsSync(abs)) {
         results.push({ path: f.path, action: 'unchanged' });
         continue;
@@ -262,7 +349,15 @@ export function removeProjection(root: string, files: readonly ProjectionFile[])
   return results;
 }
 
-/** Roll back the given clients' projections (inverse of {@link installClients}). */
-export function uninstallClients(clients: readonly ClientId[], ctx: ClientContext): ApplyResult[] {
-  return removeProjection(ctx.root, projectClients(clients, ctx));
+/**
+ * Roll back the given clients' projections (inverse of {@link installClients}).
+ * Pass the clients that stay installed as `keep`: shared JSON configs (e.g. the
+ * `.mcp.json` Copilot and Claude both use) keep their `squad_state` entry while
+ * any kept client still projects the same file.
+ */
+export function uninstallClients(clients: readonly ClientId[], ctx: ClientContext, keep: readonly ClientId[] = []): ApplyResult[] {
+  const keepPaths = new Set(
+    projectClients(keep.filter((c) => !clients.includes(c)), ctx).filter((f) => f.kind === 'json').map((f) => f.path),
+  );
+  return removeProjection(ctx.root, projectClients(clients, ctx).filter((f) => !(f.kind === 'json' && keepPaths.has(f.path))));
 }

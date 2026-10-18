@@ -43,11 +43,17 @@ export function readConfiguredClients(squadDir: string): ClientId[] {
 export function persistClients(squadDir: string, clients: readonly ClientId[]): void {
   const file = path.join(squadDir, 'config.json');
   let cfg: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) cfg = parsed as Record<string, unknown>;
-  } catch {
-    // start fresh
+  if (fs.existsSync(file)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (err) {
+      throw new Error(`Refusing to overwrite malformed ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`Refusing to overwrite ${file}: root must be a JSON object`);
+    }
+    cfg = parsed as Record<string, unknown>;
   }
   cfg['clients'] = normalizeClientIds(clients).clients;
   fs.mkdirSync(squadDir, { recursive: true });

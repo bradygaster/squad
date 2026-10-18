@@ -36,7 +36,13 @@ export function mergeMcpServer(
 ): Json {
   const out: Json = { ...existing };
   for (const [k, v] of Object.entries(topLevelDefaults)) if (!(k in out)) out[k] = v;
+  if (out[container] !== undefined && !isObject(out[container])) {
+    throw new Error(`Refusing to overwrite "${container}": expected a JSON object`);
+  }
   const servers: Json = isObject(out[container]) ? { ...(out[container] as Json) } : {};
+  if (servers[SQUAD_STATE_KEY] !== undefined && !isObject(servers[SQUAD_STATE_KEY])) {
+    throw new Error(`Refusing to overwrite "${container}.${SQUAD_STATE_KEY}": expected a JSON object`);
+  }
   const prev = isObject(servers[SQUAD_STATE_KEY]) ? (servers[SQUAD_STATE_KEY] as Json) : {};
   const entry: Json = { ...prev };
   for (const [k, v] of Object.entries(defaults)) if (!(k in entry)) entry[k] = v;

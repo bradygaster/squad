@@ -343,6 +343,15 @@ async function main(): Promise<void> {
     const modeIdx = args.indexOf('--mode');
     const mode = (modeIdx !== -1 && args[modeIdx + 1]) ? args[modeIdx + 1] : undefined;
 
+    let initClients;
+    try {
+      const { readClientFlag } = await import('./cli/core/clients.js');
+      initClients = readClientFlag(args);
+    } catch (err) {
+      console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+
     if (mode === 'remote') {
       const teamPath = args[modeIdx + 2];
       if (!teamPath) {
@@ -351,7 +360,7 @@ async function main(): Promise<void> {
       const { writeRemoteConfig } = await import('./cli/commands/init-remote.js');
       const dest = process.cwd();
       writeRemoteConfig(dest, teamPath);
-      await runInit(dest);
+      await runInit(dest, { clients: initClients });
       return;
     }
 
@@ -367,14 +376,6 @@ async function main(): Promise<void> {
     // Parse --state-backend flag for init
     const sbIdx = args.indexOf('--state-backend');
     const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
-    let initClients;
-    try {
-      const { readClientFlag } = await import('./cli/core/clients.js');
-      initClients = readClientFlag(args);
-    } catch (err) {
-      console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
-      process.exit(1);
-    }
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
     runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, clients: initClients, includeVscodeDefault: !noVscodeDefault }).then(async () => {
       if (presetName) {
