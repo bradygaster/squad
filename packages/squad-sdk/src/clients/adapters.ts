@@ -51,7 +51,7 @@ function frontmatter(fields: Array<[string, string]>): string {
 }
 
 export function slugifyMember(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'member';
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'member';
 }
 
 function yamlString(s: string): string {
@@ -307,6 +307,8 @@ const codex: ClientAdapter = {
   ],
 };
 
+const ANTIGRAVITY_TOOLS = ['view_file', 'write_to_file', 'replace_file_content', 'grep_search', 'list_dir', 'run_command', 'invoke_subagent'];
+
 function antigravityAgent(
   ctx: ClientContext,
   name: string,
@@ -322,6 +324,8 @@ function antigravityAgent(
     `subagent: ${!opts.main}`,
   ];
   if (opts.model) lines.push(`model: ${opts.model}`);
+  // Antigravity treats an omitted `tools` list as "none": without run_command the agent cannot use gh/git/npm.
+  lines.push(`tools: [${ANTIGRAVITY_TOOLS.join(', ')}]`);
   if (opts.withMcp) {
     lines.push(
       'mcpServers:',

@@ -19,6 +19,7 @@ import {
   BLOCK_BEGIN,
   type ClientContext,
 } from '../packages/squad-sdk/src/clients/index.js';
+import { runCastSync } from '../packages/squad-cli/src/cli/commands/cast.js';
 import {
   parseRoster,
   persistClients,
@@ -145,6 +146,7 @@ describe('antigravity adapter', () => {
     expect(main).toContain('subagent: false');
     expect(main).toContain('mcpServers:');
     expect(main).toContain('invoke_subagent');
+    expect(main).toMatch(/^tools: \[.*run_command.*\]$/m);
     const sub = read('.agents/agents/squad-data.md');
     expect(sub).toContain('mainAgent: false');
     expect(sub).toContain('subagent: true');
@@ -153,6 +155,10 @@ describe('antigravity adapter', () => {
 });
 
 describe('shared files and TOML helper', () => {
+  it('slugifies accented member names to ascii', () => {
+    installClients(['claude'], ctx({ members: [{ name: 'Tomás', role: 'Dev' }] }));
+    expect(exists('.claude/agents/squad-tomas.md')).toBe(true);
+  });
   it('independent block ids coexist in one file', () => {
     let t = upsertBlock('', 'one', 'a');
     t = upsertBlock(t, 'two', 'b');
@@ -224,7 +230,7 @@ describe('coordinator behavioral-contract parity', () => {
     ['Human + @copilot', [/Human members and the @copilot coding agent/, /Coding Agent/]],
     ['Process safety', [/Never kill processes by image name/]],
     ['Ralph', [/Ralph mode/, /squad:<member>/, /board clear/]],
-    ['Init Mode guards', [/NEVER with glob\/grep\/search tools/, /Auto-confirm \(default\)/, /npx squad upgrade/, /npx squad cast --name/, /NEVER hand-write or edit anything under/, /checksummed pair/, /\.squad\/scratch\//, /never write outside the workspace/, /STOP and report the roster/]],
+    ['Init Mode guards', [/NEVER with glob\/grep\/search tools/, /Auto-confirm \(default\)/, /npx squad upgrade/, /npx squad cast --name/, /NEVER hand-write or edit anything under/, /checksummed pair/, /squad cast --sync/, /\.squad\/scratch\//, /never write outside the workspace/, /STOP and report the roster/]],
   ];
   for (const id of CLIENT_IDS) {
     it(`${id} prompt carries the full coordinator contract`, () => {
@@ -242,6 +248,20 @@ describe('coordinator behavioral-contract parity', () => {
     expect(t).toContain('.team/skills/');
     expect(t).toContain('.team/casting/');
     expect(t).not.toContain('.squad/skills/');
+  });
+});
+
+describe('squad cast --sync', () => {
+  it('registers hand-written roster members idempotently', async () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(path.join(sq, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(sq, 'team.md'), '| Name | Role | Charter | Status |\n|---|---|---|---|\n| Ripley | Lead | x | ok |\n| Tomás | Dev | x | ok |\n| Scribe | Decision Merger | x | ok |\n');
+    const first = await runCastSync(root);
+    expect(first.registered).toEqual(['ripley', 'tomas']);
+    expect(Object.keys(JSON.parse(fs.readFileSync(path.join(sq, 'casting/registry.json'), 'utf8')).agents)).toEqual(['ripley', 'tomas']);
+    expect(fs.existsSync(path.join(sq, 'agents/ripley/charter.md'))).toBe(true);
+    const again = await runCastSync(root);
+    expect(again.registered).toEqual([]);
   });
 });
 

@@ -828,6 +828,12 @@ async function main(): Promise<void> {
       return val && !val.startsWith('-') ? val : undefined;
     };
 
+    if (args.includes('--sync')) {
+      const { runCastSync } = await import('./cli/commands/cast.js');
+      await runCastSync(getSquadStartDir());
+      return;
+    }
+
     if (cmd === 'hire' || hasNameFlag || hasRoleFlag) {
       const name = readFlagValue(nameIdx);
       const role = readFlagValue(roleIdx);
