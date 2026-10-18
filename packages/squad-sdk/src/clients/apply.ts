@@ -12,27 +12,77 @@ import type { ApplyResult, ClientContext, ClientId, ProjectionFile } from './typ
 export const BLOCK_BEGIN = '<!-- squad:begin (managed by Squad; do not edit between markers) -->';
 export const BLOCK_END = '<!-- squad:end -->';
 
-/** Replace (or append) the Squad-managed block, leaving all other text untouched. */
-export function upsertBlock(existing: string, content: string): string {
-  const block = `${BLOCK_BEGIN}\n${content.trim()}\n${BLOCK_END}`;
-  const start = existing.indexOf(BLOCK_BEGIN);
-  const end = existing.indexOf(BLOCK_END);
+function markers(id?: string): { begin: string; end: string } {
+  return id
+    ? { begin: `<!-- squad:begin:${id} (managed by Squad; do not edit between markers) -->`, end: `<!-- squad:end:${id} -->` }
+    : { begin: BLOCK_BEGIN, end: BLOCK_END };
+}
+
+/**
+ * Replace (or append) the Squad-managed block, leaving all other text untouched.
+ * Distinct `id`s keep independent blocks in one shared file (e.g. AGENTS.md).
+ */
+export function upsertBlock(existing: string, content: string, id?: string): string {
+  const { begin, end: endMarker } = markers(id);
+  const block = `${begin}\n${content.trim()}\n${endMarker}`;
+  const start = existing.indexOf(begin);
+  const end = existing.indexOf(endMarker);
   if (start !== -1 && end > start) {
-    return existing.slice(0, start) + block + existing.slice(end + BLOCK_END.length);
+    return existing.slice(0, start) + block + existing.slice(end + endMarker.length);
   }
   const sep = existing.length === 0 ? '' : existing.endsWith('\n\n') ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
   return `${existing}${sep}${block}\n`;
 }
 
+/**
+ * Upsert `[table]` in TOML text, setting only the given managed keys (values are
+ * already TOML literals). Other keys, sub-tables and tables are left untouched.
+ */
+export function upsertTomlTable(
+  existing: string,
+  table: string,
+  managed: Record<string, string>,
+  defaults: Record<string, string> = {},
+): string {
+  const nl = existing.includes('\r\n') ? '\r\n' : '\n';
+  const lines = existing === '' ? [] : existing.split(/\r?\n/);
+  const header = `[${table}]`;
+  const start = lines.findIndex((l) => l.trim() === header);
+  if (start === -1) {
+    const body = Object.entries({ ...managed, ...defaults }).map(([k, v]) => `${k} = ${v}`);
+    const prefix = existing === '' ? '' : existing.replace(/(\r?\n)*$/, '') + nl + nl;
+    return `${prefix}${[header, ...body].join(nl)}${nl}`;
+  }
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\s*\[/.test(lines[i]!)) { end = i; break; }
+  }
+  const section = lines.slice(start + 1, end);
+  const present = new Set(section.map((l) => /^\s*([A-Za-z0-9_-]+)\s*=/.exec(l)?.[1]).filter(Boolean));
+  const remaining = { ...managed };
+  for (const [k, v] of Object.entries(defaults)) if (!present.has(k)) remaining[k] = v;
+  const rewritten = section.map((l) => {
+    const m = /^\s*([A-Za-z0-9_-]+)\s*=/.exec(l);
+    if (m && m[1]! in remaining) {
+      const k = m[1]!;
+      const v = remaining[k]!;
+      delete remaining[k];
+      return `${k} = ${v}`;
+    }
+    return l;
+  });
+  let insertAt = rewritten.length;
+  while (insertAt > 0 && rewritten[insertAt - 1]!.trim() === '') insertAt--;
+  rewritten.splice(insertAt, 0, ...Object.entries(remaining).map(([k, v]) => `${k} = ${v}`));
+  return [...lines.slice(0, start + 1), ...rewritten, ...lines.slice(end)].join(nl);
+}
 /** Collect projection files for the given clients, in order. */
 export function projectClients(clients: readonly ClientId[], ctx: ClientContext): ProjectionFile[] {
   return clients.flatMap((c) => getClientAdapter(c).project(ctx));
 }
 
-function readJsonObject(file: string): Record<string, unknown> {
-  if (!fs.existsSync(file)) return {};
-  const raw = fs.readFileSync(file, 'utf8');
-  if (raw.trim() === '') return {};
+function parseJsonObject(file: string, raw: string | undefined): Record<string, unknown> {
+  if (raw === undefined || raw.trim() === '') return {};
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -44,7 +94,6 @@ function readJsonObject(file: string): Record<string, unknown> {
   }
   return parsed as Record<string, unknown>;
 }
-
 function writeIfChanged(file: string, next: string): ApplyResult['action'] {
   const existed = fs.existsSync(file);
   if (existed && fs.readFileSync(file, 'utf8') === next) return 'unchanged';
@@ -59,46 +108,40 @@ function writeIfChanged(file: string, next: string): ApplyResult['action'] {
  */
 export function applyProjection(root: string, files: readonly ProjectionFile[]): ApplyResult[] {
   const results: ApplyResult[] = [];
-  const jsonByPath = new Map<string, Array<Extract<ProjectionFile, { kind: 'json' }>>>();
-  const blockByPath = new Map<string, string[]>();
-  const order: Array<{ kind: 'file'; file: ProjectionFile } | { kind: 'json' | 'block'; path: string }> = [];
+  const order: string[] = [];
+  const transforms = new Map<string, Array<(existing: string | undefined, abs: string) => string>>();
+  const add = (rel: string, fn: (existing: string | undefined, abs: string) => string) => {
+    if (!transforms.has(rel)) {
+      order.push(rel);
+      transforms.set(rel, []);
+    }
+    transforms.get(rel)!.push(fn);
+  };
 
   for (const f of files) {
-    if (f.kind === 'managed') {
-      order.push({ kind: 'file', file: f });
-    } else if (f.kind === 'json') {
-      if (!jsonByPath.has(f.path)) order.push({ kind: 'json', path: f.path });
-      jsonByPath.set(f.path, [...(jsonByPath.get(f.path) ?? []), f]);
-    } else {
-      if (!blockByPath.has(f.path)) order.push({ kind: 'block', path: f.path });
-      blockByPath.set(f.path, [...(blockByPath.get(f.path) ?? []), f.content]);
+    if (f.kind === 'managed') add(f.path, () => f.content);
+    else if (f.kind === 'block') add(f.path, (t) => upsertBlock(t ?? '', f.content, f.id));
+    else if (f.kind === 'text') add(f.path, (t) => f.update(t ?? ''));
+    else {
+      add(f.path, (t, abs) => {
+        const obj = parseJsonObject(abs, t);
+        return JSON.stringify(f.update(obj), null, 2) + '\n';
+      });
     }
   }
 
-  for (const item of order) {
-    const rel = item.kind === 'file' ? (item.file as { path: string }).path : item.path;
+  for (const rel of order) {
     const abs = path.join(root, rel);
     try {
-      let action: ApplyResult['action'];
-      if (item.kind === 'file') {
-        action = writeIfChanged(abs, (item.file as { content: string }).content);
-      } else if (item.kind === 'json') {
-        let obj = readJsonObject(abs);
-        for (const f of jsonByPath.get(item.path)!) obj = f.update(obj);
-        action = writeIfChanged(abs, JSON.stringify(obj, null, 2) + '\n');
-      } else {
-        let text = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
-        for (const c of blockByPath.get(item.path)!) text = upsertBlock(text, c);
-        action = writeIfChanged(abs, text);
-      }
-      results.push({ path: rel, action });
+      let text = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : undefined;
+      for (const fn of transforms.get(rel)!) text = fn(text, abs);
+      results.push({ path: rel, action: writeIfChanged(abs, text ?? '') });
     } catch (err) {
       results.push({ path: rel, action: 'error', error: err instanceof Error ? err.message : String(err) });
     }
   }
   return results;
 }
-
 /** Project and apply the given clients in one step. */
 export function installClients(clients: readonly ClientId[], ctx: ClientContext): ApplyResult[] {
   return applyProjection(ctx.root, projectClients(clients, ctx));

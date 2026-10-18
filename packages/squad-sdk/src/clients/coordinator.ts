@@ -56,6 +56,18 @@ Invoke specialists with the \`task\` tool (or an \`@agent\` mention for agents d
 
 Delegate specialist work to Cursor subagents (\`.cursor/agents/\`) when available, otherwise in composer/agent turns that adopt the member charter explicitly. Inline the charter and task in every delegation. The \`squad_state\` MCP server is configured in \`.cursor/mcp.json\`.`,
   },
+  codex: {
+    summary: 'Codex subagents (custom agents in .codex/agents), MCP backend',
+    section: `## Dispatch adapter: OpenAI Codex
+
+Codex spawns subagents when instructions ask for it, so for every routed task explicitly **spawn one agent per specialist** (use the matching custom agent from \`.codex/agents/squad-<member>.toml\` when present, otherwise the \`worker\` agent with the member charter inlined) and wait for their results before summarizing. Spawn independent specialists in parallel. Subagents inherit this session's sandbox, approvals and MCP servers, so \`squad_state\` (configured in \`.codex/config.toml\`) is available to them. This project config only loads for trusted projects.`,
+  },
+  antigravity: {
+    summary: 'Antigravity invoke_subagent, MCP backend',
+    section: `## Dispatch adapter: Google Antigravity
+
+Delegate each specialist task with the \`invoke_subagent\` tool: use a custom subagent from \`.agents/agents/squad-<member>.md\` when present, otherwise the \`self\` subagent with the member charter inlined in the prompt. Subagents start with a clean context, so always include the charter, task and relevant decisions. Invoke independent subagents concurrently. The \`squad_state\` MCP server is attached to the Squad agent via its \`mcpServers\` frontmatter; if its tools are missing, register it globally with \`agy mcp add squad_state <command> <args...>\` (the launch spec is in \`.agents/agents/squad.md\`).`,
+  },
 };
 
 export function dispatchStrategy(client: ClientId): DispatchStrategy {
