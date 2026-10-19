@@ -1,0 +1,155 @@
+{
+  "protocol": "squad-protocol-v2.0-rc1",
+  "description": "Versioned client capability matrix and negotiation baseline for Squad 2.0.",
+  "intersectionRule": "effectiveCapabilities = clientCapabilities ∩ backendCapabilities ∩ policyCapabilities",
+  "backendCapabilities": [
+    "approvals",
+    "background-runs",
+    "cancel-run",
+    "cursor-reconnect",
+    "mcp-bridge",
+    "subagents",
+    "typed-content-parts"
+  ],
+  "policyCapabilities": [
+    "approvals",
+    "background-runs",
+    "cancel-run",
+    "cursor-reconnect",
+    "mcp-bridge",
+    "subagents",
+    "typed-content-parts"
+  ],
+  "clients": {
+    "copilot": {
+      "clientCapabilities": [
+        "approvals",
+        "background-runs",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "background-runs",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "claude": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "kiro": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "opencode": {
+      "clientCapabilities": [
+        "approvals",
+        "background-runs",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "background-runs",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "cursor": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "codex": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    },
+    "antigravity": {
+      "clientCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ],
+      "effectiveCapabilities": [
+        "approvals",
+        "cancel-run",
+        "cursor-reconnect",
+        "mcp-bridge",
+        "subagents",
+        "typed-content-parts"
+      ]
+    }
+  }
+}

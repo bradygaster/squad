@@ -5,6 +5,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { resolveSquadState } from '@bradygaster/squad-sdk';
 import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
 import { getPackageVersion } from '../core/version.js';
+import {
+  callBackendMcpTool,
+  createBackendMcpTools,
+  createMcpBackend,
+  isExperimentalBackendEnabled,
+} from '../core/backend-mcp.js';
 
 export type JsonRpcRequest = {
   jsonrpc?: string;
@@ -91,9 +97,15 @@ function normalizeToolResult(result: unknown): { content: Array<{ type: 'text'; 
   };
 }
 
+export interface StateMcpOptions {
+  args?: readonly string[];
+  env?: NodeJS.ProcessEnv;
+}
+
 export function createStateMcpSession(
   startDir = process.cwd(),
   write: (message: JsonRpcResponse | Record<string, unknown>) => void = writeMessage,
+  options: StateMcpOptions = {},
 ): { handleRequest(request: JsonRpcRequest): Promise<void> } {
   const registry = createStateMcpToolRegistry(startDir);
   const runtimeTools = new Map(registry.getTools().map(tool => [tool.name, tool]));
@@ -103,6 +115,12 @@ export function createStateMcpSession(
     return { mcpName, runtimeName, tool };
   });
   const toolMap = new Map(tools.map(entry => [entry.mcpName, entry]));
+  const experimentalBackend = isExperimentalBackendEnabled(options.args, options.env);
+  let backend: ReturnType<typeof createMcpBackend> | undefined;
+  const backendTools = experimentalBackend
+    ? createBackendMcpTools(() => (backend ??= createMcpBackend(startDir, options.env)))
+    : [];
+  const backendToolMap = new Map(backendTools.map(t => [t.name, t]));
 
   async function handleRequest(request: JsonRpcRequest): Promise<void> {
     try {
@@ -120,17 +138,22 @@ export function createStateMcpSession(
 
         case 'tools/list':
           write({ jsonrpc: '2.0', id: request.id ?? null, result: {
-            tools: tools.map(tool => ({
+            tools: [...tools.map(tool => ({
               name: tool.mcpName,
               description: tool.tool.description,
               inputSchema: tool.tool.parameters,
-            })),
+            })), ...backendTools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))],
           } });
           break;
 
         case 'tools/call': {
           const params = parseObject(request.params);
           const name = typeof params['name'] === 'string' ? params['name'] : '';
+          const backendTool = backendToolMap.get(name);
+          if (backendTool) {
+            write({ jsonrpc: '2.0', id: request.id ?? null, result: await callBackendMcpTool(backendTool, parseObject(params['arguments'])) });
+            break;
+          }
           const entry = toolMap.get(name);
           if (!entry) {
             write({ jsonrpc: '2.0', id: request.id ?? null, error: { code: -32602, message: `Unknown Squad state tool: ${name}` } });
@@ -161,7 +184,7 @@ export function createStateMcpSession(
   return { handleRequest };
 }
 
-export async function runStateMcp(startDir = process.cwd()): Promise<void> {
+export async function runStateMcp(startDir = process.cwd(), options: StateMcpOptions = {}): Promise<void> {
   // Lazy initialization: resolve state on first tool call, not at startup (#1353)
   // This ensures the MCP server connects quickly and doesn't block other MCPs
   let registry: ToolRegistry | undefined;
@@ -180,6 +203,13 @@ export async function runStateMcp(startDir = process.cwd()): Promise<void> {
     return registry;
   }
 
+  const experimentalBackend = isExperimentalBackendEnabled(options.args, options.env);
+  let backend: ReturnType<typeof createMcpBackend> | undefined;
+  const backendTools = experimentalBackend
+    ? createBackendMcpTools(() => (backend ??= createMcpBackend(startDir, options.env)))
+    : [];
+  const backendToolMap = new Map(backendTools.map(t => [t.name, t]));
+
   const server = new Server(SERVER_INFO, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, () => {
@@ -191,7 +221,7 @@ export async function runStateMcp(startDir = process.cwd()): Promise<void> {
       return { mcpName, runtimeName, tool };
     });
     return {
-      tools: tools.map(tool => ({
+      tools: [...tools.map(tool => ({
         name: tool.mcpName,
         description: tool.tool.description,
         inputSchema: tool.tool.parameters as {
@@ -199,11 +229,13 @@ export async function runStateMcp(startDir = process.cwd()): Promise<void> {
           properties?: Record<string, object>;
           required?: string[];
         },
-      })),
+      })), ...backendTools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))],
     };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async request => {
+    const backendTool = backendToolMap.get(request.params.name);
+    if (backendTool) return callBackendMcpTool(backendTool, parseObject(request.params.arguments));
     const reg = getRegistry();
     const runtimeTools = new Map(reg.getTools().map(tool => [tool.name, tool]));
     const tools = Object.entries(MCP_TOOL_ALIASES).map(([mcpName, runtimeName]) => {
@@ -234,11 +266,13 @@ export function printStateMcpHelp(): void {
   stderr.write([
     'squad state-mcp — MCP bridge for Squad runtime state tools',
     '',
-    'Usage: squad state-mcp',
+    'Usage: squad state-mcp [--experimental-backend]',
     '',
     'This command is intended to be launched by GitHub Copilot CLI through',
-    '.copilot/mcp-config.json. It exposes squad_decide and state.* tools',
-    'backed by the configured Squad state backend.',
+    '.copilot/mcp-config.json. It exposes squad_decide and squad_state_* tools',
+    'backed by the configured Squad state backend. Pass --experimental-backend',
+    '(or set SQUAD_EXPERIMENTAL_BACKEND=1 / SQUAD_BACKEND_URL) to also expose',
+    'the experimental squad_backend_* conversation tools.',
     '',
   ].join('\n'));
 }

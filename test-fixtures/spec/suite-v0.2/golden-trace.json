@@ -1,0 +1,63 @@
+{
+  "protocol": "squad-protocol-v2.0-rc1",
+  "traceId": "golden-conformance-trace",
+  "description": "Canonical Squad 2.0 protocol recovery and cancellation trace.",
+  "conversationId": "conv-demo-001",
+  "runId": "run-demo-001",
+  "expectedTerminalState": "cancelled",
+  "events": [
+    {
+      "seq": 11,
+      "event": "TurnAccepted",
+      "runId": "run-demo-001",
+      "turnSeq": 11,
+      "state": "running"
+    },
+    {
+      "seq": 12,
+      "event": "ApprovalRequested",
+      "runId": "run-demo-001",
+      "approvalId": "approval-demo-001",
+      "version": 1,
+      "scope": "turn",
+      "status": "pending",
+      "payloadHash": "sha256:approvalpayloadv1",
+      "expiresAt": "2026-10-17T22:00:00Z"
+    },
+    {
+      "seq": 13,
+      "event": "Disconnected",
+      "runId": "run-demo-001",
+      "cursor": "cursor-13"
+    },
+    {
+      "seq": 14,
+      "event": "Reconnected",
+      "runId": "run-demo-001",
+      "cursor": "cursor-13",
+      "lastAcceptedSeq": 12,
+      "resumable": true
+    },
+    {
+      "seq": 15,
+      "event": "ApprovalDecided",
+      "runId": "run-demo-001",
+      "approvalId": "approval-demo-001",
+      "version": 2,
+      "status": "approved",
+      "payloadHash": "sha256:approvalpayloadv1"
+    },
+    {
+      "seq": 16,
+      "event": "CancellationRequested",
+      "runId": "run-demo-001",
+      "reason": "user-requested"
+    },
+    {
+      "seq": 17,
+      "event": "RunTerminal",
+      "runId": "run-demo-001",
+      "state": "cancelled"
+    }
+  ]
+}
