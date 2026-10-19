@@ -34,6 +34,11 @@ export type ProjectionFile =
   | { kind: 'json'; path: string; update: (existing: Record<string, unknown>) => Record<string, unknown> }
   /** Marker-delimited block inside a user-owned text file. */
   | { kind: 'block'; path: string; content: string; id?: string }
+  /**
+   * Individual lines upserted into a line-oriented user file (e.g. `.gitignore`).
+   * Lines are appended once under a `# squad:<id>` comment; uninstall removes only those.
+   */
+  | { kind: 'lines'; path: string; lines: string[]; id: string }
   /** Read-modify-write of a user-shared text file (e.g. TOML) where only Squad's part changes. */
   | { kind: 'text'; path: string; update: (existing: string) => string };
 

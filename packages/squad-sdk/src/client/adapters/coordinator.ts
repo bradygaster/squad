@@ -178,7 +178,7 @@ Delegate specialist work to Cursor subagents (\`.cursor/agents/\`) when availabl
     summary: 'Codex subagents (custom agents in .codex/agents), MCP backend',
     section: `## Dispatch adapter: OpenAI Codex
 
-This coordinator prompt lives in \`.codex/agents/squad.md\` (while \`AGENTS.md\` holds only a discovery pointer so non-coordinator sessions and subagents are unaffected). Codex spawns subagents when instructions ask for it, so for every routed task explicitly **spawn one agent per specialist** (use the \`worker\` agent with the member's charter inlined) and wait for their results before summarizing. Spawn independent specialists in parallel. Subagents inherit this session's sandbox, approvals and MCP servers, so \`squad_state\` (configured in \`.codex/config.toml\`) is available to them. This project config only loads for trusted projects.`,
+This coordinator prompt is the \`developer_instructions\` of the \`squad\` custom agent in \`.codex/agents/squad.toml\` (while \`AGENTS.md\` holds only a discovery pointer so non-coordinator sessions and subagents are unaffected). Codex spawns subagents when instructions ask for it, so for every routed task explicitly **spawn one agent per specialist** (use the \`worker\` agent with the member's charter inlined) and wait for their results before summarizing. Spawn independent specialists in parallel. Subagents inherit this session's sandbox, approvals and MCP servers, so \`squad_state\` (configured in \`.codex/config.toml\`) is available to them. This project config only loads for trusted projects.`,
   },
   antigravity: {
     summary: 'Antigravity invoke_subagent, MCP backend',

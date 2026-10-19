@@ -130,7 +130,7 @@ const ANCHORS: Record<ClientId, { agent: string; mcp?: string }> = {
   kiro: { agent: '.kiro/steering/squad.md', mcp: '.kiro/settings/mcp.json' },
   opencode: { agent: '.opencode/agent/squad.md', mcp: 'opencode.json' },
   cursor: { agent: '.cursor/agents/squad.md', mcp: '.cursor/mcp.json' },
-  codex: { agent: '.codex/agents/squad.md', mcp: '.codex/config.toml' },
+  codex: { agent: '.codex/agents/squad.toml', mcp: '.codex/config.toml' },
   antigravity: { agent: '.agents/agents/squad.md' },
 };
 
@@ -150,7 +150,13 @@ export function createClientAdapter(options: CreateClientAdapterOptions): Client
   const tokens = CAPABILITY_TOKENS_BY_HOST[projection.id];
   if (options.declaredFlags) assertConsistentCapabilities(tokens, options.declaredFlags);
   const { ctx, runtime } = options;
-  const anchors = ANCHORS[projection.id];
+  // OpenCode may target `opencode.jsonc`; the projected JSON file is authoritative.
+  const anchors = ((): { agent: string; mcp?: string } => {
+    const base = ANCHORS[projection.id];
+    if (projection.id !== 'opencode') return base;
+    const json = projection.project(ctx).find((f) => f.kind === 'json');
+    return json ? { ...base, mcp: json.path } : base;
+  })();
   const requireRuntime = (op: string): RuntimeBinding => {
     if (!runtime) throw new AdapterUnboundError(op, projection.label);
     return runtime;

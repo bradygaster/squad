@@ -37,6 +37,39 @@ export function upsertBlock(existing: string, content: string, id?: string): str
   return `${existing}${sep}${block}\n`;
 }
 
+const linesMarker = (id: string) => `# squad:${id}`;
+
+/**
+ * Append any missing `lines` under a `# squad:<id>` comment so {@link removeLines}
+ * can later take back exactly what Squad added. Lines the user already has are
+ * left alone (and stay on uninstall).
+ */
+export function upsertLines(existing: string, lines: readonly string[], id: string): string {
+  const have = new Set(existing.split('\n').map((l) => l.trim()));
+  const missing = lines.filter((l) => !have.has(l.trim()));
+  if (missing.length === 0) return existing;
+  const marker = linesMarker(id);
+  const rows = existing === '' ? [] : existing.split('\n');
+  if (rows.length > 0 && rows[rows.length - 1] === '') rows.pop();
+  const at = rows.findIndex((l) => l.trim() === marker);
+  if (at === -1) rows.push(marker, ...missing);
+  else rows.splice(at + 1, 0, ...missing);
+  return rows.join('\n') + '\n';
+}
+
+/** Remove the `# squad:<id>` comment and the listed lines directly under it; nothing else. */
+export function removeLines(existing: string, lines: readonly string[], id: string): string {
+  const marker = linesMarker(id);
+  const rows = existing.split('\n');
+  const at = rows.findIndex((l) => l.trim() === marker);
+  if (at === -1) return existing;
+  const ours = new Set(lines.map((l) => l.trim()));
+  let end = at + 1;
+  while (end < rows.length && ours.has(rows[end]!.trim())) end++;
+  rows.splice(at, end - at);
+  return rows.join('\n');
+}
+
 const SECTION_RE = /^\s*(\[\[?)\s*([^\]\r\n]+?)\s*(\]\]?)\s*(?:#.*)?$/;
 
 /** A TOML section boundary: `[table]` or `[[array_table]]` (quotes/whitespace tolerant). */
@@ -400,38 +433,109 @@ export function projectClients(clients: readonly ClientId[], ctx: ClientContext)
   return clients.flatMap((c) => getHostProjection(c).project(ctx));
 }
 
+/** Canonical absolute root: symlinked/junctioned ancestors (OneDrive, `~/code -> /Volumes/...`) are allowed. */
+function realRoot(root: string): string {
+  const abs = path.resolve(root);
+  try {
+    return fs.realpathSync(abs);
+  } catch {
+    return abs;
+  }
+}
+
+function isInside(abs: string, root: string): boolean {
+  return abs === root || abs.startsWith(root + path.sep);
+}
+
 /**
  * Resolve `rel` under `root` and refuse anything that could escape it: absolute or
- * `..` paths, and symlink/junction components on the way (including `root` itself
- * and its ancestors down to `rel`).
+ * `..` paths, and symlink/junction components below the (real) root. The target
+ * itself may be a symlink as long as it resolves inside the root (e.g.
+ * `AGENTS.md -> CLAUDE.md`); the resolved path is returned so writes replace
+ * the file content, not the link.
  */
 export function resolveInsideRoot(root: string, rel: string): string {
   if (path.isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) {
     throw new Error(`Refusing path outside the workspace: ${rel}`);
   }
-  const rootAbs = path.resolve(root);
+  const rootAbs = realRoot(root);
   const abs = path.resolve(rootAbs, rel);
-  if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
+  if (!isInside(abs, rootAbs)) {
     throw new Error(`Refusing path outside the workspace: ${rel}`);
   }
-  const parsedRoot = path.parse(abs).root;
-  let cur = parsedRoot;
-  for (const part of abs.slice(parsedRoot.length).split(path.sep).filter(Boolean)) {
-    cur = path.join(cur, part);
-    // Skip macOS top-level OS symlinks (/var -> /private/var, /tmp -> /private/tmp, /etc -> /private/etc)
-    if (cur === '/var' || cur === '/tmp' || cur === '/etc') continue;
+  const parts = path.relative(rootAbs, abs).split(path.sep).filter(Boolean);
+  let cur = rootAbs;
+  for (let i = 0; i < parts.length; i++) {
+    cur = path.join(cur, parts[i]!);
     let st: fs.Stats;
     try {
       st = fs.lstatSync(cur);
     } catch {
       break;
     }
-    if (st.isSymbolicLink()) {
-      const label = cur.startsWith(rootAbs + path.sep) ? path.relative(rootAbs, cur) : path.basename(cur);
-      throw new Error(`Refusing symlinked path component: ${label}`);
+    if (!st.isSymbolicLink()) continue;
+    if (i === parts.length - 1) {
+      let real: string | undefined;
+      try {
+        real = fs.realpathSync(cur);
+      } catch {
+        real = undefined;
+      }
+      if (real !== undefined && isInside(real, rootAbs) && fs.statSync(real).isFile()) return real;
     }
+    throw new Error(`Refusing symlinked path component: ${path.relative(rootAbs, cur)}`);
   }
   return abs;
+}
+
+/** Dominant line ending of an existing file; LF for new or single-line files. */
+export function detectEol(text: string | undefined): '\n' | '\r\n' {
+  if (!text) return '\n';
+  const crlf = text.match(/\r\n/g)?.length ?? 0;
+  const lf = text.match(/\n/g)?.length ?? 0;
+  return crlf > lf - crlf ? '\r\n' : '\n';
+}
+
+const toLf = (text: string) => text.replace(/\r\n/g, '\n');
+const withEol = (text: string, eol: string) => (eol === '\n' ? text : text.replace(/\n/g, eol));
+
+/** Indentation (tab or N spaces) and trailing-newline convention of a JSON document. */
+function detectJsonFormat(raw: string | undefined): { indent: string | number; trailingNewline: boolean } {
+  if (raw === undefined || raw.trim() === '') return { indent: 2, trailingNewline: true };
+  const m = /^([ \t]+)\S/m.exec(raw);
+  const indent = m ? (m[1]!.includes('\t') ? '\t' : m[1]!.length) : 2;
+  return { indent, trailingNewline: raw.endsWith('\n') };
+}
+
+/** True when the text has line (`//`) or block comments outside string literals. */
+export function hasJsonComments(raw: string | undefined): boolean {
+  if (!raw) return false;
+  let inStr = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (inStr) {
+      if (ch === '\\') i++;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') {
+      inStr = true;
+    } else if (ch === '/' && (raw[i + 1] === '/' || raw[i + 1] === '*')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertMergeableJson(file: string, raw: string | undefined): void {
+  if (file.toLowerCase().endsWith('.jsonc') && hasJsonComments(raw)) {
+    throw new Error(
+      `Cannot merge ${file}: Squad can't merge JSONC files that contain comments; add the "${SQUAD_STATE_KEY}" MCP server manually or convert the file to plain JSON`,
+    );
+  }
+}
+
+function stringifyJson(obj: Record<string, unknown>, raw: string | undefined): string {
+  const fmt = detectJsonFormat(raw);
+  return JSON.stringify(obj, null, fmt.indent) + (fmt.trailingNewline ? '\n' : '');
 }
 
 function parseJsonObject(file: string, raw: string | undefined): Record<string, unknown> {
@@ -451,13 +555,26 @@ function writeIfChanged(file: string, next: string): ApplyResult['action'] {
   const existed = fs.existsSync(file);
   if (existed && fs.readFileSync(file, 'utf8') === next) return 'unchanged';
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, next, 'utf8');
+  atomicWrite(file, next);
   return existed ? 'updated' : 'created';
+}
+
+/** Write via a sibling temp file + rename so a crash never leaves a half-written shared config. */
+function atomicWrite(file: string, content: string): void {
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, content, 'utf8');
+  try {
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 /**
  * Write projection files under `root`. Failures (e.g. a malformed user JSON
- * file) are reported per-file and never abort the remaining files.
+ * file) are reported per-file and never abort the remaining files. Content is
+ * emitted with the existing file's dominant line ending (LF for new files).
  */
 export function applyProjection(root: string, files: readonly ProjectionFile[]): ApplyResult[] {
   const results: ApplyResult[] = [];
@@ -474,11 +591,12 @@ export function applyProjection(root: string, files: readonly ProjectionFile[]):
   for (const f of files) {
     if (f.kind === 'managed') add(f.path, () => f.content);
     else if (f.kind === 'block') add(f.path, (t) => upsertBlock(t ?? '', f.content, f.id));
+    else if (f.kind === 'lines') add(f.path, (t) => upsertLines(t ?? '', f.lines, f.id));
     else if (f.kind === 'text') add(f.path, (t) => f.update(t ?? ''));
     else {
       add(f.path, (t, abs) => {
-        const obj = parseJsonObject(abs, t);
-        return JSON.stringify(f.update(obj), null, 2) + '\n';
+        assertMergeableJson(abs, t);
+        return stringifyJson(f.update(parseJsonObject(abs, t)), t);
       });
     }
   }
@@ -486,9 +604,11 @@ export function applyProjection(root: string, files: readonly ProjectionFile[]):
   for (const rel of order) {
     try {
       const abs = resolveInsideRoot(root, rel);
-      let text = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : undefined;
+      const original = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : undefined;
+      const eol = detectEol(original);
+      let text = original === undefined ? undefined : toLf(original);
       for (const fn of transforms.get(rel)!) text = fn(text, abs);
-      results.push({ path: rel, action: writeIfChanged(abs, text ?? '') });
+      results.push({ path: rel, action: writeIfChanged(abs, withEol(toLf(text ?? ''), eol)) });
     } catch (err) {
       results.push({ path: rel, action: 'error', error: err instanceof Error ? err.message : String(err) });
     }
@@ -603,24 +723,30 @@ export function removeProjection(root: string, files: readonly ProjectionFile[])
         fs.rmSync(abs);
         results.push({ path: f.path, action: 'removed' });
       } else if (f.kind === 'json') {
-        const current = parseJsonObject(abs, fs.readFileSync(abs, 'utf8'));
+        const raw = fs.readFileSync(abs, 'utf8');
+        assertMergeableJson(abs, raw);
+        const current = parseJsonObject(abs, raw);
         const next = removeServerEntry(current);
         if (JSON.stringify(next) === JSON.stringify(current)) {
           results.push({ path: f.path, action: 'unchanged' });
           continue;
         }
         if (Object.keys(next).length === 0) fs.rmSync(abs);
-        else fs.writeFileSync(abs, JSON.stringify(next, null, 2) + '\n', 'utf8');
+        else atomicWrite(abs, withEol(stringifyJson(next, toLf(raw)), detectEol(raw)));
         results.push({ path: f.path, action: Object.keys(next).length === 0 ? 'removed' : 'updated' });
       } else {
-        const text = fs.readFileSync(abs, 'utf8');
-        const next = f.kind === 'text' ? removeTomlTable(text, `mcp_servers.${SQUAD_STATE_KEY}`) : removeBlock(text, f.id);
+        const raw = fs.readFileSync(abs, 'utf8');
+        const text = toLf(raw);
+        const next =
+          f.kind === 'text' ? removeTomlTable(text, `mcp_servers.${SQUAD_STATE_KEY}`)
+          : f.kind === 'lines' ? removeLines(text, f.lines, f.id)
+          : removeBlock(text, f.id);
         if (next === text) {
           results.push({ path: f.path, action: 'unchanged' });
           continue;
         }
         if (next.trim() === '') fs.rmSync(abs);
-        else fs.writeFileSync(abs, next, 'utf8');
+        else atomicWrite(abs, withEol(next, detectEol(raw)));
         results.push({ path: f.path, action: next.trim() === '' ? 'removed' : 'updated' });
       }
       pruneEmptyDirs(root, f.path);

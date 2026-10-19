@@ -15,6 +15,7 @@ import {
   installClients,
   normalizeClientIds,
   parseClients,
+  projectClients,
   resolveInsideRoot,
   type ApplyResult,
   type ClientId,
@@ -104,11 +105,15 @@ export interface SyncClientsOptions {
   clients?: readonly ClientId[];
   version?: string;
   warn?: (message: string) => void;
+  /** Only compute the client set; write nothing and persist nothing. */
+  dryRun?: boolean;
 }
 
 /**
  * Project the requested (or previously configured) clients and persist the set.
  * Unknown portable client IDs in `.squad/config.json` are warned about and preserved.
+ * A newly requested client whose projection reported an error is not persisted
+ * (it would otherwise re-warn on every upgrade); already-configured clients stay.
  * Returns the clients that were synced and per-file results.
  */
 export async function syncClients(
@@ -116,14 +121,6 @@ export async function syncClients(
   squadDir: string,
   options: SyncClientsOptions = {},
 ): Promise<{ clients: ClientId[]; results: ApplyResult[] }> {
-  // Verify squadDir itself (and path from dest to squadDir when inside dest) is not a symlink/junction
-  const destAbs = path.resolve(dest);
-  const squadAbs = path.resolve(squadDir);
-  if (squadAbs === destAbs || squadAbs.startsWith(destAbs + path.sep)) {
-    resolveInsideRoot(destAbs, path.relative(destAbs, squadAbs) || '.');
-  }
-  resolveInsideRoot(squadAbs, 'config.json');
-
   const requested = options.clients;
   const configured = readConfiguredClients(squadDir);
   const unknownClients = readUnknownConfiguredClients(squadDir);
@@ -135,16 +132,29 @@ export async function syncClients(
   const clients = requested
     ? CLIENT_IDS.filter((c) => requested.includes(c) || configured.includes(c))
     : configured;
-  if (clients.length === 0) return { clients: [], results: [] };
+  if (clients.length === 0 || options.dryRun) return { clients, results: [] };
+
+  // Verify squadDir itself (and path from dest to squadDir when inside dest) is not a symlink/junction
+  const destAbs = path.resolve(dest);
+  const squadAbs = path.resolve(squadDir);
+  if (squadAbs === destAbs || squadAbs.startsWith(destAbs + path.sep)) {
+    resolveInsideRoot(destAbs, path.relative(destAbs, squadAbs) || '.');
+  }
+  resolveInsideRoot(squadAbs, 'config.json');
 
   const version = options.version ?? getPackageVersion();
   const spec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(version));
-  const results = installClients(clients, {
+  const ctx = {
     root: dest,
     mcp: { command: spec.command, args: spec.args },
     squadDir: path.relative(dest, squadDir).split(path.sep).join('/') || '.squad',
-  });
-  persistClients(squadDir, [...clients, ...unknownClients]);
+  };
+  const results = installClients(clients, ctx);
+  const failedPaths = new Set(results.filter((r) => r.action === 'error').map((r) => r.path));
+  const healthy = clients.filter(
+    (c) => configured.includes(c) || !projectClients([c], ctx).some((f) => failedPaths.has(f.path)),
+  );
+  persistClients(squadDir, [...healthy, ...unknownClients]);
   return { clients, results };
 }
 

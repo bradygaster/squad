@@ -1272,6 +1272,16 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
         console.log(`  ${exists ? 'overwrite' : 'create'}  ${file.destination}`);
       }
     }
+    try {
+      const planned = await applyClientProjectionsForUpgrade(dest, squadDirInfo.path, {
+        clients: options.clients,
+        dryRun: true,
+        warn: (m) => warn(m.replace(/^⚠\s*/, '')),
+      });
+      if (planned.clients.length > 0) info(`Would project client host files for: ${planned.clients.join(', ')}`);
+    } catch (err) {
+      warn(`Could not plan client files: ${err instanceof Error ? err.message : String(err)}`);
+    }
     console.log(`\nRun without --dry-run to apply.\n`);
     return { fromVersion: oldVersion, toVersion: cliVersion, filesUpdated: [], migrationsRun: [] };
   }
