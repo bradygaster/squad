@@ -1326,6 +1326,36 @@ describe('Layer 3 review recommendations & bug fixes', () => {
     };
     expect(() => createStateBackendStore(backing)).toThrow(/deterministic lock directory/);
     expect(() => createStateBackendStore({ ...backing, root: '/some/root' } as never)).not.toThrow();
+    expect(() => createStateBackendStore(backing, { lockAnchor: '/team/.squad' })).not.toThrow();
+  });
+
+  it('createStateBackendStore keeps locks for cwd/anchor-backed backends out of the team .squad directory', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const teamSquadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-state-store-anchor-'));
+    try {
+      const backing = {
+        name: 'orphan',
+        cwd: path.dirname(teamSquadDir),
+        read: () => undefined,
+        write: () => undefined,
+        exists: () => false,
+        list: () => [],
+      };
+      const mkCwd = () => createStateBackendStore(backing, { lockTimeoutMs: 50 });
+      const mkAnchor = () => createStateBackendStore({ ...backing, cwd: undefined } as never, { lockAnchor: teamSquadDir, lockTimeoutMs: 50 });
+      for (const mk of [mkCwd, mkAnchor]) {
+        const release = mk().lock!('backend/locks/conv-1');
+        // the same identity resolves to the same machine-local lock directory in every process
+        expect(() => mk().lock!('backend/locks/conv-1')).toThrow(/Timed out/);
+        release();
+        expect(fs.existsSync(path.join(teamSquadDir, 'backend'))).toBe(false);
+        expect(fs.existsSync(path.join(path.dirname(teamSquadDir), '.squad', 'backend'))).toBe(false);
+      }
+    } finally {
+      fs.rmSync(teamSquadDir, { recursive: true, force: true });
+    }
   });
 
   it('DurableHttpSquadBackend times out per attempt according to requestTimeoutMs and maxRetries', async () => {

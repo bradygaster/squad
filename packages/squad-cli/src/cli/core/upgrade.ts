@@ -12,6 +12,7 @@ import {
   backfillCastingRegistryFromTeam,
   ensureCastingRegistryPair,
   preflightCastingRegistryPair,
+  readCastingRegistryPair,
   repairHandwrittenCastingRegistry,
   type RepairResult,
 } from '@bradygaster/squad-sdk/casting';
@@ -665,6 +666,10 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
     if (repair.repaired) {
       warn('Normalized a handwritten .squad/casting/registry.json');
       created.push(...repair.files.map((f) => `.squad/casting/${f}`));
+    } else if (isUnrepairableCastingRegistry(castingDir, repair)) {
+      // fail closed, but never opaquely: the error names the reason, the offending entries and the fix
+      // instead of the generic pair-initialization failure
+      fatal(formatCastingRepairBlocked(repair));
     } else {
       warnCastingRepairSkipped('Could not normalize handwritten .squad/casting/registry.json', repair);
     }
@@ -711,6 +716,37 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
     throw err;
   }
   return created;
+}
+
+/**
+ * True when the handwritten-registry repair failed closed (it has a reason) AND the
+ * casting pair cannot be read as a managed pair either, so the pair initialization
+ * and the strict preflight would both throw an opaque error.
+ */
+function isUnrepairableCastingRegistry(castingDir: string, repair: RepairResult): boolean {
+  if (repair.repaired || !repair.reason) return false;
+  try {
+    readCastingRegistryPair(castingDir);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Actionable fail-closed message for a casting registry that is neither readable nor repairable. */
+export function formatCastingRepairBlocked(repair: RepairResult): string {
+  const lines = [
+    `.squad/casting/registry.json cannot be read or repaired: ${repair.reason ?? 'unknown reason'}`,
+  ];
+  for (const { name, reason } of repair.dropped ?? []) {
+    lines.push(`  - ${name}: ${reason}`);
+  }
+  lines.push(
+    'Fix .squad/casting/registry.json so every agent entry is an object with `name` and `role`',
+    '(e.g. "tester": { "name": "Quinn", "role": "Tester" }), or re-cast with `npx squad cast --name <Name> --role <Role>`,',
+    'then run `squad upgrade` again.',
+  );
+  return lines.join('\n');
 }
 
 /**
@@ -1291,6 +1327,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     } else {
       warn('Normalized a handwritten .squad/casting/registry.json');
     }
+  } else if (isUnrepairableCastingRegistry(castingDir, repair)) {
+    // fail closed with the reason, the offending entries and the fix, instead of the preflight's generic error
+    fatal(formatCastingRepairBlocked(repair));
   } else {
     warnCastingRepairSkipped('Could not normalize handwritten .squad/casting/registry.json', repair);
   }

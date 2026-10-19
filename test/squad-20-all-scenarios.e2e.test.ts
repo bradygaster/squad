@@ -213,12 +213,12 @@ describe('Scenario 1: client projections and --client', () => {
       '.kiro/steering/squad.md', '.kiro/agents/squad.json', '.kiro/settings/mcp.json',
       '.opencode/agent/squad.md', 'opencode.json',
       '.cursor/rules/squad.mdc', '.cursor/agents/squad.md', '.cursor/mcp.json',
-      '.codex/agents/squad.md', 'AGENTS.md', '.codex/config.toml',
+      '.codex/agents/squad.toml', 'AGENTS.md', '.codex/config.toml',
       '.agents/agents/squad.md', 'GEMINI.md',
     ]) expect(fs.existsSync(path.join(root, rel)), rel).toBe(true);
     expect(fs.readFileSync(path.join(root, '.kiro/steering/squad.md'), 'utf8')).toContain('inclusion: manual');
     expect(fs.readFileSync(path.join(root, '.cursor/rules/squad.mdc'), 'utf8')).toContain('alwaysApply: false');
-    expect(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')).toContain('.codex/agents/squad.md');
+    expect(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')).toContain('.codex/agents/squad.toml');
     // members live in the shared .squad/agents/<name>/charter.md path (like Copilot): no per-member client files by default
     expect(fs.readdirSync(path.join(root, '.claude/agents'))).toEqual(['squad.md']);
     expect(fs.existsSync(path.join(root, '.opencode/agent/data.md'))).toBe(false);
@@ -1286,7 +1286,7 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
       'role-keyed entries without a wrapper': {
         lead: { name: 'Avery', status: 'active' },
         backend: { name: 'Nova', role: 'Backend Developer' },
-        tester: 'Quinn',
+        tester: { name: 'Quinn' },
       },
       'agents as an array': { universe: 'Star Trek', agents: [{ name: 'Data', role: 'Expert' }, { name: "B'Elanna", role: 'Engineer', status: 'ACTIVE' }] },
       'simplified object with version and name/role/status': {
@@ -1301,7 +1301,10 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
       fs.writeFileSync(path.join(castingDir, name), typeof body === 'string' ? body : JSON.stringify(body, null, 2));
 
     it.each(Object.keys(shapes))('normalizes: %s', (name) => {
-      const reg = normalizeHandwrittenCastingRegistry(shapes[name], '2026-10-18T00:00:00.000Z')!;
+      const result = normalizeHandwrittenCastingRegistry(shapes[name], '2026-10-18T00:00:00.000Z');
+      expect(result.dropped).toEqual([]);
+      expect(result.reason).toBeUndefined();
+      const reg = result.registry!;
       expect(reg).toBeDefined();
       const parsed = parseAgentProvenanceRegistry(reg);
       expect(parsed.completeness).toBe('complete');
@@ -1313,22 +1316,31 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
     });
 
     it('maps role keys and names to canonical ids, roles and statuses', () => {
-      const reg = normalizeHandwrittenCastingRegistry(shapes['role-keyed entries without a wrapper'])!;
+      const reg = normalizeHandwrittenCastingRegistry(shapes['role-keyed entries without a wrapper']).registry!;
       expect(Object.keys(reg.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
       expect(reg.agents['avery']).toMatchObject({ display_name: 'Avery', role: 'lead', status: 'active' });
       expect(reg.agents['nova']).toMatchObject({ role: 'Backend Developer' });
       expect(reg.agents['quinn']).toMatchObject({ display_name: 'Quinn', role: 'tester' });
-      const belanna = normalizeHandwrittenCastingRegistry(shapes['agents as an array'])!;
+      const belanna = normalizeHandwrittenCastingRegistry(shapes['agents as an array']).registry!;
       expect(Object.keys(belanna.agents)).toEqual(['data', 'b-elanna']);
       expect(belanna.agents['b-elanna']!.status).toBe('active');
-      expect(normalizeHandwrittenCastingRegistry(shapes['simplified object with version and name/role/status'])!.agents['nova']!.status).toBe('active');
+      expect(normalizeHandwrittenCastingRegistry(shapes['simplified object with version and name/role/status']).registry!.agents['nova']!.status).toBe('active');
     });
 
-    it.each(Object.keys(shapes))('repairs on disk, leaves no .handwritten.bak by default, creates history and is then readable: %s', (name) => {
+    it('rejects bare-string entries with a reason instead of guessing which side is the name', () => {
+      const result = normalizeHandwrittenCastingRegistry({ lead: { name: 'Avery' }, tester: 'Quinn' });
+      expect(result.registry).toBeUndefined();
+      expect(result.reason).toMatch(/could not be normalized/);
+      expect(result.dropped).toEqual([{ name: 'tester', reason: expect.stringMatching(/bare string value is ambiguous/) }]);
+    });
+
+    it.each(Object.keys(shapes))('repairs on disk, archives the originals by default, creates history and is then readable: %s', (name) => {
       write('registry.json', shapes[name]);
       const result = repairHandwrittenCastingRegistry(castingDir);
-      expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', 'registry-history.commit.json'] });
+      expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', 'registry-history.commit.json'], backupPath: expect.stringMatching(/^handwritten-archive-[0-9a-f]{64}$/) });
       expect(fs.existsSync(path.join(castingDir, 'registry.json.handwritten.bak'))).toBe(false);
+      expect(fs.statSync(path.join(castingDir, result.backupPath!)).isDirectory()).toBe(true);
+      expect(JSON.parse(fs.readFileSync(path.join(castingDir, result.backupPath!, 'registry.json'), 'utf8'))).toEqual(shapes[name]);
       const pair = readCastingRegistryPair(castingDir);
       expect(Object.keys(pair.registry.agents).length).toBeGreaterThan(0);
       expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
@@ -1352,7 +1364,7 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
       expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
     });
 
-    it('R3-13: a manifest-only mismatch keeps the existing history and revision', () => {
+    it('R3-13: a manifest-only mismatch keeps the existing history and bumps the revision by one', () => {
       const MANIFEST = 'registry-history.commit.json';
       write('registry.json', shapes['agents as an array']);
       repairHandwrittenCastingRegistry(castingDir);
@@ -1363,8 +1375,10 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
       expect(() => readCastingRegistryPair(castingDir)).toThrow(/commit manifest/);
       expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: true });
       const after = readCastingRegistryPair(castingDir);
-      expect(after.registry.revision).toBe(before.registry.revision);
+      // the recommit is a new generation of the same registry, never a fresh cast
+      expect(after.registry.revision).toBe(before.registry.revision + 1);
       expect(Object.keys(after.registry.agents)).toEqual(Object.keys(before.registry.agents));
+      expect(after.registry.agents).toEqual(before.registry.agents);
       const historyAfter = JSON.parse(fs.readFileSync(path.join(castingDir, 'history.json'), 'utf8'));
       expect(historyAfter.assignment_cast_snapshots).toEqual(historyBefore.assignment_cast_snapshots);
       expect(historyAfter.universe_usage_history).toEqual(historyBefore.universe_usage_history);
@@ -1372,7 +1386,7 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
     });
     it('does not touch canonical registries, absent registries or unrecoverable content', () => {
       expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
-      const canonical = normalizeHandwrittenCastingRegistry(shapes['bare array'])!;
+      const canonical = normalizeHandwrittenCastingRegistry(shapes['bare array']).registry!;
       write('registry.json', canonical);
       write('history.json', { universe_usage_history: [], assignment_cast_snapshots: {} });
       const before = fs.readFileSync(path.join(castingDir, 'registry.json'), 'utf8');
@@ -1402,22 +1416,23 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
         expect(() => readCastingRegistryPair(castingDir)).toThrow(/consistent casting registry\/history pair/);
       });
 
-      it('repair commits a valid manifest so the pair reads again without leaving .handwritten.bak by default', () => {
+      it('repair commits a valid manifest so the pair reads again, archiving the originals instead of leaving .handwritten.bak', () => {
         initPair();
         write('registry.json', shapes['role-keyed entries without a wrapper']);
         const manifestBytes = fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8');
         const result = repairHandwrittenCastingRegistry(castingDir);
-        expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', MANIFEST] });
+        expect(result).toMatchObject({ repaired: true, files: ['registry.json', 'history.json', MANIFEST], backupPath: expect.stringMatching(/^handwritten-archive-/) });
         expect(fs.existsSync(path.join(castingDir, MANIFEST))).toBe(true);
         expect(fs.readFileSync(path.join(castingDir, MANIFEST), 'utf8')).not.toBe(manifestBytes);
         expect(fs.existsSync(path.join(castingDir, `${MANIFEST}.handwritten.bak`))).toBe(false);
+        expect(fs.readFileSync(path.join(castingDir, result.backupPath!, MANIFEST), 'utf8')).toBe(manifestBytes);
         expect(Object.keys(readCastingRegistryPair(castingDir).registry.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
         expect(repairHandwrittenCastingRegistry(castingDir)).toEqual({ repaired: false, files: [] });
       });
 
       it('also repairs a well-formed canonical edit that no longer matches the manifest, keeping its agents', () => {
         initPair();
-        const edited = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }, { name: 'Linus', role: 'CLI' }] })!;
+        const edited = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }, { name: 'Linus', role: 'CLI' }] }).registry!;
         write('registry.json', edited);
         expect(() => readCastingRegistryPair(castingDir)).toThrow(/commit manifest/);
         expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({ repaired: true });
@@ -1460,6 +1475,33 @@ describe('field findings from the live demo: Init Mode, scratch files, casting r
         expect(Object.keys(readCastingRegistryPair(dir).registry.agents).sort()).toEqual(['avery', 'nova', 'quinn']);
         expect(fs.existsSync(path.join(dir, 'policy.json'))).toBe(true);
         expect(ensureCastingDefaults(dest)).toEqual([]);
+      } finally {
+        fs.rmSync(dest, { recursive: true, force: true });
+      }
+    });
+
+    it('squad upgrade (ensureCastingDefaults) fails closed on a bare-string entry with the reason and the fix, not an opaque crash', () => {
+      const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-upgrade-casting-bare-'));
+      try {
+        const dir = path.join(dest, '.squad', 'casting');
+        fs.mkdirSync(dir, { recursive: true });
+        const handwritten = { lead: { name: 'Avery', role: 'Lead' }, tester: 'Quinn' };
+        fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify(handwritten));
+        let message = '';
+        try {
+          ensureCastingDefaults(dest);
+        } catch (err) {
+          message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message).toMatch(/registry\.json cannot be read or repaired: 1 registry entry could not be normalized/);
+        expect(message).toMatch(/tester: bare string value is ambiguous/);
+        expect(message).toMatch(/object with `name` and `role`/);
+        expect(message).toMatch(/npx squad cast --name/);
+        // the generic pair-initialization error never surfaces
+        expect(message).not.toMatch(/exactly one authoritative file exists/);
+        // the registry is left for the user to fix (fail closed), nothing is invented
+        expect(JSON.parse(fs.readFileSync(path.join(dir, 'registry.json'), 'utf8'))).toEqual(handwritten);
+        expect(fs.existsSync(path.join(dir, 'history.json'))).toBe(false);
       } finally {
         fs.rmSync(dest, { recursive: true, force: true });
       }
@@ -1572,12 +1614,23 @@ describe('field findings from the multi-client demos: process hygiene, .gitignor
       '## Built-in Support Agents', '| Name | Role |', '|---|---|', '| Scribe | Session Logger |', '| Ralph | Work Monitor |', '',
     ].join('\n');
     let dest: string;
-    beforeEach(() => { dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-backfill-')); fs.mkdirSync(path.join(dest, '.squad'), { recursive: true }); });
+    beforeEach(() => {
+      dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-backfill-'));
+      fs.mkdirSync(path.join(dest, '.squad'), { recursive: true });
+      // the registry id IS the agent folder: "B'Elanna" lives in .squad/agents/belanna/, never a slug of the name
+      for (const id of ['data', 'belanna']) {
+        fs.mkdirSync(path.join(dest, '.squad', 'agents', id), { recursive: true });
+        fs.writeFileSync(path.join(dest, '.squad', 'agents', id, 'charter.md'), `# ${id}\n`);
+      }
+    });
     afterEach(() => { fs.rmSync(dest, { recursive: true, force: true }); });
 
     it('parses only routable specialists (no coordinator, built-ins, humans) and the universe', () => {
       const { members, universe } = parseTeamRoster(TEAM);
-      expect(members).toEqual([{ name: 'Data', role: 'Framework Expert' }, { name: "B'Elanna", role: 'Durable Systems' }]);
+      expect(members).toEqual([
+        { name: 'Data', role: 'Framework Expert', charterId: 'data' },
+        { name: "B'Elanna", role: 'Durable Systems', charterId: 'belanna' },
+      ]);
       expect(universe).toBe('Star Trek');
       expect(parseTeamRoster('| Name | Role |\n|---|---|\n| Ada | Core |\n').members).toEqual([{ name: 'Ada', role: 'Core' }]);
       expect(parseTeamRoster('no table here').members).toEqual([]);
@@ -1589,14 +1642,15 @@ describe('field findings from the multi-client demos: process hygiene, .gitignor
       expect(created).toEqual(expect.arrayContaining(['.squad/casting/registry.json', '.squad/casting/history.json']));
       const dir = path.join(dest, '.squad', 'casting');
       const pair = readCastingRegistryPair(dir);
-      expect(Object.keys(pair.registry.agents).sort()).toEqual(['b-elanna', 'data']);
+      expect(Object.keys(pair.registry.agents).sort()).toEqual(['belanna', 'data']);
       expect(pair.registry.agents['data']).toMatchObject({ display_name: 'Data', role: 'Framework Expert', universe: 'Star Trek', status: 'active' });
+      expect(pair.registry.agents['belanna']).toMatchObject({ display_name: "B'Elanna", role: 'Durable Systems' });
       expect(fs.existsSync(path.join(dir, 'registry-history.commit.json'))).toBe(true);
       expect(fs.existsSync(path.join(dir, 'registry.json.handwritten.bak'))).toBe(false);
       // a second upgrade creates nothing, keeps the same roster, and never backfills again
       expect(ensureCastingDefaults(dest)).toEqual([]);
       const again = readCastingRegistryPair(dir);
-      expect(Object.keys(again.registry.agents).sort()).toEqual(['b-elanna', 'data']);
+      expect(Object.keys(again.registry.agents).sort()).toEqual(['belanna', 'data']);
       expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
     });
 
@@ -1606,12 +1660,21 @@ describe('field findings from the multi-client demos: process hygiene, .gitignor
       expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
       ensureCastingDefaults(dest); // empty registry, no team.md
       expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
+      // a roster with no routable specialists is not a backfill candidate at all
       fs.writeFileSync(path.join(dest, '.squad', 'team.md'), '# Team\n\n## Members\n\n| Name | Role |\n|---|---|\n| Scribe | Logger |\n');
-      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toMatchObject({ repaired: false, reason: expect.stringMatching(/no specialist members/) });
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
+      // a roster row whose agent folder cannot be proven fails closed with the row named
+      fs.writeFileSync(path.join(dest, '.squad', 'team.md'), '**Universe:** Star Trek\n\n## Members\n\n| Name | Role |\n|---|---|\n| Seven | Analyst |\n');
+      expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toMatchObject({
+        repaired: false,
+        reason: expect.stringMatching(/could not be mapped to an agent folder/),
+        dropped: [{ name: 'Seven', reason: expect.stringMatching(/cannot be proven/) }],
+      });
+      expect(Object.keys(readCastingRegistryPair(dir).registry.agents)).toEqual([]);
 
       // a registry that already has agents is never overwritten
       fs.writeFileSync(path.join(dest, '.squad', 'team.md'), TEAM);
-      const populated = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }] })!;
+      const populated = normalizeHandwrittenCastingRegistry({ agents: [{ name: 'Ada', role: 'Core' }] }).registry!;
       fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify(populated));
       fs.rmSync(path.join(dir, 'registry-history.commit.json'), { force: true });
       expect(backfillCastingRegistryFromTeam(dir, path.join(dest, '.squad', 'team.md'))).toEqual({ repaired: false, files: [] });
@@ -1631,7 +1694,9 @@ describe('claude .gitignore marker block is projected and rolled back', () => {
     const withBlock = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
     expect(withBlock.startsWith('node_modules/\ndist/\n')).toBe(true);
     expect(withBlock).toContain('.claude/worktrees/');
-    expect(withBlock).toMatch(/squad:begin:claude/);
+    // projected as plain .gitignore lines tagged with a `# squad:<id>` comment, never HTML markers
+    expect(withBlock).toMatch(/^# squad:claude$/m);
+    expect(withBlock).not.toMatch(/squad:begin:claude/);
     expect(installClients(['claude'], ctx()).every(r => r.action === 'unchanged')).toBe(true);
 
     uninstallClients(['claude'], ctx());

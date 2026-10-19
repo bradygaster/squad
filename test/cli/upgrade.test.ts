@@ -550,7 +550,7 @@ describe('CLI: upgrade command', () => {
     const castingDir = join(dir, '.squad', 'casting');
     mkdirSync(castingDir, { recursive: true });
     writeFileSync(join(castingDir, 'registry.json'), '{"agents":{"custom":true}}');
-    expect(() => ensureCastingDefaults(dir)).toThrow(/exactly one authoritative file exists/);
+    expect(() => ensureCastingDefaults(dir)).toThrow(/registry\.json cannot be read or repaired: .*could not be normalized[\s\S]*custom: entry is not an agent record[\s\S]*object with `name` and `role`/);
     expect(readFileSync(join(castingDir, 'registry.json'), 'utf8'))
       .toBe('{"agents":{"custom":true}}');
     expect(existsSync(join(castingDir, 'history.json'))).toBe(false);

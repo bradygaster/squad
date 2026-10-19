@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { createFileStateStore, type FileStateStoreOptions } from './local-backend.js';
 import { BackendError } from './types.js';
@@ -13,21 +15,41 @@ export interface StateBackendLike {
 }
 
 export interface StateBackendStoreOptions extends FileStateStoreOptions {
-  /** Directory under which lockfiles are coordinated across callers/processes. */
+  /** Explicit directory under which lockfiles are coordinated across callers/processes. */
   squadDir?: string;
+  /**
+   * Stable identity (typically the team `.squad` path) used to derive a machine-local lock
+   * directory for backends that keep their data outside the working tree (git-notes, orphan,
+   * remote) and therefore expose no `root`. Nothing is ever written under this path.
+   */
+  lockAnchor?: string;
+}
+
+/** Machine-local lock directory shared by every process that opens the same backend identity. */
+function machineLocalLockDir(backendName: string | undefined, anchor: string): string {
+  const key = createHash('sha256').update(`${backendName ?? 'unknown'}\u0000${anchor}`, 'utf8').digest('hex').slice(0, 32);
+  return path.join(os.tmpdir(), 'squad-backend-locks', key);
 }
 
 /**
  * The lock root must be the same path in every process that shares the backend, otherwise two
  * `squad state-mcp` servers never contend and both believe they hold the conversation.
+ *
+ * A file-backed backend (`root`) keeps its locks next to its data. Backends whose data lives
+ * outside the working tree (`cwd` = repo root for git-notes/orphan, or an opaque backend with a
+ * `lockAnchor`) get a deterministic machine-local lock directory instead, so a configured state
+ * backend never materializes `.squad/backend/` inside the team directory.
  */
-function resolveLockDir(backend: StateBackendLike, explicitSquadDir?: string): string {
-  if (explicitSquadDir) return path.resolve(explicitSquadDir);
+function resolveLockDir(backend: StateBackendLike, opts: StateBackendStoreOptions): string {
+  if (opts.squadDir) return path.resolve(opts.squadDir);
   const candidate = (backend as { root?: unknown; cwd?: unknown });
   if (typeof candidate.root === 'string' && candidate.root) return path.resolve(candidate.root);
-  if (typeof candidate.cwd === 'string' && candidate.cwd) return path.resolve(candidate.cwd, '.squad');
+  const anchor = typeof candidate.cwd === 'string' && candidate.cwd
+    ? path.resolve(candidate.cwd)
+    : opts.lockAnchor ? path.resolve(opts.lockAnchor) : undefined;
+  if (anchor) return machineLocalLockDir(backend.name, anchor);
   throw new BackendError('invalid-request',
-    `Cannot determine a deterministic lock directory for state backend '${backend.name ?? 'unknown'}': pass squadDir`, 400);
+    `Cannot determine a deterministic lock directory for state backend '${backend.name ?? 'unknown'}': pass squadDir or lockAnchor`, 400);
 }
 
 /**
@@ -43,7 +65,7 @@ export function createStateBackendStore(
   const opts: StateBackendStoreOptions = typeof squadDirOrOptions === 'string'
     ? { ...maybeOptions, squadDir: squadDirOrOptions }
     : (squadDirOrOptions ?? {});
-  const lockRoot = resolveLockDir(backend, opts.squadDir);
+  const lockRoot = resolveLockDir(backend, opts);
   const fileLockStore = createFileStateStore(lockRoot, opts);
 
   // The lock directory is intentionally left in place after release: pruning it races another process's

@@ -49,7 +49,7 @@ Conversation ids are restricted to `[A-Za-z0-9._-]{1,128}` and Windows reserved 
 - **S4 (Implemented)** Messages are addressed by `(runId, seq)`; duplicates are idempotent replays and payload changes are conflicts. Gaps in `seq` are not rejected.
 - **S5 (Implemented)** A fenced writer has to learn the current epoch (returned on every admission) and present it; it cannot "resume" an old one.
 
-Cross-process mutual exclusion uses `wx` lock files with owner tokens, a bounded wait, and stale-lock recovery. The lock root is deterministic (derived from the `.squad` directory, or the configured state backend's root); `createStateBackendStore` refuses to run with a backend that cannot provide one rather than falling back to a per-process temp directory. Lock waits in the async backend methods are timer based so a contended conversation never stalls the MCP server's event loop.
+Cross-process mutual exclusion uses `wx` lock files with owner tokens, a bounded wait, and stale-lock recovery. The lock root is deterministic: the `.squad` directory for the local backend, a file-backed state backend's own root, or — for backends whose data lives outside the working tree (git-notes, orphan) — a machine-local directory derived from the backend identity, so a configured state backend never materializes `.squad/backend/` in the team directory. `createStateBackendStore` refuses to run with a backend that cannot provide one rather than falling back to a per-process temp directory. Lock waits in the async backend methods are timer based so a contended conversation never stalls the MCP server's event loop.
 
 ## 5. Contract suite
 

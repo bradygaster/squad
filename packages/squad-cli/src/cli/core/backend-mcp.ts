@@ -142,10 +142,11 @@ export function createMcpBackend(
   const context = resolveState(startDir);
   if (!context) throw new Error(`No .squad directory found from ${startDir}`);
   // honor the project's configured state backend (git-notes, orphan, ...); the local backend keeps the
-  // lock-protected, symlink-guarded file store over the team .squad directory
+  // lock-protected, symlink-guarded file store over the team .squad directory. A configured backend keeps
+  // its data outside the working tree, so its locks are machine-local and nothing lands in .squad/backend/
   const state = context.backend.name === 'local'
     ? undefined
-    : createStateBackendStore(context.backend, context.paths.teamSquadDir);
+    : createStateBackendStore(context.backend, { lockAnchor: context.paths.teamSquadDir });
   return createSquadBackend({ kind: 'mcp', squadDir: context.paths.teamSquadDir, state });
 }
 
