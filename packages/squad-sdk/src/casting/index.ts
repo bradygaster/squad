@@ -77,10 +77,15 @@ export {
 
 export {
   backfillCastingRegistryFromTeam,
+  hasExistingCastHistory,
   normalizeHandwrittenCastingRegistry,
   parseTeamRoster,
   repairHandwrittenCastingRegistry,
+  resolveRosterAgentIds,
   toAgentId,
+  type DroppedRecord,
+  type NormalizeHandwrittenResult,
+  type PreservedProvenanceRecord,
   type RepairHandwrittenOptions,
   type RepairResult,
   type TeamRosterMember,
