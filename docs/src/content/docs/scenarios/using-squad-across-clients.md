@@ -37,7 +37,7 @@ npx squad upgrade --client copilot,claude,cursor
 | Kiro (`kiro`) | `.kiro/steering/squad.md` (`inclusion: manual`), `.kiro/agents/squad.json`, `.kiro/settings/mcp.json` |
 | OpenCode (`opencode`) | `.opencode/agent/squad.md`, `opencode.json` |
 | Cursor (`cursor`) | `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc` (`alwaysApply: false`), `.cursor/mcp.json` |
-| OpenAI Codex (`codex`) | `.codex/agents/squad.md` (coordinator instructions), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) |
+| OpenAI Codex (`codex`) | `.codex/agents/squad.toml` (Codex custom agent with `developer_instructions`), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) |
 | Google Antigravity (`antigravity`) | `.agents/agents/squad.md` (with `squad_state` MCP server in frontmatter), `GEMINI.md` (pointer block) |
 
 Every host gets one coordinator file. Team members are not projected as separate host agents: the coordinator spawns each specialist as a generic subagent with that member's `.squad/agents/<name>/charter.md` inlined, exactly as Copilot does.
@@ -74,7 +74,7 @@ Every host gets one coordinator file. Team members are not projected as separate
 ## Codex walkthrough
 
 1. Run `npx squad init --client codex`.
-2. Verify `.codex/agents/squad.md` contains the full coordinator instructions, `AGENTS.md` contains the short discovery pointer block (`<!-- squad:begin:codex ... -->`), and `.codex/config.toml` has `[mcp_servers.squad_state]`. Keeping full coordinator instructions in `.codex/agents/squad.md` prevents other tools that auto-load `AGENTS.md` from being flooded.
+2. Verify `.codex/agents/squad.toml` defines the `squad` custom agent (`name`, `description`, `developer_instructions`), `AGENTS.md` contains the short discovery pointer block (`<!-- squad:begin:codex ... -->`), and `.codex/config.toml` has `[mcp_servers.squad_state]`. Keeping full coordinator instructions in `.codex/agents/squad.toml` prevents other tools that auto-load `AGENTS.md` from being flooded.
 3. Mark the project trusted in your Codex home config (use the full path, not an 8.3 short path).
 4. Start `codex` in the repo; the coordinator spawns one Codex agent per specialist.
 

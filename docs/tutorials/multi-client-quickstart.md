@@ -13,7 +13,7 @@ The `--client` flag on `squad init` and `squad upgrade` (backed by `@bradygaster
 | Kiro (`kiro`) | `.kiro/steering/squad.md` (`inclusion: manual`), `.kiro/agents/squad.json`, `.kiro/settings/mcp.json` | Select the `squad` agent in Kiro |
 | OpenCode (`opencode`) | `.opencode/agent/squad.md`, `opencode.json` | `@squad` or OpenCode `task` flow |
 | Cursor (`cursor`) | `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc` (`alwaysApply: false`), `.cursor/mcp.json` | Select the `squad` agent in Cursor |
-| OpenAI Codex (`codex`) | `.codex/agents/squad.md` (coordinator instructions), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) | Run `codex` in the repo |
+| OpenAI Codex (`codex`) | `.codex/agents/squad.toml` (Codex custom agent with `developer_instructions`), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) | Run `codex` in the repo |
 | Google Antigravity (`antigravity`) | `.agents/agents/squad.md` (with `squad_state` MCP server in frontmatter), `GEMINI.md` (pointer block) | `agy --agent squad` |
 
 ---
@@ -29,7 +29,7 @@ npx squad upgrade --client claude
 ```
 
 - `.claude/agents/squad.md` is the coordinator entrypoint (dispatches specialists via `Task` with `.squad/agents/<member>/charter.md` inlined).
-- `.mcp.json` wires `squad_state` additively; `CLAUDE.md` and `.gitignore` (`.claude/worktrees/`) are updated only inside managed `<!-- squad:begin ... -->` / `<!-- squad:end -->` blocks.
+- `.mcp.json` wires `squad_state` additively; `CLAUDE.md` is updated only inside a managed `<!-- squad:begin ... -->` / `<!-- squad:end -->` block, and `.gitignore` gains `.claude/worktrees/` under a `# squad:claude` comment line.
 
 ### 2. Kiro
 
@@ -62,7 +62,7 @@ npx squad init --client cursor
 npx squad init --client codex
 ```
 
-- Writes full coordinator instructions to `.codex/agents/squad.md`, a short discovery pointer block to `AGENTS.md` (so other tools that auto-load `AGENTS.md` are not flooded), and merges `[mcp_servers.squad_state]` into `.codex/config.toml`.
+- Writes the coordinator as a Codex custom agent to `.codex/agents/squad.toml` (`name`, `description`, multi-line `developer_instructions`), a short discovery pointer block to `AGENTS.md` (so other tools that auto-load `AGENTS.md` are not flooded), and merges `[mcp_servers.squad_state]` into `.codex/config.toml`.
 
 ### 6. Google Antigravity
 

@@ -354,10 +354,10 @@ The root package also exports cost tracking, offline mode, runtime events, OpenT
 
 > **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract. Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
 
-- `createSquadBackend(options)` builds a `SquadBackend` for `kind: 'local'`, `kind: 'mcp'`, or `kind: 'durable-http'` (configured with `baseUrl` and optional bearer `token`, or via `SQUAD_BACKEND_URL` and `SQUAD_BACKEND_TOKEN`).
+- `createSquadBackend(options)` builds a `SquadBackend` for `kind: 'local'`, `kind: 'mcp'`, or `kind: 'durable-http'` (configured with an `https://` `baseUrl` — plain `http://` only for localhost — and optional bearer `token`, or via `SQUAD_BACKEND_URL` and `SQUAD_BACKEND_TOKEN`; redirects are never followed).
 - `SquadBackend` exposes `negotiate`, `createConversation`, `sendMessage`, `getTranscript`, `getTurn`, `readEvents`, `getApprovals`, `respondApproval`, `cancelTurn`, `cancelRun`, and `health`.
 - `HarnessAdapter` and `DefaultHarnessRegistry` let custom execution runtimes plug into the broker (`submit`, `subscribe`, `cancel`, `respondApproval`, `describe`), with `validateExtensions()` enforcing `x-<harness>.*` extension namespaces.
-- In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1` (or when `SQUAD_BACKEND_URL` is set).
+- In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false` and `squad_backend_send_message` returns `unavailable` until a `HarnessAdapter` is registered, so over MCP the backend is currently a transcript and event-log surface.
 
 ## Other Public Modules
 

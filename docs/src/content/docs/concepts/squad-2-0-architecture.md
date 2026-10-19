@@ -53,7 +53,7 @@ The client plane lives in `@bradygaster/squad-sdk/client` (with `@bradygaster/sq
 | Kiro (`kiro`) | `.kiro/steering/squad.md` (`inclusion: manual`), `.kiro/agents/squad.json`, `.kiro/settings/mcp.json` | Kiro `squad` agent referencing `../steering/squad.md` |
 | OpenCode (`opencode`) | `.opencode/agent/squad.md`, `opencode.json` | OpenCode `@agent` / `task` primitive |
 | Cursor (`cursor`) | `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc` (`alwaysApply: false`), `.cursor/mcp.json` | Cursor subagents or inline charter turn |
-| OpenAI Codex (`codex`) | `.codex/agents/squad.md` (coordinator instructions), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) | Codex multi-agent specialist spawn |
+| OpenAI Codex (`codex`) | `.codex/agents/squad.toml` (Codex custom agent with `developer_instructions`), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) | Codex multi-agent specialist spawn |
 | Google Antigravity (`antigravity`) | `.agents/agents/squad.md` (with `squad_state` MCP server in frontmatter), `GEMINI.md` (pointer block) | Antigravity `invoke_subagent` |
 
 The adapter profile also defines the normalized `projectWorkspace()` view so hosts describe their root, working directory, anchor file, and MCP config consistently, while `.squad/config.json` persists only canonical portable client slugs in `clients[]`.
@@ -71,7 +71,7 @@ The control plane lives in `@bradygaster/squad-sdk/backend` and owns conversatio
 - **Versioned hash-bound approvals** (`v1` requested → `v2` decided) where `respondApproval` verifies the immutable payload `hash`;
 - **Canonical health and error envelopes** (`BackendError`, `/health/live`, `/health/ready`).
 
-In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are **opt-in**: pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1` (or set `SQUAD_BACKEND_URL` to route the MCP bridge to an external HTTP backend).
+In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are **opt-in**: pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false` and `squad_backend_send_message` returns `unavailable` until a `HarnessAdapter` is registered, so over MCP the backend is currently a transcript and event-log surface.
 
 ### Plane 3: Execution Plane (`HarnessAdapter` SPI)
 
@@ -100,7 +100,7 @@ flowchart TD
 - `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json`, `.codex/config.toml`, and Antigravity's `.agents/agents/squad.md` frontmatter are **local transport configuration**.
 - `SquadBackend` is the **conversation contract**.
 
-A repository can start locally with the file/state-store backend and later connect `durable-http` via `SQUAD_BACKEND_URL` (with `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1` on `squad state-mcp`) without rewriting its client projections.
+A repository can start locally with the file/state-store backend and later connect `durable-http` via `SQUAD_BACKEND_URL` (an `https://` URL; plain `http://` only for localhost) (with `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1` on `squad state-mcp`) without rewriting its client projections.
 
 ## Security and conformance gates (`G1`–`G9`)
 

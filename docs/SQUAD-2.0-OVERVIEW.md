@@ -63,7 +63,7 @@ flowchart LR
 | Kiro (`kiro`) | `.kiro/steering/squad.md` (`inclusion: manual`), `.kiro/agents/squad.json`, `.kiro/settings/mcp.json` |
 | OpenCode (`opencode`) | `.opencode/agent/squad.md`, `opencode.json` |
 | Cursor (`cursor`) | `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc` (`alwaysApply: false`), `.cursor/mcp.json` |
-| OpenAI Codex (`codex`) | `.codex/agents/squad.md` (coordinator instructions), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) |
+| OpenAI Codex (`codex`) | `.codex/agents/squad.toml` (Codex custom agent with `developer_instructions`), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) |
 | Google Antigravity (`antigravity`) | `.agents/agents/squad.md` (with `squad_state` MCP server in frontmatter), `GEMINI.md` (pointer block) |
 
 Persisted `clients[]` in `.squad/config.json` contains only canonical slugs validated by `normalizeClientIds()` and `assertPortableClients()`.
@@ -80,7 +80,7 @@ Persisted `clients[]` in `.squad/config.json` contains only canonical slugs vali
 - **Versioned hash-bound approvals** (`v1` requested → `v2` decided with immutable payload `hash`);
 - **`runId`-scoped cancellation** (`cancelRun(conversationId, runId, reason?)`).
 
-In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1` (or when `SQUAD_BACKEND_URL` is set).
+In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false` and `squad_backend_send_message` returns `unavailable` until a `HarnessAdapter` is registered, so over MCP the backend is currently a transcript and event-log surface.
 
 ### Plane 3: Execution Plane (`HarnessAdapter` SPI)
 

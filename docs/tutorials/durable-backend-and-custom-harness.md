@@ -10,7 +10,7 @@
 
 `createSquadBackend` supports three modes: `kind: 'local'`, `kind: 'mcp'`, and `kind: 'durable-http'`.
 
-In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are **opt-in**: pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1` (or set `SQUAD_BACKEND_URL` to route the MCP bridge to your external HTTP server).
+In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are **opt-in**: pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false` and `squad_backend_send_message` returns `unavailable` until a `HarnessAdapter` is registered, so over MCP the backend is currently a transcript and event-log surface.
 
 ### Step 1: configure environment variables
 

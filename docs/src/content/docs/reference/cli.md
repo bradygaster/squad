@@ -75,7 +75,7 @@ prerequisites, all supported methods, and update commands.
 | `squad nap --deep` | Thorough cleanup with recursive descent | Yes |
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) | No |
-| `squad state-mcp [--experimental-backend]` | Run the `squad_state` stdio MCP server; pass `--experimental-backend` (or `SQUAD_EXPERIMENTAL_BACKEND=1`) to also expose the 11 experimental `squad_backend_*` conversation tools | Yes |
+| `squad state-mcp [--experimental-backend]` | Run the `squad_state` stdio MCP server; pass `--experimental-backend` (or `SQUAD_EXPERIMENTAL_BACKEND=1`) to also expose the 11 experimental `squad_backend_*` conversation tools (transcript/event-log only until a harness is registered) | Yes |
 | `squad --version` | Print installed version | No |
 
 ### Remote Init Mode
@@ -359,7 +359,7 @@ First match wins.
 | `COPILOT_TOKEN` | Copilot auth token (SDK usage) | Token string |
 | `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context utilization warning threshold | Fraction greater than `0` and at most `1` (default: `0.8`) |
 | `SQUAD_EXPERIMENTAL_BACKEND` | Opt in to the 11 experimental `squad_backend_*` MCP tools in `squad state-mcp` | `1` |
-| `SQUAD_BACKEND_URL` | External `/v1/conversations` server URL for `durable-http` (also enables `squad_backend_*` tools in `squad state-mcp`) | HTTPS/HTTP URL |
+| `SQUAD_BACKEND_URL` | External `/v1/conversations` server URL for `durable-http`; does not by itself enable the `squad_backend_*` tools | `https://` URL (`http://` only for localhost) |
 | `SQUAD_BACKEND_TOKEN` | Optional bearer token for `SQUAD_BACKEND_URL` | Token string |
 
 ---
