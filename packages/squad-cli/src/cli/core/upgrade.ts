@@ -8,7 +8,12 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
-import { ensureCastingRegistryPair, preflightCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
+import {
+  backfillCastingRegistryFromTeam,
+  ensureCastingRegistryPair,
+  preflightCastingRegistryPair,
+  repairHandwrittenCastingRegistry,
+} from '@bradygaster/squad-sdk/casting';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -652,6 +657,14 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
   const created: string[] = [];
   try {
     storage.mkdirSync(castingDir, { recursive: true });
+    // LLM-handwritten registries (role keys, agents arrays, no schema) are normalized instead of crashing upgrade
+    if (!hasCastHistory(castingDir)) {
+      const repair = repairHandwrittenCastingRegistry(castingDir);
+      if (repair.repaired) {
+        warn('Normalized a handwritten .squad/casting/registry.json');
+        created.push(...repair.files.map((f) => `.squad/casting/${f}`));
+      }
+    }
     const pair = ensureCastingRegistryPair(
       castingDir,
       templateContent(
@@ -666,6 +679,12 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
     );
     if (pair.created) {
       created.push('.squad/casting/registry.json', '.squad/casting/history.json');
+    }
+    // team.md + charters written directly by a model on an older CLI leave the registry empty: backfill it from the roster
+    const backfill = backfillCastingRegistryFromTeam(castingDir, path.join(dest, '.squad', 'team.md'));
+    if (backfill.repaired) {
+      warn('Backfilled .squad/casting/registry.json from .squad/team.md');
+      created.push(...backfill.files.map((f) => `.squad/casting/${f}`).filter((f) => !created.includes(f)));
     }
 
     const policyPath = path.join(castingDir, 'policy.json');
@@ -1213,6 +1232,25 @@ async function refreshClients(dest: string, squadDir: string, options: UpgradeOp
   }
 }
 
+/** True when history.json records any assignment snapshot or universe usage (i.e. real cast history exists). */
+function hasCastHistory(castingDir: string): boolean {
+  const raw = storage.readSync(path.join(castingDir, 'history.json'));
+  if (raw === undefined) return false;
+  try {
+    const history = JSON.parse(raw) as Record<string, unknown>;
+    if (!history || typeof history !== 'object' || Array.isArray(history)) return true;
+    const snapshots = history['assignment_cast_snapshots'];
+    const usage = history['universe_usage_history'];
+    const assignments = history['assignments'];
+    const hasSnapshots = !!snapshots && typeof snapshots === 'object' && !Array.isArray(snapshots) && Object.keys(snapshots).length > 0;
+    const hasUsage = Array.isArray(usage) && usage.length > 0;
+    const hasAssignments = Array.isArray(assignments);
+    return hasSnapshots || hasUsage || hasAssignments;
+  } catch {
+    return true; // unreadable history: do not guess, fail closed
+  }
+}
+
 /**
  * Run the upgrade command
  */
@@ -1245,12 +1283,28 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   const projectType = detectProjectType(dest);
 
-  const castingMigrated = preflightCastingRegistryPair(
-    path.join(squadDirInfo.path, 'casting'),
-    options.dryRun ?? false,
-  );
+  // A handwritten registry (model wrote registry.json itself over the empty init pair) is repaired BEFORE the
+  // strict preflight, which would otherwise reject it and make the repair in ensureCastingDefaults unreachable.
+  // Only when there is no cast history to contradict: registries with real history keep failing closed.
+  const castingDir = path.join(squadDirInfo.path, 'casting');
+  const dryRun = options.dryRun ?? false;
+  let handwrittenRepaired = false;
+  if (!hasCastHistory(castingDir)) {
+    const repair = repairHandwrittenCastingRegistry(castingDir, { dryRun });
+    handwrittenRepaired = repair.repaired;
+    if (handwrittenRepaired) {
+      if (dryRun) {
+        info('Would normalize handwritten .squad/casting/registry.json to a managed registry/history pair.');
+      } else {
+        warn('Normalized a handwritten .squad/casting/registry.json');
+      }
+    }
+  }
+  const castingMigrated = handwrittenRepaired && dryRun
+    ? false
+    : preflightCastingRegistryPair(castingDir, dryRun);
   if (castingMigrated) {
-    info(options.dryRun
+    info(dryRun
       ? 'Would migrate legacy casting state to a managed registry/history pair.'
       : 'Migrated legacy casting state to a managed registry/history pair.');
   }

@@ -186,3 +186,15 @@ export type {
 export * from './client/adapter-contract.js';
 export * from './client/adapters/index.js';
 
+// Handwritten casting registry repair & team.md backfill
+export {
+  backfillCastingRegistryFromTeam,
+  normalizeHandwrittenCastingRegistry,
+  parseTeamRoster,
+  repairHandwrittenCastingRegistry,
+  toAgentId,
+  type RepairHandwrittenOptions,
+  type RepairResult,
+  type TeamRosterMember,
+} from './casting/handwritten-registry.js';
+

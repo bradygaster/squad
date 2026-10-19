@@ -92,6 +92,21 @@ export function detectParentGitRepo(dest: string): string | null {
   return null;
 }
 
+/**
+ * True only when a human can actually answer a prompt: stdin AND stdout are TTYs and the run
+ * is not CI / explicitly non-interactive. squad init must never block on stdin otherwise
+ * (headless model runs, pipes, redirected output).
+ */
+export function isInteractiveSession(
+  env: NodeJS.ProcessEnv = process.env,
+  stdin: { isTTY?: boolean } = process.stdin,
+  stdout: { isTTY?: boolean } = process.stdout,
+): boolean {
+  if (!stdin.isTTY || !stdout.isTTY) return false;
+  const off = (v: string | undefined): boolean => v !== undefined && v !== '' && v !== '0' && v.toLowerCase() !== 'false';
+  return !off(env['CI']) && !off(env['SQUAD_NONINTERACTIVE']);
+}
+
 /** True when animations should be suppressed (NO_COLOR, dumb term, non-TTY). */
 export function isInitNoColor(): boolean {
   return (
@@ -226,7 +241,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       console.log();
 
       let useShared = true;
-      if (process.stdin.isTTY) {
+      if (isInteractiveSession()) {
         const { createInterface } = await import('node:readline/promises');
         const rl = createInterface({ input: process.stdin, output: process.stdout });
         try {
@@ -539,7 +554,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // to the team roster, allowing squad-labeled issues to be auto-assigned.
   const teamContent = readTeamMd(squadDir);
   if (!hasCopilot(teamContent)) {
-    if (process.stdin.isTTY) {
+    if (isInteractiveSession()) {
       const { createInterface } = await import('node:readline/promises');
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       try {
