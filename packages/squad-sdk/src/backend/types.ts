@@ -414,8 +414,14 @@ export interface BackendStateStore {
   /**
    * Cross-process mutual exclusion for a read-modify-write of one key. Returns the release function.
    * Stores shared between processes MUST implement it; single-process stores may omit it.
+   * Synchronous: used only where the caller cannot await (harness event callbacks).
    */
   lock?(key: string): () => void;
+  /**
+   * Non-blocking variant of {@link lock}: waits with timers instead of spinning the thread, so a busy
+   * lock never stalls the host event loop. Preferred by every async backend method when present.
+   */
+  lockAsync?(key: string): Promise<() => void>;
   read(relativePath: string): string | undefined;
   write(relativePath: string, content: string): void;
   exists(relativePath: string): boolean;

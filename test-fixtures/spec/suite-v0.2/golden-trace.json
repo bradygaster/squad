@@ -1,38 +1,37 @@
 {
   "protocol": "squad-protocol-v2.0-rc1",
   "traceId": "golden-conformance-trace",
-  "description": "Canonical Squad 2.0 protocol recovery and cancellation trace.",
+  "description": "Canonical Squad 2.0 protocol recovery and cancellation trace. Event names are the real BackendEnvelope.type values emitted by the SDK backend; `client.*` entries are client-side steps that produce no backend event.",
   "conversationId": "conv-demo-001",
   "runId": "run-demo-001",
   "expectedTerminalState": "cancelled",
   "events": [
     {
       "seq": 11,
-      "event": "TurnAccepted",
+      "event": "message.accepted",
       "runId": "run-demo-001",
       "turnSeq": 11,
       "state": "running"
     },
     {
       "seq": 12,
-      "event": "ApprovalRequested",
+      "event": "approval.requested",
       "runId": "run-demo-001",
       "approvalId": "approval-demo-001",
       "version": 1,
       "scope": "turn",
-      "status": "pending",
-      "payloadHash": "sha256:approvalpayloadv1",
-      "expiresAt": "2026-10-17T22:00:00Z"
+      "state": "pending",
+      "hash": "approvalpayloadv1"
     },
     {
       "seq": 13,
-      "event": "Disconnected",
+      "event": "client.disconnected",
       "runId": "run-demo-001",
       "cursor": "cursor-13"
     },
     {
       "seq": 14,
-      "event": "Reconnected",
+      "event": "client.reconnected",
       "runId": "run-demo-001",
       "cursor": "cursor-13",
       "lastAcceptedSeq": 12,
@@ -40,22 +39,23 @@
     },
     {
       "seq": 15,
-      "event": "ApprovalDecided",
+      "event": "approval.resolved",
       "runId": "run-demo-001",
       "approvalId": "approval-demo-001",
       "version": 2,
-      "status": "approved",
-      "payloadHash": "sha256:approvalpayloadv1"
+      "decision": "approve",
+      "state": "approved",
+      "hash": "approvalpayloadv1"
     },
     {
       "seq": 16,
-      "event": "CancellationRequested",
+      "event": "cancellation.requested",
       "runId": "run-demo-001",
       "reason": "user-requested"
     },
     {
       "seq": 17,
-      "event": "RunTerminal",
+      "event": "turn.state",
       "runId": "run-demo-001",
       "state": "cancelled"
     }

@@ -1,1029 +1,486 @@
 /**
- * Squad 2.0 security & contract validation suite.
+ * Squad 2.0 security & isolation contract suite.
  * Spec: docs/proposals/squad-2.0-security-and-isolation.md
  *
- * The reference guards below are the executable contract that every client
- * projection (Claude Code, Kiro, OpenCode, Cursor, Copilot) and the
- * DurableSquad backend must satisfy. Production implementations must pass
- * this same suite.
+ * Every test here exercises SHIPPED product code (`@bradygaster/squad-sdk/backend`,
+ * `@bradygaster/squad-sdk/client`, `squad-cli/core/backend-mcp`). Properties the proposal lists
+ * under "Future work / not implemented" have no test here on purpose: a test that only proves
+ * its own fixture is not evidence.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import {
+  BACKEND_CAPABILITIES,
+  BACKEND_PROTOCOL_VERSION,
+  BackendError,
+  DefaultHarnessRegistry,
+  DurableHttpSquadBackend,
+  LocalSquadBackend,
+  MemoryStateStore,
+  createFileStateStore,
+  intersectCapabilities,
+  type HarnessAdapter,
+  type HarnessEventEnvelope,
+} from '../packages/squad-sdk/src/backend/index.js';
+import {
+  CLIENT_IDS,
+  assertPortableClients,
+  installClients,
+  mergeMcpServer,
+  normalizeClientIds,
+  resolveEffectiveCapabilityTokens,
+  resolveInsideRoot,
+  type ClientContext,
+} from '../packages/squad-sdk/src/client/index.js';
+import {
+  callBackendMcpTool,
+  createBackendMcpTools,
+  isExperimentalBackendEnabled,
+} from '../packages/squad-cli/src/cli/core/backend-mcp.js';
 
-// ---------- reference guards ----------
+// ---------- fixtures ----------
 
-const CLIENT_DIRS = ['.claude', '.kiro', '.opencode', '.cursor', '.github', '.agents', '.squad'];
-const FILE_ATTRIBUTE_REPARSE_POINT = 0x400;
-
-function isReparsePoint(p: string): boolean {
-  const st = fs.lstatSync(p);
-  if (st.isSymbolicLink()) return true;
-  // Node reports junctions as symlinks; also honor the attribute bit when exposed.
-  const attrs = (st as unknown as { fileAttributes?: number }).fileAttributes;
-  return typeof attrs === 'number' && (attrs & FILE_ATTRIBUTE_REPARSE_POINT) !== 0;
+class Harness implements HarnessAdapter {
+  readonly capabilities = { streaming: true, approvals: true, cancellation: true, tools: true, extensionNamespaces: [`x-${this.id}`] };
+  submits: Array<{ runId: string; seq: number }> = [];
+  cancels: Array<{ runId: string; seq: number; operationId?: string }> = [];
+  approvals: Array<{ approvalId: string; operationId?: string }> = [];
+  private listeners = new Set<(e: HarnessEventEnvelope) => void>();
+  constructor(readonly id = 'copilot') {}
+  async submit(s: { runId: string; seq: number }) { this.submits.push({ runId: s.runId, seq: s.seq }); }
+  subscribe(_c: string, l: (e: HarnessEventEnvelope) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
+  async cancel(_c: string, runId: string, seq: number, operationId?: string) { this.cancels.push({ runId, seq, operationId }); }
+  async respondApproval(_c: string, r: { approvalId: string }, operationId?: string) { this.approvals.push({ approvalId: r.approvalId, operationId }); }
+  describe() { return { id: this.id, capabilities: this.capabilities }; }
+  emit(e: HarnessEventEnvelope) { this.listeners.forEach(l => l(e)); }
 }
 
-/** Resolve `rel` under `root`; throws on traversal, absolute/UNC/ADS/NUL input, or any reparse point in the chain. */
-function safeResolve(root: string, rel: string): string {
-  if (typeof rel !== 'string' || rel.length === 0 || rel.includes('\0')) throw new Error('invalid path');
-  if (path.isAbsolute(rel) || /^[\\/]{2}/.test(rel) || /^[a-zA-Z]:/.test(rel)) throw new Error('absolute path rejected');
-  if (rel.includes(':')) throw new Error('alternate data stream rejected');
-  const segments = rel.split(/[\\/]+/);
-  if (segments.some((s) => s === '..')) throw new Error('traversal rejected');
-  const base = fs.realpathSync(root);
-  let cur = base;
-  for (const seg of segments) {
-    if (seg === '' || seg === '.') continue;
-    cur = path.join(cur, seg);
-    let exists = true;
-    try { fs.lstatSync(cur); } catch { exists = false; }
-    if (exists && isReparsePoint(cur)) throw new Error(`reparse point rejected: ${seg}`);
-  }
-  const rp = path.relative(base, cur);
-  if (rp.startsWith('..') || path.isAbsolute(rp)) throw new Error('escapes root');
-  return cur;
+function backendWithHarness(state = new MemoryStateStore()) {
+  const harness = new Harness();
+  const harnesses = new DefaultHarnessRegistry();
+  harnesses.register(harness);
+  return { harness, harnesses, state, backend: new LocalSquadBackend({ state, harnesses }) };
 }
 
-type McpServer = { command?: string; args?: string[]; env?: Record<string, string>; url?: string; [k: string]: unknown };
+const msg = (runId: string, seq: number, extra: object = {}) => ({ runId, seq, role: 'user' as const, content: `m${seq}`, ...extra });
+const ask = (runId: string, seq: number, approvalId: string, hash: string): HarnessEventEnvelope =>
+  ({ type: 'approval-requested', runId, seq, request: { approvalId, turnSeq: seq, action: 'write', hash } });
 
-const MCP_TARGETS: Array<{ file: string; key: string }> = [
-  { file: '.mcp.json', key: 'mcpServers' },
-  { file: '.kiro/settings/mcp.json', key: 'mcpServers' },
-  { file: 'opencode.json', key: 'mcp' },
-  { file: '.cursor/mcp.json', key: 'mcpServers' },
-];
-
-const SHELL_META = /[;&|`$<>\n\r]/;
-const SHELL_BINARIES = /^(?:.*[\\/])?(?:sh|bash|zsh|cmd|powershell|pwsh)(?:\.exe)?$/i;
-const SECRET_KEY = /(token|secret|key|password|pat)$/i;
-
-function validateServer(name: string, s: McpServer): void {
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(name) || name === '__proto__' || name === 'constructor') throw new Error('bad server name');
-  if (s.url !== undefined) {
-    if (!/^https:\/\//.test(s.url)) throw new Error('non-https url');
-    return;
-  }
-  if (typeof s.command !== 'string' || !s.command) throw new Error('command required');
-  if (SHELL_META.test(s.command) || /\s/.test(s.command)) throw new Error('unsafe command');
-  if (SHELL_BINARIES.test(s.command)) throw new Error('shell interpreter command rejected');
-  if (s.args !== undefined && (!Array.isArray(s.args) || s.args.some((a) => typeof a !== 'string' || a.includes('\0')))) {
-    throw new Error('bad args');
-  }
+async function errorOf(p: Promise<unknown>): Promise<BackendError | undefined> {
+  try { await p; } catch (e) { return e instanceof BackendError ? e : undefined; }
+  return undefined;
 }
 
-/** Merge a Squad-owned server into a client config without touching anything else. */
-function mergeMcp(existingText: string | null, key: string, name: string, server: McpServer): string {
-  validateServer(name, server);
-  let doc: Record<string, unknown> = {};
-  if (existingText !== null && existingText.trim() !== '') {
-    let parsed: unknown;
-    try { parsed = JSON.parse(existingText); } catch { throw new Error('existing config is malformed; refusing to overwrite'); }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('existing config is not an object');
-    doc = parsed as Record<string, unknown>;
-  }
-  const servers = Object.hasOwn(doc, key) ? (doc[key] as Record<string, McpServer>) : {};
-  if (servers === null || typeof servers !== 'object' || Array.isArray(servers)) throw new Error(`"${key}" is not an object`);
-  const prev = Object.hasOwn(servers, name) ? servers[name] : undefined;
-  const merged: McpServer = { ...server, ...(prev?.env || server.env ? { env: { ...(server.env ?? {}), ...(prev?.env ?? {}) } } : {}) };
-  const next: Record<string, McpServer> = {};
-  for (const [k, v] of Object.entries(servers)) Object.defineProperty(next, k, { value: v, enumerable: true, writable: true, configurable: true });
-  next[name] = merged;
-  return JSON.stringify({ ...doc, [key]: next }, null, 2) + '\n';
+function tryLink(target: string, p: string): boolean {
+  try { fs.symlinkSync(target, p, 'junction'); return true; } catch { return false; }
 }
-
-function redactEnv(env: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).map(([k, v]) => [k, SECRET_KEY.test(k) ? '***' : v]));
-}
-
-interface Proposal { runId: string; action: string; args: unknown; epoch: number }
-const canon = (v: unknown): string =>
-  Array.isArray(v) ? `[${v.map(canon).join(',')}]`
-  : v && typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon((v as Record<string, unknown>)[k])}`).join(',')}}`
-  : JSON.stringify(v);
-const hashProposal = (p: Proposal) => createHash('sha256').update(canon(p)).digest('hex');
-
-class Broker {
-  epoch = 0;
-  private holder: string | null = null;
-  private seen = new Map<string, unknown>();
-  private approvals = new Set<string>();
-  state: string[] = [];
-
-  acquire(holder: string): number { this.epoch += 1; this.holder = holder; return this.epoch; }
-  approve(p: Proposal): string { const h = hashProposal(p); this.approvals.add(h); return h; }
-  apply(p: Proposal, approvalHash: string, seq: number, holder: string): unknown {
-    if (holder !== this.holder || p.epoch !== this.epoch) throw new Error('stale epoch: fenced');
-    const key = `${p.runId}:${seq}`;
-    if (this.seen.has(key) && approvalHash === hashProposal(p)) return this.seen.get(key); // idempotent replay
-    if (approvalHash !== hashProposal(p) || !this.approvals.has(approvalHash)) throw new Error('approval hash mismatch');
-    this.approvals.delete(approvalHash); // single use
-    this.state.push(`${p.action}@${seq}`);
-    this.seen.set(key, 'ok');
-    return 'ok';
-  }
-}
-
-// ---------- capability negotiation (clients[] is projection config, never authority) ----------
-
-type Capability = string;
-interface PolicyCapabilities { granted: readonly Capability[]; denied?: readonly Capability[] }
-type StripReason = 'not-in-backend' | 'denied-by-policy' | 'not-granted-by-policy';
-interface Negotiated { effective: Capability[]; stripped: Array<{ capability: Capability; reason: StripReason }> }
-
-/** effectiveCapabilities = clientCapabilities ∩ backendCapabilities ∩ policyCapabilities (explicit deny always wins). */
-function negotiate(client: readonly Capability[], backend: readonly Capability[], policy: PolicyCapabilities): Negotiated {
-  if (client.some((c) => typeof c !== 'string' || c === '')) throw new Error('bad capability');
-  const be = new Set(backend);
-  const granted = new Set(policy.granted);
-  const denied = new Set(policy.denied ?? []);
-  const out: Negotiated = { effective: [], stripped: [] };
-  for (const capability of new Set(client)) {
-    if (denied.has(capability)) out.stripped.push({ capability, reason: 'denied-by-policy' });
-    else if (!be.has(capability)) out.stripped.push({ capability, reason: 'not-in-backend' });
-    else if (!granted.has(capability)) out.stripped.push({ capability, reason: 'not-granted-by-policy' });
-    else out.effective.push(capability);
-  }
-  return out;
-}
-
-/** Only a live negotiation result can authorize execution; persisted config never can. */
-const authorize = (n: Negotiated | undefined, cap: Capability): boolean => n !== undefined && n.effective.includes(cap);
-
-const NON_PORTABLE_KEY = /(credential|password|passwd|secret|token|apikey|authorization|cookie|privatekey|leaseid|checkpoint|threadid|providerthread)/;
-const ABS_PATH_VALUE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?!\/)|~[\\/]|file:)|(?:^|[\s"'=])(?:[a-zA-Z]:[\\/]|\/(?:home|Users|root|etc|var|tmp|mnt|opt)\/)/;
-const SECRET_VALUE = /(?:\bghp_|\bgho_|github_pat_|\bsk-[A-Za-z0-9]|\bxox[baprs]-|\bAKIA[0-9A-Z]{16}|\beyJ[A-Za-z0-9_-]{10,}\.|\bBearer\s)/;
-const OPAQUE_INTERNAL_VALUE = /^(?:lease[-_]|cur_|(?:thread|conv)_[A-Za-z0-9]{6,}$)/i;
-
-/** Portable config/projection artifacts: no credentials, provider thread ids, machine paths, lease tokens or checkpoint state. */
-function assertPortable(v: unknown, at = '$'): void {
-  if (typeof v === 'string') {
-    if (ABS_PATH_VALUE.test(v)) throw new Error(`machine-specific path at ${at}`);
-    if (SECRET_VALUE.test(v)) throw new Error(`credential-like value at ${at}`);
-    if (OPAQUE_INTERNAL_VALUE.test(v)) throw new Error(`lease/provider-thread value at ${at}`);
-    return;
-  }
-  if (Array.isArray(v)) { v.forEach((x, i) => assertPortable(x, `${at}[${i}]`)); return; }
-  if (v !== null && typeof v === 'object') {
-    for (const [k, x] of Object.entries(v)) {
-      if (NON_PORTABLE_KEY.test(k.toLowerCase().replace(/[^a-z]/g, ''))) throw new Error(`non-portable field ${at}.${k}`);
-      assertPortable(x, `${at}.${k}`);
-    }
-  }
-}
-
-interface ClientEntry { id: string; adapter: string; capabilities?: Capability[]; displayName?: string; [k: string]: unknown }
-const ADAPTER_DIRS: Record<string, string> = { copilot: '.github', claude: '.claude', kiro: '.kiro', opencode: '.opencode', cursor: '.cursor' };
-
-function loadConfiguredClients(rootDir: string): ClientEntry[] {
-  const doc = JSON.parse(fs.readFileSync(safeResolve(rootDir, '.squad/config.json'), 'utf8')) as { clients?: unknown };
-  if (!Array.isArray(doc.clients)) throw new Error('clients[] missing');
-  assertPortable(doc.clients, 'clients');
-  return doc.clients as ClientEntry[];
-}
-
-/** Whitelist projection: unknown fields are dropped, never copied through. */
-function projectClientArtifact(entry: ClientEntry): Record<string, unknown> {
-  const dir = Object.hasOwn(ADAPTER_DIRS, entry.adapter) ? ADAPTER_DIRS[entry.adapter] : undefined;
-  if (!dir) throw new Error('unknown adapter');
-  const artifact = { id: entry.id, adapter: entry.adapter, dir, requestedCapabilities: [...(entry.capabilities ?? [])] };
-  assertPortable(artifact);
-  return artifact;
-}
-
-// ---------- versioned durable approvals & runId-addressed cancellation ----------
-
-type ApprovalStatus = 'requested' | 'approved' | 'denied' | 'expired';
-interface Approval { approvalId: string; version: number; scope: string; expiresAt: number; status: ApprovalStatus; runId: string; payloadHash: string }
-const hashPayload = (runId: string, scope: string, payload: unknown) => createHash('sha256').update(canon({ runId, scope, payload })).digest('hex');
-
-class ApprovalStore {
-  private items = new Map<string, Approval>();
-  constructor(private now: () => number) {}
-
-  request(a: { approvalId: string; scope: string; runId: string; payload: unknown; ttlMs: number }): Approval {
-    if (this.items.has(a.approvalId)) throw new Error('approval exists');
-    const rec: Approval = { approvalId: a.approvalId, version: 1, scope: a.scope, expiresAt: this.now() + a.ttlMs, status: 'requested', runId: a.runId, payloadHash: hashPayload(a.runId, a.scope, a.payload) };
-    this.items.set(a.approvalId, rec);
-    return { ...rec };
-  }
-
-  /** v1 (requested) -> v2 (decided). Stale version or mismatched payloadHash is rejected with no state change. */
-  decide(approvalId: string, expectedVersion: number, payloadHash: string, decision: 'approved' | 'denied'): Approval {
-    const rec = this.items.get(approvalId);
-    if (!rec) throw new Error('unknown approval');
-    if (expectedVersion !== rec.version) throw new Error('stale version');
-    if (rec.status !== 'requested') throw new Error('already decided');
-    if (payloadHash !== rec.payloadHash) throw new Error('payloadHash mismatch');
-    if (this.now() >= rec.expiresAt) { rec.status = 'expired'; rec.version += 1; throw new Error('approval expired'); }
-    rec.status = decision;
-    rec.version += 1;
-    return { ...rec };
-  }
-
-  get(approvalId: string): Approval | undefined { const r = this.items.get(approvalId); return r && { ...r }; }
-}
-
-// ---------- canonical events, loss-tolerant ingest, client projections ----------
-
-interface CanonicalEvent { id: number; kind: string; runId: string | null; seq: number | null; data: unknown }
-const KNOWN_KINDS = new Set(['TurnAccepted', 'OutputDelta', 'ApprovalRequested', 'ApprovalDecided', 'CancellationRequested', 'TurnCompleted', 'TurnCancelled']);
-interface ClientCursor { cursor: string; lastAcceptedSeq: number; resumable: boolean }
-
-class DurableSession {
-  readonly log: CanonicalEvent[] = [];
-  readonly telemetry: Array<{ kind: string; data: unknown }> = [];
-  readonly effects: string[] = [];
-  readonly approvals: ApprovalStore;
-  private runs = new Map<string, { seq: number; state: 'running' | 'completed' | 'cancelled' }>();
-  private lastAcceptedSeq = 0;
-  private cursorsByToken = new Map<string, { index: number; leaseToken: string; checkpoint: { raw: string } }>();
-  private cursorsByIndex = new Map<number, string>();
-  private readonly leaseToken = `lease-${randomBytes(8).toString('hex')}`;
-  private readonly checkpointRaw = `ckpt-${randomBytes(8).toString('hex')}`;
-
-  constructor(now: () => number, private telemetryCap = 8) { this.approvals = new ApprovalStore(now); }
-
-  private append(kind: string, runId: string | null, seq: number | null, data: unknown = null): CanonicalEvent {
-    const e: CanonicalEvent = { id: this.log.length + 1, kind, runId, seq, data };
-    this.log.push(e);
-    return e;
-  }
-
-  /** Unknown kinds are preserved verbatim; `telemetry.*` is disposable and never enters the durable log. */
-  ingest(raw: unknown): void {
-    const o = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
-    const kind = o && typeof o.kind === 'string' && o.kind !== '' ? o.kind : undefined;
-    if (kind?.startsWith('telemetry.')) { this.emitTelemetry(kind, o!.data ?? null); return; }
-    if (!kind) { this.append('x-unknown', null, null, { raw }); return; }
-    this.append(kind, typeof o!.runId === 'string' ? o!.runId : null, typeof o!.seq === 'number' ? o!.seq : null, o!.data ?? null);
-  }
-
-  emitTelemetry(kind: string, data: unknown): void {
-    this.telemetry.push({ kind, data });
-    while (this.telemetry.length > this.telemetryCap) this.telemetry.shift();
-  }
-
-  acceptTurn(runId: string, seq: number): void {
-    const existing = this.runs.get(runId);
-    if (existing && existing.seq === seq) return; // duplicate delivery is an idempotent replay
-    if (existing || seq !== this.lastAcceptedSeq + 1) throw new Error('sequence gap or duplicate runId');
-    this.lastAcceptedSeq = seq;
-    this.runs.set(runId, { seq, state: 'running' });
-    this.append('TurnAccepted', runId, seq);
-  }
-
-  private running(runId: string) {
-    const r = this.runs.get(runId);
-    if (!r) throw new Error('unknown run');
-    return r;
-  }
-
-  output(runId: string, text: string): void {
-    if (this.running(runId).state !== 'running') throw new Error('run is terminal');
-    this.append('OutputDelta', runId, null, { text });
-  }
-
-  requestApproval(a: { approvalId: string; scope: string; runId: string; payload: unknown; ttlMs: number }): Approval {
-    if (this.running(a.runId).state !== 'running') throw new Error('run is terminal');
-    const rec = this.approvals.request(a);
-    this.append('ApprovalRequested', a.runId, null, rec);
-    return rec;
-  }
-
-  decide(approvalId: string, expectedVersion: number, payloadHash: string, decision: 'approved' | 'denied'): Approval {
-    const rec = this.approvals.decide(approvalId, expectedVersion, payloadHash, decision);
-    this.append('ApprovalDecided', rec.runId, null, rec);
-    if (rec.status === 'approved') this.effects.push(`apply:${rec.approvalId}`);
-    return rec;
-  }
-
-  /** Cancellation is addressed by stable runId and is independent of turn seq. First terminal transition wins. */
-  cancel(runId: string): 'cancelled' | 'already-terminal' {
-    const r = this.running(runId);
-    if (r.state !== 'running') return 'already-terminal';
-    this.append('CancellationRequested', runId, null);
-    r.state = 'cancelled';
-    this.append('TurnCancelled', runId, null);
-    return 'cancelled';
-  }
-
-  complete(runId: string): 'completed' | 'already-terminal' {
-    const r = this.running(runId);
-    if (r.state !== 'running') return 'already-terminal';
-    r.state = 'completed';
-    this.append('TurnCompleted', runId, null);
-    return 'completed';
-  }
-
-  state(runId: string) { return this.running(runId).state; }
-
-  private issueCursor(index: number): ClientCursor {
-    let token = this.cursorsByIndex.get(index);
-    if (!token) {
-      token = `cur_${randomBytes(9).toString('hex')}`;
-      this.cursorsByIndex.set(index, token);
-      this.cursorsByToken.set(token, { index, leaseToken: this.leaseToken, checkpoint: { raw: this.checkpointRaw } });
-    }
-    const resumable = [...this.runs.values()].some((r) => r.state === 'running');
-    return { cursor: token, lastAcceptedSeq: this.lastAcceptedSeq, resumable };
-  }
-
-  /** Replays strictly after the cursor; the client only ever sees { cursor, lastAcceptedSeq, resumable }. */
-  pull(token?: string): { events: CanonicalEvent[]; cursor: ClientCursor } {
-    let index = 0;
-    if (token !== undefined) {
-      const c = this.cursorsByToken.get(token);
-      if (!c) throw new Error('unknown cursor');
-      index = c.index;
-    }
-    return { events: structuredClone(this.log.slice(index)), cursor: this.issueCursor(this.log.length) };
-  }
-
-  /** Test-only view of server-private values that must never reach a client. */
-  internalSecrets(): string[] { return [this.leaseToken, this.checkpointRaw]; }
-}
-
-interface Projection { name: string; encode(e: CanonicalEvent): unknown; decode(w: any): CanonicalEvent }
-const PROJECTIONS: Projection[] = [
-  { name: 'copilot', encode: (e) => ({ type: e.kind, id: e.id, runId: e.runId, seq: e.seq, data: e.data }),
-    decode: (w) => ({ id: w.id, kind: w.type, runId: w.runId, seq: w.seq, data: w.data }) },
-  { name: 'claude', encode: (e) => ({ hook_event_name: e.kind, meta: { id: e.id, runId: e.runId, seq: e.seq }, payload: e.data }),
-    decode: (w) => ({ id: w.meta.id, kind: w.hook_event_name, runId: w.meta.runId, seq: w.meta.seq, data: w.payload }) },
-  { name: 'kiro', encode: (e) => ({ event: e.kind, ref: [e.id, e.runId, e.seq], body: JSON.stringify(e.data) }),
-    decode: (w) => ({ id: w.ref[0], kind: w.event, runId: w.ref[1], seq: w.ref[2], data: JSON.parse(w.body) }) },
-  { name: 'opencode', encode: (e) => ({ type: e.kind, properties: { id: e.id, runId: e.runId, seq: e.seq, data: e.data } }),
-    decode: (w) => ({ id: w.properties.id, kind: w.type, runId: w.properties.runId, seq: w.properties.seq, data: w.properties.data }) },
-  { name: 'cursor', encode: (e) => ({ k: e.kind, i: e.id, r: e.runId, s: e.seq, d: e.data }),
-    decode: (w) => ({ id: w.i, kind: w.k, runId: w.r, seq: w.s, data: w.d }) },
-];
-
-/** UI label that degrades gracefully on kinds it does not understand. */
-function renderEvent(e: CanonicalEvent): string {
-  return KNOWN_KINDS.has(e.kind) ? e.kind : `unsupported:${e.kind}`;
-}
-
-class SimClient {
-  history: CanonicalEvent[] = [];
-  views: ClientCursor[] = [];
-  wire: string[] = [];
-  duplicatesDropped = 0;
-  private cursor?: string;
-  private connected = true;
-  constructor(private proj: Projection, private s: DurableSession) {}
-
-  sync(): void {
-    if (!this.connected) throw new Error('disconnected');
-    const { events, cursor } = this.s.pull(this.cursor);
-    for (const e of events) {
-      const frame = JSON.stringify(this.proj.encode(e));
-      this.wire.push(frame);
-      const d = this.proj.decode(JSON.parse(frame));
-      if (this.history.some((h) => h.id === d.id)) this.duplicatesDropped += 1;
-      else this.history.push(d);
-    }
-    this.cursor = cursor.cursor;
-    this.views.push(cursor);
-  }
-  disconnect(): void { this.connected = false; }
-  reconnect(): void { this.connected = true; this.sync(); }
-}
-
-// ---------- tests ----------
 
 let root: string;
 let outside: string;
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sq20-root-')));
-  outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sq20-out-')));
-  for (const d of CLIENT_DIRS) fs.mkdirSync(path.join(root, d, 'skills'), { recursive: true });
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-sec-root-'));
+  outside = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-sec-outside-'));
 });
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(outside, { recursive: true, force: true });
 });
 
-function tryLink(target: string, p: string): boolean {
-  try { fs.symlinkSync(target, p, 'junction'); return true; } catch { return false; }
-}
+// ---------- G1: path containment ----------
 
-describe('path / symlink / reparse-point guards across client directories', () => {
-  it.each(CLIENT_DIRS)('accepts a plain skill file under %s', (d) => {
-    fs.mkdirSync(path.join(root, d, 'skills', 'ok'), { recursive: true });
-    fs.writeFileSync(path.join(root, d, 'skills', 'ok', 'SKILL.md'), '# ok');
-    expect(safeResolve(root, `${d}/skills/ok/SKILL.md`)).toContain('SKILL.md');
+describe('G1 path containment: backend state store (createFileStateStore)', () => {
+  it('rejects a key that lexically escapes the state root', () => {
+    const store = createFileStateStore(root);
+    expect(() => store.read('../outside.json')).toThrow(/escapes state directory/);
+    expect(() => store.write('backend/../../x.json', '{}')).toThrow(/escapes state directory/);
+    expect(() => store.lock!('../../k')).toThrow(/escapes state directory/);
   });
 
-  it.each(CLIENT_DIRS)('rejects ../ traversal out of %s', (d) => {
-    expect(() => safeResolve(root, `${d}/skills/../../../etc/passwd`)).toThrow(/traversal/);
-    expect(() => safeResolve(root, `${d}\\skills\\..\\..\\x`)).toThrow(/traversal/);
-  });
-
-  it.each(CLIENT_DIRS)('rejects symlink/junction skill dir escaping root in %s', (d) => {
-    const link = path.join(root, d, 'skills', 'evil');
+  it('refuses to follow a symlink/junction between the root and the target', () => {
+    const store = createFileStateStore(root);
+    store.write('backend/conversations/ok.json', '{}');
+    const link = path.join(root, 'backend', 'evil');
     if (!tryLink(outside, link)) return;
-    fs.writeFileSync(path.join(outside, 'SKILL.md'), 'stolen');
-    expect(() => safeResolve(root, `${d}/skills/evil/SKILL.md`)).toThrow(/reparse/);
+    fs.writeFileSync(path.join(outside, 'c.json'), '{"stolen":true}');
+    expect(() => store.read('backend/evil/c.json')).toThrow(/symbolic link or junction/);
+    expect(() => store.write('backend/evil/c.json', '{}')).toThrow(/symbolic link or junction/);
+    expect(fs.readFileSync(path.join(outside, 'c.json'), 'utf8')).toBe('{"stolen":true}');
   });
 
-  it('rejects a client directory itself replaced by a link', () => {
-    fs.rmSync(path.join(root, '.cursor'), { recursive: true, force: true });
-    if (!tryLink(outside, path.join(root, '.cursor'))) return;
-    expect(() => safeResolve(root, '.cursor/mcp.json')).toThrow(/reparse/);
+  it('refuses when the state root itself is a link', () => {
+    const linkedRoot = path.join(root, 'linked');
+    if (!tryLink(outside, linkedRoot)) return;
+    const store = createFileStateStore(linkedRoot);
+    expect(() => store.read('backend/conversations/c.json')).toThrow(/symbolic link or junction/);
   });
 
-  it('rejects dangling symlinks', () => {
-    const link = path.join(root, '.kiro', 'skills', 'dangling');
-    if (!tryLink(path.join(outside, 'nope'), link)) return;
-    expect(() => safeResolve(root, '.kiro/skills/dangling')).toThrow(/reparse/);
-  });
-
-  it.each([
-    ['absolute posix', '/etc/passwd'],
-    ['absolute drive', 'C:\\Windows\\win.ini'],
-    ['UNC', '\\\\server\\share\\x'],
-    ['NUL byte', '.claude/skills/a\0b'],
-    ['ADS', '.claude/skills/a.md:stream'],
-    ['empty', ''],
-  ])('rejects %s input', (_n, p) => {
-    expect(() => safeResolve(root, p)).toThrow();
-  });
-
-  it('detects real NTFS junctions via mklink /J (Windows only)', () => {
+  it('detects a real NTFS junction created with mklink /J (Windows only)', () => {
     if (process.platform !== 'win32') return;
     const target = path.join(outside, 'jt');
     fs.mkdirSync(target);
-    const j = path.join(root, '.agents', 'skills', 'junc');
-    execFileSync('cmd.exe', ['/c', 'mklink', '/J', j, target], { stdio: 'ignore' });
-    expect(isReparsePoint(j)).toBe(true);
-    expect(() => safeResolve(root, '.agents/skills/junc/x')).toThrow(/reparse/);
+    const junction = path.join(root, 'backend');
+    execFileSync('cmd.exe', ['/c', 'mklink', '/J', junction, target], { stdio: 'ignore' });
+    const store = createFileStateStore(root);
+    expect(() => store.read('backend/conversations/c.json')).toThrow(/symbolic link or junction/);
+  });
+
+  it('only accepts well-formed conversation ids (no separators, traversal or Windows device names)', async () => {
+    const b = new LocalSquadBackend({ state: createFileStateStore(root) });
+    for (const id of ['../x', 'a/b', 'a\\b', '', 'x'.repeat(129), 'NUL', 'com1', 'a:b']) {
+      expect((await errorOf(b.createConversation({ conversationId: id })))?.code, id).toBe('invalid-request');
+    }
+    expect(fs.existsSync(path.join(root, 'backend'))).toBe(false);
   });
 });
 
-describe('MCP config merge safety', () => {
-  const server: McpServer = { command: 'npx', args: ['-y', '@bradygaster/squad-mcp'], env: { SQUAD_MODE: 'client' } };
+describe('G1 path containment: client projections (resolveInsideRoot)', () => {
+  const CLIENT_DIRS = ['.claude', '.kiro', '.opencode', '.cursor', '.github', '.agents', '.squad'];
 
-  it.each(MCP_TARGETS)('preserves unrelated servers and top-level keys in $file', ({ key }) => {
-    const existing = JSON.stringify({ theme: 'dark', [key]: { github: { command: 'gh-mcp', env: { GH_TOKEN: 'keepme' } } } });
-    const out = JSON.parse(mergeMcp(existing, key, 'squad', server));
+  it.each(CLIENT_DIRS)('rejects ../ traversal and absolute paths out of %s', (d) => {
+    expect(() => resolveInsideRoot(root, `${d}/skills/../../../etc/passwd`)).toThrow(/outside the workspace/);
+    expect(() => resolveInsideRoot(root, `${d}\\skills\\..\\..\\x`)).toThrow(/outside the workspace/);
+    expect(() => resolveInsideRoot(root, path.join(outside, d, 'x'))).toThrow(/outside the workspace/);
+  });
+
+  it.each(CLIENT_DIRS)('rejects a symlinked component under %s', (d) => {
+    fs.mkdirSync(path.join(root, d), { recursive: true });
+    const link = path.join(root, d, 'evil');
+    if (!tryLink(outside, link)) return;
+    expect(() => resolveInsideRoot(root, `${d}/evil/SKILL.md`)).toThrow(/symlinked path component/);
+  });
+
+  it('rejects a client directory that was itself replaced by a link', () => {
+    if (!tryLink(outside, path.join(root, '.cursor'))) return;
+    expect(() => resolveInsideRoot(root, '.cursor/mcp.json')).toThrow(/symlinked path component/);
+  });
+});
+
+// ---------- G2: MCP config merge ----------
+
+describe('G2 MCP config merge (mergeMcpServer / installClients)', () => {
+  const launch = { command: 'npx', args: ['-y', '@bradygaster/squad-cli', 'state-mcp'] };
+  const ctx = (): ClientContext => ({ root, mcp: launch });
+
+  it('preserves unrelated servers and top-level keys', () => {
+    const existing = { theme: 'dark', mcpServers: { github: { command: 'gh-mcp', env: { GH_TOKEN: 'keepme' } } } };
+    const out = mergeMcpServer(existing, 'mcpServers', launch, { env: {} }) as { theme: string; mcpServers: Record<string, unknown> };
     expect(out.theme).toBe('dark');
-    expect(out[key].github).toEqual({ command: 'gh-mcp', env: { GH_TOKEN: 'keepme' } });
-    expect(out[key].squad.command).toBe('npx');
+    expect(out.mcpServers['github']).toEqual({ command: 'gh-mcp', env: { GH_TOKEN: 'keepme' } });
+    expect(out.mcpServers['squad_state']).toMatchObject(launch);
   });
 
-  it('preserves user env vars on an existing squad entry; user values win', () => {
-    const existing = JSON.stringify({ mcpServers: { squad: { command: 'old', env: { SQUAD_MODE: 'custom', MY_VAR: '1' } } } });
-    const out = JSON.parse(mergeMcp(existing, 'mcpServers', 'squad', server));
-    expect(out.mcpServers.squad.env).toEqual({ SQUAD_MODE: 'custom', MY_VAR: '1' });
+  it('keeps user env and custom fields on an existing squad_state entry; only launch fields are owned', () => {
+    const existing = { mcpServers: { squad_state: { command: 'old', env: { SQUAD_MODE: 'custom', MY_VAR: '1' }, tools: ['x'] } } };
+    const out = mergeMcpServer(existing, 'mcpServers', launch, { env: {}, tools: ['*'] }) as { mcpServers: { squad_state: Record<string, unknown> } };
+    expect(out.mcpServers.squad_state).toEqual({ ...launch, env: { SQUAD_MODE: 'custom', MY_VAR: '1' }, tools: ['x'] });
   });
 
-  it('is idempotent', () => {
-    const once = mergeMcp(null, 'mcpServers', 'squad', server);
-    expect(mergeMcp(once, 'mcpServers', 'squad', server)).toBe(once);
+  it('refuses to overwrite a container or entry of the wrong type', () => {
+    expect(() => mergeMcpServer({ mcpServers: [] }, 'mcpServers', launch)).toThrow(/expected a JSON object/);
+    expect(() => mergeMcpServer({ mcpServers: { squad_state: 'str' } }, 'mcpServers', launch)).toThrow(/expected a JSON object/);
   });
 
-  it('creates a config when none exists, including an empty file', () => {
-    expect(JSON.parse(mergeMcp(null, 'mcp', 'squad', server)).mcp.squad).toBeDefined();
-    expect(JSON.parse(mergeMcp('  ', 'mcp', 'squad', server)).mcp.squad).toBeDefined();
+  it('a __proto__ key in the existing config does not pollute Object.prototype', () => {
+    const existing = JSON.parse('{"mcpServers":{"__proto__":{"polluted":true}}}') as Record<string, unknown>;
+    mergeMcpServer(existing, 'mcpServers', launch);
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
   });
 
-  it.each(['{ not json', '[]', 'null', '"str"'])('refuses to clobber malformed config %j', (bad) => {
-    expect(() => mergeMcp(bad, 'mcpServers', 'squad', server)).toThrow();
+  it('leaves a malformed .mcp.json untouched and reports the error instead of clobbering it', () => {
+    const file = path.join(root, '.mcp.json');
+    fs.writeFileSync(file, '{ not json');
+    const results = installClients(['claude'], ctx());
+    const mcp = results.find(r => r.path === '.mcp.json')!;
+    expect(mcp.action).toBe('error');
+    expect(mcp.error).toMatch(/malformed/);
+    expect(fs.readFileSync(file, 'utf8')).toBe('{ not json');
   });
 
-  it('refuses when the server container has the wrong type', () => {
-    expect(() => mergeMcp('{"mcpServers":[]}', 'mcpServers', 'squad', server)).toThrow(/not an object/);
+  it.each(['[]', 'null', '"str"'])('refuses a non-object JSON root %s', (bad) => {
+    const file = path.join(root, '.mcp.json');
+    fs.writeFileSync(file, bad);
+    const mcp = installClients(['claude'], ctx()).find(r => r.path === '.mcp.json')!;
+    expect(mcp.action).toBe('error');
+    expect(fs.readFileSync(file, 'utf8')).toBe(bad);
   });
 
-  it.each([
-    ['semicolon', 'node;rm'],
-    ['pipe', 'node|curl'],
-    ['subshell', '$(curl)'],
-    ['backtick', '`id`'],
-    ['newline', 'node\nrm'],
-    ['space in command', 'node server.js'],
-    ['bash', '/bin/bash'],
-    ['cmd', 'C:\\Windows\\System32\\cmd.exe'],
-    ['pwsh', 'pwsh'],
-  ])('rejects command injection via %s', (_n, command) => {
-    expect(() => mergeMcp(null, 'mcpServers', 'squad', { command })).toThrow();
-  });
-
-  it('rejects non-string args, plain http urls, and prototype-pollution names', () => {
-    expect(() => mergeMcp(null, 'mcpServers', 'squad', { command: 'npx', args: [1 as unknown as string] })).toThrow();
-    expect(() => mergeMcp(null, 'mcpServers', 'squad', { url: 'http://evil' })).toThrow();
-    expect(() => mergeMcp(null, 'mcpServers', '__proto__', server)).toThrow();
-  });
-
-  it('a __proto__ key in existing JSON does not pollute Object.prototype', () => {
-    mergeMcp('{"mcpServers":{"__proto__":{"polluted":true}}}', 'mcpServers', 'squad', server);
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-  });
-
-  it('redacts secret env values in diagnostics', () => {
-    const r = redactEnv({ GH_TOKEN: 'ghp_x', API_KEY: 'k', MODE: 'a', DB_PASSWORD: 'p' });
-    expect(JSON.stringify(r)).not.toMatch(/ghp_x|"k"|"p"/);
-    expect(r.MODE).toBe('a');
-  });
-
-  it('leaves the on-disk config untouched when validation fails', () => {
-    const f = path.join(root, '.mcp.json');
-    fs.writeFileSync(f, '{"mcpServers":{"a":{"command":"x"}}}');
-    const before = fs.readFileSync(f, 'utf8');
-    expect(() => mergeMcp(before, 'mcpServers', 'squad', { command: 'a;b' })).toThrow();
-    expect(fs.readFileSync(f, 'utf8')).toBe(before);
+  it('is idempotent on disk', () => {
+    installClients(['claude'], ctx());
+    const once = fs.readFileSync(path.join(root, '.mcp.json'), 'utf8');
+    const again = installClients(['claude'], ctx()).find(r => r.path === '.mcp.json')!;
+    expect(again.action).toBe('unchanged');
+    expect(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8')).toBe(once);
   });
 });
 
-describe('hash-bound approvals and epoch fencing', () => {
-  const base = (epoch: number): Proposal => ({ runId: 'r1', action: 'write-decision', args: { a: 1, b: [2, 3] }, epoch });
+// ---------- G3: idempotent admission ----------
 
-  it('hash is stable across key order and sensitive to any change', () => {
-    const a = hashProposal({ runId: 'r', action: 'x', args: { a: 1, b: 2 }, epoch: 1 });
-    expect(hashProposal({ runId: 'r', action: 'x', args: { b: 2, a: 1 }, epoch: 1 })).toBe(a);
-    expect(hashProposal({ runId: 'r', action: 'x', args: { a: 1, b: 3 }, epoch: 1 })).not.toBe(a);
-    expect(hashProposal({ runId: 'r', action: 'x', args: { a: 1, b: 2 }, epoch: 2 })).not.toBe(a);
+describe('G3 (runId, seq) idempotent admission', () => {
+  it('a verbatim retry is a duplicate with the original cursor; a changed payload is a conflict', async () => {
+    const { backend, harness } = backendWithHarness();
+    await backend.createConversation({ conversationId: 'c' });
+    const first = await backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    const retry = await backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    expect(retry).toMatchObject({ duplicate: true, cursor: first.cursor });
+    expect((await errorOf(backend.sendMessage('c', msg('r', 1, { harness: 'copilot', content: 'tampered' }))))?.code).toBe('conflict');
+    expect(harness.submits).toEqual([{ runId: 'r', seq: 1 }]);
+    expect(await backend.getTranscript('c')).toHaveLength(1);
   });
 
-  it('executes an approved proposal exactly once per (runId, seq)', () => {
-    const b = new Broker(); const p = base(b.acquire('w1'));
-    const h = b.approve(p);
-    expect(b.apply(p, h, 1, 'w1')).toBe('ok');
-    expect(b.apply(p, h, 1, 'w1')).toBe('ok');
-    expect(b.state).toHaveLength(1);
+  it('a duplicate admission survives a backend restart over the same durable state', async () => {
+    const state = new MemoryStateStore();
+    const a = backendWithHarness(state);
+    await a.backend.createConversation({ conversationId: 'c' });
+    await a.backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    const b = new LocalSquadBackend({ state, harnesses: a.harnesses });
+    expect((await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }))).duplicate).toBe(true);
+    expect(a.harness.submits).toHaveLength(1);
   });
 
-  it('rejects a tampered proposal under a valid approval hash', () => {
-    const b = new Broker(); const p = base(b.acquire('w1'));
-    const h = b.approve(p);
-    expect(() => b.apply({ ...p, args: { a: 999 } }, h, 1, 'w1')).toThrow(/mismatch/);
-    expect(b.state).toHaveLength(0);
-  });
-
-  it('rejects unapproved proposals and approval reuse for a new seq', () => {
-    const b = new Broker(); const p = base(b.acquire('w1'));
-    expect(() => b.apply(p, hashProposal(p), 1, 'w1')).toThrow(/mismatch/);
-    const h = b.approve(p);
-    b.apply(p, h, 1, 'w1');
-    expect(() => b.apply(p, h, 2, 'w1')).toThrow(/mismatch/);
-    expect(b.state).toHaveLength(1);
-  });
-
-  it('fences a stale holder after lease takeover (epoch bump)', () => {
-    const b = new Broker();
-    const p = base(b.acquire('worktree-A')); const h = b.approve(p);
-    b.acquire('worktree-B');
-    expect(() => b.apply(p, h, 1, 'worktree-A')).toThrow(/fenced/);
-    expect(b.state).toHaveLength(0);
-  });
-
-  it('rejects a non-holder presenting the current epoch', () => {
-    const b = new Broker(); const p = base(b.acquire('A')); const h = b.approve(p);
-    expect(() => b.apply(p, h, 1, 'B')).toThrow(/fenced/);
-  });
-
-  it('epochs are strictly monotonic', () => {
-    const b = new Broker();
-    expect([b.acquire('a'), b.acquire('b'), b.acquire('a')]).toEqual([1, 2, 3]);
-  });
-
-  it('isolates state between worktrees: separate brokers never share writes', () => {
-    const a = new Broker(); const c = new Broker();
-    const pa = { ...base(a.acquire('A')), runId: 'rA' };
-    a.apply(pa, a.approve(pa), 1, 'A');
-    expect(c.state).toHaveLength(0);
-    expect(() => c.apply(pa, hashProposal(pa), 1, 'A')).toThrow();
+  it('createConversation is idempotent and never overwrites an existing conversation', async () => {
+    const b = new LocalSquadBackend();
+    const created = await b.createConversation({ conversationId: 'c', title: 'first' });
+    const again = await b.createConversation({ conversationId: 'c', title: 'second' });
+    expect(again).toEqual(created);
   });
 });
 
-describe('configured vs. negotiated capabilities (clients[] is not authority)', () => {
-  const ALL = ['read', 'write', 'shell', 'net'];
-  const subsets = (): string[][] => Array.from({ length: 1 << ALL.length }, (_, m) => ALL.filter((_c, i) => m & (1 << i)));
+// ---------- G4: capability negotiation ----------
 
-  it('effective = client ∩ backend ∩ policy for every combination (exhaustive)', () => {
-    for (const c of subsets()) for (const b of subsets()) for (const p of subsets()) {
-      const { effective } = negotiate(c, b, { granted: p });
-      expect(effective).toEqual(c.filter((x) => b.includes(x) && p.includes(x)));
+describe('G4 effective capabilities = client ∩ backend ∩ policy', () => {
+  it('intersectCapabilities is exhaustive over every subset of the backend set', () => {
+    const caps = [...BACKEND_CAPABILITIES];
+    const n = caps.length;
+    for (let c = 0; c < 1 << n; c += 7) {
+      for (let p = 0; p < 1 << n; p += 11) {
+        const client = caps.filter((_, i) => c & (1 << i));
+        const policy = caps.filter((_, i) => p & (1 << i));
+        expect(intersectCapabilities(caps, client, policy)).toEqual(caps.filter(x => client.includes(x) && policy.includes(x)));
+      }
+    }
+    expect(intersectCapabilities(caps, undefined, undefined)).toEqual(caps);
+    expect(intersectCapabilities(caps, ['approvals', 'not-a-capability'], undefined)).toEqual(['approvals']);
+  });
+
+  it('negotiate() never widens beyond the backend set and derives approvals/resume from the effective set', async () => {
+    const b = new LocalSquadBackend();
+    const neg = await b.negotiate({ protocols: [BACKEND_PROTOCOL_VERSION], capabilities: ['approvals', 'cursor-reconnect', 'x-made-up'], policyCapabilities: ['cursor-reconnect'] });
+    expect(neg.effectiveCapabilities).toEqual(['cursor-reconnect']);
+    expect(neg.approvals).toBe(false);
+    expect(neg.resume).toBe(true);
+    expect(neg.harnesses).toEqual([]);
+    expect((await errorOf(b.negotiate({ protocols: ['1.0'] })))?.code).toBe('unsupported-protocol');
+  });
+
+  it('client-side token resolution is a strict intersection too', () => {
+    expect(resolveEffectiveCapabilityTokens(['approvals', 'subagents'], ['approvals'], undefined)).toEqual(['approvals']);
+    expect(resolveEffectiveCapabilityTokens(['approvals', 'subagents'], undefined, ['subagents'])).toEqual(['subagents']);
+    expect(resolveEffectiveCapabilityTokens(['approvals'], ['subagents'], ['approvals'])).toEqual([]);
+  });
+
+  it('persisted clients[] is projection config: non-portable values are rejected without being echoed', () => {
+    const { clients, rejected } = normalizeClientIds(['claude', 'ghp_secret', '/home/me/.squad', 'thread_abc123', 'claude', 'unknown-host']);
+    expect(clients).toEqual(['claude']);
+    expect(rejected.filter(r => r.reason === 'sensitive').every(r => r.value === '[redacted]')).toBe(true);
+    expect(rejected.some(r => r.reason === 'unknown' && r.value === 'unknown-host')).toBe(true);
+    expect(() => assertPortableClients(['claude', 'token=abc'])).toThrow(/non-portable/);
+    expect(() => assertPortableClients(['claude', 'token=abc'])).not.toThrow(/abc/);
+    expect(assertPortableClients([...CLIENT_IDS])).toEqual([...CLIENT_IDS]);
+  });
+});
+
+// ---------- G5: cooperative epoch fencing ----------
+
+describe('G5 cooperative lease epochs (fencing of stale writers, NOT an identity boundary)', () => {
+  it('rejects a stale epoch and, once fenced, an omitted epoch', async () => {
+    const b = new LocalSquadBackend();
+    await b.createConversation({ conversationId: 'c' });
+    expect((await b.sendMessage('c', msg('r', 1, { epoch: 3 }))).epoch).toBe(3);
+    expect((await errorOf(b.sendMessage('c', msg('r', 2, { epoch: 2 }))))?.code).toBe('stale-epoch');
+    expect((await errorOf(b.sendMessage('c', msg('r', 3))))?.code).toBe('stale-epoch');
+    expect((await errorOf(b.cancelTurn('c', 1)))?.code).toBe('stale-epoch');
+    expect((await errorOf(b.sendMessage('c', msg('r', 4, { epoch: 0 }))))?.code).toBe('invalid-request');
+  });
+
+  it('any caller presenting a higher epoch takes over: the epoch is client-asserted, not broker-issued', async () => {
+    // documented limitation (proposal §4 and "Future work"): there is no holder identity behind an epoch
+    const b = new LocalSquadBackend();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('holder', 1, { epoch: 1 }));
+    const takeover = await b.sendMessage('c', msg('intruder', 1, { epoch: 2 }));
+    expect(takeover.epoch).toBe(2);
+    expect((await errorOf(b.sendMessage('c', msg('holder', 2, { epoch: 1 }))))?.code).toBe('stale-epoch');
+  });
+
+  it('harness output issued under an older epoch is fenced off with an auditable control event', async () => {
+    const { backend, harness } = backendWithHarness();
+    await backend.createConversation({ conversationId: 'c' });
+    await backend.sendMessage('c', msg('r', 1, { harness: 'copilot', epoch: 3 }));
+    harness.emit({ type: 'state', state: 'completed', runId: 'r', seq: 1, epoch: 2 });
+    expect((await backend.getTurn('c', 1)).state).toBe('running');
+    const audit = (await backend.readEvents('c')).events.filter(e => e.type === 'harness.epoch-rejected');
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.payload).toMatchObject({ rejectedEpoch: 2, currentEpoch: 3 });
+  });
+});
+
+// ---------- G6: approvals and runId cancellation ----------
+
+describe('G6 approvals echo an opaque harness hash; decisions are single-use; cancellation targets runId', () => {
+  it('rejects a mismatched hash with no state change and accepts the verbatim echo exactly once', async () => {
+    const { backend, harness } = backendWithHarness();
+    await backend.createConversation({ conversationId: 'c' });
+    await backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    harness.emit(ask('r', 1, 'a1', 'opaque-from-harness'));
+    expect((await backend.getApprovals('c'))[0]).toMatchObject({ approvalId: 'a1', version: 1, state: 'pending', hash: 'opaque-from-harness' });
+
+    expect((await errorOf(backend.respondApproval('c', { approvalId: 'a1', hash: 'tampered', decision: 'approve' })))?.code).toBe('approval-hash-mismatch');
+    expect((await backend.getTurn('c', 1)).state).toBe('awaiting-approval');
+    expect(harness.approvals).toEqual([]);
+
+    const turn = await backend.respondApproval('c', { approvalId: 'a1', hash: 'opaque-from-harness', decision: 'approve' });
+    expect(turn.state).toBe('running');
+    expect((await backend.getApprovals('c'))[0]).toMatchObject({ version: 2, state: 'approved', decision: 'approve' });
+    expect((await errorOf(backend.respondApproval('c', { approvalId: 'a1', hash: 'opaque-from-harness', decision: 'approve' })))?.code).toBe('approval-not-pending');
+    expect((await errorOf(backend.respondApproval('c', { approvalId: 'a1', hash: 'opaque-from-harness', decision: 'deny' })))?.code).toBe('approval-not-pending');
+    expect(harness.approvals.map(a => a.approvalId)).toEqual(['a1']);
+  });
+
+  it('a redelivered approval-requested event does not create a second approval', async () => {
+    const { backend, harness } = backendWithHarness();
+    await backend.createConversation({ conversationId: 'c' });
+    await backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    harness.emit(ask('r', 1, 'a1', 'h'));
+    harness.emit(ask('r', 1, 'a1', 'h'));
+    expect(await backend.getApprovals('c')).toHaveLength(1);
+  });
+
+  it('cancelRun targets the stable runId across turns, is idempotent, and closes a pending approval', async () => {
+    const { backend, harness } = backendWithHarness();
+    await backend.createConversation({ conversationId: 'c' });
+    await backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    await backend.sendMessage('c', msg('r', 2, { harness: 'copilot' }));
+    await backend.sendMessage('c', msg('other', 3, { harness: 'copilot' }));
+    harness.emit(ask('r', 2, 'a2', 'h'));
+
+    const tail = await backend.cancelRun('c', 'r', 'user-requested');
+    expect(tail).toMatchObject({ runId: 'r', seq: 2, state: 'cancelled' });
+    expect((await backend.getTurn('c', 1)).state).toBe('cancelled');
+    expect((await backend.getTurn('c', 3)).state).toBe('running');
+    expect((await backend.getApprovals('c'))[0]).toMatchObject({ approvalId: 'a2', state: 'cancelled', version: 2 });
+    expect((await errorOf(backend.respondApproval('c', { approvalId: 'a2', hash: 'h', decision: 'approve' })))?.code).toBe('approval-not-pending');
+
+    await backend.cancelRun('c', 'r');
+    expect(harness.cancels.map(c => c.seq)).toEqual([1, 2]);
+    expect((await errorOf(backend.cancelRun('c', 'nope')))?.code).toBe('not-found');
+    const terminalEvents = (await backend.readEvents('c')).events.filter(e => e.type === 'turn.state' && (e.payload as { runId: string }).runId === 'r');
+    expect(terminalEvents).toHaveLength(2); // exactly one terminal event per cancelled turn
+  });
+
+  it('a late harness state event cannot revive a terminal run', async () => {
+    const { backend, harness } = backendWithHarness();
+    await backend.createConversation({ conversationId: 'c' });
+    await backend.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    await backend.cancelRun('c', 'r');
+    harness.emit({ type: 'state', state: 'completed', runId: 'r', seq: 1 });
+    harness.emit({ type: 'message', runId: 'r', seq: 1, message: { runId: 'r', seq: 1, role: 'assistant', content: 'late' } });
+    expect((await backend.getTurn('c', 1)).state).toBe('cancelled');
+    expect(await backend.getTranscript('c')).toHaveLength(1);
+  });
+});
+
+// ---------- G7: cursors ----------
+
+describe('G7 opaque cursors: validated for the conversation only (unsigned by design)', () => {
+  it('rejects malformed and cross-conversation cursors and reports an unresumable position', async () => {
+    const b = new LocalSquadBackend();
+    await b.createConversation({ conversationId: 'c1' });
+    await b.createConversation({ conversationId: 'c2' });
+    await b.sendMessage('c1', msg('r', 1));
+    const page = await b.readEvents('c1');
+    expect((await errorOf(b.readEvents('c2', { after: page.nextCursor })))?.code).toBe('invalid-request');
+    expect((await errorOf(b.readEvents('c1', { after: 'not-a-cursor' })))?.code).toBe('invalid-request');
+    expect((await errorOf(b.readEvents('c1', { after: Buffer.from('c1:c1:abc').toString('base64url') })))?.code).toBe('invalid-request');
+    // a cursor ahead of the log is not an error but is reported as unresumable (client must re-sync)
+    const ahead = await b.readEvents('c1', { after: Buffer.from('c1:c1:999').toString('base64url') });
+    expect(ahead).toMatchObject({ events: [], resumable: false, lastAcceptedSeq: page.lastAcceptedSeq });
+  });
+
+  it('pages expose only cursor, lastAcceptedSeq and resumable; no lease or checkpoint material', async () => {
+    const b = new LocalSquadBackend();
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { epoch: 5 }));
+    const page = await b.readEvents('c');
+    expect(Object.keys(page).sort()).toEqual(['events', 'lastAcceptedSeq', 'nextCursor', 'resumable']);
+    for (const e of page.events) {
+      expect(Buffer.from(e.cursor!, 'base64url').toString('utf8')).not.toMatch(/lease|checkpoint|epoch/i);
     }
   });
+});
 
-  it('strips capabilities absent from the backend and reports why', () => {
-    const n = negotiate(['read', 'shell'], ['read'], { granted: ['read', 'shell'] });
-    expect(n.effective).toEqual(['read']);
-    expect(n.stripped).toEqual([{ capability: 'shell', reason: 'not-in-backend' }]);
+// ---------- G8: MCP bridge opt-in and error surface ----------
+
+describe('G8 MCP bridge: explicit opt-in, canonical errors, no silent queueing without a harness', () => {
+  it('SQUAD_BACKEND_URL alone never enables the squad_backend_* tools', () => {
+    expect(isExperimentalBackendEnabled([], { SQUAD_BACKEND_URL: 'https://durable.test', SQUAD_BACKEND_TOKEN: 't' })).toBe(false);
+    expect(isExperimentalBackendEnabled(['--experimental-backend'], {})).toBe(true);
+    expect(isExperimentalBackendEnabled([], { SQUAD_EXPERIMENTAL_BACKEND: '1' })).toBe(true);
   });
 
-  it('strips capabilities denied by policy; explicit deny beats grant', () => {
-    const n = negotiate(['read', 'write', 'net'], ALL, { granted: ['read', 'write', 'net'], denied: ['write'] });
-    expect(n.effective).toEqual(['read', 'net']);
-    expect(n.stripped).toEqual([{ capability: 'write', reason: 'denied-by-policy' }]);
+  it('returns BackendErrorInfo for contract errors and a generic message for anything else', async () => {
+    const b = new LocalSquadBackend({ kind: 'mcp' });
+    const tools = createBackendMcpTools(() => b);
+    const tool = (n: string) => tools.find(t => t.name === n)!;
+    const res = await callBackendMcpTool(tool('squad_backend_get_turn'), { conversationId: 'missing', seq: 1 });
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0]!.text).error).toMatchObject({ code: 'not-found', retryable: false, status: 404 });
+
+    const leaky = { ...tool('squad_backend_health'), call: async () => { throw new Error(`EACCES ${path.join(root, 'secret.json')}`); } };
+    const generic = await callBackendMcpTool(leaky, {});
+    expect(generic.isError).toBe(true);
+    expect(generic.content[0]!.text).not.toContain(root);
   });
 
-  it('strips capabilities the policy never granted', () => {
-    const n = negotiate(['read', 'net'], ALL, { granted: ['read'] });
-    expect(n.stripped).toEqual([{ capability: 'net', reason: 'not-granted-by-policy' }]);
-  });
-
-  it('rejects malformed capability requests and de-duplicates repeats', () => {
-    expect(() => negotiate([1 as unknown as string], ALL, { granted: ALL })).toThrow(/bad capability/);
-    expect(negotiate(['read', 'read'], ALL, { granted: ALL }).effective).toEqual(['read']);
-  });
-
-  it('persisted clients[] grants nothing: no negotiated session means no authority', () => {
-    fs.writeFileSync(path.join(root, '.squad', 'config.json'), JSON.stringify({
-      clients: [{ id: 'c1', adapter: 'claude', capabilities: ['read', 'write', 'shell', 'admin'] }],
-    }));
-    const [entry] = loadConfiguredClients(root);
-    expect(entry.capabilities).toContain('shell');
-    for (const cap of entry.capabilities!) expect(authorize(undefined, cap)).toBe(false);
-  });
-
-  it('widening clients[] on disk cannot widen effective capabilities', () => {
-    const backend = ['read', 'write'];
-    const policy = { granted: ['read', 'write', 'shell'], denied: ['write'] };
-    const narrow = negotiate(['read'], backend, policy);
-    const widened = negotiate(['read', 'write', 'shell', 'admin'], backend, policy);
-    expect(widened.effective).toEqual(narrow.effective);
-    expect(authorize(widened, 'shell')).toBe(false);
-    expect(authorize(widened, 'write')).toBe(false);
-    expect(authorize(widened, 'admin')).toBe(false);
-    expect(authorize(widened, 'read')).toBe(true);
-  });
-
-  it.each(Object.keys(ADAPTER_DIRS))('projection artifact for %s is a whitelist and marks capabilities as requested only', (adapter) => {
-    const a = projectClientArtifact({ id: 'c', adapter, capabilities: ['read'], leaseToken: 'lease-abc', extra: 'dropped' });
-    expect(Object.keys(a).sort()).toEqual(['adapter', 'dir', 'id', 'requestedCapabilities']);
-    expect(a.dir).toBe(ADAPTER_DIRS[adapter]);
-    expect(JSON.stringify(a)).not.toMatch(/lease|dropped/);
-  });
-
-  it('rejects an unknown adapter and a prototype-named adapter', () => {
-    expect(() => projectClientArtifact({ id: 'c', adapter: 'vim' })).toThrow(/unknown adapter/);
-    expect(() => projectClientArtifact({ id: 'c', adapter: 'constructor' })).toThrow(/unknown adapter/);
-  });
-
-  it.each([
-    ['credential key', { apiKey: 'x' }],
-    ['password key', { password: 'x' }],
-    ['token key', { auth_token: 'x' }],
-    ['provider thread id key', { providerThreadId: 'abc' }],
-    ['thread id key', { thread_id: 'abc' }],
-    ['lease token key', { leaseToken: 'x' }],
-    ['raw checkpoint state', { checkpoint: { raw: 'x' } }],
-    ['nested checkpoint state', { meta: { rawCheckpointState: {} } }],
-    ['github pat value', { note: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' }],
-    ['bearer value', { note: 'Bearer abc.def' }],
-    ['provider thread value', { ref: 'thread_abc123XYZ' }],
-    ['lease value', { ref: 'lease-9f2c' }],
-    ['posix home path', { cwd: '/home/user/repo' }],
-    ['windows path', { cwd: 'C:\\Users\\user\\repo' }],
-    ['unc path', { cwd: '\\\\host\\share' }],
-    ['tilde path', { cwd: '~/repo' }],
-    ['embedded path', { cmd: 'run D:\\work\\x.ps1' }],
-  ])('portable clients[] rejects %s', (_n, extra) => {
-    expect(() => assertPortable([{ id: 'c', adapter: 'kiro', ...extra }])).toThrow(/non-portable|credential|machine-specific|lease/);
-  });
-
-  it('refuses to load a config whose clients[] is non-portable', () => {
-    fs.writeFileSync(path.join(root, '.squad', 'config.json'), JSON.stringify({ clients: [{ id: 'c', adapter: 'cursor', workdir: 'C:\\Users\\x' }] }));
-    expect(() => loadConfiguredClients(root)).toThrow(/machine-specific/);
-  });
-
-  it('accepts a clean, relative, portable clients[]', () => {
-    expect(() => assertPortable([{ id: 'c', adapter: 'opencode', capabilities: ['read'], dir: '.opencode/skills', url: 'https://example.com/mcp' }])).not.toThrow();
+  it('send_message is refused (not queued) when no harness is registered', async () => {
+    const b = new LocalSquadBackend({ kind: 'mcp' });
+    const tools = createBackendMcpTools(() => b);
+    const tool = (n: string) => tools.find(t => t.name === n)!;
+    await tool('squad_backend_create_conversation').call({ conversationId: 'c' });
+    const res = await callBackendMcpTool(tool('squad_backend_send_message'), { conversationId: 'c', runId: 'r', seq: 1, content: 'x' });
+    expect(JSON.parse(res.content[0]!.text).error).toMatchObject({ code: 'unavailable', details: { executionAvailable: false } });
+    expect(await tool('squad_backend_health').call({})).toMatchObject({ executionAvailable: false, harnesses: [] });
+    expect(await b.getTranscript('c')).toEqual([]);
   });
 });
 
-describe('versioned durable approvals', () => {
-  let t = 1_000;
-  const clock = () => t;
-  const req = { approvalId: 'ap-1', scope: 'tool:write', runId: 'run-1', payload: { file: 'a.md', n: 1 }, ttlMs: 60_000 };
-  const hashOf = (payload: unknown, scope = 'tool:write', runId = 'run-1') => hashPayload(runId, scope, payload);
-  beforeEach(() => { t = 1_000; });
+// ---------- G9: remote transport ----------
 
-  it('carries the full resource shape and starts at v1 requested', () => {
-    const a = new ApprovalStore(clock).request(req);
-    expect(Object.keys(a).sort()).toEqual(['approvalId', 'expiresAt', 'payloadHash', 'runId', 'scope', 'status', 'version']);
-    expect(a).toMatchObject({ version: 1, status: 'requested', runId: 'run-1', scope: 'tool:write', expiresAt: 61_000 });
-    expect(a.payloadHash).toBe(hashOf(req.payload));
+describe('G9 durable-http transport: https only, bearer never replayed through redirects', () => {
+  it('refuses plain http to a non-loopback host and any non-URL', () => {
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'http://durable.test', token: 't' })).toThrow(/https/);
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'durable.test' })).toThrow(/not a valid URL/);
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'http://localhost:7777' })).not.toThrow();
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'https://durable.test' })).not.toThrow();
   });
 
-  it('increments version on state transition: v1 requested -> v2 decided', () => {
-    const s = new ApprovalStore(clock);
-    const a = s.request(req);
-    const d = s.decide('ap-1', a.version, a.payloadHash, 'approved');
-    expect(d).toMatchObject({ version: 2, status: 'approved' });
-    expect(s.get('ap-1')!.version).toBe(2);
-  });
-
-  it('rejects a stale version without mutating state', () => {
-    const s = new ApprovalStore(clock);
-    const a = s.request(req);
-    expect(() => s.decide('ap-1', 7, a.payloadHash, 'approved')).toThrow(/stale version/);
-    expect(s.get('ap-1')).toMatchObject({ version: 1, status: 'requested' });
-  });
-
-  it('rejects replay of the v1 decision after v2 and a second decision at v2', () => {
-    const s = new ApprovalStore(clock);
-    const a = s.request(req);
-    s.decide('ap-1', 1, a.payloadHash, 'approved');
-    expect(() => s.decide('ap-1', 1, a.payloadHash, 'approved')).toThrow(/stale version/);
-    expect(() => s.decide('ap-1', 2, a.payloadHash, 'denied')).toThrow(/already decided/);
-    expect(s.get('ap-1')!.status).toBe('approved');
-  });
-
-  it('rejects a mismatched payloadHash (tampered payload, scope or run)', () => {
-    const s = new ApprovalStore(clock);
-    s.request(req);
-    for (const bad of [hashOf({ ...req.payload, n: 2 }), hashOf(req.payload, 'tool:shell'), hashOf(req.payload, 'tool:write', 'run-2'), 'deadbeef']) {
-      expect(() => s.decide('ap-1', 1, bad, 'approved')).toThrow(/payloadHash mismatch/);
+  it('every request carries redirect: "error" and a timeout signal, and the token goes only to the configured origin', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const f = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init: init ?? {} });
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://durable.test/', token: 'secret', fetch: f as never, retryDelayMs: 1 });
+    await b.createConversation({ conversationId: 'c' });
+    await b.health();
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    for (const { url, init } of calls) {
+      expect(url.startsWith('https://durable.test/')).toBe(true);
+      expect(init.redirect).toBe('error');
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer secret');
     }
-    expect(s.get('ap-1')).toMatchObject({ version: 1, status: 'requested' });
-  });
-
-  it('payloadHash is key-order independent', () => {
-    expect(hashOf({ a: 1, b: 2 })).toBe(hashOf({ b: 2, a: 1 }));
-  });
-
-  it('expires durably: decision at/after expiresAt is refused and cannot be revived', () => {
-    const s = new ApprovalStore(clock);
-    const a = s.request(req);
-    t = a.expiresAt;
-    expect(() => s.decide('ap-1', 1, a.payloadHash, 'approved')).toThrow(/expired/);
-    expect(s.get('ap-1')).toMatchObject({ status: 'expired', version: 2 });
-    expect(() => s.decide('ap-1', 2, a.payloadHash, 'approved')).toThrow(/already decided/);
-  });
-
-  it('unknown and duplicate approval ids are rejected', () => {
-    const s = new ApprovalStore(clock);
-    expect(() => s.decide('nope', 1, 'x', 'approved')).toThrow(/unknown approval/);
-    s.request(req);
-    expect(() => s.request(req)).toThrow(/exists/);
-  });
-
-  it('returned records are copies: callers cannot mutate durable state', () => {
-    const s = new ApprovalStore(clock);
-    const a = s.request(req);
-    a.status = 'approved'; a.version = 99;
-    expect(s.get('ap-1')).toMatchObject({ status: 'requested', version: 1 });
-  });
-});
-
-describe('runId-addressed cancellation', () => {
-  const mk = () => new DurableSession(() => 1_000);
-
-  it('cancels by stable runId after later turns advanced seq', () => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    s.acceptTurn('run-2', 2);
-    s.acceptTurn('run-3', 3);
-    expect(s.cancel('run-1')).toBe('cancelled');
-    expect(s.state('run-1')).toBe('cancelled');
-    expect(s.state('run-2')).toBe('running');
-    expect(s.state('run-3')).toBe('running');
-  });
-
-  it('seq is not an identifier: cancelling by a seq value fails', () => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    expect(() => s.cancel('1')).toThrow(/unknown run/);
-    expect(s.state('run-1')).toBe('running');
-  });
-
-  it('cancellation is idempotent and a no-op once terminal', () => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    s.cancel('run-1');
-    const n = s.log.length;
-    expect(s.cancel('run-1')).toBe('already-terminal');
-    expect(s.complete('run-1')).toBe('already-terminal');
-    expect(s.log).toHaveLength(n);
-  });
-
-  it('enforces turn sequencing: gaps and runId reuse are rejected, same (runId, seq) is an idempotent replay', () => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    s.acceptTurn('run-1', 1);
-    expect(s.log.filter((e) => e.kind === 'TurnAccepted')).toHaveLength(1);
-    expect(() => s.acceptTurn('run-2', 5)).toThrow(/sequence gap/);
-    expect(() => s.acceptTurn('run-1', 2)).toThrow(/sequence gap/);
-  });
-
-  it('output and approval requests on a terminal run are refused', () => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    s.complete('run-1');
-    expect(() => s.output('run-1', 'late')).toThrow(/terminal/);
-    expect(() => s.requestApproval({ approvalId: 'a', scope: 's', runId: 'run-1', payload: {}, ttlMs: 1 })).toThrow(/terminal/);
-  });
-});
-
-describe('loss-tolerant projection', () => {
-  const mk = () => new DurableSession(() => 1_000);
-  const future = { kind: 'x-future.event', runId: 'run-1', seq: 9, data: { nested: { a: [1, { b: null }] }, flag: true } };
-
-  it.each(PROJECTIONS)('$name projection preserves unknown future kinds without crashing', (proj) => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    s.ingest(future);
-    s.ingest({ kind: 'x-other.v2', data: 'str' });
-    const c = new SimClient(proj, s);
-    expect(() => c.sync()).not.toThrow();
-    const got = c.history.find((e) => e.kind === 'x-future.event')!;
-    expect(got).toMatchObject({ kind: 'x-future.event', runId: 'run-1', seq: 9, data: future.data });
-    expect(c.history.map((e) => renderEvent(e))).toEqual(['TurnAccepted', 'unsupported:x-future.event', 'unsupported:x-other.v2']);
-  });
-
-  it.each([
-    ['missing kind', { data: 1 }],
-    ['numeric kind', { kind: 42, data: 1 }],
-    ['object kind', { kind: { a: 1 } }],
-    ['empty kind', { kind: '' }],
-    ['null', null],
-    ['string', 'garbage'],
-    ['array', [1, 2]],
-  ])('preserves malformed event (%s) as x-unknown with the raw payload', (_n, raw) => {
-    const s = mk();
-    s.ingest(raw);
-    expect(s.log).toHaveLength(1);
-    expect(s.log[0].kind).toBe('x-unknown');
-    expect(s.log[0].data).toEqual({ raw });
-    for (const proj of PROJECTIONS) {
-      const c = new SimClient(proj, s);
-      c.sync();
-      expect(canon(c.history)).toBe(canon(s.log));
-    }
-  });
-
-  it('separates disposable telemetry from durable events', () => {
-    const s = mk();
-    s.acceptTurn('run-1', 1);
-    s.ingest({ kind: 'telemetry.latency', data: { ms: 12 } });
-    s.emitTelemetry('telemetry.tokens', { n: 3 });
-    s.output('run-1', 'hi');
-    expect(s.log.map((e) => e.kind)).toEqual(['TurnAccepted', 'OutputDelta']);
-    expect(s.telemetry.map((t) => t.kind)).toEqual(['telemetry.latency', 'telemetry.tokens']);
-    const c = new SimClient(PROJECTIONS[0], s);
-    c.sync();
-    expect(c.wire.join('')).not.toMatch(/telemetry/);
-  });
-
-  it('telemetry is bounded and never changes durable history or its ids', () => {
-    const a = mk(); const b = mk();
-    for (const s of [a, b]) { s.acceptTurn('run-1', 1); }
-    for (let i = 0; i < 100; i++) b.emitTelemetry('telemetry.tick', { i });
-    for (const s of [a, b]) { s.output('run-1', 'x'); s.complete('run-1'); }
-    expect(b.telemetry.length).toBeLessThanOrEqual(8);
-    expect(canon(b.log)).toBe(canon(a.log));
-  });
-
-  it('unknown kinds survive a disconnect/reconnect cycle', () => {
-    const s = mk();
-    const c = new SimClient(PROJECTIONS[2], s);
-    c.sync();
-    c.disconnect();
-    s.ingest(future);
-    expect(() => c.sync()).toThrow(/disconnected/);
-    c.reconnect();
-    expect(c.history.map((e) => e.kind)).toEqual(['x-future.event']);
-  });
-});
-
-describe('golden cross-adapter conformance trace', () => {
-  /**
-   * TurnAccepted(runId, seq) → stream partial output → ApprovalRequested(v1) → disconnect →
-   * reconnect(cursor) → ApprovalDecided(v2) → race CancellationRequested(runId) vs completion → terminal.
-   */
-  function golden(proj: Projection, winner: 'cancel' | 'complete') {
-    const s = new DurableSession(() => 1_000);
-    const c = new SimClient(proj, s);
-    const payload = { action: 'write-decision', file: 'decisions.md' };
-
-    s.acceptTurn('run-1', 1);
-    s.output('run-1', 'par');
-    s.output('run-1', 'tial');
-    const a1 = s.requestApproval({ approvalId: 'ap-1', scope: 'tool:write', runId: 'run-1', payload, ttlMs: 60_000 });
-    c.sync();
-    const beforeDrop = c.views[c.views.length - 1];
-
-    c.disconnect();
-    c.reconnect(); // resumes from the stored cursor
-    c.reconnect(); // a second reconnect from the same cursor must be a no-op
-    s.decide('ap-1', a1.version, a1.payloadHash, 'approved');
-    c.sync();
-
-    if (winner === 'cancel') { s.cancel('run-1'); s.complete('run-1'); } else { s.complete('run-1'); s.cancel('run-1'); }
-    c.sync();
-    return { s, c, a1, beforeDrop };
-  }
-
-  const EXPECT = {
-    cancel: ['TurnAccepted', 'OutputDelta', 'OutputDelta', 'ApprovalRequested', 'ApprovalDecided', 'CancellationRequested', 'TurnCancelled'],
-    complete: ['TurnAccepted', 'OutputDelta', 'OutputDelta', 'ApprovalRequested', 'ApprovalDecided', 'TurnCompleted'],
-  } as const;
-
-  it.each(['cancel', 'complete'] as const)('canonical history follows the trace when %s wins the race', (winner) => {
-    const { s } = golden(PROJECTIONS[0], winner);
-    expect(s.log.map((e) => e.kind)).toEqual(EXPECT[winner]);
-    expect(s.log.map((e) => e.id)).toEqual(s.log.map((_e, i) => i + 1));
-    expect(s.log[0]).toMatchObject({ kind: 'TurnAccepted', runId: 'run-1', seq: 1 });
-    expect(s.log[3].data).toMatchObject({ version: 1, status: 'requested', runId: 'run-1' });
-    expect(s.log[4].data).toMatchObject({ version: 2, status: 'approved', runId: 'run-1' });
-  });
-
-  it.each(['cancel', 'complete'] as const)('exactly one terminal state, no matter who wins (%s)', (winner) => {
-    const { s } = golden(PROJECTIONS[0], winner);
-    const terminals = s.log.filter((e) => e.kind === 'TurnCompleted' || e.kind === 'TurnCancelled');
-    expect(terminals).toHaveLength(1);
-    expect(s.state('run-1')).toBe(winner === 'cancel' ? 'cancelled' : 'completed');
-  });
-
-  it.each(['cancel', 'complete'] as const)('all 5 client projections observe identical canonical history (%s)', (winner) => {
-    const runs = PROJECTIONS.map((p) => ({ name: p.name, ...golden(p, winner) }));
-    expect(runs.map((r) => r.name)).toEqual(['copilot', 'claude', 'kiro', 'opencode', 'cursor']);
-    const reference = canon(runs[0].s.log);
-    for (const r of runs) {
-      expect(canon(r.c.history), r.name).toBe(reference);
-      expect(canon(r.c.history), r.name).toBe(canon(r.s.log));
-    }
-  });
-
-  it('wire formats differ per adapter even though canonical history is identical', () => {
-    const wires = new Set(PROJECTIONS.map((p) => golden(p, 'cancel').c.wire[0]));
-    expect(wires.size).toBe(PROJECTIONS.length);
-  });
-
-  it.each(PROJECTIONS)('$name: reconnect causes no duplicate side effects or duplicate events', (proj) => {
-    const { s, c, a1 } = golden(proj, 'cancel');
-    expect(s.effects).toEqual(['apply:ap-1']);
-    expect(c.duplicatesDropped).toBe(0);
-    expect(new Set(c.history.map((e) => e.id)).size).toBe(c.history.length);
-    expect(s.log.filter((e) => e.kind === 'ApprovalDecided')).toHaveLength(1);
-
-    // Client retries the stale v1 decision after reconnecting: rejected, still exactly one effect.
-    expect(() => s.decide('ap-1', a1.version, a1.payloadHash, 'approved')).toThrow(/stale version/);
-    // Extra reconnects and fresh pulls from an old cursor never re-run effects.
-    for (let i = 0; i < 3; i++) { c.disconnect(); c.reconnect(); }
-    s.pull(); s.pull();
-    expect(s.effects).toEqual(['apply:ap-1']);
-    expect(s.log.filter((e) => e.kind === 'ApprovalDecided')).toHaveLength(1);
-  });
-
-  it('replaying from an older cursor returns only the missed suffix', () => {
-    const s = new DurableSession(() => 1_000);
-    s.acceptTurn('run-1', 1);
-    const first = s.pull();
-    s.output('run-1', 'a');
-    s.output('run-1', 'b');
-    const replay = s.pull(first.cursor.cursor);
-    expect(replay.events.map((e) => e.id)).toEqual([2, 3]);
-    expect(s.pull(first.cursor.cursor).events.map((e) => e.id)).toEqual([2, 3]); // idempotent
-    expect(s.pull(replay.cursor.cursor).events).toEqual([]);
-  });
-
-  it.each(PROJECTIONS)('$name: client cursor payload only exposes cursor, lastAcceptedSeq, resumable', (proj) => {
-    const { s, c, beforeDrop } = golden(proj, 'cancel');
-    for (const v of c.views) expect(Object.keys(v).sort()).toEqual(['cursor', 'lastAcceptedSeq', 'resumable']);
-    expect(beforeDrop).toMatchObject({ lastAcceptedSeq: 1, resumable: true });
-    expect(c.views[c.views.length - 1]).toMatchObject({ lastAcceptedSeq: 1, resumable: false });
-    expect(beforeDrop.cursor).toMatch(/^cur_[0-9a-f]+$/);
-
-    // Lease token and raw checkpoint state never appear in anything the client received.
-    const everything = JSON.stringify([c.views, c.wire, c.history]);
-    for (const secret of s.internalSecrets()) expect(everything).not.toContain(secret);
-    expect(everything).not.toMatch(/lease-|ckpt-/);
-  });
-
-  it('cursors are opaque: forged, tampered and cross-session cursors are rejected', () => {
-    const a = new DurableSession(() => 1_000);
-    const b = new DurableSession(() => 1_000);
-    a.acceptTurn('run-1', 1);
-    const cur = a.pull().cursor.cursor;
-    expect(() => a.pull('cur_deadbeef')).toThrow(/unknown cursor/);
-    expect(() => a.pull(`${cur}0`)).toThrow(/unknown cursor/);
-    expect(() => a.pull('1')).toThrow(/unknown cursor/);
-    expect(() => b.pull(cur)).toThrow(/unknown cursor/);
-  });
-
-  it('an unknown future event mid-trace does not disturb conformance across projections', () => {
-    const histories = PROJECTIONS.map((proj) => {
-      const s = new DurableSession(() => 1_000);
-      const c = new SimClient(proj, s);
-      s.acceptTurn('run-1', 1);
-      s.ingest({ kind: 'x-future.event', runId: 'run-1', data: { v: 3 } });
-      s.ingest({ kind: 'telemetry.span', data: { ms: 1 } });
-      s.output('run-1', 'ok');
-      c.sync();
-      c.disconnect(); c.reconnect();
-      s.complete('run-1');
-      c.sync();
-      return canon(c.history);
-    });
-    expect(new Set(histories).size).toBe(1);
-    expect(histories[0]).toContain('x-future.event');
-    expect(histories[0]).not.toContain('telemetry');
   });
 });

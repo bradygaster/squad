@@ -530,6 +530,7 @@ const GITIGNORE_ENTRIES = [
   '.squad/decisions/inbox/',
   '.squad/sessions/',
   '.squad/.cache/',
+  '.squad/backend/',
   '.squad-workstream',
 ];
 

@@ -10,13 +10,16 @@
 
 **Claimable capabilities:** None
 
-**Implementation status:** Squad already exposes local session APIs, the
-`squad_state` MCP bridge, Copilot ACP sessions, and external durable runtimes,
-but they do not yet share one portable conversation contract.
+**Implementation status:** The contract in this draft is implemented as the
+experimental `@bradygaster/squad-sdk/backend` subpath (`LocalSquadBackend`,
+`DurableHttpSquadBackend`, `DefaultHarnessRegistry`) and bridged over MCP by
+`squad state-mcp --experimental-backend`. No execution harness ships with it;
+the MCP bridge records transcripts and events only.
 
-**Known deviations:** Conversation admission, approval replay protection, task
-leases, and transcript pagination are implemented differently across local,
-MCP, and remote runtimes.
+**Known deviations:** Approval hashes are opaque harness-supplied strings
+(not broker-computed digests), lease epochs are client-asserted rather than
+broker-issued, cursors are unsigned, and conversations are whole-file JSON
+snapshots. See section 10.4.
 
 **Depends on:** `squad-core/v0.1`, `squad-interop/v0.1`,
 `squad-coordination-handoff/v0.1`,
@@ -64,16 +67,19 @@ authorization boundary between host affordances and execution rights.
 The broker surface is organized around one conversation resource and a small
 set of stable subordinate views.
 
-| Resource | Purpose | Canonical shape |
+| Resource | `SquadBackend` method | Canonical shape |
 |---|---|---|
-| `/v1/conversations` | create or enumerate portable conversation identities | conversation descriptor |
-| `/v1/capabilities` | report negotiated capabilities for one backend and one client projection | capability envelope |
-| `/v1/conversations/{id}/messages` | submit user, system, approval, or tool messages for admission | `BackendMessage` plus admission metadata |
-| `/v1/conversations/{id}/transcript` | read the materialized transcript in broker order | transcript snapshot |
-| `/v1/conversations/{id}/turns/{seq}` | read one broker turn with its run and task state | `BackendTurn` |
-| `/v1/conversations/{id}/runs/{runId}/cancel` | request lifecycle cancellation by stable run identity | cancellation request |
-| `/v1/runs/{runId}/cancel` | optional global cancellation alias for the same lifecycle target | cancellation request |
-| `/v1/conversations/{id}/approvals/{approvalId}` | resolve one hash-bound approval request | approval request and response envelope |
+| `POST /v1/conversations` | `createConversation` (idempotent per `conversationId`) | `BackendConversation` |
+| `POST /v1/capabilities` | `negotiate` | `NegotiatedCapabilities` |
+| `POST /v1/conversations/{id}/messages` | `sendMessage` (idempotent per `(runId, seq)`) | `BackendMessage` → `BackendAdmission` |
+| `GET /v1/conversations/{id}/transcript` | `getTranscript` | `BackendMessage[]` |
+| `GET /v1/conversations/{id}/events?after=&limit=&stream=` | `readEvents` | `BackendEventPage` of `BackendEnvelope` |
+| `GET /v1/conversations/{id}/turns/{seq}` | `getTurn` | `BackendTurn` |
+| `POST /v1/conversations/{id}/turns/{seq}/cancel` | `cancelTurn` | `BackendTurn` |
+| `POST /v1/conversations/{id}/runs/{runId}/cancel` | `cancelRun` (stable run identity) | `BackendTurn` |
+| `GET /v1/conversations/{id}/approvals` | `getApprovals` | `ApprovalRecord[]` |
+| `POST /v1/conversations/{id}/approvals/{approvalId}` | `respondApproval` (echoes the request `hash`) | `ApprovalResponse` → `BackendTurn` |
+| `GET /health/live`, `GET /health/ready` | `health` | operational, outside `/v1` |
 
 These paths are a resource vocabulary, not an HTTP requirement. A filesystem
 broker, MCP tool surface, or durable task API may project the same resources
@@ -86,191 +92,190 @@ portable conversation protocol.
 
 ## 4. Portable TypeScript contracts
 
-The broker contracts are designed to live in one SDK-facing module and remain
-independent from any host-specific tool schema.
+The broker contract lives in one SDK module,
+`packages/squad-sdk/src/backend/types.ts`, exported from
+`@bradygaster/squad-sdk/backend` (stage: `experimental`). That file is the
+source of truth; the excerpts below are copied from it and trimmed to the
+members a client author needs.
 
 ```ts
-export type BackendRunState =
-  | 'queued'
-  | 'admitted'
-  | 'running'
-  | 'waiting-input'
-  | 'waiting-approval'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'expired';
+export type RunState = 'queued' | 'running' | 'awaiting-approval' | 'completed' | 'failed' | 'cancelled';
+export type TaskState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-export type BackendTaskState =
-  | 'pending'
-  | 'leased'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'expired';
+/** Fencing token: a higher epoch supersedes a lower one; stale epochs are rejected. */
+export type LeaseEpoch = number;
+export const BACKEND_PROTOCOL_VERSION = '2.0';
+/** Opaque, server-issued position in a conversation's event log. Clients do not parse it. */
+export type BackendCursor = string;
 
-export interface BackendLease {
-  leaseId: string;
-  holderId: string;
-  epoch: number;
-  acquiredAt: string;
-  expiresAt: string;
+export type BackendErrorCode =
+  | 'not-found' | 'stale-epoch' | 'approval-hash-mismatch' | 'approval-not-pending'
+  | 'invalid-request' | 'unsupported-protocol' | 'unavailable' | 'conflict';
+
+export interface BackendErrorInfo {
+  code: BackendErrorCode; message: string; retryable: boolean;
+  status?: number; correlationId?: string; details?: Record<string, unknown>;
 }
 
 export interface BackendMessage {
-  messageId: string;
-  conversationId: string;
-  kind:
-    | 'user'
-    | 'assistant'
-    | 'system'
-    | 'tool-call'
-    | 'tool-result'
-    | 'approval-request'
-    | 'approval-response';
+  /** Idempotency key, part 1 of `(runId, seq)`. */
+  runId: string;
+  /** Idempotency key, part 2; monotonically increasing per run. */
+  seq: number;
   role: 'user' | 'assistant' | 'system' | 'tool';
-  createdAt: string;
-  runId?: string;
-  turnSeq?: number;
-  taskId?: string;
-  idempotencyKey?: string;
-  causationId?: string;
+  /** Plain-text rendering; derived from `parts` when omitted by the sender. */
+  content: string;
+  /** Typed content; authoritative when present. */
+  parts?: BackendContentPart[];
   correlationId?: string;
-  payloadHash: string;
-  body: Record<string, unknown>;
+  causationId?: string;
+  /** Fencing token held by the sender. */
+  epoch?: LeaseEpoch;
+  /** Target harness, if the caller wants to route explicitly. */
+  harness?: string;
+  extensions?: ExtensionBag; // keys are `x-<harness>.*`
 }
 
 export interface BackendAdmission {
+  protocol: string;
+  /** Cursor positioned after the admission event. */
+  cursor?: BackendCursor;
+  correlationId?: string;
   conversationId: string;
-  messageId: string;
   runId: string;
-  state: BackendRunState;
-  admittedAt: string;
-  expectedTurnSeq: number;
-  lease?: BackendLease;
-  replayed: boolean;
+  seq: number;
+  /** `true` when `(runId, seq)` had already been admitted; no new turn created. */
+  duplicate: boolean;
+  state: RunState;
+  epoch: LeaseEpoch;
 }
 
-export interface BackendApprovalRequest {
+export interface ApprovalRequest {
   approvalId: string;
-  version: number;
-  conversationId: string;
-  runId: string;
   turnSeq: number;
-  scope: 'conversation' | 'turn' | 'task' | 'artifact';
+  /** Monotonic resource version: 1 when requested, 2 when decided. */
+  version: number;
+  scope: { kind: 'turn' | 'run' | 'conversation'; runId?: string; seq?: number };
+  action: string;
+  /** Opaque string supplied by the harness; approvals echo it verbatim. */
+  hash: string;
+  payload?: unknown;
+}
+
+export interface ApprovalRecord extends ApprovalRequest {
+  state: 'pending' | 'approved' | 'denied' | 'cancelled';
+  runId: string;
   requestedAt: string;
-  expiresAt: string;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
-  requestHash: string;
-  payloadHash: string;
-  prompt: string;
-  options?: string[];
+  decidedAt?: string;
+  decision?: 'approve' | 'deny';
+  reason?: string;
+}
+
+export interface ApprovalResponse {
+  approvalId: string;
+  /** Equals {@link ApprovalRequest.hash}. */
+  hash: string;
+  decision: 'approve' | 'deny';
+  reason?: string;
+  epoch?: LeaseEpoch;
 }
 
 export interface BackendTurn {
   conversationId: string;
   runId: string;
-  turnSeq: number;
-  state: BackendRunState;
-  startedAt: string;
-  completedAt?: string;
-  inputMessageIds: string[];
-  outputMessageIds: string[];
-  taskStates: Array<{
-    taskId: string;
-    state: BackendTaskState;
-    executorId: string;
-    epoch: number;
-  }>;
-  approval?: BackendApprovalRequest;
-  transcriptHash: string;
-}
-
-export interface ConversationDescriptor {
-  conversationId: string;
-  backendKind: 'local' | 'mcp' | 'remote';
-  title?: string;
-  createdAt: string;
-  updatedAt: string;
-  currentRunState: BackendRunState;
-  currentTurnSeq: number;
-}
-
-export interface ConversationTranscript {
-  conversation: ConversationDescriptor;
+  seq: number;
+  state: RunState;
+  tasks: Array<{ id: string; state: TaskState; title?: string }>;
   messages: BackendMessage[];
-  turns: BackendTurn[];
-  nextCursor?: string;
+  pendingApproval?: ApprovalRequest;
+  error?: string;
+  extensions?: ExtensionBag;
+  epoch?: LeaseEpoch;
+}
+
+export interface BackendConversation {
+  conversationId: string;
+  epoch: LeaseEpoch;
+  createdAt: string;
+  title?: string;
+  metadata?: ExtensionBag;
+}
+
+export interface BackendEnvelope<T = unknown> {
+  protocol: string;
+  id: string;                       // stable across redelivery
+  kind: 'command' | 'event' | 'response';
+  stream: 'control' | 'execution';
+  type: string;                     // e.g. `message.accepted`, `turn.state`
+  conversationId: string;
+  sequence?: number;                // per-conversation monotonic (events only)
+  cursor?: BackendCursor;
+  correlationId?: string;
+  causationId?: string;
+  timestamp: string;
+  payload: T;
+  error?: BackendErrorInfo;
+}
+
+export interface BackendEventPage {
+  events: BackendEnvelope[];
+  nextCursor: BackendCursor;
   lastAcceptedSeq: number;
+  /** false when the supplied cursor is ahead of the log and the client re-syncs from the transcript. */
   resumable: boolean;
 }
 
-export interface CapabilityEnvelope {
+export interface NegotiatedCapabilities {
   clientCapabilities: string[];
   backendCapabilities: string[];
-  policyCapabilities: string[];
+  policyCapabilities?: string[];
+  /** Intersection of client, backend and (optional) policy capabilities. */
   effectiveCapabilities: string[];
+  protocol: string;
+  contentParts: BackendContentPart['type'][];
+  extensionNamespaces: string[];
+  streams: Array<'control' | 'execution'>;
+  atLeastOnce: true;
+  resume: boolean;
+  approvals: boolean;
+  /** Registered execution harness ids; empty when the backend only records transcripts. */
+  harnesses: string[];
 }
 
-export interface ApprovalResponseInput {
-  approvalId: string;
-  requestHash: string;
-  decision: 'approved' | 'rejected' | 'cancelled';
-  responseText?: string;
-  leaseId: string;
-  epoch: number;
+export interface SquadBackend {
+  readonly kind: string;
+  negotiate(hello: ProtocolHello): Promise<NegotiatedCapabilities>;
+  readEvents(conversationId: string, options?: { after?: BackendCursor; limit?: number; stream?: 'control' | 'execution' }): Promise<BackendEventPage>;
+  createConversation(options?: { title?: string; metadata?: ExtensionBag; conversationId?: string }): Promise<BackendConversation>;
+  sendMessage(conversationId: string, message: BackendMessage): Promise<BackendAdmission>;
+  getTranscript(conversationId: string): Promise<BackendMessage[]>;
+  getTurn(conversationId: string, seq: number): Promise<BackendTurn>;
+  cancelTurn(conversationId: string, seq: number, epoch?: LeaseEpoch): Promise<BackendTurn>;
+  /** Cancel by stable runId (distinct from turn seq). Idempotent. */
+  cancelRun(conversationId: string, runId: string, reason?: string, epoch?: LeaseEpoch): Promise<BackendTurn>;
+  getApprovals(conversationId: string): Promise<ApprovalRecord[]>;
+  respondApproval(conversationId: string, response: ApprovalResponse): Promise<BackendTurn>;
+  health(): Promise<{ ok: boolean; live?: boolean; ready?: boolean; backend: string; version?: string; detail?: string }>;
 }
 
-export interface IConversationBackend {
-  createConversation(input?: { title?: string; metadata?: Record<string, unknown> }):
-    Promise<ConversationDescriptor>;
-  getConversation(conversationId: string): Promise<ConversationDescriptor | null>;
-  admitMessage(
-    conversationId: string,
-    message: Omit<BackendMessage, 'conversationId'>,
-  ): Promise<BackendAdmission>;
-  getTranscript(
-    conversationId: string,
-    options?: { afterTurnSeq?: number; cursor?: string; limit?: number },
-  ): Promise<ConversationTranscript>;
-  getCapabilities(conversationId?: string): Promise<CapabilityEnvelope>;
-  getTurn(conversationId: string, turnSeq: number): Promise<BackendTurn | null>;
-  subscribe(
-    conversationId: string,
-    listener: (event: BackendMessage | BackendTurn) => void | Promise<void>,
-  ): Promise<() => Promise<void>>;
-  cancelRun(conversationId: string, runId: string, reason?: string): Promise<void>;
-  respondApproval(
-    conversationId: string,
-    response: ApprovalResponseInput,
-  ): Promise<BackendAdmission>;
-  describe(): Promise<{
-    backendKind: 'local' | 'mcp' | 'remote';
-    supportsLeases: boolean;
-    supportsApprovals: boolean;
-    supportsPaging: boolean;
-  }>;
-}
-
-export interface SquadBackend extends IConversationBackend {
-  listTasks(runId: string): Promise<Array<{ taskId: string; state: BackendTaskState }>>;
-  reportTaskState(taskId: string, state: BackendTaskState, detail?: Record<string, unknown>):
-    Promise<void>;
-}
+/** DurableSquad naming alias. */
+export type IConversationBackend = SquadBackend;
 ```
 
-`IConversationBackend` is the client-facing minimum surface. `SquadBackend`
-extends it with the broker-owned lease and task operations needed by durable
-or multi-worker control planes.
-
-The shared backend contract is also where versioned commands and events are
-defined. Hosts translate into and out of this contract, but they do not fork
-its meaning.
+`SquadBackend` (alias `IConversationBackend`) is the whole client-facing
+surface; there is no separate broker-only extension with task leasing today.
+Task state is only visible through `BackendTurn.tasks` as reported by a
+harness.
 
 Leases and checkpoints remain internal to the broker and execution planes. The
-client-facing contract exposes only opaque resume hints such as `nextCursor`,
+client-facing contract exposes only opaque resume hints: `nextCursor`,
 `lastAcceptedSeq`, and `resumable`.
+
+Event `type` values emitted by the SDK backend are `conversation.created`,
+`message.accepted`, `turn.state`, `approval.requested`, `approval.resolved`,
+`cancellation.requested`, `harness.message`, `harness.task` and
+`harness.epoch-rejected`. The golden trace in
+`test-fixtures/spec/suite-v0.2/golden-trace.json` uses these names directly.
 
 ## 5. Protocol invariants and stream boundaries
 
@@ -314,15 +319,18 @@ messages and turns.
 Admission has three steps:
 
 1. client submits a `BackendMessage` with a stable idempotency key;
-2. broker returns `BackendAdmission` with the accepted run identity and next
-   expected turn sequence;
-3. execution publishes `BackendTurn` and resulting output messages back
-   through the same conversation resource.
+2. broker returns `BackendAdmission` with the accepted `(runId, seq)`, the
+   run state, the conversation epoch and a cursor positioned after the
+   `message.accepted` event;
+3. the routed harness publishes messages, task updates, approval requests and
+   state changes, which the broker records as `harness.*`, `approval.*` and
+   `turn.state` events on the same conversation.
 
-Repeated submission of the same idempotency key returns the original admission.
-Reusing the key with a different payload hash is a conflict.
+Repeated submission of the same `(runId, seq)` returns `duplicate: true` with
+the original admission cursor. Reusing the key with a different `role`,
+`content`, `parts` or `extensions` is a `conflict`.
 
-`runId` is exposed independently from turn sequence. `turnSeq` remains the
+`runId` is exposed independently from turn sequence. `seq` remains the
 ordering and causation coordinate, while lifecycle cancellation and resumable
 state target `runId`. Host completion signals are evidence for projection, not
 the canonical lifecycle state.
@@ -333,48 +341,70 @@ Broker-level run state and execution-level task state are related but not
 identical.
 
 ```text
-run: queued -> admitted -> running -> waiting-input|waiting-approval
-     -> completed|failed|cancelled|expired
+run:  queued -> running -> awaiting-approval -> running
+      -> completed|failed|cancelled
 
-task: pending -> leased -> running -> succeeded|failed|cancelled|expired
+task: pending -> running -> completed|failed|cancelled
 ```
 
-The broker turn is the join point. A run remains `running` while one or more
-leased tasks continue in the execution plane. A run becomes
-`waiting-approval` only when the broker has emitted a `BackendApprovalRequest`
-and no successor admission has yet been recorded.
+A turn is admitted as `running` when a harness is routed and as `queued` when
+none is (a `queued` turn stays queued until a harness picks it up or it is
+cancelled). A run becomes `awaiting-approval` when its harness raises an
+`approval-requested` event; an approval decision moves it back to `running`
+(approve) or to `cancelled` (deny). Task state is reported by the harness and
+recorded on the turn; the broker does not lease tasks.
 
-Lifecycle cancellation targets `runId` through a run-scoped cancel resource.
-The backend may expose either the conversation-relative or global alias, but
-both name the same stable run resource.
+Lifecycle cancellation targets `runId` through `cancelRun`; `cancelTurn` by
+`seq` exists for local convenience. Both are idempotent and emit exactly one
+`turn.state` terminal event per turn, caused by the `cancellation.requested`
+event.
 
-## 8. Hash-bound approvals
+## 8. Hash-echoed approvals
 
 Approvals are durable versioned resources, not ordinary transcript messages or
-ephemeral prompts. Approval replay safety is owned by the broker. Every
-approval request carries:
+ephemeral prompts. Every approval record carries:
 
-- the canonical `requestHash` of the broker-emitted approval payload;
-- an explicit `version`, `scope`, `status`, `runId`, and immutable
-  `payloadHash`;
-- an expiry timestamp;
-- the conversation, run, and turn identities.
+- `approvalId`, `turnSeq`, `runId` and a `scope` (`turn` by default);
+- `version` (1 while pending, 2 once decided or cancelled) and `state`
+  (`pending`, `approved`, `denied`, `cancelled`);
+- `hash`, an opaque string supplied by the harness together with the request;
+- `requestedAt` and, after the decision, `decidedAt`, `decision` and
+  `reason`.
 
-`respondApproval` succeeds only when the client echoes the same
-`approvalId`, `requestHash`, and current approval `version`. If any of those
-values are stale, the broker rejects the response and requires the client to
-re-read the approval resource or conversation transcript before resubmitting.
+`respondApproval` succeeds only when the response echoes the same
+`approvalId` and the exact `hash` string; a different string is rejected with
+`approval-hash-mismatch` and no state change. A second decision for an already
+decided or cancelled approval is rejected with `approval-not-pending`, so the
+side effect of a decision happens at most once.
+
+The broker neither computes nor interprets `hash`. Whether it is a SHA-256 of
+a canonical payload, a nonce, or a plain label is entirely the harness's
+choice, and nothing stops a client that can read the approval record from
+echoing it. There is no `payloadHash`, no expiry, and the response does not
+carry or check `version`. Broker-computed hashes and expiry are listed under
+"Known limitations" below as future work.
 
 ## 9. Lease and epoch fencing
 
-Leases fence concurrent writers in the control plane and execution plane.
-Clients do not manipulate those leases directly. They only observe whether the
-backend can resume from a cursor and which sequence was last durably accepted.
+A conversation carries one integer `epoch` (initially 1). Every write may
+present an epoch:
 
-When the broker rotates an internal lease epoch, stale worker writes are
-rejected instead of becoming last-writer-wins updates. This keeps a
-disconnected worker from overwriting a newer broker decision after recovery
-without leaking internal lease handles into client contracts.
+- an epoch lower than the conversation's is rejected with `stale-epoch`;
+- once any writer has presented an epoch the conversation is *fenced* and a
+  write that omits the epoch is rejected as well;
+- an epoch higher than the conversation's is adopted and becomes the new
+  current epoch.
+
+Harness output tagged with an epoch older than the conversation's is dropped
+and recorded as a `harness.epoch-rejected` control event, so a worker that
+resumes after a pause cannot overwrite a newer decision.
+
+Epochs are cooperative and client-asserted. There is no broker-issued lease
+token, no holder identity and no expiry: any caller that presents a larger
+integer takes over the conversation and fences everyone else. This is an
+optimistic-concurrency version for well-behaved writers, not a security
+boundary against a hostile or buggy co-tenant. The `DurableHttpSquadBackend`
+client learns the epoch from every admission and sends it as `X-Lease-Epoch`.
 
 ## 10. Backend plug-in shapes
 
@@ -382,30 +412,45 @@ The same contract is projected through three backend families.
 
 ### 10.1 Local backend
 
-The local backend runs broker and execution logic inside one process tree. It
-typically stores transcript state in memory plus repository-local state
-artifacts. This is the fastest development path and the reference surface for
-single-user sessions.
+`LocalSquadBackend` runs the broker in process and stores each conversation as
+one JSON snapshot under `.squad/backend/conversations/<id>.json`, serialized
+across processes by `.squad/backend/locks/<id>.lock`. Harnesses are plugged in
+through a `HarnessRegistry`; the SDK ships the registry and the harness
+interface but no harness implementation.
 
-### 10.2 MCP broker backend
+### 10.2 MCP bridge
 
-The MCP backend projects the control plane through the `squad_state` server.
-Conversation material may still live in local files or broker storage, but the
-portable boundary is the MCP tool contract rather than direct file mutation.
-This is the bridge used when a host can load `.mcp.json` but cannot link the
-SDK directly.
+`squad state-mcp --experimental-backend` exposes the same `SquadBackend`
+instance as `squad_backend_*` tools. The portable boundary is still the
+conversation contract; MCP only carries it for hosts that can load `.mcp.json`
+but cannot link the SDK.
 
-MCP is treated here as an execution and tool transport, or as a local CLI
-convenience bridge. It is behind the shared conversation contract, not a
-replacement for it.
+The bridge is a transcript and event-log surface. It bundles no execution
+harness: `squad_backend_health` and `squad_backend_negotiate` report
+`harnesses: []` and `executionAvailable: false`, and
+`squad_backend_send_message` is refused with `unavailable` instead of queueing
+a turn that nothing will ever run. `SQUAD_BACKEND_URL` by itself does not
+enable the tools.
 
 ### 10.3 Remote durable backend
 
-The remote backend maps the same conversation contract onto DurableSquad,
-Durable Task Scheduler, or another remote orchestration fabric. Durable
-workers own retries and checkpoints, but they still expose the same
-conversation descriptors, admissions, turns, task states, approval hashes, and
-lease epochs back to the client plane.
+`DurableHttpSquadBackend` maps the same contract onto DurableSquad's
+`/v1/conversations` HTTP surface with retries, per-attempt timeouts and
+`Idempotency-Key` headers. The base URL has to be `https://`, or `http://` to a
+loopback host, and redirects are treated as errors so the bearer token is never
+replayed to another origin.
+
+### 10.4 Known limitations
+
+- Conversations are stored as whole-file JSON snapshots that are rewritten on
+  every change (temp file, fsync, rename). There is no append-only log or
+  compaction; very long conversations grow the per-write cost accordingly.
+- Approval hashes are opaque harness strings; there is no broker-computed
+  digest, expiry or response-side version check.
+- Lease epochs are client-asserted (see section 9).
+- Cursors are unsigned `base64url("c1:<conversationId>:<sequence>")` values,
+  validated only for the conversation id and numeric form.
+- No execution harness ships with the CLI or SDK.
 
 ## 11. Protocol versioning and compatibility policy
 
@@ -430,30 +475,36 @@ Any future adapter or backend compatibility claim is gated by `G1` through
 |---|---|
 | `G1` | stable `runId` exists independently from turn ordering |
 | `G2` | turn ordering remains monotonic by `seq` within one conversation |
-| `G3` | approvals are durable versioned resources with immutable payload hashes |
+| `G3` | approvals are durable versioned resources that echo the harness-supplied opaque `hash` |
 | `G4` | effective capabilities are negotiated as `client ∩ backend ∩ policy` |
 | `G5` | recovery is cursor-based and exposes `lastAcceptedSeq` plus `resumable` |
 | `G6` | cancellation targets `runId`, not host-local completion state |
 | `G7` | operational health endpoints stay outside the protocol resource tree |
-| `G8` | projections are loss-tolerant for unknown durable events and extensions |
-| `G9` | the immutable golden fixtures in `test-fixtures/spec/suite-v0.2/` pass unchanged |
+| `G8` | `x-<harness>.*` extension fields are validated and preserved; unknown event kinds are not yet projected loss-tolerantly |
+| `G9` | the golden fixtures in `test-fixtures/spec/suite-v0.2/` pass against the local and durable-http backends |
 
 The architectural rationale for those gates is recorded in
 [ADR 001: Client, Control, and Execution Boundary](adr-001-client-control-execution-boundary.md).
 
 ## 12. Golden conformance trace
 
-The reference golden trace for this draft is:
+The reference golden trace for this draft, written with the real event `type`
+names, is:
 
 ```text
-TurnAccepted(runId, seq)
--> ApprovalRequested(v1)
--> disconnect
--> reconnect(cursor)
--> ApprovalDecided(v2)
--> CancellationRequested(runId)
--> terminal state
+message.accepted(runId, seq)
+-> approval.requested(version 1, hash)
+-> client.disconnected
+-> client.reconnected(cursor, resumable)
+-> approval.resolved(version 2, decision approve)
+-> cancellation.requested(runId)
+-> turn.state(cancelled)
 ```
+
+`client.*` entries are client-side steps that produce no backend event. The
+trace is executed end to end against the file-backed local backend and the
+durable-http client in `test/squad-20-all-scenarios.e2e.test.ts`, with the
+same canonical history on both.
 
 This trace captures the core invariants of the split: stable `runId`
 cancellation, monotonic `seq` ordering, durable approval versioning, resumable
@@ -475,13 +526,12 @@ conversation transcripts, turn records, leases, and approvals.
 Promote this draft only after the suite has:
 
 1. deterministic positive and negative fixtures for message admission,
-   transcript paging, duplicate idempotency keys, and conflicting payload
-   hashes;
+   transcript paging, duplicate idempotency keys, and conflicting payloads;
 2. lease and epoch traces that show stale worker writes being rejected after
-   broker failover;
-3. approval fixtures covering expired, replayed, and digest-mismatched
-   responses;
+   broker failover, with broker-issued (not client-asserted) epochs;
+3. approval fixtures covering replayed and hash-mismatched responses, plus
+   broker-computed digests and expiry once those exist;
 4. one local backend, one MCP backend, and one remote durable backend passing
-   the same contract tests;
+   the same contract tests, with at least one real execution harness;
 5. sanitized transcript evidence that demonstrates the three-plane split
    without leaking tokens, tool secrets, or private prompt content.

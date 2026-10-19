@@ -46,8 +46,7 @@ export class DurableHttpSquadBackend implements SquadBackend {
   private readonly epochs = new Map<string, LeaseEpoch>();
 
   constructor(private readonly options: DurableHttpOptions) {
-    if (!options.baseUrl) throw new BackendError('invalid-request', 'baseUrl is required', 400);
-    this.base = options.baseUrl.replace(/\/+$/, '');
+    this.base = validateBaseUrl(options.baseUrl);
     this.doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.maxRetries = options.maxRetries ?? 3;
     this.retryDelayMs = options.retryDelayMs ?? 200;
@@ -131,7 +130,6 @@ export class DurableHttpSquadBackend implements SquadBackend {
     );
   }
 
-  /** Probes unversioned /health/live and /health/ready, falling back to /health. */
   private epochOf(conversationId: string): LeaseEpoch | undefined {
     return this.epochs.get(conversationId) ?? this.defaultEpoch;
   }
@@ -140,6 +138,7 @@ export class DurableHttpSquadBackend implements SquadBackend {
     if (typeof epoch === 'number') this.epochs.set(conversationId, Math.max(this.epochs.get(conversationId) ?? 0, epoch));
   }
 
+  /** Probes unversioned /health/live and /health/ready, falling back to /health. */
   async health(): Promise<BackendHealth> {
     const [live, ready] = await Promise.all([this.probe('/health/live'), this.probe('/health/ready')]);
     if (live.status === 'missing' && ready.status === 'missing') {
@@ -158,7 +157,9 @@ export class DurableHttpSquadBackend implements SquadBackend {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (this.options.token) headers['Authorization'] = `Bearer ${this.options.token}`;
     try {
-      const res = await this.doFetch(`${this.base}${route}`, { method: 'GET', headers });
+      const res = await this.doFetch(`${this.base}${route}`, {
+        method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(this.requestTimeoutMs),
+      });
       if (res.status === 404) return { status: 'missing' };
       let body: { version?: string; detail?: string } = {};
       try { body = JSON.parse(await res.text()) as typeof body; } catch { /* plain-text probe */ }
@@ -188,8 +189,9 @@ export class DurableHttpSquadBackend implements SquadBackend {
       let res: Response;
       let text: string;
       try {
+        // redirect: 'error' — the bearer token is never replayed to a different origin
         res = await this.doFetch(`${this.base}${route}`, {
-          method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal,
+          method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal, redirect: 'error',
         });
         // the body is part of the attempt: a stream failing after the headers arrived is retried like any network error
         text = await res.text();
@@ -212,6 +214,25 @@ export class DurableHttpSquadBackend implements SquadBackend {
 
 const enc = encodeURIComponent;
 const delay = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/** Only https, or plain http to a loopback host, may carry the bearer token. Returns the normalized base. */
+export function validateBaseUrl(baseUrl: string | undefined): string {
+  if (!baseUrl) throw new BackendError('invalid-request', 'baseUrl is required', 400);
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new BackendError('invalid-request', `baseUrl '${baseUrl}' is not a valid URL`, 400);
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) {
+    throw new BackendError('invalid-request',
+      `baseUrl must use https:// (plain http:// is allowed only for localhost / 127.0.0.1 / ::1); got '${url.protocol}//${url.host}'`, 400);
+  }
+  if (url.username || url.password) throw new BackendError('invalid-request', 'baseUrl must not embed credentials', 400);
+  return baseUrl.replace(/\/+$/, '');
+}
 
 function toError(res: Response, text: string): BackendError {
   let detail = '';

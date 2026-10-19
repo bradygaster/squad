@@ -1,7 +1,6 @@
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createFileStateStore, type FileStateStoreOptions } from './local-backend.js';
+import { BackendError } from './types.js';
 import type { BackendStateStore } from './types.js';
 
 /** The synchronous subset of the SDK's `StateBackend` the conversation store needs. */
@@ -18,32 +17,17 @@ export interface StateBackendStoreOptions extends FileStateStoreOptions {
   squadDir?: string;
 }
 
-const fallbackLockDirs = new WeakMap<StateBackendLike, string>();
-
+/**
+ * The lock root must be the same path in every process that shares the backend, otherwise two
+ * `squad state-mcp` servers never contend and both believe they hold the conversation.
+ */
 function resolveLockDir(backend: StateBackendLike, explicitSquadDir?: string): string {
   if (explicitSquadDir) return path.resolve(explicitSquadDir);
   const candidate = (backend as { root?: unknown; cwd?: unknown });
   if (typeof candidate.root === 'string' && candidate.root) return path.resolve(candidate.root);
   if (typeof candidate.cwd === 'string' && candidate.cwd) return path.resolve(candidate.cwd, '.squad');
-  let dir = fallbackLockDirs.get(backend);
-  if (!dir) {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-state-backend-lock-'));
-    fallbackLockDirs.set(backend, dir);
-  }
-  return dir;
-}
-
-function cleanupEmptyLockDirs(lockRoot: string, key: string): void {
-  const lockFile = path.resolve(lockRoot, `${key}.lock`);
-  let cur = path.dirname(lockFile);
-  while (cur.startsWith(lockRoot + path.sep) && cur !== lockRoot) {
-    try {
-      fs.rmdirSync(cur);
-    } catch {
-      break;
-    }
-    cur = path.dirname(cur);
-  }
+  throw new BackendError('invalid-request',
+    `Cannot determine a deterministic lock directory for state backend '${backend.name ?? 'unknown'}': pass squadDir`, 400);
 }
 
 /**
@@ -62,17 +46,11 @@ export function createStateBackendStore(
   const lockRoot = resolveLockDir(backend, opts.squadDir);
   const fileLockStore = createFileStateStore(lockRoot, opts);
 
+  // The lock directory is intentionally left in place after release: pruning it races another process's
+  // mkdir -> open('wx') sequence.
   return {
-    lock: (key: string) => {
-      const release = fileLockStore.lock!(key);
-      return () => {
-        try {
-          release();
-        } finally {
-          cleanupEmptyLockDirs(lockRoot, key);
-        }
-      };
-    },
+    lock: (key: string) => fileLockStore.lock!(key),
+    lockAsync: (key: string) => fileLockStore.lockAsync!(key),
     read: p => backend.read(p),
     write: (p, content) => backend.write(p, content),
     exists: p => backend.exists(p),

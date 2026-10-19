@@ -1,9 +1,12 @@
 import { resolveSquadState } from '@bradygaster/squad-sdk';
 import {
+  ALL_CONTENT_PART_TYPES,
+  BACKEND_PROTOCOL_VERSION,
   BackendError,
   createSquadBackend,
   createStateBackendStore,
   type BackendContentPart,
+  type BackendMessage,
   type ProtocolHello,
   type SquadBackend,
 } from '@bradygaster/squad-sdk/backend';
@@ -14,6 +17,10 @@ import {
  * versioned envelope protocol defined in the SDK (`BackendEnvelope`,
  * `BackendErrorInfo`, `NegotiatedCapabilities`). Errors are returned in the
  * canonical `BackendErrorInfo` structure.
+ *
+ * No execution harness ships with the CLI: the bridge is a transcript / event-log
+ * surface. `squad_backend_send_message` refuses to admit a turn when no harness is
+ * registered instead of queueing it forever.
  */
 export interface BackendMcpTool {
   name: string;
@@ -22,12 +29,29 @@ export interface BackendMcpTool {
   call(args: Record<string, unknown>): Promise<unknown>;
 }
 
+export const NO_HARNESS_MESSAGE =
+  'No execution harness is registered; the experimental MCP backend currently records transcripts only';
+
+const MAX_READ_EVENTS_LIMIT = 500;
+const ROLES: readonly BackendMessage['role'][] = ['user', 'assistant', 'system', 'tool'];
+
 const cid = { type: 'string', description: 'Conversation id' };
 const seq = { type: 'integer', description: 'Turn sequence number' };
 
 function str(args: Record<string, unknown>, key: string): string {
   const v = args[key];
-  if (typeof v !== 'string' || !v) throw new BackendError('invalid-request', `'${key}' is required`, 400);
+  if (typeof v !== 'string' || !v) return missing(key);
+  return v;
+}
+
+function missing(key: string): never {
+  throw new BackendError('invalid-request', `'${key}' is required`, 400);
+}
+
+function optStr(args: Record<string, unknown>, key: string): string | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string') throw new BackendError('invalid-request', `'${key}' must be a string`, 400);
   return v;
 }
 
@@ -37,26 +61,76 @@ function num(args: Record<string, unknown>, key: string): number {
   return v;
 }
 
-/**
- * Backend selection: SQUAD_BACKEND_URL (+ SQUAD_BACKEND_TOKEN) → durable-http,
- * otherwise the local backend over the repo's .squad directory.
- */
+function optInt(args: Record<string, unknown>, key: string): number | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'number' || !Number.isInteger(v)) throw new BackendError('invalid-request', `'${key}' must be an integer`, 400);
+  return v;
+}
+
+function optEnum<T extends string>(args: Record<string, unknown>, key: string, allowed: readonly T[]): T | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string' || !allowed.includes(v as T)) {
+    throw new BackendError('invalid-request', `'${key}' must be one of ${allowed.join(', ')}`, 400);
+  }
+  return v as T;
+}
+
+function optStringArray(args: Record<string, unknown>, key: string): string[] | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || !v.every(x => typeof x === 'string')) {
+    throw new BackendError('invalid-request', `'${key}' must be an array of strings`, 400);
+  }
+  return v as string[];
+}
+
+function optObject(args: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'object' || Array.isArray(v)) throw new BackendError('invalid-request', `'${key}' must be an object`, 400);
+  return v as Record<string, unknown>;
+}
+
+function optParts(args: Record<string, unknown>): BackendContentPart[] | undefined {
+  const v = args['parts'];
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v)) throw new BackendError('invalid-request', "'parts' must be an array", 400);
+  for (const p of v) {
+    const type = (p as { type?: unknown } | null)?.type;
+    if (!p || typeof p !== 'object' || typeof type !== 'string' || !ALL_CONTENT_PART_TYPES.includes(type as BackendContentPart['type'])) {
+      throw new BackendError('invalid-request', `each part needs a 'type' of ${ALL_CONTENT_PART_TYPES.join(', ')}`, 400);
+    }
+  }
+  return v as BackendContentPart[];
+}
+
 /** content is optional when typed parts are supplied. */
-function sendContent(args: Record<string, unknown>): string {
+function sendContent(args: Record<string, unknown>, parts: BackendContentPart[] | undefined): string {
   if (typeof args['content'] === 'string') return args['content'];
-  if (Array.isArray(args['parts']) && args['parts'].length > 0) return '';
+  if (parts && parts.length > 0) return '';
   throw new BackendError('invalid-request', "'content' or 'parts' is required", 400);
 }
 
+/**
+ * The `squad_backend_*` tools are exposed only on explicit opt-in: `--experimental-backend` or
+ * `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` by itself selects the remote backend but does
+ * not enable the tools, so a stray environment variable never routes traffic (and the bearer token)
+ * anywhere.
+ */
 export function isExperimentalBackendEnabled(
   args: readonly string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return args.includes('--experimental-backend')
-    || env['SQUAD_EXPERIMENTAL_BACKEND'] === '1'
-    || Boolean(env['SQUAD_BACKEND_URL']);
+    || env['SQUAD_EXPERIMENTAL_BACKEND'] === '1';
 }
 
+/**
+ * Backend selection: SQUAD_BACKEND_URL (+ SQUAD_BACKEND_TOKEN) → durable-http (https, or http to loopback),
+ * otherwise the local backend over the repo's .squad directory.
+ */
 export function createMcpBackend(
   startDir: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -75,6 +149,22 @@ export function createMcpBackend(
   return createSquadBackend({ kind: 'mcp', squadDir: context.paths.teamSquadDir, state });
 }
 
+/** Harness ids registered on an in-process backend; `undefined` when the backend is remote and does not expose them. */
+function registeredHarnesses(backend: SquadBackend): string[] | undefined {
+  const h = (backend as { harnesses?: { list?: () => Array<{ id: string }> } }).harnesses;
+  return typeof h?.list === 'function' ? h.list().map(d => d.id) : undefined;
+}
+
+async function harnessIds(backend: SquadBackend): Promise<string[]> {
+  const local = registeredHarnesses(backend);
+  if (local) return local;
+  try {
+    return (await backend.negotiate({ protocols: [BACKEND_PROTOCOL_VERSION] })).harnesses;
+  } catch {
+    return [];
+  }
+}
+
 export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMcpTool[] {
   return [
     {
@@ -84,36 +174,44 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
         conversationId: { type: 'string' }, title: { type: 'string' }, metadata: { type: 'object' },
       } },
       call: a => getBackend().createConversation({
-        conversationId: typeof a['conversationId'] === 'string' ? a['conversationId'] : undefined,
-        title: typeof a['title'] === 'string' ? a['title'] : undefined,
-        metadata: a['metadata'] as Record<string, unknown> | undefined,
+        conversationId: optStr(a, 'conversationId'),
+        title: optStr(a, 'title'),
+        metadata: optObject(a, 'metadata'),
       }),
     },
     {
       name: 'squad_backend_send_message',
-      description: 'Send a message; (runId, seq) is the idempotency key and epoch is the lease fencing token.',
+      description: 'Send a message; (runId, seq) is the idempotency key and epoch is the lease fencing token. '
+        + 'Fails with code "unavailable" when no execution harness is registered (the bundled bridge ships none: it records transcripts only).',
       inputSchema: { type: 'object', properties: {
         conversationId: cid,
         runId: { type: 'string' }, seq,
-        role: { type: 'string', enum: ['user', 'assistant', 'system', 'tool'] },
+        role: { type: 'string', enum: [...ROLES] },
         content: { type: 'string' },
         parts: { type: 'array', items: { type: 'object' }, description: 'Typed content parts (text, data, resource, tool-call, tool-result)' },
         correlationId: { type: 'string' }, causationId: { type: 'string' },
         epoch: { type: 'integer' }, harness: { type: 'string' },
         extensions: { type: 'object', description: 'Keys must be x-<harness>.*' },
       }, required: ['conversationId', 'runId', 'seq'] },
-      call: a => getBackend().sendMessage(str(a, 'conversationId'), {
-        runId: str(a, 'runId'),
-        seq: num(a, 'seq'),
-        role: (a['role'] as 'user' | undefined) ?? 'user',
-        content: sendContent(a),
-        parts: Array.isArray(a['parts']) ? a['parts'] as BackendContentPart[] : undefined,
-        correlationId: typeof a['correlationId'] === 'string' ? a['correlationId'] : undefined,
-        causationId: typeof a['causationId'] === 'string' ? a['causationId'] : undefined,
-        epoch: typeof a['epoch'] === 'number' ? a['epoch'] : undefined,
-        harness: typeof a['harness'] === 'string' ? a['harness'] : undefined,
-        extensions: a['extensions'] as Record<string, unknown> | undefined,
-      }),
+      call: a => {
+        const backend = getBackend();
+        if (registeredHarnesses(backend)?.length === 0) {
+          throw new BackendError('unavailable', NO_HARNESS_MESSAGE, 503, { executionAvailable: false });
+        }
+        const parts = optParts(a);
+        return backend.sendMessage(str(a, 'conversationId'), {
+          runId: str(a, 'runId'),
+          seq: num(a, 'seq'),
+          role: optEnum(a, 'role', ROLES) ?? 'user',
+          content: sendContent(a, parts),
+          parts,
+          correlationId: optStr(a, 'correlationId'),
+          causationId: optStr(a, 'causationId'),
+          epoch: optInt(a, 'epoch'),
+          harness: optStr(a, 'harness'),
+          extensions: optObject(a, 'extensions'),
+        });
+      },
     },
     {
       name: 'squad_backend_get_transcript',
@@ -131,13 +229,13 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
       name: 'squad_backend_cancel_turn',
       description: 'Cancel a running turn.',
       inputSchema: { type: 'object', properties: { conversationId: cid, seq, epoch: { type: 'integer', description: 'Lease epoch; required once the conversation is fenced' } }, required: ['conversationId', 'seq'] },
-      call: a => getBackend().cancelTurn(str(a, 'conversationId'), num(a, 'seq'), typeof a['epoch'] === 'number' ? a['epoch'] : undefined),
+      call: a => getBackend().cancelTurn(str(a, 'conversationId'), num(a, 'seq'), optInt(a, 'epoch')),
     },
     {
       name: 'squad_backend_cancel_run',
       description: 'Cancel a run by its stable runId (distinct from turn seq).',
       inputSchema: { type: 'object', properties: { conversationId: cid, runId: { type: 'string' }, reason: { type: 'string' }, epoch: { type: 'integer', description: 'Lease epoch; required once the conversation is fenced' } }, required: ['conversationId', 'runId'] },
-      call: a => getBackend().cancelRun(str(a, 'conversationId'), str(a, 'runId'), typeof a['reason'] === 'string' ? a['reason'] : undefined, typeof a['epoch'] === 'number' ? a['epoch'] : undefined),
+      call: a => getBackend().cancelRun(str(a, 'conversationId'), str(a, 'runId'), optStr(a, 'reason'), optInt(a, 'epoch')),
     },
     {
       name: 'squad_backend_get_approvals',
@@ -147,7 +245,7 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
     },
     {
       name: 'squad_backend_respond_approval',
-      description: 'Approve or deny a pending approval; hash must match the request hash.',
+      description: 'Approve or deny a pending approval; hash must echo the opaque hash the harness supplied with the request.',
       inputSchema: { type: 'object', properties: {
         conversationId: cid, approvalId: { type: 'string' }, hash: { type: 'string' },
         decision: { type: 'string', enum: ['approve', 'deny'] },
@@ -156,14 +254,15 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
       call: a => getBackend().respondApproval(str(a, 'conversationId'), {
         approvalId: str(a, 'approvalId'),
         hash: str(a, 'hash'),
-        decision: str(a, 'decision') === 'approve' ? 'approve' : 'deny',
-        reason: typeof a['reason'] === 'string' ? a['reason'] : undefined,
-        epoch: typeof a['epoch'] === 'number' ? a['epoch'] : undefined,
+        decision: optEnum(a, 'decision', ['approve', 'deny'] as const) ?? missing('decision'),
+        reason: optStr(a, 'reason'),
+        epoch: optInt(a, 'epoch'),
       }),
     },
     {
       name: 'squad_backend_negotiate',
-      description: 'Negotiate protocol version and capabilities.',
+      description: 'Negotiate protocol version and capabilities. `harnesses` lists registered execution harnesses and '
+        + '`executionAvailable` is false when there are none (the bundled bridge ships no harness).',
       inputSchema: { type: 'object', properties: {
         protocols: { type: 'array', items: { type: 'string' } },
         clientName: { type: 'string' },
@@ -172,35 +271,53 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
         capabilities: { type: 'array', items: { type: 'string' }, description: 'Client capability flags' },
         policyCapabilities: { type: 'array', items: { type: 'string' }, description: 'Policy-allowed capability flags' },
       }, required: ['protocols'] },
-      call: a => getBackend().negotiate({
-        protocols: Array.isArray(a['protocols']) ? a['protocols'] as string[] : [],
-        clientName: typeof a['clientName'] === 'string' ? a['clientName'] : undefined,
-        contentParts: a['contentParts'] as ProtocolHello['contentParts'],
-        extensionNamespaces: a['extensionNamespaces'] as string[] | undefined,
-        capabilities: a['capabilities'] as string[] | undefined,
-        policyCapabilities: a['policyCapabilities'] as string[] | undefined,
-      }),
+      call: async a => {
+        const protocols = optStringArray(a, 'protocols');
+        if (!protocols) throw new BackendError('invalid-request', "'protocols' must be an array of strings", 400);
+        const contentParts = optStringArray(a, 'contentParts');
+        if (contentParts?.some(p => !ALL_CONTENT_PART_TYPES.includes(p as BackendContentPart['type']))) {
+          throw new BackendError('invalid-request', `'contentParts' entries must be one of ${ALL_CONTENT_PART_TYPES.join(', ')}`, 400);
+        }
+        const negotiated = await getBackend().negotiate({
+          protocols,
+          clientName: optStr(a, 'clientName'),
+          contentParts: contentParts as ProtocolHello['contentParts'],
+          extensionNamespaces: optStringArray(a, 'extensionNamespaces'),
+          capabilities: optStringArray(a, 'capabilities'),
+          policyCapabilities: optStringArray(a, 'policyCapabilities'),
+        });
+        return { ...negotiated, executionAvailable: negotiated.harnesses.length > 0 };
+      },
     },
     {
       name: 'squad_backend_read_events',
-      description: 'Read canonical event envelopes after an opaque cursor (at-least-once; dedupe on id).',
+      description: `Read canonical event envelopes after an opaque cursor (at-least-once; dedupe on id). limit is capped at ${MAX_READ_EVENTS_LIMIT}.`,
       inputSchema: { type: 'object', properties: {
         conversationId: cid,
         after: { type: 'string', description: 'Opaque cursor from a previous page' },
-        limit: { type: 'integer' },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_READ_EVENTS_LIMIT },
         stream: { type: 'string', enum: ['control', 'execution'] },
       }, required: ['conversationId'] },
-      call: a => getBackend().readEvents(str(a, 'conversationId'), {
-        after: typeof a['after'] === 'string' ? a['after'] : undefined,
-        limit: typeof a['limit'] === 'number' ? a['limit'] : undefined,
-        stream: a['stream'] === 'control' || a['stream'] === 'execution' ? a['stream'] : undefined,
-      }),
+      call: a => {
+        const limit = optInt(a, 'limit');
+        if (limit !== undefined && limit < 1) throw new BackendError('invalid-request', "'limit' must be a positive integer", 400);
+        return getBackend().readEvents(str(a, 'conversationId'), {
+          after: optStr(a, 'after'),
+          limit: limit === undefined ? undefined : Math.min(limit, MAX_READ_EVENTS_LIMIT),
+          stream: optEnum(a, 'stream', ['control', 'execution'] as const),
+        });
+      },
     },
     {
       name: 'squad_backend_health',
-      description: 'Backend health.',
+      description: 'Backend health, plus the registered execution harnesses and whether execution is available at all '
+        + '(false for the bundled transcript-only bridge).',
       inputSchema: { type: 'object', properties: {} },
-      call: () => getBackend().health(),
+      call: async () => {
+        const backend = getBackend();
+        const [health, harnesses] = await Promise.all([backend.health(), harnessIds(backend)]);
+        return { ...health, harnesses, executionAvailable: harnesses.length > 0 };
+      },
     },
   ];
 }
@@ -212,9 +329,16 @@ export async function callBackendMcpTool(tool: BackendMcpTool, args: Record<stri
   try {
     return { content: [{ type: 'text', text: JSON.stringify(await tool.call(args), null, 2) }] };
   } catch (err) {
-    const info = err instanceof BackendError
+    // non-contract failures are reported generically: raw messages may carry absolute paths or stack details
+    const info = isBackendError(err)
       ? err.toInfo()
-      : { code: 'unavailable', message: err instanceof Error ? err.message : String(err), retryable: false };
+      : { code: 'unavailable', message: `Backend tool '${tool.name}' failed unexpectedly`, retryable: false };
     return { content: [{ type: 'text', text: JSON.stringify({ error: info }) }], isError: true };
   }
+}
+
+/** Structural check: the SDK may be loaded twice (source + dist), which breaks `instanceof`. */
+function isBackendError(err: unknown): err is BackendError {
+  return err instanceof BackendError
+    || (err instanceof Error && err.name === 'BackendError' && typeof (err as Partial<BackendError>).toInfo === 'function');
 }

@@ -231,9 +231,13 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
 
   'state-mcp': (version) => {
     header('state-mcp', version, 'MCP bridge exposing Squad runtime state tools');
-    console.log(`Usage: squad state-mcp\n`);
+    console.log(`Usage: squad state-mcp [--experimental-backend]\n`);
     console.log(`Starts a Model Context Protocol server over stdio that exposes Squad`);
     console.log(`state read/write tools to MCP-compatible hosts.\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--experimental-backend${RESET}      Also expose the experimental squad_backend_* conversation`);
+    console.log(`                              tools (or set SQUAD_EXPERIMENTAL_BACKEND=1). Transcript/event-log`);
+    console.log(`                              only: no execution harness is bundled.\n`);
   },
 
   doctor: (version) => {

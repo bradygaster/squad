@@ -340,34 +340,29 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
     expect(bad.json.error).toMatchObject({ code: 'unsupported-protocol', retryable: false });
   });
 
-  it('runs a backend conversation over real JSON-RPC: create, send, dedupe, page events, cancel', async () => {
+  it('runs a backend conversation over real JSON-RPC: create, refuse execution without a harness, page events', async () => {
     const conv = await server!.call('squad_backend_create_conversation', { conversationId: `${client}-conv`, title: `real ${client}` });
     expect(conv.json).toMatchObject({ conversationId: `${client}-conv`, epoch: 1 });
 
+    // no execution harness ships with the CLI: the bridge refuses to admit a turn instead of queueing it forever
     const sent = await server!.call('squad_backend_send_message', {
       conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, correlationId: 'corr-real',
       parts: [{ type: 'text', text: 'hello from a real client' }, { type: 'resource', uri: 'file:///README.md', title: 'README' }],
     });
-    expect(sent.json).toMatchObject({ runId: `${client}-run`, seq: 1, duplicate: false, state: 'queued', correlationId: 'corr-real' });
-    const dup = await server!.call('squad_backend_send_message', {
-      conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, correlationId: 'corr-real',
-      parts: [{ type: 'text', text: 'hello from a real client' }, { type: 'resource', uri: 'file:///README.md', title: 'README' }],
-    });
-    expect(dup.json.duplicate).toBe(true);
+    expect(sent.isError).toBe(true);
+    expect(sent.json.error).toMatchObject({ code: 'unavailable', retryable: true, details: { executionAvailable: false } });
+    expect(sent.json.error.message).toMatch(/No execution harness is registered/);
 
     const transcript = await server!.call('squad_backend_get_transcript', { conversationId: `${client}-conv` });
-    expect(transcript.json).toHaveLength(1);
-    expect(transcript.json[0].content).toContain('hello from a real client');
-    expect((await server!.call('squad_backend_get_turn', { conversationId: `${client}-conv`, seq: 1 })).json).toMatchObject({ runId: `${client}-run`, state: 'queued' });
+    expect(transcript.json).toEqual([]);
+    expect((await server!.call('squad_backend_get_turn', { conversationId: `${client}-conv`, seq: 1 })).json.error.code).toBe('not-found');
 
     const page1 = await server!.call('squad_backend_read_events', { conversationId: `${client}-conv`, limit: 1 });
-    expect(page1.json.events.map((e: { sequence: number }) => e.sequence)).toEqual([1]);
+    expect(page1.json.events.map((e: { type: string; sequence: number }) => [e.type, e.sequence])).toEqual([['conversation.created', 1]]);
     const page2 = await server!.call('squad_backend_read_events', { conversationId: `${client}-conv`, after: page1.json.nextCursor });
-    expect(page2.json.events.map((e: { type: string }) => e.type)).toEqual(['message.accepted']);
-    expect(page2.json).toMatchObject({ resumable: true, lastAcceptedSeq: 2 });
+    expect(page2.json).toMatchObject({ events: [], resumable: true, lastAcceptedSeq: 1, nextCursor: page1.json.nextCursor });
+    expect((await server!.call('squad_backend_read_events', { conversationId: `${client}-conv`, limit: 0 })).json.error.code).toBe('invalid-request');
 
-    const cancelled = await server!.call('squad_backend_cancel_run', { conversationId: `${client}-conv`, runId: `${client}-run`, reason: 'real test' });
-    expect(cancelled.json).toMatchObject({ runId: `${client}-run`, state: 'cancelled' });
     expect((await server!.call('squad_backend_cancel_run', { conversationId: `${client}-conv`, runId: 'nope' })).json.error.code).toBe('not-found');
 
     // persisted by the child process into the real workspace
@@ -392,13 +387,15 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
     expect(again.json.error).toMatchObject({ code: 'unavailable', retryable: true });
   });
 
-  it('reports backend health', async () => {
+  it('reports backend health with an explicit executionAvailable: false (no bundled harness)', async () => {
     const health = await server!.call('squad_backend_health');
-    expect(health.json).toMatchObject({ ok: true, backend: 'mcp' });
+    expect(health.json).toMatchObject({ ok: true, backend: 'mcp', harnesses: [], executionAvailable: false });
+    const neg = await server!.call('squad_backend_negotiate', { protocols: ['2.0'] });
+    expect(neg.json).toMatchObject({ harnesses: [], executionAvailable: false });
   });
 
   it('survives a real server process restart and resumes from the old cursor', async () => {
-    const first = await server!.call('squad_backend_read_events', { conversationId: `${client}-conv`, limit: 2 });
+    const first = await server!.call('squad_backend_read_events', { conversationId: `${client}-conv`, limit: 1 });
     const cursor = first.json.nextCursor as string;
     const oldPid = server!.pid;
     await server!.close();
@@ -415,10 +412,11 @@ describe.each(CLIENTS)('real stdio MCP server launched from the %s config', (cli
     const all = await server!.call('squad_backend_read_events', { conversationId: `${client}-conv` });
     const seqs = all.json.events.map((e: { sequence: number }) => e.sequence);
     expect(seqs).toEqual(seqs.map((_: number, i: number) => i + 1));
-    expect(resumed.json.events.map((e: { sequence: number }) => e.sequence)).toEqual(seqs.slice(2));
+    expect(resumed.json.events.map((e: { sequence: number }) => e.sequence)).toEqual(seqs.slice(1));
     expect((await server.call('squad_backend_get_approvals', { conversationId: 'seeded' })).json[0].version).toBe(2);
-    expect((await server.call('squad_backend_send_message', { conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, correlationId: 'corr-real',
-      parts: [{ type: 'text', text: 'hello from a real client' }, { type: 'resource', uri: 'file:///README.md', title: 'README' }] })).json.duplicate).toBe(true);
+    // still no harness after the restart: execution is still refused, transcripts are still intact
+    expect((await server.call('squad_backend_send_message', { conversationId: `${client}-conv`, runId: `${client}-run`, seq: 1, content: 'again' })).json.error.code).toBe('unavailable');
+    expect((await server.call('squad_backend_get_transcript', { conversationId: `${client}-conv` })).json).toEqual([]);
   }, 120_000);
 });
 
@@ -455,7 +453,11 @@ const BINARIES: Array<{ client: RealClient; names: string[]; configChecks: Array
   { client: 'kiro', names: ['kiro-cli', 'kiro'], configChecks: [{ args: ['agent', 'list'], expect: /squad/i }] },
 ];
 
-describe('live client binaries (executed when present on PATH)', () => {
+// Opt-in only: these spawn whatever third-party binaries happen to be on PATH, which is slow and
+// environment-dependent. Set SQUAD_REAL_CLI_TESTS=1 to run them.
+const realCli = process.env['SQUAD_REAL_CLI_TESTS'] === '1' ? describe : describe.skip;
+
+realCli('live client binaries (SQUAD_REAL_CLI_TESTS=1; executed when present on PATH)', () => {
   for (const b of BINARIES) {
     const bin = which(...b.names);
     const d = bin ? describe : describe.skip;

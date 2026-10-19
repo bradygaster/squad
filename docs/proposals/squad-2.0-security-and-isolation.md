@@ -1,7 +1,7 @@
-# Squad 2.0 — Security, Threat Model & Isolation Gates
+# Squad 2.0 — Security, Threat Model & Isolation
 
-**Status:** Proposal · **Owner:** Worf (Security & Reliability) · **Scope:** Client/Backend decoupling and multi-client projections (Claude Code, Kiro, OpenCode, Cursor, GitHub Copilot, OpenAI Codex, Google Antigravity) plus the `DurableSquad` remote backend.
-**Executable contract:** `test/squad-20-security-contracts.test.ts`
+**Status:** Proposal, partially implemented · **Owner:** Worf (Security & Reliability) · **Scope:** Client/Backend decoupling and multi-client projections (Claude Code, Kiro, OpenCode, Cursor, GitHub Copilot, OpenAI Codex, Google Antigravity) plus the `DurableSquad` remote backend.
+**Contract suite:** `test/squad-20-security-contracts.test.ts` exercises the shipped product modules (`@bradygaster/squad-sdk/backend`, `@bradygaster/squad-sdk/client`, `squad-cli/core/backend-mcp`) for every property marked **Implemented** below. Properties marked **Not implemented** have no test on purpose; they are design intent, not shipped behavior.
 
 ## 1. Trust model
 
@@ -9,95 +9,96 @@
 |---|---|---|
 | Client / harness (any of the seven hosts: `copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`) | **Untrusted caller** | Prompt-injectable; may replay, reorder, or tamper with requests. |
 | Projected files (`.claude/`, `.kiro/`, `.opencode/`, `.cursor/`, `.codex/`, `.github/`, `.agents/`, `.squad/`, MCP configs) | **Untrusted input** | Writable by the user, other tools, and cloned repos. |
-| Control Plane / Broker | **Trusted** | Sole authority for state writes, memory governance, approvals, leases. |
-| `DurableSquad` remote backend | Trusted only through broker-issued epochs and idempotency keys | Network is hostile; replays and partitions are expected. |
+| Control Plane / Broker (`LocalSquadBackend`) | **Trusted process** | Owns conversation state, admission, approvals and lease epochs. Today it runs in the same process (or the same user account) as its callers, so it is a correctness boundary, not a privilege boundary. |
+| `DurableSquad` remote backend | Trusted through its bearer token and TLS | Network is hostile; replays and partitions are expected. |
 
-### Control Plane / Broker invariants
-- **B1** Clients never write `.squad/` state, decisions, or memory directly; every mutation is a broker proposal.
-- **B2** Approvals are **hash-bound**: approval = SHA-256 over canonicalized `{runId, action, args, epoch}` (sorted keys). Any change to the proposal invalidates it (no TOCTOU).
-- **B3** Approvals are single-use; replay of the same `(runId, seq)` returns the recorded result, never re-executes.
-- **B4** Broker never trusts client-supplied identity, epoch, or paths; they are re-derived/validated.
-- **B5** Secrets are never persisted into projections, logs, or proposals; env values matching `token|secret|key|password|pat` are redacted in all diagnostics.
+### Control Plane / Broker — what is shipped
 
-## 2. Safe MCP configuration merging
+- **B1 (Implemented)** Clients never write `.squad/backend/**` directly; every mutation goes through a `SquadBackend` method and a lock-protected read-modify-write of the conversation snapshot.
+- **B2 (Implemented, weaker than originally proposed)** Approval binding is an **opaque echo**. The harness supplies `ApprovalRequest.hash` when it raises an approval; the broker stores it and `respondApproval` succeeds only when the response echoes the exact same string (`approval-hash-mismatch` otherwise). The broker does **not** compute or verify the hash: its meaning (SHA-256 of a canonical payload, a nonce, anything) is entirely up to the harness.
+- **B3 (Implemented)** Approvals are single-use. A decided approval is `version: 2` and any later decision — identical or different — is rejected with `approval-not-pending`. The same `(runId, seq)` message replays as `duplicate: true`; a different payload under the same key is a `conflict`.
+- **B4 (Not implemented — see §4)** The broker **does** trust client-supplied epochs. Anything the broker receives (ids, epochs, hashes) is validated for shape only, never re-derived from an authenticated identity.
+- **B5 (Partially implemented)** The MCP bridge returns a generic message for non-contract failures so absolute paths and stack details do not leak to the host; `normalizeClientIds` redacts values that look sensitive. There is no general secret scrubber for logs or projections.
 
-Targets: `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json` (key `mcp`), `.cursor/mcp.json` (refs #1893, #1296).
+## 2. Safe MCP configuration merging (Implemented)
 
-- **M1** Merge is additive and scoped to Squad-owned server names; unrelated servers and top-level keys are preserved byte-semantically.
-- **M2** Existing user `env` values win over Squad defaults; user env is never dropped or rewritten.
-- **M3** Malformed JSON, non-object roots, or wrong-typed containers abort with no write (never "repair by overwrite").
-- **M4** Server names must match `^[A-Za-z0-9._-]{1,64}$`; `__proto__`/`constructor` rejected; objects built without prototype pollution.
-- **M5** `command` is a single executable token: no whitespace or shell metacharacters (`; & | \` $ < > \n`), and shell interpreters (`sh`, `bash`, `cmd`, `powershell`, `pwsh`) are rejected. Arguments must be strings; remote `url` must be `https`.
-- **M6** Writes are atomic (temp file + rename in same dir), idempotent, and validated before touching disk.
-- **M7** Secrets are referenced (env passthrough / `${VAR}`), never inlined by Squad.
+Targets: `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json` (key `mcp`), `.cursor/mcp.json`. Implementation: `mergeMcpServer` and `applyProjection` in `packages/squad-sdk/src/client/adapters/`.
 
-## 3. Path, symlink & reparse-point guards
+- **M1** Merge is additive and scoped to the Squad-owned `squad_state` entry; unrelated servers and top-level keys are preserved.
+- **M2** Existing user `env` and any custom field on the `squad_state` entry are kept; Squad only owns the launch fields (`command`, `args`).
+- **M3** Malformed JSON and non-object roots or containers abort that file with an `error` result and no write (never "repair by overwrite").
+- **M4** Existing `__proto__` keys are copied as plain data and never pollute `Object.prototype`.
+- **M5 (Not implemented)** There is no validation of `command`/`args` content (shell metacharacters, interpreters, `https`-only `url`). Squad writes the launch spec it is given.
+- **M6 (Partially implemented)** Writes are idempotent (`unchanged` when nothing differs) and validated before touching disk, but they are plain `writeFileSync`, not temp-file + rename.
+- **M7** Secrets are never inlined by Squad; the projected `env` is `{}` unless the user already had one.
 
-Applies to every skill/agent/config path under `.claude/`, `.kiro/`, `.opencode/`, `.cursor/`, `.github/`, `.agents/`, `.squad/`.
+## 3. Path, symlink & reparse-point guards (Implemented)
 
-- **P1** Reject `..` segments (both `/` and `\`), absolute paths, drive-relative paths, UNC paths, NUL bytes, and NTFS alternate data streams (`:`).
-- **P2** Walk each path segment with `lstat`; reject any symlink, dangling symlink, or NTFS junction/mount point (`FILE_ATTRIBUTE_REPARSE_POINT`, 0x400) — including the client directory itself.
-- **P3** Verify the final path is within `realpath(root)` after resolution.
-- **P4** Guards run on read **and** write, and again immediately before use (re-check to narrow TOCTOU; prefer `O_NOFOLLOW`/handle-based opens where available).
-- **P5** Windows tests must exercise a real `mklink /J` junction.
+Two independent guards exist and are tested:
 
-## 4. State-backend isolation
+- `createFileStateStore` (backend state under `.squad/backend/`): rejects any key whose resolved path leaves the state root, walks every path component with `lstat`, and refuses symlinks/junctions anywhere between the root (and its `.squad` parent) and the target. The check runs on read, write, lock and again after `mkdir -p` so a link introduced between the two calls is still caught.
+- `resolveInsideRoot` (client projections): rejects absolute paths and `..` segments, then walks every component and refuses symlinked components, including a client directory that was itself replaced by a link.
 
-- **S1** Each worktree has its own state namespace; no shared mutable file between worktrees. Cross-worktree reads go through the broker.
-- **S2** Single writer via lease. Every lease acquisition bumps a strictly monotonic **epoch**; every write carries `(holder, epoch)`.
-- **S3** Writes from a stale epoch or non-holder are **fenced** (rejected) with no partial effect.
-- **S4** `DurableSquad` conversations are addressed by `(runId, seq)`; the backend treats duplicates as idempotent replays and out-of-order/gapped sequences as errors.
-- **S5** A fenced client must re-acquire and re-read state before retrying; it cannot "resume" an old epoch.
+Conversation ids are restricted to `[A-Za-z0-9._-]{1,128}` and Windows reserved device names (`CON`, `NUL`, `COM1`…) are rejected. Guards rely on Node reporting junctions as symbolic links; a real `mklink /J` junction is exercised on Windows.
 
-## 5. Security gates (CI-blocking)
+## 4. State-backend isolation and lease epochs
 
-| Gate | Requirement |
+- **S1 (Implemented)** Each `.squad` directory is its own state namespace; conversations are `.squad/backend/conversations/<id>.json`, locks are `.squad/backend/locks/<id>.lock`. Both paths are git-ignored by `squad upgrade`.
+- **S2 / S3 (Implemented as cooperative fencing)** A conversation carries a single integer `epoch`. A writer may present an epoch: a lower one is rejected with `stale-epoch`, and once any writer has presented one the conversation is *fenced* and omitting the epoch is also rejected. Harness output tagged with an older epoch is dropped and leaves a `harness.epoch-rejected` control event.
+- **Not a security boundary.** Epochs are **client-asserted**. There is no lease holder identity, no broker-issued token and no expiry: *any* caller presenting a larger integer takes over the conversation and fences everybody else. This protects against a crashed or paused writer resuming with stale state; it does not protect against a malicious or buggy co-tenant. Treat it like an optimistic-concurrency version, not like a lock.
+- **S4 (Implemented)** Messages are addressed by `(runId, seq)`; duplicates are idempotent replays and payload changes are conflicts. Gaps in `seq` are not rejected.
+- **S5 (Implemented)** A fenced writer has to learn the current epoch (returned on every admission) and present it; it cannot "resume" an old one.
+
+Cross-process mutual exclusion uses `wx` lock files with owner tokens, a bounded wait, and stale-lock recovery. The lock root is deterministic (derived from the `.squad` directory, or the configured state backend's root); `createStateBackendStore` refuses to run with a backend that cannot provide one rather than falling back to a per-process temp directory. Lock waits in the async backend methods are timer based so a contended conversation never stalls the MCP server's event loop.
+
+## 5. Contract suite
+
+`test/squad-20-security-contracts.test.ts` is organized by the gates below. It is part of the normal test run; it is not a release gate on its own and does not run a Windows junction case outside Windows.
+
+| Gate | What the suite exercises (product code) |
 |---|---|
-| G1 | Contract suite `squad-20-security-contracts.test.ts` passes on Linux, macOS **and Windows**. |
-| G2 | Every client projection routes all file access through the shared path guard (P1–P4); no direct `fs` on projected paths. |
-| G3 | Every MCP writer uses the shared merge function (M1–M7); golden tests per client file. |
-| G4 | Broker rejects unsigned/unbound approvals; fuzz test on proposal tampering. |
-| G5 | Fencing integration test with two concurrent worktrees and a simulated lease takeover. |
-| G6 | Secret scan on generated projections and logs. |
-| G7 | `clients[]` non-authority: capability negotiation test (exhaustive ∩) and portable-config rejection tests pass (§7). |
-| G8 | Versioned approval + `runId` cancellation contract tests pass (§8). |
-| G9 | Golden Cross-Adapter Conformance Trace passes for all five projections (§9). |
+| G1 | Path containment: `createFileStateStore` and `resolveInsideRoot` reject escapes, symlinks and junctions; id validation |
+| G2 | `mergeMcpServer` / `installClients`: additive merge, user env preserved, malformed JSON left untouched, prototype safety, idempotence |
+| G3 | `(runId, seq)` idempotency and conflict detection, across a backend restart |
+| G4 | `intersectCapabilities` / `negotiate()` / `resolveEffectiveCapabilityTokens` strict intersection; `normalizeClientIds` redaction |
+| G5 | Cooperative epoch fencing incl. the documented take-over behavior and fenced harness output |
+| G6 | Opaque approval hash echo, single-use decisions, `cancelRun` by `runId` closing pending approvals, no revival of terminal runs |
+| G7 | Cursors: cross-conversation and malformed cursors rejected, unresumable position reported, no lease material in pages |
+| G8 | MCP bridge: explicit opt-in, canonical `BackendErrorInfo`, generic message for non-contract failures, refusal without a harness |
+| G9 | `DurableHttpSquadBackend`: `https` only (plain `http` for loopback), `redirect: 'error'`, per-attempt timeouts, token sent only to the configured origin |
 
-## 6. Known gaps / follow-ups
-- Reference guards live in the test file; production code must adopt them and the suite should then import the real modules.
-- Windows attribute-bit detection relies on Node reporting junctions as symlinks; add a native check if that changes.
-- `DurableSquad` wire protocol auth (token binding to epoch) is not yet specified.
-- Cursor expiry/retention policy is unspecified; the reference accepts any previously issued cursor.
-
-## 7. Configured vs. negotiated capabilities
+## 6. Configured vs. negotiated capabilities (Implemented)
 
 Persisted `clients[]` in `.squad/config.json` is **projection config only**. It decides which client files are generated; it never grants execution authority.
 
-- **C1** `effectiveCapabilities = clientCapabilities ∩ backendCapabilities ∩ policyCapabilities`, computed at session negotiation, not at config load.
-- **C2** Any capability a client adapter requests that is absent from `backendCapabilities`, explicitly denied, or not granted by `policyCapabilities` is **stripped** and reported with a reason (`not-in-backend`, `denied-by-policy`, `not-granted-by-policy`). Explicit deny beats grant.
-- **C3** With no negotiated session, authorization fails closed. Widening `clients[]` on disk can never widen `effectiveCapabilities`.
-- **C4** In projection artifacts, `clients[].capabilities` is emitted as `requestedCapabilities`. Artifacts are built from a field whitelist; unknown fields are dropped, not copied.
-- **C5** Portable `clients[]` and every client projection artifact MUST NOT contain credentials (key or value), provider thread IDs, machine-specific absolute paths (POSIX, drive, UNC, `~`), lease tokens, or raw checkpoint state. Loading a config that violates this is refused.
+- **C1** `effectiveCapabilities = clientCapabilities ∩ backendCapabilities ∩ policyCapabilities`, computed by `negotiate()` (backend) and `resolveEffectiveCapabilityTokens` (client), never at config load.
+- **C2** Unknown capability tokens are dropped silently (there is no per-token reason reporting).
+- **C3** Widening `clients[]` on disk cannot widen `effectiveCapabilities`.
+- **C4 / C5** `normalizeClientIds` keeps only canonical client slugs and reports everything else as `unknown` or `sensitive` (redacted); `assertPortableClients` throws without echoing the offending values.
 
-## 8. Versioned durable approvals & `runId` cancellation
+## 7. Approvals & `runId` cancellation (Implemented)
 
-An approval is a versioned resource: `{ approvalId, version, scope, expiresAt, status, runId, payloadHash }`.
+An approval record is `{ approvalId, version, scope, action, hash, payload?, state, runId, requestedAt, decidedAt?, decision?, reason? }`.
 
-- **A1** `version` increments on every state transition: `v1` requested → `v2` decided (or expired).
-- **A2** `payloadHash = sha256(canon({runId, scope, payload}))`. A decision carrying a stale `version` or a mismatched `payloadHash` is rejected with no state change.
-- **A3** A decided or expired approval is terminal; replaying the v1 decision is rejected as stale, so side effects run at most once.
-- **A4** Expiry is durable and enforced at decision time (`now >= expiresAt`).
-- **A5** Cancellation targets the stable `runId`, never a turn `seq`. It is idempotent, and a no-op once the run is terminal. Exactly one terminal event per run; the first terminal transition wins a cancel-vs-complete race.
-- **A6** Turn acceptance is sequenced by `seq` (gap/duplicate-runId rejected; same `(runId, seq)` is an idempotent replay), but `seq` is not an identifier for control operations.
+- **A1** `version` is 1 while pending and incremented on the decision (or on cancellation of the run).
+- **A2** `hash` is the opaque string supplied by the harness; a response with a different string is rejected without state change. There is no `payloadHash`, no canonicalization and no `version` check on the response.
+- **A3** Decided or cancelled approvals are terminal; replaying the decision is `approval-not-pending`.
+- **A5** Cancellation targets the stable `runId` across all its turns, is idempotent, and is a no-op once terminal. A late harness `state`/`message` for a cancelled run is ignored.
+- **A6** Same `(runId, seq)` is an idempotent replay; `seq` is not an identifier for control operations.
 
-## 9. Loss-tolerant projection & golden conformance trace
+## 8. Cursors and loss tolerance
 
-- **L1** Unknown future event kinds (e.g. `x-future.event`, or a missing/non-string `kind`) are preserved verbatim in canonical history (malformed input becomes `x-unknown` with the raw payload). Projections pass them through and clients render `unsupported:<kind>`; none may crash.
-- **L2** Disposable telemetry (`telemetry.*`) is separate from durable events: bounded, never replayed, never part of canonical history or event ids.
-- **L3** Client cursor payload exposes only `{ cursor, lastAcceptedSeq, resumable }`. Lease tokens and checkpoint state stay server-side behind the opaque cursor; forged, tampered, or cross-session cursors are rejected.
+- **L3 (Implemented, unsigned)** Cursors are opaque `base64url("c1:<conversationId>:<sequence>")`. The broker validates the conversation id and the numeric form; a cursor ahead of the log yields `resumable: false`. Cursors are **not signed**: a client can mint a cursor for any position of a conversation it can already read. Pages expose only `events`, `nextCursor`, `lastAcceptedSeq` and `resumable`.
+- **L1 / L2 (Not implemented)** There is no loss-tolerant projection layer for unknown event kinds and no separate telemetry channel in the SDK backend.
 
-**Golden Cross-Adapter Conformance Trace** (must pass for `copilot`, `claude`, `kiro`, `opencode`, `cursor`):
+## 9. Future work / not implemented
 
-`TurnAccepted(runId, seq)` → stream partial output → `ApprovalRequested(v1)` → disconnect → `reconnect(cursor)` → `ApprovalDecided(v2)` → race `CancellationRequested(runId)` against completion → terminal state
+Earlier drafts of this proposal described the following as shipped. They are not, and the contract suite does not pretend otherwise:
 
-Assertions: identical canonical history across all five projections (wire formats may differ); no duplicate events or side effects on reconnect or stale-decision retry; exactly one terminal state; no lease/checkpoint material in any client-visible payload.
+- broker-computed approval hashes (`sha256(canon({runId, action, args, epoch}))`), `payloadHash`, `expiresAt` and version-checked decisions;
+- broker-issued leases with holder identity, so a client cannot fence others by asserting a larger epoch;
+- signed or forgery-resistant cursors and cursor expiry;
+- `command`/`args`/`url` validation in MCP config merges (M5) and atomic temp-file writes (M6);
+- a general secret scrubber for diagnostics and projections (B5 beyond the MCP error surface);
+- loss-tolerant projection of unknown event kinds and a separate telemetry stream (L1/L2);
+- a bundled execution harness: the `squad_backend_*` MCP tools are a transcript/event-log surface, `squad_backend_send_message` is refused with `unavailable` while no harness is registered, and `health`/`negotiate` report `executionAvailable: false`.

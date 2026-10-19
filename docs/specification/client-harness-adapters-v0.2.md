@@ -155,22 +155,86 @@ export interface ClientAdapter {
   describe(): Promise<AdapterDescription>;
   projectWorkspace(): Promise<ProjectWorkspaceProjection>;
 }
+```
+
+The `HarnessAdapter` SPI is defined in
+`packages/squad-sdk/src/backend/types.ts` and exported from
+`@bradygaster/squad-sdk/backend`; the broker (`LocalSquadBackend`) calls it
+through a `HarnessRegistry`. Copied from the source of truth:
+
+```ts
+export interface HarnessCapabilities {
+  streaming: boolean;
+  approvals: boolean;
+  cancellation: boolean;
+  tools: boolean;
+  /** Extension namespaces this harness understands, e.g. `x-copilot`. */
+  extensionNamespaces: string[];
+}
+
+export interface HarnessSubmission {
+  conversationId: string;
+  runId: string;
+  seq: number;
+  messages: BackendMessage[];
+  extensions?: ExtensionBag;
+  /** Lease epoch of the admission; echo it on every event for the run. */
+  epoch?: LeaseEpoch;
+}
+
+export type HarnessEvent =
+  | { type: 'message'; message: BackendMessage }
+  | { type: 'task'; id: string; state: TaskState; title?: string }
+  | { type: 'approval-requested'; request: HarnessApprovalRequest } // approvalId, turnSeq, action, hash, payload?, scope?
+  | { type: 'state'; state: RunState; error?: string };
+
+/** Output whose epoch is older than the conversation's is fenced off. */
+export type HarnessEventEnvelope = HarnessEvent & { runId: string; seq: number; epoch?: LeaseEpoch };
+
+export interface HarnessDescriptor {
+  id: string;
+  displayName?: string;
+  version?: string;
+  capabilities: HarnessCapabilities;
+}
 
 export interface HarnessAdapter {
-  submit(input: AdapterSubmission): Promise<{ taskId: string; runId: string }>;
-  subscribe(
-    input: AdapterSubscription,
-    onEvent: (event: Record<string, unknown>) => void | Promise<void>,
-  ): Promise<() => Promise<void>>;
-  cancel(conversationId: string, runId: string, reason?: string): Promise<void>;
-  respondApproval(conversationId: string, response: ApprovalResponse): Promise<void>;
-  getCapabilities(conversationId?: string): Promise<AdapterCapabilityProjection>;
-  describe(): Promise<AdapterDescription>;
-  projectWorkspace(): Promise<ProjectWorkspaceProjection>;
+  readonly id: string;                     // ^[a-z][a-z0-9-]*$
+  readonly capabilities: HarnessCapabilities;
+  submit(submission: HarnessSubmission): Promise<void>;
+  subscribe(conversationId: string, listener: (event: HarnessEventEnvelope) => void): () => void;
+  /** Idempotent: deliveries are retried. operationId is stable across retries and restarts of one delivery. */
+  cancel(conversationId: string, runId: string, seq: number, operationId?: string): Promise<void>;
+  /** Idempotent: deliveries are retried. operationId is stable across retries and restarts of one delivery. */
+  respondApproval(conversationId: string, response: ApprovalResponse, operationId?: string): Promise<void>;
+  describe(): HarnessDescriptor;
+}
+
+export interface HarnessRegistry {
+  register(adapter: HarnessAdapter): void;
+  get(id: string): HarnessAdapter | undefined;
+  list(): HarnessDescriptor[];
 }
 ```
 
-The method set is intentionally identical. `describe` and `projectWorkspace`
+The two SPIs are deliberately different in shape. `ClientAdapter` is an
+asynchronous facade over a host; `HarnessAdapter` is a synchronous-subscription
+SPI driven by the broker: `submit` returns nothing because the admission
+(`runId`, `seq`, state, cursor) was already issued by the broker, `cancel` and
+`respondApproval` are redelivered with a stable `operationId` until the
+harness acknowledges them, and `describe()` is synchronous because the
+registry lists harnesses during capability negotiation.
+
+`ApprovalResponse` for a harness is the backend type (`approvalId`, `hash`,
+`decision: 'approve' | 'deny'`, `reason?`, `epoch?`); the `hash` is the opaque
+string the harness itself supplied with its `approval-requested` event.
+
+No `HarnessAdapter` implementation ships in the SDK or CLI today. The
+registry, the SPI and the broker-side delivery guarantees exist and are tested
+with in-memory harnesses; the `squad state-mcp` bridge runs without any
+harness and refuses `squad_backend_send_message` accordingly.
+
+`describe` and `projectWorkspace` on `ClientAdapter`
 let the broker reason about host capabilities and file projection without
 special-casing each client in coordinator logic.
 

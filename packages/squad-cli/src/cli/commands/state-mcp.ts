@@ -271,8 +271,12 @@ export function printStateMcpHelp(): void {
     'This command is intended to be launched by GitHub Copilot CLI through',
     '.copilot/mcp-config.json. It exposes squad_decide and squad_state_* tools',
     'backed by the configured Squad state backend. Pass --experimental-backend',
-    '(or set SQUAD_EXPERIMENTAL_BACKEND=1 / SQUAD_BACKEND_URL) to also expose',
-    'the experimental squad_backend_* conversation tools.',
+    '(or set SQUAD_EXPERIMENTAL_BACKEND=1) to also expose the experimental',
+    'squad_backend_* conversation tools. SQUAD_BACKEND_URL alone does not',
+    'enable them; once enabled it routes the tools to a remote durable backend',
+    '(https required, plain http only for localhost) with SQUAD_BACKEND_TOKEN.',
+    'No execution harness is bundled: the bridge records transcripts and',
+    'events only.',
     '',
   ].join('\n'));
 }

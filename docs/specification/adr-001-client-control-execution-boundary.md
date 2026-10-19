@@ -27,21 +27,35 @@ Squad 2.0 is split into three planes:
 
 MCP is treated as an execution or tool bridge. It is useful for local broker
 projection and host integration, but it is not the canonical conversation wire
-contract.
+contract. The bridge that ships today (`squad state-mcp --experimental-backend`)
+exposes the `SquadBackend` contract as `squad_backend_*` tools but bundles no
+execution harness: it is a transcript and event-log surface that refuses to
+admit turns (`unavailable`) and reports `executionAvailable: false` until a
+harness is registered.
+
+The source of truth for the contract is
+`packages/squad-sdk/src/backend/types.ts`. Where this ADR or the companion
+specifications and the code disagree, the code wins and the documents are
+corrected.
 
 Future compatibility claims are gated by `G1` through `G9`:
 
-| Gate | Requirement |
-|---|---|
-| `G1` | stable `runId` independent from `seq` |
-| `G2` | monotonic per-conversation ordering by `seq` |
-| `G3` | durable versioned approvals with immutable payload hashes |
-| `G4` | effective capabilities negotiated as `client ∩ backend ∩ policy` |
-| `G5` | cursor-based recovery with `lastAcceptedSeq` and `resumable` |
-| `G6` | cancellation scoped to `runId` |
-| `G7` | operational health kept outside the protocol resource tree |
-| `G8` | loss-tolerant projection of unknown durable events and extensions |
-| `G9` | immutable golden fixtures in `test-fixtures/spec/suite-v0.2/` |
+| Gate | Requirement | Status |
+|---|---|---|
+| `G1` | stable `runId` independent from `seq` | implemented |
+| `G2` | monotonic per-conversation ordering by `seq` | implemented |
+| `G3` | durable versioned approvals echoing the harness-supplied opaque `hash` | implemented (broker-computed digests, expiry and version-checked responses are future work) |
+| `G4` | effective capabilities negotiated as `client ∩ backend ∩ policy` | implemented |
+| `G5` | cursor-based recovery with `lastAcceptedSeq` and `resumable` | implemented (cursors are unsigned) |
+| `G6` | cancellation scoped to `runId` | implemented |
+| `G7` | operational health kept outside the protocol resource tree | implemented |
+| `G8` | loss-tolerant projection of unknown durable events and extensions | extension validation only; unknown event kinds are not yet projected |
+| `G9` | golden fixtures in `test-fixtures/spec/suite-v0.2/` pass against the shipped backends | implemented (fixture event names are the real `BackendEnvelope.type` values) |
+
+Lease epochs are cooperative and client-asserted: a stale epoch is fenced but
+any caller presenting a larger epoch takes over. Broker-issued leases with
+holder identity are future work; see
+`docs/proposals/squad-2.0-security-and-isolation.md`.
 
 ## Consequences
 

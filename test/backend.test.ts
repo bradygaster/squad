@@ -189,7 +189,7 @@ function jsonRes(status: number, body: unknown): Response {
 
 describe('DurableHttpSquadBackend', () => {
   const mk = (fetchImpl: typeof fetch, extra: object = {}) =>
-    new DurableHttpSquadBackend({ baseUrl: 'http://x/', token: 'tok', fetch: fetchImpl, retryDelayMs: 1, ...extra });
+    new DurableHttpSquadBackend({ baseUrl: 'https://x/', token: 'tok', fetch: fetchImpl, retryDelayMs: 1, ...extra });
 
   it('speaks the /v1/conversations wire protocol', async () => {
     const calls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
@@ -212,14 +212,14 @@ describe('DurableHttpSquadBackend', () => {
     expect((await b.health()).version).toBe('1');
 
     expect(calls.map(c => `${c.method} ${c.url}`)).toEqual([
-      'POST http://x/v1/conversations',
-      'POST http://x/v1/conversations/c/messages',
-      'GET http://x/v1/conversations/c/transcript',
-      'GET http://x/v1/conversations/c/turns/1',
-      'POST http://x/v1/conversations/c/turns/1/cancel',
-      'POST http://x/v1/conversations/c/approvals/a',
-      'GET http://x/health/live',
-      'GET http://x/health/ready',
+      'POST https://x/v1/conversations',
+      'POST https://x/v1/conversations/c/messages',
+      'GET https://x/v1/conversations/c/transcript',
+      'GET https://x/v1/conversations/c/turns/1',
+      'POST https://x/v1/conversations/c/turns/1/cancel',
+      'POST https://x/v1/conversations/c/approvals/a',
+      'GET https://x/health/live',
+      'GET https://x/health/ready',
     ]);
     const send = calls[1]!;
     expect(send.headers['Idempotency-Key']).toBe('r:1');
@@ -259,11 +259,11 @@ describe('DurableHttpSquadBackend', () => {
       return url.endsWith('/health/ready') ? jsonRes(503, { detail: 'warming up' }) : jsonRes(200, { version: '2' });
     });
     expect(await mk(ready503 as unknown as typeof fetch).health()).toMatchObject({ ok: false, live: true, ready: false, detail: 'warming up' });
-    expect(urls.sort()).toEqual(['http://x/health/live', 'http://x/health/ready']); // 503 not retried
+    expect(urls.sort()).toEqual(['https://x/health/live', 'https://x/health/ready']); // 503 not retried
 
     const legacy = vi.fn(async (url: string) => (url.endsWith('/health') ? jsonRes(200, {}) : jsonRes(404, {})));
     expect(await mk(legacy as unknown as typeof fetch).health()).toMatchObject({ ok: true, live: true, ready: true });
-    expect(legacy).toHaveBeenLastCalledWith('http://x/health', expect.anything());
+    expect(legacy).toHaveBeenLastCalledWith('https://x/health', expect.anything());
   });
 
   it('cancels by runId and lists approvals over HTTP', async () => {
@@ -274,11 +274,11 @@ describe('DurableHttpSquadBackend', () => {
     });
     const b = mk(f as unknown as typeof fetch, { epoch: 5 });
     await b.cancelRun('c', 'r/1', 'why');
-    expect(seen[0]).toMatchObject({ method: 'POST', url: 'http://x/v1/conversations/c/runs/r%2F1/cancel' });
+    expect(seen[0]).toMatchObject({ method: 'POST', url: 'https://x/v1/conversations/c/runs/r%2F1/cancel' });
     expect(seen[0]!.headers['X-Lease-Epoch']).toBe('5');
     expect(JSON.parse(seen[0]!.body!)).toEqual({ reason: 'why' });
     expect(await b.getApprovals('c')).toEqual([{ approvalId: 'a', version: 2 }]);
-    expect(seen[1]).toMatchObject({ method: 'GET', url: 'http://x/v1/conversations/c/approvals' });
+    expect(seen[1]).toMatchObject({ method: 'GET', url: 'https://x/v1/conversations/c/approvals' });
   });
 
   it('maps canonical error bodies, sends protocol/correlation headers, and reads events', async () => {
@@ -291,10 +291,10 @@ describe('DurableHttpSquadBackend', () => {
     });
     const b = mk(f as unknown as typeof fetch);
     expect((await b.readEvents('c', { after: 'x y', limit: 5, stream: 'control' })).nextCursor).toBe('cur');
-    expect(seen[0]!.url).toBe('http://x/v1/conversations/c/events?after=x+y&limit=5&stream=control');
+    expect(seen[0]!.url).toBe('https://x/v1/conversations/c/events?after=x+y&limit=5&stream=control');
     expect(seen[0]!.headers['X-Squad-Protocol']).toBe(BACKEND_PROTOCOL_VERSION);
     expect((await b.negotiate({ protocols: ['2.0'] })).protocol).toBe('2.0');
-    expect(seen[1]!.url).toBe('http://x/v1/capabilities');
+    expect(seen[1]!.url).toBe('https://x/v1/capabilities');
     try {
       await b.respondApproval('c', { approvalId: 'a', hash: 'h', decision: 'approve' });
       expect.unreachable();
@@ -485,7 +485,7 @@ describe('createSquadBackend', () => {
   it('builds each backend kind', () => {
     expect(createSquadBackend({ kind: 'local', squadDir: '.', state: new MemoryStateStore() }).kind).toBe('local');
     expect(createSquadBackend({ kind: 'mcp', squadDir: '.', state: new MemoryStateStore() }).kind).toBe('mcp');
-    expect(createSquadBackend({ kind: 'durable-http', baseUrl: 'http://x' }).kind).toBe('durable-http');
+    expect(createSquadBackend({ kind: 'durable-http', baseUrl: 'https://x' }).kind).toBe('durable-http');
   });
 });
 
@@ -619,7 +619,7 @@ describe('PR #2238 review regressions (local backend)', () => {
 
 describe('PR #2238 review regressions (durable-http)', () => {
   const mkClient = (handler: (url: string, init: RequestInit) => Promise<Response> | Response, extra: object = {}) =>
-    new DurableHttpSquadBackend({ baseUrl: 'http://d.test', token: 't', retryDelayMs: 1, fetch: (async (u: string, i: RequestInit) => handler(String(u), i ?? {})) as never, ...extra });
+    new DurableHttpSquadBackend({ baseUrl: 'https://d.test', token: 't', retryDelayMs: 1, fetch: (async (u: string, i: RequestInit) => handler(String(u), i ?? {})) as never, ...extra });
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
   it('10. createConversation retries reuse one conversation id and idempotency key', async () => {
@@ -767,7 +767,7 @@ describe('PR #2238 race/fault matrix', () => {
   it('7. createConversation keeps one Idempotency-Key when the response is lost', async () => {
     const keys: Array<string | null> = []; const ids: string[] = [];
     let n = 0;
-    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', token: 't', retryDelayMs: 1, fetch: (async (_u: string, init: RequestInit) => {
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://d.test', token: 't', retryDelayMs: 1, fetch: (async (_u: string, init: RequestInit) => {
       keys.push(new Headers(init.headers as HeadersInit).get('Idempotency-Key'));
       const body = JSON.parse(String(init.body)); ids.push(body.conversationId);
       if (++n < 3) throw new TypeError('connection reset');
@@ -782,7 +782,7 @@ describe('PR #2238 race/fault matrix', () => {
   it('8. two conversations advance independent epochs without cross-talk', async () => {
     const sent: Record<string, Array<string | null>> = { a: [], b: [] };
     const next: Record<string, number> = { a: 5, b: 2 };
-    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', token: 't', retryDelayMs: 1, fetch: (async (u: string, init: RequestInit) => {
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://d.test', token: 't', retryDelayMs: 1, fetch: (async (u: string, init: RequestInit) => {
       const id = /conversations\/([^/]+)/.exec(u)![1]!;
       sent[id]!.push(new Headers(init.headers as HeadersInit).get('X-Lease-Epoch'));
       return json(200, { runId: 'r', seq: 1, duplicate: false, state: 'queued', epoch: next[id] });
@@ -1027,7 +1027,7 @@ describe('PR review round 3 (Brady re-review of 6451747d)', () => {
 
   it('P2 an HTTP body-read failure is retried like any other transient failure', async () => {
     let calls = 0;
-    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', retryDelayMs: 1, fetch: (async () => {
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://d.test', retryDelayMs: 1, fetch: (async () => {
       calls++;
       if (calls === 1) return { ok: true, status: 200, headers: new Headers(), text: async () => { throw new TypeError('terminated'); } } as unknown as Response;
       return new Response(JSON.stringify({ runId: 'r', seq: 1, duplicate: false, state: 'queued' }), { status: 200 });
@@ -1293,13 +1293,39 @@ describe('Layer 3 review recommendations & bug fixes', () => {
       expect(() => storeB.lock!('backend/locks/conv-1')).toThrow(/Timed out waiting for the conversation lock/);
       releaseA();
 
-      // After release, storeB can acquire and release cleanly without leaving a backend/ directory behind
+      // After release, storeB can acquire and release cleanly; the lock directory stays (pruning it would race
+      // another process's mkdir -> open('wx'))
       const releaseB = storeB.lock!('backend/locks/conv-1');
       releaseB();
-      expect(fs.existsSync(path.join(dir, 'backend'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'backend', 'locks'))).toBe(true);
+      expect(fs.existsSync(path.join(dir, 'backend', 'locks', 'conv-1.lock'))).toBe(false);
+
+      // async acquisition contends on the same lock files without blocking the event loop
+      const releaseAsync = await storeA.lockAsync!('backend/locks/conv-1');
+      let ticks = 0;
+      const ticker = setInterval(() => { ticks++; }, 5);
+      try {
+        await expect(storeB.lockAsync!('backend/locks/conv-1')).rejects.toThrow(/Timed out waiting for the conversation lock/);
+      } finally {
+        clearInterval(ticker);
+      }
+      expect(ticks).toBeGreaterThan(0);
+      releaseAsync();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('createStateBackendStore refuses a backend without a deterministic lock root', () => {
+    const backing = {
+      name: 'opaque',
+      read: () => undefined,
+      write: () => undefined,
+      exists: () => false,
+      list: () => [],
+    };
+    expect(() => createStateBackendStore(backing)).toThrow(/deterministic lock directory/);
+    expect(() => createStateBackendStore({ ...backing, root: '/some/root' } as never)).not.toThrow();
   });
 
   it('DurableHttpSquadBackend times out per attempt according to requestTimeoutMs and maxRetries', async () => {
@@ -1319,7 +1345,7 @@ describe('Layer 3 review recommendations & bug fixes', () => {
     });
 
     const client = new DurableHttpSquadBackend({
-      baseUrl: 'http://durable.test',
+      baseUrl: 'https://durable.test',
       fetch: hangingFetch as unknown as typeof fetch,
       requestTimeoutMs: 30,
       maxRetries: 2,
@@ -1341,12 +1367,165 @@ describe('Layer 3 review recommendations & bug fixes', () => {
     expect(elapsed).toBeLessThan(2_000);
   });
 
-  it('gates squad_backend_* tools in state-mcp behind explicit opt-in', async () => {
+  it('gates squad_backend_* tools in state-mcp behind explicit opt-in (SQUAD_BACKEND_URL alone is not opt-in)', async () => {
     const { isExperimentalBackendEnabled } = await import('../packages/squad-cli/src/cli/core/backend-mcp.js');
     expect(isExperimentalBackendEnabled([], {})).toBe(false);
     expect(isExperimentalBackendEnabled(['--experimental-backend'], {})).toBe(true);
     expect(isExperimentalBackendEnabled([], { SQUAD_EXPERIMENTAL_BACKEND: '1' })).toBe(true);
     expect(isExperimentalBackendEnabled([], { SQUAD_EXPERIMENTAL_BACKEND: '0' })).toBe(false);
-    expect(isExperimentalBackendEnabled([], { SQUAD_BACKEND_URL: 'http://durable.test' })).toBe(true);
+    expect(isExperimentalBackendEnabled([], { SQUAD_BACKEND_URL: 'https://durable.test' })).toBe(false);
+    expect(isExperimentalBackendEnabled([], { SQUAD_BACKEND_URL: 'https://durable.test', SQUAD_EXPERIMENTAL_BACKEND: '1' })).toBe(true);
+  }, 20_000);
+
+  it('DurableHttpSquadBackend only accepts https (or http to loopback) and never follows redirects', async () => {
+    const { validateBaseUrl } = await import('../packages/squad-sdk/src/backend/index.js');
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'http://durable.test' })).toThrow(/https/);
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'ftp://durable.test' })).toThrow(/https/);
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'not a url' })).toThrow(/not a valid URL/);
+    expect(() => new DurableHttpSquadBackend({ baseUrl: 'https://user:pw@durable.test' })).toThrow(/credentials/);
+    expect(() => new DurableHttpSquadBackend({ baseUrl: '' as string })).toThrow(/required/);
+    expect(validateBaseUrl('http://localhost:8080/')).toBe('http://localhost:8080');
+    expect(validateBaseUrl('http://127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
+    expect(validateBaseUrl('http://[::1]:8080')).toBe('http://[::1]:8080');
+    expect(validateBaseUrl('https://durable.test/')).toBe('https://durable.test');
+
+    const inits: RequestInit[] = [];
+    const f = vi.fn(async (_u: string, init?: RequestInit) => {
+      inits.push(init ?? {});
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://durable.test', token: 't', fetch: f as never, retryDelayMs: 1, requestTimeoutMs: 1_000 });
+    await b.getTurn('c', 1);
+    await b.health();
+    expect(inits.length).toBeGreaterThanOrEqual(3);
+    for (const init of inits) {
+      expect(init.redirect).toBe('error');
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('DurableHttpSquadBackend health probes time out instead of hanging', async () => {
+    const hanging = vi.fn((_u: string, init?: RequestInit) => new Promise<Response>((_r, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('timeout'), { name: 'TimeoutError' })));
+    }));
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://durable.test', fetch: hanging as never, requestTimeoutMs: 50 });
+    const started = Date.now();
+    const health = await b.health();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(health.ok).toBe(false);
+    expect(health.detail).toMatch(/timeout/i);
+  });
+
+  it('file store: a non-ENOENT read failure is reported, never mistaken for a missing conversation', async () => {
+    const fsMod = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fsMod.mkdtempSync(path.join(os.tmpdir(), 'sq-read-err-'));
+    try {
+      const store = createFileStateStore(dir);
+      const b = new LocalSquadBackend({ state: store });
+      const first = await b.createConversation({ conversationId: 'c', title: 'original' });
+      const spy = vi.spyOn(fsMod.default, 'readFileSync').mockImplementationOnce(() => {
+        throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+      });
+      try {
+        const err = await b.createConversation({ conversationId: 'c', title: 'replacement' }).catch(e => e);
+        expect(err).toBeInstanceOf(BackendError);
+        expect(err).toMatchObject({ code: 'unavailable', retryable: true });
+      } finally {
+        spy.mockRestore();
+      }
+      // the original was not overwritten by the "idempotent" create
+      expect((await b.createConversation({ conversationId: 'c' })).title).toBe(first.title);
+      expect(store.read('backend/conversations/missing.json')).toBeUndefined();
+    } finally {
+      fsMod.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a corrupt conversation file surfaces as BackendError with its path, not a raw SyntaxError', async () => {
+    const state = new MemoryStateStore();
+    const b = new LocalSquadBackend({ state });
+    await b.createConversation({ conversationId: 'c' });
+    state.write('backend/conversations/c.json', '{ not json');
+    const err = await b.getTranscript('c').catch(e => e);
+    expect(err).toBeInstanceOf(BackendError);
+    expect(err).toMatchObject({ code: 'unavailable', details: { path: 'backend/conversations/c.json' } });
+    expect(err.message).toMatch(/not valid JSON/);
+    // a parseable file with the wrong shape is rejected the same way, and never treated as "absent"
+    state.write('backend/conversations/c.json', '[]');
+    expect(await rejectCode(b.createConversation({ conversationId: 'c' }))).toBe('unavailable');
+  });
+
+  it('rejects Windows reserved device names as conversation ids', async () => {
+    const b = new LocalSquadBackend();
+    for (const id of ['CON', 'con', 'NUL', 'COM1', 'lpt9', 'AUX.json', 'PRN.txt']) {
+      expect(await rejectCode(b.createConversation({ conversationId: id }))).toBe('invalid-request');
+    }
+    expect((await b.createConversation({ conversationId: 'console' })).conversationId).toBe('console');
+    expect((await b.createConversation({ conversationId: 'COM10' })).conversationId).toBe('COM10');
+  });
+
+  it('MCP bridge: send_message refuses when no harness is registered; health/negotiate expose executionAvailable', async () => {
+    const { createBackendMcpTools, callBackendMcpTool, NO_HARNESS_MESSAGE } = await import('../packages/squad-cli/src/cli/core/backend-mcp.js');
+    const bare = new LocalSquadBackend({ kind: 'mcp' });
+    const tools = createBackendMcpTools(() => bare);
+    const tool = (n: string) => tools.find(t => t.name === n)!;
+    await tool('squad_backend_create_conversation').call({ conversationId: 'c' });
+
+    const res = await callBackendMcpTool(tool('squad_backend_send_message'), { conversationId: 'c', runId: 'r', seq: 1, content: 'hi' });
+    expect(res.isError).toBe(true);
+    const parsed = JSON.parse(res.content[0]!.text) as { error: { code: string; message: string; details?: Record<string, unknown> } };
+    expect(parsed.error).toMatchObject({ code: 'unavailable', message: NO_HARNESS_MESSAGE, details: { executionAvailable: false } });
+    expect(await bare.getTranscript('c')).toEqual([]); // nothing was queued silently
+
+    const health = await tool('squad_backend_health').call({}) as { executionAvailable: boolean; harnesses: string[] };
+    expect(health).toMatchObject({ ok: true, harnesses: [], executionAvailable: false });
+    const negotiated = await tool('squad_backend_negotiate').call({ protocols: [BACKEND_PROTOCOL_VERSION] }) as { executionAvailable: boolean; harnesses: string[] };
+    expect(negotiated).toMatchObject({ harnesses: [], executionAvailable: false });
+    expect(tool('squad_backend_send_message').description).toMatch(/transcripts only/);
+
+    // with a harness registered the same call is admitted
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(new FakeHarness());
+    const withHarness = new LocalSquadBackend({ kind: 'mcp', harnesses });
+    const tools2 = createBackendMcpTools(() => withHarness);
+    await tools2.find(t => t.name === 'squad_backend_create_conversation')!.call({ conversationId: 'c' });
+    const adm = await tools2.find(t => t.name === 'squad_backend_send_message')!.call({ conversationId: 'c', runId: 'r', seq: 1, content: 'hi', harness: 'copilot' }) as { state: string };
+    expect(adm.state).toBe('running');
+    expect(await tools2.find(t => t.name === 'squad_backend_health')!.call({})).toMatchObject({ harnesses: ['copilot'], executionAvailable: true });
+  });
+
+  it('MCP bridge validates argument shapes and hides non-contract error details', async () => {
+    const { createBackendMcpTools, callBackendMcpTool } = await import('../packages/squad-cli/src/cli/core/backend-mcp.js');
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(new FakeHarness());
+    const b = new LocalSquadBackend({ kind: 'mcp', harnesses });
+    const tools = createBackendMcpTools(() => b);
+    const tool = (n: string) => tools.find(t => t.name === n)!;
+    await tool('squad_backend_create_conversation').call({ conversationId: 'c' });
+    const code = async (n: string, args: Record<string, unknown>) =>
+      (JSON.parse((await callBackendMcpTool(tool(n), args)).content[0]!.text) as { error?: { code: string } }).error?.code;
+
+    expect(await code('squad_backend_send_message', { conversationId: 'c', runId: 'r', seq: 1, content: 'x', role: 'root' })).toBe('invalid-request');
+    expect(await code('squad_backend_send_message', { conversationId: 'c', runId: 'r', seq: 1, parts: 'text' })).toBe('invalid-request');
+    expect(await code('squad_backend_send_message', { conversationId: 'c', runId: 'r', seq: 1, parts: [{ type: 'bogus' }] })).toBe('invalid-request');
+    expect(await code('squad_backend_send_message', { conversationId: 'c', runId: 'r', seq: 1, content: 'x', extensions: [] })).toBe('invalid-request');
+    expect(await code('squad_backend_negotiate', { protocols: 'nope' })).toBe('invalid-request');
+    expect(await code('squad_backend_negotiate', { protocols: [BACKEND_PROTOCOL_VERSION], contentParts: ['video'] })).toBe('invalid-request');
+    expect(await code('squad_backend_read_events', { conversationId: 'c', limit: 0 })).toBe('invalid-request');
+    expect(await code('squad_backend_read_events', { conversationId: 'c', stream: 'all' })).toBe('invalid-request');
+    expect(await code('squad_backend_respond_approval', { conversationId: 'c', approvalId: 'a', hash: 'h', decision: 'maybe' })).toBe('invalid-request');
+
+    // limit is capped
+    for (let i = 1; i <= 3; i++) await tool('squad_backend_send_message').call({ conversationId: 'c', runId: `r${i}`, seq: 1, content: 'x', harness: 'copilot' });
+    const page = await tool('squad_backend_read_events').call({ conversationId: 'c', limit: 100_000 }) as { events: unknown[] };
+    expect(page.events.length).toBeLessThanOrEqual(500);
+
+    const exploding = { ...tool('squad_backend_health'), call: async () => { throw new Error('ENOENT: C:\\secret\\path\\state.json'); } };
+    const res = await callBackendMcpTool(exploding, {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).not.toMatch(/secret/);
+    expect(JSON.parse(res.content[0]!.text).error).toMatchObject({ code: 'unavailable', retryable: false });
   });
 });

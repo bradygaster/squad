@@ -54,8 +54,14 @@ interface StoredConversation {
 }
 
 const ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+/** Windows reserved device names are valid ID_RE matches but cannot be used as file names. */
+const WINDOWS_RESERVED_RE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i;
 const ROOT = 'backend/conversations';
 const LOCKS = 'backend/locks';
+
+export function isValidConversationId(id: string): boolean {
+  return ID_RE.test(id) && !WINDOWS_RESERVED_RE.test(id);
+}
 
 export class MemoryStateStore implements BackendStateStore {
   private readonly files = new Map<string, string>();
@@ -72,8 +78,11 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
+
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
+const LOCK_POLL_MS = 10;
 
 /**
  * Remove an abandoned lock under an exclusive `.recover` mutex. While holding it the lock is re-read: it is
@@ -167,59 +176,96 @@ export function createFileStateStore(squadDir: string, options: FileStateStoreOp
     }
     return full;
   };
+  /**
+   * One acquisition attempt. Returns the release function when the lock was taken, or `'wait'` when the
+   * caller should sleep and retry; throws once the deadline has passed.
+   */
+  const tryAcquire = (lockPath: string, token: string, deadline: number): (() => void) | 'wait' => {
+    try {
+      const fd = fs.openSync(lockPath, 'wx');
+      fs.writeSync(fd, token);
+      fs.closeSync(fd);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        // another process pruned the (empty) lock directory between our mkdir and open: recreate and retry
+        fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+        return 'wait';
+      }
+      if (code !== 'EEXIST') throw err;
+      // Crash recovery: an abandoned lock is claimed by atomic rename, so exactly one waiter wins it.
+      // The claimed file is re-checked; if it turns out to be a live holder's lock it is put back untouched.
+      try {
+        const { observed, observedMtime } = options.inspectLockFile
+          ? options.inspectLockFile(lockPath)
+          : { observed: fs.readFileSync(lockPath, 'utf8'), observedMtime: fs.statSync(lockPath).mtimeMs };
+        if (Date.now() - observedMtime > staleLockMs) {
+          options.beforeStaleRecovery?.(lockPath);
+          if (recoverStaleLock(lockPath, observed, observedMtime, staleLockMs, recoverStaleMs)) return 'wait';
+        }
+      } catch {
+        // Fall through to the deadline check and sleep so a persistent permission error (EACCES/EPERM)
+        // or race on lockPath respects lockTimeoutMs instead of spinning forever.
+      }
+      if (Date.now() > deadline) {
+        throw new BackendError('unavailable', 'Timed out waiting for the conversation lock', 503);
+      }
+      return 'wait';
+    }
+    return () => {
+      try { if (fs.readFileSync(lockPath, 'utf8') === token) fs.rmSync(lockPath, { force: true }); } catch { /* already gone */ }
+    };
+  };
+  const prepareLock = (key: string): { lockPath: string; token: string; deadline: number } => {
+    const lockPath = resolve(`${key}.lock`);
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    resolve(`${key}.lock`);
+    return { lockPath, token: `${process.pid}:${randomUUID()}`, deadline: Date.now() + lockTimeoutMs };
+  };
+  const readFile = (rel: string): string | undefined => {
+    try { return fs.readFileSync(resolve(rel), 'utf8'); } catch (e) {
+      if (e instanceof BackendError) throw e;
+      // only a missing file is "absent"; EPERM/EBUSY/EIO must not be mistaken for an empty slot
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw new BackendError('unavailable', `Cannot read state file '${rel}': ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}`, 503);
+    }
+  };
   return {
     lock: key => {
-      const lockPath = resolve(`${key}.lock`);
-      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-      resolve(`${key}.lock`);
-      const deadline = Date.now() + lockTimeoutMs;
-      const token = `${process.pid}:${randomUUID()}`;
+      const { lockPath, token, deadline } = prepareLock(key);
       for (;;) {
-        try {
-          const fd = fs.openSync(lockPath, 'wx');
-          fs.writeSync(fd, token);
-          fs.closeSync(fd);
-          break;
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-          // Crash recovery: an abandoned lock is claimed by atomic rename, so exactly one waiter wins it.
-          // The claimed file is re-checked; if it turns out to be a live holder's lock it is put back untouched.
-          let recoveryBusy = false;
-          try {
-            const { observed, observedMtime } = options.inspectLockFile
-              ? options.inspectLockFile(lockPath)
-              : { observed: fs.readFileSync(lockPath, 'utf8'), observedMtime: fs.statSync(lockPath).mtimeMs };
-            if (Date.now() - observedMtime > staleLockMs) {
-              options.beforeStaleRecovery?.(lockPath);
-              if (recoverStaleLock(lockPath, observed, observedMtime, staleLockMs, recoverStaleMs)) continue;
-              recoveryBusy = true;
-            }
-          } catch {
-            // Fall through to the deadline check and sleep so a persistent permission error (EACCES/EPERM)
-            // or race on lockPath respects lockTimeoutMs instead of spinning forever.
-          }
-          if (recoveryBusy && Date.now() <= deadline) { sleepSync(10); continue; }
-          if (Date.now() > deadline) throw new BackendError('unavailable', 'Timed out waiting for the conversation lock', 503);
-          sleepSync(10);
-        }
-      }
-      return () => {
-        try { if (fs.readFileSync(lockPath, 'utf8') === token) fs.rmSync(lockPath, { force: true }); } catch { /* already gone */ }
-      };
-    },
-    read: rel => {
-      try { return fs.readFileSync(resolve(rel), 'utf8'); } catch (e) {
-        if (e instanceof BackendError) throw e;
-        return undefined;
+        const r = tryAcquire(lockPath, token, deadline);
+        if (r !== 'wait') return r;
+        sleepSync(LOCK_POLL_MS);
       }
     },
+    lockAsync: async key => {
+      const { lockPath, token, deadline } = prepareLock(key);
+      for (;;) {
+        const r = tryAcquire(lockPath, token, deadline);
+        if (r !== 'wait') return r;
+        await sleep(LOCK_POLL_MS);
+      }
+    },
+    read: readFile,
     write: (rel, content) => {
       const full = resolve(rel);
       fs.mkdirSync(path.dirname(full), { recursive: true });
       resolve(rel); // re-check after directories were created
       const tmp = `${full}.${process.pid}.${randomUUID()}.tmp`;
-      fs.writeFileSync(tmp, content, { encoding: 'utf8', flag: 'wx' });
-      fs.renameSync(tmp, full);
+      const fd = fs.openSync(tmp, 'wx');
+      try {
+        fs.writeSync(fd, content, null, 'utf8');
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      try {
+        fs.renameSync(tmp, full);
+      } catch (err) {
+        fs.rmSync(tmp, { force: true });
+        throw err;
+      }
     },
     exists: rel => fs.existsSync(resolve(rel)),
     list: rel => {
@@ -255,7 +301,7 @@ export class LocalSquadBackend implements SquadBackend {
     validateExtensions(options.metadata);
     const id = options.conversationId ?? randomUUID();
     this.assertId(id);
-    const release = this.state.lock?.(`${LOCKS}/${id}`);
+    const release = await this.acquire(id);
     try {
       const existing = this.load(id, false);
       if (existing) return existing.info; // idempotent create
@@ -281,7 +327,7 @@ export class LocalSquadBackend implements SquadBackend {
       throw new BackendError('invalid-request', 'message requires runId and a non-negative integer seq', 400);
     }
     const msg = message;
-    const admitted = this.tx(conversationId, (conv) => {
+    const admitted = await this.tx(conversationId, (conv) => {
       this.checkEpoch(conv, msg.epoch);
       const dup = conv.turns.find(t => t.runId === msg.runId && t.seq === msg.seq);
       if (dup) {
@@ -374,7 +420,7 @@ export class LocalSquadBackend implements SquadBackend {
           503,
         );
       }
-      this.tx(conversationId, (fresh) => {
+      await this.tx(conversationId, (fresh) => {
         this.clearPendingSubmission(fresh, msg.runId, msg.seq);
       });
     }
@@ -395,7 +441,7 @@ export class LocalSquadBackend implements SquadBackend {
   }
 
   async cancelTurn(conversationId: string, seq: number, epoch?: LeaseEpoch): Promise<BackendTurn> {
-    const target = this.tx(conversationId, (conv) => {
+    const target = await this.tx(conversationId, (conv) => {
       this.checkEpoch(conv, epoch);
       const turn = this.requireTurn(conv, seq);
       this.markCancelled(conv, turn);
@@ -406,7 +452,7 @@ export class LocalSquadBackend implements SquadBackend {
   }
 
   async cancelRun(conversationId: string, runId: string, reason?: string, epoch?: LeaseEpoch): Promise<BackendTurn> {
-    const last = this.tx(conversationId, (conv) => {
+    const last = await this.tx(conversationId, (conv) => {
       this.checkEpoch(conv, epoch);
       const turns = conv.turns.filter(t => t.runId === runId);
       if (turns.length === 0) throw new BackendError('not-found', `Run '${runId}' not found`, 404);
@@ -424,7 +470,7 @@ export class LocalSquadBackend implements SquadBackend {
   }
 
   async respondApproval(conversationId: string, response: ApprovalResponse): Promise<BackendTurn> {
-    const target = this.tx(conversationId, (conv) => {
+    const target = await this.tx(conversationId, (conv) => {
       this.checkEpoch(conv, response.epoch);
       const turn = conv.turns.find(t => t.pendingApproval?.approvalId === response.approvalId);
       if (!turn || !turn.pendingApproval || turn.state !== 'awaiting-approval') {
@@ -515,11 +561,30 @@ export class LocalSquadBackend implements SquadBackend {
 
   /**
    * One complete read-modify-write of a conversation, serialized across processes by the store lock
-   * (when the store provides one). Harness calls must never run inside `fn`.
+   * (when the store provides one). Harness calls must never run inside `fn`. The lock wait is
+   * asynchronous (timer based) so a contended conversation never stalls the host event loop.
    */
-  private tx<T>(conversationId: string, fn: (conv: StoredConversation) => T): T {
+  private async tx<T>(conversationId: string, fn: (conv: StoredConversation) => T): Promise<T> {
     this.assertId(conversationId);
-    const release = this.state.lock?.(`${LOCKS}/${conversationId}`);
+    const release = await this.acquire(conversationId);
+    return this.locked(conversationId, fn, release);
+  }
+
+  /**
+   * Synchronous variant for harness event callbacks, which are delivered synchronously by the SPI and have
+   * no way to await. Falls back to the store's blocking `lock` when it offers one.
+   */
+  private txSync<T>(conversationId: string, fn: (conv: StoredConversation) => T): T {
+    this.assertId(conversationId);
+    return this.locked(conversationId, fn, this.state.lock?.(`${LOCKS}/${conversationId}`));
+  }
+
+  private async acquire(conversationId: string): Promise<(() => void) | undefined> {
+    if (this.state.lockAsync) return this.state.lockAsync(`${LOCKS}/${conversationId}`);
+    return this.state.lock?.(`${LOCKS}/${conversationId}`);
+  }
+
+  private locked<T>(conversationId: string, fn: (conv: StoredConversation) => T, release: (() => void) | undefined): T {
     this.txActive.add(conversationId);
     try {
       const conv = this.load(conversationId);
@@ -607,7 +672,7 @@ export class LocalSquadBackend implements SquadBackend {
   private async flushDeliveries(conversationId: string): Promise<void> {
     // Legacy entries (`id`, or no `operationId`) are normalized deterministically on load; write that back under
     // the lock BEFORE any external delivery so a crash mid-delivery restarts with the very same operationId.
-    if (this.outboxNeedsWriteThrough(conversationId)) this.tx(conversationId, () => undefined);
+    if (this.outboxNeedsWriteThrough(conversationId)) await this.tx(conversationId, () => undefined);
     for (;;) {
       const conv = this.load(conversationId);
       const next = conv.deliveries?.[0];
@@ -629,7 +694,7 @@ export class LocalSquadBackend implements SquadBackend {
         throw new BackendError('unavailable',
           `Harness ${next.kind} delivery failed and will be retried: ${err instanceof Error ? err.message : String(err)}`, 503);
       }
-      this.tx(conversationId, (fresh) => {
+      await this.tx(conversationId, (fresh) => {
         fresh.deliveries = (fresh.deliveries ?? []).filter(d => d.operationId !== next.operationId);
       });
     }
@@ -685,7 +750,7 @@ export class LocalSquadBackend implements SquadBackend {
       return;
     }
     try {
-      this.tx(conversationId, conv => this.applyEventLocked(conv, incoming));
+      this.txSync(conversationId, conv => this.applyEventLocked(conv, incoming));
     } catch (err) {
       if (err instanceof BackendError && err.code === 'not-found') return;
       throw err;
@@ -776,19 +841,29 @@ export class LocalSquadBackend implements SquadBackend {
   }
 
   private assertId(id: string): void {
-    if (!ID_RE.test(id)) throw new BackendError('invalid-request', `Invalid conversation id '${id}'`, 400);
+    if (!isValidConversationId(id)) throw new BackendError('invalid-request', `Invalid conversation id '${id}'`, 400);
   }
 
   private load(id: string): StoredConversation;
   private load(id: string, required: false): StoredConversation | undefined;
   private load(id: string, required = true): StoredConversation | undefined {
     this.assertId(id);
-    const raw = this.state.read(`${ROOT}/${id}.json`);
+    const file = `${ROOT}/${id}.json`;
+    const raw = this.state.read(file);
     if (!raw) {
       if (required) throw new BackendError('not-found', `Conversation '${id}' not found`, 404);
       return undefined;
     }
-    const conv = JSON.parse(raw) as StoredConversation;
+    let conv: StoredConversation;
+    try {
+      conv = JSON.parse(raw) as StoredConversation;
+    } catch (err) {
+      // a corrupt snapshot is an operator problem, never a silent "new conversation"
+      throw new BackendError('unavailable', `Conversation file '${file}' is not valid JSON: ${err instanceof Error ? err.message : String(err)}`, 503, { path: file });
+    }
+    if (!conv || typeof conv !== 'object' || !conv.info || !Array.isArray(conv.turns)) {
+      throw new BackendError('unavailable', `Conversation file '${file}' has an unexpected shape`, 503, { path: file });
+    }
     normalizeDeliveries(conv);
     this.loading.set(id, conv);
     try {

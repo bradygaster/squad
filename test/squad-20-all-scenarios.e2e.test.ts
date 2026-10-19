@@ -52,7 +52,7 @@ import {
   readCastingRegistryPair,
   repairHandwrittenCastingRegistry,
 } from '@bradygaster/squad-sdk/casting';
-import { ensureCastingDefaults, ensureGitignore, runUpgrade } from '../packages/squad-cli/src/cli/core/upgrade.js';
+import { ensureCastingDefaults, ensureGitattributes, ensureGitignore, runUpgrade } from '../packages/squad-cli/src/cli/core/upgrade.js';
 import { isInteractiveSession, runInit } from '../packages/squad-cli/src/cli/core/init.js';
 import { persistClients } from '../packages/squad-cli/src/cli/core/clients.js';
 import { callBackendMcpTool, createBackendMcpTools, createMcpBackend } from '../packages/squad-cli/src/cli/core/backend-mcp.js';
@@ -168,7 +168,7 @@ function createMockDurableSquad(local: LocalSquadBackend) {
 }
 
 function mkHttp(server: ReturnType<typeof createMockDurableSquad>, extra: object = {}) {
-  return new DurableHttpSquadBackend({ baseUrl: 'http://durable.test', token: 't', fetch: server.fetch, retryDelayMs: 1, ...extra });
+  return new DurableHttpSquadBackend({ baseUrl: 'https://durable.test', token: 't', fetch: server.fetch, retryDelayMs: 1, ...extra });
 }
 
 const canonical = (events: BackendEnvelope[]) =>
@@ -512,7 +512,7 @@ describe('Scenario 4: DurableHttpSquadBackend full HTTP lifecycle', () => {
     expect(await b.health()).toMatchObject({ ok: false, live: false, ready: false });
 
     const legacy = vi.fn(async (u: string) => (u.endsWith('/health') ? json(200, {}) : json(404, {})));
-    const old = new DurableHttpSquadBackend({ baseUrl: 'http://old.test', fetch: legacy as unknown as typeof fetch });
+    const old = new DurableHttpSquadBackend({ baseUrl: 'https://old.test', fetch: legacy as unknown as typeof fetch });
     expect(await old.health()).toMatchObject({ ok: true, live: true, ready: true });
   });
 });
@@ -611,7 +611,7 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
     const server = createMockDurableSquad(new LocalSquadBackend());
     vi.stubGlobal('fetch', server.fetch);
     try {
-      const remote = createMcpBackend('.', { SQUAD_BACKEND_URL: 'http://durable.test', SQUAD_BACKEND_TOKEN: 'tok' });
+      const remote = createMcpBackend('.', { SQUAD_BACKEND_URL: 'https://durable.test', SQUAD_BACKEND_TOKEN: 'tok' });
       expect(remote.kind).toBe('durable-http');
       await remote.createConversation({ conversationId: 'c' });
       expect(server.calls[0]!.headers['Authorization']).toBe('Bearer tok');
@@ -637,7 +637,7 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
     try {
       expect(createSquadBackend({ kind: 'local', squadDir: dir }).kind).toBe('local');
       expect(createSquadBackend({ kind: 'mcp', squadDir: dir }).kind).toBe('mcp');
-      expect(createSquadBackend({ kind: 'durable-http', baseUrl: 'http://x' }).kind).toBe('durable-http');
+      expect(createSquadBackend({ kind: 'durable-http', baseUrl: 'https://x' }).kind).toBe('durable-http');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -647,13 +647,8 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
 // ── Scenario 6: golden conformance trace ────────────────────────────
 
 describe('Scenario 6: golden-trace.json conformance (local and durable-http)', () => {
-  const MAPPED: Record<string, string> = {
-    TurnAccepted: 'message.accepted',
-    ApprovalRequested: 'approval.requested',
-    ApprovalDecided: 'approval.resolved',
-    CancellationRequested: 'cancellation.requested',
-    RunTerminal: 'turn.state',
-  };
+  // fixture event names are the real BackendEnvelope.type values; `client.*` entries are client-side steps
+  const backendEvents = () => golden.events.filter(e => !e.event.startsWith('client.'));
   const ev = (name: string) => golden.events.find(e => e.event === name)!;
 
   async function execute(mode: 'local' | 'durable-http') {
@@ -667,17 +662,17 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
     const { conversationId, runId } = golden;
     await client.createConversation({ conversationId });
 
-    const accepted = ev('TurnAccepted');
+    const accepted = ev('message.accepted');
     const adm = await client.sendMessage(conversationId, msg(runId, accepted['turnSeq'] as number, { harness: 'copilot' }));
     expect(adm).toMatchObject({ runId, seq: accepted['turnSeq'], duplicate: false, state: accepted['state'] });
 
-    const requested = ev('ApprovalRequested');
+    const requested = ev('approval.requested');
     harness.emit({ type: 'approval-requested', runId, seq: accepted['turnSeq'] as number, request: {
       approvalId: requested['approvalId'] as string, turnSeq: accepted['turnSeq'] as number,
-      action: 'golden', hash: requested['payloadHash'] as string,
+      action: 'golden', hash: requested['hash'] as string,
     } });
     const [v1] = await client.getApprovals(conversationId);
-    expect(v1).toMatchObject({ version: requested['version'], state: requested['status'], scope: { kind: requested['scope'] }, hash: requested['payloadHash'] });
+    expect(v1).toMatchObject({ version: requested['version'], state: requested['state'], scope: { kind: requested['scope'] }, hash: requested['hash'] });
 
     // disconnect: remember the cursor, drop the client
     const beforeDrop = await client.readEvents(conversationId);
@@ -686,7 +681,7 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
     client = connect();
 
     // reconnect(cursor): nothing missed, nothing new, resumable; redelivery is deduped by id
-    const reconnected = ev('Reconnected');
+    const reconnected = ev('client.reconnected');
     const resume = await client.readEvents(conversationId, { after: cursor });
     expect(resume.resumable).toBe(reconnected['resumable']);
     expect(resume.events).toEqual([]);
@@ -695,17 +690,17 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
     replay.events.forEach(e => seen.set(e.id, e));
     expect(seen.size).toBe(beforeDrop.events.length);
 
-    const decided = ev('ApprovalDecided');
+    const decided = ev('approval.resolved');
     const turn = await client.respondApproval(conversationId, {
-      approvalId: decided['approvalId'] as string, hash: decided['payloadHash'] as string, decision: 'approve',
+      approvalId: decided['approvalId'] as string, hash: decided['hash'] as string, decision: decided['decision'] as 'approve',
     });
     expect(turn.state).toBe('running');
     // at-most-once visible effect: a retried decision does not apply again
     expect((await errorOf(client.respondApproval(conversationId, {
-      approvalId: decided['approvalId'] as string, hash: decided['payloadHash'] as string, decision: 'approve',
+      approvalId: decided['approvalId'] as string, hash: decided['hash'] as string, decision: 'approve',
     })))?.code).toBe('approval-not-pending');
 
-    const cancelled = await client.cancelRun(conversationId, runId, ev('CancellationRequested')['reason'] as string);
+    const cancelled = await client.cancelRun(conversationId, runId, ev('cancellation.requested')['reason'] as string);
     expect(cancelled.state).toBe(golden.expectedTerminalState);
     await client.cancelRun(conversationId, runId);
     expect((await client.sendMessage(conversationId, msg(runId, accepted['turnSeq'] as number, { harness: 'copilot' }))).duplicate).toBe(true);
@@ -718,18 +713,16 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
   it.each(['local', 'durable-http'] as const)('%s: executes the normative trace', async (mode) => {
     const r = await execute(mode);
     const types = r.finalPage.events.map(e => e.type);
-    expect(types).toEqual([
-      'conversation.created',
-      ...golden.events.map(e => MAPPED[e.event]).filter((t): t is string => Boolean(t)),
-    ]);
+    expect(types).toEqual(['conversation.created', ...backendEvents().map(e => e.event)]);
 
     const byType = (t: string) => r.finalPage.events.find(e => e.type === t)!;
-    expect((byType('approval.requested').payload as any).request).toMatchObject({ version: 1, hash: ev('ApprovalRequested')['payloadHash'], scope: { kind: 'turn' } });
+    expect((byType('approval.requested').payload as any).request).toMatchObject({ version: 1, hash: ev('approval.requested')['hash'], scope: { kind: 'turn' } });
     expect(byType('approval.resolved').payload).toMatchObject({ version: 2, approvalId: r.decided['approvalId'], decision: 'approve' });
     expect(r.approvals).toHaveLength(1);
-    expect(r.approvals[0]).toMatchObject({ version: 2, state: 'approved', hash: ev('ApprovalDecided')['payloadHash'] });
+    expect(r.approvals[0]).toMatchObject({ version: 2, state: r.decided['state'], hash: ev('approval.resolved')['hash'] });
     expect(byType('cancellation.requested').payload).toMatchObject({ runId: golden.runId, reason: 'user-requested' });
     const terminal = r.finalPage.events.at(-1)!;
+    expect(terminal.type).toBe('turn.state');
     expect(terminal.payload).toMatchObject({ runId: golden.runId, state: golden.expectedTerminalState });
     expect(terminal.causationId).toBe(byType('cancellation.requested').id);
 
@@ -741,9 +734,9 @@ describe('Scenario 6: golden-trace.json conformance (local and durable-http)', (
     expect(r.finalPage.events.map(e => e.sequence)).toEqual(r.finalPage.events.map((_, i) => i + 1));
 
     // exactly-once harness effects despite retries/redelivery
-    expect(r.harness.submitted).toEqual([{ runId: golden.runId, seq: ev('TurnAccepted')['turnSeq'] }]);
-    expect(r.harness.approvals).toEqual([ev('ApprovalDecided')['approvalId']]);
-    expect(r.harness.cancelled).toEqual([{ runId: golden.runId, seq: ev('TurnAccepted')['turnSeq'] }]);
+    expect(r.harness.submitted).toEqual([{ runId: golden.runId, seq: ev('message.accepted')['turnSeq'] }]);
+    expect(r.harness.approvals).toEqual([ev('approval.resolved')['approvalId']]);
+    expect(r.harness.cancelled).toEqual([{ runId: golden.runId, seq: ev('message.accepted')['turnSeq'] }]);
 
     // no lease/checkpoint internals leak into client-facing pages or cursors
     const wire = JSON.stringify(r.finalPage);
@@ -1106,7 +1099,7 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
     let terminal = '';
     for (const e of trace.events) {
       switch (e.event) {
-        case 'TurnAccepted': {
+        case 'message.accepted': {
           await client!.createConversation({ conversationId: trace.conversationId });
           const adm = await client!.sendMessage(trace.conversationId, {
             runId: e['runId'] as string, seq: e['turnSeq'] as number, role: 'user', content: 'go', harness: 'cleanroom',
@@ -1116,33 +1109,35 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
           await pull(client!);
           break;
         }
-        case 'ApprovalRequested':
+        case 'approval.requested':
           await pull(client!);
           break;
-        case 'Disconnected':
+        case 'client.disconnected':
           beforeDrop = maxSeq();
           client = null;
           break;
-        case 'Reconnected': {
+        case 'client.reconnected': {
           client = connect();
           const meta = await pull(client);
           reconnects.push({ ...meta, seenBefore: beforeDrop });
           break;
         }
-        case 'ApprovalDecided':
-          await client!.respondApproval(trace.conversationId, { approvalId: e['approvalId'] as string, hash: e['payloadHash'] as string, decision: 'approve' });
+        case 'approval.resolved':
+          await client!.respondApproval(trace.conversationId, { approvalId: e['approvalId'] as string, hash: e['hash'] as string, decision: e['decision'] as 'approve' });
           await pull(client!);
           break;
-        case 'CancellationRequested':
+        case 'cancellation.requested':
           await client!.cancelRun(trace.conversationId, e['runId'] as string, e['reason'] as string);
           await pull(client!);
           break;
-        case 'RunTerminal': {
+        case 'turn.state': {
           const turn = await client!.getTurn(trace.conversationId, (trace.events[0]!['turnSeq'] as number));
           terminal = turn.state;
           await pull(client!);
           break;
         }
+        default:
+          throw new Error(`golden-trace.json contains an event the runner does not understand: ${e.event}`);
       }
     }
     const events = [...seen.values()].sort((a, b) => a.sequence! - b.sequence!);
@@ -1152,10 +1147,6 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
   }
 
   const ev = (name: string) => golden.events.find(e => e.event === name)!;
-  const NAME_OF: Record<string, string> = {
-    'message.accepted': 'TurnAccepted', 'approval.requested': 'ApprovalRequested', 'approval.resolved': 'ApprovalDecided',
-    'cancellation.requested': 'CancellationRequested', 'turn.state': 'RunTerminal',
-  };
 
   it('exposes the required runtime surface through the public package exports', async () => {
     const rootIndexSrc = fs.readFileSync(path.resolve(__dirname, '..', 'packages/squad-sdk/src/index.ts'), 'utf8');
@@ -1197,8 +1188,8 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
     const { createSquadBackend: create, DefaultHarnessRegistry: Registry } = await import('@bradygaster/squad-sdk/backend');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad20-cleanroom-'));
     try {
-      const approval = ev('ApprovalRequested');
-      const harness = new CleanRoomHarness({ approvalId: approval['approvalId'] as string, hash: approval['payloadHash'] as string });
+      const approval = ev('approval.requested');
+      const harness = new CleanRoomHarness({ approvalId: approval['approvalId'] as string, hash: approval['hash'] as string });
       const harnesses = new Registry();
       harnesses.register(harness);
       let connect: () => CRBackend;
@@ -1210,27 +1201,27 @@ describe('RC1→stable exit 3: clean-room client and harness against the public 
       }
       const r = await runFixture(connect, golden);
 
-      // the canonical history is exactly the fixture's, in order (client-side Disconnected/Reconnected aside)
-      const expectedNames = golden.events.map(e => e.event).filter(n => n !== 'Disconnected' && n !== 'Reconnected');
-      expect(r.events.map(e => NAME_OF[e.type]).filter(Boolean)).toEqual(expectedNames);
-      const by = (name: string) => r.events.find(e => NAME_OF[e.type] === name)!;
-      const requested = ev('ApprovalRequested');
-      const decided = ev('ApprovalDecided');
-      expect((by('ApprovalRequested').payload as any).request).toMatchObject({
-        approvalId: requested['approvalId'], version: requested['version'], hash: requested['payloadHash'], scope: { kind: requested['scope'] },
+      // the canonical history is exactly the fixture's, in order (client-side steps aside); no name translation needed
+      const expectedTypes = golden.events.map(e => e.event).filter(n => !n.startsWith('client.'));
+      expect(r.events.map(e => e.type).filter(t => t !== 'conversation.created')).toEqual(expectedTypes);
+      const by = (type: string) => r.events.find(e => e.type === type)!;
+      const requested = ev('approval.requested');
+      const decided = ev('approval.resolved');
+      expect((by('approval.requested').payload as any).request).toMatchObject({
+        approvalId: requested['approvalId'], version: requested['version'], hash: requested['hash'], scope: { kind: requested['scope'] },
       });
-      expect(by('ApprovalDecided').payload).toMatchObject({ approvalId: decided['approvalId'], version: decided['version'], decision: 'approve' });
+      expect(by('approval.resolved').payload).toMatchObject({ approvalId: decided['approvalId'], version: decided['version'], decision: decided['decision'] });
       expect(r.approvals).toHaveLength(1);
-      expect(r.approvals[0]).toMatchObject({ version: decided['version'], state: 'approved' });
-      expect(by('CancellationRequested').payload).toMatchObject({ runId: golden.runId, reason: ev('CancellationRequested')['reason'] });
+      expect(r.approvals[0]).toMatchObject({ version: decided['version'], state: decided['state'] });
+      expect(by('cancellation.requested').payload).toMatchObject({ runId: golden.runId, reason: ev('cancellation.requested')['reason'] });
       expect(r.terminal).toBe(golden.expectedTerminalState);
-      expect(by('RunTerminal').payload).toMatchObject({ runId: golden.runId, state: golden.expectedTerminalState });
+      expect(by('turn.state').payload).toMatchObject({ runId: golden.runId, state: golden.expectedTerminalState });
 
-      // Reconnected semantics from the fixture
-      const reconnected = ev('Reconnected');
+      // reconnect semantics from the fixture
+      const reconnected = ev('client.reconnected');
       expect(r.reconnects).toHaveLength(1);
       expect(r.reconnects[0]!.resumable).toBe(reconnected['resumable']);
-      expect(r.reconnects[0]!.seenBefore).toBe(by('ApprovalRequested').sequence);
+      expect(r.reconnects[0]!.seenBefore).toBe(by('approval.requested').sequence);
 
       // each side effect happened exactly once, and nothing internal leaked
       expect(harness.effects).toEqual({ submits: 1, approvals: [decided['approvalId']], cancels: 1 });
@@ -1493,12 +1484,21 @@ describe('field findings from the multi-client demos: process hygiene, .gitignor
 
     it('adds only .squad runtime entries on plain upgrade, idempotently (no .claude/worktrees/ or NUL without --client claude)', () => {
       const added = ensureGitignore(dest);
-      expect(added).toEqual(expect.arrayContaining(['.squad/orchestration-log/', '.squad/log/', '.squad/sessions/']));
+      expect(added).toEqual(expect.arrayContaining(['.squad/orchestration-log/', '.squad/log/', '.squad/sessions/', '.squad/backend/']));
       expect(added).not.toContain('.claude/worktrees/');
       expect(added).not.toContain('NUL');
       expect(lines()).not.toContain('.claude/worktrees/');
       expect(lines()).not.toContain('NUL');
       expect(ensureGitignore(dest)).toEqual([]);
+    });
+
+    it('ignores experimental backend transcripts/locks and never gives them a merge=union rule', () => {
+      ensureGitignore(dest);
+      expect(lines()).toContain('.squad/backend/');
+      ensureGitattributes(dest);
+      const attributes = fs.readFileSync(path.join(dest, '.gitattributes'), 'utf8');
+      expect(attributes).toMatch(/\.squad\/log\/\*\* merge=union/);
+      expect(attributes).not.toMatch(/\.squad\/backend/);
     });
 
     it('respects existing entries and parent coverage in .gitignore', () => {
@@ -1920,7 +1920,7 @@ describe('Brady re-review 13 defect repros', () => {
 
   it('10. an HTTP body-read failure is retried', async () => {
     let calls = 0;
-    const b = new DurableHttpSquadBackend({ baseUrl: 'http://d.test', retryDelayMs: 1, fetch: (async () => {
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://d.test', retryDelayMs: 1, fetch: (async () => {
       if (++calls === 1) return { ok: true, status: 200, headers: new Headers(), text: async () => { throw new TypeError('terminated'); } } as unknown as Response;
       return json(200, { runId: 'r', seq: 1, duplicate: false, state: 'queued' });
     }) as never });

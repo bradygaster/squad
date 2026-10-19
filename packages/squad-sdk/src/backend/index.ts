@@ -16,7 +16,7 @@ export { LocalSquadBackend, MemoryStateStore, createFileStateStore } from './loc
 export type { LocalSquadBackendOptions, FileStateStoreOptions } from './local-backend.js';
 export { createStateBackendStore } from './state-backend-store.js';
 export type { StateBackendLike, StateBackendStoreOptions } from './state-backend-store.js';
-export { DurableHttpSquadBackend } from './durable-http-backend.js';
+export { DurableHttpSquadBackend, validateBaseUrl } from './durable-http-backend.js';
 export type { DurableHttpOptions } from './durable-http-backend.js';
 
 /**
