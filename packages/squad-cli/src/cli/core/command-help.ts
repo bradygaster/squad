@@ -43,6 +43,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--no-workflows${RESET}              Skip writing GitHub Actions workflows`);
     console.log(`  ${BOLD}--preset <name>${RESET}             Apply a curated preset after init`);
     console.log(`  ${BOLD}--state-backend <type>${RESET}      State backend (local|orphan|two-layer)`);
+    console.log(`  ${BOLD}--client <list>${RESET}             Client hosts to project (or "all"):`);
     console.log(`  ${BOLD}--mode remote <path>${RESET}        Point at an external team root (creates .squad/config.json)\n`);
   },
 
@@ -58,6 +59,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--global${RESET}                    Upgrade the personal (global) squad`);
     console.log(`  ${BOLD}--migrate-directory${RESET}         Rename legacy .ai-team/ to .squad/`);
     console.log(`  ${BOLD}--state-backend <type>${RESET}      Migrate to a new backend (orphan|two-layer)`);
+    console.log(`  ${BOLD}--client <list>${RESET}             Add client hosts (or "all"):`);
     console.log(`  ${BOLD}--self${RESET}                      Upgrade the squad CLI package itself`);
     console.log(`  ${BOLD}--insider${RESET}                   With --self, install the @insider tag`);
     console.log(`  ${BOLD}--force${RESET}                     Overwrite files without prompting\n`);

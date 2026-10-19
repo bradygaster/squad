@@ -181,3 +181,8 @@ export type {
   DecisionEntry,
   GitRunner,
 } from './state/io/index.js';
+
+// Multi-host client adapters (spec: client-harness-adapters/v0.2)
+export * from './client/adapter-contract.js';
+export * from './client/adapters/index.js';
+

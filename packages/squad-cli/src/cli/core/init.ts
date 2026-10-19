@@ -19,6 +19,7 @@ import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
 import { syncCopilotInstructionsFile } from './managed-file.js';
 import { getTemplatesDir } from './templates.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import { applyClientProjectionsForInit, reportClientResults, type ClientId } from './clients.js';
 import {
   readTeamMd,
   writeTeamMd,
@@ -165,6 +166,8 @@ export interface RunInitOptions {
   stateBackend?: string;
   /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
   mcpFrontmatter?: boolean;
+  /** Client hosts to project (copilot, claude, kiro, opencode, cursor, codex, antigravity) */
+  clients?: ClientId[];
   /** If false, skip writing "chat.newSession.defaultMode": "Squad" to .vscode/settings.json (default: true) */
   includeVscodeDefault?: boolean;
 }
@@ -493,6 +496,15 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     }
   } catch {
     // best-effort: .mcp.json write failure does not block init
+  }
+
+  if (options.clients && options.clients.length > 0 && !options.isGlobal) {
+    try {
+      const synced = await applyClientProjectionsForInit(dest, squadDir, { clients: options.clients, version });
+      reportClientResults(synced.results, (m) => console.log(m.startsWith('⚠') ? `${YELLOW}${m}${RESET}` : `${GREEN}${m}${RESET}`));
+    } catch (err) {
+      console.warn(`${YELLOW}⚠ Could not project client files: ${err instanceof Error ? err.message : err}${RESET}`);
+    }
   }
 
   // Apply VS Code default chat session mode (opt-out: --no-vscode-default)

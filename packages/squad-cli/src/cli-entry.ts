@@ -161,6 +161,7 @@ async function main(): Promise<void> {
     console.log(`                    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
+    console.log(`                    --client <list> (client hosts to project, or "all")`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -169,6 +170,7 @@ async function main(): Promise<void> {
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
+    console.log(`                    --client <list> (add client hosts; refresh configured)`);
     console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
     console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
@@ -341,6 +343,15 @@ async function main(): Promise<void> {
     const modeIdx = args.indexOf('--mode');
     const mode = (modeIdx !== -1 && args[modeIdx + 1]) ? args[modeIdx + 1] : undefined;
 
+    let initClients;
+    try {
+      const { readClientFlag } = await import('./cli/core/clients.js');
+      initClients = readClientFlag(args);
+    } catch (err) {
+      console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+
     if (mode === 'remote') {
       const teamPath = args[modeIdx + 2];
       if (!teamPath) {
@@ -349,7 +360,7 @@ async function main(): Promise<void> {
       const { writeRemoteConfig } = await import('./cli/commands/init-remote.js');
       const dest = process.cwd();
       writeRemoteConfig(dest, teamPath);
-      await runInit(dest);
+      await runInit(dest, { clients: initClients });
       return;
     }
 
@@ -366,7 +377,7 @@ async function main(): Promise<void> {
     const sbIdx = args.indexOf('--state-backend');
     const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, includeVscodeDefault: !noVscodeDefault }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, clients: initClients, includeVscodeDefault: !noVscodeDefault }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
@@ -413,6 +424,14 @@ async function main(): Promise<void> {
     const forceUpgrade = args.includes('--force');
     const insider = args.includes('--insider');
     const dryRun = args.includes('--dry-run');
+    let upgradeClients;
+    try {
+      const { readClientFlag } = await import('./cli/core/clients.js');
+      upgradeClients = readClientFlag(args);
+    } catch (err) {
+      console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : getSquadStartDir();
 
     // Parse --state-backend for backend migration
@@ -477,6 +496,7 @@ async function main(): Promise<void> {
         self: selfUpgrade,
         force: forceUpgrade,
         dryRun,
+        clients: upgradeClients,
       });
     }
 
