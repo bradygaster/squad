@@ -289,11 +289,11 @@ distinct from negotiated `effectiveCapabilities`.
 | Host (`ClientId` / `hostKind`) | Agent anchor | MCP config | Support files | `submit` projection |
 |---|---|---|---|---|
 | GitHub Copilot (`copilot` / `github-copilot`) | `.github/agents/squad.agent.md` | `.mcp.json` | `.github/copilot-instructions.md` when present | `create_session`, `task`, or `runSubagent` depending on surface |
-| Claude Code (`claude` / `claude-code`) | `.claude/agents/squad.md` | `.mcp.json` | `CLAUDE.md`, `.gitignore` marker block | Claude `Task` subagent tool |
+| Claude Code (`claude` / `claude-code`) | `.claude/agents/squad.md` | `.mcp.json` | `CLAUDE.md` marker block, `.gitignore` `# squad:claude` lines | Claude `Task` subagent tool |
 | Kiro (`kiro`) | `.kiro/steering/squad.md` | `.kiro/settings/mcp.json` | `.kiro/agents/squad.json`, Kiro spec and steering hooks | Kiro agent or spec execution hook |
 | OpenCode (`opencode`) | `.opencode/agent/squad.md` | `opencode.json` | host agent and MCP definition blocks in `opencode.json` | OpenCode agent execution entry declared in `opencode.json` |
 | Cursor (`cursor`) | `.cursor/agents/squad.md` | `.cursor/mcp.json` | `.cursor/rules/squad.mdc` | Cursor agent dispatch or inline agent run with projected rules |
-| Codex (`codex`) | `.codex/agents/squad.md` | `.codex/config.toml` | `AGENTS.md` discovery pointer marker block | Codex agent execution surface |
+| Codex (`codex`) | `.codex/agents/squad.toml` | `.codex/config.toml` | `AGENTS.md` discovery pointer marker block | Codex agent execution surface |
 | Antigravity (`antigravity`) | `.agents/agents/squad.md` | `mcpServers:` frontmatter in `.agents/agents/squad.md` | `GEMINI.md` marker block | Antigravity agent execution surface |
 
 These file paths are the portable contract. A host-specific installer may
@@ -448,24 +448,25 @@ prompt.
 
 ### 11.1 Canonical files
 
-- agent anchor: `.codex/agents/squad.md`
+- agent anchor: `.codex/agents/squad.toml` (Codex custom agent: `name`,
+  `description`, multi-line `developer_instructions`)
 - MCP config: `.codex/config.toml`
 - support files: `AGENTS.md` discovery pointer marker block
 
 Codex is currently a compatibility-tier projection. Full coordinator instructions
-live in `.codex/agents/squad.md`, while root `AGENTS.md` carries only a short
+live in `.codex/agents/squad.toml`, while root `AGENTS.md` carries only a short
 discovery pointer inside a Squad-owned marker block so other hosts that
 auto-load `AGENTS.md` are not flooded with coordinator instructions.
 
 ### 11.2 `projectWorkspace`
 
-The projection reports `.codex/agents/squad.md` as the agent anchor, the
+The projection reports `.codex/agents/squad.toml` as the agent anchor, the
 `[mcp_servers.squad_state]` table inside `.codex/config.toml` as the MCP
 anchor, and `AGENTS.md` under `supportFiles`.
 
 ### 11.3 Rollback
 
-`removeProjection` deletes `.codex/agents/squad.md`, removes the managed marker
+`removeProjection` deletes `.codex/agents/squad.toml`, removes the managed marker
 block in `AGENTS.md`, and removes the Squad-owned TOML table in
 `.codex/config.toml`, preserving all surrounding bytes verbatim.
 
