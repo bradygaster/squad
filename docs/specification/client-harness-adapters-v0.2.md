@@ -378,7 +378,7 @@ the projected host files are in sync with the portable Squad contract.
 
 ### 8.1 Canonical files
 
-- agent anchor: `.kiro/steering/squad.md`
+- agent anchor: `.kiro/steering/squad.md` (`inclusion: manual`)
 - MCP config: `.kiro/settings/mcp.json`
 - support files: `.kiro/agents/squad.json` plus any Kiro spec hook
   definitions that import the Squad steering file
@@ -429,7 +429,7 @@ definitions together.
 
 - agent anchor: `.cursor/agents/squad.md`
 - MCP config: `.cursor/mcp.json`
-- support files: `.cursor/rules/squad.mdc`
+- support files: `.cursor/rules/squad.mdc` (`alwaysApply: false`)
 
 ### 10.2 `submit`
 
@@ -547,8 +547,9 @@ Promote this draft only after the suite has:
 3. approval and cancellation traces that demonstrate host-specific UI behavior
    still round-trips through the same portable response envelope;
 4. MCP projection tests that prove `.mcp.json`, `.kiro/settings/mcp.json`,
-   `opencode.json`, `.cursor/mcp.json`, and `.codex/config.toml` are emitted
-   with stable semantics;
+   `opencode.json`, `.cursor/mcp.json`, `.codex/config.toml`, and
+   Antigravity's `mcpServers:` frontmatter in `.agents/agents/squad.md` are
+   emitted with stable semantics;
 5. broker-to-harness replay tests showing that the chosen host primitive
    preserves run identity, transcript ordering, and background capability
    reporting;

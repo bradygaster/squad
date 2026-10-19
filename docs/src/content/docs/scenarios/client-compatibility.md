@@ -2,6 +2,8 @@
 
 > **Quick answer:** Not sure which interface to use? See [Choose your interface](../get-started/choose-your-interface.md) for a concise decision tree and comparison.
 
+> **New in Squad 2.0:** `squad init --client copilot|claude|kiro|opencode|cursor|codex|antigravity|all` and `squad upgrade --client ...` now project host-native adapters across all 7 supported hosts (GitHub Copilot, Claude Code, Kiro, OpenCode, Cursor, OpenAI Codex, and Google Antigravity) while keeping the backend contract portable. Start with [Using Squad across clients](./using-squad-across-clients.md) for the hands-on walkthrough and [Squad 2.0 architecture](../concepts/squad-2-0-architecture.md) for the three-plane model, MCP-vs-HTTP transport story, and the `G1`-`G9` conformance gates.
+
 Squad runs on multiple Copilot surfaces — each with its own agent spawning mechanism, tool set, and constraints. This document maps Squad's core capabilities across CLI, VS Code, JetBrains, and GitHub.com to help you understand what works where.
 
 ## Quick Reference

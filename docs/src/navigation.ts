@@ -22,6 +22,7 @@ export const NAV_SECTIONS: NavSection[] = [
     dir: 'concepts',
     items: [
       { title: 'Architecture', slug: 'concepts/architecture' },
+      { title: 'Squad 2.0 Architecture', slug: 'concepts/squad-2-0-architecture' },
       { title: 'Your Team', slug: 'concepts/your-team' },
       { title: 'Agent Identity Provenance', slug: 'concepts/agent-identity-provenance' },
       { title: 'Memory & Knowledge', slug: 'concepts/memory-and-knowledge' },
@@ -141,6 +142,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Remote Q&A', slug: 'scenarios/remote-qa' },
       { title: 'Disaster Recovery', slug: 'scenarios/disaster-recovery' },
       { title: 'Client Compatibility', slug: 'scenarios/client-compatibility' },
+      { title: 'Using Squad Across Clients', slug: 'scenarios/using-squad-across-clients' },
       { title: 'Aspire Dashboard', slug: 'scenarios/aspire-dashboard' },
       { title: 'Keep My Squad', slug: 'scenarios/keep-my-squad' },
       { title: 'Troubleshooting', slug: 'scenarios/troubleshooting' },

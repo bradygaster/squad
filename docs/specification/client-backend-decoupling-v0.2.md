@@ -49,7 +49,7 @@ Squad 2.0 uses three cooperating planes:
 
 | Plane | Responsibility | Typical examples |
 |---|---|---|
-| Client Plane | gathers user intent, renders transcript state, sends approvals, and hosts local UX affordances | Copilot CLI, Copilot App, VS Code, Claude Code, Cursor, Kiro, OpenCode |
+| Client Plane | gathers user intent, renders transcript state, sends approvals, and hosts local UX affordances | GitHub Copilot (`copilot`), Claude Code (`claude`), Kiro (`kiro`), OpenCode (`opencode`), Cursor (`cursor`), OpenAI Codex (`codex`), Google Antigravity (`antigravity`) |
 | Control and Broker Plane | owns conversation identity, admission, sequencing, transcript projection, task routing, approval digests, and lease fencing | in-process broker, `squad_state` MCP bridge, DurableSquad coordinator, DTS orchestration service |
 | Execution Plane | runs agent turns, tools, background work, and durable task continuations | local Copilot session, spawned subagent session, MCP worker, durable task host |
 
@@ -422,8 +422,10 @@ interface but no harness implementation.
 
 `squad state-mcp --experimental-backend` exposes the same `SquadBackend`
 instance as `squad_backend_*` tools. The portable boundary is still the
-conversation contract; MCP only carries it for hosts that can load `.mcp.json`
-but cannot link the SDK.
+conversation contract; MCP only carries it for hosts that can load `.mcp.json`,
+`.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json`,
+`.codex/config.toml`, or Antigravity's `mcpServers:` frontmatter in
+`.agents/agents/squad.md` without linking the SDK directly.
 
 The bridge is a transcript and event-log surface. It bundles no execution
 harness: `squad_backend_health` and `squad_backend_negotiate` report

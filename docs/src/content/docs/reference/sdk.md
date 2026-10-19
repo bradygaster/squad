@@ -15,7 +15,8 @@ The package uses ESM and exposes a root entrypoint plus focused subpath entrypoi
 | Import path | Use for |
 |-------------|---------|
 | `@bradygaster/squad-sdk` | Resolution, configuration, builders, models, roles, storage, telemetry, and shared types |
-| `@bradygaster/squad-sdk/client` | `SquadClient`, `SquadClientWithPool`, `SessionPool`, and client events |
+| `@bradygaster/squad-sdk/client` | `SquadClient`, `SquadClientWithPool`, `SessionPool`, client events, and multi-host `HostProjection` / `ClientAdapter` APIs (`@bradygaster/squad-sdk/clients` is a deprecated alias) |
+| `@bradygaster/squad-sdk/backend` | Experimental `SquadBackend` (`local`, `mcp`, `durable-http`), `HarnessAdapter`, and capability/extension helpers |
 | `@bradygaster/squad-sdk/coordinator` | `SquadCoordinator`, fan-out, and response-tier orchestration |
 | `@bradygaster/squad-sdk/tools` | `defineTool` and `ToolRegistry` |
 | `@bradygaster/squad-sdk/hooks` | `HookPipeline` and hook policy types |
@@ -339,6 +340,24 @@ pipeline.onContextUtilization(snapshot => {
 Every accepted sample is also emitted as a typed `context:utilization` event and recorded in the `squad.context.utilization` OpenTelemetry gauge. Exact runtime samples take precedence over later estimates for the same session.
 
 The root package also exports cost tracking, offline mode, runtime events, OpenTelemetry metrics, and internationalization helpers.
+
+## Client host adapters
+
+`@bradygaster/squad-sdk/client` (and the deprecated alias `@bradygaster/squad-sdk/clients`) projects the host-agnostic Squad coordinator into the files each AI host loads natively across all 7 supported hosts (`GitHub Copilot`, `Claude Code`, `Kiro`, `OpenCode`, `Cursor`, `OpenAI Codex`, and `Google Antigravity`).
+
+- `HostProjection` is a pure workspace projection (`project(ctx)`) for `copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, and `antigravity`. Get one with `getHostProjection(id)`; apply with `installClients(ids, ctx)` or remove with `uninstallClients(ids, ctx)`.
+- `createClientAdapter({ host, ctx, runtime? })` returns the spec-level `ClientAdapter` facade: `describe()`, `projectWorkspace()` and `getCapabilities()` work locally; `submit`, `subscribe`, `cancel` and `respondApproval` delegate to a bound `RuntimeBinding` and otherwise throw `AdapterUnboundError`.
+- Capabilities are canonical string tokens (`CAPABILITY_TOKENS_BY_HOST`); the boolean `ClientCapabilities` flags are a derived view, and passing conflicting flags throws. Advertised capabilities stay separate from negotiated `effectiveCapabilities` (client ∩ backend ∩ policy).
+- JSON and TOML config merges only touch Squad's own keys; `normalizeClientIds()` / `assertPortableClients()` keep `clients[]` free of credentials and paths.
+
+## Experimental backend and harness SPI (`@bradygaster/squad-sdk/backend`)
+
+> **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract. Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
+
+- `createSquadBackend(options)` builds a `SquadBackend` for `kind: 'local'`, `kind: 'mcp'`, or `kind: 'durable-http'` (configured with `baseUrl` and optional bearer `token`, or via `SQUAD_BACKEND_URL` and `SQUAD_BACKEND_TOKEN`).
+- `SquadBackend` exposes `negotiate`, `createConversation`, `sendMessage`, `getTranscript`, `getTurn`, `readEvents`, `getApprovals`, `respondApproval`, `cancelTurn`, `cancelRun`, and `health`.
+- `HarnessAdapter` and `DefaultHarnessRegistry` let custom execution runtimes plug into the broker (`submit`, `subscribe`, `cancel`, `respondApproval`, `describe`), with `validateExtensions()` enforcing `x-<harness>.*` extension namespaces.
+- In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1` (or when `SQUAD_BACKEND_URL` is set).
 
 ## Other Public Modules
 

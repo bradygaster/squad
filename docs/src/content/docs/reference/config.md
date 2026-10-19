@@ -78,6 +78,8 @@ Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates 
 └── orchestration-log/   # Coordinator state
 ```
 
+`.squad/config.json` may also carry `clients`: the portable list of host projections to keep fresh (`copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`). It never holds credentials, paths, URLs or session ids. See [Using Squad across clients](../scenarios/using-squad-across-clients.md).
+
 Commit this directory. It's your team's brain. Anyone who clones the repo gets the full team with all their knowledge.
 
 ---
@@ -196,6 +198,9 @@ First match wins.
 | `SQUAD_CLIENT` | Detected client (`cli` or `vscode`) |
 | `COPILOT_TOKEN` | Auth token for SDK usage |
 | `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context warning threshold as a fraction greater than `0` and at most `1` (default: `0.8`) |
+| `SQUAD_EXPERIMENTAL_BACKEND` | Set to `1` to enable the 11 opt-in `squad_backend_*` MCP tools in `squad state-mcp` |
+| `SQUAD_BACKEND_URL` | Connect `squad state-mcp` or `DurableHttpSquadBackend` to your own external `/v1/conversations` server |
+| `SQUAD_BACKEND_TOKEN` | Optional bearer token paired with `SQUAD_BACKEND_URL` |
 
 ---
 
