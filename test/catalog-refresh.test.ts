@@ -46,20 +46,22 @@ const DEAD_MODEL_IDS = [
 ];
 
 /**
- * The exact set of CLI-reachable seed model IDs.
- * gpt-5.6-sol/terra/luna added 2026-07-13 (env-observed as reachable via
- * Copilot CLI; tamirdresher follow-up request on PR #1444).
+ * The exact set of public GA seed model IDs.
+ * gpt-5.6-sol/terra/luna added 2026-07-13 (tamirdresher follow-up on PR #1444).
+ * Refreshed 2026-10-14 for #1598 against the public GA table at
+ * https://docs.github.com/en/copilot/reference/ai-models/supported-models:
+ * stale claude-opus-4.7/4.6, claude-sonnet-4.6/4.5 and gemini-3.1-pro removed.
  */
 const EXPECTED_CATALOG_IDS = [
   'claude-haiku-4.5',
+  'claude-haiku-5.5',
   'claude-opus-5',
-  'claude-opus-4.6',
-  'claude-opus-4.7',
+  'claude-opus-5.5',
   'claude-opus-4.8',
-  'claude-sonnet-4.5',
-  'claude-sonnet-4.6',
   'claude-sonnet-5',
-  'gemini-3.1-pro',
+  'claude-sonnet-5.5',
+  'gemini-3.8-flash',
+  'gemini-4-argon',
   'gpt-5-mini',
   'gpt-5.3-codex',
   'gpt-5.4',
@@ -68,6 +70,15 @@ const EXPECTED_CATALOG_IDS = [
   'gpt-5.6-luna',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
+  'gpt-6-luna',
+  'gpt-6-sol',
+  'gpt-6.1-sol',
+  'grok-4.6',
+  'grok-4.7',
+  'mai-code-1.1-flash',
+  // Research preview, opt-in only (#2014); never in a default chain.
+  'hydrafusion',
+  'hydrafusion-max',
 ];
 
 const CONFIG_CHAINS = DEFAULT_FALLBACK_CHAINS as Record<string, string[]>;
@@ -121,22 +132,22 @@ describe('catalog refresh invariants (#1080/#1183)', () => {
   });
 
   // ── Ordering invariants (tamirdresher PR #1444 follow-up) ──────────────────
-  // Prefer the NEWEST model in each series at [0]. Verified 2026-07-13.
+  // Prefer the NEWEST public GA model in each tier at [0]. Verified 2026-10-14 (#1598).
 
-  it('config premium chain[0] is gpt-5.6-sol (GPT-first premium routing)', () => {
-    expect(CONFIG_CHAINS.premium[0]).toBe('gpt-5.6-sol');
+  it('config premium chain[0] is claude-opus-5.5 (newest GA premium)', () => {
+    expect(CONFIG_CHAINS.premium[0]).toBe('claude-opus-5.5');
   });
 
-  it('config standard chain[0] is gpt-5.6-terra (Terra-first standard routing)', () => {
-    expect(CONFIG_CHAINS.standard[0]).toBe('gpt-5.6-terra');
+  it('config standard chain[0] is claude-sonnet-5.5 (newest GA standard)', () => {
+    expect(CONFIG_CHAINS.standard[0]).toBe('claude-sonnet-5.5');
   });
 
-  it('runtime premium chain[0] is gpt-5.6-sol (GPT-first premium routing)', () => {
-    expect(RUNTIME_CHAINS.premium[0]).toBe('gpt-5.6-sol');
+  it('runtime premium chain[0] is claude-opus-5.5 (newest GA premium)', () => {
+    expect(RUNTIME_CHAINS.premium[0]).toBe('claude-opus-5.5');
   });
 
-  it('runtime standard chain[0] is gpt-5.6-terra (Terra-first standard routing)', () => {
-    expect(RUNTIME_CHAINS.standard[0]).toBe('gpt-5.6-terra');
+  it('runtime standard chain[0] is claude-sonnet-5.5 (newest GA standard)', () => {
+    expect(RUNTIME_CHAINS.standard[0]).toBe('claude-sonnet-5.5');
   });
 
   // ── GPT-5.6 catalog membership (tamirdresher PR #1444 follow-up) ──────────

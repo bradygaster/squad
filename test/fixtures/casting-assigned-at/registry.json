@@ -1,0 +1,11 @@
+{
+  "agents": {
+    "analyst": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"analyst","universe":"none (descriptive naming)","legacy_named":false,"status":"active"},
+    "designer": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"designer","universe":"none (descriptive naming)","legacy_named":false,"status":"active"},
+    "planner": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"planner","universe":"none (descriptive naming)","legacy_named":false,"status":"active"},
+    "tester": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"tester","universe":"none (descriptive naming)","legacy_named":false,"status":"active"},
+    "reviewer": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"reviewer","universe":"none (descriptive naming)","legacy_named":false,"status":"active"},
+    "critic": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"critic","universe":"none (descriptive naming)","legacy_named":false,"status":"active"},
+    "recorder": {"created_at":"2026-08-08T01:16:24.000Z","persistent_name":"recorder","universe":"none (descriptive naming)","legacy_named":false,"status":"active"}
+  }
+}

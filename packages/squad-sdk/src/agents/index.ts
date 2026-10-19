@@ -64,6 +64,8 @@ export {
 // --- M1-9 Model Selection + M3-5 Model Fallback ---
 export { 
   resolveModel,
+  resolveAgentModel,
+  MODEL_RESOLUTION_PRECEDENCE,
   inferTierFromModel,
   isTierFallbackAllowed,
   ModelFallbackExecutor,
@@ -71,13 +73,24 @@ export {
   buildEffectiveCostPolicy,
   buildCatalogCategoryMap,
   pruneChainToCeiling,
+  isModelPreference,
+  persistentConfigModel,
+  resolveModelProfile,
+  PROFILE_TASK_TIERS,
+  DEFAULT_MODEL_SELECTION_PROFILE,
+  MODEL_SELECTION_PROFILES,
+  isModelSelectionProfile,
+  type ModelSelectionProfile,
   type ModelResolutionOptions, 
   type ResolvedModel,
+  type ModelResolution,
+  type PersistentModelConfig,
   type EffectiveCostPolicy,
   type TaskType,
   type ModelTier,
   type ModelResolutionSource,
   type FallbackExecutorConfig,
+  type FallbackExecuteOptions,
   type FallbackAttempt,
   type FallbackResult,
 } from './model-selector.js';
@@ -89,6 +102,7 @@ export {
   type AgentStatus,
   type SpawnAgentOptions,
   type LifecycleManagerConfig,
+  type AgentModelResolution,
 } from './lifecycle.js';
 
 // --- M1-11 History Shadows ---

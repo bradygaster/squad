@@ -1,32 +1,6 @@
 /**
- * E4 preflight package A — fast-path `/squad activate` artifact integrity.
- *
- * Before this change, only the granular `/squad plan activate` path
- * (`squad-plan-activate`, artifacts `activated` / `phases-activated`) was required to emit
- * a non-empty `Activation bindings:` block, and only that path's checker/collector wiring
- * covered it. The recommended fast path (`squad-plan-accept`, artifacts `plan-accepted` /
- * `phases-accepted`) creates and labels issues identically but had no such requirement, no
- * checker coverage, and the CI collector (`.github/workflows/squad-agent-binding-check.yml`)
- * filtered on a literal `/activated/i` substring that a `plan-accepted`/`phases-accepted`
- * comment never contains — so a fast-path activation with omitted or empty bindings was
- * invisible to the deterministic post-activation check.
- *
- * This suite locks four things:
- *   1. Both activation paths use the exact same `Label operations accepted` heading text.
- *   2. The fast path's output template requires a non-empty `Activation bindings:` block,
- *      with the same shape/quoting/omission-reason contract as the granular path.
- *   3. The deterministic checker (`scripts/check-agent-binding.mjs`) validates `plan-accepted`
- *      / `phases-accepted` bindings exactly like `activated` / `phases-activated`, and rejects
- *      standalone certainty claims ("applied", "received", "landed", "verified", "confirmed",
- *      "checked") in label-operation reporting — scoped per-clause (not per-line or a blanket
- *      whole-comment scan), so quoted titles, unrelated sections, substrings, a forbidden word
- *      describing an unrelated subject sharing a line with a label token, and negations never
- *      false-positive, while a negation elsewhere on the line never blanket-suppresses a real,
- *      separate claim.
- *   4. The CI collector actually passes fast-path artifact comments to that checker.
- *
- * Out of scope (per the E4 preflight package A brief): workflow discriminators, docs
- * sequencing, draft PR UX, and every other E4 finding.
+ * Both activation routes delegate metadata and bindings to the trusted writer.
+ * Checker, wording-scanner and collector regressions remain independently covered.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -40,6 +14,9 @@ import {
   validateActivation,
   validateBindings,
 } from '../scripts/check-agent-binding.mjs';
+import {
+  ACTIVATION_RECEIPT_SCHEMA, buildActivationBindings, digest,
+} from '../workflows/shared/squad-activation.mjs';
 
 /** Read a text file with line endings normalized to LF (Windows checkouts materialize CRLF). */
 function readText(filePath: string): string {
@@ -54,22 +31,17 @@ const COLLECTOR_YML = join(process.cwd(), '.github', 'workflows', 'squad-agent-b
 const workflow = readText(SQUAD_WORKFLOW);
 const ontology = readText(ONTOLOGY);
 
-/** `squad-plan-activate` — the `/squad plan activate` granular path. Has an explicit end marker. */
-const ACTIVATE_START = workflow.indexOf('## skill: `squad-plan-activate`');
-const ACTIVATE_END = workflow.indexOf('## end skill: `squad-plan-activate`');
-expect(ACTIVATE_START, '"## skill: `squad-plan-activate`" is missing from workflows/squad.md').toBeGreaterThan(-1);
-expect(ACTIVATE_END, '"## end skill: `squad-plan-activate`" is missing').toBeGreaterThan(ACTIVATE_START);
-const activateSkill = workflow.slice(ACTIVATE_START, ACTIVATE_END);
-
-/**
- * `squad-plan-accept` — the recommended `/squad activate` fast path. It has no
- * `## end skill:` marker, so its body runs to the next `## skill:` heading.
- */
-const ACCEPT_START = workflow.indexOf('## skill: `squad-plan-accept`');
-const ACCEPT_END = workflow.indexOf('## skill: `squad-plan-revise`');
-expect(ACCEPT_START, '"## skill: `squad-plan-accept`" is missing from workflows/squad.md').toBeGreaterThan(-1);
-expect(ACCEPT_END, '"## skill: `squad-plan-revise`" is missing from workflows/squad.md').toBeGreaterThan(ACCEPT_START);
-const acceptSkill = workflow.slice(ACCEPT_START, ACCEPT_END);
+/** Skill bodies end at the next level-two heading or EOF, not a legacy end marker. */
+function skillBody(name: string): string {
+  const heading = `## skill: \`${name}\``;
+  const start = workflow.indexOf(heading);
+  expect(start, `${heading} is missing`).toBeGreaterThan(-1);
+  const rest = workflow.slice(start + heading.length);
+  const end = rest.search(/\n## /);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+const activateSkill = skillBody('squad-plan-activate');
+const acceptSkill = skillBody('squad-plan-accept');
 
 /** Both activation paths, so parity assertions cannot pass by covering only one. */
 const BOTH_PATHS: ReadonlyArray<readonly [string, string]> = [
@@ -77,124 +49,31 @@ const BOTH_PATHS: ReadonlyArray<readonly [string, string]> = [
   ['/squad activate fast path (squad-plan-accept)', acceptSkill],
 ];
 
-// ---------------------------------------------------------------------------
-// 1. Heading parity — both paths use the exact same literal heading.
-// ---------------------------------------------------------------------------
-
-describe('gh-aw: both activation paths use the exact "Label operations accepted" heading', () => {
-  it.each(BOTH_PATHS)('%s: renders the heading verbatim', (_path, skillText) => {
-    expect(skillText).toMatch(/^#{1,6} Label operations accepted\s*$/m);
+describe('gh-aw: both model paths delegate activation publication to the trusted writer', () => {
+  it.each(BOTH_PATHS)('%s: routes to activate_plan rather than authoring bindings', (_path, text) => {
+    expect(text).toContain('`activate_plan`');
+    expect(text).toContain('trusted');
+    expect(text).not.toMatch(/MUST include an `Activation bindings:|Label operations accepted/);
   });
 
-  it('never reintroduces the old, non-identical heading text in either path', () => {
-    expect(workflow).not.toContain('Label reporting — accepted operations only');
-    expect(workflow).not.toContain('Label reporting');
+  it('makes the granular route reuse the exact fast-path procedure and recovery rules', () => {
+    expect(activateSkill.replace(/\s+/g, ' ')).toContain(
+      'same `activate_plan` procedure and no-create recovery rules as `squad-plan-accept`',
+    );
+    expect(activateSkill).toContain('one `activate_plan` request only');
   });
 
-  it('the two headings are byte-identical, not merely similar', () => {
-    const activateHeading = activateSkill.match(/^#{1,6} Label operations accepted\s*$/m)?.[0].replace(/^#+\s*/, '').trim();
-    const acceptHeading = acceptSkill.match(/^#{1,6} Label operations accepted\s*$/m)?.[0].replace(/^#+\s*/, '').trim();
-    expect(activateHeading).toBe('Label operations accepted');
-    expect(acceptHeading).toBe('Label operations accepted');
-    expect(activateHeading).toBe(acceptHeading);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 2. Fast-path output template requires non-empty Activation bindings.
-// ---------------------------------------------------------------------------
-
-/**
- * Shared assertion used both as a direct positive check against the real committed skill
- * text, and — mutated — as a mutation-test kill switch. A mutation that survives this
- * function despite deleting or hollowing out the contract would mean the test suite cannot
- * actually detect the regression it claims to guard.
- */
-function assertBindingsContractPresent(skillText: string): void {
-  const prose = skillText.replace(/\s+/g, ' ');
-  expect(prose).toMatch(
-    /MUST include an `Activation bindings:` fenced JSON block containing a non-empty array/,
-  );
-  expect(prose).toMatch(/never emit an empty array/);
-  expect(prose).toMatch(/#{1,6} Label operations accepted/);
-}
-
-describe('gh-aw: fast-path (`squad-plan-accept`) requires non-empty Activation bindings (#1958 E4 preflight A)', () => {
-  it('passes against the real committed fast-path skill body', () => {
-    expect(() => assertBindingsContractPresent(acceptSkill)).not.toThrow();
-  });
-
-  it('passes against the real committed granular skill body (parity baseline)', () => {
-    expect(() => assertBindingsContractPresent(activateSkill)).not.toThrow();
-  });
-
-  it('states the identical versioned provenance/quoting/omission contract as the granular path', () => {
+  it('requires exactly one comment-ID request and forbids model-owned metadata and native writes', () => {
     const prose = acceptSkill.replace(/\s+/g, ' ');
-    expect(prose).toMatch(
-      /identical versioned provenance, binding shape, quoting, and omission semantics as `squad-plan-activate` Step 4/,
-    );
-    expect(activateSkill).toContain('squad-work-agent-binding/v1');
-    expect(activateSkill).toContain('squad-agent-provenance/v1');
-    expect(activateSkill).toContain('legacy-plan-missing-id');
-    expect(prose).toMatch(/never bare numbers/);
-    expect(prose).toMatch(/a surviving `#aw_…` reference means `create-issue` never\s*landed/);
+    expect(prose).toMatch(/Call `activate_plan` exactly once with `plan_comment_id`/);
+    expect(prose).toContain("comment's numeric ID as a string. Emit no other safe-output operation.");
+    expect(prose).toContain('Do not call `create_issue`, `add_labels`, `add_comment` or `upsert_lifecycle_state`');
+    expect(prose).toContain('Do not author Activation bindings, acceptance metadata, issue-number maps');
+    expect(prose).toContain('synchronous createIssue API');
+    expect(prose).toContain('Never deduplicate by title, guess issue numbers');
   });
 
-  it('the checker treats a missing/empty fast-path bindings block as a failure, stated explicitly', () => {
-    const prose = acceptSkill.replace(/\s+/g, ' ');
-    expect(prose).toMatch(
-      /missing, empty, malformed, or unresolved bindings block on a `plan-accepted` or\s*`phases-accepted` artifact as a failure exactly as it does for `activated`\s*and `phases-activated`/,
-    );
-  });
-
-  it('both activation paths revalidate stable IDs before mutation', () => {
-    expect(acceptSkill).toMatch(/Agent ID` MUST exactly match its `AGENT_IDENTITY:` record/);
-    expect(activateSkill).toMatch(/plan `Agent ID` to exactly match the\s+same `AGENT_IDENTITY:` record/);
-    expect(activateSkill).toContain('never reconstruct one from its name or label');
-  });
-
-  it('both artifact-data lines for the fast path carry the Activation bindings JSON array', () => {
-    expect(acceptSkill).toContain(
-      'Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table + the `Activation bindings:` JSON array.',
-    );
-    expect(acceptSkill).toContain(
-      'Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table + the `Activation bindings:` JSON array.',
-    );
-  });
-
-  // --- Mutation tests: prove the assertion above actually fails when the committed source
-  // --- is hollowed out, rather than only ever passing by construction.
-  it.each(BOTH_PATHS)(
-    '%s: mutation kill — deleting the Activation bindings requirement sentence fails the contract check',
-    (_path, skillText) => {
-      const mutated = skillText.replace(
-        /(?:\*\*Every phase and full acceptance artifact body|Every phase and full activation artifact body) MUST include an `Activation[\s\S]*?non-empty array[^.]*\./,
-        'The summary should mention the created issues.',
-      );
-      expect(mutated).not.toBe(skillText);
-      expect(() => assertBindingsContractPresent(mutated)).toThrow();
-    },
-  );
-
-  it.each(BOTH_PATHS)(
-    '%s: mutation kill — weakening "never emit an empty array" to permit an empty array fails the contract check',
-    (_path, skillText) => {
-      const mutated = skillText.replace(/never\s+emit an empty array/, 'an empty array is acceptable');
-      expect(mutated).not.toBe(skillText);
-      expect(() => assertBindingsContractPresent(mutated)).toThrow();
-    },
-  );
-
-  it.each(BOTH_PATHS)(
-    '%s: mutation kill — renaming the Label operations accepted heading fails the contract check',
-    (_path, skillText) => {
-      const mutated = skillText.replace(/#{1,6} Label operations accepted/, '###### Label Notes');
-      expect(mutated).not.toBe(skillText);
-      expect(() => assertBindingsContractPresent(mutated)).toThrow();
-    },
-  );
-
-  it('documents the fast-path mandatory-bindings contract in the shared ontology, not only the skill body', () => {
+  it('retains the shared ontology requirement for all four acceptance types', () => {
     const prose = ontology.replace(/\s+/g, ' ');
     expect(prose).toMatch(
       /mandatory for\s*`phases-activated`, `activated`, `phases-accepted`, and `plan-accepted` artifacts/,
@@ -203,21 +82,140 @@ describe('gh-aw: fast-path (`squad-plan-accept`) requires non-empty Activation b
   });
 });
 
-// ---------------------------------------------------------------------------
-// Known-trap wording regression: "the label set it should have received".
-// ---------------------------------------------------------------------------
+const trustedTeam = '## Members\n| Name | Role |\n|---|---|\n| Builder | Engineer |';
+const trustedRegistry = {
+  schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 3,
+  agents: {
+    builder: {
+      status: 'active', display_name: 'Builder', persistent_name: 'Builder', role: 'Engineer',
+      universe: 'descriptive', created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+    },
+  },
+};
 
-describe('gh-aw: the known "should have received" trap phrase is reworded (#1958 E4 preflight A)', () => {
-  it('never uses the exact trap phrase describing a label a report_incomplete item was targeting', () => {
-    // Narrowly scoped to the exact known-trap phrase, not a blanket ban on "received" — the
-    // word legitimately appears elsewhere in this file for unrelated meanings (e.g. "the
-    // right issue received the right value", "a rejection you never received"), and a
-    // blanket scan would be exactly the false-positive-prone pattern this change avoids.
-    expect(workflow).not.toMatch(/label set it should have received/);
+function producerFixture(kind = 'implementation', phase: number | null = null) {
+  const capture = {
+    repository: 'example/project', origin_issue: 7, registry: trustedRegistry,
+    run_id: 100, run_attempt: 1, phase,
+    plan: {
+      kind, tasks: [
+        { id: '1', epic: 'epic1', agent: 'Builder', agent_id: 'builder', label: 'squad:builder', dependencies: [] as string[] },
+        { id: '2', epic: 'epic1', agent: 'Builder', agent_id: 'builder', label: 'squad:builder', dependencies: ['1'] },
+      ],
+    },
+    operations: [{ id: 'epic:epic1' }, { id: 'task:1' }, { id: 'task:2' }],
+  };
+  const journal = {
+    schema: ACTIVATION_RECEIPT_SCHEMA, capture_sha256: digest(capture),
+    repository: capture.repository, run_id: capture.run_id, run_attempt: capture.run_attempt,
+    started: capture.operations.map(operation => operation.id),
+    parent_fallbacks: [],
+    receipts: capture.operations.map((operation, index) => ({
+      operation_id: operation.id, repository: capture.repository,
+      number: 40 + index, id: 1040 + index, node_id: `I_example_${40 + index}`,
+      url: `https://github.com/example/project/issues/${40 + index}`,
+    })),
+  };
+  return { capture, journal };
+}
+
+function checkProduced(capture: ReturnType<typeof producerFixture>['capture'], bindings: unknown) {
+  const artifact = capture.plan.kind === 'plan'
+    ? (capture.phase === null ? 'plan-accepted' : 'phases-accepted')
+    : (capture.phase === null ? 'activated' : 'phases-activated');
+  return validateActivation({
+    squad_artifact: artifact, schema_version: '1', origin_issue: capture.origin_issue,
+    phases: capture.phase === null ? [] : [capture.phase], bindings,
+  }, parseRoster(trustedTeam), new Map([40, 41, 42].map(number =>
+    [number, new Set(['squad', 'squad:builder'])])), capture.origin_issue, {
+    repository: capture.repository, registry: parseAgentRegistry(trustedRegistry),
+  });
+}
+
+describe.each([
+  ['plan', null, 'plan-accepted'], ['plan', 1, 'phases-accepted'],
+  ['implementation', null, 'activated'], ['implementation', 1, 'phases-activated'],
+] as const)('trusted producer: %s phase %s emits %s', (kind, phase, artifact) => {
+  it('builds complete versioned metadata and real-number bindings for the compatibility checker', () => {
+    const { capture, journal } = producerFixture(kind, phase);
+    const bindings = buildActivationBindings(capture, journal);
+    expect(bindings).toHaveLength(2);
+    expect(bindings[0]).toEqual({
+      binding_schema: 'squad-work-agent-binding/v1', binding_version: 1, producer: 'squad',
+      repository: 'example/project', origin_issue: 7, artifact,
+      registry_schema: 'squad-agent-provenance/v1', registry_revision: 3,
+      task: '1', issue: '#41', epic: 'epic1', epic_issue: '#40',
+      agent: 'Builder', agent_id: 'builder', epic_agents: ['builder'], epic_agent_ids: ['builder'],
+      label: 'squad:builder', epic_label: 'squad:builder', depends_on: [],
+    });
+    expect(bindings[1]).toMatchObject({ task: '2', issue: '#42', depends_on: ['#41'] });
+    expect(checkProduced(capture, bindings)).toMatchObject({ checked: 2 });
+  });
+});
+
+describe('trusted producer: missing, empty and unresolved binding evidence fails closed', () => {
+  it.each([0, 1, 2])('does not build bindings from only %i of three create receipts', count => {
+    const { capture, journal } = producerFixture();
+    journal.receipts = journal.receipts.slice(0, count);
+    expect(() => buildActivationBindings(capture, journal)).toThrow(/recreation is forbidden/);
   });
 
-  it('replaces it with wording that names the same fact without a forbidden certainty word', () => {
-    expect(workflow).toContain('the label set that missing operation targeted');
+  it.each(['aw_task1', '#aw_task1', undefined])('rejects unresolved or missing actual issue number %j', number => {
+    const { capture, journal } = producerFixture();
+    Object.assign(journal.receipts[1], { number });
+    expect(() => buildActivationBindings(capture, journal)).toThrow(/actual issue identities/);
+  });
+
+  it('cannot publish an empty binding array even with an empty self-consistent journal', () => {
+    const { capture, journal } = producerFixture();
+    capture.plan.tasks = [];
+    capture.operations = [];
+    journal.started = [];
+    journal.receipts = [];
+    journal.capture_sha256 = digest(capture);
+    expect(() => checkProduced(capture, buildActivationBindings(capture, journal)))
+      .toThrow(/bindings are missing or empty/);
+  });
+
+  it('cannot resolve dependencies absent from the actual receipt map', () => {
+    const { capture, journal } = producerFixture();
+    capture.plan.tasks[1].dependencies = ['missing'];
+    journal.capture_sha256 = digest(capture);
+    expect(() => buildActivationBindings(capture, journal)).toThrow();
+  });
+
+  it('cannot resolve a missing epic receipt even when all declared operations finished', () => {
+    const { capture, journal } = producerFixture();
+    capture.operations.shift();
+    journal.started.shift();
+    journal.receipts.shift();
+    journal.capture_sha256 = digest(capture);
+    expect(() => buildActivationBindings(capture, journal)).toThrow();
+  });
+
+  it.each([
+    { binding_schema: undefined }, { producer: 'model' }, { registry_revision: 4 },
+    { repository: 'example/other' }, { origin_issue: 8 }, { issue: 'aw_task1' },
+    { epic_issue: '#aw_epic1' },
+  ])('checker rejects corrupted producer metadata or unresolved mappings: %j', mutation => {
+    const { capture, journal } = producerFixture();
+    const bindings = buildActivationBindings(capture, journal);
+    Object.assign(bindings[0], mutation);
+    expect(() => checkProduced(capture, bindings)).toThrow();
+  });
+
+  it('never labels the existing origin as an epic for a flat plan', () => {
+    const { capture, journal } = producerFixture('plan');
+    capture.plan.tasks.forEach(task => { task.epic = 'origin'; });
+    capture.operations.shift();
+    journal.started.shift();
+    journal.receipts.shift();
+    journal.capture_sha256 = digest(capture);
+    const bindings = buildActivationBindings(capture, journal);
+    for (const binding of bindings) {
+      expect(binding).toMatchObject({ epic: 'origin', epic_issue: '#7', epic_label: null, epic_omission_reason: 'origin' });
+    }
+    expect(checkProduced(capture, bindings)).toMatchObject({ checked: 2 });
   });
 });
 
@@ -637,18 +635,20 @@ Label squad:kint: add_labels accepted for #42.
 // ---------------------------------------------------------------------------
 
 const COLLECTOR_ARTIFACT_REGEX_SOURCE =
-  '"squad_artifact"\\s*:\\s*"?(?:phases-activated|activated|phases-accepted|plan-accepted)';
+  '"squad_artifact"\\s*:\\s*"?(?:phases-activated|activated|phases-accepted|plan-accepted|activation-reconciled)';
 
 describe('gh-aw: squad-agent-binding-check.yml collector passes fast-path artifacts to the checker (E4 preflight A)', () => {
   const ymlContent = readText(COLLECTOR_YML);
 
-  it('embeds the exact artifact-matching regex used to filter collected comments', () => {
-    expect(ymlContent).toContain(COLLECTOR_ARTIFACT_REGEX_SOURCE);
+  it('delegates discovery to the canonical collector with the exact artifact-matching regex', () => {
+    expect(ymlContent).toContain('await collectHistoricalActivationRecords({ github, context })');
+    expect(readText(join(WORKFLOWS_DIR, 'shared', 'check-agent-binding.mjs')))
+      .toContain(COLLECTOR_ARTIFACT_REGEX_SOURCE);
   });
 
-  it('the embedded regex matches every activation artifact type (fast-path and granular)', () => {
+  it('the shared discovery regex matches every activation artifact type (fast-path and granular)', () => {
     const collectorRegex = new RegExp(COLLECTOR_ARTIFACT_REGEX_SOURCE, 'i');
-    for (const artifactType of ['activated', 'phases-activated', 'plan-accepted', 'phases-accepted']) {
+    for (const artifactType of ['activated', 'phases-activated', 'plan-accepted', 'phases-accepted', 'activation-reconciled']) {
       expect(
         collectorRegex.test(`Structured data:\n\`\`\`json\n{"squad_artifact":"${artifactType}","schema_version":"1"}\n\`\`\``),
         `expected collector regex to match ${artifactType}`,
@@ -656,7 +656,7 @@ describe('gh-aw: squad-agent-binding-check.yml collector passes fast-path artifa
     }
   });
 
-  it('the embedded regex does not indiscriminately match unrelated non-activation artifacts', () => {
+  it('the shared discovery regex does not indiscriminately match unrelated non-activation artifacts', () => {
     const collectorRegex = new RegExp(COLLECTOR_ARTIFACT_REGEX_SOURCE, 'i');
     for (const artifactType of ['research', 'triage', 'scope-accepted', 'impl-accepted', 'impl-phases-accepted', 'validation']) {
       expect(

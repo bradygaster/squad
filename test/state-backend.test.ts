@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync, execFileSync } from 'node:child_process';
+import { execSync, execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, CircuitBreaker, GitExecError, resolveStateBackend, validateStateKey, StateBackendStorageAdapter, verifyStateBackend, _resetGitNotesMigrationWarnForTesting, _resetExternalStubMigrationWarnForTesting } from '../packages/squad-sdk/src/state-backend.js';
+import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, CircuitBreaker, GitExecError, resolveStateBackend, validateStateKey, StateBackendStorageAdapter, verifyStateBackend, _resetGitNotesMigrationWarnForTesting, _resetExternalStubMigrationWarnForTesting, _setCasInjectorForTesting } from '../packages/squad-sdk/src/state-backend.js';
 import type { StateBackend, StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
 import { resolveSquadState, clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js';
 import { ToolRegistry } from '../packages/squad-sdk/src/tools/index.js';
@@ -1559,6 +1559,98 @@ describe('OrphanBranchBackend CAS retry semantics', () => {
     let caught: unknown;
     try { b.delete('seed.md'); } catch (e) { caught = e; }
     expect(caught).toBeInstanceOf(StateBackendConcurrencyError);
+  });
+});
+
+describe('cross-process append regression', () => {
+  it.skipIf(process.env.SQUAD_APPEND_WORKER !== '1')('cross-process append worker', { timeout: 30_000 }, () => {
+    const repoRoot = process.env.SQUAD_APPEND_REPO;
+    const gateDir = process.env.SQUAD_APPEND_GATE;
+    const workerId = process.env.SQUAD_APPEND_WORKER_ID;
+    const backendType = process.env.SQUAD_APPEND_BACKEND;
+    if (!repoRoot || !gateDir || !workerId || !backendType) {
+      throw new Error('cross-process append worker configuration is incomplete');
+    }
+
+    let firstCas = true;
+    _setCasInjectorForTesting(() => {
+      if (!firstCas) return null;
+      firstCas = false;
+      writeFileSync(join(gateDir, `${workerId}.ready`), 'ready');
+      const deadline = Date.now() + 15_000;
+      const bothReady = () => existsSync(join(gateDir, 'first.ready')) && existsSync(join(gateDir, 'second.ready'));
+      while (!bothReady()) {
+        if (Date.now() >= deadline) throw new Error('timed out waiting for both append workers at the snapshot barrier');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+      return null;
+    });
+
+    try {
+      const backend = backendType === 'two-layer'
+        ? new TwoLayerBackend(repoRoot)
+        : new OrphanBranchBackend(repoRoot);
+      backend.append('audit.log', `${workerId}\n`);
+    } finally {
+      _setCasInjectorForTesting(null);
+    }
+  });
+
+  it('preserves concurrent appends from separate processes for orphan and two-layer backends', { timeout: 60_000 }, async () => {
+    const vitestCli = join(process.cwd(), 'node_modules', 'vitest', 'vitest.mjs');
+    for (const backendType of ['orphan', 'two-layer'] as const) {
+      if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+      initRepo();
+      const twoLayerBackend = backendType === 'two-layer' ? new TwoLayerBackend(TMP) : null;
+      const backend = twoLayerBackend ?? new OrphanBranchBackend(TMP);
+      backend.append('audit.log', 'seed\n');
+
+      const gateDir = join(tmpdir(), `squad-append-barrier-${randomBytes(8).toString('hex')}`);
+      mkdirSync(gateDir, { recursive: true });
+      const runWorker = (workerId: 'first' | 'second') => new Promise<{ code: number | null; output: string }>((resolve, reject) => {
+        const child = spawn(process.execPath, [
+          vitestCli,
+          'run',
+          '--config',
+          'vitest.config.ts',
+          '--testNamePattern',
+          'cross-process append worker',
+          'test/state-backend.test.ts',
+        ], {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            SQUAD_APPEND_WORKER: '1',
+            SQUAD_APPEND_REPO: TMP,
+            SQUAD_APPEND_GATE: gateDir,
+            SQUAD_APPEND_WORKER_ID: workerId,
+            SQUAD_APPEND_BACKEND: backendType,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let output = '';
+        child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+        child.stderr?.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ code, output }));
+      });
+
+      try {
+        const results = await Promise.all([runWorker('first'), runWorker('second')]);
+        for (const result of results) expect(result.code, result.output).toBe(0);
+
+        const expectedLines = new Set(['seed', 'first', 'second']);
+        const orphanLines = new Set((backend.read('audit.log') ?? '').trim().split('\n'));
+        expect(orphanLines).toEqual(expectedLines);
+        if (twoLayerBackend) {
+          const notesLines = new Set((twoLayerBackend.notes.read('audit.log') ?? '').trim().split('\n'));
+          expect(notesLines).toEqual(expectedLines);
+        }
+      } finally {
+        rmSync(gateDir, { recursive: true, force: true });
+        if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+      }
+    }
   });
 });
 

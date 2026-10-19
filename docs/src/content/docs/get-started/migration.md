@@ -27,7 +27,7 @@
 | `npx github:bradygaster/squad` | `npm install -g @bradygaster/squad-cli` |
 | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
 | `.ai-team/` directory | `.squad/` directory |
-| v0.5.4 (beta) | v1.0.1 (stable) |
+| v0.5.4 (beta) | v1.1.0 (stable) |
 
 ---
 
@@ -171,7 +171,7 @@ Verify the version:
 squad --version
 ```
 
-Expected output: the latest stable version (currently `1.0.1`).
+Expected output: the latest stable version (currently `1.1.0`).
 
 Your `.squad/` directory is compatible — no reinitialization needed.
 
@@ -314,7 +314,7 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 ### Key CI/CD Notes
 
 - Set `GITHUB_TOKEN` as an environment variable. Squad requires it for GitHub Copilot operations.
-- Pin to a specific version (e.g., `@1.0.1`) in CI to avoid surprise upgrades, or use `@latest` to stay current.
+- Pin to a specific version (e.g., `@1.1.0`) in CI to avoid surprise upgrades, or use `@latest` to stay current.
 - Node.js 22.5+ is required for npm-based CI. The standalone action and bundles
   vendor Node.js.
 
@@ -488,14 +488,14 @@ fnm use 22
 If you need to downgrade to the previous stable release:
 
 ```bash
-npm install -g @bradygaster/squad-cli@1.0.0
+npm install -g @bradygaster/squad-cli@1.0.1
 ```
 
 ### Warnings
 
 - **The GitHub-native distribution (`npx github:bradygaster/squad`) is permanently removed.** You cannot roll back to that install method.
 - **`.squad/` directory format changed between v0.5.4 and v0.8.x.** If you roll back to v0.5.4, your current `.squad/` directory will not be compatible. Keep backups.
-- Rolling back within the v1.0.x line should be safe because v1.0.1 contains targeted fixes without format changes.
+- Rolling back within the v1.x line should be safe because v1.1.0 preserves the stable package and state formats.
 
 ---
 

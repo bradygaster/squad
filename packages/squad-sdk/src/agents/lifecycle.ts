@@ -10,8 +10,15 @@
 import { SquadClientWithPool } from '../client/index.js';
 import type { SquadSession, SquadSessionConfig, SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
 import { compileCharterFull, type CharterCompileOptions } from './charter-compiler.js';
-import { resolveModel, type ModelResolutionOptions, type TaskType } from './model-selector.js';
-import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS } from '../config/models.js';
+import {
+  resolveModel,
+  persistentConfigModel,
+  type ModelResolution,
+  type ModelResolutionOptions,
+  type ModelResolutionSource,
+  type TaskType,
+} from './model-selector.js';
+import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS, isModelSelectionProfile, isPreviewModel, type ModelSelectionProfile } from '../config/models.js';
 import type { CostPolicyConfig, SessionCostPolicyOverride } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
@@ -40,6 +47,8 @@ export interface AgentHandle {
   sessionId: string;
   /** Model being used for this agent */
   model: string;
+  /** How {@link model} was resolved (source, rationale, availability fallback). */
+  modelResolution?: AgentModelResolution;
   /** Current agent status */
   status: AgentStatus;
   /** Timestamp when agent was spawned */
@@ -61,6 +70,22 @@ export interface AgentHandle {
 }
 
 /**
+ * Provenance of an agent's model, recorded at spawn time.
+ */
+export interface AgentModelResolution {
+  /** Precedence layer that selected the model. */
+  source: ModelResolutionSource;
+  /** Human-readable explanation from the central resolver. */
+  rationale: string;
+  /** Quality profile in effect for the resolution. */
+  profile?: ModelSelectionProfile;
+  /** Model and source preferred before an availability fallback. */
+  fallbackFrom?: { model: string; source: ModelResolutionSource };
+  /** True when the model parameter was omitted so the platform default applies. */
+  omitModel?: boolean;
+}
+
+/**
  * Options for spawning an agent.
  */
 export interface SpawnAgentOptions {
@@ -75,6 +100,34 @@ export interface SpawnAgentOptions {
   
   /** User-specified model override */
   modelOverride?: string;
+
+  /**
+   * Model picked for the current session, inherited by this spawn with source
+   * `session` (below explicit override and persistent config, above charter).
+   * Any id passes through, including opt-in preview models.
+   */
+  sessionModel?: string;
+
+  /**
+   * Model ids known to be unavailable. The resolver falls forward along the
+   * fallback chain; when no candidate remains, `model` is omitted from the
+   * session config so the platform default applies.
+   */
+  unavailableModels?: Iterable<string>;
+
+  /**
+   * Live model list from the runtime (for example the session model enum).
+   * Authoritative for availability: ids not listed are skipped with visible
+   * fallback provenance. Omit when no live list is known.
+   */
+  availableModels?: Iterable<string>;
+
+  /**
+   * Quality profile for this session; wins over `.squad/config.json`
+   * `modelProfile` and legacy `economyMode`. Explicit model choices are never
+   * changed by a profile.
+   */
+  sessionProfile?: ModelSelectionProfile;
 
   /** User-specified reasoning effort override */
   reasoningEffortOverride?: SquadReasoningEffort;
@@ -144,6 +197,8 @@ export class AgentLifecycleManager {
   private costPolicy?: CostPolicyConfig;
   private eventBus?: EventBus;
   private agents: Map<string, AgentHandleImpl> = new Map();
+  /** Preview models already reported as unavailable (one notice per model). */
+  private unavailablePreviewNotified: Set<string> = new Set();
   private idleCheckTimer: NodeJS.Timeout | null = null;
   
   constructor(config: LifecycleManagerConfig) {
@@ -164,7 +219,7 @@ export class AgentLifecycleManager {
    * Pipeline:
    * 1. Read charter.md from team root
    * 2. Compile charter with team context
-   * 3. Resolve model using 4-layer priority
+   * 3. Resolve model via the central resolver (persistent config included)
    * 4. Create session via Squad Client
    * 5. Set up event handlers
    * 6. Return AgentHandle
@@ -181,6 +236,10 @@ export class AgentLifecycleManager {
       task,
       taskType = 'code',
       modelOverride,
+      sessionModel,
+      unavailableModels,
+      availableModels,
+      sessionProfile,
       reasoningEffortOverride,
       contextTierOverride,
       sessionCostPolicy,
@@ -226,9 +285,17 @@ export class AgentLifecycleManager {
       
       const agentConfig = compileCharterFull(compileOptions);
       
-      // Step 3: Resolve model (with cost-policy finalization, issue #1080/#1183)
+      // Step 3: Resolve model (with cost-policy finalization, issue #1080/#1183).
+      // Persistent .squad/config.json lives beside the agents/ directory.
+      const squadDir = path.dirname(path.dirname(path.dirname(charterPath)));
+      const persistent = await this.readPersistentModelConfig(squadDir);
       const modelOptions: ModelResolutionOptions = {
         userOverride: modelOverride,
+        configModel: persistentConfigModel(persistent, agentName),
+        sessionModel,
+        economyMode: persistent?.economyMode === true,
+        profile: isModelSelectionProfile(persistent?.modelProfile) ? persistent.modelProfile : undefined,
+        sessionProfile,
         charterPreference: agentConfig.resolvedModel !== undefined
           ? agentConfig.resolvedModel
           : this.extractModelPreference(charterContent),
@@ -236,9 +303,24 @@ export class AgentLifecycleManager {
         agentRole: agentName,
         config: this.costPolicy ? { costPolicy: this.costPolicy } : undefined,
         sessionCostPolicy,
+        unavailableModels,
+        availableModels,
       };
       
-      const resolvedModel = resolveModel(modelOptions);
+      let resolvedModel = resolveModel(modelOptions);
+      span.setAttribute('model.id', resolvedModel.model);
+      span.setAttribute('model.source', resolvedModel.source);
+      if (resolvedModel.profile) span.setAttribute('model.profile', resolvedModel.profile);
+      await this.emitModelResolved(agentName, resolvedModel);
+      if (resolvedModel.fallbackFrom && isPreviewModel(resolvedModel.fallbackFrom.model)) {
+        await this.noticePreviewUnavailable(agentName, resolvedModel.fallbackFrom.model, resolvedModel);
+      }
+      
+      // Surface the cost-policy outcome — this was the #1089 bug: the policy
+      // result was computed but never wired/emitted. Never swallow it.
+      if (resolvedModel.policy && resolvedModel.policy.action !== 'none') {
+        await this.emitPolicyOutcome(agentName, resolvedModel);
+      }
       
       // Surface the cost-policy outcome — this was the #1089 bug: the policy
       // result was computed but never wired/emitted. Never swallow it.
@@ -263,22 +345,48 @@ export class AgentLifecycleManager {
       const validTier = rawTier && rawTier !== 'auto' && (VALID_CONTEXT_TIERS as readonly string[]).includes(rawTier)
         ? rawTier as SquadContextTier
         : undefined;
-      const sessionConfig: SquadSessionConfig = {
-        model: resolvedModel.model,
+      const buildSessionConfig = (resolved: ModelResolution): SquadSessionConfig => ({
+        ...(resolved.omitModel ? {} : { model: resolved.model }),
         systemMessage: {
           content: agentConfig.prompt,
         },
         ...(validEffort ? { reasoningEffort: validEffort } : {}),
         ...(validTier ? { contextTier: validTier } : {}),
-      };
+      });
       
-      const session = await this.client.createSession(sessionConfig);
+      let session: SquadSession;
+      try {
+        session = await this.client.createSession(buildSessionConfig(resolvedModel));
+      } catch (createError) {
+        // A profile-picked preview model can be rejected at session creation
+        // (org policy, preview features off). Fall forward along its chain
+        // once instead of failing the spawn; explicit picks are not retried.
+        const rejected = resolvedModel.model;
+        if (resolvedModel.omitModel || resolvedModel.source !== 'task-auto' || !isPreviewModel(rejected)) {
+          throw createError;
+        }
+        resolvedModel = resolveModel({
+          ...modelOptions,
+          unavailableModels: [...(unavailableModels ?? []), rejected],
+        });
+        span.setAttribute('model.id', resolvedModel.model);
+        await this.emitModelResolved(agentName, resolvedModel);
+        await this.noticePreviewUnavailable(agentName, rejected, resolvedModel);
+        session = await this.client.createSession(buildSessionConfig(resolvedModel));
+      }
       
       // Step 5: Create handle with event handlers
       const handle = new AgentHandleImpl({
         agentName,
         sessionId: session.sessionId,
         model: resolvedModel.model,
+        modelResolution: {
+          source: resolvedModel.source,
+          rationale: resolvedModel.rationale,
+          ...(resolvedModel.profile ? { profile: resolvedModel.profile } : {}),
+          ...(resolvedModel.fallbackFrom ? { fallbackFrom: resolvedModel.fallbackFrom } : {}),
+          ...(resolvedModel.omitModel ? { omitModel: true } : {}),
+        },
         session,
         idleTimeout,
         onDestroy: () => this.agents.delete(session.sessionId),
@@ -401,6 +509,82 @@ export class AgentLifecycleManager {
   }
 
   /**
+   * Read the persistent model fields of `.squad/config.json`, if present.
+   * @private
+   */
+  private async readPersistentModelConfig(
+    squadDir: string,
+  ): Promise<
+    { defaultModel?: unknown; agentModelOverrides?: unknown; economyMode?: unknown; modelProfile?: unknown } | undefined
+  > {
+    const raw = await this.storage.read(path.join(squadDir, 'config.json'));
+    if (raw === undefined) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Record model-resolution provenance as an `agent:milestone` event
+   * (`event: 'model.resolved'`) when an event bus is configured.
+   * @private
+   */
+  private async emitModelResolved(agentName: string, resolved: ModelResolution): Promise<void> {
+    if (!this.eventBus) return;
+    await this.eventBus.emit({
+      type: 'agent:milestone',
+      agentName,
+      payload: {
+        event: 'model.resolved',
+        model: resolved.model,
+        source: resolved.source,
+        rationale: resolved.rationale,
+        ...(resolved.profile ? { profile: resolved.profile } : {}),
+        ...(resolved.fallbackFrom ? { fallbackFrom: resolved.fallbackFrom } : {}),
+        ...(resolved.omitModel ? { omitModel: true } : {}),
+      },
+      timestamp: new Date(),
+    });
+  }
+
+  /**
+   * Tell the user, once per preview model per manager, that an opt-in preview
+   * model is unavailable and which model is used instead. Logged via
+   * console.warn and emitted as `agent:milestone` (`event: 'model.unavailable'`).
+   * @private
+   */
+  private async noticePreviewUnavailable(
+    agentName: string,
+    previewModel: string,
+    resolved: ModelResolution,
+  ): Promise<void> {
+    const key = previewModel.toLowerCase();
+    if (this.unavailablePreviewNotified.has(key)) return;
+    this.unavailablePreviewNotified.add(key);
+    const replacement = resolved.omitModel ? 'the platform default model' : `'${resolved.model}'`;
+    const message =
+      `Preview model '${previewModel}' is not available (plan, org policy, or preview features); ` +
+      `using ${replacement} instead. This notice is shown once.`;
+    console.warn(`[squad:model] ${message}`);
+    if (this.eventBus) {
+      await this.eventBus.emit({
+        type: 'agent:milestone',
+        agentName,
+        payload: {
+          event: 'model.unavailable',
+          model: previewModel,
+          replacement: resolved.omitModel ? null : resolved.model,
+          message,
+        },
+        timestamp: new Date(),
+      });
+    }
+  }
+
+  /**
    * Surface a cost-policy outcome (downgrade / warn-allow / fail-closed).
    *
    * Emits an `agent:milestone` event (`event: 'model.policy'`) on the bus when
@@ -444,6 +628,7 @@ class AgentHandleImpl implements AgentHandle {
   agentName: string;
   sessionId: string;
   model: string;
+  modelResolution?: AgentModelResolution;
   status: AgentStatus;
   createdAt: Date;
   lastActivityAt: Date;
@@ -456,6 +641,7 @@ class AgentHandleImpl implements AgentHandle {
     agentName: string;
     sessionId: string;
     model: string;
+    modelResolution?: AgentModelResolution;
     session: SquadSession;
     idleTimeout: number;
     onDestroy: () => void;
@@ -463,6 +649,7 @@ class AgentHandleImpl implements AgentHandle {
     this.agentName = config.agentName;
     this.sessionId = config.sessionId;
     this.model = config.model;
+    this.modelResolution = config.modelResolution;
     this.session = config.session;
     this.idleTimeout = config.idleTimeout;
     this.onDestroy = config.onDestroy;

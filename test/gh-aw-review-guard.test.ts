@@ -76,7 +76,7 @@ function fixture(relay = false) {
     event: 'pull_request_target', path: '.github/workflows/squad-review.lock.yml',
     display_title: 'Squad review \u2014 PR #42',
     repository: { full_name: REPOSITORY }, head_sha: BASE, run_attempt: 1,
-    pull_requests: [{ number: 42, head: { sha: HEAD }, base: { repo: { name: 'example' } } }],
+    pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: BASE, repo: { name: 'example' } } }],
     run_started_at: START, updated_at: FINISHED, status: 'completed', conclusion: 'success',
   };
   const jobs = [{
@@ -153,6 +153,9 @@ function fixture(relay = false) {
         throw Object.assign(new Error('Not Found'), { status: 404 });
       }
       return encode(attribution);
+    }
+    if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+      throw Object.assign(new Error('Not Found'), { status: 404 });
     }
     if (route.endsWith('/contents/.squad/casting/registry.json')) {
       expect(fields?.ref).toBe(BASE);
@@ -297,6 +300,93 @@ function retainFirstAttempt(f: ReturnType<typeof fixture>) {
   return first;
 }
 
+describe('generation-bound fresh bootstrap review', () => {
+  const reset = {
+    schema: 'squad-bootstrap-reset/v1', id: 'retry-1',
+    archived_pull_requests: [3], archived_issues: [],
+  };
+  function freshFixture(manual = false) {
+    const f = fixture();
+    makeBootstrap(f);
+    f.pr.head.ref = 'squad/bootstrap-cast-retry-1';
+    f.pr.title += ' [reset:retry-1]';
+    f.bootstrapRun.event = 'workflow_dispatch';
+    const actors = {
+      actor: { login: 'maintainer', type: 'User' },
+      triggering_actor: { login: 'maintainer', type: 'User' },
+    };
+    Object.assign(f.bootstrapRun, actors);
+    if (manual) {
+      f.pr.user = { login: 'human', type: 'User' };
+      f.state.comments = [];
+      f.state.repoIssues = [makeBootstrapPrFallbackIssue({
+        headBranch: f.pr.head.ref, baseBranch: f.pr.base.ref,
+        compareUrlOverride: buildBootstrapPrFallbackCompareUrl({
+          repository: REPOSITORY, baseBranch: f.pr.base.ref,
+          headBranch: f.pr.head.ref, title: f.pr.title, server: 'https://github.com',
+        }),
+      })];
+    }
+    const state = { reset, recordedReset: reset };
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+        return f.encode(fields?.ref === f.pr.base.sha ? state.reset : state.recordedReset);
+      }
+      return f.get(route, fields);
+    };
+    return { ...f, get, actors, resetState: state };
+  }
+
+  it.each([false, true])('authorizes exact authenticated dispatch provenance (manual fallback=%s)', async manual => {
+    const f = freshFixture(manual);
+    expect((await reviewTarget(f.env, f.get, { requireBootstrapRunSuccess: true })).author_agent)
+      .toBe('@squad/base-controlled-bootstrap');
+    expect(f.state.calls.some(route => route.includes('/collaborators/maintainer/permission'))).toBe(true);
+  });
+
+  it.each([false, true])('rejects wrong actor, identity, head and unsuccessful runs (fallback=%s)', async manual => {
+    for (const mutate of [
+      (f: ReturnType<typeof freshFixture>) => { f.state.permission = 'read'; },
+      (f: ReturnType<typeof freshFixture>) => { f.actors.triggering_actor.type = 'Bot'; },
+      (f: ReturnType<typeof freshFixture>) => { f.resetState.reset = { ...reset, id: 'other' }; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.head_sha = HEAD; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.conclusion = 'failure'; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.path = '.github/workflows/other.yml'; },
+      (f: ReturnType<typeof freshFixture>) => { f.bootstrapRun.event = 'push'; },
+    ]) {
+      const f = freshFixture(manual);
+      mutate(f);
+      await expect(reviewTarget(f.env, f.get, { requireBootstrapRunSuccess: true })).rejects.toThrow();
+    }
+  });
+
+  it('keeps legacy manual dispatch ineligible and refuses changed committed reset history', async () => {
+    const legacy = fixture();
+    makeBootstrap(legacy);
+    legacy.bootstrapRun.event = 'workflow_dispatch';
+    await expect(reviewTarget(legacy.env, legacy.get)).rejects.toThrow('base-controlled workflow run');
+    const f = freshFixture();
+    f.pr.base.sha = '9'.repeat(40);
+    f.env.SQUAD_REVIEW_WORKFLOW_SHA = f.pr.base.sha;
+    f.state.compareStatus = 'ahead';
+    f.resetState.recordedReset = { ...reset, archived_pull_requests: [99] };
+    await expect(reviewTarget(f.env, f.get)).rejects.toThrow('reset changed');
+  });
+
+  it.each([false, true])('refuses reopened archived legacy Cast authorization (fallback=%s)', async manual => {
+    const f = fixture();
+    if (manual) makeBootstrapPrFallback(f);
+    else makeBootstrap(f);
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route.endsWith('/contents/.squad/bootstrap-reset.json')) {
+        return f.encode({ ...reset, archived_pull_requests: [42] });
+      }
+      return f.get(route, fields);
+    };
+    await expect(reviewTarget(f.env, get)).rejects.toThrow('archived bootstrap pull requests');
+  });
+});
+
 describe('independent Squad review guard', () => {
   it('uses reserved workflow roles only for the base-controlled post-install bootstrap PR', async () => {
     const f = fixture();
@@ -328,6 +418,27 @@ describe('independent Squad review guard', () => {
     f.pr.body = `Package: bradygaster/squad/workflows@${HEAD}`;
     await expect(reviewTarget(f.env, f.get))
       .rejects.toThrow('missing or duplicate base-controlled bootstrap PR provenance');
+  });
+
+  it('preserves review output when signed bootstrap run evidence is inaccessible', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    const workspace = mkdtempSync(join(tmpdir(), 'squad-review-run-permission-'));
+    workspaces.push(workspace);
+    const path = join(workspace, 'output.json');
+    const original = JSON.stringify({ items: [{
+      type: 'submit_pull_request_review', event: 'COMMENT', body: 'Bootstrap Cast reviewed.',
+    }] });
+    writeFileSync(path, original);
+    const get = async (route: string, fields?: Record<string, unknown>) => {
+      if (route === `repos/${REPOSITORY}/actions/runs/29`) {
+        throw Object.assign(new Error('Resource not accessible by integration'), { status: 403 });
+      }
+      return f.get(route, fields);
+    };
+    await expect(enforceReviewOutputs({ ...f.env, GH_AW_AGENT_OUTPUT: path }, get))
+      .rejects.toThrow('Resource not accessible by integration');
+    expect(readFileSync(path, 'utf8')).toBe(original);
   });
 
   it.each([
@@ -836,7 +947,7 @@ describe('independent Squad review guard', () => {
       case 'duplicate-job': f.jobs.push(f.jobs[0]); break;
       case 'wrong-workflow': f.run.path = '.github/workflows/untrusted.yml'; break;
       case 'wrong-event': f.run.event = 'workflow_dispatch'; break;
-      case 'wrong-head': f.run.head_sha = HEAD; break;
+      case 'wrong-head': f.run.head_sha = 'c'.repeat(40); break;
       case 'replay': f.run.run_started_at = f.run.updated_at; break;
       case 'after-merge': f.jobs[0].completed_at = '2026-09-28T12:04:00Z'; break;
       case 'malformed': f.review.body = `${VERDICT_PREFIX}{broken`; break;
@@ -947,7 +1058,7 @@ describe('independent Squad review guard', () => {
       case 'manual-run': f.run.event = 'workflow_dispatch'; break;
       case 'wrong-workflow': f.run.path = '.github/workflows/other.yml'; break;
       case 'wrong-run-repo': f.run.repository.full_name = 'other/repo'; break;
-      case 'wrong-run-sha': f.run.head_sha = HEAD; break;
+      case 'wrong-run-sha': f.run.head_sha = 'c'.repeat(40); break;
       case 'wrong-run-pr': f.run.pull_requests[0].number = 43; break;
       case 'wrong-run-attempt': f.run.run_attempt = 0; break;
       case 'wrong-run-title': f.run.display_title = 'Squad review \u2014 PR #43'; break;
@@ -974,6 +1085,55 @@ describe('independent Squad review guard', () => {
     await expect(assertClearingReview(f.env, f.get, { relay: true }))
       .rejects.toThrow('missing trusted workflow run attempt');
   });
+
+  it.each([false, true])('binds PR-head run metadata to the trusted base and exact PR (relay=%s)', async relay => {
+    const f = fixture(relay);
+    f.run.head_sha = HEAD;
+    await expect(assertClearingReview(f.env, f.get, { relay })).resolves.toEqual(f.verdict);
+  });
+
+  it('clears signed Bootstrap review with PR-head run metadata and base-controlled workflow provenance', async () => {
+    const f = fixture();
+    makeBootstrap(f);
+    f.run.head_sha = HEAD;
+    await expect(assertClearingReview(f.env, f.get)).resolves.toEqual(f.verdict);
+  });
+
+  it.each([false, true])('validates the exact rerun attempt with PR-head run metadata (relay=%s)', async relay => {
+    const f = fixture(relay);
+    f.run.head_sha = HEAD;
+    retainFirstAttempt(f);
+    f.env.GITHUB_RUN_ATTEMPT = '2';
+    await expect(assertClearingReview(f.env, f.get, { relay })).resolves.toEqual(f.verdict);
+    f.state.attempts.get(2)!.pull_requests[0].base.sha = 'c'.repeat(40);
+    await expect(assertClearingReview(f.env, f.get, { relay })).rejects.toThrow();
+  });
+
+  for (const relay of [false, true]) {
+    it.each([
+      'event', 'path', 'repository', 'run-id', 'attempt', 'pr', 'head', 'base',
+      'base-repo', 'missing-base', 'missing-links', 'workflow-source', 'verdict-source',
+    ])(`rejects PR-head metadata with mismatched %s (relay=${relay})`, async mutation => {
+      const f = fixture(relay);
+      f.run.head_sha = HEAD;
+      switch (mutation) {
+        case 'event': f.run.event = 'pull_request'; break;
+        case 'path': f.run.path = '.github/workflows/untrusted.yml'; break;
+        case 'repository': f.run.repository.full_name = 'other/repo'; break;
+        case 'run-id': f.run.id = 18; break;
+        case 'attempt': f.run.run_attempt = 0; break;
+        case 'pr': f.run.pull_requests[0].number = 43; break;
+        case 'head': f.run.pull_requests[0].head.sha = BASE; break;
+        case 'base': f.run.pull_requests[0].base.sha = HEAD; break;
+        case 'base-repo': f.run.pull_requests[0].base.repo.name = 'other'; break;
+        case 'missing-base': Reflect.deleteProperty(f.run.pull_requests[0].base, 'sha'); break;
+        case 'missing-links': f.run.pull_requests = []; break;
+        case 'workflow-source': f.env.SQUAD_REVIEW_WORKFLOW_SHA = HEAD; break;
+        case 'verdict-source': f.verdict.workflow_sha = HEAD; f.sync(); break;
+      }
+      await expect(assertClearingReview(f.env, f.get, { relay })).rejects.toThrow();
+    });
+  }
 
   it('clears a rejection only through a human-admin SHA-scoped override bound to its run attempt', async () => {
     const f = fixture(true);

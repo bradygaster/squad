@@ -769,4 +769,84 @@ describe('CLI: upgrade command', () => {
       },
     );
   });
+
+  describe('.github/copilot-instructions.md user content preservation (#2186)', () => {
+    it('creates .github/copilot-instructions.md with Squad markers when missing and @copilot is enabled', async () => {
+      const teamPath = join(TEST_ROOT, '.squad', 'team.md');
+      writeFileSync(teamPath, readFileSync(teamPath, 'utf8') + '\n## Coding Agent\n\n🤖 Coding Agent\n');
+
+      const instructionsPath = join(TEST_ROOT, '.github', 'copilot-instructions.md');
+      if (existsSync(instructionsPath)) {
+        rmSync(instructionsPath, { force: true });
+      }
+
+      await runUpgrade(TEST_ROOT, { force: true });
+
+      expect(existsSync(instructionsPath)).toBe(true);
+      const content = readFileSync(instructionsPath, 'utf8');
+      expect(content).toContain('<!-- squad:copilot-instructions:start -->');
+      expect(content).toContain('# Copilot Coding Agent — Squad Instructions');
+      expect(content).toContain('<!-- squad:copilot-instructions:end -->');
+    });
+
+    it('preserves 100% of existing user instructions without markers and appends the Squad section cleanly', async () => {
+      const teamPath = join(TEST_ROOT, '.squad', 'team.md');
+      writeFileSync(teamPath, readFileSync(teamPath, 'utf8') + '\n## Coding Agent\n\n🤖 Coding Agent\n');
+
+      const instructionsPath = join(TEST_ROOT, '.github', 'copilot-instructions.md');
+      const userContent = [
+        '# My Project Copilot Instructions',
+        '',
+        '- Always use TypeScript strict mode.',
+        '- Follow repository naming conventions.',
+        '- Never use raw SQL strings in controllers.',
+      ].join('\n');
+      writeFileSync(instructionsPath, userContent + '\n');
+
+      await runUpgrade(TEST_ROOT, { force: true });
+
+      const upgraded = readFileSync(instructionsPath, 'utf8');
+      expect(upgraded).toContain(userContent);
+      expect(upgraded.startsWith('# My Project Copilot Instructions')).toBe(true);
+      expect(upgraded).toContain('<!-- squad:copilot-instructions:start -->');
+      expect(upgraded).toContain('<!-- squad:copilot-instructions:end -->');
+    });
+
+    it('updates only the Squad section on subsequent upgrades without duplicating or clobbering user content', async () => {
+      const teamPath = join(TEST_ROOT, '.squad', 'team.md');
+      writeFileSync(teamPath, readFileSync(teamPath, 'utf8') + '\n## Coding Agent\n\n🤖 Coding Agent\n');
+
+      const instructionsPath = join(TEST_ROOT, '.github', 'copilot-instructions.md');
+      const userHeader = '# Custom User Header\n\nKeep these top instructions intact.';
+      const userFooter = '## Custom User Footer\n\nKeep these bottom instructions intact.';
+      const existingWithMarkers = [
+        userHeader,
+        '',
+        '<!-- squad:copilot-instructions:start -->',
+        '# Copilot Coding Agent — Squad Instructions',
+        '',
+        'Outdated Squad instructions from an older release.',
+        '<!-- squad:copilot-instructions:end -->',
+        '',
+        userFooter,
+        '',
+      ].join('\n');
+      writeFileSync(instructionsPath, existingWithMarkers);
+
+      await runUpgrade(TEST_ROOT, { force: true });
+      const firstUpgrade = readFileSync(instructionsPath, 'utf8');
+
+      expect(firstUpgrade).toContain(userHeader);
+      expect(firstUpgrade).toContain(userFooter);
+      expect(firstUpgrade).not.toContain('Outdated Squad instructions from an older release.');
+      expect(firstUpgrade).toContain('## Coordinator Canary Check');
+      expect(firstUpgrade.match(/<!-- squad:copilot-instructions:start -->/g)?.length).toBe(1);
+      expect(firstUpgrade.match(/<!-- squad:copilot-instructions:end -->/g)?.length).toBe(1);
+
+      // Run a second upgrade to verify idempotence (no duplication)
+      await runUpgrade(TEST_ROOT, { force: true });
+      const secondUpgrade = readFileSync(instructionsPath, 'utf8');
+      expect(secondUpgrade).toBe(firstUpgrade);
+    });
+  });
 });

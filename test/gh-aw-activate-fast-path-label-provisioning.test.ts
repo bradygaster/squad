@@ -1,421 +1,296 @@
 /**
- * Fresh-repo label provisioning for the recommended `/squad activate` fast path (#1959).
- *
- * Parent: #1957. Depends on #1962 (`gh-aw-activation-temporary-ids.test.ts`), which
- * established the temporary-ID targeting pattern for the full `/squad plan activate`
- * path and enabled workflow-global `require-temporary-id: true`.
- *
- * `/squad activate` routes to the `squad-plan-accept` skill. When only a flat `plan`
- * artifact exists (no `program`/`implementation`), it takes its own fast path with its
- * own `create-issue` calls. #1955 fixed provisioning in `squad-plan-activate` only, and
- * #1962 added just enough temporary-ID compliance here to survive the new global flag —
- * so on a fresh repository the fast path still leaned on `create-issue`'s `labels:`
- * field, which GitHub silently drops for label names that do not already exist.
- *
- * This suite locks in the fast path's own copy of the verified pattern:
- *   - every fast-path `create-issue` still carries a unique temporary ID (#1962's
- *     compliance edit is preserved, not regressed)
- *   - `add_labels` is called in the same turn, targeting that call's temporary ID
- *   - `item_number` is mandatory, with the silent triggering-issue fallback named
- *   - reused/pre-existing issues are targeted by verified real numbers instead
- *   - base `squad`, single certified owner, `@copilot`, multi-owner, and non-roster
- *     behavior stays at parity with `squad-plan-activate` — including the `@copilot`
- *     mapping stated in the *primary* Step 2 label computation, not only in the
- *     provisioning prose, and omit-and-record (not a hard stop) for an uncertified owner
- *   - the origin intent issue is never an `add_labels` target
- *   - reruns stay idempotent
- *
- * Out of scope: activation-result reporting redesign (#1963), operation-capacity policy
- * (#1961), the broad behavioral suite (#1960), checker distribution, and E4 (#1958).
+ * Fast-path activation uses one trusted request, frozen row identities and actual
+ * receipts. Native temporary-ID label tools remain available only for other commands.
  */
-
-import { afterAll, describe, it, expect } from 'vitest';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { afterAll, describe, it, expect, vi } from 'vitest';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import {
+  ACTIVATION_RECEIPT_SCHEMA, buildActivationBindings, digest, parseActivationPlan,
+  validateCreateReceipt, validateReceiptSet,
+} from '../workflows/shared/squad-activation.mjs';
+import { enforceSquadCommandContract } from '../workflows/shared/squad-command-contract.mjs';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
-const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces-fast-path-labels');
+const workflow = readFileSync(join(WORKFLOWS_DIR, 'squad.md'), 'utf8').replace(/\r\n/g, '\n');
+const acceptStart = workflow.indexOf('## skill: `squad-plan-accept`');
+const acceptEnd = workflow.indexOf('## skill: `squad-plan-revise`');
+const acceptSkill = workflow.slice(acceptStart, acceptEnd);
+const timestamp = '2026-01-01T00:00:00Z';
+const team = '## Members\n| Name | Role |\n|---|---|\n| Builder | Engineer |\n| Reviewer | Tester |';
+const registry = {
+  schema: 'squad-agent-provenance/v1', schema_version: 1, revision: 1,
+  agents: Object.fromEntries(['Builder', 'Reviewer'].map(name => [name.toLowerCase(), {
+    status: 'active', display_name: name, persistent_name: name, role: 'Engineer',
+    universe: 'synthetic', created_at: timestamp, updated_at: timestamp,
+  }])),
+};
+const table = (rows: string[]) => [
+  '| # | Title | Owner | Agent ID | Depends On |', '|---|---|---|---|---|', ...rows,
+].join('\n');
+const rows = [
+  '| build | Same title | Builder | builder | None |',
+  '| review | Same title | Reviewer | reviewer | build |',
+  '| assist | Assistant task | @copilot | - | review |',
+];
+const parse = (body = table(rows), roster = team, identities = registry) =>
+  parseActivationPlan(body, 'plan', identities, roster);
 
-afterAll(() => {
-  rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
-});
+afterAll(() => rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true }));
 
-/** Read a text file with line endings normalized to LF (Windows checkouts materialize CRLF). */
-function readText(filePath: string): string {
-  return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+function workspace(prefix: string) {
+  mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
+  return mkdtempSync(join(TEST_WORKSPACES_DIR, prefix));
 }
 
-const workflow = readText(SQUAD_WORKFLOW);
+function captured(phased = false) {
+  const plan = parse(`${phased ? '### Phase 1\n' : ''}${table(rows)}`);
+  const operations = [
+    ...plan.epics.map((epic: string) => ({ id: `epic:${epic}`, epic })),
+    ...plan.tasks.map((task: any) => ({ id: `task:${task.id}`, task: task.id, epic: task.epic })),
+  ];
+  const capture = {
+    repository: 'owner/repo', origin_issue: 42, run_id: 900, run_attempt: 1,
+    plan, fullPlan: plan, operations, registry, phase: null,
+  };
+  const journal = {
+    schema: ACTIVATION_RECEIPT_SCHEMA, repository: capture.repository,
+    capture_sha256: digest(capture), run_id: 900, run_attempt: 1,
+    started: operations.map(operation => operation.id),
+    parent_fallbacks: [],
+    receipts: operations.map((operation, index) => ({
+      operation_id: operation.id, repository: capture.repository,
+      number: 101 + index, id: 1001 + index, node_id: `I_${index}`,
+      url: `https://github.com/owner/repo/issues/${101 + index}`,
+    })),
+  };
+  return { capture, journal };
+}
 
-/**
- * Isolate the `squad-plan-accept` skill body — the fast path `/squad activate` routes to.
- * It has no `## end skill:` marker of its own, so its body runs to the next `## skill:`
- * heading (`squad-plan-revise`).
- */
-const ACCEPT_START = workflow.indexOf('## skill: `squad-plan-accept`');
-const ACCEPT_END = workflow.indexOf('## skill: `squad-plan-revise`');
-expect(ACCEPT_START, '"## skill: `squad-plan-accept`" is missing from workflows/squad.md').toBeGreaterThan(-1);
-expect(ACCEPT_END, '"## skill: `squad-plan-revise`" is missing from workflows/squad.md').toBeGreaterThan(ACCEPT_START);
-const acceptSkill = workflow.slice(ACCEPT_START, ACCEPT_END);
-
-/** Whitespace-collapsed view for prose assertions that may span wrapped lines. */
-const acceptProse = acceptSkill.replace(/\s+/g, ' ');
-
-/** The `squad-plan-activate` body, used only for path-parity comparisons. */
-const ACTIVATE_START = workflow.indexOf('## skill: `squad-plan-activate`');
-const ACTIVATE_END = workflow.indexOf('## end skill: `squad-plan-activate`');
-expect(ACTIVATE_START, '"## skill: `squad-plan-activate`" is missing from workflows/squad.md').toBeGreaterThan(-1);
-expect(ACTIVATE_END, '"## end skill: `squad-plan-activate`" is missing').toBeGreaterThan(ACTIVATE_START);
-const activateProse = workflow.slice(ACTIVATE_START, ACTIVATE_END).replace(/\s+/g, ' ');
-
-describe('gh-aw: /squad activate fast path provisions labels on a fresh repo (#1959)', () => {
-  it('routes `/squad activate` to squad-plan-accept, so this skill is the fast path', () => {
-    // If routing ever moves, every assertion below is inspecting the wrong skill.
+describe('gh-aw: fast-path request boundary', () => {
+  it('routes activate to the shared trusted writer, not paired native tools', () => {
+    expect(acceptStart).toBeGreaterThan(-1);
+    expect(acceptEnd).toBeGreaterThan(acceptStart);
     expect(workflow).toContain('| `activate` | `squad-plan-accept` |');
-    expect(workflow).toContain('| `/squad activate` | Activate (recommended fast-path) |');
+    expect(acceptSkill).toContain('Call `activate_plan` exactly once');
+    expect(acceptSkill).toContain('Do not call `create_issue`, `add_labels`, `add_comment`');
+    expect(workflow.slice(workflow.indexOf('## skill: `squad-plan-activate`')))
+      .toContain('Use the same `activate_plan` procedure');
   });
 
-  it('names the root cause: create-issue labels: cannot create a missing label', () => {
-    expect(
-      /GitHub silently drops label names that do not already exist/i.test(acceptProse),
-      "The fast path must state why create-issue's own labels: field is insufficient — " +
-        'GitHub drops unknown label names on POST /issues rather than creating them. ' +
-        'Without this the model has no reason to make the extra add_labels call.',
-    ).toBe(true);
-    expect(acceptProse).toMatch(/`create-issue`'s (own )?`labels:` field (alone )?cannot/i);
+  async function enforce(command: string, items: unknown[]) {
+    const outputPath = join(workspace('dispatch-'), 'output.json');
+    writeFileSync(outputPath, JSON.stringify({ items }));
+    const createComment = vi.fn();
+    const user = { id: 700, login: 'operator', type: 'User' };
+    const operation = enforceSquadCommandContract({
+      payload: {
+        action: 'created', sender: user, issue: { number: 42, user },
+        comment: { id: 9, body: `/squad ${command}`, user },
+      },
+      eventName: 'issue_comment', actor: 'operator',
+      resolvePermission: async () => 'admin', createComment, agentOutputPath: outputPath,
+    });
+    return { operation, createComment };
+  }
+
+  it.each(['activate', 'plan accept', 'plan activate'])('accepts only the plan reference for %s', async command => {
+    const { operation, createComment } = await enforce(command, [{ type: 'activate_plan', plan_comment_id: '10' }]);
+    await expect(operation).resolves.toMatchObject({ status: 'accepted', mode: command });
+    expect(createComment).not.toHaveBeenCalled();
   });
 
-  it('declares add_labels with create-if-missing as the provisioning mechanism', () => {
-    expect(acceptSkill).toContain('add_labels');
-    expect(acceptSkill).toContain('create-if-missing');
-    expect(acceptProse).toMatch(/`add-labels` safe output \(`allowed: \[squad, "squad:\*"\]`, `create-if-missing: true`\)/);
-    expect(
-      /fresh repository/i.test(acceptProse),
-      'The fresh-repository case is the entire point of #1959 and must be named explicitly.',
-    ).toBe(true);
-  });
-
-  it('calls add_labels in the same turn as each create-issue call', () => {
-    expect(acceptProse).toMatch(/In the same turn as each `create-issue` call in Step 2, call `add_labels`/i);
-    // The per-item bullet must carry the instruction too, not just the section prose,
-    // so a model reading only the create-issue recipe still emits the label call.
-    const labelApplication = acceptSkill.match(/^- Label application:.*$/m)?.[0] ?? '';
-    expect(labelApplication, 'Step 2 needs a per-item "Label application:" bullet').not.toBe('');
-    expect(labelApplication).toContain('add_labels');
-    expect(labelApplication).toContain('item_number');
-  });
-});
-
-describe('#1959: fast-path add_labels targets an explicit, verified item', () => {
-  it('targets the minting create-issue call\'s own temporary ID', () => {
-    expect(acceptProse).toMatch(
-      /`item_number` — that same `create-issue` call's `temporary_id` \(`#aw_ph\{N\}` for a phase issue, `#aw_wi\{N\}` for a work item\)/i,
-    );
-    const labelApplication = acceptSkill.match(/^- Label application:.*$/m)?.[0] ?? '';
-    expect(labelApplication).toMatch(/`item_number` set to this item's own temporary ID/i);
-  });
-
-  it('preserves #1962\'s minimal temp-ID compliance on every fast-path create-issue', () => {
-    // Regression guard: #1962 enabled workflow-global require-temporary-id: true, which
-    // rejects any create-issue call lacking one. #1959 must not weaken that.
-    const tempIdBullet = acceptSkill.match(/^- Temporary ID:.*$/m)?.[0] ?? '';
-    expect(tempIdBullet, 'Step 2 must keep its "Temporary ID:" bullet').not.toBe('');
-    expect(tempIdBullet).toContain('require-temporary-id: true');
-    expect(tempIdBullet).toContain('#aw_ph{N}');
-    expect(tempIdBullet).toContain('#aw_wi{N}');
-    expect(tempIdBullet).toContain('^#?aw_[A-Za-z0-9_]{3,12}$');
-    // Uniqueness invariant. #1962's follow-up (528ba9b0) byte-tightened the wording from
-    // "must not repeat within this run" to "be unique in this run" — the same contract,
-    // fewer bytes. Accept either phrasing, but keep requiring BOTH the uniqueness mandate
-    // and the silent-duplicate hazard that motivates it, so the invariant cannot be
-    // dropped by quietly rewording it away.
-    expect(
-      /(must not repeat within|be unique in) this run/i.test(tempIdBullet),
-      'The "Temporary ID:" bullet must state the per-run uniqueness requirement.',
-    ).toBe(true);
-    expect(
-      /silently lets (the|a duplicate's) last writer own the mapping/i.test(tempIdBullet),
-      'The bullet must keep the reason uniqueness matters: gh-aw does not reject a ' +
-        'duplicate temporary_id, it silently lets the last writer own the mapping.',
-    ).toBe(true);
-    // The phase-issue parent linkage from #1962 must still resolve via temporary ID.
-    expect(acceptProse).toMatch(/pass its `#aw_ph\{N\}` temporary ID/i);
-  });
-
-  it('makes item_number mandatory and names the silent triggering-issue fallback', () => {
-    expect(acceptProse).toMatch(/Every `add_labels` call MUST pass `item_number`/);
-    expect(
-      /Omitting it does not fail — it silently applies the labels to the \*\*triggering intent issue\*\*/i.test(
-        acceptProse,
-      ),
-      'The hazard must be stated as a silent mislabel of the user\'s own issue, not a ' +
-        'generic "always pass item_number" — the model needs the consequence to weigh it.',
-    ).toBe(true);
-    // Parity: squad-plan-activate states the identical hazard.
-    expect(activateProse).toMatch(/silently labels the \*\*triggering intent issue\*\*/i);
-  });
-
-  it('forbids borrowing another item\'s temporary ID or labeling an uncreated item', () => {
-    expect(acceptProse).toMatch(/Never reuse another item's temporary ID/i);
-    expect(acceptProse).toMatch(
-      /never emit `add_labels` for an item whose `create-issue` call was not made in this run/i,
-    );
-  });
-
-  it('uses verified real numbers for reused or pre-existing issues', () => {
-    expect(acceptProse).toMatch(
-      /For an issue this run did \*\*not\*\* create — one recognized by Step 1a's idempotency check or matched by title — pass its verified real number instead/i,
-    );
-    expect(acceptProse).toMatch(/a temporary ID maps only issues this run created/i);
-  });
-
-  it('forbids predicting a returned issue number or waiting for one', () => {
-    expect(acceptProse).toMatch(
-      /`create-issue` returns no real issue number during this run, so never predict or infer one and never pause between the two calls waiting for one/i,
-    );
-    expect(acceptProse).toMatch(/`create-issue` first and `add_labels` immediately after is the supported order/i);
+  const unsafeItems = [
+    ['native create with temporary ID', [{ type: 'create_issue', temporary_id: 'aw_wi1', title: 'Task' }]],
+    ['paired native create and label', [
+      { type: 'create_issue', temporary_id: 'aw_wi1', title: 'Task' },
+      { type: 'add_labels', item_number: 'aw_wi1', labels: ['squad', 'squad:builder'] },
+    ]],
+    ['implicit origin label fallback', [{ type: 'add_labels', labels: ['squad:builder'] }]],
+    ['borrowed or predicted issue number', [{ type: 'add_labels', item_number: 101, labels: ['squad'] }]],
+    ['mixed trusted and native outputs', [
+      { type: 'activate_plan', plan_comment_id: '10' }, { type: 'add_labels', item_number: 'aw_other', labels: ['squad'] },
+    ]],
+    ['model-supplied labels', [{ type: 'activate_plan', plan_comment_id: '10', labels: ['squad:visitor'] }]],
+    ['model-supplied bindings', [{ type: 'add_comment', body: 'Activation bindings:\n[]' }]],
+    ['model acceptance', [{ type: 'add_comment', data: { squad_artifact: 'plan-accepted' }, body: 'Accepted' }]],
+    ['model lifecycle', [{ type: 'upsert_lifecycle_state', body: '**Current state:** Activated' }]],
+    ['duplicate requests', [{ type: 'activate_plan', plan_comment_id: '10' }, { type: 'activate_plan', plan_comment_id: '10' }]],
+  ] as const;
+  it.each(unsafeItems)('rejects %s before writes in all activation modes', async (_name, items) => {
+    for (const command of ['activate', 'plan accept', 'plan activate']) {
+      const { operation, createComment } = await enforce(command, [...items]);
+      await expect(operation).rejects.toThrow(/trusted writer|native issue creation/);
+      expect(createComment).not.toHaveBeenCalled();
+    }
   });
 });
 
-describe('#1959: fast-path label sets stay at parity with squad-plan-activate', () => {
-  it('applies the base squad label to every activated item', () => {
-    expect(acceptProse).toMatch(/Work item: `squad`, plus `squad:\{owner\}`/);
-    expect(acceptProse).toMatch(/Phase issue: `squad`, plus `squad:\{owner\}`/);
+describe('gh-aw: frozen fast-path owner and actual-ID correspondence', () => {
+  it.each([
+    ['Azure Frontend', 'azure-frontend'],
+    ['Dr. Example', 'dr-example'],
+    ['--Release_Lead--', 'release-lead'],
+  ])('derives the actual task and epic label from certified display name %s', (name, slug) => {
+    const identities = structuredClone(registry);
+    identities.agents.builder.display_name = name;
+    identities.agents.builder.persistent_name = name;
+    const plan = parse(`### Phase 1\n${table([`| build | Example | ${name} | builder | None |`])}`,
+      team.replace('Builder', name), identities);
+    const operations = [{ id: 'epic:phase-1', epic: 'phase-1' }, { id: 'task:build', task: 'build', epic: 'phase-1' }];
+    const capture = {
+      repository: 'owner/repo', origin_issue: 42, run_id: 900, run_attempt: 1,
+      plan, fullPlan: plan, operations, registry: identities, phase: 1,
+    };
+    const journal = {
+      schema: ACTIVATION_RECEIPT_SCHEMA, repository: capture.repository,
+      capture_sha256: digest(capture), run_id: 900, run_attempt: 1, parent_fallbacks: [],
+      started: operations.map(operation => operation.id),
+      receipts: operations.map((operation, index) => ({
+        operation_id: operation.id, repository: capture.repository, number: 101 + index,
+        id: 1001 + index, node_id: `I_${index}`, url: `https://github.com/owner/repo/issues/${101 + index}`,
+      })),
+    };
+    expect(buildActivationBindings(capture, journal)).toMatchObject([
+      { label: `squad:${slug}`, epic_label: `squad:${slug}`, agent_id: 'builder' },
+    ]);
   });
 
-  it('derives the member label from that row\'s own frozen certified Owner', () => {
-    expect(acceptProse).toMatch(
-      /derived from that row's own frozen certified `Owner`, lowercased/i,
-    );
-    expect(acceptProse).toMatch(
-      /never inherit the phase issue's owner or carry the previous row's value forward/i,
-    );
-    // The Step 2 computation bullet must still name its certified binding source.
-    const labelRule = acceptSkill.match(/^- Labels:.*$/m)?.[0] ?? '';
-    expect(labelRule).toMatch(/frozen row `Owner` lowercased/i);
-    expect(labelRule).toMatch(/only from that task's certified binding/i);
+  it('rejects ambiguous certified display-name slugs before producing a plan', () => {
+    const identities = structuredClone(registry);
+    identities.agents.builder.display_name = 'Foo Bar';
+    identities.agents.builder.persistent_name = 'Foo Bar';
+    identities.agents.reviewer.display_name = 'Foo-Bar';
+    identities.agents.reviewer.persistent_name = 'Foo-Bar';
+    expect(() => parse(table(['| build | Example | Foo Bar | builder | None |']),
+      team.replace('Builder', 'Foo Bar').replace('Reviewer', 'Foo-Bar'), identities))
+      .toThrow(/slug.*ambiguous/);
   });
 
-  it('maps @copilot to squad:copilot in the primary label computation itself', () => {
-    // The bug this guards: the Step 2 `- Labels:` bullet is the *primary* computation —
-    // it says "the frozen row `Owner` lowercased", which turns `@copilot` into the
-    // invalid `squad:@copilot`. Stating the mapping only in the provisioning section
-    // below leaves the primary rule wrong, and a model following the bullet literally
-    // still emits the bad label. Assert against the extracted bullet, not the whole
-    // skill, so a correct-elsewhere/wrong-here workflow cannot pass.
-    const labelRule = acceptSkill.match(/^- Labels:.*$/m)?.[0] ?? '';
-    expect(labelRule, 'Step 2 must have a "- Labels:" computation bullet').not.toBe('');
-    expect(
-      /Map `@copilot` to `squad:copilot`/.test(labelRule),
-      'The `- Labels:` bullet must carry the @copilot mapping inline.',
-    ).toBe(true);
-    expect(
-      /never `squad:@copilot`/.test(labelRule),
-      'The `- Labels:` bullet must forbid the lowercased-verbatim form explicitly.',
-    ).toBe(true);
-
-    // Still stated in the provisioning section, and identical to the full path.
-    expect(acceptProse).toMatch(/`@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`/);
-    expect(activateProse).toMatch(/`@copilot` maps to the existing `squad:copilot` routing label — never `squad:@copilot`/);
+  it('uses each row owner and explicitly maps @copilot without inheriting the prior owner', () => {
+    expect(parse().tasks.map((task: any) => [task.id, task.agent_id, task.label])).toEqual([
+      ['build', 'builder', 'squad:builder'], ['review', 'reviewer', 'squad:reviewer'],
+      ['assist', null, 'squad:copilot'],
+    ]);
+    expect(parse().tasks[2].label).not.toBe('squad:@copilot');
   });
 
-  it('gives a multi-owner phase issue only squad, and records the omission', () => {
-    expect(acceptProse).toMatch(
-      /only when every accepted row in that phase names one and the same owner/i,
-    );
-    expect(acceptProse).toMatch(
-      /Two or more distinct owners is a multi-owner phase: apply only `squad`, choose none of them/i,
-    );
-    expect(acceptProse).toMatch(/record it under a `Non-roster agent values` heading/i);
-    // Parity with the epic rule in squad-plan-activate.
-    expect(activateProse).toMatch(/multi-owner epic: apply only `squad`/i);
+  it('keeps distinct stable tasks with the same title instead of title-deduplicating them', () => {
+    expect(parse().tasks.slice(0, 2).map((task: any) => task.id)).toEqual(['build', 'review']);
   });
 
-  it('omits and records a non-roster owner instead of stopping, matching full activation', () => {
-    // #1959 requires parity with squad-plan-activate. The fast path previously stopped
-    // before any mutation on an uncertified Owner; that is now aligned to omit-and-record
-    // so both activation paths behave identically for the same plan.
-    const labelRule = acceptSkill.match(/^- Labels:.*$/m)?.[0] ?? '';
-    expect(
-      /An `Owner` certified by neither route gets `squad` alone: omit the owner label, continue, and record the value under `Non-roster agent values`/.test(
-        labelRule,
-      ),
-      'The primary label computation must carry the omit-and-record rule inline, not ' +
-        'defer it to prose elsewhere in the skill.',
-    ).toBe(true);
-
-    expect(acceptProse).toMatch(
-      /An individual `Owner` matching no certified active roster name and not `@copilot` does \*\*not\*\* stop the run/i,
-    );
-    expect(acceptProse).toMatch(
-      /create that issue with the base `squad` label only, omit the owner label, continue, and record the value under `Non-roster agent values`/i,
-    );
-    expect(acceptProse).toMatch(
-      /an uncertified value can reach `add_labels` only as the base `squad` label/i,
-    );
-
-    // The old stop must be gone — a lingering `/squad plan revise` hard stop would
-    // contradict the rule above and reintroduce the divergence.
-    expect(
-      acceptProse,
-      'The pre-mutation stop on an uncertified Owner must be removed, not merely ' +
-        'supplemented — otherwise the fast path still diverges from squad-plan-activate.',
-    ).not.toMatch(/stop before mutation and require `\/squad plan revise`/i);
-
-    // Parity: squad-plan-activate's own omit-and-record rule.
-    expect(activateProse).toMatch(
-      /MUST NOT become a\s+`squad:\{agent\}` label: apply only `squad` for that issue/i,
-    );
+  it('rejects duplicate stable IDs rather than last-writer-wins mappings', () => {
+    expect(() => parse(table([...rows, rows[0]]))).toThrow(/stable task IDs.*duplicated/);
   });
 
-  it('still stops before mutation when the roster itself is unreadable', () => {
-    // ROSTER_UNREADABLE is a different failure: no certified set exists at all, so
-    // omit-and-record has nothing to certify against. squad-plan-activate stops here
-    // too — this is parity, not a leftover of the removed per-owner stop.
-    expect(acceptProse).toMatch(
-      /If TG-2 emitted a `ROSTER_UNREADABLE:` line, stop before mutation and report that named reason/i,
-    );
-    expect(activateProse).toMatch(/If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP:/);
+  it.each([
+    ['borrowed identity', rows[0].replace('| builder |', '| reviewer |'), /Agent ID/],
+    ['invented identity', rows[0].replace('| builder |', '| invented |'), /Agent ID/],
+    ['non-roster asserted identity', rows[0].replace('| Builder |', '| Visitor |'), /unknown non-roster owner/],
+  ] as const)('rejects %s before producing a label binding', (_name, row, reason) => {
+    expect(() => parse(table([row]))).toThrow(reason);
   });
 
-  it('requires the Non-roster agent values heading the omissions feed', () => {
-    // The omit-and-record rule is only coherent if the heading it records into is
-    // actually mandated. Without this, "record it" points at nothing.
-    expect(acceptProse).toMatch(
-      /Whenever an accepted `Owner` did not become a `squad:\{owner\}` label — a multi-owner phase issue, or a value certified by neither the roster nor `@copilot` — a `Non-roster agent values` heading is \*\*required\*\* in this summary, naming the value and the issue it applied to/i,
-    );
-    expect(acceptProse).toMatch(/Omitting the label while omitting the heading reports a clean run that did not happen/i);
+  it('refuses an unreadable roster rather than treating it as an empty certified set', () => {
+    expect(() => parse(table(rows), 'not a roster')).toThrow();
   });
 
-  it('never targets the triggering intent issue with an owner label', () => {
-    expect(acceptProse).toMatch(
-      /The triggering intent issue is never an `add_labels` target/i,
-    );
-    expect(acceptProse).toMatch(
-      /It is the flat-plan parent, not an activated item, and receives no owner label from this run/i,
-    );
+  it('does not certify an inactive frozen owner', () => {
+    const identities = structuredClone(registry);
+    identities.agents.builder.status = 'inactive';
+    expect(() => parse(table(rows), team, identities)).toThrow(/active frozen roster owner/);
   });
 
-  it('keeps reruns idempotent', () => {
-    expect(acceptProse).toMatch(
-      /Re-applying an already-present label on a rerun is a no-op under add-only merge semantics/i,
-    );
-    expect(acceptProse).toMatch(/safe under Step 1a's idempotency path/i);
-    // The pre-existing whole-plan idempotency contract must survive untouched.
-    expect(acceptProse).toMatch(/\*\*Whole-plan idempotency:\*\* when `requested_phase` is null/i);
+  it('uses only actual receipt numbers for task, parent and dependency bindings', () => {
+    const { capture, journal } = captured();
+    const bindings = buildActivationBindings(capture, journal);
+    expect(bindings.map((binding: any) => [binding.task, binding.issue, binding.epic_issue, binding.depends_on]))
+      .toEqual([['build', '#101', '#42', []], ['review', '#102', '#42', ['#101']], ['assist', '#103', '#42', ['#102']]]);
+    expect(bindings.every((binding: any) => binding.epic_label === null && binding.epic_omission_reason === 'origin')).toBe(true);
   });
 
-  it('treats an auto-provisioned label\'s default color as expected, not a failure', () => {
-    expect(acceptProse).toMatch(
-      /auto-provisioned by `create-if-missing` on a fresh repository instead receives gh-aw's deterministic color and an empty description/i,
-    );
-    expect(acceptProse).toMatch(/that is expected, not a failure, and must not be reported as one/i);
+  it('records multi-owner parent omission without choosing any task owner for the epic', () => {
+    const { capture, journal } = captured(true);
+    const bindings = buildActivationBindings(capture, journal);
+    expect(bindings.every((binding: any) => binding.epic_issue === '#101' &&
+      binding.epic_label === null && binding.epic_omission_reason === 'multi-owner')).toBe(true);
+    expect(bindings[0].epic_agents).toEqual(['@copilot', 'builder', 'reviewer']);
+    expect(bindings.map((binding: any) => binding.label)).toEqual(['squad:builder', 'squad:reviewer', 'squad:copilot']);
   });
 
-  it('reports labels actually applied, never merely intended', () => {
-    // #1963 tightened this sentence: a run cannot know a label was "actually applied" —
-    // safe outputs land after the agent turn — so the claim is now an *accepted*
-    // `add_labels` call for that same issue, with create-issue explicitly ruled out as
-    // evidence. #1959's original guarantee (never skipped/deferred/merely intended) is
-    // preserved verbatim inside the tightened sentence.
-    expect(acceptProse).toMatch(
-      /Report only the labels an accepted `add_labels` call carried for that same issue; never a label that was skipped, deferred, or merely intended, and never one attributed to `create-issue`/i,
-    );
+  it.each(['aw_wi1', '#aw_wi1', 0, 1.5])('rejects non-actual receipt number %s', number => {
+    const { capture, journal } = captured();
+    (journal.receipts[0] as any).number = number;
+    expect(() => validateReceiptSet(capture, journal)).toThrow(/identities.*malformed/);
+  });
+
+  it('rejects staged output instead of waiting for a native queued result', () => {
+    const { capture } = captured();
+    expect(() => validateCreateReceipt({ staged: true, temporary_id: 'aw_wi1' }, capture.operations[0], capture))
+      .toThrow(/did not return an actual issue/);
+  });
+
+  it('cannot borrow a receipt, change repositories, or report an uncreated operation', () => {
+    for (const mutate of [
+      (journal: any) => { journal.receipts[1] = { ...journal.receipts[0], operation_id: 'task:review' }; },
+      (journal: any) => { journal.receipts[0].repository = 'other/repo'; },
+      (journal: any) => { journal.receipts.pop(); },
+      (journal: any) => { journal.started.reverse(); },
+    ]) {
+      const { capture, journal } = captured();
+      mutate(journal);
+      expect(() => validateReceiptSet(capture, journal)).toThrow();
+    }
   });
 });
 
-// ---------------------------------------------------------------------------
-// Compiled-artifact verification
-// ---------------------------------------------------------------------------
-//
-// The assertions above lock the prose contract. This section proves the fast path's
-// calls are actually executable: `gh aw compile --strict` must expose add_labels and
-// create_issue as tools, wire create_if_missing into the handler config, and keep
-// #1962's require_temporary_id enforcement on. Fails closed (never skips) per this
-// repo's #1833/#1834 convention: an unmeasured contract is indistinguishable from a
-// violated one.
-
-const GH_AW_INSTALL_HINT =
-  '`gh aw` is required to compile the workflow this gate inspects. Install it with ' +
-  '`gh extension install github/gh-aw` (matches .github/workflows/squad-ci.yml). This ' +
-  'gate fails closed rather than skipping: an unmeasured contract is indistinguishable ' +
-  'from a violated one (#1834).';
-
-describe('gh-aw: the fast path\'s label calls compile and stay enforceable (#1959)', () => {
+describe('gh-aw: native compiled policy remains bounded outside activation', () => {
   let compiledLock: string | null = null;
-
-  function lockText(): string {
+  function lockText() {
     if (compiledLock !== null) return compiledLock;
-
-    const versionProbe = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' });
-    if (versionProbe.status !== 0) {
-      throw new Error(`gh aw --version failed. ${GH_AW_INSTALL_HINT}`);
-    }
-
-    mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
-    const workspace = mkdtempSync(join(TEST_WORKSPACES_DIR, 'fast-path-labels-'));
-    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-    // gh-aw's dispatch-workflow validation resolves cross-workflow references against a
-    // `.github/workflows/` directory relative to the compiled file. This repo ships the
-    // gh-aw *source* from a top-level `workflows/` dir; consumers install it into
-    // `.github/workflows/` via `gh aw add`. Mirror that real deployment layout.
-    cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
-    execFileSync(
-      'gh',
-      ['aw', 'compile', '.github/workflows/squad.md', '--strict', '--approve', '--no-check-update'],
-      { cwd: workspace, encoding: 'utf8', stdio: 'pipe' },
-    );
-
-    const lockPath = join(workspace, '.github', 'workflows', 'squad.lock.yml');
-    if (!existsSync(lockPath)) {
-      throw new Error(
-        'gh aw compile produced no squad.lock.yml — the compiled artifact this gate ' +
-          `inspects is absent, so the contract is unmeasured. ${GH_AW_INSTALL_HINT}`,
-      );
-    }
-    compiledLock = readText(lockPath);
+    const compiler = process.env.SQUAD_GH_AW_BIN ?? 'gh';
+    const prefix = process.env.SQUAD_GH_AW_BIN ? [] : ['aw'];
+    const version = spawnSync(compiler, [...prefix, '--version'], { encoding: 'utf8' });
+    expect(version.status, 'Supported gh-aw is required; this contract never skips').toBe(0);
+    expect(`${version.stdout}\n${version.stderr}`).toContain('v0.91.5');
+    const root = workspace('compile-');
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    cpSync(WORKFLOWS_DIR, join(root, '.github/workflows'), { recursive: true });
+    execFileSync(compiler, [...prefix, 'compile', '.github/workflows/squad.md', '--strict', '--no-check-update'],
+      { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+    const lockPath = join(root, '.github/workflows/squad.lock.yml');
+    expect(existsSync(lockPath)).toBe(true);
+    compiledLock = readFileSync(lockPath, 'utf8').replace(/\r\n/g, '\n');
     return compiledLock;
   }
 
-  it('strict-compiles the workflow carrying the fast-path label calls', () => {
-    expect(lockText().length).toBeGreaterThan(0);
+  it('strict-compiles the workflow containing the trusted activation request', () => {
+    expect(lockText()).toContain('activate_plan');
   });
-
-  it('keeps add_labels and create_issue callable together, so the fast path can pair them', () => {
-    const compiled = lockText();
-    expect(compiled).toMatch(/"tools":\[[^\]]*"add_labels"[^\]]*\]/);
-    expect(compiled).toMatch(/"tools":\[[^\]]*"create_issue"[^\]]*\]/);
+  it('retains native add_labels and create_issue tools for unrelated commands', () => {
+    expect(lockText()).toMatch(/"tools":\[[^\]]*"add_labels"[^\]]*\]/);
+    expect(lockText()).toMatch(/"tools":\[[^\]]*"create_issue"[^\]]*\]/);
   });
-
-  it('wires create_if_missing into the handler config the fast path relies on', () => {
-    // gh-aw embeds this JSON config inside a double-quoted YAML env value with every
-    // `"` backslash-escaped. De-escape before matching so this holds across versions.
+  it('retains bounded native label provisioning, not arbitrary label creation', () => {
     const compiled = lockText().replace(/\\"/g, '"');
     expect(compiled).toMatch(/"add_labels":\{[^}]*"create_if_missing":true/);
     expect(compiled).toMatch(/"add_labels":\{[^}]*"allowed":\["squad","squad:\*"\]/);
   });
-
-  it('keeps #1962\'s require_temporary_id enforcement on for the fast path\'s create_issue calls', () => {
-    // require-temporary-id is workflow-global, enforced at the MCP tool layer from the
-    // single create_issue config block — it covers squad-plan-accept's calls too.
+  it('retains native temporary-ID enforcement without using it as activation authority', () => {
     const compiled = lockText().replace(/\\"/g, '"');
     expect(compiled).toMatch(/"create_issue":\{[^}]*"require_temporary_id":true/);
     expect(compiled).toMatch(/"required_field_additions":\s*\{\s*"create_issue":\s*\[\s*"temporary_id"\s*\]/);
   });
-
-  it('leaves label writes in the safe-output job, not the agent job', () => {
+  it('keeps issue writes outside the model agent job', () => {
     const compiled = lockText();
-    const agentJobAt = compiled.indexOf('\n  agent:\n');
-    const safeOutputsJobAt = compiled.indexOf('\n  safe_outputs:\n');
-    expect(agentJobAt, '"agent:" job is missing from the compiled lock file').toBeGreaterThan(-1);
-    expect(safeOutputsJobAt, '"safe_outputs:" job is missing from the compiled lock file').toBeGreaterThan(agentJobAt);
-
-    const permsMatch = compiled.slice(agentJobAt, safeOutputsJobAt).match(/permissions:\n((?:\s{6}\S.*\n)+)/);
-    expect(permsMatch, 'agent job permissions block not found').not.toBeNull();
-    const permsBlock = permsMatch ? permsMatch[1] : '';
-    expect(permsBlock).toContain('issues: read');
-    expect(permsBlock).not.toContain('issues: write');
+    const start = compiled.indexOf('\n  agent:\n');
+    const end = compiled.indexOf('\n  safe_outputs:\n');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const permissions = compiled.slice(start, end).match(/permissions:\n((?:\s{6}\S.*\n)+)/)?.[1];
+    expect(permissions).toContain('issues: read');
+    expect(permissions).not.toContain('issues: write');
   });
 });

@@ -145,14 +145,18 @@ describe('gh-aw dependency dispatcher routing (#1748 S3)', () => {
   );
 
   it('wires both workers and keeps the dependency route conservative', () => {
-    expect(dispatcherTargets).toEqual(
+    expect(dispatcher).toContain('dispatch-implementation-workers:');
+    expect(dispatcher).toContain('squad-implement-worker or squad-deps-worker');
+    expect(dispatcherTargets).not.toEqual(
       expect.arrayContaining(['squad-implement-worker', 'squad-deps-worker']),
     );
     expect(dispatcher).toContain('Choose `squad_deps_worker` only when **all**');
     expect(dispatcher).toContain(
       'Choose `squad_implement_worker` for every other task.',
     );
-    expect(dispatcher).toContain('Never call both workers for one issue.');
+    expect(dispatcher).toMatch(
+      /Never dispatch duplicate or\s+unsorted issue targets or call both workers for one issue\./,
+    );
     expect(dispatcher).toContain(
       'do not reroute it to the general worker',
     );
@@ -162,7 +166,6 @@ describe('gh-aw dependency dispatcher routing (#1748 S3)', () => {
     const routed = routeFixture(fixture);
     expect(routed).toBe(fixture.expectedWorkflow);
     if (routed !== 'denied') {
-      expect(dispatcherTargets).toContain(routed);
       const toolName = routed.replaceAll('-', '_');
       expect(dispatcher).toContain(`\`${toolName}\``);
     }
@@ -198,8 +201,18 @@ describe('gh-aw dependency dispatcher routing (#1748 S3)', () => {
       const dispatch = dispatcherSafeOutputs.dispatch_workflow;
       const depsPullRequest = depsSafeOutputs.create_pull_request;
       const generalPullRequest = generalSafeOutputs.create_pull_request;
+      const implementationDispatch = dispatcherSafeOutputs['dispatch-implementation-workers'];
 
-      expect(dispatch.aw_context_workflows).toEqual(
+      expect(implementationDispatch).toMatchObject({
+        max: 1,
+        inputs: {
+          dispatches_json: {
+            required: true,
+            type: 'string',
+          },
+        },
+      });
+      expect(dispatch.aw_context_workflows).not.toEqual(
         expect.arrayContaining([
           'squad-implement-worker',
           'squad-deps-worker',

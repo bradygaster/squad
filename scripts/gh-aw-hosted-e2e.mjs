@@ -298,7 +298,7 @@ function packageArtifactCategories(contract) {
   };
 }
 
-function matchingPriorRunArtifacts(branches, pullRequests, issues) {
+function matchingPriorRunArtifacts(branches, pullRequests, issues, target) {
   return {
     branches: branches.filter(({ name }) => name.startsWith('squad-e2e/install-')
       || name.startsWith('squad-e2e/probe-')
@@ -312,14 +312,16 @@ function matchingPriorRunArtifacts(branches, pullRequests, issues) {
       || title === CAST_PR_TITLE
     )),
     issues: issues.filter(({ title, body }) => (
-      title === RESEARCH_ISSUE_TITLE || (body ?? '').includes(RESEARCH_MARKER)
+      title === RESEARCH_ISSUE_TITLE ||
+      title === `[Agentic Research] ${target} — initial proposals` ||
+      (body ?? '').includes(RESEARCH_MARKER)
     )),
   };
 }
 
 export function assertPristineTarget(target, defaultBranch, contract, github = githubAdapter, now = Date.now) {
-  if (contract.workflows.length !== 8 || contract.runtime.length !== 17 || contract.skills.length !== 1) {
-    throw new Error('Trusted package topology must be exactly 8 workflows, 17 runtime resources, and 1 skill.');
+  if (contract.workflows.length !== 8 || contract.runtime.length !== 21 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 8 workflows, 21 runtime resources, and 1 skill.');
   }
   const defaultBranchSha = github.getDefaultBranchSha(target, defaultBranch);
   assertSha(defaultBranchSha, 'Target default-branch SHA');
@@ -334,7 +336,7 @@ export function assertPristineTarget(target, defaultBranch, contract, github = g
   const branches = github.listBranches(target);
   const pullRequests = github.listPullRequests(target);
   const issues = github.listIssues(target);
-  const prior = matchingPriorRunArtifacts(branches, pullRequests, issues);
+  const prior = matchingPriorRunArtifacts(branches, pullRequests, issues, target);
   if (existingPaths.length > 0 || packageNamespace.length > 0
     || prior.branches.length > 0 || prior.pullRequests.length > 0 || prior.issues.length > 0) {
     throw new Error(`Target is not pristine: ${JSON.stringify({
@@ -544,7 +546,7 @@ export function selectBootstrapOutputs(outputs, baseline, installation, bootstra
   const issues = outputs.issues.filter((issue) => (
     issue.number > baseline.maximumIssueNumber
     && Date.parse(issue.createdAt) >= cutoff
-    && issue.title === RESEARCH_ISSUE_TITLE
+    && issue.title === `[Agentic Research] ${outputs.target} — initial proposals`
   ));
   if (castPrs.length > 1 || issues.length > 1) {
     throw new Error(
@@ -966,8 +968,8 @@ function hosted(args, repositoryRoot) {
   const sourceSha = requireArg(args, 'source_sha');
   const evidence = resolve(requireArg(args, 'evidence'));
   const contract = loadBundleContract(repositoryRoot);
-  if (contract.workflows.length !== 8 || contract.runtime.length !== 17 || contract.skills.length !== 1) {
-    throw new Error('Trusted package topology must be exactly 8 workflows, 17 runtime resources, and 1 skill.');
+  if (contract.workflows.length !== 8 || contract.runtime.length !== 21 || contract.skills.length !== 1) {
+    throw new Error('Trusted package topology must be exactly 8 workflows, 21 runtime resources, and 1 skill.');
   }
   const targetState = authorizeTarget(args, sourceInfo, contract);
   mkdirSync(evidence, { recursive: true });

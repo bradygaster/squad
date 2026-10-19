@@ -439,7 +439,9 @@ with full hierarchy (Root → Epics → Tasks) and assigned to their respective 
 | Activated | ✅ Done | [comment link] | 2026-08-10 |
 
 **Current state:** Activated
-**Last command:** `/squad plan activate` by @bradygaster at 2026-08-10T00:39:00Z
+**Last command:** `/squad plan activate`
+**Updated by:** @user at 2026-08-10T00:39:00Z
+**Next action:** Track execution in the linked issues.
 ```
 
 **Key point:** This comment is a living progress bar. It updates itself at every transition. Any agent — human or AI — can look at this one comment and know exactly where in the SDLC this issue stands. No context lost, no ambiguity.

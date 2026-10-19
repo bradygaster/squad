@@ -182,6 +182,7 @@ class CopilotSessionAdapter implements SquadSession {
     'message_delta': 'assistant.message_delta',
     'message': 'assistant.message',
     'usage': 'assistant.usage',
+    'context_usage': 'session.usage_info',
     'reasoning_delta': 'assistant.reasoning_delta',
     'reasoning': 'assistant.reasoning',
     'turn_start': 'assistant.turn_start',

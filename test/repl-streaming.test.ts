@@ -14,6 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  parseContextWarningThreshold,
   parseCoordinatorResponse,
   SessionRegistry,
 } from '../packages/squad-cli/src/cli/shell/index.js';
@@ -24,6 +25,16 @@ import { TIMEOUTS } from '../packages/squad-sdk/src/runtime/constants.js';
 // ============================================================================
 
 type EventHandler = (event: { type: string; [key: string]: unknown }) => void;
+
+describe('context warning threshold', () => {
+  it('accepts a fractional threshold and falls back to 80% for invalid values', () => {
+    expect(parseContextWarningThreshold('0.65')).toBe(0.65);
+    expect(parseContextWarningThreshold(undefined)).toBe(0.8);
+    expect(parseContextWarningThreshold('0')).toBe(0.8);
+    expect(parseContextWarningThreshold('101')).toBe(0.8);
+    expect(parseContextWarningThreshold('not-a-number')).toBe(0.8);
+  });
+});
 
 interface MockSquadSession {
   sendMessage: ReturnType<typeof vi.fn>;

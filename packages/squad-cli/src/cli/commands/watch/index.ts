@@ -1044,8 +1044,14 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
     // Update executed count from execute capability
     const execResult = execResults.get('execute');
-    if (execResult?.data?.['executed']) {
-      roundState.executed = execResult.data['executed'] as number;
+    const executedCount =
+      typeof execResult?.data?.['executed'] === 'number'
+        ? (execResult.data['executed'] as number)
+        : typeof execResult?.data?.['dispatched'] === 'number'
+          ? (execResult.data['dispatched'] as number)
+          : 0;
+    if (executedCount > 0) {
+      roundState.executed = executedCount;
     }
 
     // Phase 4: housekeeping (monitoring, retro, decision hygiene)

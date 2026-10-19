@@ -17,7 +17,7 @@ export function extractSafeOutputsConfigJson(compiledLockYml: string): string | 
   const envVarLine = lines.find(line => line.includes('GH_AW_SAFE_OUTPUTS_CONFIG:'));
   if (envVarLine) {
     const match = envVarLine.match(/GH_AW_SAFE_OUTPUTS_CONFIG:\s*"(.*)"\s*$/);
-    if (match) return match[1].replace(/\\"/g, '"');
+    if (match) return JSON.parse(`"${match[1]}"`) as string;
   }
 
   const configStart = lines.findIndex(

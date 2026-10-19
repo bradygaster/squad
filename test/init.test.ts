@@ -233,6 +233,10 @@ describe('Squad Initialization', () => {
       expect(charter.length).toBeGreaterThan(1000);
       expect(charter).toMatch(/Verification Methodology|## Verification/i);
       expect(charter).toMatch(/Confidence Ratings|✅ Verified/i);
+      expect(charter).toContain('.squad/fact-checker/audit-trail.md');
+      expect(charter).toContain('squad_state_append');
+      expect(charter).toMatch(/Never overwrite or delete prior\s+entries/);
+      expect(charter).not.toMatch(/does not create audit logs|do not create histories, audit trails/i);
       // Must NOT contain the generic stub boilerplate.
       expect(charter).not.toMatch(/^## Work Style$/m);
     });
@@ -256,11 +260,11 @@ describe('Squad Initialization', () => {
       expect(existsSync(charterPath)).toBe(true);
       const charter = await readFile(charterPath, 'utf-8');
       expect(charter.length).toBeGreaterThan(1000);
-      // The bounded support charter keeps the policy source but must not
-      // recreate the retired audit-log contract.
       expect(charter).toMatch(/\.squad\/rai\/policy\.md/);
-      expect(charter).toMatch(/does not create audit logs/i);
-      expect(charter).not.toMatch(/\.squad\/rai\/audit-trail\.md/);
+      expect(charter).toMatch(/\.squad\/rai\/audit-trail\.md/);
+      expect(charter).toContain('squad_state_append');
+      expect(charter).toMatch(/Never overwrite or delete prior\s+entries/);
+      expect(charter).not.toMatch(/does not create audit logs|do not create histories, audit trails/i);
     });
 
     it('should install every manifest-curated skill (regression: bradygaster/squad#1289, #1264)', async () => {

@@ -24,10 +24,6 @@ on:
         description: Origin of the request (manual, squad-review, squad-implement, or ralph)
         required: false
         type: string
-      aw_context:
-        description: Originating agentic workflow context
-        required: false
-        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -44,6 +40,10 @@ network:
     - defaults
 imports:
   - shared/squad.md
+engine:
+  id: copilot
+  version: 1.0.78
+  agent: squad
 resources:
   - shared/squad-retro-evidence.mjs
   - shared/squad-retro-provenance.mjs

@@ -63,7 +63,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
           cache: 'npm'
@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
           cache: 'npm'
@@ -173,7 +173,7 @@ jobs:
         # than skipping — a skipped gate is indistinguishable from no gate. This
         # includes the shell input security contract gate (#1834) and the compile
         # contract (#1732).
-        run: gh extension install --pin v0.89.22 github/gh-aw
+        run: gh extension install --pin v0.91.5 github/gh-aw
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Build
@@ -203,7 +203,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
       - name: Check changeset drift
@@ -220,7 +220,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
       - name: Check shebang line endings
@@ -244,7 +244,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
       - name: Fetch PR labels
@@ -475,7 +475,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
       - name: Check skip conditions
@@ -608,7 +608,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
           cache: 'npm'
@@ -739,7 +739,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
           cache: npm
@@ -747,10 +747,10 @@ jobs:
       - name: Install verifier dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org/
 
-      - name: Install gh-aw v0.89.22 (pinned)
+      - name: Install gh-aw v0.91.5 (pinned)
         run: |
-          gh extension install --force --pin v0.89.22 github/gh-aw
-          test "$(gh aw --version 2>&1 | awk '{print $NF}')" = v0.89.22
+          gh extension install --force --pin v0.91.5 github/gh-aw
+          test "$(gh aw --version 2>&1 | awk '{print $NF}')" = v0.91.5
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -788,7 +788,8 @@ jobs:
               --source-revision "$SQUAD_SOURCE_REVISION"
             node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
             test "$(find .github/workflows -maxdepth 1 -name 'squad*.md' | wc -l | tr -d ' ')" = 8
-            test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 17
+            test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 20
+            test -f .github/workflows/squad-agent-binding-check.yml
             test "$(find .github/skills/gh-aw-enlistment -type f | wc -l | tr -d ' ')" = 1
             node --input-type=module -e '
               import { compileWithPinnedActions } from "./.github/workflows/shared/squad-install-verifier.mjs";

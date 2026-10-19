@@ -708,3 +708,60 @@ describe('squad build — edge cases', () => {
     expect(result.filesWritten).toHaveLength(5);
   });
 });
+
+describe('squad build --watch (#2192)', () => {
+  it('runs an initial build and rebuilds when squad.config.js changes', async () => {
+    const root = makeTmpDir();
+    const squadDir = scaffoldSquadDir(root);
+    const configPath = join(root, 'squad.config.js');
+
+    const makeConfigJs = (teamName: string, agentRole: string) => `export default {
+  version: '1.0.0',
+  team: { name: ${JSON.stringify(teamName)}, description: 'Watch test team' },
+  agents: [
+    { name: 'watcher', role: ${JSON.stringify(agentRole)}, charter: 'Watches the build pipeline.' }
+  ]
+};\n`;
+
+    writeFileSync(configPath, makeConfigJs('Initial Watch Team', 'Initial Builder'), 'utf-8');
+
+    const { runBuild: runCliBuild } = await import('../packages/squad-cli/src/cli/commands/build.js');
+    const controller = new AbortController();
+
+    let resolveRebuild!: () => void;
+    const rebuildPromise = new Promise<void>((resolve) => {
+      resolveRebuild = resolve;
+    });
+
+    const watchTask = runCliBuild(root, {
+      watch: true,
+      signal: controller.signal,
+      debounceMs: 25,
+      onWatchReady: () => {
+        expect(existsSync(join(squadDir, 'team.md'))).toBe(true);
+        expect(readFileSync(join(squadDir, 'team.md'), 'utf-8')).toContain('Initial Watch Team');
+        expect(readFileSync(join(squadDir, 'agents', 'watcher', 'charter.md'), 'utf-8')).toContain('Initial Builder');
+
+        setTimeout(() => {
+          writeFileSync(configPath, makeConfigJs('Updated Watch Team', 'Updated Architect'), 'utf-8');
+        }, 40);
+      },
+      onRebuild: () => {
+        resolveRebuild();
+        controller.abort();
+      },
+    });
+
+    await Promise.race([
+      rebuildPromise,
+      new Promise<void>((_, reject) => setTimeout(() => {
+        controller.abort();
+        reject(new Error('Timed out waiting for squad build --watch rebuild'));
+      }, 5000)),
+    ]);
+    await watchTask;
+
+    expect(readFileSync(join(squadDir, 'team.md'), 'utf-8')).toContain('Updated Watch Team');
+    expect(readFileSync(join(squadDir, 'agents', 'watcher', 'charter.md'), 'utf-8')).toContain('Updated Architect');
+  });
+});

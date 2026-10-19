@@ -1,6 +1,6 @@
 # Upgrading Squad
 
-Update Squad-owned files to the latest version without touching your team state.
+Update Squad-owned files to the latest version without losing your team state.
 
 ---
 
@@ -18,7 +18,7 @@ Squad detects your installed version, updates Squad-owned files, and runs any ne
 ✅ upgraded coordinator from 0.1.0 to 0.2.0
 ✅ upgraded .squad/templates/
 
-.squad/ untouched — your team state is safe
+Casting state validated — your team's identities and history are preserved
 
 Squad is upgraded. (v0.2.0)
 ```
@@ -35,11 +35,23 @@ That's it.
 | `.ai-team-templates/` | ✅ Yes | Overwritten with latest templates |
 | `.github/workflows/squad-*.yml` | ✅ Yes | Overwritten with latest squad workflows |
 | `.github/copilot-instructions.md` | ⚡ Conditional | Updated only if @copilot is enabled on the team |
-| `.ai-team/` | ❌ Never | Your team's knowledge, decisions, casting state, skills |
+| `.squad/` (or legacy `.ai-team/`) | ⚡ Conditional | Casting schema migrations and built-in file refreshes; team knowledge is preserved |
 
 Squad-owned files (`squad.agent.md` and `.ai-team-templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.
 
-Your team state in `.ai-team/` is never touched. Agent charters, histories, decisions, casting state, skills, and session logs are all safe.
+Updates retain each existing destination's newline style, including CRLF on
+Windows, across the coordinator, generated capability block, templates,
+built-in skills, and workflows. A newline-only difference does not rewrite a
+managed template; real content updates still apply. New files use shipped
+template newlines. Upgrade does not change your repository's line-ending policy.
+
+Shared `.mcp.json` entries never contain a standalone installation's absolute
+path. Packaged installs use `squad.exe` on Windows or `squad` on Unix from the
+MCP host's PATH; npm installs retain their version-pinned `npx` entry.
+
+Agent identities, charters, histories, decisions, and session logs are preserved.
+Supported legacy casting state is migrated as described below; built-in skills
+may be refreshed as Squad-owned files.
 
 ---
 
@@ -48,10 +60,93 @@ Your team state in `.ai-team/` is never touched. Agent charters, histories, deci
 Some upgrades require additive changes to your team state directory — like creating a new subdirectory that didn't exist in older versions.
 
 Migrations are:
-- **Additive** — they only create new files or directories, never modify existing ones
+- **Preserving** — directory migrations are additive; casting schema migrations
+  preserve original files in a non-overwriting archive
 - **Idempotent** — safe to re-run; if the change already exists, it's skipped
 
 Example: upgrading to v0.2.0 creates `.ai-team/skills/` if it doesn't already exist.
+
+### Legacy casting state (upgrades to 1.x)
+
+`squad upgrade` validates casting state **before** replacing the coordinator,
+skills, workflows, or other upgrade-managed files, even when the installed
+coordinator already matches the CLI version.
+
+Supported unversioned registries have an `agents` object with persistent names,
+universes, statuses, and creation dates. Roles default to the agent ID only when
+absent; display names and update dates default to the persistent name and creation
+date only when absent. Supported history contains assignment snapshots using
+`members[].folder`, agent ID arrays, or role-ID-to-persistent-name maps, with
+matching universe usage records using `created_at` or `used_at`.
+Snapshots and usage records also accept the historical `assigned_at` timestamp.
+If multiple recognized timestamp fields are present, each must be valid and
+denote the same instant. The original timestamp string, including its timezone
+offset, is retained; migration never substitutes an agent creation date for an
+assignment date.
+
+The historical `entries[]` / `assignments[]` variant is also supported when
+each registry entry's persistent name matches exactly one canonical folder's
+`charter.md` under the team's `agents/` directory. The charter must contain an
+`## Identity` section with `- **Name:**`; its optional `- **Role:**` supplies the
+role, otherwise the canonical folder ID is used. Missing, duplicated, malformed,
+or conflicting identities stop migration; names are never slugified into IDs.
+Keep the original producer's charters with the state when testing this variant.
+Each assignment's explicit persistent-name list supplies **only that historical
+membership**, not today's roster. Its recorded universe and timestamp supply
+the corresponding usage event. Missing universe or date evidence is never filled
+from the current naming policy or agent creation dates.
+
+Migration preserves agent IDs, names, original dates (including timezone offsets),
+assignment keys, and snapshot dates. Revision 1 and `generated_at` establish a
+**new managed migration baseline**, not a reconstructed historical generation.
+An agent created after an older assignment keeps its later creation date.
+
+The byte-exact originals, including repository paths and metadata not represented
+by the current runtime schema, are retained at
+`casting/legacy-archive-<content-hash>/registry.json` and `history.json`.
+Archives are never overwritten. Treat them as private state: inspect them before
+sharing or committing. Publication uses the shared writer lock and recoverable
+registry/history commit transaction. Repeating migration preserves managed bytes.
+
+`squad upgrade --dry-run` validates and previews migration without creating locks,
+archives, or transaction files. Unknown schemas, damaged files, missing pair
+members, mismatched assignment evidence, or inconsistent managed transactions
+stop the upgrade before managed files change. Back up the state and seek recovery
+help; do not manually add `revision`, delete casting files, or rewrite dates.
+
+#### Incomplete legacy provenance
+
+Automatic migration refuses agents without a nonempty universe, snapshots with
+a missing or `null` universe, and snapshots without matching historical usage.
+Descriptive names alone do not prove a universe. A current coordinator's naming
+policy does not prove the policy of an older assignment. Migration will not
+invent a universe, usage entry, or historical membership.
+
+The historical `entries[]` / `assignments[]` pair requires recovery when original
+folder/charter identities are missing or ambiguous. Persistent names are not
+canonical folder IDs. Today's team roster is not evidence of which agents
+belonged to an older assignment. Restore the original authoritative `charter.md`
+files alongside the original casting pair; do not create charters from guessed
+name-to-folder mappings.
+
+If either policy stops your upgrade:
+
+1. Keep the installed coordinator and both original casting files intact. Make
+   a private backup of the entire team state directory and coordinator before
+   attempting recovery.
+2. Retrieve the original assignment records and producing coordinator from
+   version control or backups. For identity recovery, include original folder
+   IDs and each historical assignment's membership, not just today's roster.
+   For universe recovery, include recorded universe and usage evidence for each
+   assignment. Do not fill fields from guesses or create synthetic usage.
+3. Request migration/recovery support with the producer version, schema shape,
+   and anonymized evidence. Do not publish private paths, state archives, or
+   team knowledge. If evidence is unavailable, keep using the installed version;
+   this refusal is **not** a completed migration.
+4. After an evidence-backed recovery is available, test it on a disposable
+   backup using `squad upgrade --dry-run`, then upgrade and verify identities,
+   historical membership, dates, and byte-exact original archives before
+   applying it to the live team.
 
 ---
 
@@ -144,13 +239,15 @@ git add .github/agents/squad.agent.md .ai-team-templates/
 git commit -m "Upgrade Squad to v0.2.0"
 ```
 
-No changes to `.ai-team/` — the diff is limited to Squad-owned files.
+Review the upgrade diff, including any casting migration and original-file
+archives, before committing. Do not share archives containing private metadata.
 
 ---
 
 ## Tips
 
-- **Upgrade is safe.** It only overwrites files that Squad owns. Your team state is never modified.
+- **Upgrade preserves your team.** It refreshes Squad-owned files and safely
+  migrates supported casting state with original-file archives.
 - **Don't customize `squad.agent.md`.** Any changes you make will be overwritten on the next upgrade. If you need custom behavior, use directives in `decisions.md` instead.
 - **Re-running upgrade is harmless.** If you're not sure whether an upgrade completed, run it again. It's idempotent.
 

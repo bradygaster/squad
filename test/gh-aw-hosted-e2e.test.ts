@@ -105,7 +105,7 @@ const currentCastPr = {
 const currentResearchIssue = {
   number: 21,
   url: 'https://example.test/issues/21',
-  title: '[Research Proposals] Agent-discovered repo opportunities',
+  title: '[Agentic Research] owner/consumer — initial proposals',
   body: `<!-- squad:bootstrap-opportunities schema=1 -->\n${provenanceMarker()}\nCurrent proposals`,
   createdAt: '2026-09-24T20:01:07.000Z',
   author: ACTIONS_BOT,
@@ -258,7 +258,7 @@ describe('Squad gh-aw hosted E2E controller', () => {
     const contract = loadBundleContract(ROOT);
     expect(contract.package).toBe('bradygaster/squad/workflows');
     expect(contract.workflows).toHaveLength(8);
-    expect(contract.runtime).toHaveLength(17);
+    expect(contract.runtime).toHaveLength(21);
     expect(contract.skills).toHaveLength(1);
     expect(contract.triggerProbe).toBe('shared/squad-bootstrap-trigger-probe.json');
     expect(() => loadInstalledBundleContract(resolve(ROOT, 'does-not-exist'))).toThrow(/missing or invalid/);
@@ -683,7 +683,7 @@ describe('Squad gh-aw hosted E2E controller', () => {
       issues: [currentResearchIssue, { ...currentResearchIssue, number: 22 }],
     }],
   ])('fails closed on duplicate current-run %s', (_label, outputs) => {
-    expect(() => selectBootstrapOutputs(outputs, baseline, installation, bootstrapRun))
+    expect(() => selectBootstrapOutputs({ ...currentOutputs(), ...outputs }, baseline, installation, bootstrapRun))
       .toThrow(/Ambiguous current bootstrap outputs/);
   });
 });

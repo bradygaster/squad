@@ -5,7 +5,12 @@
 import { MODELS } from '../runtime/constants.js';
 import {
   applyEconomyMode,
+  DEFAULT_MODEL_SELECTION_PROFILE,
+  HYDRAFUSION_MODEL_ID,
+  isModelSelectionProfile,
+  isPreviewModel,
   MODEL_CATALOG,
+  type ModelSelectionProfile,
   CATEGORY_ORDER,
   type GitHubModelCategory,
   type CostPolicyConfig,
@@ -14,10 +19,33 @@ import {
 } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
 
+export {
+  DEFAULT_MODEL_SELECTION_PROFILE,
+  MODEL_SELECTION_PROFILES,
+  isModelSelectionProfile,
+  type ModelSelectionProfile,
+} from '../config/models.js';
+
 /**
- * Task types that influence model selection.
+ * Task types that influence model selection. Quality-sensitive non-code work
+ * (architecture, research, verification, review, security, design) is
+ * distinguished from language work (docs, writing, planning) and mechanical
+ * work (Scribe, git, release bookkeeping).
  */
-export type TaskType = 'code' | 'prompt' | 'docs' | 'visual' | 'planning' | 'mechanical';
+export type TaskType =
+  | 'code'
+  | 'prompt'
+  | 'docs'
+  | 'visual'
+  | 'planning'
+  | 'mechanical'
+  | 'architecture'
+  | 'research'
+  | 'verification'
+  | 'review'
+  | 'security'
+  | 'design'
+  | 'writing';
 
 /**
  * Model tier classification.
@@ -25,24 +53,77 @@ export type TaskType = 'code' | 'prompt' | 'docs' | 'visual' | 'planning' | 'mec
 export type ModelTier = 'premium' | 'standard' | 'fast';
 
 /**
- * Source of the model resolution.
+ * Source of the model resolution, in precedence order:
+ * - `user-override`: explicit per-spawn directive ("use X for this task")
+ * - `config`: persistent `.squad/config.json` override (per-agent or `defaultModel`)
+ * - `session`: model picked for the session; inherited by every sub-agent spawn
+ * - `charter`: the agent charter's `## Model` → `**Preferred:**` value (not `auto`)
+ * - `task-auto`: task-aware auto-selection
+ * - `default`: nothing else matched
+ * - `fallback`: chosen from the fallback chain after the preferred model was unavailable
  */
-export type ModelResolutionSource = 'user-override' | 'charter' | 'task-auto' | 'default';
+export type ModelResolutionSource =
+  | 'user-override'
+  | 'config'
+  | 'session'
+  | 'charter'
+  | 'task-auto'
+  | 'default'
+  | 'fallback';
+
+/**
+ * Resolution precedence (first match wins). Fallback is not a layer: it only
+ * applies after the selected model is known to be unavailable.
+ */
+export const MODEL_RESOLUTION_PRECEDENCE: readonly ModelResolutionSource[] = [
+  'user-override',
+  'config',
+  'session',
+  'charter',
+  'task-auto',
+  'default',
+] as const;
 
 /**
  * Options for model resolution.
  */
 export interface ModelResolutionOptions {
-  /** User-specified model override */
+  /** Explicit per-spawn model directive (highest precedence) */
   userOverride?: string;
+  /**
+   * Persistent `.squad/config.json` model for this agent: the caller passes
+   * `agentModelOverrides[agent]` when present, otherwise `defaultModel`.
+   */
+  configModel?: string;
+  /**
+   * Model picked for the current session (by the user or the session itself).
+   * Passed unchanged to every sub-agent spawn so it is inherited with source
+   * `session`. Any model id passes through, including opt-in or preview ids.
+   */
+  sessionModel?: string;
   /** Model preference from agent's charter (## Model section) */
   charterPreference?: string;
-  /** Type of task being performed */
-  taskType: TaskType;
+  /** Type of task being performed. When omitted, task-aware selection is skipped. */
+  taskType?: TaskType;
+  /**
+   * Caller-chosen task-aware model. When set (and not `auto`) it replaces the
+   * tier pick of the `task-auto` layer; economy mode still applies to it.
+   */
+  taskModel?: string;
   /** Agent role (for context) */
   agentRole?: string;
-  /** When true, apply economy mode substitution at Layer 3/4 */
+  /**
+   * Legacy economy switch. `true` selects the `economy` profile unless a
+   * session profile is set.
+   */
   economyMode?: boolean;
+  /**
+   * Persistent quality profile (`.squad/config.json` `modelProfile`). Defaults
+   * to `quality-first`. Only automatic layers (task-auto, default) use it.
+   */
+  profile?: ModelSelectionProfile;
+  /** Quality profile chosen for the current session; wins over `profile` and `economyMode`. */
+  sessionProfile?: ModelSelectionProfile;
   /**
    * Persistent config carrying an optional cost policy (cost-ceiling axis).
    * When present with a `maxCategory`, resolution is finalized against it.
@@ -50,6 +131,22 @@ export interface ModelResolutionOptions {
   config?: { costPolicy?: CostPolicyConfig };
   /** Per-session cost policy override (wins over `config.costPolicy`). */
   sessionCostPolicy?: SessionCostPolicyOverride;
+  /**
+   * Model ids known to be unavailable (plan restriction, org policy, rate
+   * limit, deprecation). When the resolved model is listed, the next available
+   * fallback-chain entry after it is chosen with source `fallback`; a model
+   * that is not in its chain searches the chain from the head. Under an
+   * active cost ceiling, catalog-known candidates above it are skipped. When
+   * no candidate remains, `omitModel` is set.
+   */
+  unavailableModels?: Iterable<string>;
+  /**
+   * Live model list supplied by the runtime (for example the session's model
+   * enum). When present it is authoritative for availability: any id not in
+   * it is treated as unavailable, for every source, and handled like
+   * {@link unavailableModels}. Omit when no live list is known.
+   */
+  availableModels?: Iterable<string>;
 }
 
 /**
@@ -66,7 +163,25 @@ export interface ResolvedModel {
   fallbackChain: string[];
   /** Cost-policy outcome, present only when a policy was applied. */
   policy?: CostPolicyOutcome;
+  /**
+   * Human-readable explanation of why this model was chosen. Always set on
+   * {@link resolveModel} output (see {@link ModelResolution}); optional here so
+   * consumer-constructed values stay valid.
+   */
+  rationale?: string;
+  /** Quality profile in effect for this resolution (set by {@link resolveModel}). */
+  profile?: ModelSelectionProfile;
+  /** Model and source that were preferred before an availability fallback. */
+  fallbackFrom?: { model: string; source: ModelResolutionSource };
+  /**
+   * True when every fallback candidate was unavailable: omit the `model`
+   * parameter so the platform picks its default. `model` is then empty.
+   */
+  omitModel?: boolean;
 }
+
+/** Output of {@link resolveModel}: a {@link ResolvedModel} with guaranteed provenance. */
+export type ModelResolution = ResolvedModel & { rationale: string };
 
 /**
  * Effective (merged) cost policy after combining persistent config + session
@@ -77,100 +192,255 @@ export interface EffectiveCostPolicy {
 }
 
 /**
- * Resolve the appropriate model using the 4-layer priority system, then
- * finalize against the effective cost policy (cost-ceiling axis).
+ * Central model resolver. Applies {@link MODEL_RESOLUTION_PRECEDENCE}, then
+ * finalizes against the effective cost policy (cost-ceiling axis), then walks
+ * the fallback chain if the chosen model is known to be unavailable.
  *
  * @param options - Model resolution options
- * @returns Resolved model with tier, fallback chain, and optional policy outcome
+ * @returns Resolved model with tier, source, rationale, fallback chain, and optional policy outcome
  */
-export function resolveModel(options: ModelResolutionOptions): ResolvedModel {
-  const base = resolveBaseModel(options);
+export function resolveModel(options: ModelResolutionOptions): ModelResolution {
+  const profile = resolveModelProfile(options);
+  const base = resolveBaseModel(options, profile);
   const policy = buildEffectiveCostPolicy(options.config, options.sessionCostPolicy);
-  if (!policy) return base;
-  return finalizeResolvedModel(base, policy, buildCatalogCategoryMap());
+  const catalogMap = policy ? buildCatalogCategoryMap() : undefined;
+  const finalized = policy && catalogMap ? finalizeResolvedModel(base, policy, catalogMap) : base;
+  const ceiling = policy && catalogMap ? { maxCategory: policy.maxCategory, catalogMap } : undefined;
+  const isUnavailable = buildAvailabilityCheck(options.unavailableModels, options.availableModels);
+  const resolved = normalizeFallbackChain(applyAvailabilityFallback(finalized, isUnavailable, ceiling), isUnavailable);
+  return { ...resolved, profile, rationale: resolved.rationale ?? resolved.source };
 }
 
 /**
- * Layered base resolution (the original 4-layer selector). Unchanged behavior;
- * split out so {@link resolveModel} can finalize the result against a policy.
+ * Make the returned chain safe to retry in order: drop entries known to be
+ * unavailable and, when the selected model is in its chain, start the chain
+ * at that model so retries never move back toward the head. A model outside
+ * its chain keeps head-first fallback.
  */
-function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
-  const { userOverride, charterPreference, taskType, economyMode } = options;
+function normalizeFallbackChain(resolved: ResolvedModel, isUnavailable?: (id: string) => boolean): ResolvedModel {
+  if (resolved.omitModel) return resolved;
+  const key = resolved.model.toLowerCase();
+  const position = resolved.fallbackChain.findIndex((id) => id.toLowerCase() === key);
+  const forward = position > 0 ? resolved.fallbackChain.slice(position) : resolved.fallbackChain;
+  const fallbackChain = isUnavailable ? forward.filter((id) => !isUnavailable(id)) : forward;
+  if (position <= 0 && fallbackChain.length === resolved.fallbackChain.length) return resolved;
+  return { ...resolved, fallbackChain };
+}
 
-  // Layer 1: User Override (explicit — economy does not apply)
-  if (userOverride && userOverride.trim().length > 0) {
-    const tier = inferTierFromModel(userOverride);
-    return {
-      model: userOverride,
-      tier,
-      source: 'user-override',
-      fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
-    };
+/**
+ * Effective quality profile: session profile, then legacy `economyMode: true`,
+ * then the persistent profile, then `quality-first`. Unknown values are ignored.
+ */
+export function resolveModelProfile(
+  options: Pick<ModelResolutionOptions, 'profile' | 'sessionProfile' | 'economyMode'>,
+): ModelSelectionProfile {
+  if (isModelSelectionProfile(options.sessionProfile)) return options.sessionProfile;
+  if (options.economyMode === true) return 'economy';
+  if (isModelSelectionProfile(options.profile)) return options.profile;
+  return DEFAULT_MODEL_SELECTION_PROFILE;
+}
+
+function buildAvailabilityCheck(
+  unavailableModels?: Iterable<string>,
+  availableModels?: Iterable<string>,
+): ((id: string) => boolean) | undefined {
+  if (!unavailableModels && !availableModels) return undefined;
+  const unavailable = new Set(Array.from(unavailableModels ?? [], (id) => id.toLowerCase()));
+  const available = availableModels ? new Set(Array.from(availableModels, (id) => id.toLowerCase())) : undefined;
+  return (id: string) => {
+    const key = id.toLowerCase();
+    return unavailable.has(key) || (available !== undefined && !available.has(key));
+  };
+}
+
+/**
+ * Documented provenance-returning entry point for agent model resolution.
+ * Alias of {@link resolveModel} in `@bradygaster/squad-sdk/agents`; distinct
+ * from the root `resolveModel` export, which is a legacy adapter returning
+ * only the model id.
+ */
+export const resolveAgentModel: (options: ModelResolutionOptions) => ModelResolution = resolveModel;
+
+/**
+ * True when a layer value expresses a model preference. Empty values and the
+ * `auto` sentinel (any case, surrounding whitespace ignored) mean "no
+ * preference here; continue to the next layer".
+ */
+export function isModelPreference(value: string | null | undefined): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.toLowerCase() !== 'auto';
+}
+
+/** Persistent `.squad/config.json` model fields consulted by {@link persistentConfigModel}. */
+export interface PersistentModelConfig {
+  defaultModel?: unknown;
+  agentModelOverrides?: unknown;
+}
+
+/**
+ * Pick the persistent `config` layer model for an agent: its
+ * `agentModelOverrides` entry, otherwise `defaultModel`. `auto` at either
+ * field means no preference there.
+ */
+export function persistentConfigModel(
+  config: PersistentModelConfig | null | undefined,
+  agentName?: string,
+): string | undefined {
+  if (!config || typeof config !== 'object') return undefined;
+  const overrides = config.agentModelOverrides;
+  if (agentName && overrides && typeof overrides === 'object') {
+    const agentModel = (overrides as Record<string, unknown>)[agentName];
+    if (typeof agentModel === 'string' && isModelPreference(agentModel)) return agentModel.trim();
+  }
+  const defaultModel = config.defaultModel;
+  if (typeof defaultModel === 'string' && isModelPreference(defaultModel)) return defaultModel.trim();
+  return undefined;
+}
+
+function explicitModel(model: string, source: ModelResolutionSource, rationale: string): ResolvedModel {
+  const tier = inferTierFromModel(model);
+  return {
+    model,
+    tier,
+    source,
+    fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
+    rationale,
+  };
+}
+
+/**
+ * Layered base resolution. Explicit layers (user-override, config, session,
+ * charter) are never altered by the quality profile or economy mode.
+ */
+function resolveBaseModel(options: ModelResolutionOptions, profile: ModelSelectionProfile): ResolvedModel {
+  const { taskType, taskModel } = options;
+  const economyMode = profile === 'economy';
+  const userOverride = options.userOverride?.trim();
+  const configModel = options.configModel?.trim();
+  const sessionModel = options.sessionModel?.trim();
+  const charterPreference = options.charterPreference?.trim();
+
+  if (isModelPreference(userOverride)) {
+    return explicitModel(userOverride, 'user-override', `explicit per-spawn directive selected '${userOverride}'`);
   }
 
-  // Layer 2: Charter Preference (explicit — economy does not apply)
-  if (charterPreference && charterPreference.trim().length > 0 && charterPreference !== 'auto') {
-    const tier = inferTierFromModel(charterPreference);
-    return {
-      model: charterPreference,
-      tier,
-      source: 'charter',
-      fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
-    };
+  if (isModelPreference(configModel)) {
+    return explicitModel(configModel, 'config', `persistent .squad/config.json override selected '${configModel}'`);
   }
 
-  // Layer 3: Task-Aware Auto-Selection (economy mode applies)
-  const autoSelected = selectModelForTask(taskType, economyMode);
+  if (isModelPreference(sessionModel)) {
+    return explicitModel(sessionModel, 'session', `session model '${sessionModel}' inherited by this spawn`);
+  }
+
+  if (isModelPreference(charterPreference)) {
+    return explicitModel(charterPreference, 'charter', `charter preference selected '${charterPreference}'`);
+  }
+
+  // Layer 3: Task-Aware Auto-Selection (profile applies)
+  const autoSelected = isModelPreference(taskModel)
+    ? selectTaskModel(taskModel.trim(), economyMode)
+    : taskType
+      ? selectModelForTask(taskType, profile)
+      : undefined;
   if (autoSelected) {
     return autoSelected;
   }
 
-  // Layer 4: Default (economy mode applies)
+  // Layer 4: Default (profile applies). Economy keeps the cost-first default;
+  // quality-first and balanced use the standard chain head.
   const defaultModel = economyMode
     ? applyEconomyMode(MODELS.SELECTOR_DEFAULT)
-    : MODELS.SELECTOR_DEFAULT;
+    : MODELS.FALLBACK_CHAINS.standard[0];
   const defaultTier = inferTierFromModel(defaultModel);
   return {
     model: defaultModel,
     tier: defaultTier,
     source: 'default',
-    fallbackChain: [...MODELS.FALLBACK_CHAINS[defaultTier]],
+    fallbackChain: getFallbackChain(defaultTier, economyMode),
+    rationale: `${profile}: no override, session, charter, or task match; default '${defaultModel}'` +
+      (economyMode ? ' (economy profile)' : ''),
   };
 }
 
 /**
- * Select model based on task type, with optional economy mode substitution.
+ * Replace an unavailable model with the next available fallback-chain entry.
+ * A model found in its chain searches only the entries after it (never back
+ * toward the head); a model not in its chain searches the chain from the
+ * head. Under an active cost ceiling, catalog-known candidates above the
+ * ceiling are skipped: an automatic fallback is never an explicit opt-in.
+ * When no candidate remains, signal that the `model` parameter should be
+ * omitted so the platform default applies.
+ */
+function applyAvailabilityFallback(
+  resolved: ResolvedModel,
+  isUnavailable?: (id: string) => boolean,
+  ceiling?: { maxCategory: GitHubModelCategory; catalogMap: Map<string, GitHubModelCategory> },
+): ResolvedModel {
+  if (!isUnavailable || !isUnavailable(resolved.model)) return resolved;
+
+  const fallbackFrom = { model: resolved.model, source: resolved.source };
+  const position = resolved.fallbackChain.findIndex((id) => id.toLowerCase() === resolved.model.toLowerCase());
+  const start = position + 1; // 0 when the model is not in its chain
+  const withinCeiling = (id: string): boolean => {
+    if (!ceiling) return true;
+    const cat = ceiling.catalogMap.get(id.toLowerCase());
+    return cat === undefined || CATEGORY_ORDER[cat] <= CATEGORY_ORDER[ceiling.maxCategory];
+  };
+  const index = resolved.fallbackChain.findIndex(
+    (id, i) => i >= start && !isUnavailable(id) && withinCeiling(id),
+  );
+  const next = index >= 0 ? resolved.fallbackChain[index] : undefined;
+  const ceilingNote = ceiling ? ` within cost ceiling '${ceiling.maxCategory}'` : '';
+  if (next) {
+    return {
+      ...resolved,
+      model: next,
+      tier: inferTierFromModel(next),
+      source: 'fallback',
+      fallbackChain: resolved.fallbackChain.slice(index).filter(withinCeiling),
+      fallbackFrom,
+      rationale: `'${resolved.model}' (${resolved.source}) unavailable; fell back to '${next}'${ceilingNote}`,
+    };
+  }
+  return {
+    ...resolved,
+    model: '',
+    source: 'fallback',
+    fallbackChain: [],
+    fallbackFrom,
+    omitModel: true,
+    rationale: `'${resolved.model}' (${resolved.source}) unavailable and no later fallback-chain candidate is available${ceilingNote}; omit the model parameter for the platform default`,
+  };
+}
+
+/**
+ * Select model based on task type and quality profile. The economy profile
+ * also applies economy substitution.
  *
  * @param taskType - Type of task being performed
- * @param economyMode - When true, downgrade model to cheaper alternative
+ * @param profile - Effective quality profile
  * @returns Resolved model or undefined if no match
  */
-function selectModelForTask(taskType: TaskType, economyMode?: boolean): ResolvedModel | undefined {
-  let model: string | undefined;
-  let tier: ModelTier | undefined;
+function selectModelForTask(taskType: TaskType, profile: ModelSelectionProfile): ResolvedModel | undefined {
+  const taskTier = PROFILE_TASK_TIERS[profile][taskType];
+  if (!taskTier) return undefined;
 
-  switch (taskType) {
-    case 'code':
-      model = 'gpt-5.6-terra';
-      tier = 'standard';
-      break;
-    case 'prompt':
-      model = 'gpt-5.6-terra';
-      tier = 'standard';
-      break;
-    case 'visual':
-      model = 'gpt-5.6-sol';
-      tier = 'premium';
-      break;
-    case 'docs':
-    case 'planning':
-    case 'mechanical':
-      model = 'gpt-5.6-luna';
-      tier = 'fast';
-      break;
-    default:
-      return undefined;
+  if (profile === 'hydrafusion' && HYDRAFUSION_PROFILE_TASKS.has(taskType)) {
+    return {
+      model: HYDRAFUSION_MODEL_ID,
+      tier: 'premium',
+      source: 'task-auto',
+      fallbackChain: [HYDRAFUSION_MODEL_ID, ...MODELS.FALLBACK_CHAINS.premium],
+      rationale: `hydrafusion: ${taskType} task → opt-in '${HYDRAFUSION_MODEL_ID}', then the quality-first premium chain`,
+    };
   }
+  const economyMode = profile === 'economy';
+
+  // Task-aware picks are the head of the tier's fallback chain, so the
+  // catalog in runtime constants stays the single source of model ids.
+  let model: string = MODELS.FALLBACK_CHAINS[taskTier][0];
+  let tier: ModelTier = taskTier;
 
   if (economyMode) {
     model = applyEconomyMode(model);
@@ -181,9 +451,109 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
     model,
     tier,
     source: 'task-auto',
-    fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
+    fallbackChain: getFallbackChain(tier, economyMode === true),
+    rationale: `${profile}: ${taskType} task → ${taskTier} tier '${model}'` + (economyMode ? ' (economy profile)' : ''),
   };
 }
+
+/** Caller-supplied task model (legacy `taskModel`), with optional economy substitution. */
+function selectTaskModel(taskModel: string, economyMode?: boolean): ResolvedModel {
+  const model = economyMode ? applyEconomyMode(taskModel) : taskModel;
+  const tier = inferTierFromModel(model);
+  return {
+    model,
+    tier,
+    source: 'task-auto',
+    fallbackChain: getFallbackChain(tier, economyMode === true),
+    rationale: `task-aware model '${model}'` + (economyMode ? ' (economy profile)' : ''),
+  };
+}
+
+function getFallbackChain(tier: ModelTier, includeCheaperTiers: boolean): string[] {
+  const chain = [...MODELS.FALLBACK_CHAINS[tier]];
+  if (!includeCheaperTiers) return chain;
+
+  for (const cheaperTier of Object.keys(TIER_ORDER) as ModelTier[]) {
+    if (TIER_ORDER[cheaperTier] > TIER_ORDER[tier]) {
+      chain.push(...MODELS.FALLBACK_CHAINS[cheaperTier]);
+    }
+  }
+  return chain;
+}
+
+/** quality-first task → tier table, shared by the opt-in `hydrafusion` profile. */
+const QUALITY_FIRST_TASK_TIERS: Readonly<Record<TaskType, ModelTier>> = {
+  architecture: 'premium',
+  research: 'premium',
+  verification: 'premium',
+  review: 'premium',
+  security: 'premium',
+  design: 'premium',
+  visual: 'premium',
+  code: 'standard',
+  prompt: 'standard',
+  docs: 'standard',
+  writing: 'standard',
+  planning: 'standard',
+  mechanical: 'fast',
+};
+
+/**
+ * Quality-sensitive task types that the opt-in `hydrafusion` profile sends to
+ * {@link HYDRAFUSION_MODEL_ID} first (#2014). Other tasks, including Scribe and
+ * other mechanical work, follow `quality-first` unchanged.
+ */
+const HYDRAFUSION_PROFILE_TASKS: ReadonlySet<TaskType> = new Set<TaskType>([
+  'architecture',
+  'research',
+  'verification',
+  'review',
+  'security',
+  'design',
+]);
+
+/**
+ * Task → tier per quality profile (#1598). quality-first sends
+ * quality-sensitive non-code work to premium even when no code is written;
+ * economy keeps the historical cost-first table and then substitutes via
+ * {@link applyEconomyMode}. The opt-in `hydrafusion` profile uses the
+ * quality-first tiers; {@link selectModelForTask} puts `hydrafusion` first for
+ * quality-sensitive tasks.
+ */
+export const PROFILE_TASK_TIERS: Readonly<Record<ModelSelectionProfile, Readonly<Record<TaskType, ModelTier>>>> = {
+  'quality-first': QUALITY_FIRST_TASK_TIERS,
+  hydrafusion: QUALITY_FIRST_TASK_TIERS,
+  balanced: {
+    architecture: 'premium',
+    verification: 'premium',
+    review: 'premium',
+    security: 'premium',
+    design: 'premium',
+    visual: 'premium',
+    research: 'standard',
+    code: 'standard',
+    prompt: 'standard',
+    docs: 'standard',
+    writing: 'standard',
+    planning: 'fast',
+    mechanical: 'fast',
+  },
+  economy: {
+    architecture: 'premium',
+    verification: 'premium',
+    review: 'premium',
+    security: 'premium',
+    design: 'premium',
+    visual: 'premium',
+    code: 'standard',
+    prompt: 'standard',
+    research: 'fast',
+    docs: 'fast',
+    writing: 'fast',
+    planning: 'fast',
+    mechanical: 'fast',
+  },
+};
 
 export function inferTierFromModel(model: string): ModelTier {
   const lowerModel = model.toLowerCase();
@@ -275,7 +645,8 @@ function findInCeilingReplacement(
   };
   add(base.model);
   for (const id of base.fallbackChain) add(id);
-  for (const info of MODEL_CATALOG) add(info.id);
+  // Preview entries are opt-in only and never an implicit replacement (#2014).
+  for (const info of MODEL_CATALOG) if (!isPreviewModel(info.id)) add(info.id);
 
   for (const id of candidates) {
     const cat = catalogMap.get(id);
@@ -290,7 +661,7 @@ function findInCeilingReplacement(
  * Branches:
  * - uncategorized model ⇒ passthrough (no policy action).
  * - within ceiling ⇒ prune the fallback chain to the ceiling.
- * - over ceiling + EXPLICIT source (user-override/charter) ⇒ warn-and-allow;
+ * - over ceiling + EXPLICIT source (user-override/config/session/charter) ⇒ warn-and-allow;
  *   the explicit model is kept as chain head, the rest pruned.
  * - over ceiling + IMPLICIT source (task-auto/default) ⇒ deterministic
  *   downgrade to the best in-ceiling model.
@@ -320,11 +691,18 @@ export function finalizeResolvedModel(
     };
   }
 
-  const isExplicit = base.source === 'user-override' || base.source === 'charter';
+  const isExplicit =
+    base.source === 'user-override' ||
+    base.source === 'config' ||
+    base.source === 'session' ||
+    base.source === 'charter';
 
   if (isExplicit) {
-    // AC6: honor the explicit over-ceiling selection, but warn loudly.
-    const prunedRest = pruneChainToCeiling(base.fallbackChain, maxCategory, catalogMap).filter(
+    // AC6: honor the explicit over-ceiling selection, but warn loudly. Keep
+    // only chain entries after the model's own position so availability
+    // fallback stays forward-only (never back toward the chain head).
+    const position = base.fallbackChain.findIndex((id) => id.toLowerCase() === base.model.toLowerCase());
+    const prunedRest = pruneChainToCeiling(base.fallbackChain.slice(position + 1), maxCategory, catalogMap).filter(
       (id) => id !== base.model,
     );
     return {
@@ -356,6 +734,7 @@ export function finalizeResolvedModel(
       tier: newTier,
       source: base.source,
       fallbackChain: prunedChain.length > 0 ? prunedChain : [replacement],
+      rationale: `${base.rationale ?? base.source}; downgraded to '${replacement}' to meet cost ceiling '${maxCategory}'`,
       policy: {
         action: 'downgraded-to-ceiling',
         originalModel: base.model,
@@ -408,15 +787,28 @@ export interface FallbackAttempt {
 
 export interface FallbackResult<T> {
   value: T;
+  /** Model that succeeded; empty when the platform default was used. */
   model: string;
   tier: ModelTier;
   attempts: FallbackAttempt[];
   didFallback: boolean;
+  /** True when the request ran without a `model` parameter (platform default). */
+  omitModel?: boolean;
 }
 
 export interface FallbackExecutorConfig {
   allowCrossTier?: boolean;
   eventBus?: EventBus;
+}
+
+/** Per-call options for {@link ModelFallbackExecutor.execute}. */
+export interface FallbackExecuteOptions<T> {
+  /**
+   * Runs the request without a `model` parameter so the platform picks its
+   * default. Called instead of the model callback when the resolution has
+   * `omitModel` (every fallback candidate was unavailable).
+   */
+  platformDefault?: () => Promise<T>;
 }
 
 export class ModelFallbackExecutor {
@@ -433,14 +825,35 @@ export class ModelFallbackExecutor {
     resolved: ResolvedModel,
     agentName: string,
     fn: (model: string) => Promise<T>,
+    options: FallbackExecuteOptions<T> = {},
   ): Promise<FallbackResult<T>> {
     const attempts: FallbackAttempt[] = [];
     const originalTier = resolved.tier;
+    const economyAutoResolution =
+      resolved.profile === 'economy' &&
+      isAutomaticModelResolution(resolved);
+    if (resolved.omitModel) {
+      // Never send an empty model id: run model-less, or fail before calling fn.
+      if (!options.platformDefault) {
+        throw new Error(
+          `No available model for agent '${agentName}' (resolution has omitModel); ` +
+          `pass a platformDefault callback to run without a model parameter.`,
+        );
+      }
+      const value = await options.platformDefault();
+      return { value, model: '', tier: originalTier, attempts, didFallback: false, omitModel: true };
+    }
     const candidates = this.buildCandidateList(resolved);
 
     for (const candidate of candidates) {
       const candidateTier = inferTierFromModel(candidate);
-      if (!isTierFallbackAllowed(originalTier, candidateTier, this.allowCrossTier)) {
+      const allowedByEconomyProfile =
+        economyAutoResolution &&
+        TIER_ORDER[candidateTier] >= TIER_ORDER[originalTier];
+      const tierAllowed = economyAutoResolution
+        ? allowedByEconomyProfile
+        : isTierFallbackAllowed(originalTier, candidateTier, this.allowCrossTier);
+      if (!tierAllowed) {
         continue;
       }
       try {
@@ -474,8 +887,8 @@ export class ModelFallbackExecutor {
     const seen = new Set<string>();
     const result: string[] = [];
     const add = (m: string) => { if (!seen.has(m)) { seen.add(m); result.push(m); } };
-    add(resolved.model);
-    for (const fb of resolved.fallbackChain) add(fb);
+    if (resolved.model) add(resolved.model);
+    for (const fb of resolved.fallbackChain) if (fb) add(fb);
     return result;
   }
 
@@ -483,4 +896,9 @@ export class ModelFallbackExecutor {
     if (!this.eventBus) return;
     await this.eventBus.emit({ type: type as any, payload, timestamp: new Date() });
   }
+}
+
+function isAutomaticModelResolution(resolved: ResolvedModel): boolean {
+  const source = resolved.source === 'fallback' ? resolved.fallbackFrom?.source : resolved.source;
+  return source === 'task-auto' || source === 'default';
 }

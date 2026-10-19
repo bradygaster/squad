@@ -48,10 +48,10 @@ squad upgrade --self
    Detected package manager: npm
    Running: npm install -g @bradygaster/squad@latest
 
-✅ Squad CLI upgraded to v1.0.1
+✅ Squad CLI upgraded to v1.1.0
    Running: squad upgrade (to refresh repo templates)
 
-✅ Repo templates upgraded to v1.0.1
+✅ Repo templates upgraded to v1.1.0
 ```
 
 ---
@@ -187,7 +187,7 @@ squad --version
 
 **Output:**
 ```
-@bradygaster/squad v1.0.1
+@bradygaster/squad v1.1.0
 ```
 
 Check if a newer version is available:
@@ -199,7 +199,7 @@ npm outdated -g @bradygaster/squad
 **Output:**
 ```
 Package             Current  Wanted  Latest  Location
-@bradygaster/squad  1.0.0    1.0.1   1.0.1   global
+@bradygaster/squad  1.0.1    1.1.0   1.1.0   global
 ```
 
 ---
@@ -247,7 +247,7 @@ Honors `SQUAD_NO_UPDATE_CHECK=1` — exits `0` with no output (or `{}` with `--j
 
 | Channel | Tag | Description |
 |---------|-----|-------------|
-| **Stable** | `@latest` | Production-ready releases (e.g., `v1.0.1`) |
+| **Stable** | `@latest` | Production-ready releases (e.g., `v1.1.0`) |
 | **Insider** | `@insider` | Prerelease builds for testing (e.g., `v1.1.0-insider.3`) |
 
 **When to use insider:**

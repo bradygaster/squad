@@ -14,8 +14,9 @@ import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolveGlobalSquadPath, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
-import { resolveSquadStateMcpSpec } from './mcp-spec.js';
+import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
+import { syncCopilotInstructionsFile } from './managed-file.js';
 import { getTemplatesDir } from './templates.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 import {
@@ -451,7 +452,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         // stale project-level entry left by the SDK init writer in
         // `.copilot/mcp-config.json`. No HOME modifications.
         try {
-          const mcpSpec = await resolveSquadStateMcpSpec(getPackageVersion());
+          const mcpSpec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(getPackageVersion()));
           const rootResult = ensureSquadStateMcpInRoot(dest, getPackageVersion(), mcpSpec);
           if (rootResult.written) {
             success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
@@ -474,7 +475,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // for vanilla `squad init` (no --state-backend flag) so the squad_state
   // MCP entry is reachable regardless of init path. No HOME modifications.
   try {
-    const mcpSpec = await resolveSquadStateMcpSpec(version);
+    const mcpSpec = projectSquadStateMcpSpec(await resolveSquadStateMcpSpec(version));
     const rootResult = ensureSquadStateMcpInRoot(dest, version, mcpSpec);
     if (rootResult.written) {
       success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
@@ -546,9 +547,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
           const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
           const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
 
-          if (storage.existsSync(instructionsSrc) && !storage.existsSync(instructionsDest)) {
+          if (storage.existsSync(instructionsSrc)) {
             storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
-            storage.copySync(instructionsSrc, instructionsDest);
+            syncCopilotInstructionsFile(instructionsSrc, instructionsDest);
             success('.github/copilot-instructions.md');
           }
         } else {

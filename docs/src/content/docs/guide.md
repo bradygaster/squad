@@ -74,7 +74,7 @@ methods vendor Node.js.
 
 Running `squad init` creates the `.squad/` directory structure, copies `squad.agent.md` into `.github/agents/`, and installs GitHub Actions workflows into `.github/workflows/`. Your team is created at runtime when you first talk to Squad.
 
-**Note:** When you select Squad from the agent picker, you'll see the version number in the name (e.g., "Squad (v1.0.1)"). This helps you confirm which version is installed.
+**Note:** When you select Squad from the agent picker, you'll see the version number in the name (e.g., "Squad (v1.1.0)"). This helps you confirm which version is installed.
 
 ### GitHub CLI authentication
 

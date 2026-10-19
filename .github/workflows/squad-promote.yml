@@ -9,6 +9,11 @@ on:
         default: 'false'
         type: choice
         options: ['false', 'true']
+      promotion_branch:
+        description: 'Existing validated in-repository promotion branch to open as a bot-authored PR'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}
@@ -19,7 +24,156 @@ permissions:
   contents: write
 
 jobs:
+  open-existing-promotion:
+    if: ${{ inputs.promotion_branch != '' }}
+    name: Open validated promotion PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Validate promotion branch input
+        env:
+          BRANCH: ${{ inputs.promotion_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${BRANCH}" =~ ^chore/promote(-v)?-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Promotion branch must match chore/promote-X.Y.Z or chore/promote-vX.Y.Z."
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" --silent
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.promotion_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Validate existing promotion tree
+        id: validate
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor origin/main HEAD || {
+            echo "::error::Promotion branch must descend from the current main branch."
+            exit 1
+          }
+
+          forbidden="$(git ls-files | grep -E '^(\.(ai-team|squad|ai-team-templates)/|team-docs/|docs/proposals/)' || true)"
+          if [ -n "${forbidden}" ]; then
+            echo "::error::Forbidden internal files remain in the promotion branch:"
+            printf '%s\n' "${forbidden}"
+            exit 1
+          fi
+
+          changesets="$(git ls-files '.changeset/*.md' | grep -v '^.changeset/README.md$' || true)"
+          if [ -n "${changesets}" ]; then
+            echo "::error::Consumed changesets remain in the promotion branch:"
+            printf '%s\n' "${changesets}"
+            exit 1
+          fi
+
+          version="$(node -p 'require("./package.json").version')"
+          stable_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "${version}" =~ ${stable_re} ]]; then
+            echo "::error::Stable promotion requires a MAJOR.MINOR.PATCH version, got '${version}'."
+            exit 1
+          fi
+
+          for manifest in packages/squad-sdk/package.json packages/squad-cli/package.json; do
+            package_version="$(node -p "require('./${manifest}').version")"
+            if [ "${package_version}" != "${version}" ]; then
+              echo "::error::${manifest} version '${package_version}' does not match root version '${version}'."
+              exit 1
+            fi
+          done
+
+          lock_root="$(node -p 'require("./package-lock.json").version')"
+          lock_sdk="$(node -p 'require("./package-lock.json").packages["packages/squad-sdk"].version')"
+          lock_cli="$(node -p 'require("./package-lock.json").packages["packages/squad-cli"].version')"
+          if [ "${lock_root}" != "${version}" ] || [ "${lock_sdk}" != "${version}" ] || [ "${lock_cli}" != "${version}" ]; then
+            echo "::error::package-lock.json package versions must all match '${version}'."
+            exit 1
+          fi
+
+          expected_sdk_dependency=">=${version}"
+          sdk_dependency="$(node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']")"
+          lock_dependency="$(node -p "require('./package-lock.json').packages['packages/squad-cli'].dependencies['@bradygaster/squad-sdk']")"
+          if [ "${sdk_dependency}" != "${expected_sdk_dependency}" ] || [ "${lock_dependency}" != "${expected_sdk_dependency}" ]; then
+            echo "::error::CLI SDK dependency floors must both be '${expected_sdk_dependency}'."
+            exit 1
+          fi
+
+          grep -Fq "## [${version}]" CHANGELOG.md || {
+            echo "::error::Version ${version} is missing from CHANGELOG.md."
+            exit 1
+          }
+
+          test -z "$(git status --porcelain)" || {
+            echo "::error::Promotion branch checkout is not clean."
+            git status --short
+            exit 1
+          }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build release tree
+        env:
+          SKIP_BUILD_BUMP: '1'
+        run: npm run build
+
+      - name: Run release tests
+        run: node --test test/*.test.cjs
+
+      - name: Verify validation did not mutate the branch
+        run: |
+          test -z "$(git status --porcelain)" || {
+            echo "::error::Build or tests modified the promotion branch."
+            git status --short
+            exit 1
+          }
+
+      - name: Open bot-authored promotion PR
+        if: inputs.dry_run == 'false'
+        env:
+          BRANCH: ${{ inputs.promotion_branch }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          existing_url="$(gh pr list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --base main \
+            --head "${BRANCH}" \
+            --json url \
+            --jq '.[0].url // ""')"
+          if [ -n "${existing_url}" ]; then
+            echo "Promotion PR already exists: ${existing_url}"
+            exit 0
+          fi
+
+          gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore(release): promote dev to main (v${VERSION})" \
+            --body "Bot-authored promotion PR for validated Squad v${VERSION} release branch \`${BRANCH}\`.
+
+          Validation run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          The repository's required pull-request checks may initially wait for a maintainer to approve workflow execution because this PR was created with \`GITHUB_TOKEN\`."
+
   dev-to-main:
+    if: ${{ inputs.promotion_branch == '' }}
     name: Promote sanitized dev to main
     runs-on: ubuntu-latest
     steps:
@@ -28,7 +182,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
           cache: 'npm'

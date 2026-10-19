@@ -1,3 +1,4 @@
+<!-- squad:copilot-instructions:start -->
 # Copilot Coding Agent — Squad Instructions
 
 You are working on a project that uses **Squad**, an AI team framework. When picking up issues autonomously, follow these guidelines.
@@ -62,3 +63,5 @@ If you make a decision that affects other team members, write it to:
 .squad/decisions/inbox/copilot-{brief-slug}.md
 ```
 The Scribe will merge it into the shared decisions file.
+<!-- squad:copilot-instructions:end -->
+

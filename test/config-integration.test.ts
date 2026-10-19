@@ -905,7 +905,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
 
   it('ModelRegistry validates models from compiled config', () => {
     const registry = new ModelRegistry();
-    expect(registry.isModelAvailable('claude-sonnet-4.5')).toBe(true);
+    expect(registry.isModelAvailable('claude-sonnet-5.5')).toBe(true);
     expect(registry.isModelAvailable('nonexistent-model')).toBe(false);
 
     const chain = registry.getFallbackChain('standard');
