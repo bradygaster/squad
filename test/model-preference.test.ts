@@ -30,7 +30,18 @@ import {
   writeAgentContextTierOverrides,
   resolveContextTier,
   clampContextTier,
+  CATEGORY_ORDER,
+  type GitHubModelCategory,
 } from '@bradygaster/squad-sdk/config';
+import {
+  resolveAgentModel,
+  resolveModel as centralResolveModel,
+  MODEL_RESOLUTION_PRECEDENCE,
+  buildCatalogCategoryMap,
+  type ModelResolutionOptions,
+  type ResolvedModel,
+} from '@bradygaster/squad-sdk/agents';
+import { MODELS } from '@bradygaster/squad-sdk';
 
 // Temp directory for each test
 let squadDir: string;
@@ -233,8 +244,8 @@ describe('writeAgentModelOverrides', () => {
 // ============================================================================
 
 describe('resolveModel', () => {
-  it('Layer 4: returns default Luna when nothing is set', () => {
-    expect(resolveModel({})).toBe('gpt-5.6-luna');
+  it('Layer 4: returns the quality-first standard default when nothing is set', () => {
+    expect(resolveModel({})).toBe(MODELS.FALLBACK_CHAINS.standard[0]);
   });
 
   it('Layer 3: task model wins over default', () => {
@@ -1016,5 +1027,366 @@ describe('clampContextTier', () => {
 
   it('returns fallback for an unrecognized tier value', () => {
     expect(clampContextTier('turbo', ['default', 'long_context'])).toBe('default');
+  });
+});
+
+// ============================================================================
+// Central model resolver (agents/model-selector) — #1720
+// ============================================================================
+
+describe('central resolver: config, session, fallback sources + rationale (#1720)', () => {
+  type Opts = ModelResolutionOptions;
+  const describeCall = (opts: Opts) =>
+    `resolveAgentModel(${JSON.stringify(opts, (_k, v) => (v instanceof Set ? [...v] : v))})`;
+
+  function expectResolution(opts: Opts, model: string, source: string): ResolvedModel {
+    const result = resolveAgentModel(opts);
+    expect(
+      { model: result.model, source: result.source },
+      `${describeCall(opts)} should pick '${model}' from '${source}', got '${result.model}' from '${result.source}'`,
+    ).toEqual({ model, source });
+    expect(
+      typeof result.rationale === 'string' && result.rationale.length > 0,
+      `${describeCall(opts)} returned no rationale`,
+    ).toBe(true);
+    return result;
+  }
+
+  it('exports the documented precedence order', () => {
+    expect(
+      [...MODEL_RESOLUTION_PRECEDENCE],
+      'MODEL_RESOLUTION_PRECEDENCE must be user-override > config > session > charter > task-auto > default',
+    ).toEqual(['user-override', 'config', 'session', 'charter', 'task-auto', 'default']);
+  });
+
+  it('config source: persistent .squad/config.json model wins over session, charter and task', () => {
+    const r = expectResolution(
+      { configModel: 'cfg-model', sessionModel: 'sess-model', charterPreference: 'charter-model', taskType: 'code' },
+      'cfg-model',
+      'config',
+    );
+    expect(r.rationale, `config rationale should name the model and config file: '${r.rationale}'`).toMatch(
+      /config\.json.*'cfg-model'/,
+    );
+  });
+
+  it('session source: session model wins over charter and task', () => {
+    const r = expectResolution(
+      { sessionModel: 'sess-model', charterPreference: 'charter-model', taskType: 'visual' },
+      'sess-model',
+      'session',
+    );
+    expect(r.rationale, `session rationale should say the model is inherited: '${r.rationale}'`).toMatch(
+      /session model 'sess-model' inherited/,
+    );
+  });
+
+  it('user-override still beats config and session', () => {
+    expectResolution(
+      { userOverride: 'spawn-model', configModel: 'cfg-model', sessionModel: 'sess-model' },
+      'spawn-model',
+      'user-override',
+    );
+  });
+
+  it('applies every precedence layer in order as higher layers are removed', () => {
+    const full: Opts = {
+      userOverride: 'L-user',
+      configModel: 'L-config',
+      sessionModel: 'L-session',
+      charterPreference: 'L-charter',
+      taskType: 'code',
+    };
+    const keys: (keyof Opts)[] = ['userOverride', 'configModel', 'sessionModel', 'charterPreference', 'taskType'];
+    const observed: string[] = [];
+    const opts: Opts = { ...full };
+    for (const key of [...keys, undefined]) {
+      const result = resolveAgentModel(opts);
+      observed.push(`${result.source}`);
+      expect(result.rationale, `${describeCall(opts)} returned no rationale`).toBeTruthy();
+      if (key) delete opts[key];
+    }
+    expect(observed, `sources observed while peeling layers off ${JSON.stringify(full)}`).toEqual([
+      ...MODEL_RESOLUTION_PRECEDENCE,
+    ]);
+  });
+
+  it("'auto' at config or session means no preference and falls through", () => {
+    expectResolution({ configModel: 'auto', sessionModel: 'auto', charterPreference: 'charter-model' }, 'charter-model', 'charter');
+  });
+
+  it('session inheritance: every sub-agent spawn inherits the session model, whatever its charter or task', () => {
+    const sessionModel = 'hydrafusion';
+    const spawns: Opts[] = [
+      { charterPreference: 'auto', taskType: 'docs' },
+      { charterPreference: 'gpt-5.6-sol', taskType: 'visual' },
+      { taskType: 'code', economyMode: true },
+      { taskType: 'mechanical' },
+      {},
+    ];
+    for (const spawn of spawns) {
+      expectResolution({ ...spawn, sessionModel }, sessionModel, 'session');
+    }
+  });
+
+  it('task-auto and default results carry a rationale', () => {
+    const task = expectResolution({ taskType: 'mechanical' }, MODELS.FALLBACK_CHAINS.fast[0], 'task-auto');
+    expect(task.rationale, `task-auto rationale should name the task type: '${task.rationale}'`).toMatch(/mechanical task/);
+    const def = expectResolution({}, MODELS.FALLBACK_CHAINS.standard[0], 'default');
+    expect(def.rationale, `default rationale should say nothing matched: '${def.rationale}'`).toMatch(/default/);
+  });
+
+  it('fallback source: an unavailable chosen model is replaced by the next available chain entry', () => {
+    const chain = MODELS.FALLBACK_CHAINS.standard;
+    const opts: Opts = { charterPreference: chain[0], unavailableModels: [chain[0], chain[1]] };
+    const r = expectResolution(opts, chain[2], 'fallback');
+    expect(r.fallbackFrom, `${describeCall(opts)} should record what it fell back from`).toEqual({
+      model: chain[0],
+      source: 'charter',
+    });
+    expect(r.rationale, `fallback rationale should name the unavailable model: '${r.rationale}'`).toContain(
+      `'${chain[0]}' (charter) unavailable`,
+    );
+  });
+
+  it('fallback source: an exhausted chain asks the caller to omit the model parameter', () => {
+    const chain = MODELS.FALLBACK_CHAINS.fast;
+    const opts: Opts = { taskType: 'mechanical', unavailableModels: [...chain] };
+    const r = resolveAgentModel(opts);
+    expect(
+      { source: r.source, omitModel: r.omitModel, model: r.model },
+      `${describeCall(opts)} should signal omit-model fallback`,
+    ).toEqual({ source: 'fallback', omitModel: true, model: '' });
+  });
+
+  it('available models are not touched by the fallback step', () => {
+    expectResolution({ sessionModel: 'sess-model', unavailableModels: ['other-model'] }, 'sess-model', 'session');
+  });
+});
+
+// ============================================================================
+// Central resolver revision: forward fallback, sentinel, legacy adapter (#1720)
+// ============================================================================
+
+describe('central resolver: forward fallback from the chosen chain position (#1720)', () => {
+  const chain = MODELS.FALLBACK_CHAINS.standard;
+
+  it('a middle-chain pick falls forward to the next available candidate, never back to the head', () => {
+    const opts: ModelResolutionOptions = { charterPreference: chain[2], taskType: 'code', unavailableModels: [chain[2]] };
+    const r = resolveAgentModel(opts);
+    expect(
+      { model: r.model, source: r.source },
+      `resolveModel(charterPreference=${chain[2]}, unavailable=[${chain[2]}]) must pick next candidate ${chain[3]}, got '${r.model}' (${r.source})`,
+    ).toEqual({ model: chain[3], source: 'fallback' });
+    expect(r.fallbackChain[0], `fallbackChain must start at the chosen fallback '${chain[3]}'`).toBe(chain[3]);
+  });
+
+  it('skips unavailable subsequent candidates and keeps searching forward', () => {
+    const opts: ModelResolutionOptions = { charterPreference: chain[1], taskType: 'code', unavailableModels: [chain[1], chain[2]] };
+    const r = resolveAgentModel(opts);
+    expect(r.model, `charter ${chain[1]} with ${chain[1]},${chain[2]} unavailable must pick ${chain[3]}, got '${r.model}'`).toBe(chain[3]);
+  });
+
+  it('the last chain entry being unavailable exhausts the chain: omit the model rather than wrapping to the head', () => {
+    const last = chain[chain.length - 1]!;
+    const r = resolveAgentModel({ charterPreference: last, taskType: 'code', unavailableModels: [last] });
+    expect(
+      { omitModel: r.omitModel, model: r.model, source: r.source },
+      `last-entry '${last}' unavailable must omit the model param, got '${r.model}' omit=${r.omitModel}`,
+    ).toEqual({ omitModel: true, model: '', source: 'fallback' });
+    expect(r.fallbackFrom, 'exhausted fallback must still record what it fell back from').toEqual({ model: last, source: 'charter' });
+  });
+
+  it('an out-of-chain pick searches its tier chain from the head', () => {
+    const r = resolveAgentModel({ sessionModel: 'custom-out-of-chain', taskType: 'code', unavailableModels: ['custom-out-of-chain', chain[0]] });
+    expect(r.model, `out-of-chain 'custom-out-of-chain' unavailable must pick first available ${chain[1]}, got '${r.model}'`).toBe(chain[1]);
+    expect(r.fallbackFrom).toEqual({ model: 'custom-out-of-chain', source: 'session' });
+  });
+});
+
+describe("central resolver: 'auto' sentinel at every layer (#1720)", () => {
+  it("userOverride 'auto' means no preference and falls through to config", () => {
+    const opts: ModelResolutionOptions = { userOverride: 'auto', configModel: 'saved-model', taskType: 'docs' };
+    const r = resolveAgentModel(opts);
+    expect(
+      { model: r.model, source: r.source },
+      `resolveModel(${JSON.stringify(opts)}) must skip the 'auto' override; got '${r.model}' (${r.source})`,
+    ).toEqual({ model: 'saved-model', source: 'config' });
+  });
+
+  it("'auto' is case- and whitespace-insensitive at every explicit layer", () => {
+    const opts: ModelResolutionOptions = {
+      userOverride: ' AUTO ',
+      configModel: 'Auto',
+      sessionModel: 'auto ',
+      charterPreference: 'AUTO',
+      taskType: 'mechanical',
+    };
+    const r = resolveAgentModel(opts);
+    expect(
+      { model: r.model, source: r.source },
+      `resolveModel(${JSON.stringify(opts)}) must treat every 'auto' as no preference; got '${r.model}' (${r.source})`,
+    ).toEqual({ model: MODELS.FALLBACK_CHAINS.fast[0], source: 'task-auto' });
+  });
+});
+
+describe('legacy config resolveModel delegates to the central resolver (#1720)', () => {
+  it("charter 'auto' with a task model returns the task model, not the literal sentinel", () => {
+    const taskModel = MODELS.FALLBACK_CHAINS.fast[0];
+    const got = resolveModel({ charterPreference: 'auto', taskModel });
+    expect(got, `legacy resolveModel({charterPreference:'auto', taskModel:'${taskModel}'}) returned '${got}'`).toBe(taskModel);
+  });
+
+  it("'auto' session directive and config defaultModel fall through", () => {
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify({ version: 1, defaultModel: 'auto', agentModelOverrides: { fenster: 'auto' } }));
+    const got = resolveModel({ agentName: 'fenster', squadDir, sessionDirective: 'auto', charterPreference: 'charter-model' });
+    expect(got, `legacy resolveModel with every higher layer 'auto' must pick the charter model, got '${got}'`).toBe('charter-model');
+  });
+
+  it('agrees with the central resolver for persistent config', () => {
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify({ version: 1, agentModelOverrides: { fenster: 'persisted' } }));
+    const legacy = resolveModel({ agentName: 'fenster', squadDir, sessionDirective: 'sess', charterPreference: 'charter' });
+    const central = resolveAgentModel({ configModel: 'persisted', sessionModel: 'sess', charterPreference: 'charter', taskType: 'code' });
+    expect(legacy, `legacy '${legacy}' must equal central '${central.model}'`).toBe(central.model);
+  });
+});
+
+describe('documented resolver entry point (#1720)', () => {
+  it('@bradygaster/squad-sdk/agents exports resolveAgentModel as the same function as its resolveModel', () => {
+    expect(typeof resolveAgentModel, '@bradygaster/squad-sdk/agents must export resolveAgentModel').toBe('function');
+    expect(resolveAgentModel, 'resolveAgentModel must be an alias of the agents resolveModel, not a fork').toBe(centralResolveModel);
+  });
+
+  it('model-selection-reference names the subpath that exports resolveAgentModel with provenance', async () => {
+    const reference = readFileSync(join(import.meta.dirname, '..', '.squad-templates', 'model-selection-reference.md'), 'utf8');
+    const match = reference.match(/`resolveAgentModel` (?:from|in) `(@bradygaster\/squad-sdk[^`]*)`/);
+    expect(match, 'model-selection-reference.md must name the module that exports resolveAgentModel').toBeTruthy();
+    const mod = (await import(match![1]!)) as { resolveAgentModel?: (o: unknown) => unknown };
+    expect(typeof mod.resolveAgentModel, `${match![1]} must export resolveAgentModel`).toBe('function');
+    const r = mod.resolveAgentModel!({ taskType: 'docs', charterPreference: 'auto' }) as ResolvedModel;
+    expect(
+      typeof r === 'object' && r !== null && typeof r.source === 'string' && typeof r.rationale === 'string',
+      `${match![1]} resolveAgentModel must return {model, source, rationale}; got ${JSON.stringify(r)}`,
+    ).toBe(true);
+  });
+});
+
+describe('cost policy composes with forward-only availability fallback (#1720)', () => {
+  const versatile = { costPolicy: { maxCategory: 'versatile' as const } };
+  const chain = MODELS.FALLBACK_CHAINS.standard;
+
+  it('explicit over-ceiling pick that is unavailable never falls back to an earlier chain entry', () => {
+    const opts: ModelResolutionOptions = { userOverride: 'gpt-5.4', config: versatile, unavailableModels: ['gpt-5.4'] };
+    const r = resolveAgentModel(opts);
+    const earlier = chain.slice(0, chain.indexOf('gpt-5.4'));
+    expect(earlier, `${JSON.stringify(opts)} chose '${r.model}', which precedes 'gpt-5.4' in ${JSON.stringify(chain)}`).not.toContain(r.model);
+    // Every entry after 'gpt-5.4' is over the versatile ceiling, so the forward
+    // search exhausts and omits the model rather than stepping back to the head.
+    expect(
+      { model: r.model, source: r.source, omitModel: r.omitModel, fallbackFrom: r.fallbackFrom },
+      `${JSON.stringify(opts)} must not wrap back past 'gpt-5.4' in ${JSON.stringify(chain)}`,
+    ).toEqual({ model: '', source: 'fallback', omitModel: true, fallbackFrom: { model: 'gpt-5.4', source: 'user-override' } });
+    expect(r.policy?.action).toBe('warn-allow-explicit');
+  });
+
+  it('explicit over-ceiling pick with every later in-ceiling entry unavailable omits the model instead of wrapping', () => {
+    const opts: ModelResolutionOptions = {
+      userOverride: 'gpt-5.4', config: versatile, unavailableModels: ['gpt-5.4', 'claude-sonnet-4.5'],
+    };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, omitModel: r.omitModel }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: '', omitModel: true });
+  });
+
+  it('session over-ceiling pick keeps the forward cursor under a session cost policy', () => {
+    const opts: ModelResolutionOptions = {
+      sessionModel: 'gpt-5.5', sessionCostPolicy: { maxCategory: 'versatile' }, unavailableModels: ['gpt-5.5'],
+    };
+    const r = resolveAgentModel(opts);
+    const earlier = chain.slice(0, chain.indexOf('gpt-5.5'));
+    expect(earlier, `${JSON.stringify(opts)} chose '${r.model}', which precedes 'gpt-5.5'`).not.toContain(r.model);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: '', source: 'fallback' });
+  });
+
+  it('within-ceiling pick that is unavailable moves forward over pruned entries', () => {
+    // gemini-3.8-flash (versatile) follows gpt-5.6-luna in the fast chain and is pruned by a lightweight ceiling.
+    const opts: ModelResolutionOptions = {
+      userOverride: 'gpt-5.6-luna', config: { costPolicy: { maxCategory: 'lightweight' } }, unavailableModels: ['gpt-5.6-luna'],
+    };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} chose '${r.model}'`).toEqual({ model: 'claude-haiku-4.5', source: 'fallback' });
+  });
+});
+
+describe('availability fallback respects the active cost ceiling (#1720)', () => {
+  const standard = MODELS.FALLBACK_CHAINS.standard;
+  const fast = MODELS.FALLBACK_CHAINS.fast;
+  const ceilingSources = [
+    { label: 'config.costPolicy', policy: (maxCategory: GitHubModelCategory) => ({ config: { costPolicy: { maxCategory } } }) },
+    { label: 'sessionCostPolicy', policy: (maxCategory: GitHubModelCategory) => ({ sessionCostPolicy: { maxCategory } }) },
+  ] as const;
+  const categories = buildCatalogCategoryMap();
+  const overCeiling = (ids: readonly string[], ceiling: GitHubModelCategory) =>
+    ids.filter((id) => {
+      const cat = categories.get(id);
+      return cat !== undefined && CATEGORY_ORDER[cat] > CATEGORY_ORDER[ceiling];
+    });
+
+  for (const { label, policy } of ceilingSources) {
+    it(`[${label}] available out-of-catalog 'hydrafusion' is still honored unchanged under a lightweight ceiling`, () => {
+      const opts: ModelResolutionOptions = { sessionModel: 'hydrafusion', taskType: 'code', ...policy('lightweight') };
+      const r = resolveAgentModel(opts);
+      expect(
+        { model: r.model, source: r.source, omitModel: r.omitModel },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (${r.source}); explicit opt-in must pass through`,
+      ).toEqual({ model: 'hydrafusion', source: 'session', omitModel: undefined });
+    });
+
+    it(`[${label}] unavailable 'hydrafusion' with no in-ceiling chain entry omits the model instead of exceeding a lightweight ceiling`, () => {
+      const opts: ModelResolutionOptions = {
+        sessionModel: 'hydrafusion', taskType: 'code', unavailableModels: ['hydrafusion'], ...policy('lightweight'),
+      };
+      const r = resolveAgentModel(opts);
+      expect(
+        { model: r.model, omitModel: r.omitModel, source: r.source, fallbackFrom: r.fallbackFrom },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (category ${categories.get(r.model) ?? 'none'}); ` +
+          'an automatic fallback must not exceed the ceiling',
+      ).toEqual({ model: '', omitModel: true, source: 'fallback', fallbackFrom: { model: 'hydrafusion', source: 'session' } });
+    });
+
+    it(`[${label}] unavailable explicit out-of-catalog pick skips over-ceiling entries and lands on an allowed later entry`, () => {
+      // lightweight ceiling: gemini-3.8-flash (versatile) must be skipped, not chosen, after the earlier lightweight entries are unavailable.
+      const unavailable = ['custom-mini', ...fast.slice(0, fast.indexOf('gemini-3.8-flash'))];
+      const opts: ModelResolutionOptions = {
+        userOverride: 'custom-mini', unavailableModels: unavailable, ...policy('lightweight'),
+      };
+      const r = resolveAgentModel(opts);
+      const picked = categories.get(r.model);
+      expect(
+        { model: r.model, source: r.source },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (category ${picked ?? 'none'})`,
+      ).toEqual({ model: 'claude-haiku-4.5', source: 'fallback' });
+      expect(
+        overCeiling(r.fallbackChain, 'lightweight'),
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) left over-ceiling entries in fallbackChain ${JSON.stringify(r.fallbackChain)}`,
+      ).toEqual([]);
+    });
+
+    it(`[${label}] unavailable fast-tier out-of-catalog pick falls back to an in-ceiling lightweight entry`, () => {
+      const opts: ModelResolutionOptions = {
+        configModel: 'custom-mini', unavailableModels: ['custom-mini'], ...policy('lightweight'),
+      };
+      const r = resolveAgentModel(opts);
+      expect(
+        { model: r.model, source: r.source },
+        `${JSON.stringify(opts)} (ceiling lightweight via ${label}) picked '${r.model}' (category ${categories.get(r.model) ?? 'none'})`,
+      ).toEqual({ model: fast[0], source: 'fallback' });
+    });
+  }
+
+  it('without a cost policy the out-of-catalog availability fallback is unchanged', () => {
+    // 'hydrafusion' is a catalog entry since #2014; use a truly out-of-catalog id.
+    const opts: ModelResolutionOptions = { sessionModel: 'custom-preview-model', taskType: 'code', unavailableModels: ['custom-preview-model'] };
+    const r = resolveAgentModel(opts);
+    expect({ model: r.model, source: r.source }, `${JSON.stringify(opts)} picked '${r.model}'`).toEqual({ model: standard[0], source: 'fallback' });
   });
 });

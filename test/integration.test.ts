@@ -433,9 +433,13 @@ describe('Integration: Charter → Model → Session Pipeline', () => {
       const codeResult = results[0];
       expect(codeResult.tier).toBe('standard');
 
-      // Docs/planning tasks should get fast tier (cost optimization)
+      // Docs tasks get standard tier under the default quality-first profile
       const docsResult = results[1];
-      expect(docsResult.tier).toBe('fast');
+      expect(docsResult.tier).toBe('standard');
+
+      // Mechanical tasks stay on the fast tier
+      const mechanicalResult = results[5];
+      expect(mechanicalResult.tier).toBe('fast');
     });
 
     it('should provide fallback chains for each tier', () => {
@@ -446,7 +450,7 @@ describe('Integration: Charter → Model → Session Pipeline', () => {
 
       expect(premiumResult.tier).toBe('premium');
       expect(premiumResult.fallbackChain.length).toBeGreaterThan(1);
-      expect(premiumResult.fallbackChain[0]).toBe('gpt-5.6-sol');
+      expect(premiumResult.fallbackChain[0]).toBe('claude-opus-5.5');
     });
   });
 });

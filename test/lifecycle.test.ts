@@ -18,6 +18,7 @@ import {
 } from '@bradygaster/squad-sdk/agents';
 import { SquadClientWithPool } from '@bradygaster/squad-sdk/client';
 import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
+import { MODELS } from '@bradygaster/squad-sdk';
 
 describe('Agent Lifecycle Manager', () => {
   let tempDir: string;
@@ -394,7 +395,7 @@ Test collaboration.
   });
 
   it('downgrades an implicit over-ceiling pick end-to-end AND surfaces the change', async () => {
-    // visual → task-auto gpt-5.6-sol (powerful); ceiling versatile ⇒ downgrade.
+    // visual → task-auto claude-opus-5.5 (powerful); ceiling versatile ⇒ downgrade.
     const handle = await manager.spawnAgent({
       agentName: 'policy-agent',
       task: 'Draw a diagram',
@@ -403,7 +404,7 @@ Test collaboration.
     });
 
     // The wired policy must actually change the session model (the #1089 dead-code bug).
-    expect(handle.model).toBe('claude-sonnet-4.6');
+    expect(handle.model).toBe('claude-sonnet-5.5');
 
     // The policy change must be SURFACED, not swallowed: emitted on the bus.
     const policyEvents = events.filter(
@@ -435,11 +436,175 @@ Test collaboration.
       task: 'Draw',
       taskType: 'visual',
     });
-    expect(handle.model).toBe('gpt-5.6-sol');
+    expect(handle.model).toBe(MODELS.FALLBACK_CHAINS.premium[0]);
     const policyEvents = events.filter(
       (e) => (e.payload as { event?: string })?.event === 'model.policy',
     );
     expect(policyEvents.length).toBe(0);
+  });
+});
+
+describe('Agent Lifecycle Manager — persistent model preference + provenance (#1720)', () => {
+  let tempDir: string;
+  let squadDir: string;
+  let mockClient: SquadClientWithPool;
+  let sessionConfigs: Array<Record<string, unknown>>;
+  let events: Array<Record<string, unknown>>;
+  let manager: AgentLifecycleManager;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'squad-model-pref-spawn-'));
+    squadDir = path.join(tempDir, '.squad');
+    const agentsDir = path.join(squadDir, 'agents', 'pref-agent');
+    await fs.mkdir(agentsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(agentsDir, 'charter.md'),
+      `# Pref Agent\n\n## Identity\n\n**Name:** Pref Agent\n**Role:** Test\n\n## Model\n\n**Preferred:** charter-model\n`,
+      'utf-8',
+    );
+    mockClient = createMockClient();
+    sessionConfigs = [];
+    const create = mockClient.createSession.bind(mockClient);
+    (mockClient as any).createSession = async (config: Record<string, unknown>) => {
+      sessionConfigs.push(config);
+      return create(config as any);
+    };
+    const eventBus = new EventBus();
+    events = [];
+    eventBus.subscribe('agent:milestone', (e) => {
+      events.push(e.payload as Record<string, unknown>);
+    });
+    manager = new AgentLifecycleManager({ client: mockClient, teamRoot: tempDir, defaultIdleTimeout: 60_000, eventBus });
+  });
+
+  afterEach(async () => {
+    await manager.shutdown();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function writeConfig(config: Record<string, unknown>): Promise<void> {
+    await fs.writeFile(path.join(squadDir, 'config.json'), JSON.stringify({ version: 1, ...config }), 'utf-8');
+  }
+
+  it('per-agent persistent config beats charter and task in the created session', async () => {
+    await writeConfig({ defaultModel: 'global-model', agentModelOverrides: { 'pref-agent': 'persisted-model' } });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', taskType: 'visual' });
+
+    expect(sessionConfigs[0]?.model, `createSession model with agentModelOverrides set: ${JSON.stringify(sessionConfigs[0])}`).toBe('persisted-model');
+    expect(handle.model).toBe('persisted-model');
+    expect(handle.modelResolution?.source, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toBe('config');
+    expect(handle.modelResolution?.rationale).toMatch(/config\.json.*'persisted-model'/);
+  });
+
+  it('global defaultModel applies when the agent has no override', async () => {
+    await writeConfig({ defaultModel: 'global-model' });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work' });
+    expect(sessionConfigs[0]?.model, `createSession model with defaultModel set: ${JSON.stringify(sessionConfigs[0])}`).toBe('global-model');
+    expect(handle.modelResolution?.source).toBe('config');
+  });
+
+  it("'auto' persisted preference falls through to the charter", async () => {
+    await writeConfig({ defaultModel: 'auto' });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work' });
+    expect(sessionConfigs[0]?.model, `createSession model with defaultModel 'auto': ${JSON.stringify(sessionConfigs[0])}`).toBe('charter-model');
+    expect(handle.modelResolution?.source).toBe('charter');
+  });
+
+  it('explicit spawn override still beats persistent config', async () => {
+    await writeConfig({ defaultModel: 'global-model' });
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', modelOverride: 'spawn-model' });
+    expect(sessionConfigs[0]?.model).toBe('spawn-model');
+    expect(handle.modelResolution?.source).toBe('user-override');
+  });
+
+  it('records resolution provenance as a model.resolved milestone event', async () => {
+    await writeConfig({ agentModelOverrides: { 'pref-agent': 'persisted-model' } });
+    await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work' });
+    const resolved = events.filter((e) => e.event === 'model.resolved');
+    expect(resolved, `model.resolved events: ${JSON.stringify(events)}`).toHaveLength(1);
+    expect(resolved[0]).toMatchObject({ model: 'persisted-model', source: 'config' });
+    expect(String(resolved[0]!.rationale)).toMatch(/config\.json/);
+  });
+
+  it('inherits the session model (e.g. opt-in hydrafusion) over the charter in the created session', async () => {
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', taskType: 'code', sessionModel: 'hydrafusion' });
+    expect(sessionConfigs[0]?.model, `createSession with sessionModel 'hydrafusion': ${JSON.stringify(sessionConfigs[0])}`).toBe('hydrafusion');
+    expect(handle.model).toBe('hydrafusion');
+    expect(handle.modelResolution?.source, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toBe('session');
+    const resolved = events.filter((e) => e.event === 'model.resolved');
+    expect(resolved[0], `model.resolved events: ${JSON.stringify(events)}`).toMatchObject({ model: 'hydrafusion', source: 'session' });
+  });
+
+  it("'auto' session model falls through to the charter", async () => {
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', sessionModel: ' AUTO ' });
+    expect(sessionConfigs[0]?.model, `createSession with sessionModel ' AUTO ': ${JSON.stringify(sessionConfigs[0])}`).toBe('charter-model');
+    expect(handle.modelResolution?.source).toBe('charter');
+  });
+
+  it('explicit spawn override and persistent config both beat the session model', async () => {
+    const explicit = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', modelOverride: 'spawn-model', sessionModel: 'hydrafusion' });
+    expect(sessionConfigs[0]?.model, `override vs session: ${JSON.stringify(sessionConfigs[0])}`).toBe('spawn-model');
+    expect(explicit.modelResolution?.source).toBe('user-override');
+
+    await writeConfig({ agentModelOverrides: { 'pref-agent': 'persisted-model' } });
+    const persisted = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', sessionModel: 'hydrafusion' });
+    expect(sessionConfigs[1]?.model, `config vs session: ${JSON.stringify(sessionConfigs[1])}`).toBe('persisted-model');
+    expect(persisted.modelResolution?.source).toBe('config');
+  });
+
+  it('forwards unavailableModels: falls forward along the chain and records fallback provenance', async () => {
+    const chain = MODELS.FALLBACK_CHAINS.standard;
+    const handle = await manager.spawnAgent({
+      agentName: 'pref-agent', task: 'Work', modelOverride: chain[1], unavailableModels: [chain[1]!],
+    });
+    expect(sessionConfigs[0]?.model, `createSession with '${chain[1]}' unavailable: ${JSON.stringify(sessionConfigs[0])}`).toBe(chain[2]);
+    expect(handle.modelResolution).toMatchObject({ source: 'fallback', fallbackFrom: { model: chain[1], source: 'user-override' } });
+  });
+
+  it('exhausted fallback omits the model key from the SDK session config (no undefined own property)', async () => {
+    const chain = MODELS.FALLBACK_CHAINS.standard;
+    const last = chain[chain.length - 1]!;
+    const handle = await manager.spawnAgent({ agentName: 'pref-agent', task: 'Work', sessionModel: last, unavailableModels: [last] });
+    const config = sessionConfigs[0]!;
+    expect(
+      Object.prototype.hasOwnProperty.call(config, 'model'),
+      `createSession config must not carry a 'model' key when '${last}' (last chain entry) is unavailable: ${JSON.stringify(Object.keys(config))} model=${String(config.model)}`,
+    ).toBe(false);
+    expect(handle.modelResolution, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toMatchObject({
+      source: 'fallback', omitModel: true, fallbackFrom: { model: last, source: 'session' },
+    });
+  });
+
+  it('unavailable session hydrafusion under a lightweight session ceiling omits the model key instead of an over-ceiling fallback', async () => {
+    const spawn = { agentName: 'pref-agent', task: 'Work', taskType: 'code' as const, sessionModel: 'hydrafusion', sessionCostPolicy: { maxCategory: 'lightweight' as const }, unavailableModels: ['hydrafusion'] };
+    const handle = await manager.spawnAgent(spawn);
+    const config = sessionConfigs[0]!;
+    expect(
+      Object.prototype.hasOwnProperty.call(config, 'model'),
+      `spawnAgent(${JSON.stringify(spawn)}) with ceiling lightweight passed createSession model '${String(config.model)}'; no in-ceiling fallback exists, so 'model' must be omitted`,
+    ).toBe(false);
+    expect(handle.modelResolution, `handle provenance: ${JSON.stringify(handle.modelResolution)}`).toMatchObject({
+      source: 'fallback', omitModel: true, fallbackFrom: { model: 'hydrafusion', source: 'session' },
+    });
+  });
+
+  it('unavailable session hydrafusion under a versatile config ceiling passes only an allowed fallback to createSession', async () => {
+    const cappedManager = new AgentLifecycleManager({
+      client: mockClient, teamRoot: tempDir, defaultIdleTimeout: 60_000, costPolicy: { maxCategory: 'versatile' },
+    });
+    try {
+      // Every versatile standard entry is unavailable; the remaining powerful entries must be skipped, so the model is omitted.
+      const unavailable = ['hydrafusion', 'claude-sonnet-5.5', 'gpt-5.6-terra', 'claude-sonnet-5'];
+      const spawn = { agentName: 'pref-agent', task: 'Work', taskType: 'code' as const, sessionModel: 'hydrafusion', unavailableModels: unavailable };
+      const handle = await cappedManager.spawnAgent(spawn);
+      expect(
+        Object.prototype.hasOwnProperty.call(sessionConfigs[0] ?? {}, 'model'),
+        `spawnAgent(${JSON.stringify(spawn)}) with config ceiling versatile passed createSession model '${String(sessionConfigs[0]?.model)}'; powerful 'gpt-5.5' must be skipped`,
+      ).toBe(false);
+      expect(handle.modelResolution).toMatchObject({ source: 'fallback', omitModel: true, fallbackFrom: { model: 'hydrafusion', source: 'session' } });
+    } finally {
+      await cappedManager.shutdown();
+    }
   });
 });
 

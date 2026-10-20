@@ -13,6 +13,12 @@ import {
   MODEL_CATALOG,
   DEFAULT_FALLBACK_CHAINS,
 } from '@bradygaster/squad-sdk/config';
+import {
+  resolveAgentModel,
+  ModelFallbackExecutor,
+  type ModelResolutionOptions,
+} from '@bradygaster/squad-sdk/agents';
+import { MODELS } from '@bradygaster/squad-sdk/runtime/constants';
 
 // ============================================================================
 // Cross-tier fallback: standard chain tries all models in order
@@ -45,9 +51,9 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
     expect(visitedSet).toEqual(chainSet);
   });
 
-  it('premium chain starts with GPT Sol and walks through all premium options', () => {
+  it('premium chain starts with Claude Opus 5.5 and walks through all premium options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.premium;
-    expect(chain[0]).toBe('gpt-5.6-sol');
+    expect(chain[0]).toBe('claude-opus-5.5');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -68,7 +74,7 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
 
   it('fast chain walks through all fast options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.fast;
-    expect(chain[0]).toBe('gpt-5.6-luna');
+    expect(chain[0]).toBe('claude-haiku-5.5');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -149,7 +155,7 @@ describe('Provider preference — Claude family preference', () => {
   const registry = new ModelRegistry();
 
   it('getFallbackChain with preferSameProvider starts with same provider', () => {
-    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-4.5');
+    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-5.5');
 
     // First models should be Anthropic (Claude family)
     const firstTwo = chain.slice(0, 2);
@@ -160,7 +166,7 @@ describe('Provider preference — Claude family preference', () => {
   });
 
   it('prefer Claude: all anthropic models come before other providers', () => {
-    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-4.5');
+    const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-5.5');
     const standardAnthropicCount = MODEL_CATALOG.filter(
       m => m.tier === 'standard' && m.provider === 'anthropic'
     ).length;
@@ -260,8 +266,8 @@ describe('Model fallback — edge cases', () => {
 
   it('getNextFallback with empty attempted set returns second in chain', () => {
     const next = registry.getNextFallback('claude-opus-4.8', 'premium');
-    // With no attempted set, it should return the next in chain after current
-    expect(next).toBe('claude-opus-5');
+    // With no attempted set, it returns the first same-provider entry other than current
+    expect(next).toBe('claude-opus-5.5');
   });
 
   it('getNextFallback for unknown model returns null', () => {
@@ -291,5 +297,141 @@ describe('Model fallback — edge cases', () => {
         expect(registry.getModelInfo(modelId)).not.toBeNull();
       }
     }
+  });
+});
+
+// ============================================================================
+// Resolver → executor: retry chain is availability-filtered and forward-only
+// (PR #2225 review)
+// ============================================================================
+
+async function attemptedModels(options: ModelResolutionOptions): Promise<{ tried: Array<string | undefined>; label: string }> {
+  const resolved = resolveAgentModel(options);
+  const tried: Array<string | undefined> = [];
+  await new ModelFallbackExecutor({ allowCrossTier: true })
+    .execute(resolved, 'agent', async (model) => {
+      tried.push(model);
+      throw new Error(`fail ${model}`);
+    })
+    .catch(() => undefined);
+  return { tried, label: `resolveAgentModel(${JSON.stringify(options)}) → ${JSON.stringify(resolved)}; tried ${JSON.stringify(tried)}` };
+}
+
+describe('Resolver → ModelFallbackExecutor retry chain (PR #2225)', () => {
+  const standard = MODELS.FALLBACK_CHAINS.standard;
+
+  it('only available entries are retried (no unavailable middle-chain model)', async () => {
+    const options = { taskType: 'code' as const, availableModels: ['claude-sonnet-5.5', 'claude-sonnet-5'] };
+    const resolved = resolveAgentModel(options);
+    const { tried, label } = await attemptedModels(options);
+    expect(resolved.fallbackChain, label).toEqual(['claude-sonnet-5.5', 'claude-sonnet-5']);
+    expect(tried, label).toEqual(['claude-sonnet-5.5', 'claude-sonnet-5']);
+  });
+
+  it('a middle-chain selection never retries earlier chain entries', async () => {
+    const options = { userOverride: standard[2] };
+    const { tried, label } = await attemptedModels(options);
+    expect(tried, label).toEqual(standard.slice(2));
+  });
+
+  it('a middle-chain selection with a live list retries only available later entries', async () => {
+    const options = { userOverride: standard[2], availableModels: [standard[0], standard[2], standard[4]] };
+    const { tried, label } = await attemptedModels(options);
+    expect(tried, label).toEqual([standard[2], standard[4]]);
+  });
+
+  it('an out-of-chain selection keeps head-first fallback over available entries', async () => {
+    const options = { userOverride: 'my-custom-model', availableModels: ['my-custom-model', standard[0], standard[3]] };
+    const { tried, label } = await attemptedModels(options);
+    expect(tried, label).toEqual(['my-custom-model', standard[0], standard[3]]);
+  });
+});
+
+describe('Resolver → ModelFallbackExecutor exhausted chain (omitModel, PR #2225)', () => {
+  const options: ModelResolutionOptions = { taskType: 'code', availableModels: ['not-a-chain-model'] };
+
+  it('runs the platform-default callback instead of calling fn with an empty model id', async () => {
+    const resolved = resolveAgentModel(options);
+    const tried: string[] = [];
+    let platformCalls = 0;
+    const result = await new ModelFallbackExecutor().execute(
+      resolved,
+      'agent',
+      async (model) => { tried.push(model); return `model:${model}`; },
+      { platformDefault: async () => { platformCalls++; return 'platform-default'; } },
+    );
+    const label = `resolveAgentModel(${JSON.stringify(options)}) → ${JSON.stringify(resolved)}; fn got ${JSON.stringify(tried)}`;
+    expect(resolved.omitModel, label).toBe(true);
+    expect(tried, label).toEqual([]);
+    expect(platformCalls, label).toBe(1);
+    expect(result, label).toMatchObject({ value: 'platform-default', model: '', omitModel: true, didFallback: false });
+  });
+
+  it('without a platform-default callback it rejects and never calls fn with an empty model id', async () => {
+    const resolved = resolveAgentModel(options);
+    const tried: string[] = [];
+    const run = new ModelFallbackExecutor().execute(resolved, 'agent', async (model) => { tried.push(model); return model; });
+    await expect(run, `execute(${JSON.stringify(resolved)})`).rejects.toThrow(/omitModel/);
+    expect(tried, `fn calls for ${JSON.stringify(resolved)}`).toEqual([]);
+  });
+});
+
+describe('Economy-profile runtime fallback', () => {
+  it('retries an available cheaper tier with default executor settings', async () => {
+    const resolved = resolveAgentModel({
+      taskType: 'visual',
+      profile: 'economy',
+      availableModels: ['claude-sonnet-5.5', 'gpt-5.6-luna'],
+    });
+    const tried: string[] = [];
+
+    await new ModelFallbackExecutor()
+      .execute(resolved, 'agent', async (model) => {
+        tried.push(model);
+        throw new Error(`fail ${model}`);
+      })
+      .catch(() => undefined);
+
+    expect(resolved.model).toBe('claude-sonnet-5.5');
+    expect(tried).toEqual(['claude-sonnet-5.5', 'gpt-5.6-luna']);
+    expect(resolved.fallbackChain).toEqual(['claude-sonnet-5.5', 'gpt-5.6-luna']);
+  });
+
+  it('does not add cheaper-tier retries for explicit model preferences', async () => {
+    const resolved = resolveAgentModel({
+      userOverride: 'claude-sonnet-5.5',
+      profile: 'economy',
+      availableModels: ['claude-sonnet-5.5', 'gpt-5.6-luna'],
+    });
+    const tried: string[] = [];
+
+    await new ModelFallbackExecutor()
+      .execute(resolved, 'agent', async (model) => {
+        tried.push(model);
+        throw new Error(`fail ${model}`);
+      })
+      .catch(() => undefined);
+
+    expect(resolved.fallbackChain).not.toContain('gpt-5.6-luna');
+    expect(tried).toEqual(['claude-sonnet-5.5']);
+  });
+
+  it('keeps non-economy fallback chains within the selected tier', async () => {
+    const resolved = resolveAgentModel({
+      taskType: 'visual',
+      profile: 'quality-first',
+      availableModels: ['claude-opus-5.5', 'claude-sonnet-5.5'],
+    });
+    const tried: string[] = [];
+
+    await new ModelFallbackExecutor()
+      .execute(resolved, 'agent', async (model) => {
+        tried.push(model);
+        throw new Error(`fail ${model}`);
+      })
+      .catch(() => undefined);
+
+    expect(resolved.fallbackChain).not.toContain('claude-sonnet-5.5');
+    expect(tried).toEqual(['claude-opus-5.5']);
   });
 });

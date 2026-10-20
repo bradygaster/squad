@@ -122,7 +122,7 @@ export interface MarkdownMigrationResult {
  * Parses team.md content into agent configurations.
  *
  * Supports two formats:
- * 1. Table format: | Name | Role | Skills | Model |
+ * 1. Table format within a roster section: | Name | Role | Skills | Model |
  * 2. Section format: ## Agent Name \n Role: ... \n Skills: ...
  *
  * @param content - Raw team.md content
@@ -232,14 +232,28 @@ export function parseTeamMarkdown(content: string): { agents: ParsedAgent[]; war
 function parseTeamTable(lines: string[]): ParsedAgent[] {
   const agents: ParsedAgent[] = [];
   let headerCols: string[] | null = null;
+  let inRosterSection = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith('|')) continue;
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (headingMatch) {
+      const heading = headingMatch[2]!.trim();
+      inRosterSection =
+        headingMatch[1] === '##' &&
+        /^(?:roster|team\s+roster|members?|team\s+members?|agents?)$/i.test(heading);
+      headerCols = null;
+      continue;
+    }
+
+    if (!trimmed.startsWith('|')) {
+      headerCols = null;
+      continue;
+    }
+    if (!inRosterSection) continue;
 
     const cells = trimmed.split('|').map((c) => c.trim()).filter(Boolean);
 
-    // Reset the column mapping for each roster table in the document.
     if (cells.some((c) => /^name$/i.test(c.replace(/[*_`]/g, '').trim()))) {
       headerCols = cells.map((c) => c.toLowerCase());
       continue;

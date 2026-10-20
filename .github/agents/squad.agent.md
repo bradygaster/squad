@@ -393,11 +393,13 @@ After routing determines WHO handles work, select a **response MODE** (Direct / 
 
 ### Per-Agent Model Selection
 
-Resolve a model before every spawn. Honor persistent config first, then session directives, charter preferences, and task-aware auto-selection; keep the cost-first rule unless code or prompt architecture is being written.
+Resolve a model before every spawn with the central resolver precedence (first match wins): **user-override** (explicit per-spawn directive) → **config** (`.squad/config.json` `agentModelOverrides.{agent}`, then `defaultModel`) → **session** (the model picked for this session; every sub-agent spawn inherits it unchanged) → **charter** (`## Model` → `**Preferred:**`) → **task-auto** (task-aware tier under the active quality profile; default `quality-first`, with `balanced` or `economy` only by explicit opt-in) → **default**. `auto` at any layer means no preference; continue to the next. Never hard-code model IDs in spawn guidance; tiers map to IDs only through the catalog appendix of the reference.
 
-Use silent fallback chains when a chosen model is unavailable, and omit the `model` parameter for the platform default fallback.
+When the resolved model is unavailable, silently try the next entries after it in its tier fallback chain (source `fallback`), never back toward the head; once no later candidate remains, omit the `model` parameter for the platform default.
 
-**On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full layer hierarchy, role mapping, fallback chains, spawn formatting, and valid models catalog.
+Every spawn acknowledgment shows the model, its source and a short rationale: `{emoji} {Name} ({model} · {source}) — {task summary} — {rationale}`.
+
+**On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full precedence, role-to-tier mapping, fallback rules, spawn formatting, and the model catalog appendix.
 
 ### Per-Agent Reasoning Effort
 
@@ -424,7 +426,34 @@ When the resolved reasoning effort is not `auto` or default, include it in the a
 
 **Spawn output format — show the model choice and effort:**
 
-Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default reasoning effort, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.7-1m-internal · xhigh) — deep architecture analysis`).
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default reasoning effort, append it in the acknowledgment (for example, `🧠 DeepThink ({model} · charter · xhigh) — deep architecture analysis — charter preference`).
+
+### Per-Agent Context Tier
+
+Context tier controls the size of the model's context window — how much conversation, code, and instruction the model can hold at once. Larger tiers fit more context but cost more per token. This is SEPARATE from model selection and reasoning effort — you can run the same model at different context tiers.
+
+Valid tiers: `default`, `long_context`. The value `auto` means "let the model decide" (platform default). A `long_context` request clamps to `default` on models that only support a single window.
+
+**Resolution — check these layers in order (first match wins):**
+
+1. **Persistent Config:** `.squad/config.json` → `agentContextTierOverrides.{agentName}`, then `defaultContextTier`
+2. **User directive:** User says "use long context" or "1M window" → apply to this spawn
+3. **Charter preference:** Agent's `## Model` section → `**Context Tier:** long_context`
+4. **Default:** Do not set a context tier (platform decides)
+
+**When user requests a larger window:** Use the SAME model with a different context tier — do NOT switch to a different model variant. Context tier is a session parameter, not a model choice.
+
+- **When user says "always use long context" / "1M window by default":** Write `defaultContextTier` to `.squad/config.json`. Acknowledge: `✅ Context tier saved: long_context — all future sessions will use this until changed.`
+- **When user says "use long context for {agent}":** Write to `agentContextTierOverrides.{agent}` in `.squad/config.json`. Acknowledge: `✅ {Agent} will always use long context — saved to config.`
+- **When user says "clear context tier preference":** Remove context tier fields from `.squad/config.json`. Acknowledge: `✅ Context tier preference cleared — returning to automatic.`
+
+**Passing context tier to spawns:**
+
+When the resolved context tier is not `auto` or default, include it in the agent's charter-compiled spawn prompt or session config. The SDK threads it through to `SquadSessionConfig.contextTier` automatically, clamping to what the model supports.
+
+**Spawn output format — show the model choice and tier:**
+
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink ({model} · charter · long context) — deep architecture analysis — 1M-token window`).
 
 ### Per-Agent Context Tier
 

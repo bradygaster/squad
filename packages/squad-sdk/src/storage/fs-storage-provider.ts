@@ -1,8 +1,8 @@
-import { readFile, writeFile, appendFile, access, readdir, unlink, mkdir as fsMkdir, realpath, rm, stat as fsStat, rename as fsRename, copyFile } from 'fs/promises';
+import { readFile, writeFile, appendFile, access, readdir, unlink, mkdir as fsMkdir, realpath, rm, stat as fsStat, rename as fsRename, copyFile, open } from 'fs/promises';
 import { readFileSync, writeFileSync, appendFileSync, existsSync as fsExistsSync, mkdirSync as fsMkdirSync, realpathSync, readdirSync, statSync, unlinkSync, renameSync as fsRenameSync, copyFileSync, rmSync } from 'fs';
 import { dirname, resolve, sep } from 'path';
 import type { StorageProvider, StorageStats } from './storage-provider.js';
-import { StorageError } from './storage-error.js';
+import { StorageError, StateKeyConflictError, StateBackendUncertaintyError } from './storage-error.js';
 
 /**
  * FSStorageProvider — Node.js `fs` implementation of StorageProvider.
@@ -124,6 +124,49 @@ export class FSStorageProvider implements StorageProvider {
         return resolved;
       }
       throw err;
+    }
+  }
+
+  async createIfAbsent(filePath: string, data: string): Promise<void> {
+    const safePath = await this.assertSafePath(filePath);
+    // Create parent dirs before attempting exclusive open so mkdir failure
+    // is distinguished from the key-already-exists conflict.
+    try {
+      await fsMkdir(dirname(safePath), { recursive: true });
+    } catch (mkdirErr: unknown) {
+      throw new StateBackendUncertaintyError(
+        'createIfAbsent',
+        `mkdir failed for "${filePath}": ${(mkdirErr as NodeJS.ErrnoException).code ?? 'UNKNOWN'}`,
+      );
+    }
+    let fh: import('fs/promises').FileHandle | undefined;
+    try {
+      // 'wx' = O_WRONLY | O_CREAT | O_EXCL — fails atomically with EEXIST
+      // if the file already exists, with no race between check and create.
+      fh = await open(safePath, 'wx');
+    } catch (openErr: unknown) {
+      const code = (openErr as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') {
+        throw new StateKeyConflictError(filePath);
+      }
+      throw new StateBackendUncertaintyError(
+        'createIfAbsent',
+        `exclusive open failed for "${filePath}": ${code ?? 'UNKNOWN'}`,
+      );
+    }
+    try {
+      await fh.writeFile(data, 'utf-8');
+    } catch (writeErr: unknown) {
+      // Write failed after exclusive open: state is uncertain (file exists but
+      // may be empty or partial). Attempt cleanup; if cleanup fails, the
+      // uncertainty persists but we still surface the original error.
+      try { await unlink(safePath); } catch { /* best-effort cleanup */ }
+      throw new StateBackendUncertaintyError(
+        'createIfAbsent',
+        `write failed after exclusive open for "${filePath}": ${(writeErr as NodeJS.ErrnoException).code ?? 'UNKNOWN'}`,
+      );
+    } finally {
+      try { await fh.close(); } catch { /* best-effort */ }
     }
   }
 

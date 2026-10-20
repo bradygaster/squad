@@ -279,7 +279,7 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(posted[0].body).toContain('Issue-body revocations are not durable.');
   });
 
-  it('does not comment or throw for valid commands and no-invocation non-events', async () => {
+  it('fails closed for commands without identity and no-invocation non-events', async () => {
     const posted: string[] = [];
     const createComment = async (_issueNumber: number, body: string) => {
       posted.push(body);
@@ -290,14 +290,14 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
         eventName: 'issue_comment',
         createComment,
       }),
-    ).resolves.toMatchObject({ status: 'accepted', mode: 'status' });
+    ).rejects.toThrow('verified event actor');
     await expect(
       enforceSquadCommandContract({
         payload: comment('ordinary discussion'),
         eventName: 'issue_comment',
         createComment,
       }),
-    ).resolves.toEqual({ status: 'none', source: 'comment' });
+    ).rejects.toThrow('No explicit Squad command');
     expect(posted).toEqual([]);
   });
 
@@ -337,9 +337,9 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     expect(DISCOVERY_WORKFLOW).toContain("startsWith(github.event.comment.body, '/squad ')");
     expect(DISCOVERY_WORKFLOW).toContain('squad-command-contract.mjs');
     expect(DISCOVERY_WORKFLOW).toContain('classifySquadCommand');
-    expect(DISCOVERY_WORKFLOW).toContain('commandRequiresAuthorization');
+    expect(DISCOVERY_WORKFLOW).toContain('authorizeSquadCommand');
     expect(DISCOVERY_WORKFLOW).toContain('getCollaboratorPermissionLevel');
-    expect(DISCOVERY_WORKFLOW).toContain('isAuthorizedPermission');
+    expect(DISCOVERY_WORKFLOW).toContain('enforceSquadRouterOutputs');
     expect(DISCOVERY_WORKFLOW).toContain('No standalone Squad command was found');
     expect(DISCOVERY_WORKFLOW).toContain('rejectionComment');
     expect(DISCOVERY_WORKFLOW).toContain('github.rest.issues.createComment');

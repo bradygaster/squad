@@ -113,7 +113,7 @@ describe('standalone release handoff', () => {
     expect(release).toContain('-preview\\.(0|[1-9][0-9]*)');
     expect(release).toContain('Preview releases require the CLI SDK dependency');
     expect(release).toContain('--prerelease');
-    expect(release).toContain('--latest');
+    expect(release).toContain('--latest=false');
     expect(releaseWorkflow.jobs.release.outputs?.stable_release).toBe(
       '${{ steps.version.outputs.stable_release }}',
     );
@@ -130,6 +130,34 @@ describe('standalone release handoff', () => {
     expect(release).toContain('uses: ./.github/workflows/squad-standalone-release.yml');
     expect(release).toContain('release_tag: ${{ needs.release.outputs.tag }}');
     expect(release).toContain('source_ref: ${{ needs.release.outputs.tag }}');
+  });
+
+  it('keeps an incomplete stable release out of latest until standalone assets exist', () => {
+    const create = stepNamed(releaseWorkflow.jobs.release, 'Create GitHub Release');
+    const promotion = releaseWorkflow.jobs['promote-latest'];
+    const promote = stepNamed(promotion, 'Verify standalone assets and promote latest').run ?? '';
+
+    expect(create.run).toContain('--latest=false');
+    expect(promotion.needs).toEqual(['release', 'npm', 'standalone']);
+    expect(promotion.if).toBe(
+      "needs.release.outputs.created == 'true' && needs.release.outputs.stable_release == 'true'",
+    );
+    for (const asset of [
+      'squad-linux-x64.tar.gz',
+      'squad-linux-arm64.tar.gz',
+      'squad-darwin-x64.tar.gz',
+      'squad-darwin-arm64.tar.gz',
+      'squad-win32-x64.zip',
+      'squad-win32-arm64.zip',
+      'SHA256SUMS.txt',
+    ]) {
+      expect(promote).toContain(asset);
+    }
+    expect(promote).toContain('refusing latest promotion');
+    expect(promote.indexOf('missing_assets[@]')).toBeLessThan(
+      promote.indexOf('gh release edit "${TAG}" --latest'),
+    );
+    expect(promote).toContain('repos/${GITHUB_REPOSITORY}/releases/latest');
   });
 
   it('uses only contents permission for the reusable release upload', () => {
@@ -205,7 +233,7 @@ describe('standalone release handoff', () => {
 describe('stable promotion', () => {
   it('promotes directly from dev to main through a validated sanitized merge', () => {
     expect(existsSync(join(WORKFLOWS, 'squad-preview.yml'))).toBe(false);
-    expect(Object.keys(promoteWorkflow.jobs)).toEqual(['dev-to-main']);
+    expect(Object.keys(promoteWorkflow.jobs)).toEqual(['open-existing-promotion', 'dev-to-main']);
 
     const promotion = serialized(promoteWorkflow.jobs['dev-to-main']);
     expect(promotion).toContain(
@@ -232,6 +260,39 @@ describe('stable promotion', () => {
       actions: 'write',
       contents: 'write',
     });
+  });
+
+  it('can open a validated in-repository promotion branch as a bot-authored PR', () => {
+    expect(promoteWorkflow.on?.workflow_dispatch?.inputs?.promotion_branch).toMatchObject({
+      required: false,
+      default: '',
+      type: 'string',
+    });
+
+    const botPromotion = promoteWorkflow.jobs['open-existing-promotion'];
+    expect(botPromotion.if).toBe("${{ inputs.promotion_branch != '' }}");
+    expect(botPromotion.permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'write',
+    });
+    expect(promoteWorkflow.jobs['dev-to-main'].if).toBe("${{ inputs.promotion_branch == '' }}");
+
+    const promotion = serialized(botPromotion);
+    expect(promotion).toContain(
+      'Promotion branch must match chore/promote-X.Y.Z or chore/promote-vX.Y.Z',
+    );
+    expect(promotion).toContain('git merge-base --is-ancestor origin/main HEAD');
+    expect(promotion).toContain("git ls-files '.changeset/*.md'");
+    expect(promotion).toContain('CLI SDK dependency floors must both be');
+    expect(promotion).toContain('SKIP_BUILD_BUMP');
+    expect(promotion).toContain('node --test test/*.test.cjs');
+    expect(promotion).toContain('Build or tests modified the promotion branch');
+    expect(promotion).toContain('gh pr create');
+    expect(promotion).toContain('--base main');
+    expect(promotion).toContain('--head');
+    expect(promotion).toContain('${BRANCH}');
+    expect(promotion).toContain('created with');
+    expect(promotion).toContain('GITHUB_TOKEN');
   });
 });
 
@@ -311,7 +372,7 @@ describe('reusable npm publication', () => {
     expect(guard.run).toContain('lockDependency !== expected');
   });
 
-  it('skips each existing package independently and still verifies it', () => {
+  it('skips each existing package and polls for a stale dist-tag', () => {
     const packages = [
       ['publish-sdk', '@bradygaster/squad-sdk'],
       ['publish-cli', '@bradygaster/squad-cli'],
@@ -327,11 +388,22 @@ describe('reusable npm publication', () => {
         `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
       );
       expect(publish.run, jobName).toContain('already exists; skipping npm publish');
+      expect(publish.run, jobName).toContain(
+        "verification step will wait for npm dist-tag '${NPM_DIST_TAG}' to converge",
+      );
+      expect(publish.run, jobName).not.toContain('"dist-tags.${NPM_DIST_TAG}"');
+      expect(publish.run, jobName).not.toContain('Refusing to move it implicitly');
       expect(publish.run, jobName).toContain('publish --access public --provenance');
       expect(verifyIndex, jobName).toBeGreaterThan(publishIndex);
-      expect(steps[verifyIndex].run, jobName).toContain(
+      const verify = steps[verifyIndex].run;
+      expect(verify, jobName).toContain(
         `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
       );
+      expect(verify, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
+      expect(verify, jobName).toContain('for i in $(seq 1 20)');
+      expect(verify, jobName).toContain('Registry attempt $i/20');
+      expect(verify, jobName).toContain('sleep 15');
+      expect(verify, jobName).toContain('after 20 attempts');
     }
   });
 
@@ -353,7 +425,6 @@ describe('reusable npm publication', () => {
         '${{ steps.version.outputs.dist_tag }}',
       );
       expect(publish?.run, jobName).toContain('--tag "$NPM_DIST_TAG"');
-      expect(publish?.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
       expect(verify.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
     }
 
@@ -566,6 +637,7 @@ describe('automated package publication', () => {
     for (const permissions of [
       releaseWorkflow.permissions,
       releaseWorkflow.jobs.standalone.permissions,
+      releaseWorkflow.jobs['promote-latest'].permissions,
       standaloneWorkflow.permissions,
       standaloneWorkflow.jobs.publish.permissions,
       homebrew.permissions,

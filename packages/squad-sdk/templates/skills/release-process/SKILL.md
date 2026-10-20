@@ -15,7 +15,7 @@ and two long-lived branches:
 |--------|---------|--------|-----|------------|-----------------|
 | Insider dispatch from `dev` | Generated `X.Y.Z-insider.N` | Prerelease | `insider` | Yes | Yes |
 | Release dispatch from `dev` | `X.Y.Z-preview.N` | Prerelease | `preview` | Yes | Yes |
-| Push to `main` by promotion workflow | `X.Y.Z` | Stable/latest | `latest` | Yes | Yes |
+| Promotion PR merged to `main` (or legacy workflow push) | `X.Y.Z` | Stable/latest | `latest` | Yes | Yes |
 
 The repository does not use a staging `preview` branch. Preview is a release
 channel, not a branch.
@@ -171,6 +171,24 @@ Human-only reference command: this live publish workflow must be run by a human.
 gh workflow run squad-promote.yml --ref dev -f dry_run=false
 gh run watch
 ```
+
+When a validated sanitized promotion branch already exists in the upstream
+repository, a human can instead have `github-actions[bot]` open the protected
+`main` PR:
+
+```bash
+gh workflow run squad-promote.yml --ref dev \
+  -f dry_run=false \
+  -f promotion_branch=chore/promote-X.Y.Z
+```
+
+The workflow revalidates the branch, builds it, runs the release-gate tests,
+and opens the PR with `GITHUB_TOKEN`. GitHub may hold the resulting
+`pull_request` workflow runs for maintainer approval. A maintainer with write
+access must approve those runs, approve the PR, and merge it. The merge push
+to `main` starts `squad-release.yml` normally.
+
+Without `promotion_branch`, the legacy workflow:
 
 `squad-promote.yml`:
 

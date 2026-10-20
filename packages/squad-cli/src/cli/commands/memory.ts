@@ -6,6 +6,7 @@ import {
 } from '@bradygaster/squad-sdk';
 import fs from 'node:fs';
 import path from 'node:path';
+import { SquadError } from '../core/errors.js';
 
 const REAL_COPILOT_UNAVAILABLE_REASON =
   'Real Copilot Memory API unavailable: no concrete callable API was found in installed @github/copilot SDK/tooling. Squad will not fake provider=copilot; use hostInjectedCopilotAdapter only when a host supplies a client.';
@@ -278,7 +279,7 @@ export async function runMemoryCommand(projectRoot: string, args: string[]): Pro
 
     if (operation === 'provider' || operation === 'providers' || operation === 'status') {
       if (readFlag(commandArgs, '--provider') === 'copilot' || commandArgs.includes('--default-copilot')) {
-        throw new Error(REAL_COPILOT_UNAVAILABLE_REASON);
+        throw new SquadError(REAL_COPILOT_UNAVAILABLE_REASON);
       }
       if (commandArgs.includes('--enable-host-injected-copilot-adapter') || commandArgs.includes('--enable-copilot')) {
         const requireApproval = parseBoolean(readFlag(commandArgs, '--require-approval'), true);
@@ -337,9 +338,9 @@ export async function runMemoryCommand(projectRoot: string, args: string[]): Pro
       '  write --content "..." --class LOCAL --title "..." --author scribe [--load-guidance ALWAYS|ON-DEMAND|ARCHIVE|NEVER]',
       '  search --query "testing strategy"',
       '  provider [--enable-host-injected-copilot-adapter|--disable-host-injected-copilot-adapter] [--require-approval true|false]',
-      '  provider --provider copilot fails unless a real Copilot Memory API module is present.',
+      '  provider --provider copilot is unsupported in this release (no concrete callable Copilot Memory API is shipped in @github/copilot).',
       '  diagnostics: --log-level none|error|info|debug, --verbose, SQUAD_MEMORY_LOG_LEVEL, or .squad/config.json memory.logLevel (stderr; never logs raw memory content or search text).',
-      'hostInjectedCopilotAdapter is not real provider=copilot persistence; enabling config alone never fakes remote memory.',
+      'hostInjectedCopilotAdapter is an optional host-injected client adapter, not native provider=copilot persistence; enabling config alone never fakes remote memory.',
     ].join('\n'));
   } catch (error) {
     diagnostics.error('command.error', {

@@ -412,7 +412,7 @@ Structured data:
     expect(workflow).toContain('workflow_run:');
     expect(workflow).toContain('workflows: [Squad, Squad CI]');
     expect(workflow).toContain('issues: read');
-    expect(workflow).toContain('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
+    expect(workflow).toContain('actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
     expect(workflow).toContain('node-version: 22');
     expect(workflow).toContain('node scripts/check-agent-binding.mjs');
     expect(workflow).not.toContain('issues: write');

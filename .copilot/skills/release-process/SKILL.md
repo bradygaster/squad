@@ -15,7 +15,7 @@ recovery commands. The operational model is:
 |---------|---------|------------------|--------|
 | Insider | Manual `squad-insider-publish.yml` dispatch from `dev` | Generated `X.Y.Z-insider.N` | GitHub prerelease, npm `insider`, standalone archives, Homebrew, WinGet |
 | Preview | Manual `squad-release.yml` dispatch from `dev` | `X.Y.Z-preview.N` | GitHub prerelease, npm `preview`, standalone archives, Homebrew, WinGet |
-| Stable | Manual `squad-promote.yml` dispatch from `dev` | `X.Y.Z` | Sanitized `main` push, GitHub stable release, npm `latest`, standalone archives, Homebrew, WinGet |
+| Stable | Manual `squad-promote.yml` dispatch from `dev` | `X.Y.Z` | Sanitized promotion PR or legacy `main` push, then GitHub stable release, npm `latest`, standalone archives, Homebrew, WinGet |
 
 There is no staging `preview` branch. Do not create tags or GitHub Releases
 manually.
@@ -102,11 +102,28 @@ gh workflow run squad-promote.yml --ref dev -f dry_run=false
 gh run watch
 ```
 
-Promotion merges `dev` directly into `main`, strips internal team state,
-validates the release tree, builds it, runs tests, and pushes `main`. It then
-explicitly dispatches `squad-release.yml` because `GITHUB_TOKEN` pushes do not
-start another workflow. The release creates the tag and stable GitHub Release
-and directly invokes npm and standalone publication.
+When a validated sanitized promotion branch already exists in the upstream
+repository, a human may instead have `github-actions[bot]` open the protected
+`main` PR:
+
+```bash
+gh workflow run squad-promote.yml --ref dev \
+  -f dry_run=false \
+  -f promotion_branch=chore/promote-X.Y.Z
+```
+
+The workflow revalidates the branch, builds it, runs the release-gate tests,
+and opens the PR with `GITHUB_TOKEN`. GitHub may hold the resulting
+`pull_request` workflow runs for maintainer approval; a maintainer with write
+access must approve those runs, approve the PR, and merge it. The human merge
+pushes `main`, which starts `squad-release.yml` normally.
+
+Without `promotion_branch`, the legacy path merges `dev` directly into `main`,
+strips internal team state, validates the release tree, builds it, runs tests,
+and pushes `main`. It then explicitly dispatches `squad-release.yml` because
+`GITHUB_TOKEN` pushes do not start another workflow. The release creates the
+tag and stable GitHub Release and directly invokes npm and standalone
+publication.
 
 ## Verify
 

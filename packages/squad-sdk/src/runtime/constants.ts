@@ -13,34 +13,42 @@ export const MODELS = {
   /** Default model for config files and new projects (env-overridable) */
   DEFAULT: process.env['SQUAD_DEFAULT_MODEL'] ?? 'gpt-5.6-terra',
 
-  /** Default model for model-selector Layer 4 — cost-first */
+  /**
+   * Economy-profile default for model-selector Layer 4 (cost-first). The
+   * quality-first and balanced profiles default to the standard chain head.
+   */
   SELECTOR_DEFAULT: 'gpt-5.6-luna',
 
-  /** Default tier for the model-selector Layer 4 fallback */
+  /** Tier of {@link MODELS.SELECTOR_DEFAULT} */
   SELECTOR_DEFAULT_TIER: 'fast',
 
-  /** Fallback chains by tier — policy-ordered, GPT-first for premium/standard */
+  /**
+   * Fallback chains by tier — public GA model ids only (#1598), quality first,
+   * alternating providers. Must match `DEFAULT_FALLBACK_CHAINS` and
+   * `DEFAULT_CONFIG.models.tiers`.
+   */
   FALLBACK_CHAINS: {
     premium: [
-      'gpt-5.6-sol',
+      'claude-opus-5.5',
+      'gpt-6.1-sol',
       'claude-opus-5',
+      'gpt-6-sol',
       'claude-opus-4.8',
-      'claude-opus-4.7',
-      'claude-opus-4.6',
-      'claude-sonnet-4.6',
+      'gpt-5.6-sol',
     ],
     standard: [
+      'claude-sonnet-5.5',
       'gpt-5.6-terra',
       'claude-sonnet-5',
-      'claude-sonnet-4.6',
       'gpt-5.5',
       'gpt-5.4',
       'gpt-5.3-codex',
-      'claude-sonnet-4.5',
-      'gemini-3.1-pro',
     ],
     fast: [
+      'claude-haiku-5.5',
+      'gpt-6-luna',
       'gpt-5.6-luna',
+      'gemini-3.8-flash',
       'claude-haiku-4.5',
       'gpt-5.4-mini',
       'gpt-5-mini',

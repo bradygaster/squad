@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compileFunction, constants as vmConstants } from 'node:vm';
@@ -94,6 +94,11 @@ async function runLifecycleUpsert(items: unknown[], comments: Comment[] = []) {
 async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
   const directory = mkdtempSync(join(tmpdir(), 'squad-research-'));
   tempDirectories.push(directory);
+  const shared = join(directory, '.squad-evidence-trusted-base/.github/workflows/shared');
+  mkdirSync(shared, { recursive: true });
+  for (const name of ['squad-evidence-provider.mjs', 'squad-command-contract.mjs']) {
+    cpSync(join('workflows/shared', name), join(shared, name));
+  }
   const outputPath = join(directory, 'agent-output.json');
   writeFileSync(outputPath, JSON.stringify({ items }));
 
@@ -115,8 +120,10 @@ async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
   const context = { repo: { owner: 'octodemo', repo: 'consumer' } };
   const previousOutput = process.env.GH_AW_AGENT_OUTPUT;
   const previousIssue = process.env.ISSUE_NUMBER;
+  const previousWorkspace = process.env.GITHUB_WORKSPACE;
   process.env.GH_AW_AGENT_OUTPUT = outputPath;
   process.env.ISSUE_NUMBER = '5';
+  process.env.GITHUB_WORKSPACE = directory;
 
   try {
     const compiled = compileFunction(
@@ -130,6 +137,8 @@ async function runResearchUpsert(items: unknown[], comments: Comment[] = []) {
     else process.env.GH_AW_AGENT_OUTPUT = previousOutput;
     if (previousIssue === undefined) delete process.env.ISSUE_NUMBER;
     else process.env.ISSUE_NUMBER = previousIssue;
+    if (previousWorkspace === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = previousWorkspace;
   }
 
   return { created, updated, deleted, failures };
@@ -215,6 +224,34 @@ describe('#1935: deterministic research artifact safe output', () => {
     '- R1',
   ].join('\n');
   const boldSectionBody = body.replace(/^### (.+)$/gm, '**$1**');
+
+  it('publishes complete explicit research without a preexisting bootstrap artifact', async () => {
+    const completeBody = [
+      body,
+      '',
+      '### Online sources',
+      'Online sources: unavailable — repository evidence only.',
+      '',
+      '### Recommendations',
+      '- R1: address the verified finding before planning.',
+      '',
+      '### Next step',
+      'Run `/squad triage` or `/squad plan`.',
+    ].join('\n');
+    const result = await runResearchUpsert([
+      { type: 'upsert_research_artifact', body: completeBody },
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.deleted).toEqual([]);
+    expect(result.created).toEqual([{
+      owner: 'octodemo',
+      repo: 'consumer',
+      issue_number: 5,
+      body: `${completeBody}\n\nStructured data:\n\n\`\`\`json\n{"squad_artifact":"research","schema_version":"1","origin_issue":5,"phases":[]}\n\`\`\``,
+    }]);
+  });
 
   it('accepts bold section labels and creates the fixed structured envelope', async () => {
     const result = await runResearchUpsert([
@@ -532,31 +569,33 @@ describe('#1916: deterministic lifecycle safe output', () => {
     expect(result.created[0].body).toContain(issueHeadingBody);
   });
 
-  it('accepts non-command guidance for the terminal Activated state', async () => {
+  it('rejects model terminal activation even with otherwise valid terminal guidance', async () => {
     const result = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: terminalBody },
     ]);
 
-    expect(result.failures).toEqual([]);
-    expect(result.created).toHaveLength(1);
-    expect(result.created[0].body).toContain(terminalBody);
+    expect(result.failures).toEqual(['Activated lifecycle belongs exclusively to the trusted activation finalizer.']);
+    expect(result.created).toEqual([]);
+    expect(result.updated).toEqual([]);
   });
 
   it.each([
-    ['progress-table activation with command attribution', terminalTableBody],
-    ['plain progress-list activation', terminalProgressBody],
-    ['activate-stage table row', terminalActivateTableBody],
-    ['scope acceptance from the E2E planning run', liveScopeAcceptanceBody],
-    ['implementation acceptance with separate guidance', liveImplementationAcceptanceBody],
-    ['terminal granular activation from run 34987615314', liveActivatedBody],
-  ])('accepts live lifecycle presentation: %s', async (_name, liveBody) => {
+    ['progress-table activation with command attribution', terminalTableBody, true],
+    ['plain progress-list activation', terminalProgressBody, true],
+    ['activate-stage table row', terminalActivateTableBody, true],
+    ['scope acceptance from the E2E planning run', liveScopeAcceptanceBody, false],
+    ['implementation acceptance with separate guidance', liveImplementationAcceptanceBody, false],
+    ['terminal granular activation', liveActivatedBody, true],
+  ])('enforces trusted-finalizer ownership for lifecycle presentation: %s', async (_name, liveBody, terminal) => {
     const result = await runLifecycleUpsert([
       { type: 'upsert_lifecycle_state', body: liveBody },
     ]);
 
-    expect(result.failures).toEqual([]);
-    expect(result.created).toHaveLength(1);
-    expect(result.created[0].body).toContain(liveBody);
+    expect(result.failures).toEqual(terminal
+      ? ['Activated lifecycle belongs exclusively to the trusted activation finalizer.'] : []);
+    expect(result.created).toHaveLength(terminal ? 0 : 1);
+    if (!terminal) expect(result.created[0].body).toContain(liveBody);
+    expect(result.updated).toEqual([]);
   });
 
   it('rejects non-command next actions for nonterminal states', async () => {

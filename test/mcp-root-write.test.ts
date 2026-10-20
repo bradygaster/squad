@@ -169,6 +169,40 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
     expect(JSON.parse(fs.readFileSync(cfgPath, 'utf8')).mcpServers.squad_state.env).toEqual({});
   });
 
+  it.each(['npx', 'absolute'])('replaces an existing %s spec with a portable packaged command', previous => {
+    const cfgPath = getProjectMcpJsonPath(tmpProject);
+    const launcher = 'C:\\Users\\example\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Example.Squad\\squad.exe';
+    const custom = { command: 'node', args: ['./my-server.js'], env: { MODE: 'custom' } };
+    fs.writeFileSync(cfgPath, JSON.stringify({
+      mcpServers: {
+        custom,
+        squad_state: {
+          command: previous === 'npx' ? 'npx' : launcher,
+          args: previous === 'npx' ? PINNED_SPEC.args : ['state-mcp'],
+          env: { npm_config_registry: 'https://packagefeedproxy.microsoft.io/npm/' },
+          tools: ['read_state'],
+          timeout: 60000,
+        },
+      },
+    }, null, 2).replace(/\n/g, '\r\n') + '\r\n');
+    const spec: SquadStateMcpSpec = { command: launcher, args: ['state-mcp'], source: 'standalone' };
+    expect(ensureSquadStateMcpInRoot(tmpProject, '1.0.1', spec).written).toBe(true);
+    const raw = fs.readFileSync(cfgPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    expect(parsed.mcpServers.squad_state).toEqual({
+      command: process.platform === 'win32' ? 'squad.exe' : 'squad',
+      args: ['state-mcp'],
+      env: { npm_config_registry: 'https://packagefeedproxy.microsoft.io/npm/' },
+      tools: ['read_state'],
+      timeout: 60000,
+    });
+    expect(parsed.mcpServers.custom).toEqual(custom);
+    expect(raw).not.toContain('WinGet');
+    expect(raw).not.toMatch(/(?<!\r)\n/);
+    expect(ensureSquadStateMcpInRoot(tmpProject, '1.0.1', spec).written).toBe(false);
+    expect(fs.readFileSync(cfgPath, 'utf8')).toBe(raw);
+  });
+
   it('tombstone removes squad_state from .copilot/mcp-config.json while preserving siblings', () => {
     const copilotDir = path.join(tmpProject, '.copilot');
     fs.mkdirSync(copilotDir, { recursive: true });

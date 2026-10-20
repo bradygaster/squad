@@ -9,7 +9,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WatchContext } from '../../packages/squad-cli/src/cli/commands/watch/types.js';
 
-const { mockExecFile, mockFsExistsSync } = vi.hoisted(() => ({
+const {
+  mockExecFile,
+  mockFsExistsSync,
+  mockFsMkdirSync,
+  mockFsReadFileSync,
+  mockFsUnlinkSync,
+  mockFsWriteFileSync,
+} = vi.hoisted(() => ({
   mockExecFile: vi.fn((...args: unknown[]) => {
     const cb = args.find(a => typeof a === 'function') as
       | ((...cbArgs: unknown[]) => void)
@@ -18,6 +25,10 @@ const { mockExecFile, mockFsExistsSync } = vi.hoisted(() => ({
     return { pid: 1234, on: vi.fn() };
   }),
   mockFsExistsSync: vi.fn((): boolean => false),
+  mockFsMkdirSync: vi.fn(),
+  mockFsReadFileSync: vi.fn((): string => ''),
+  mockFsUnlinkSync: vi.fn(),
+  mockFsWriteFileSync: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -27,12 +38,22 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('node:fs', () => ({
   existsSync: mockFsExistsSync,
+  mkdirSync: mockFsMkdirSync,
+  readFileSync: mockFsReadFileSync,
+  unlinkSync: mockFsUnlinkSync,
+  writeFileSync: mockFsWriteFileSync,
 }));
 
 import {
+  WINDOWS_MAX_INLINE_ARG_LENGTH,
   buildAgentCommand,
   buildCopilotCommand,
+  escapeArgs,
+  parseCopilotUsageOutput,
+  prepareArgsForSpawn,
   spawnAgent,
+  spillPromptArgForCmd,
+  withCopilotUsageOutput,
 } from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
 function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
@@ -152,3 +173,150 @@ describe('agent-spawn: spawnAgent pid tracking', () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe('agent-spawn: Copilot usage capture', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFsExistsSync.mockReturnValue(false);
+  });
+
+  it('adds a unique usage output file under the effective state directory', () => {
+    const capture = withCopilotUsageOutput(['-p', 'hello'], '/external/.squad');
+
+    expect(mockFsMkdirSync).toHaveBeenCalledWith(
+      expect.stringMatching(/external[\\/]\.squad[\\/]log$/),
+      { recursive: true },
+    );
+    expect(capture.args.slice(0, 2)).toEqual(['-p', 'hello']);
+    expect(capture.args.at(-2)).toBe('--usage-output-file');
+    expect(capture.args.at(-1)).toBe(capture.filePath);
+    expect(capture.filePath).toMatch(/context-usage-.+\.json$/);
+  });
+
+  it('validates the required last-call usage fields', () => {
+    expect(parseCopilotUsageOutput({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    })).toEqual({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    });
+    expect(parseCopilotUsageOutput({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: -1,
+      lastCallOutputTokens: 200,
+    })).toBeUndefined();
+  });
+
+  it('returns parsed usage and removes the temporary file', async () => {
+    mockFsExistsSync.mockReturnValue(true);
+    mockFsReadFileSync.mockReturnValue(JSON.stringify({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    }));
+
+    const result = await spawnAgent(
+      'copilot',
+      ['-p', 'x'],
+      '/repo',
+      1000,
+      undefined,
+      '/repo/.squad/log/usage.json',
+    );
+
+    expect(result.usage).toEqual({
+      currentModel: 'gpt-5.4',
+      lastCallInputTokens: 800,
+      lastCallOutputTokens: 200,
+    });
+    expect(result.usageError).toBeUndefined();
+    expect(mockFsUnlinkSync).toHaveBeenCalledWith('/repo/.squad/log/usage.json');
+  });
+
+  it('reports malformed or missing usage without fabricating telemetry', async () => {
+    mockFsExistsSync.mockReturnValue(true);
+    mockFsReadFileSync.mockReturnValue('not-json');
+    const malformed = await spawnAgent(
+      'copilot',
+      ['-p', 'x'],
+      '/repo',
+      1000,
+      undefined,
+      '/repo/.squad/log/malformed.json',
+    );
+    expect(malformed.usage).toBeUndefined();
+    expect(malformed.usageError).toMatch(/Could not read Copilot usage output/);
+    expect(mockFsUnlinkSync).toHaveBeenCalledWith('/repo/.squad/log/malformed.json');
+
+    mockFsExistsSync.mockReturnValue(false);
+    const missing = await spawnAgent(
+      'copilot',
+      ['-p', 'x'],
+      '/repo',
+      1000,
+      undefined,
+      '/repo/.squad/log/missing.json',
+    );
+    expect(missing.usage).toBeUndefined();
+    expect(missing.usageError).toBe('Copilot usage output was not created');
+  });
+});
+
+describe('agent-spawn: Windows multiline and oversized prompt handling (#2070)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFsExistsSync.mockReturnValue(true);
+  });
+
+  it('spills multiline prompt arguments to a temp .md file and returns a single-line pointer', () => {
+    const multilinePrompt = 'You are an AI agent on a software development team.\n\nYOUR CHARTER:\n# Ralph\n\nHere are the current open squad issues:\n- #2070: Fix Windows prompt truncation';
+    const tempFiles: string[] = [];
+
+    const rewritten = spillPromptArgForCmd(multilinePrompt, tempFiles);
+
+    expect(tempFiles).toHaveLength(1);
+    expect(tempFiles[0]).toMatch(/squad-prompts[\\/]prompt-.*\.md$/);
+    expect(mockFsWriteFileSync).toHaveBeenCalledWith(tempFiles[0], multilinePrompt, 'utf8');
+    expect(rewritten).not.toMatch(/[\r\n]/);
+    expect(rewritten).toContain(tempFiles[0]!);
+    expect(rewritten).toContain('Your complete instructions are in the file');
+  });
+
+  it('spills single-line prompts exceeding WINDOWS_MAX_INLINE_ARG_LENGTH to a temp file', () => {
+    const longPrompt = 'x'.repeat(WINDOWS_MAX_INLINE_ARG_LENGTH + 100);
+    const tempFiles: string[] = [];
+
+    const rewritten = spillPromptArgForCmd(longPrompt, tempFiles);
+
+    expect(tempFiles).toHaveLength(1);
+    expect(mockFsWriteFileSync).toHaveBeenCalledWith(tempFiles[0], longPrompt, 'utf8');
+    expect(rewritten.length).toBeLessThan(500);
+  });
+
+  it('prepareArgsForSpawn escapes spilled prompt for cmd.exe on Windows and cleans up temp file', () => {
+    const multilinePrompt = 'Line 1\nLine 2\nLine 3';
+    const prepared = prepareArgsForSpawn(['-p', multilinePrompt, '--yolo'], true);
+
+    expect(prepared.tempFiles).toHaveLength(1);
+    expect(prepared.args[0]).toBe('-p');
+    expect(prepared.args[1]).toMatch(/^"Your complete instructions are in the file .+ - read that whole file first and follow it exactly as if it were this prompt\."$/);
+    expect(prepared.args[1]).not.toMatch(/[\r\n]/);
+    expect(prepared.args[2]).toBe('--yolo');
+
+    prepared.cleanup();
+    expect(mockFsUnlinkSync).toHaveBeenCalledWith(prepared.tempFiles[0]);
+  });
+
+  it('leaves args untouched when isWindows is false', () => {
+    const multilinePrompt = 'Line 1\nLine 2';
+    const prepared = prepareArgsForSpawn(['-p', multilinePrompt], false);
+
+    expect(prepared.tempFiles).toHaveLength(0);
+    expect(prepared.args).toEqual(['-p', multilinePrompt]);
+    expect(escapeArgs(['-p', multilinePrompt], false)).toEqual(['-p', multilinePrompt]);
+  });
+});
+

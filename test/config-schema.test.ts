@@ -31,7 +31,7 @@ describe('Configuration Schema', () => {
     it('should have tier definitions', () => {
       expect(DEFAULT_CONFIG.models.tiers.premium).toContain('claude-opus-5');
       expect(DEFAULT_CONFIG.models.tiers.premium).toContain('claude-opus-4.8');
-      expect(DEFAULT_CONFIG.models.tiers.standard).toContain('claude-sonnet-4.6');
+      expect(DEFAULT_CONFIG.models.tiers.standard).toContain('claude-sonnet-5.5');
       expect(DEFAULT_CONFIG.models.tiers.fast).toContain('gpt-5.6-luna');
     });
   });

@@ -419,6 +419,49 @@ describe('squad.agent.md template handling (#730)', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('initSquad stamps only the greeting placeholder or a valid SemVer literal', async () => {
+    const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
+    const realStorage = new FSStorageProvider();
+    const version = '2.3.4-beta.1+build.7';
+    const preservedText = [
+      '`Squad velocity`',
+      '`Squad v1.2`',
+      '`Squad v01.2.3`',
+    ];
+
+    const templateStorage = new Proxy(realStorage, {
+      get(target, prop, receiver) {
+        if (prop === 'readSync') {
+          return (filePath: string) => {
+            const content = target.readSync(filePath);
+            if (!filePath.endsWith('squad.agent.md.template') || content === undefined) {
+              return content;
+            }
+            return [
+              content,
+              '`Squad v1.2.3-01alpha`',
+              ...preservedText,
+            ].join('\n');
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    await initSquad(
+      { ...sdkOptions(TEST_ROOT), version },
+      templateStorage as typeof realStorage,
+    );
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const content = await readFile(agentPath, 'utf-8');
+    expect(content).toContain(`\`Squad v${version}\``);
+    expect(content).not.toContain('`Squad v1.2.3-01alpha`');
+    for (const text of preservedText) {
+      expect(content).toContain(text);
+    }
+  });
+
   it('initSquad returns warning when squad.agent.md template is missing', async () => {
     const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
     const realStorage = new FSStorageProvider();

@@ -23,30 +23,33 @@ describe('MODEL_CATALOG', () => {
     expect(fastModels.length).toBeGreaterThan(0);
   });
 
-  it('marks every catalog model as vision-capable', () => {
-    expect(MODEL_CATALOG.every(model => model.vision === true)).toBe(true);
+  it('marks every GA catalog model as vision-capable', () => {
+    // Preview opt-in entries (#2014) do not claim capabilities that are not documented.
+    const notVision = MODEL_CATALOG.filter(model => model.preview !== true && model.vision !== true).map(model => model.id);
+    expect(notVision, `GA catalog models without vision: ${JSON.stringify(notVision)}`).toEqual([]);
   });
 
   it('includes expected premium models', () => {
     const modelIds = MODEL_CATALOG.map(m => m.id);
 
+    expect(modelIds).toContain('claude-opus-5.5');
     expect(modelIds).toContain('claude-opus-5');
-    expect(modelIds).toContain('claude-opus-4.6');
     expect(modelIds).toContain('claude-opus-4.8');
-    expect(modelIds).toContain('claude-opus-4.7');
+    expect(modelIds).toContain('gpt-6.1-sol');
   });
 
   it('includes expected standard models', () => {
     const modelIds = MODEL_CATALOG.map(m => m.id);
 
-    expect(modelIds).toContain('claude-sonnet-4.5');
+    expect(modelIds).toContain('claude-sonnet-5.5');
     expect(modelIds).toContain('gpt-5.4');
-    expect(modelIds).toContain('gemini-3.1-pro');
+    expect(modelIds).toContain('gpt-5.6-terra');
   });
 
   it('includes expected fast models', () => {
     const modelIds = MODEL_CATALOG.map(m => m.id);
 
+    expect(modelIds).toContain('claude-haiku-5.5');
     expect(modelIds).toContain('claude-haiku-4.5');
     expect(modelIds).toContain('gpt-5.4-mini');
     expect(modelIds).toContain('gpt-5-mini');
@@ -54,13 +57,17 @@ describe('MODEL_CATALOG', () => {
   });
 
   it('assigns correct providers', () => {
-    const claude = MODEL_CATALOG.find(m => m.id === 'claude-sonnet-4.5');
+    const claude = MODEL_CATALOG.find(m => m.id === 'claude-sonnet-5.5');
     const gpt = MODEL_CATALOG.find(m => m.id === 'gpt-5.4');
-    const gemini = MODEL_CATALOG.find(m => m.id === 'gemini-3.1-pro');
+    const gemini = MODEL_CATALOG.find(m => m.id === 'gemini-4-argon');
+    const grok = MODEL_CATALOG.find(m => m.id === 'grok-4.7');
+    const mai = MODEL_CATALOG.find(m => m.id === 'mai-code-1.1-flash');
 
     expect(claude?.provider).toBe('anthropic');
     expect(gpt?.provider).toBe('openai');
     expect(gemini?.provider).toBe('google');
+    expect(grok?.provider).toBe('xai');
+    expect(mai?.provider).toBe('microsoft');
   });
 });
 
@@ -77,16 +84,16 @@ describe('DEFAULT_FALLBACK_CHAINS', () => {
     expect(DEFAULT_FALLBACK_CHAINS.fast.length).toBeGreaterThan(0);
   });
 
-  it('starts premium chain with GPT Sol', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('gpt-5.6-sol');
+  it('starts premium chain with Claude Opus 5.5', () => {
+    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-5.5');
   });
 
-  it('starts standard chain with GPT Terra', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('gpt-5.6-terra');
+  it('starts standard chain with Claude Sonnet 5.5', () => {
+    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-5.5');
   });
 
-  it('starts fast chain with Luna', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.fast[0]).toBe('gpt-5.6-luna');
+  it('starts fast chain with Claude Haiku 5.5', () => {
+    expect(DEFAULT_FALLBACK_CHAINS.fast[0]).toBe('claude-haiku-5.5');
   });
 });
 
@@ -95,10 +102,10 @@ describe('ModelRegistry', () => {
 
   describe('getModelInfo', () => {
     it('returns info for valid model', () => {
-      const info = registry.getModelInfo('claude-sonnet-4.5');
+      const info = registry.getModelInfo('claude-sonnet-5.5');
 
       expect(info).toBeDefined();
-      expect(info?.id).toBe('claude-sonnet-4.5');
+      expect(info?.id).toBe('claude-sonnet-5.5');
       expect(info?.tier).toBe('standard');
       expect(info?.provider).toBe('anthropic');
     });
@@ -112,7 +119,7 @@ describe('ModelRegistry', () => {
 
   describe('isModelAvailable', () => {
     it('returns true for catalog models', () => {
-      expect(registry.isModelAvailable('claude-opus-4.6')).toBe(true);
+      expect(registry.isModelAvailable('claude-opus-5.5')).toBe(true);
       expect(registry.isModelAvailable('gpt-5.4')).toBe(true);
       expect(registry.isModelAvailable('claude-haiku-4.5')).toBe(true);
     });
@@ -179,7 +186,7 @@ describe('ModelRegistry', () => {
     });
 
     it('prefers same provider when enabled', () => {
-      const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-4.5');
+      const chain = registry.getFallbackChain('standard', true, 'claude-sonnet-5.5');
 
       // First models should be Claude (Anthropic)
       const firstFew = chain.slice(0, 2);
@@ -198,11 +205,12 @@ describe('ModelRegistry', () => {
     it('returns next model in chain', () => {
       const next = registry.getNextFallback('claude-opus-4.8', 'premium');
 
-      expect(next).toBe('claude-opus-5');
+      // Same-provider preference walks Anthropic entries first, newest first.
+      expect(next).toBe('claude-opus-5.5');
     });
 
     it('skips already attempted models', () => {
-      const attempted = new Set(['claude-opus-4.7', 'claude-opus-4.6']);
+      const attempted = new Set(['claude-opus-5.5', 'claude-opus-5']);
       const next = registry.getNextFallback('claude-opus-4.8', 'premium', attempted);
 
       expect(next).not.toBeNull();
@@ -246,7 +254,7 @@ describe('ModelRegistry', () => {
       const ids = registry.getAllModelIds();
 
       expect(ids.length).toBe(MODEL_CATALOG.length);
-      expect(ids).toContain('claude-opus-4.6');
+      expect(ids).toContain('claude-opus-5.5');
       expect(ids).toContain('gpt-5.4');
       expect(ids).toContain('claude-haiku-4.5');
     });
@@ -268,10 +276,10 @@ describe('ModelRegistry', () => {
 
 describe('convenience functions', () => {
   it('getModelInfo works', () => {
-    const info = getModelInfo('claude-sonnet-4.5');
+    const info = getModelInfo('claude-sonnet-5.5');
 
     expect(info).toBeDefined();
-    expect(info?.id).toBe('claude-sonnet-4.5');
+    expect(info?.id).toBe('claude-sonnet-5.5');
   });
 
   it('getFallbackChain works', () => {
@@ -281,7 +289,7 @@ describe('convenience functions', () => {
   });
 
   it('isModelAvailable works', () => {
-    expect(isModelAvailable('claude-opus-4.6')).toBe(true);
+    expect(isModelAvailable('claude-opus-5.5')).toBe(true);
     expect(isModelAvailable('nonexistent-model')).toBe(false);
   });
 });

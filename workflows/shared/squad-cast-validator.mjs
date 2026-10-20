@@ -194,6 +194,25 @@ function charterReferences(markdown) {
     .sort();
 }
 
+function validateTeamRoleSection(team, heading, name, role, errors) {
+  const section = extractSingleSection(team, heading, 'team', errors);
+  if (section === null) return;
+  const rows = section.split('\n')
+    .map(line => line.trim())
+    .filter(line => /^\|.+\|$/.test(line))
+    .map(line => line.slice(1, -1).split('|').map(cell => cell.trim()))
+    .filter(cells => cells[0] !== 'Name' && !/^:?-+/.test(cells[0]));
+  if (rows.length !== 1 || rows[0][0] !== name || rows[0][1] !== role) {
+    errors.push(`team: "${heading}" must contain exactly one row for ${name} with role ${role}`);
+  }
+  if (name === '@copilot' &&
+      (rows[0]?.at(-1) !== '🤖 Coding Agent' ||
+       (team.match(/copilot-auto-assign/gi) ?? []).length !== 1 ||
+       !/^<!-- copilot-auto-assign: false -->$/m.test(section))) {
+    errors.push('team: Coding Agent requires status "🤖 Coding Agent" and one standalone <!-- copilot-auto-assign: false --> marker in its section');
+  }
+}
+
 function parseRouting(routing, activeNames, errors) {
   const headingMatches = routing.match(/^## Routing Table\s*$/gm) ?? [];
   if (headingMatches.length !== 1) {
@@ -718,6 +737,9 @@ export function validateCastTree({ root, payloadPath, gitRoot = root }) {
 
   const membersSection = extractSingleSection(team, '## Members', 'team', errors);
   if (membersSection !== null) {
+    if (/^\|\s*(?:Squad|@copilot)\s*\|/mi.test(membersSection)) {
+      errors.push('team: Coordinator and Coding Agent must be in their dedicated sections, not Members');
+    }
     const leakedBuiltinCharters = charterReferences(membersSection)
       .filter((reference) => REQUIRED_BUILTIN_CHARTERS.includes(reference));
     if (leakedBuiltinCharters.length > 0) {
@@ -728,6 +750,9 @@ export function validateCastTree({ root, payloadPath, gitRoot = root }) {
       errors.push(`team: Members roster must not list built-in agents as specialists: ${[...new Set(builtinRows)].join(', ')}`);
     }
   }
+
+  validateTeamRoleSection(team, '## Coordinator', 'Squad', 'Coordinator', errors);
+  validateTeamRoleSection(team, '## Coding Agent', '@copilot', 'Coding Agent', errors);
 
   const builtinSection = extractSingleSection(team, BUILTIN_SECTION_HEADING, 'team', errors);
   if (builtinSection !== null) {

@@ -156,9 +156,9 @@ describe('initSquadTelemetry — auto-wiring', () => {
 
 describe('estimateCost()', () => {
   it('returns correct cost for a known model', () => {
-    const cost = estimateCost('claude-sonnet-4.5', 1000, 500);
-    // pricing: input $0.000003/token, output $0.000015/token
-    expect(cost).toBeCloseTo(0.003 + 0.0075, 6);
+    const cost = estimateCost('claude-sonnet-5', 1000, 500);
+    // pricing: input $0.000002/token, output $0.00001/token
+    expect(cost).toBeCloseTo(0.002 + 0.005, 6);
   });
 
   it('returns 0 for an unknown model', () => {
@@ -167,7 +167,7 @@ describe('estimateCost()', () => {
   });
 
   it('returns 0 for zero tokens', () => {
-    const cost = estimateCost('claude-sonnet-4.5', 0, 0);
+    const cost = estimateCost('claude-sonnet-5', 0, 0);
     expect(cost).toBe(0);
   });
 
@@ -184,7 +184,7 @@ describe('estimateCost()', () => {
   });
 
   it('works for premium-tier models', () => {
-    const cost = estimateCost('claude-opus-4.6', 1000, 500);
+    const cost = estimateCost('claude-opus-4.8', 1000, 500);
     // Pricing: input $0.000005/token, output $0.000025/token.
     expect(cost).toBeCloseTo(0.005 + 0.0125, 6);
   });
@@ -208,7 +208,7 @@ describe('MODEL_CATALOG pricing', () => {
   });
 
   it('premium models cost more per token than fast models', () => {
-    const premium = MODEL_CATALOG.find(m => m.id === 'claude-opus-4.6')!;
+    const premium = MODEL_CATALOG.find(m => m.id === 'claude-opus-4.8')!;
     const fast = MODEL_CATALOG.find(m => m.id === 'claude-haiku-4.5')!;
     expect(premium.pricing!.inputPerToken).toBeGreaterThan(fast.pricing!.inputPerToken);
     expect(premium.pricing!.outputPerToken).toBeGreaterThan(fast.pricing!.outputPerToken);

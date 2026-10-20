@@ -182,9 +182,10 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
+      // An explicitly named stale ID is still passed through unchanged.
       expect(result.model).toBe('claude-opus-4.6');
       expect(result.tier).toBe('premium');
-      expect(result.fallbackChain).toContain('claude-opus-4.7');
+      expect(result.fallbackChain).toContain('claude-opus-5.5');
     });
 
     it('should infer fast tier for haiku models', () => {
@@ -225,7 +226,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.source).not.toBe('charter');
       expect(result.source).toBe('task-auto');
-      expect(result.model).toBe('gpt-5.6-terra');
+      expect(result.model).toBe('claude-sonnet-5.5');
     });
 
     it('should prefer user override over charter', () => {
@@ -250,7 +251,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-terra');
+      expect(result.model).toBe('claude-sonnet-5.5');
       expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
@@ -262,7 +263,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-terra');
+      expect(result.model).toBe('claude-sonnet-5.5');
       expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
@@ -274,32 +275,32 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-sol');
+      expect(result.model).toBe('claude-opus-5.5');
       expect(result.tier).toBe('premium');
       expect(result.source).toBe('task-auto');
     });
 
-    it('should select fast tier for docs tasks', () => {
+    it('should select standard tier for docs tasks (quality-first)', () => {
       const options: ModelResolutionOptions = {
         taskType: 'docs',
       };
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-luna');
-      expect(result.tier).toBe('fast');
+      expect(result.model).toBe('claude-sonnet-5.5');
+      expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
 
-    it('should select fast tier for planning tasks', () => {
+    it('should select standard tier for planning tasks (quality-first)', () => {
       const options: ModelResolutionOptions = {
         taskType: 'planning',
       };
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-luna');
-      expect(result.tier).toBe('fast');
+      expect(result.model).toBe('claude-sonnet-5.5');
+      expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
 
@@ -310,7 +311,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-luna');
+      expect(result.model).toBe('claude-haiku-5.5');
       expect(result.tier).toBe('fast');
       expect(result.source).toBe('task-auto');
     });
@@ -327,8 +328,8 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       // Should fall through to task-auto first
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-luna');
-      expect(result.tier).toBe('fast');
+      expect(result.model).toBe('claude-sonnet-5.5');
+      expect(result.tier).toBe('standard');
     });
   });
 
@@ -342,24 +343,25 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.fallbackChain).toEqual([
-        'gpt-5.6-sol',
+        'claude-opus-5.5',
+        'gpt-6.1-sol',
         'claude-opus-5',
+        'gpt-6-sol',
         'claude-opus-4.8',
-        'claude-opus-4.7',
-        'claude-opus-4.6',
-        'claude-sonnet-4.6',
+        'gpt-5.6-sol',
       ]);
     });
 
-    it('should classify catalog premium Sol with the premium fallback chain', () => {
+    it('should classify catalog premium Sol with the premium fallback chain, from its own position', () => {
       const result = resolveModel({
         userOverride: 'gpt-5.6-sol',
         taskType: 'code',
       });
 
       expect(result.tier).toBe('premium');
+      // Retries are forward-only: never back toward the chain head (PR #2225).
       expect(result.fallbackChain[0]).toBe('gpt-5.6-sol');
-      expect(result.fallbackChain).toContain('gpt-5.6-sol');
+      expect(result.fallbackChain).not.toContain('claude-opus-5.5');
     });
 
     it('should provide standard fallback chain', () => {
@@ -369,28 +371,29 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      // Standard routing prefers GPT Terra before the Claude fallbacks.
+      // Standard routing: newest public GA standard models first.
       expect(result.fallbackChain).toEqual([
+        'claude-sonnet-5.5',
         'gpt-5.6-terra',
         'claude-sonnet-5',
-        'claude-sonnet-4.6',
         'gpt-5.5',
         'gpt-5.4',
         'gpt-5.3-codex',
-        'claude-sonnet-4.5',
-        'gemini-3.1-pro',
       ]);
     });
 
     it('should provide fast fallback chain', () => {
       const options: ModelResolutionOptions = {
-        taskType: 'docs',
+        taskType: 'mechanical',
       };
 
       const result = resolveModel(options);
 
       expect(result.fallbackChain).toEqual([
+        'claude-haiku-5.5',
+        'gpt-6-luna',
         'gpt-5.6-luna',
+        'gemini-3.8-flash',
         'claude-haiku-4.5',
         'gpt-5.4-mini',
         'gpt-5-mini',
@@ -453,7 +456,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.source).toBe('task-auto');
-      expect(result.model).toBe('gpt-5.6-terra');
+      expect(result.model).toBe('claude-sonnet-5.5');
     });
 
     it('should include agentRole in context without affecting resolution', () => {
@@ -464,7 +467,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('gpt-5.6-terra');
+      expect(result.model).toBe('claude-sonnet-5.5');
       expect(result.source).toBe('task-auto');
     });
   });

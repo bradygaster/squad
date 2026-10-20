@@ -24,6 +24,10 @@ import {
   type ResolvedModel,
   type ModelTier,
 } from '@bradygaster/squad-sdk/agents';
+import { MODEL_CATALOG } from '@bradygaster/squad-sdk/config';
+import { MODELS } from '@bradygaster/squad-sdk';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // --- Helpers ---
 
@@ -578,5 +582,101 @@ describe('isTierFallbackAllowed', () => {
   it('allows premium → standard (one step down) by default', () => {
     // premium → standard is a downgrade, not same or upgrade
     expect(isTierFallbackAllowed('premium', 'standard', false)).toBe(false);
+  });
+});
+
+// =============================================================================
+// Contract: coordinator spawn guidance is model-ID agnostic (#1720)
+// =============================================================================
+
+describe('coordinator spawn guidance contract (#1720)', () => {
+  const ROOT = resolve(import.meta.dirname, '..');
+  const SPAWN_SECTIONS = [
+    '### Per-Agent Model Selection',
+    '### Per-Agent Reasoning Effort',
+    '### Per-Agent Context Tier',
+    '### How to Spawn an Agent',
+  ];
+  const AGENT_FILES = ['.squad-templates/squad.agent.md', '.github/agents/squad.agent.md'];
+  const REFERENCE_FILE = '.squad-templates/model-selection-reference.md';
+  const SPAWN_REFERENCE_FILE = '.squad-templates/spawn-reference.md';
+
+  const knownIds = new Set<string>([
+    ...MODEL_CATALOG.map((m) => m.id.toLowerCase()),
+    ...Object.values(MODELS.FALLBACK_CHAINS).flat().map((id) => id.toLowerCase()),
+  ]);
+  const ID_PATTERN = /\b(?:gpt|claude|gemini|grok|o[1-9])-[a-z0-9][a-z0-9.-]*|\b(?:opus|sonnet|haiku|codex)\b/gi;
+
+  function section(text: string, heading: string, file: string): { body: string; startLine: number } {
+    const lines = text.split(/\r?\n/);
+    const start = lines.findIndex((l) => l.trim() === heading);
+    expect(start, `${file} is missing spawn-guidance section '${heading}'`).toBeGreaterThanOrEqual(0);
+    let end = lines.findIndex((l, i) => i > start && /^#{2,3} /.test(l));
+    if (end === -1) end = lines.length;
+    return { body: lines.slice(start, end).join('\n'), startLine: start + 1 };
+  }
+
+  function offenders(label: string, body: string, startLine: number): string[] {
+    const found: string[] = [];
+    body.split('\n').forEach((line, i) => {
+      for (const id of knownIds) {
+        if (new RegExp(`(^|[^a-z0-9.-])${id.replace(/[.]/g, '\\.')}($|[^a-z0-9.-])`, 'i').test(line)) {
+          found.push(`${label}:${startLine + i}: '${id}'`);
+        }
+      }
+      for (const match of line.matchAll(ID_PATTERN)) {
+        const hit = `${label}:${startLine + i}: '${match[0].toLowerCase()}'`;
+        if (!found.includes(hit)) found.push(hit);
+      }
+    });
+    return found;
+  }
+
+  function guidanceTexts(): { label: string; body: string; startLine: number }[] {
+    const out: { label: string; body: string; startLine: number }[] = [];
+    for (const file of AGENT_FILES) {
+      const text = readFileSync(resolve(ROOT, file), 'utf8');
+      for (const heading of SPAWN_SECTIONS) {
+        out.push({ label: `${file} › ${heading}`, ...section(text, heading, file) });
+      }
+    }
+    const reference = readFileSync(resolve(ROOT, REFERENCE_FILE), 'utf8');
+    // Catalog data lives in '## Appendix A'; without it, the whole file is guidance.
+    const appendixAt = reference.search(/^## Appendix A\b/m);
+    const guidance = appendixAt > 0 ? reference.slice(0, appendixAt) : reference;
+    out.push({ label: `${REFERENCE_FILE} (guidance before Appendix A)`, body: guidance, startLine: 1 });
+    out.push({ label: SPAWN_REFERENCE_FILE, body: readFileSync(resolve(ROOT, SPAWN_REFERENCE_FILE), 'utf8'), startLine: 1 });
+    return out;
+  }
+
+  it('contains no hard-coded model IDs', () => {
+    const found = guidanceTexts().flatMap(({ label, body, startLine }) => offenders(label, body, startLine));
+    expect(found, `Hard-coded model IDs in coordinator spawn guidance:\n${found.join('\n')}`).toEqual([]);
+  });
+
+  it('defers to the central resolver precedence and acknowledges model, source and rationale', () => {
+    const order = ['user-override', 'config', 'session', 'charter', 'task-auto', 'default'];
+    for (const file of AGENT_FILES) {
+      const { body } = section(readFileSync(resolve(ROOT, file), 'utf8'), '### Per-Agent Model Selection', file);
+      const positions = order.map((source) => body.indexOf(`**${source}**`));
+      expect(
+        positions.every((p, i) => p >= 0 && (i === 0 || p > positions[i - 1]!)),
+        `${file} Per-Agent Model Selection must list sources in order ${order.join(' > ')}; positions ${JSON.stringify(
+          Object.fromEntries(order.map((s, i) => [s, positions[i]])),
+        )}`,
+      ).toBe(true);
+      expect(body, `${file} spawn acknowledgment must show model, source and rationale`).toContain(
+        '({model} · {source})',
+      );
+      expect(body, `${file} spawn acknowledgment must include a rationale`).toContain('{rationale}');
+    }
+    const reference = readFileSync(resolve(ROOT, REFERENCE_FILE), 'utf8');
+    expect(
+      /^## Appendix A\b/m.test(reference),
+      `${REFERENCE_FILE} must keep catalog IDs in '## Appendix A', separate from spawn guidance`,
+    ).toBe(true);
+    for (const source of [...order, 'fallback']) {
+      expect(reference, `${REFERENCE_FILE} must document resolver source '${source}'`).toContain(`\`${source}\``);
+    }
   });
 });

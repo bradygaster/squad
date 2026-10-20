@@ -4,7 +4,15 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ---
 
-## v1.0.1 — Current Release
+## v1.1.0 — Current Release
+
+- **Smarter model routing** — Central model resolution, GA quality profiles, and safer economy fallbacks make model selection predictable and observable
+- **HydraFusion opt-in** — Preview HydraFusion models are available through an explicit profile without entering default or GA recommendation chains
+- **Safer upgrades** — Legacy casting state migrates automatically, portable MCP configuration and CRLF style are preserved, and user-authored Copilot instructions survive upgrades
+- **CLI completeness** — Cast/hire persistence, build watch mode, explicit memory-provider errors, and reliable multiline Windows watch prompts close command gaps
+- **Release reliability** — Homebrew and WinGet reads use anonymous clones, with credentials scoped only to later pushes
+
+## v1.0.1 — Stable Release
 
 - **Routing health fix** — `squad health` now accepts persistent casting names as valid routing references
 - **Activation integrity** — Stable standalone installs fail closed when checksums are missing, invalid, or tampered with

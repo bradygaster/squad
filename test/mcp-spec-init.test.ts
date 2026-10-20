@@ -11,7 +11,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, copyFileSync, mkdirSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -24,6 +25,7 @@ vi.mock(
 
 import {
   resolveSquadStateMcpSpec,
+  projectSquadStateMcpSpec,
   detectStandaloneLauncher,
   STANDALONE_HOME_ENV,
   _resetMcpSpecCache,
@@ -212,8 +214,54 @@ describe('describeMcpSpec — standalone specs (#1593)', () => {
       args: ['state-mcp'],
       source: 'standalone',
     });
+
     expect(described).toContain('/opt/squad/squad');
     expect(described).not.toContain('<unknown>');
+  });
+});
+
+describe('project MCP launch portability', () => {
+  it.each([
+    ['win32', 'squad.exe'],
+    ['linux', 'squad'],
+    ['darwin', 'squad'],
+  ] as const)('uses the supported PATH executable on %s without altering the local spec', (platform, command) => {
+    const local = { command: 'C:\\example\\bundle\\squad.exe', args: ['state-mcp'], source: 'standalone' as const };
+    expect(projectSquadStateMcpSpec(local, platform)).toEqual({
+      command, args: ['state-mcp'], source: 'standalone',
+    });
+    expect(local.command).toBe('C:\\example\\bundle\\squad.exe');
+    expect(projectSquadStateMcpSpec({
+      command: 'npx', args: ['-y', '@bradygaster/squad-cli@1.0.1', 'state-mcp'], source: 'pinned',
+    }, platform)).toEqual({
+      command: 'npx', args: ['-y', '@bradygaster/squad-cli@1.0.1', 'state-mcp'], source: 'pinned',
+    });
+  });
+
+  it.runIf(process.platform === 'win32')('resolves squad.exe through subprocess PATH without a shell or shim', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'squad-mcp-path-'));
+    try {
+      const bin = path.join(root, 'bin');
+      const cwd = path.join(root, 'project');
+      mkdirSync(bin);
+      mkdirSync(cwd);
+      // A real PE executable, not a PowerShell alias or CMD wrapper.
+      copyFileSync(process.execPath, path.join(bin, 'squad.exe'));
+      writeFileSync(path.join(bin, 'squad.cmd'), '@echo off\r\nexit /b 99\r\n');
+      writeFileSync(path.join(bin, 'squad.ps1'), 'exit 99\r\n');
+      const spec = projectSquadStateMcpSpec({
+        command: path.join(bin, 'squad.exe'), args: ['state-mcp'], source: 'standalone',
+      });
+      const env = { ...process.env };
+      for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+      env.PATH = bin;
+      const result = spawnSync(spec.command, ['--version'], { cwd, env, shell: false, encoding: 'utf8' });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).toBe(process.version);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

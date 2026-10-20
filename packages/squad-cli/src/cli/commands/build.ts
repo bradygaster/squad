@@ -17,6 +17,7 @@
  * @module cli/commands/build
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -66,7 +67,7 @@ interface LoadedConfig {
  *   2. squad.config.ts
  *   3. squad.config.js
  */
-async function loadSquadConfig(cwd: string): Promise<LoadedConfig> {
+async function loadSquadConfig(cwd: string, cacheBust = false): Promise<LoadedConfig> {
   const storage = new FSStorageProvider();
   const candidates = [
     path.join(cwd, 'squad', 'index.ts'),
@@ -77,7 +78,8 @@ async function loadSquadConfig(cwd: string): Promise<LoadedConfig> {
   for (const candidate of candidates) {
     if (storage.existsSync(candidate)) {
       try {
-        const url = pathToFileURL(candidate).href;
+        const baseUrl = pathToFileURL(candidate).href;
+        const url = cacheBust ? `${baseUrl}?update=${Date.now()}-${Math.random()}` : baseUrl;
         const mod = await import(url);
         const config: SquadSDKConfig = mod.default ?? mod.config ?? mod.squadConfig;
         if (!config) {
@@ -495,6 +497,14 @@ export interface BuildOptions {
   check?: boolean;
   dryRun?: boolean;
   watch?: boolean;
+  /** Optional AbortSignal to stop `--watch` mode cleanly (used in tests and programmatic callers). */
+  signal?: AbortSignal;
+  /** Optional callback invoked when the watcher is active and ready. */
+  onWatchReady?: (sourcePath: string) => void;
+  /** Optional callback invoked after each rebuild in `--watch` mode. */
+  onRebuild?: (result: { written: number; skipped: number; source: string }) => void;
+  /** Debounce interval in milliseconds for `--watch` rebuilds (default: 75ms). */
+  debounceMs?: number;
 }
 
 /**
@@ -504,13 +514,6 @@ export interface BuildOptions {
  * @param options - CLI flags
  */
 export async function runBuild(cwd: string, options: BuildOptions = {}): Promise<void> {
-  // --watch stub
-  if (options.watch) {
-    info(`${YELLOW}⏳${RESET} Watch mode coming soon — rebuilding on file changes is not yet implemented.`);
-    info(`   For now, run ${BOLD}squad build${RESET} manually after changes.`);
-    return;
-  }
-
   // Resolve effective state directory (respects externalized state)
   let stateDir: string | undefined;
   try {
@@ -564,13 +567,114 @@ export async function runBuild(cwd: string, options: BuildOptions = {}): Promise
     return;
   }
 
-  // Default: write files
+  // Default: write files (initial build)
   const result = writeFiles(cwd, files, stateDir);
 
   success(`squad build complete — generated ${result.written} file(s)`);
   if (result.skipped > 0) {
     dim(`  (${result.skipped} protected file(s) skipped)`);
   }
+
+  // --watch mode: stay alive and rebuild when the config file changes
+  if (options.watch) {
+    const relSource = path.relative(cwd, source) || path.basename(source);
+    info(`${YELLOW}👀${RESET} Watching ${BOLD}${relSource}${RESET} for changes... (Ctrl+C to stop)`);
+    await watchSquadConfig(cwd, source, stateDir, options);
+  }
+}
+
+async function watchSquadConfig(
+  cwd: string,
+  initialSource: string,
+  stateDir: string | undefined,
+  options: BuildOptions,
+): Promise<void> {
+  if (options.signal?.aborted) return;
+
+  const watchDir = path.dirname(initialSource);
+  const targetBasename = path.basename(initialSource);
+  const debounceMs = options.debounceMs ?? 75;
+  let lastContent = '';
+  try {
+    lastContent = fs.readFileSync(initialSource, 'utf-8');
+  } catch {
+    // Ignore initial read failure
+  }
+
+  await new Promise<void>((resolve) => {
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    let rebuilding = false;
+    let pendingRebuild = false;
+    let closed = false;
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      watcher.close();
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+      options.signal?.removeEventListener('abort', onAbort);
+      resolve();
+    };
+
+    const onSignal = () => cleanup();
+    const onAbort = () => cleanup();
+
+    const triggerRebuild = async () => {
+      if (closed) return;
+      if (rebuilding) {
+        pendingRebuild = true;
+        return;
+      }
+      rebuilding = true;
+      try {
+        let currentContent = '';
+        try {
+          currentContent = fs.readFileSync(initialSource, 'utf-8');
+        } catch {
+          // File may be mid-rename during atomic save; wait for next event
+          return;
+        }
+        if (currentContent === lastContent) {
+          return;
+        }
+        lastContent = currentContent;
+
+        const { config: updatedConfig, source: updatedSource } = await loadSquadConfig(cwd, true);
+        const updatedFiles = buildFilePlan(updatedConfig);
+        const rebuildResult = writeFiles(cwd, updatedFiles, stateDir);
+        success(`squad build complete — generated ${rebuildResult.written} file(s)`);
+        options.onRebuild?.({
+          written: rebuildResult.written,
+          skipped: rebuildResult.skipped,
+          source: updatedSource,
+        });
+      } catch (err) {
+        warn(`Rebuild failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        rebuilding = false;
+        if (pendingRebuild && !closed) {
+          pendingRebuild = false;
+          void triggerRebuild();
+        }
+      }
+    };
+
+    const watcher = fs.watch(watchDir, (_eventType, filename) => {
+      if (closed) return;
+      if (filename && filename !== targetBasename) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void triggerRebuild();
+      }, debounceMs);
+    });
+
+    process.on('SIGINT', onSignal);
+    process.on('SIGTERM', onSignal);
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    options.onWatchReady?.(initialSource);
+  });
 }
 
 // ---------------------------------------------------------------------------
