@@ -333,11 +333,7 @@ jobs:
           set -euo pipefail
           if npm view "@bradygaster/squad-sdk@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
             echo "@bradygaster/squad-sdk@${PACKAGE_VERSION} already exists; skipping npm publish."
-            tagged_version="$(npm view @bradygaster/squad-sdk "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
-            if [ "$tagged_version" != "$PACKAGE_VERSION" ]; then
-              echo "::error::npm dist-tag '${NPM_DIST_TAG}' points to '${tagged_version:-<unset>}', not '${PACKAGE_VERSION}'. Refusing to move it implicitly."
-              exit 1
-            fi
+            echo "The verification step will wait for npm dist-tag '${NPM_DIST_TAG}' to converge."
           else
             npm -w packages/squad-sdk publish --access public --provenance --tag "$NPM_DIST_TAG"
           fi
@@ -346,17 +342,17 @@ jobs:
           NPM_DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          for i in 1 2 3 4 5; do
+          for i in $(seq 1 20); do
             published_version="$(npm view "@bradygaster/squad-sdk@${PACKAGE_VERSION}" version 2>/dev/null || true)"
             tagged_version="$(npm view @bradygaster/squad-sdk "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
             if [ "$published_version" = "$PACKAGE_VERSION" ] && [ "$tagged_version" = "$PACKAGE_VERSION" ]; then
               echo "Verified @bradygaster/squad-sdk@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}'"
               exit 0
             fi
-            echo "Registry attempt $i/5: version='${published_version:-<unset>}', ${NPM_DIST_TAG}='${tagged_version:-<unset>}'; waiting 15s..."
+            echo "Registry attempt $i/20: version='${published_version:-<unset>}', ${NPM_DIST_TAG}='${tagged_version:-<unset>}'; waiting 15s..."
             sleep 15
           done
-          echo "::error::Could not verify @bradygaster/squad-sdk@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}' after 5 attempts."
+          echo "::error::Could not verify @bradygaster/squad-sdk@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}' after 20 attempts."
           exit 1
   publish-cli:
     name: Publish @bradygaster/squad-cli
@@ -512,11 +508,7 @@ jobs:
           set -euo pipefail
           if npm view "@bradygaster/squad-cli@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
             echo "@bradygaster/squad-cli@${PACKAGE_VERSION} already exists; skipping npm publish."
-            tagged_version="$(npm view @bradygaster/squad-cli "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
-            if [ "$tagged_version" != "$PACKAGE_VERSION" ]; then
-              echo "::error::npm dist-tag '${NPM_DIST_TAG}' points to '${tagged_version:-<unset>}', not '${PACKAGE_VERSION}'. Refusing to move it implicitly."
-              exit 1
-            fi
+            echo "The verification step will wait for npm dist-tag '${NPM_DIST_TAG}' to converge."
           else
             npm -w packages/squad-cli publish --access public --provenance --tag "$NPM_DIST_TAG"
           fi
@@ -525,17 +517,17 @@ jobs:
           NPM_DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          for i in 1 2 3 4 5; do
+          for i in $(seq 1 20); do
             published_version="$(npm view "@bradygaster/squad-cli@${PACKAGE_VERSION}" version 2>/dev/null || true)"
             tagged_version="$(npm view @bradygaster/squad-cli "dist-tags.${NPM_DIST_TAG}" 2>/dev/null || true)"
             if [ "$published_version" = "$PACKAGE_VERSION" ] && [ "$tagged_version" = "$PACKAGE_VERSION" ]; then
               echo "Verified @bradygaster/squad-cli@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}'"
               exit 0
             fi
-            echo "Registry attempt $i/5: version='${published_version:-<unset>}', ${NPM_DIST_TAG}='${tagged_version:-<unset>}'; waiting 15s..."
+            echo "Registry attempt $i/20: version='${published_version:-<unset>}', ${NPM_DIST_TAG}='${tagged_version:-<unset>}'; waiting 15s..."
             sleep 15
           done
-          echo "::error::Could not verify @bradygaster/squad-cli@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}' after 5 attempts."
+          echo "::error::Could not verify @bradygaster/squad-cli@${PACKAGE_VERSION} on npm dist-tag '${NPM_DIST_TAG}' after 20 attempts."
           exit 1
 
   # --- Issues #1491 / #1497 ---------------------------------------------

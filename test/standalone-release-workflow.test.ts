@@ -372,7 +372,7 @@ describe('reusable npm publication', () => {
     expect(guard.run).toContain('lockDependency !== expected');
   });
 
-  it('skips each existing package independently and still verifies it', () => {
+  it('skips each existing package and polls for a stale dist-tag', () => {
     const packages = [
       ['publish-sdk', '@bradygaster/squad-sdk'],
       ['publish-cli', '@bradygaster/squad-cli'],
@@ -388,11 +388,22 @@ describe('reusable npm publication', () => {
         `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
       );
       expect(publish.run, jobName).toContain('already exists; skipping npm publish');
+      expect(publish.run, jobName).toContain(
+        "verification step will wait for npm dist-tag '${NPM_DIST_TAG}' to converge",
+      );
+      expect(publish.run, jobName).not.toContain('"dist-tags.${NPM_DIST_TAG}"');
+      expect(publish.run, jobName).not.toContain('Refusing to move it implicitly');
       expect(publish.run, jobName).toContain('publish --access public --provenance');
       expect(verifyIndex, jobName).toBeGreaterThan(publishIndex);
-      expect(steps[verifyIndex].run, jobName).toContain(
+      const verify = steps[verifyIndex].run;
+      expect(verify, jobName).toContain(
         `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
       );
+      expect(verify, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
+      expect(verify, jobName).toContain('for i in $(seq 1 20)');
+      expect(verify, jobName).toContain('Registry attempt $i/20');
+      expect(verify, jobName).toContain('sleep 15');
+      expect(verify, jobName).toContain('after 20 attempts');
     }
   });
 
@@ -414,7 +425,6 @@ describe('reusable npm publication', () => {
         '${{ steps.version.outputs.dist_tag }}',
       );
       expect(publish?.run, jobName).toContain('--tag "$NPM_DIST_TAG"');
-      expect(publish?.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
       expect(verify.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
     }
 
