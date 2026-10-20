@@ -154,21 +154,35 @@ export function normalizeHandwrittenCastingRegistry(value: unknown, now = new Da
       dropped.push({ name: key ?? String(raw), reason: 'entry is not an agent record' });
       continue;
     }
+    const explicitId = str(raw['id']);
+    const validUnderKey = !explicitId && key !== undefined && ID_PATTERN.test(key) && recordDiagnostics(key, raw).length === 0;
     let name = str(raw['persistent_name']) ?? str(raw['display_name']) ?? str(raw['name']) ?? str(raw['agent']) ?? str(raw['id']);
     let role = str(raw['role']) ?? str(raw['title']);
+    const keyMatchesNameSlug = Boolean(
+      key && name && (
+        toAgentId(key) === toAgentId(name)
+        || toAgentId(key).replace(/-/g, '') === toAgentId(name).replace(/-/g, '')
+      ),
+    );
+    const keyMatchesAvatarPath = Boolean(
+      key && isRecord(raw['avatar']) && str(raw['avatar']['path'])?.startsWith(`.squad/agents/${key}/`),
+    );
     // role-keyed entry without an explicit role: the key is the role
-    if (!role && key && name && toAgentId(key) !== toAgentId(name)) role = key;
+    if (!validUnderKey && !role && key && name && !keyMatchesNameSlug && !keyMatchesAvatarPath) role = key;
     name ??= key;
     if (!name) {
       dropped.push({ name: key ?? '(unnamed)', reason: 'entry has no name' });
       continue;
     }
-    const explicitId = str(raw['id']);
-    const id = explicitId
-      ? toAgentId(explicitId)
-      : key && toAgentId(key) === toAgentId(name)
-        ? key
-        : toAgentId(name);
+    const id = validUnderKey
+      ? key!
+      : explicitId
+        ? toAgentId(explicitId)
+        : key && ID_PATTERN.test(key) && (keyMatchesNameSlug || keyMatchesAvatarPath)
+          ? key
+          : key && toAgentId(key) === toAgentId(name)
+            ? key
+            : toAgentId(name);
     if (!id || !ID_PATTERN.test(id)) {
       dropped.push({ name, reason: `cannot derive a lowercase kebab-case agent id from "${explicitId ?? key ?? name}"` });
       continue;
@@ -236,9 +250,11 @@ function isAcceptable(value: unknown): boolean {
   }
   // legacy registries are read by the durable reader; only repair what it cannot read
   if (!isRecord(value['agents'])) return false;
-  return Object.keys(value['agents']).length > 0 && Object.values(value['agents']).every((a) => isRecord(a)
+  return Object.keys(value['agents']).length > 0 && Object.entries(value['agents']).every(([id, a]) => ID_PATTERN.test(id)
+    && isRecord(a)
     && !!str(a['persistent_name']) && isTs(a['created_at']) && !!str(a['universe'])
-    && (STATUSES as readonly string[]).includes(String(a['status'])));
+    && (STATUSES as readonly string[]).includes(String(a['status']))
+    && (a['status'] !== 'retired' || isTs(a['retired_at'])));
 }
 
 interface CastingDiskSnapshot {
@@ -286,6 +302,11 @@ function verifyCastingDirectoryAndFiles(castingDir: string, extraPaths: string[]
   if (!dirSt || !dirSt.isDirectory()) return false;
   for (const name of ['registry.json', 'history.json', COMMIT_MANIFEST, JOURNAL_FILE]) {
     assertNotSymlink(path.join(castingDir, name));
+  }
+  for (const entry of fs.readdirSync(castingDir)) {
+    if (entry.startsWith(ARCHIVE_PREFIX)) {
+      assertNotSymlink(path.join(castingDir, entry));
+    }
   }
   for (const extra of extraPaths) {
     assertNotSymlink(extra);
@@ -369,7 +390,9 @@ function commitManifestMismatch(snapshot: CastingDiskSnapshot): boolean {
     );
     return false;
   } catch (error) {
-    return /commit manifest/i.test(error instanceof Error ? error.message : String(error));
+    return /commit manifest|registry revision does not match/i.test(
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 
@@ -437,11 +460,12 @@ function normalizeHandwrittenHistory(
   const [rawKey, rawSnapshot] = snapshotEntries[0]!;
   if (!isRecord(rawSnapshot)) return { reason: `${HISTORY_BLOCKER} with a malformed snapshot` };
   const byName = new Map(Object.entries(agents).map(([id, rec]) => [rec.display_name.toLowerCase(), id]));
-  const resolve = (ref: unknown, hint?: string): string | undefined => {
-    if (hint && Object.hasOwn(agents, hint)) return hint;
+  const resolveValue = (ref: unknown): string | undefined => {
     if (typeof ref !== 'string') return undefined;
-    if (Object.hasOwn(agents, ref)) return ref;
-    return byName.get(ref.trim().toLowerCase()) ?? (Object.hasOwn(agents, toAgentId(ref)) ? toAgentId(ref) : undefined);
+    const trimmed = ref.trim();
+    if (!trimmed) return undefined;
+    if (Object.hasOwn(agents, trimmed)) return trimmed;
+    return byName.get(trimmed.toLowerCase()) ?? (Object.hasOwn(agents, toAgentId(trimmed)) ? toAgentId(trimmed) : undefined);
   };
   const rawAgents = rawSnapshot['agents'];
   const refs: Array<[unknown, string | undefined]> = Array.isArray(rawAgents)
@@ -450,8 +474,17 @@ function normalizeHandwrittenHistory(
   if (refs.length === 0) return { reason: `${HISTORY_BLOCKER} whose snapshot lists no agents` };
   const members: string[] = [];
   for (const [ref, hint] of refs) {
-    const id = resolve(ref, hint);
-    if (!id) return { reason: `${HISTORY_BLOCKER} referencing unknown agent "${String(hint ?? ref)}"` };
+    const id = resolveValue(ref);
+    if (!id) return { reason: `${HISTORY_BLOCKER} referencing unknown agent "${String(ref ?? hint)}"` };
+    if (hint !== undefined) {
+      const trimmedHint = hint.trim();
+      const hintAgentId = Object.hasOwn(agents, trimmedHint)
+        ? trimmedHint
+        : byName.get(trimmedHint.toLowerCase());
+      if (hintAgentId !== undefined && hintAgentId !== id) {
+        return { reason: `${HISTORY_BLOCKER} where snapshot key "${hint}" disagrees with agent "${String(ref)}"` };
+      }
+    }
     if (members.includes(id)) return { reason: `${HISTORY_BLOCKER} referencing agent "${id}" twice` };
     members.push(id);
   }
@@ -561,7 +594,12 @@ export function repairHandwrittenCastingRegistry(
       return NOOP;
     }
     if (manifestMismatch) {
-      return recommitExistingPair(castingDir, snapshot, options);
+      const unmintedInitOverwrite = isRecord(parsed)
+        && parsed['transaction_id'] === undefined
+        && !hasExistingCastHistory(snapshot.historyRaw);
+      if (!unmintedInitOverwrite) {
+        return recommitExistingPair(castingDir, snapshot, options);
+      }
     }
     const normalized = normalizeHandwrittenCastingRegistry(parsed, options.now);
     if (!normalized.registry) {
@@ -582,16 +620,18 @@ function recommitExistingPair(
   snapshot: CastingDiskSnapshot,
   options: Required<RepairHandwrittenOptions>,
 ): RepairResult {
-  if (snapshot.registryRaw === undefined || snapshot.historyRaw === undefined) {
-    return failed('history.json is required to recommit pair');
+  if (snapshot.registryRaw === undefined || snapshot.historyRaw === undefined || snapshot.manifestRaw === undefined) {
+    return failed('history.json and commit manifest are required to recommit pair');
   }
   let registry: unknown;
   let history: unknown;
+  let manifest: unknown;
   try {
     registry = JSON.parse(stripBom(snapshot.registryRaw));
     history = JSON.parse(stripBom(snapshot.historyRaw));
+    manifest = JSON.parse(stripBom(snapshot.manifestRaw));
   } catch {
-    return failed('registry.json or history.json is not valid JSON');
+    return failed('registry.json, history.json, or commit manifest is not valid JSON');
   }
   if (!isRecord(history)) {
     return failed(`${HISTORY_BLOCKER} that is not an object`);
@@ -599,7 +639,27 @@ function recommitExistingPair(
   if (!isRecord(registry) || !Number.isSafeInteger(registry['revision']) || (registry['revision'] as number) < 1) {
     return failed('registry/history pair is missing revision metadata');
   }
-  const nextRevision = (registry['revision'] as number) + 1;
+  if (
+    !isRecord(manifest)
+    || manifest['version'] !== 1
+    || typeof manifest['transaction_id'] !== 'string'
+    || manifest['transaction_id'].length === 0
+    || !Number.isSafeInteger(manifest['registry_revision'])
+    || (manifest['registry_revision'] as number) < 1
+  ) {
+    return failed('commit manifest is malformed');
+  }
+  const expectedTxId = manifest['transaction_id'];
+  const expectedRevision = manifest['registry_revision'] as number;
+  if (
+    registry['transaction_id'] !== expectedTxId
+    || history['transaction_id'] !== expectedTxId
+    || registry['revision'] !== expectedRevision
+    || history['registry_revision'] !== expectedRevision
+  ) {
+    return failed('registry, history, and commit manifest generation metadata do not agree');
+  }
+  const nextRevision = expectedRevision + 1;
   const { transaction_id: _rt, ...reg } = registry;
   const { transaction_id: _ht, registry_revision: _hr, ...hist } = history;
   void _rt;
@@ -623,7 +683,12 @@ function commitGenesisPair(
 function archiveOriginals(castingDir: string, snapshot: CastingDiskSnapshot): string {
   const archiveName = `${ARCHIVE_PREFIX}${sha256(snapshot.registryRaw, snapshot.historyRaw, snapshot.manifestRaw)}`;
   const archiveDir = path.join(castingDir, archiveName);
+  const existingArchive = assertNotSymlink(archiveDir);
+  if (existingArchive && !existingArchive.isDirectory()) {
+    throw new Error(`Refusing to operate on non-directory casting archive path: ${archiveDir}`);
+  }
   fs.mkdirSync(archiveDir, { recursive: true });
+  assertNotSymlink(archiveDir);
   const originals: Array<[string, Buffer | undefined]> = [
     ['registry.json', snapshot.registryBytes],
     ['history.json', snapshot.historyBytes],
@@ -632,6 +697,7 @@ function archiveOriginals(castingDir: string, snapshot: CastingDiskSnapshot): st
   for (const [name, bytes] of originals) {
     if (bytes === undefined) continue;
     const target = path.join(archiveDir, name);
+    assertNotSymlink(target);
     const existing = readOptionalBytes(target);
     if (existing !== undefined && !existing.equals(bytes)) {
       throw new Error(`Cannot archive handwritten casting originals: archive differs at ${target}`);

@@ -833,4 +833,155 @@ describe('Layer 2: Handwritten casting registry repair & backfill', () => {
       expect(isInteractiveSession({ SQUAD_NONINTERACTIVE: '1' }, { isTTY: true }, { isTTY: true })).toBe(false);
     });
   });
+
+  describe('PR #2252 review thread regressions', () => {
+    it('Thread 1: preserves existing valid map keys (e.g. agents.belanna named B\'Elanna with avatar) when repairing sibling entries', () => {
+      const belannaValid = {
+        display_name: "B'Elanna",
+        persistent_name: "B'Elanna",
+        role: 'Engineer',
+        universe: 'Star Trek',
+        status: 'active',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-02-01T00:00:00.000Z',
+        avatar: { kind: 'repository-path', path: '.squad/agents/belanna/avatar.png' },
+      };
+      const result = normalizeHandwrittenCastingRegistry({
+        universe: 'Star Trek',
+        agents: {
+          belanna: belannaValid,
+          data: { name: 'Data', role: 'Expert' },
+        },
+      }, '2026-10-20T00:00:00.000Z');
+      expect(result.dropped).toEqual([]);
+      expect(result.registry).toBeDefined();
+      expect(Object.keys(result.registry!.agents).sort()).toEqual(['belanna', 'data']);
+      expect(result.registry!.agents['belanna']).toEqual(belannaValid);
+
+      // Also preserves `belanna` when the record itself is incomplete and carries an avatar under `.squad/agents/belanna/`
+      const incompleteBelanna = normalizeHandwrittenCastingRegistry({
+        universe: 'Star Trek',
+        agents: {
+          belanna: {
+            name: "B'Elanna",
+            role: 'Engineer',
+            avatar: { kind: 'repository-path', path: '.squad/agents/belanna/avatar.png' },
+          },
+        },
+      }, '2026-10-20T00:00:00.000Z');
+      expect(incompleteBelanna.dropped).toEqual([]);
+      expect(Object.keys(incompleteBelanna.registry!.agents)).toEqual(['belanna']);
+    });
+
+    it('Thread 2: normalizes legacy-shaped retired records missing or having invalid retired_at instead of early-exiting', () => {
+      write('registry.json', {
+        agents: {
+          tuvok: {
+            persistent_name: 'Tuvok',
+            role: 'Security',
+            universe: 'Star Trek',
+            created_at: '2025-01-01T00:00:00.000Z',
+            status: 'retired',
+          },
+        },
+      });
+      const result = repairHandwrittenCastingRegistry(castingDir, '2026-10-20T00:00:00.000Z');
+      expect(result.repaired).toBe(true);
+      const pair = readCastingRegistryPair(castingDir);
+      const tuvok = (pair.registry!.agents as Record<string, Record<string, unknown>>)['tuvok']!;
+      expect(tuvok['status']).toBe('retired');
+      expect(tuvok['retired_at']).toBe('2026-10-20T00:00:00.000Z');
+    });
+
+    it('Thread 3: rejects snapshot agent maps where the value is unknown or disagrees with a recognized ID key', () => {
+      write('registry.json', {
+        universe: 'Star Trek',
+        agents: {
+          data: { name: 'Data', role: 'Lead' },
+          tuvok: { name: 'Tuvok', role: 'Security' },
+        },
+      });
+      write('history.json', {
+        universe_usage_history: [],
+        assignment_cast_snapshots: {
+          'init-2026': {
+            universe: 'Star Trek',
+            agents: { data: 'Unknown Agent' },
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      });
+      expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({
+        repaired: false,
+        reason: expect.stringMatching(/unknown agent "Unknown Agent"/),
+      });
+
+      write('history.json', {
+        universe_usage_history: [],
+        assignment_cast_snapshots: {
+          'init-2026': {
+            universe: 'Star Trek',
+            agents: { data: 'Tuvok' },
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      });
+      expect(repairHandwrittenCastingRegistry(castingDir)).toMatchObject({
+        repaired: false,
+        reason: expect.stringMatching(/snapshot key "data" disagrees with agent "Tuvok"/),
+      });
+    });
+
+    it('Thread 4: refuses to recommit a mixed-generation pair when registry, history, and manifest metadata disagree', () => {
+      write('registry.json', shapes['agents as an array']);
+      expect(repairHandwrittenCastingRegistry(castingDir).repaired).toBe(true);
+      const gen1 = readCastingRegistryPair(castingDir);
+
+      // Reformat to trigger a legitimate recommit to revision 2
+      fs.writeFileSync(path.join(castingDir, 'registry.json'), JSON.stringify(gen1.registry));
+      expect(repairHandwrittenCastingRegistry(castingDir).repaired).toBe(true);
+      const gen2 = readCastingRegistryPair(castingDir);
+      expect(gen2.registry!['revision']).toBe(2);
+
+      // Overwrite history.json with generation 1 while registry.json and manifest are at generation 2
+      fs.writeFileSync(path.join(castingDir, 'history.json'), gen1.historyRaw!);
+      const mixedTree = snapshotTree(castingDir);
+
+      const attempt = repairHandwrittenCastingRegistry(castingDir);
+      expect(attempt).toMatchObject({
+        repaired: false,
+        reason: expect.stringMatching(/generation metadata do not agree/),
+      });
+      expect(snapshotTree(castingDir)).toEqual(mixedTree);
+    });
+
+    it('Thread 5: rejects a symlinked handwritten-archive-<sha256> directory before creating or writing archive files', () => {
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-outside-archive-'));
+      try {
+        write('registry.json', shapes['bare array']);
+        // Discover the deterministic archive directory name via a dry inspection or temp run
+        const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-probe-archive-'));
+        let archiveName: string;
+        try {
+          fs.copyFileSync(path.join(castingDir, 'registry.json'), path.join(probeDir, 'registry.json'));
+          archiveName = repairHandwrittenCastingRegistry(probeDir).backupPath!;
+        } finally {
+          fs.rmSync(probeDir, { recursive: true, force: true });
+        }
+        expect(archiveName).toMatch(ARCHIVE_RE);
+
+        const archivePath = path.join(castingDir, archiveName);
+        try {
+          fs.symlinkSync(outsideDir, archivePath, process.platform === 'win32' ? 'junction' : 'dir');
+        } catch {
+          return;
+        }
+
+        expect(() => repairHandwrittenCastingRegistry(castingDir)).toThrow(/symlinked casting path/);
+        expect(fs.readdirSync(outsideDir)).toEqual([]);
+      } finally {
+        fs.rmSync(outsideDir, { recursive: true, force: true });
+      }
+    });
+  });
 });
