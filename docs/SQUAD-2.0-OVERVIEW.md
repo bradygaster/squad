@@ -59,9 +59,9 @@ flowchart LR
 | Host (`ClientId`) | Generated files |
 |---|---|
 | GitHub Copilot (`copilot`) | `.github/agents/squad.agent.md`, `.mcp.json` |
-| Claude Code (`claude`) | `.claude/agents/squad.md`, `CLAUDE.md` (managed marker block), `.mcp.json`, `.gitignore` block for `.claude/worktrees/` |
+| Claude Code (`claude`) | `.claude/agents/squad.md`, `CLAUDE.md` (managed marker block), `.mcp.json`, `# squad:claude` `.gitignore` line for `.claude/worktrees/` |
 | Kiro (`kiro`) | `.kiro/steering/squad.md` (`inclusion: manual`), `.kiro/agents/squad.json`, `.kiro/settings/mcp.json` |
-| OpenCode (`opencode`) | `.opencode/agent/squad.md`, `opencode.json` |
+| OpenCode (`opencode`) | `.opencode/agent/squad.md`, `opencode.json` / `opencode.jsonc` |
 | Cursor (`cursor`) | `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc` (`alwaysApply: false`), `.cursor/mcp.json` |
 | OpenAI Codex (`codex`) | `.codex/agents/squad.toml` (Codex custom agent with `developer_instructions`), `AGENTS.md` (short pointer block), `.codex/config.toml` (`[mcp_servers.squad_state]`) |
 | Google Antigravity (`antigravity`) | `.agents/agents/squad.md` (with `squad_state` MCP server in frontmatter), `GEMINI.md` (pointer block) |
@@ -70,7 +70,7 @@ Persisted `clients[]` in `.squad/config.json` contains only canonical slugs vali
 
 ### Plane 2: Control / Broker Plane (`@bradygaster/squad-sdk/backend`)
 
-> **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract. Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
+> **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract (`BACKEND_CONTRACT_STAGE = 'experimental'`). Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server, and server-side DurableSquad Phase 2 integration (remote durable approvals and lease-epoch coordination) is pending. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
 
 `SquadBackend` / `IConversationBackend` defines the conversation contract:
 
@@ -80,7 +80,7 @@ Persisted `clients[]` in `.squad/config.json` contains only canonical slugs vali
 - **Versioned hash-bound approvals** (`v1` requested → `v2` decided with immutable payload `hash`);
 - **`runId`-scoped cancellation** (`cancelRun(conversationId, runId, reason?)`).
 
-In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false` and `squad_backend_send_message` returns `unavailable` until a `HarnessAdapter` is registered, so over MCP the backend is currently a transcript and event-log surface.
+In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false`, and `squad_backend_send_message` refuses instead of queueing (`unavailable` when no harness is registered; auto-selects a single registered in-process harness when `harness` is omitted, or refuses with `invalid-request` when multiple harnesses are registered), so over MCP the bundled backend is a transcript and event-log surface.
 
 ### Plane 3: Execution Plane (`HarnessAdapter` SPI)
 

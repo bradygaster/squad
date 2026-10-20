@@ -199,8 +199,8 @@ First match wins.
 | `COPILOT_TOKEN` | Auth token for SDK usage |
 | `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context warning threshold as a fraction greater than `0` and at most `1` (default: `0.8`) |
 | `SQUAD_EXPERIMENTAL_BACKEND` | Set to `1` to enable the 11 opt-in `squad_backend_*` MCP tools in `squad state-mcp` |
-| `SQUAD_BACKEND_URL` | Connect `squad state-mcp` (with `SQUAD_EXPERIMENTAL_BACKEND=1`) or `DurableHttpSquadBackend` to your own external `/v1/conversations` server over `https://` (`http://` only for localhost) |
-| `SQUAD_BACKEND_TOKEN` | Optional bearer token paired with `SQUAD_BACKEND_URL` |
+| `SQUAD_BACKEND_URL` | Read automatically by `squad state-mcp` (when enabled with `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`) to connect its MCP bridge to your own external `/v1/conversations` server over `https://` (`http://` only for localhost). SDK callers using `createSquadBackend({ kind: 'durable-http', ... })` or `DurableHttpSquadBackend` must pass `baseUrl` (and optional `token`) explicitly |
+| `SQUAD_BACKEND_TOKEN` | Optional bearer token read by `squad state-mcp` alongside `SQUAD_BACKEND_URL` (pass `token` explicitly when calling `createSquadBackend` or `DurableHttpSquadBackend` in SDK code) |
 
 ---
 

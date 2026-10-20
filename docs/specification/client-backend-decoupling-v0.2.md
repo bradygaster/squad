@@ -430,8 +430,10 @@ conversation contract; MCP only carries it for hosts that can load `.mcp.json`,
 The bridge is a transcript and event-log surface. It bundles no execution
 harness: `squad_backend_health` and `squad_backend_negotiate` report
 `harnesses: []` and `executionAvailable: false`, and
-`squad_backend_send_message` is refused with `unavailable` instead of queueing
-a turn that nothing will ever run. `SQUAD_BACKEND_URL` by itself does not
+`squad_backend_send_message` refuses instead of queueing (`unavailable` when no
+harness is registered; when `harness` is omitted on an in-process backend, it
+auto-selects a single registered harness or refuses with `invalid-request` when
+multiple harnesses are registered). `SQUAD_BACKEND_URL` by itself does not
 enable the tools.
 
 ### 10.3 Remote durable backend

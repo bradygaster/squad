@@ -4,7 +4,25 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ---
 
-## v1.1.0 — Current Release
+## v2.0.0 — Multi-Host Clients & Experimental Backend Contract
+
+- **Seven AI hosts via `--client`** — `squad init --client <list>` and `squad upgrade [--dry-run] --client <list>` project the Squad coordinator and `squad_state` MCP wiring across GitHub Copilot (`copilot`), Claude Code (`claude`), Kiro (`kiro`), OpenCode (`opencode`), Cursor (`cursor`), OpenAI Codex (`codex`), and Google Antigravity (`antigravity`), or `all`, persisting portable slugs in `.squad/config.json` `clients[]`
+- **Shared charters & capability negotiation (`@bradygaster/squad-sdk/client`)** — Every host uses one coordinator that dispatches specialists from shared `.squad/agents/<member>/charter.md` files; `HostProjection`, `ClientAdapter`, and `CAPABILITY_TOKENS_BY_HOST` negotiate effective capabilities as `client ∩ backend ∩ policy` (`@bradygaster/squad-sdk/clients` remains as a deprecated alias)
+- **Transactional casting repair & roster backfill** — `squad upgrade` normalizes handwritten `.squad/casting/registry.json` files per record (preserving retired/inactive agents and extra metadata), backfills empty registries from `team.md` using `.squad/agents/<id>/charter.md` folder IDs, archives pre-repair originals under `.squad/casting/handwritten-archive-<sha256>/`, and fails closed with an explicit `dropped` list when entries cannot be proven
+- **Experimental backend & harness SPI (`@bradygaster/squad-sdk/backend`)** — Ships the experimental `SquadBackend` (`LocalSquadBackend`, `DurableHttpSquadBackend`, `createStateBackendStore`) and `HarnessAdapter` / `DefaultHarnessRegistry` contracts plus 11 opt-in `squad_backend_*` MCP tools in `squad state-mcp` (`--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`), validated against the `squad-protocol-v2.0-rc1` golden trace (`G1`–`G9`); server-side DurableSquad Phase 2 integration (remote durable approvals and lease-epoch coordination) is pending
+- **Strict opt-in & byte-preserving rollback** — Existing Copilot-only repos see no extra host files or client-specific `.gitignore` entries unless `--client` is passed; shared JSON, TOML, `.gitignore`, and markdown marker merges preserve formatting and roll back byte-for-byte via `uninstallClients`
+
+### Breaking & Behavior Changes (v2.0.0)
+
+| Area | Change in 2.0.0 | Migration |
+|------|-----------------|-----------|
+| Client SDK import path | `@bradygaster/squad-sdk/client` is canonical; `@bradygaster/squad-sdk/clients` is a deprecated alias | Update imports to `@bradygaster/squad-sdk/client` |
+| Experimental backend exports | `@bradygaster/squad-sdk/backend` is exported only from `./backend` (not the root barrel) | Import `SquadBackend` / `HarnessAdapter` from `@bradygaster/squad-sdk/backend` |
+| `squad state-mcp` backend tools | `squad_backend_*` tools require `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1` (`SQUAD_BACKEND_URL` alone does not enable them) | Pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1` |
+| `DurableHttpSquadBackend` options | Requires an explicit `https://` `baseUrl` (`http://` only for localhost) and does not read `SQUAD_BACKEND_URL` in SDK code | Pass `baseUrl` (and optional `token`) explicitly to `createSquadBackend` / `DurableHttpSquadBackend` |
+| Static config vs. mutable state | `squad_state_write` rejects static team config (`team.md`, `routing.md`, `config.json`, `charter.md`); `.squad/casting/` must not be hand-edited | Edit static files in the workspace and register roster changes with `npx squad cast --name <Name> --role "<Role>"` |
+
+## v1.1.0 — Stable Release
 
 - **Smarter model routing** — Central model resolution, GA quality profiles, and safer economy fallbacks make model selection predictable and observable
 - **HydraFusion opt-in** — Preview HydraFusion models are available through an explicit profile without entering default or GA recommendation chains

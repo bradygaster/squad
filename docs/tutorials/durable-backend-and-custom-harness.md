@@ -1,6 +1,6 @@
 # Durable backend and custom harness tutorial
 
-> **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract. Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
+> **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract (`BACKEND_CONTRACT_STAGE = 'experimental'`). Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server, and server-side DurableSquad Phase 2 integration (remote durable approvals and lease-epoch coordination) is pending. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
 
 > **Canonical Published Docs:** See [Squad 2.0 architecture](../src/content/docs/concepts/squad-2-0-architecture.md) and the [SDK Reference](../src/content/docs/reference/sdk.md) on the published Astro docs site for the architectural overview and API surface.
 
@@ -10,7 +10,7 @@
 
 `createSquadBackend` supports three modes: `kind: 'local'`, `kind: 'mcp'`, and `kind: 'durable-http'`.
 
-In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are **opt-in**: pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false` and `squad_backend_send_message` returns `unavailable` until a `HarnessAdapter` is registered, so over MCP the backend is currently a transcript and event-log surface.
+In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are **opt-in**: pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false`, and `squad_backend_send_message` refuses instead of queueing (`unavailable` when no harness is registered; auto-selects a single registered in-process harness when `harness` is omitted, or refuses with `invalid-request` when multiple harnesses are registered), so over MCP the bundled backend is a transcript and event-log surface.
 
 ### Step 1: configure environment variables
 
@@ -53,12 +53,13 @@ const hello: ProtocolHello = {
   protocols: [BACKEND_PROTOCOL_VERSION],
   clientName: 'docs-sample',
   contentParts: ['text', 'tool-call', 'tool-result'],
-  capabilities: ['stream:control', 'stream:execution', 'resume', 'approvals', 'cancel:run'],
-  policyCapabilities: ['stream:control', 'stream:execution', 'resume', 'approvals', 'cancel:run'],
+  capabilities: ['cursor-reconnect', 'approvals', 'cancel-run', 'typed-content-parts'],
+  policyCapabilities: ['cursor-reconnect', 'approvals', 'cancel-run', 'typed-content-parts'],
 };
 
+// NegotiatedCapabilities advertises streams: ['control', 'execution'] separately
 const negotiated = await backend.negotiate(hello);
-console.log(negotiated.effectiveCapabilities);
+console.log(negotiated.effectiveCapabilities, negotiated.streams);
 
 const conversation = await backend.createConversation({ title: 'Durable demo' });
 
@@ -129,6 +130,7 @@ export class DemoHarnessAdapter implements HarnessAdapter {
 
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly cancelledRuns = new Set<string>();
+  private readonly pendingApprovals = new Map<string, { runId: string; seq: number }>();
 
   constructor(private readonly repoRoot: string) {}
 
@@ -158,12 +160,18 @@ export class DemoHarnessAdapter implements HarnessAdapter {
       },
     });
 
+    const approvalId = `approval-${submission.runId}-${submission.seq}`;
+    this.pendingApprovals.set(`${submission.conversationId}:${approvalId}`, {
+      runId: submission.runId,
+      seq: submission.seq,
+    });
+
     this.emit(submission.conversationId, {
       runId: submission.runId,
       seq: submission.seq,
       type: 'approval-requested',
       request: {
-        approvalId: `approval-${submission.runId}`,
+        approvalId,
         turnSeq: submission.seq,
         action: 'demo.write',
         hash: 'sha256:demo-payload',
@@ -193,26 +201,29 @@ export class DemoHarnessAdapter implements HarnessAdapter {
   }
 
   async respondApproval(conversationId: string, response: ApprovalResponse): Promise<void> {
-    const approvalRunId = response.approvalId.replace(/^approval-/, '');
+    const turn = this.pendingApprovals.get(`${conversationId}:${response.approvalId}`);
+    if (!turn) return;
+    this.pendingApprovals.delete(`${conversationId}:${response.approvalId}`);
+
     this.emit(conversationId, {
-      runId: approvalRunId,
-      seq: 1,
+      runId: turn.runId,
+      seq: turn.seq,
       type: 'message',
       message: {
-        runId: approvalRunId,
-        seq: 1,
+        runId: turn.runId,
+        seq: turn.seq,
         role: 'tool',
         content: `Approval ${response.decision} for ${response.approvalId}`,
         harness: this.id,
       },
     });
 
-    if (!this.cancelledRuns.has(approvalRunId)) {
+    if (!this.cancelledRuns.has(turn.runId)) {
       this.emit(conversationId, {
-        runId: approvalRunId,
-        seq: 1,
+        runId: turn.runId,
+        seq: turn.seq,
         type: 'state',
-        state: 'completed',
+        state: response.decision === 'approve' ? 'completed' : 'cancelled',
       });
     }
   }

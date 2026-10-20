@@ -27,7 +27,23 @@
 | `npx github:bradygaster/squad` | `npm install -g @bradygaster/squad-cli` |
 | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
 | `.ai-team/` directory | `.squad/` directory |
-| v0.5.4 (beta) | v1.1.0 (stable) |
+| v0.5.4 (beta) | v2.0.0 (stable) |
+
+---
+
+## Upgrading from v1.x to v2.0
+
+If you are already on Squad v1.x (`@bradygaster/squad-cli` and `@bradygaster/squad-sdk`), upgrading to v2.0 requires no reinitialization:
+
+```bash
+npm install -g @bradygaster/squad-cli@latest
+squad upgrade
+```
+
+- **Copilot-only projects:** `squad upgrade` without `--client` updates `.github/agents/squad.agent.md` and templates in place without creating files for other AI hosts.
+- **Multi-host projections:** Pass `--client claude,kiro,opencode,cursor,codex,antigravity` (or `--client all`) to `squad init` or `squad upgrade` to project your team across all 7 supported hosts; use `uninstallClients()` from `@bradygaster/squad-sdk/client` for byte-preserving rollback.
+- **SDK imports:** `@bradygaster/squad-sdk/client` is the canonical subpath for client and host-adapter APIs (`@bradygaster/squad-sdk/clients` is retained as a deprecated alias). Experimental backend APIs live under `@bradygaster/squad-sdk/backend`.
+- **Full details:** See [Upgrading to Squad 2.0](../scenarios/upgrading.md#upgrading-to-squad-20) and [Using Squad across clients](../scenarios/using-squad-across-clients.md).
 
 ---
 

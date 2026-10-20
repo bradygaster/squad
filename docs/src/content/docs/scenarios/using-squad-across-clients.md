@@ -116,12 +116,31 @@ Squad persists only canonical client ids in `.squad/config.json`:
 
 That list is projection metadata only, validated by `normalizeClientIds()` and `assertPortableClients()` from `@bradygaster/squad-sdk/client`. It never carries secrets, machine paths, URLs, thread ids, lease tokens, or checkpoint state.
 
-## Why the merge behavior matters
+## Why the merge behavior and rollback matter
 
-Every client adapter uses additive config merging for shared JSON and TOML files (`.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json`, and `.codex/config.toml`). Existing MCP servers and top-level settings are preserved, and malformed config is refused instead of overwritten.
+Every client adapter uses additive config merging for shared JSON and TOML files (`.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json` / `opencode.jsonc`, `.cursor/mcp.json`, and `.codex/config.toml`). Existing MCP servers, formatting, line endings, and top-level settings are preserved, and malformed config (or `opencode.jsonc` files with comments) is refused instead of overwritten.
+
+To remove a client projection and restore shared files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.gitignore`, and shared MCP configs) byte-for-byte outside Squad's managed sections, call `uninstallClients`:
+
+```ts
+import { uninstallClients } from '@bradygaster/squad-sdk/client';
+
+uninstallClients(['claude', 'codex'], {
+  root: process.cwd(),
+  mcp: { command: 'squad', args: ['state-mcp'] },
+});
+```
+
+## Static team config vs. mutable runtime state
+
+Across all 7 hosts, the generated coordinator prompt enforces a strict boundary:
+
+- **Mutable runtime state** (decisions, memories, session state) flows through the `squad_state` MCP tools (`squad_decide`, `squad_state_*`, `memory.*`).
+- **Static team configuration** (`.squad/team.md`, `.squad/routing.md`, `.squad/config.json`, `.squad/agents/<name>/charter.md`) is read and edited through workspace files and CLI commands (`npx squad cast --name <Name> --role "<Role>"`), never written via `squad_state_write` or hand-edited under `.squad/casting/`.
 
 ## Read next
 
 - [Squad 2.0 architecture](../concepts/squad-2-0-architecture.md)
 - [Client compatibility](./client-compatibility.md)
+- [Upgrading Squad](./upgrading.md)
 - [SDK Reference](../reference/sdk.md)

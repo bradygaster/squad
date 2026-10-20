@@ -55,6 +55,66 @@ may be refreshed as Squad-owned files.
 
 ---
 
+## Upgrading to Squad 2.0
+
+### What changes for existing Copilot-only users
+
+Nothing changes unless you opt in:
+
+- Running `squad upgrade` without `--client` keeps your repository Copilot-only, preserves your `.squad/` team state, and does not generate files for Claude Code, Kiro, OpenCode, Cursor, Codex, or Antigravity.
+- Plain `squad init` and `squad upgrade` only scaffold `.squad/` runtime ignores (including `.squad/backend/`) in `.gitignore`; client-specific ignores such as `.claude/worktrees/` are added only when `--client claude` (or `--client all`) is selected.
+
+### Adding multi-host client projections (`--client`)
+
+Project your existing `.squad/` team into any of the 7 supported hosts (`copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`, or `all`):
+
+```bash
+# Preview which host files would be created or updated
+squad upgrade --dry-run --client claude,cursor,codex
+
+# Apply and persist the selected hosts in .squad/config.json clients[]
+squad upgrade --client claude,cursor,codex
+```
+
+Subsequent `squad upgrade` runs automatically refresh every client listed in `.squad/config.json` `clients[]` while preserving your existing MCP servers, formatting, and line endings in `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json` / `opencode.jsonc`, `.cursor/mcp.json`, and `.codex/config.toml`.
+
+### Handwritten casting registry repair and `team.md` backfill
+
+If `.squad/casting/registry.json` was previously hand-edited by an agent or is empty after an older CLI init, `squad upgrade` (and `squad upgrade --dry-run`) automatically repairs it before upgrading managed files:
+
+- Valid provenance records (including `retired` and `inactive` agents and extra fields) are kept verbatim and `revision` is incremented.
+- Empty registries are backfilled from `.squad/team.md` when each specialist maps to a provable `.squad/agents/<id>/charter.md` folder.
+- Pre-repair originals are archived at `.squad/casting/handwritten-archive-<sha256>/`.
+- If an entry cannot be proven (for example, bare strings without a role/name object or a roster row with no matching charter folder), `squad upgrade` fails closed and prints the exact dropped entries and how to fix them (`npx squad cast --name <Name> --role "<Role>"`).
+
+### Deprecated `@bradygaster/squad-sdk/clients` alias
+
+If you import host adapter APIs programmatically, update `@bradygaster/squad-sdk/clients` to the canonical `@bradygaster/squad-sdk/client` subpath. The `/clients` subpath remains exported in 2.0 as a deprecated compatibility alias for the same symbols.
+
+### Experimental backend flag (`--experimental-backend`)
+
+`@bradygaster/squad-sdk/backend` (`BACKEND_CONTRACT_STAGE = 'experimental'`) is an opt-in preview surface (DurableSquad Phase 2 server-side integration for remote durable approvals and lease epochs is pending):
+
+- In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are disabled by default. Pass `--experimental-backend` or set `SQUAD_EXPERIMENTAL_BACKEND=1` to expose them (`SQUAD_BACKEND_URL` alone does not enable them).
+- In SDK code, import `createSquadBackend` / `DurableHttpSquadBackend` from `@bradygaster/squad-sdk/backend` and pass an explicit `https://` `baseUrl` (`http://` only for localhost) and optional `token`.
+
+### Rolling back client projections (`uninstallClients`)
+
+To remove generated host projections and restore shared files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.gitignore`, and shared MCP config files) byte-for-byte outside Squad's managed sections:
+
+```ts
+import { uninstallClients } from '@bradygaster/squad-sdk/client';
+
+uninstallClients(['claude', 'cursor', 'codex'], {
+  root: process.cwd(),
+  mcp: { command: 'squad', args: ['state-mcp'] },
+});
+```
+
+Then remove the corresponding slug(s) from `clients` in `.squad/config.json`.
+
+---
+
 ## Migrations
 
 Some upgrades require additive changes to your team state directory — like creating a new subdirectory that didn't exist in older versions.
