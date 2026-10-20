@@ -352,6 +352,8 @@ export interface HarnessSubmission {
   conversationId: string;
   runId: string;
   seq: number;
+  /** Deterministic idempotency token (`${conversationId}:${runId}:${seq}`); stable across retries and restarts. */
+  operationId?: string;
   messages: BackendMessage[];
   extensions?: ExtensionBag;
   /** Lease epoch of the admission; echo it on every event for the run. */
@@ -380,6 +382,10 @@ export interface HarnessDescriptor {
 export interface HarnessAdapter {
   readonly id: string;
   readonly capabilities: HarnessCapabilities;
+  /**
+   * Idempotent: deliveries are retried until acknowledged. Adapters MUST deduplicate
+   * submissions by `(conversationId, runId, seq)` (or `operationId`) across retries and restarts.
+   */
   submit(submission: HarnessSubmission): Promise<void>;
   subscribe(conversationId: string, listener: (event: HarnessEventEnvelope) => void): () => void;
   /** Idempotent: deliveries are retried. operationId is stable across retries and restarts of one delivery. */

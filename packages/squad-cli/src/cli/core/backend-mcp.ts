@@ -32,7 +32,7 @@ export interface BackendMcpTool {
 export const NO_HARNESS_MESSAGE =
   'No execution harness is registered; the experimental MCP backend currently records transcripts only';
 
-const MAX_READ_EVENTS_LIMIT = 500;
+export const MAX_READ_EVENTS_LIMIT = 500;
 const ROLES: readonly BackendMessage['role'][] = ['user', 'assistant', 'system', 'tool'];
 
 const cid = { type: 'string', description: 'Conversation id' };
@@ -196,8 +196,22 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
       }, required: ['conversationId', 'runId', 'seq'] },
       call: a => {
         const backend = getBackend();
-        if (registeredHarnesses(backend)?.length === 0) {
+        const localHarnesses = registeredHarnesses(backend);
+        if (localHarnesses?.length === 0) {
           throw new BackendError('unavailable', NO_HARNESS_MESSAGE, 503, { executionAvailable: false });
+        }
+        let harness = optStr(a, 'harness');
+        if (harness === undefined && localHarnesses !== undefined) {
+          if (localHarnesses.length === 1) {
+            harness = localHarnesses[0];
+          } else {
+            throw new BackendError(
+              'invalid-request',
+              `Multiple execution harnesses are registered (${localHarnesses.join(', ')}); 'harness' is required`,
+              400,
+              { harnesses: localHarnesses },
+            );
+          }
         }
         const parts = optParts(a);
         return backend.sendMessage(str(a, 'conversationId'), {
@@ -209,7 +223,7 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
           correlationId: optStr(a, 'correlationId'),
           causationId: optStr(a, 'causationId'),
           epoch: optInt(a, 'epoch'),
-          harness: optStr(a, 'harness'),
+          harness,
           extensions: optObject(a, 'extensions'),
         });
       },
@@ -304,7 +318,7 @@ export function createBackendMcpTools(getBackend: () => SquadBackend): BackendMc
         if (limit !== undefined && limit < 1) throw new BackendError('invalid-request', "'limit' must be a positive integer", 400);
         return getBackend().readEvents(str(a, 'conversationId'), {
           after: optStr(a, 'after'),
-          limit: limit === undefined ? undefined : Math.min(limit, MAX_READ_EVENTS_LIMIT),
+          limit: limit === undefined ? MAX_READ_EVENTS_LIMIT : Math.min(limit, MAX_READ_EVENTS_LIMIT),
           stream: optEnum(a, 'stream', ['control', 'execution'] as const),
         });
       },

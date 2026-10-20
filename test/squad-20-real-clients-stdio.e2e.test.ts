@@ -88,7 +88,11 @@ class McpStdioClient {
   exited: Promise<number | null>;
 
   constructor(spec: LaunchSpec, cwd: string) {
-    this.proc = spawn(spec.command, spec.args, { cwd, env: { ...process.env, ...spec.env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const baseEnv = { ...process.env };
+    delete baseEnv['SQUAD_BACKEND_URL'];
+    delete baseEnv['SQUAD_BACKEND_TOKEN'];
+    delete baseEnv['SQUAD_EXPERIMENTAL_BACKEND'];
+    this.proc = spawn(spec.command, spec.args, { cwd, env: { ...baseEnv, ...spec.env }, stdio: ['pipe', 'pipe', 'pipe'] });
     this.proc.stdout.setEncoding('utf8');
     this.proc.stdout.on('data', (d: string) => this.onData(d));
     this.proc.stderr.setEncoding('utf8');

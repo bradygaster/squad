@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createFileStateStore, type FileStateStoreOptions } from './local-backend.js';
@@ -25,9 +26,121 @@ export interface StateBackendStoreOptions extends FileStateStoreOptions {
   lockAnchor?: string;
 }
 
-/** Machine-local lock directory shared by every process that opens the same backend identity. */
-function machineLocalLockDir(backendName: string | undefined, anchor: string): string {
-  const key = createHash('sha256').update(`${backendName ?? 'unknown'}\u0000${anchor}`, 'utf8').digest('hex').slice(0, 32);
+type InspectableBackend = StateBackendLike & {
+  root?: unknown;
+  cwd?: unknown;
+  repoRoot?: unknown;
+  branch?: unknown;
+  ref?: unknown;
+  orphan?: InspectableBackend;
+  notes?: InspectableBackend;
+};
+
+/** Resolve symlinks/junctions and platform path casing so path aliases hash to the same identity. */
+function canonicalizePath(targetPath: string): string {
+  const resolved = path.resolve(targetPath);
+  let real = resolved;
+  const realpathFn = typeof fs.realpathSync.native === 'function' ? fs.realpathSync.native : fs.realpathSync;
+  try {
+    real = realpathFn(resolved);
+  } catch {
+    let cur = path.dirname(resolved);
+    const tail: string[] = [path.basename(resolved)];
+    while (cur && cur !== path.dirname(cur)) {
+      try {
+        real = path.join(realpathFn(cur), ...tail.reverse());
+        break;
+      } catch {
+        tail.push(path.basename(cur));
+        cur = path.dirname(cur);
+      }
+    }
+  }
+  return process.platform === 'win32' || process.platform === 'darwin'
+    ? real.toLowerCase()
+    : real;
+}
+
+/**
+ * Resolve the shared git common directory (`.git`) when `dir` is a git checkout or linked worktree,
+ * so two linked worktrees updating the same git ref contend on the same lock.
+ */
+function resolveGitCommonStorage(dir: string): string | undefined {
+  const tmpNorm = canonicalizePath(os.tmpdir());
+  let cur = path.resolve(dir);
+  if (path.basename(cur) === '.squad') cur = path.dirname(cur);
+  while (cur && cur !== path.dirname(cur)) {
+    if (canonicalizePath(cur) === tmpNorm) break;
+    const dotGit = path.join(cur, '.git');
+    let st: fs.Stats | undefined;
+    try { st = fs.statSync(dotGit); } catch { st = undefined; }
+    if (st?.isDirectory()) {
+      const commonFile = path.join(dotGit, 'commondir');
+      try {
+        if (fs.statSync(commonFile).isFile()) {
+          return canonicalizePath(path.resolve(dotGit, fs.readFileSync(commonFile, 'utf8').trim()));
+        }
+      } catch { /* regular .git directory */ }
+      return canonicalizePath(dotGit);
+    }
+    if (st?.isFile()) {
+      try {
+        const raw = fs.readFileSync(dotGit, 'utf8').trim();
+        const m = /^gitdir:\s*(.+)$/i.exec(raw);
+        if (m) {
+          const gitDir = path.resolve(cur, m[1]!.trim());
+          const commonFile = path.join(gitDir, 'commondir');
+          try {
+            if (fs.statSync(commonFile).isFile()) {
+              return canonicalizePath(path.resolve(gitDir, fs.readFileSync(commonFile, 'utf8').trim()));
+            }
+          } catch { /* fallback below */ }
+          if (path.basename(path.dirname(gitDir)) === 'worktrees') {
+            return canonicalizePath(path.dirname(path.dirname(gitDir)));
+          }
+          return canonicalizePath(gitDir);
+        }
+      } catch { /* ignore malformed .git file */ }
+    }
+    cur = path.dirname(cur);
+  }
+  return undefined;
+}
+
+/** Canonical shared storage + state ref identity across checkouts, linked worktrees, and two-layer wrappers. */
+function resolveSharedBackendIdentity(backend: StateBackendLike, opts: StateBackendStoreOptions): { storage: string; stateRef: string } | undefined {
+  const candidate = backend as InspectableBackend;
+  const primary = candidate.orphan && typeof candidate.orphan === 'object' ? candidate.orphan : candidate;
+
+  const rawDir = typeof primary.cwd === 'string' && primary.cwd
+    ? primary.cwd
+    : typeof candidate.cwd === 'string' && candidate.cwd
+      ? candidate.cwd
+      : typeof candidate.repoRoot === 'string' && candidate.repoRoot
+        ? candidate.repoRoot
+        : opts.lockAnchor;
+  if (!rawDir) return undefined;
+
+  const storage = resolveGitCommonStorage(rawDir) ?? canonicalizePath(
+    path.basename(rawDir) === '.squad' ? path.dirname(path.resolve(rawDir)) : rawDir,
+  );
+
+  const stateRef = typeof primary.branch === 'string' && primary.branch
+    ? `refs/heads/${primary.branch}`
+    : typeof primary.ref === 'string' && primary.ref
+      ? `refs/notes/${primary.ref}`
+      : primary.name === 'orphan' || candidate.name === 'two-layer'
+        ? 'refs/heads/squad-state'
+        : primary.name === 'git-notes'
+          ? 'refs/notes/squad'
+          : `backend:${candidate.name ?? 'unknown'}`;
+
+  return { storage, stateRef };
+}
+
+/** Machine-local lock directory shared by every process that opens the same canonical storage + state ref. */
+function machineLocalLockDir(storage: string, stateRef: string): string {
+  const key = createHash('sha256').update(`${storage}\u0000${stateRef}`, 'utf8').digest('hex').slice(0, 32);
   return path.join(os.tmpdir(), 'squad-backend-locks', key);
 }
 
@@ -36,18 +149,16 @@ function machineLocalLockDir(backendName: string | undefined, anchor: string): s
  * `squad state-mcp` servers never contend and both believe they hold the conversation.
  *
  * A file-backed backend (`root`) keeps its locks next to its data. Backends whose data lives
- * outside the working tree (`cwd` = repo root for git-notes/orphan, or an opaque backend with a
- * `lockAnchor`) get a deterministic machine-local lock directory instead, so a configured state
- * backend never materializes `.squad/backend/` inside the team directory.
+ * outside the working tree (`orphan`, `git-notes`, `two-layer`, or an opaque backend with a
+ * `lockAnchor`) derive their lock directory from the canonical shared storage (the shared git
+ * common dir across linked worktrees, resolved through symlinks/path aliases) and the state ref.
  */
 function resolveLockDir(backend: StateBackendLike, opts: StateBackendStoreOptions): string {
   if (opts.squadDir) return path.resolve(opts.squadDir);
-  const candidate = (backend as { root?: unknown; cwd?: unknown });
+  const candidate = backend as InspectableBackend;
   if (typeof candidate.root === 'string' && candidate.root) return path.resolve(candidate.root);
-  const anchor = typeof candidate.cwd === 'string' && candidate.cwd
-    ? path.resolve(candidate.cwd)
-    : opts.lockAnchor ? path.resolve(opts.lockAnchor) : undefined;
-  if (anchor) return machineLocalLockDir(backend.name, anchor);
+  const identity = resolveSharedBackendIdentity(backend, opts);
+  if (identity) return machineLocalLockDir(identity.storage, identity.stateRef);
   throw new BackendError('invalid-request',
     `Cannot determine a deterministic lock directory for state backend '${backend.name ?? 'unknown'}': pass squadDir or lockAnchor`, 400);
 }

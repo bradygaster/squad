@@ -161,8 +161,9 @@ export class DurableHttpSquadBackend implements SquadBackend {
         method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
       if (res.status === 404) return { status: 'missing' };
+      const text = await res.text();
       let body: { version?: string; detail?: string } = {};
-      try { body = JSON.parse(await res.text()) as typeof body; } catch { /* plain-text probe */ }
+      try { body = JSON.parse(text) as typeof body; } catch { /* plain-text probe */ }
       return res.ok ? { status: 'ok', version: body.version } : { status: 'fail', detail: body.detail ?? `HTTP ${res.status}` };
     } catch (err) {
       return { status: 'fail', detail: err instanceof Error ? err.message : String(err) };

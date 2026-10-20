@@ -50,7 +50,7 @@ interface StoredConversation {
   /** Decisions awaiting an idempotent harness acknowledgement; retried until delivered. */
   deliveries?: PendingDelivery[];
   /** Admitted turns whose initial harness.submit(...) has not yet completed; retried on same-(runId, seq) sendMessage. */
-  pendingSubmissions?: Array<{ runId: string; seq: number }>;
+  pendingSubmissions?: Array<{ operationId?: string; runId: string; seq: number }>;
 }
 
 const ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
@@ -290,6 +290,7 @@ export class LocalSquadBackend implements SquadBackend {
   private readonly subscriptions = new Map<string, () => void>();
   private readonly loading = new Map<string, StoredConversation>();
   private readonly txActive = new Set<string>();
+  private readonly inflightSubmissions = new Map<string, Promise<void>>();
 
   constructor(options: LocalSquadBackendOptions = {}) {
     this.kind = options.kind ?? 'local';
@@ -327,6 +328,8 @@ export class LocalSquadBackend implements SquadBackend {
       throw new BackendError('invalid-request', 'message requires runId and a non-negative integer seq', 400);
     }
     const msg = message;
+    const submissionOpId = `${conversationId}:${msg.runId}:${msg.seq}`;
+    const dispatchKey = `${conversationId}\u0000${msg.runId}\u0000${msg.seq}`;
     const admitted = await this.tx(conversationId, (conv) => {
       this.checkEpoch(conv, msg.epoch);
       const dup = conv.turns.find(t => t.runId === msg.runId && t.seq === msg.seq);
@@ -337,8 +340,8 @@ export class LocalSquadBackend implements SquadBackend {
           throw new BackendError('conflict', `Idempotency key (${msg.runId}, ${msg.seq}) was reused with a different message payload`, 409);
         }
         const cursor = this.admissionCursor(conv, dup);
-        const pendingSubmit = Boolean(conv.pendingSubmissions?.some(s => s.runId === dup.runId && s.seq === dup.seq))
-          && !TERMINAL_RUN_STATES.includes(dup.state);
+        const pendingEntry = conv.pendingSubmissions?.find(s => s.runId === dup.runId && s.seq === dup.seq);
+        const pendingSubmit = Boolean(pendingEntry) && !TERMINAL_RUN_STATES.includes(dup.state);
         if (pendingSubmit && original?.harness) {
           const retryAdapter = this.harnesses.get(original.harness);
           if (!retryAdapter) {
@@ -348,6 +351,7 @@ export class LocalSquadBackend implements SquadBackend {
               503,
             );
           }
+          pendingEntry!.operationId ??= submissionOpId;
           return {
             duplicate: true as const,
             needsSubmit: true as const,
@@ -355,6 +359,7 @@ export class LocalSquadBackend implements SquadBackend {
             stored: original,
             epoch: dup.epoch ?? conv.info.epoch,
             cursor,
+            operationId: pendingEntry!.operationId,
           };
         }
         return {
@@ -390,7 +395,7 @@ export class LocalSquadBackend implements SquadBackend {
       conv.transcript.push(stored);
       conv.turns.push(turn);
       if (adapter) {
-        (conv.pendingSubmissions ??= []).push({ runId: msg.runId, seq: msg.seq });
+        (conv.pendingSubmissions ??= []).push({ operationId: submissionOpId, runId: msg.runId, seq: msg.seq });
       }
       const accepted = this.emit(conv, 'control', 'message.accepted',
         { runId: msg.runId, seq: msg.seq, state: turn.state }, msg.correlationId, msg.causationId);
@@ -401,28 +406,38 @@ export class LocalSquadBackend implements SquadBackend {
         stored,
         epoch,
         cursor: accepted.cursor,
+        operationId: submissionOpId,
       };
     });
     if (!admitted.needsSubmit && admitted.duplicate) return admitted.admission;
 
-    const { adapter, stored, epoch, cursor } = admitted;
+    const { adapter, stored, epoch, cursor, operationId } = admitted;
     if (adapter) {
       this.ensureSubscribed(conversationId, adapter.id);
-      try {
-        await adapter.submit({
-          conversationId, runId: msg.runId, seq: msg.seq,
-          messages: [stored], extensions: stored.extensions, epoch,
+      let inflight = this.inflightSubmissions.get(dispatchKey);
+      if (!inflight) {
+        inflight = (async () => {
+          try {
+            await adapter.submit({
+              conversationId, runId: msg.runId, seq: msg.seq, operationId,
+              messages: [stored], extensions: stored.extensions, epoch,
+            });
+          } catch (err) {
+            throw new BackendError(
+              'unavailable',
+              `Harness submit delivery failed and will be retried: ${err instanceof Error ? err.message : String(err)}`,
+              503,
+            );
+          }
+          await this.tx(conversationId, (fresh) => {
+            this.clearPendingSubmission(fresh, msg.runId, msg.seq);
+          });
+        })().finally(() => {
+          this.inflightSubmissions.delete(dispatchKey);
         });
-      } catch (err) {
-        throw new BackendError(
-          'unavailable',
-          `Harness submit delivery failed and will be retried: ${err instanceof Error ? err.message : String(err)}`,
-          503,
-        );
+        this.inflightSubmissions.set(dispatchKey, inflight);
       }
-      await this.tx(conversationId, (fresh) => {
-        this.clearPendingSubmission(fresh, msg.runId, msg.seq);
-      });
+      await inflight;
     }
     const latest = this.load(conversationId);
     const final = this.findTurn(latest, msg.runId, msg.seq)!;
@@ -651,10 +666,18 @@ export class LocalSquadBackend implements SquadBackend {
     if (conv.pendingSubmissions.length === 0) delete conv.pendingSubmissions;
   }
 
+  private clearQueuedApprovals(conv: StoredConversation, runId: string, seq: number): void {
+    if (!conv.deliveries?.length) return;
+    conv.deliveries = conv.deliveries.filter(
+      d => !(d.kind === 'approval' && d.runId === runId && d.seq === seq),
+    );
+  }
+
   /** Persist the cancellation (and an outstanding harness delivery); the harness call happens later. */
   private markCancelled(conv: StoredConversation, turn: BackendTurn, reason?: string): void {
     if (TERMINAL_RUN_STATES.includes(turn.state)) return;
     this.clearPendingSubmission(conv, turn.runId, turn.seq);
+    this.clearQueuedApprovals(conv, turn.runId, turn.seq);
     this.cancelPendingApproval(conv, turn);
     turn.state = 'cancelled';
     const requested = this.emit(conv, 'control', 'cancellation.requested', { runId: turn.runId, seq: turn.seq, reason });
@@ -732,35 +755,36 @@ export class LocalSquadBackend implements SquadBackend {
     // track BEFORE subscribing: an adapter that replays synchronously must not re-enter rehydration
     this.subscriptions.set(key, () => undefined);
     try {
-      this.subscriptions.set(key, adapter.subscribe(conversationId, ev => this.applyEvent(conversationId, ev)));
+      this.subscriptions.set(key, adapter.subscribe(conversationId, ev => this.applyEvent(conversationId, harnessId, ev)));
     } catch (err) {
       this.subscriptions.delete(key);
       throw err;
     }
   }
 
-  private applyEvent(conversationId: string, incoming: HarnessEventEnvelope): void {
+  private applyEvent(conversationId: string, harnessId: string, incoming: HarnessEventEnvelope): void {
     const loading = this.loading.get(conversationId);
     if (loading) {
       // synchronous replay while this conversation is being loaded: apply to the in-memory state instead of
       // re-entering load() (and the non-reentrant lock). Persisted by the enclosing tx, or re-applied
       // (idempotently) right after the load when there is none.
-      this.applyEventLocked(loading, incoming);
-      if (!this.txActive.has(conversationId)) queueMicrotask(() => this.applyEvent(conversationId, incoming));
+      this.applyEventLocked(loading, harnessId, incoming);
+      if (!this.txActive.has(conversationId)) queueMicrotask(() => this.applyEvent(conversationId, harnessId, incoming));
       return;
     }
     try {
-      this.txSync(conversationId, conv => this.applyEventLocked(conv, incoming));
+      this.txSync(conversationId, conv => this.applyEventLocked(conv, harnessId, incoming));
     } catch (err) {
       if (err instanceof BackendError && err.code === 'not-found') return;
       throw err;
     }
   }
 
-  private applyEventLocked(conv: StoredConversation, ev: HarnessEventEnvelope): void {
+  private applyEventLocked(conv: StoredConversation, harnessId: string, ev: HarnessEventEnvelope): void {
     let emitted: object = ev;
     const turn = this.findTurn(conv, ev.runId, ev.seq);
     if (!turn || TERMINAL_RUN_STATES.includes(turn.state)) return;
+    if (turn.messages[0]?.harness !== harnessId) return;
     // fencing: output issued under an older lease than the conversation's current one is stale
     const eventEpoch = ev.epoch ?? turn.epoch ?? 1;
     if (eventEpoch < conv.info.epoch) {
@@ -785,6 +809,8 @@ export class LocalSquadBackend implements SquadBackend {
       case 'approval-requested': {
         // harness delivery is at-least-once: a redelivered request must not create a second approval
         if ((conv.approvals ?? []).some(a => a.approvalId === ev.request.approvalId)) return;
+        // single-pending-approval model per turn: reject a second distinct request before replacing the first
+        if (turn.pendingApproval) return;
         const request: ApprovalRequest = {
           ...ev.request, version: 1, scope: ev.request.scope ?? { kind: 'turn', runId: turn.runId, seq: turn.seq },
         };
@@ -800,7 +826,10 @@ export class LocalSquadBackend implements SquadBackend {
         if (turn.state === ev.state) return;
         if (turn.pendingApproval && !TERMINAL_RUN_STATES.includes(ev.state)) return; // only a decision resumes an awaiting turn
         // a terminal state closes any approval still pending so a late decision cannot revive the turn
-        if (TERMINAL_RUN_STATES.includes(ev.state)) this.cancelPendingApproval(conv, turn);
+        if (TERMINAL_RUN_STATES.includes(ev.state)) {
+          this.clearQueuedApprovals(conv, turn.runId, turn.seq);
+          this.cancelPendingApproval(conv, turn);
+        }
         turn.state = ev.state;
         if (ev.error) turn.error = ev.error;
         break;
@@ -883,6 +912,7 @@ export class LocalSquadBackend implements SquadBackend {
 function sameMessagePayload(a: BackendMessage, b: BackendMessage): boolean {
   return a.role === b.role
     && a.content === b.content
+    && (b.harness === undefined || a.harness === b.harness)
     && JSON.stringify(a.parts ?? null) === JSON.stringify(b.parts ?? null)
     && JSON.stringify(a.extensions ?? null) === JSON.stringify(b.extensions ?? null);
 }

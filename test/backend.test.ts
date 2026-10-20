@@ -1559,3 +1559,214 @@ describe('Layer 3 review recommendations & bug fixes', () => {
     expect(JSON.parse(res.content[0]!.text).error).toMatchObject({ code: 'unavailable', retryable: false });
   });
 });
+
+describe('PR #2253 Copilot review thread regressions', () => {
+  it('1. backend-mcp send_message auto-selects a single registered harness or rejects an omitted harness when multiple are registered', async () => {
+    const { createBackendMcpTools, callBackendMcpTool } = await import('../packages/squad-cli/src/cli/core/backend-mcp.js');
+    const h1 = new FakeHarness();
+    const singleReg = new DefaultHarnessRegistry();
+    singleReg.register(h1);
+    const singleBackend = new LocalSquadBackend({ kind: 'mcp', harnesses: singleReg });
+    const singleTools = new Map(createBackendMcpTools(() => singleBackend).map(t => [t.name, t]));
+    await singleTools.get('squad_backend_create_conversation')!.call({ conversationId: 'c' });
+
+    const adm = await singleTools.get('squad_backend_send_message')!.call({
+      conversationId: 'c', runId: 'r1', seq: 1, content: 'auto-routed',
+    }) as { state: string };
+    expect(adm.state).toBe('running');
+    expect(h1.submitted).toEqual([{ runId: 'r1', seq: 1 }]);
+
+    // When multiple harnesses are registered, omitting 'harness' is rejected instead of silently queueing
+    const h2 = { ...new FakeHarness(), id: 'claude', capabilities: { streaming: true, approvals: true, cancellation: true, tools: true, extensionNamespaces: ['x-claude'] }, describe: () => ({ id: 'claude', capabilities: { streaming: true, approvals: true, cancellation: true, tools: true, extensionNamespaces: ['x-claude'] } }) } as unknown as HarnessAdapter;
+    const multiReg = new DefaultHarnessRegistry();
+    multiReg.register(new FakeHarness());
+    multiReg.register(h2);
+    const multiBackend = new LocalSquadBackend({ kind: 'mcp', harnesses: multiReg });
+    const multiTools = new Map(createBackendMcpTools(() => multiBackend).map(t => [t.name, t]));
+    await multiTools.get('squad_backend_create_conversation')!.call({ conversationId: 'c' });
+
+    const res = await callBackendMcpTool(multiTools.get('squad_backend_send_message')!, {
+      conversationId: 'c', runId: 'r1', seq: 1, content: 'ambiguous',
+    });
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0]!.text).error).toMatchObject({ code: 'invalid-request' });
+    expect(await multiBackend.getTranscript('c')).toEqual([]);
+  });
+
+  it('2. backend-mcp read_events defaults an omitted limit to MAX_READ_EVENTS_LIMIT (500)', async () => {
+    const { createBackendMcpTools, MAX_READ_EVENTS_LIMIT } = await import('../packages/squad-cli/src/cli/core/backend-mcp.js');
+    const seenOptions: Array<{ limit?: number }> = [];
+    const spyBackend = {
+      kind: 'mcp',
+      readEvents: async (_c: string, opts?: { limit?: number }) => {
+        seenOptions.push(opts ?? {});
+        return { events: [], nextCursor: 'cur', lastAcceptedSeq: 0, resumable: true };
+      },
+    } as unknown as LocalSquadBackend;
+    const tools = new Map(createBackendMcpTools(() => spyBackend).map(t => [t.name, t]));
+    await tools.get('squad_backend_read_events')!.call({ conversationId: 'c' });
+    expect(seenOptions).toEqual([{ after: undefined, limit: MAX_READ_EVENTS_LIMIT, stream: undefined }]);
+  });
+
+  it('3. DurableHttpSquadBackend health probe fails when response-body read rejects after HTTP 200 headers', async () => {
+    const bodyReadFails = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => {
+        throw Object.assign(new Error('Body stream timed out'), { name: 'TimeoutError' });
+      },
+    } as unknown as Response));
+    const b = new DurableHttpSquadBackend({ baseUrl: 'https://durable.test', fetch: bodyReadFails as never, requestTimeoutMs: 50 });
+    const health = await b.health();
+    expect(health).toMatchObject({ ok: false, live: false, ready: false });
+    expect(health.detail).toMatch(/timed out/i);
+  });
+
+  it('4. sendMessage deduplicates concurrent in-flight adapter.submit calls and passes stable operationId across crash retries', async () => {
+    const seenOps: Array<string | undefined> = [];
+    let submitCalls = 0;
+    let releaseSubmit!: () => void;
+    const submitGate = new Promise<void>(r => { releaseSubmit = r; });
+
+    const h = new FakeHarness();
+    h.submit = async (s: { runId: string; seq: number; operationId?: string }) => {
+      submitCalls++;
+      seenOps.push(s.operationId);
+      await submitGate;
+      h.submitted.push({ runId: s.runId, seq: s.seq });
+    };
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    const state = new MemoryStateStore();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+
+    const firstPromise = b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    await new Promise(r => setTimeout(r, 15)); // let first call enter adapter.submit
+    const secondPromise = b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    await new Promise(r => setTimeout(r, 15));
+    expect(submitCalls).toBe(1); // concurrent retry awaited the in-flight dispatch instead of calling submit twice
+
+    releaseSubmit();
+    const [firstAdm, secondAdm] = await Promise.all([firstPromise, secondPromise]);
+    expect(firstAdm.duplicate).toBe(false);
+    expect(secondAdm.duplicate).toBe(true);
+    expect(submitCalls).toBe(1);
+    expect(seenOps).toEqual(['c:r:1']);
+  });
+
+  it('5. cancelling a turn removes queued approval deliveries for that turn so flushDeliveries does not send or block on an obsolete approval', async () => {
+    const h = new FakeHarness();
+    let failApproval = true;
+    const origApprove = h.respondApproval.bind(h);
+    h.respondApproval = async (c: string, r: { approvalId: string }) => {
+      if (failApproval) throw new Error('approval delivery down');
+      return origApprove(c, r);
+    };
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    const state = new MemoryStateStore();
+    const b = new LocalSquadBackend({ state, harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+    h.emit({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a1', turnSeq: 1, action: 'deploy', hash: 'h1' } });
+
+    expect(await rejectCode(b.respondApproval('c', { approvalId: 'a1', hash: 'h1', decision: 'approve' }))).toBe('unavailable');
+    // Now cancel while approval delivery is still failing: cancellation drops the obsolete approval delivery and succeeds
+    const cancelled = await b.cancelRun('c', 'r', 'abort');
+    expect(cancelled.state).toBe('cancelled');
+    expect(h.approvals).toEqual([]);
+    expect(h.cancelled).toEqual([1]);
+    failApproval = false;
+  });
+
+  it('6. harness event callbacks verify the publishing harnessId matches the turn routed harness', async () => {
+    const copilot = new FakeHarness();
+    class ClaudeHarness extends FakeHarness {
+      override readonly id = 'claude' as never;
+      override readonly capabilities = { streaming: true, approvals: true, cancellation: true, tools: true, extensionNamespaces: ['x-claude'] };
+    }
+    const claude = new ClaudeHarness();
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(copilot);
+    harnesses.register(claude);
+    const b = new LocalSquadBackend({ harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r-copilot', 1, { harness: 'copilot' }));
+    await b.sendMessage('c', msg('r-claude', 2, { harness: 'claude' }));
+
+    // copilot attempts to emit messages, approvals, and completion for claude's turn (r-claude, seq 2)
+    copilot.emit({ type: 'message', runId: 'r-claude', seq: 2, message: { runId: 'r-claude', seq: 99, role: 'assistant', content: 'spoofed' } });
+    copilot.emit({ type: 'approval-requested', runId: 'r-claude', seq: 2, request: { approvalId: 'spoof-a', turnSeq: 2, action: 'rm', hash: 'h' } });
+    copilot.emit({ type: 'state', runId: 'r-claude', seq: 2, state: 'completed' });
+
+    const claudeTurn = await b.getTurn('c', 2);
+    expect(claudeTurn.state).toBe('running');
+    expect(claudeTurn.messages).toHaveLength(1);
+    expect(claudeTurn.pendingApproval).toBeUndefined();
+    expect(await b.getApprovals('c')).toEqual([]);
+  });
+
+  it('7. a second distinct approval-requested event for a turn with a pending approval is rejected without overwriting', async () => {
+    const h = new FakeHarness();
+    const harnesses = new DefaultHarnessRegistry();
+    harnesses.register(h);
+    const b = new LocalSquadBackend({ harnesses });
+    await b.createConversation({ conversationId: 'c' });
+    await b.sendMessage('c', msg('r', 1, { harness: 'copilot' }));
+
+    h.emit({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a1', turnSeq: 1, action: 'first', hash: 'h1' } });
+    h.emit({ type: 'approval-requested', runId: 'r', seq: 1, request: { approvalId: 'a2', turnSeq: 1, action: 'second', hash: 'h2' } });
+
+    expect((await b.getTurn('c', 1)).pendingApproval?.approvalId).toBe('a1');
+    expect((await b.getApprovals('c')).map(a => a.approvalId)).toEqual(['a1']);
+    const resolved = await b.respondApproval('c', { approvalId: 'a1', hash: 'h1', decision: 'approve' });
+    expect(resolved.state).toBe('running');
+  });
+
+  it('8. createStateBackendStore derives shared lock identity across linked git worktrees, path aliases, and TwoLayerBackend', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { OrphanBranchBackend, TwoLayerBackend } = await import('../packages/squad-sdk/src/state-backend.js');
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-wt-lock-'));
+    try {
+      const repoMain = path.join(base, 'main-repo');
+      const repoWt = path.join(base, 'linked-wt');
+      const repoAlias = path.join(base, 'alias-repo');
+      fs.mkdirSync(repoMain, { recursive: true });
+      execFileSync('git', ['init'], { cwd: repoMain, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoMain, 'README.md'), '# test\n');
+      execFileSync('git', ['add', 'README.md'], { cwd: repoMain, stdio: 'ignore' });
+      execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@e', 'commit', '-m', 'init'], { cwd: repoMain, stdio: 'ignore' });
+      execFileSync('git', ['worktree', 'add', '-b', 'wt-branch', repoWt], { cwd: repoMain, stdio: 'ignore' });
+      fs.symlinkSync(repoMain, repoAlias, 'junction');
+
+      const opts = { lockTimeoutMs: 50 };
+      const storeMain = createStateBackendStore(new OrphanBranchBackend(repoMain), opts);
+      const storeWt = createStateBackendStore(new OrphanBranchBackend(repoWt), opts);
+      const storeTwoLayerWt = createStateBackendStore(new TwoLayerBackend(repoWt), { ...opts, lockAnchor: path.join(repoWt, '.squad') });
+      const storeAlias = createStateBackendStore(new OrphanBranchBackend(repoAlias), opts);
+
+      const release = storeMain.lock!('backend/locks/shared-conv');
+      try {
+        // Linked worktree, TwoLayerBackend wrapper, and symlink/junction alias all contend on the same lock
+        expect(() => storeWt.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
+        expect(() => storeTwoLayerWt.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
+        expect(() => storeAlias.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
+
+        // A different orphan branch ref has its own independent lock
+        const storeOtherBranch = createStateBackendStore(new OrphanBranchBackend(repoWt, 'other-state'), opts);
+        const releaseOther = storeOtherBranch.lock!('backend/locks/shared-conv');
+        releaseOther();
+      } finally {
+        release();
+      }
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+

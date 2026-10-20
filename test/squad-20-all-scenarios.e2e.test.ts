@@ -548,9 +548,9 @@ describe('Scenario 5: backend-mcp.ts full tool coverage', () => {
     expect(sent.body).toMatchObject({ runId: 'r', seq: 1, duplicate: false, correlationId: 'k1' });
     expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 1, content: '', harness: 'claude',
       parts: [{ type: 'text', text: 'hi' }], extensions: { 'x-claude.mode': 'plan' } })).body.duplicate).toBe(true);
-    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 1, content: 'again' })).body.error).toMatchObject({ code: 'conflict' });
-    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 9, content: 'x', extensions: { bad: 1 } })).body.error.code).toBe('invalid-request');
-    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', seq: 1, content: 'x' })).isError).toBe(true);
+    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 1, content: 'again', harness: 'claude' })).body.error).toMatchObject({ code: 'conflict' });
+    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', runId: 'r', seq: 9, content: 'x', harness: 'claude', extensions: { bad: 1 } })).body.error.code).toBe('invalid-request');
+    expect((await call('squad_backend_send_message', { conversationId: 'mcp-c', seq: 1, content: 'x', harness: 'claude' })).isError).toBe(true);
 
     expect((await call('squad_backend_get_turn', { conversationId: 'mcp-c', seq: 1 })).body).toMatchObject({ runId: 'r', state: 'running' });
     expect((await call('squad_backend_get_transcript', { conversationId: 'mcp-c' })).body).toHaveLength(1);
