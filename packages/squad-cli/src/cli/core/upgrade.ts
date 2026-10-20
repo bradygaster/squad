@@ -12,7 +12,6 @@ import {
   backfillCastingRegistryFromTeam,
   ensureCastingRegistryPair,
   preflightCastingRegistryPair,
-  readCastingRegistryPair,
   repairHandwrittenCastingRegistry,
   type RepairResult,
 } from '@bradygaster/squad-sdk/casting';
@@ -666,14 +665,10 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
     if (repair.repaired) {
       warn('Normalized a handwritten .squad/casting/registry.json');
       created.push(...repair.files.map((f) => `.squad/casting/${f}`));
-    } else if (isUnrepairableCastingRegistry(castingDir, repair)) {
-      // fail closed, but never opaquely: the error names the reason, the offending entries and the fix
-      // instead of the generic pair-initialization failure
-      fatal(formatCastingRepairBlocked(repair));
     } else {
       warnCastingRepairSkipped('Could not normalize handwritten .squad/casting/registry.json', repair);
     }
-    const pair = ensureCastingRegistryPair(
+    const pair = withCastingRepairContext(repair, () => ensureCastingRegistryPair(
       castingDir,
       templateContent(
         'casting-registry.json',
@@ -684,7 +679,7 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
         JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n',
       ),
       'CLI upgrade',
-    );
+    ));
     if (pair.created) {
       created.push('.squad/casting/registry.json', '.squad/casting/history.json');
     }
@@ -719,17 +714,24 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
 }
 
 /**
- * True when the handwritten-registry repair failed closed (it has a reason) AND the
- * casting pair cannot be read as a managed pair either, so the pair initialization
- * and the strict preflight would both throw an opaque error.
+ * Generic pair-initialization / consistency failures carry no hint about *why* a handwritten
+ * registry could not be normalized. Legacy-migration errors (entries provenance, missing universe,
+ * …) are specific already and pass through untouched.
  */
-function isUnrepairableCastingRegistry(castingDir: string, repair: RepairResult): boolean {
-  if (repair.repaired || !repair.reason) return false;
+const GENERIC_CASTING_PAIR_ERROR = /Cannot (initialize|read a consistent) casting registry/;
+
+/**
+ * Run a managed-pair operation; when it fails with the generic pair error after the handwritten
+ * repair declined with a reason, rethrow with the reason, the offending entries and the fix.
+ */
+function withCastingRepairContext<T>(repair: RepairResult, run: () => T): T {
   try {
-    readCastingRegistryPair(castingDir);
-    return false;
-  } catch {
-    return true;
+    return run();
+  } catch (err: unknown) {
+    if (!repair.repaired && repair.reason && err instanceof Error && GENERIC_CASTING_PAIR_ERROR.test(err.message)) {
+      fatal(formatCastingRepairBlocked(repair));
+    }
+    throw err;
   }
 }
 
@@ -1327,15 +1329,14 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     } else {
       warn('Normalized a handwritten .squad/casting/registry.json');
     }
-  } else if (isUnrepairableCastingRegistry(castingDir, repair)) {
-    // fail closed with the reason, the offending entries and the fix, instead of the preflight's generic error
-    fatal(formatCastingRepairBlocked(repair));
   } else {
     warnCastingRepairSkipped('Could not normalize handwritten .squad/casting/registry.json', repair);
   }
+  // Legacy registries still go through the strict preflight (and its specific errors); only the
+  // preflight's generic failure is enriched with the handwritten-repair reason and fix.
   const castingMigrated = handwrittenRepaired && dryRun
     ? false
-    : preflightCastingRegistryPair(castingDir, dryRun);
+    : withCastingRepairContext(repair, () => preflightCastingRegistryPair(castingDir, dryRun));
   if (castingMigrated) {
     info(dryRun
       ? 'Would migrate legacy casting state to a managed registry/history pair.'
