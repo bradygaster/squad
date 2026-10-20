@@ -15,7 +15,7 @@ export interface RejectedClientValue {
 }
 
 const SENSITIVE =
-  /(token|secret|password|passwd|apikey|api[-_]key|bearer|credential|authorization|thread|lease|checkpoint|session[-_]?id|[a-z]:[\\/]|^[\\/~]|[\\/]|@|:\/\/|=)/i;
+  /(token|secret|password|passwd|apikey|api[-_]key|bearer|credential|authorization|thread|lease|checkpoint|session[-_]?id|^(?:gh[pousr]_|github_pat_|glpat-|sk-|sk_(?:live|test)_|xox[baprs]-|akia[0-9a-z]|eyj[a-z0-9_-]+\.)|[a-z]:[\\/]|^[\\/~]|[\\/]|@|:\/\/|=)/i;
 
 /**
  * Normalize an arbitrary persisted `clients` value to canonical, de-duplicated
@@ -29,9 +29,14 @@ export function normalizeClientIds(input: unknown): { clients: ClientId[]; rejec
       rejected.push({ value: typeof v === 'object' ? '[object]' : v, reason: 'non-string' });
       continue;
     }
-    const slug = v.trim().toLowerCase();
-    if ((CLIENT_IDS as readonly string[]).includes(slug)) seen.add(slug as ClientId);
-    else rejected.push({ value: SENSITIVE.test(v) ? '[redacted]' : v, reason: SENSITIVE.test(v) ? 'sensitive' : 'unknown' });
+    const trimmed = v.trim();
+    const slug = trimmed.toLowerCase();
+    if ((CLIENT_IDS as readonly string[]).includes(slug)) {
+      seen.add(slug as ClientId);
+    } else {
+      const isSensitive = SENSITIVE.test(trimmed);
+      rejected.push({ value: isSensitive ? '[redacted]' : trimmed, reason: isSensitive ? 'sensitive' : 'unknown' });
+    }
   }
   return { clients: CLIENT_IDS.filter((c) => seen.has(c)), rejected };
 }
@@ -45,8 +50,9 @@ export function extractUnknownPortableClientIds(rejected: readonly RejectedClien
   const seen = new Set<string>();
   for (const r of rejected) {
     if (r.reason !== 'unknown' || typeof r.value !== 'string') continue;
-    const slug = r.value.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(slug) || seen.has(slug)) continue;
+    const trimmed = r.value.trim();
+    const slug = trimmed.toLowerCase();
+    if (!slug || SENSITIVE.test(trimmed) || !/^[a-z0-9][a-z0-9._-]*$/i.test(slug) || seen.has(slug)) continue;
     seen.add(slug);
     out.push(slug);
   }

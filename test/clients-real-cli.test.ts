@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { installClients } from '../packages/squad-sdk/src/client/index.js';
@@ -43,6 +44,9 @@ const CODEX = bin('codex');
 const AGY = bin('agy');
 const CURSOR = bin('cursor-agent');
 
+const MCP_STDIO_STUB =
+  'process.stdin.on("data",d=>{for(const l of String(d).split(/\\r?\\n/).filter(Boolean)){try{const j=JSON.parse(l);if(j.id!==undefined)process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:j.id,result:{protocolVersion:"2024-11-05",capabilities:{tools:{}},serverInfo:{name:"squad_state",version:"1.0.0"},tools:[]}})+"\\n")}catch{}}})';
+
 let root: string;
 beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-real-cli-'));
@@ -52,7 +56,7 @@ beforeAll(() => {
   fs.writeFileSync(path.join(squad, 'team.md'), '| Name | Role | Charter | Status |\n|---|---|---|---|\n| Data | Expert | c | ok |\n');
   const results = installClients(['claude', 'opencode', 'kiro', 'codex', 'antigravity', 'cursor'], {
     root,
-    mcp: { command: 'node', args: ['-e', '0'] },
+    mcp: { command: 'node', args: ['-e', MCP_STDIO_STUB] },
   });
   expect(results.filter((r) => r.action === 'error')).toEqual([]);
 });
@@ -90,7 +94,7 @@ describe.skipIf(!ENABLED)('real CLIs load Squad projections', () => {
     expect(out).toMatch(/squad\s+Workspace/);
   });
 
-  it.skipIf(!has(CODEX))('codex loads the project config (trusted) and sees the squad_state server', () => {
+  it.skipIf(!has(CODEX))('codex loads the project config (trusted), sees squad_state MCP, discovers the squad TOML role, and activates coordinator instructions on spawn', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
     const key = fs.realpathSync.native(root).replace(/\\/g, '\\\\');
     fs.writeFileSync(path.join(home, 'config.toml'), `[projects."${key}"]\ntrust_level = "trusted"\n`);
@@ -98,6 +102,104 @@ describe.skipIf(!ENABLED)('real CLIs load Squad projections', () => {
       const r = run(CODEX!, ['mcp', 'get', 'squad_state'], root, { ...process.env, CODEX_HOME: home });
       expect(r.stdout).toMatch(/enabled: true/);
       expect(r.stdout).toMatch(/transport: stdio/);
+
+      // Verify Codex discovers .codex/agents/squad.toml as a custom role (without hijacking the root session)
+      // and activates its developer_instructions when `spawn_agent` spawns `agent_type: "squad"`.
+      const turns: Array<{ hasRole: boolean; hasCoordinatorPrompt: boolean }> = [];
+      let turnCount = 0;
+      const server = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          turnCount++;
+          turns.push({
+            hasRole: body.includes('Available roles:\\nsquad:'),
+            hasCoordinatorPrompt: body.includes('## Dispatch adapter: OpenAI Codex'),
+          });
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          if (turnCount === 1) {
+            const callItem = {
+              id: 'fc_1',
+              type: 'function_call',
+              call_id: 'call_1',
+              name: 'spawn_agent',
+              namespace: 'multi_agent_v1',
+              arguments: JSON.stringify({ agent_type: 'squad', message: 'route task' }),
+            };
+            res.end(
+              [
+                'data: {"type":"response.created","response":{"id":"r1"}}',
+                `data: ${JSON.stringify({ type: 'response.output_item.added', output_index: 0, item: callItem })}`,
+                `data: ${JSON.stringify({ type: 'response.output_item.done', output_index: 0, item: callItem })}`,
+                `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'r1', output: [callItem] } })}`,
+                '',
+              ].join('\n\n'),
+            );
+          } else if (turnCount === 2 && !body.includes('## Dispatch adapter: OpenAI Codex')) {
+            const agentIdMatch = /\\"agent_id\\":\\"([^\\"]+)\\"/.exec(body);
+            const waitItem = {
+              id: 'fc_2',
+              type: 'function_call',
+              call_id: 'call_2',
+              name: 'wait_agent',
+              namespace: 'multi_agent_v1',
+              arguments: JSON.stringify({
+                targets: agentIdMatch ? [agentIdMatch[1]!] : [],
+                timeout_ms: 10000,
+              }),
+            };
+            res.end(
+              [
+                'data: {"type":"response.created","response":{"id":"r2"}}',
+                `data: ${JSON.stringify({ type: 'response.output_item.added', output_index: 0, item: waitItem })}`,
+                `data: ${JSON.stringify({ type: 'response.output_item.done', output_index: 0, item: waitItem })}`,
+                `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'r2', output: [waitItem] } })}`,
+                '',
+              ].join('\n\n'),
+            );
+          } else {
+            res.end(
+              `data: {"type":"response.created","response":{"id":"r${turnCount}"}}\n\ndata: {"type":"response.completed","response":{"id":"r${turnCount}","output":[]}}\n\n`,
+            );
+          }
+        });
+      });
+
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+      try {
+        const addr = server.address() as { port: number };
+        const viaCmd = process.platform === 'win32' && /\.(cmd|bat)$/i.test(CODEX!);
+        const file = viaCmd ? (process.env['ComSpec'] ?? 'cmd.exe') : CODEX!;
+        const codexArgs = [
+          'exec',
+          '--skip-git-repo-check',
+          '-m',
+          'gpt-4.1',
+          '-c',
+          'mcp_servers.squad_state.enabled=false',
+          '-c',
+          `model_providers.mock={ name = "mock", base_url = "http://127.0.0.1:${addr.port}/v1", wire_api = "responses" }`,
+          '-c',
+          'model_provider="mock"',
+          'hello',
+        ];
+        const argv = viaCmd ? ['/d', '/s', '/c', [CODEX!, ...codexArgs].map((a) => `"${a}"`).join(' ')] : codexArgs;
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(file, argv, {
+            cwd: root,
+            env: { ...process.env, CODEX_HOME: home },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsVerbatimArguments: viaCmd,
+          });
+          child.on('error', reject);
+          child.on('close', () => resolve());
+        });
+      } finally {
+        server.close();
+      }
+      expect(turns[0]?.hasRole).toBe(true);
+      expect(turns[0]?.hasCoordinatorPrompt).toBe(false);
+      expect(turns.some((t) => t.hasCoordinatorPrompt)).toBe(true);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }

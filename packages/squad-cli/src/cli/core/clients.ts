@@ -4,6 +4,13 @@
  * Persists configured clients to `.squad/config.json` (`clients: string[]`)
  * and (re)projects each client's host files without clobbering user settings.
  *
+ * Note on default Copilot bootstrap: plain `squad init` and `squad upgrade`
+ * always bootstrap the default GitHub Copilot host (`.github/agents/squad.agent.md`
+ * and `.mcp.json` via `ensureSquadStateMcpInRoot`). All `--client` multi-host
+ * projections (Claude Code, Kiro, OpenCode, Cursor, Codex, Antigravity, plus
+ * `clients[]` in `.squad/config.json`) are strictly opt-in and no-op when
+ * `--client` is omitted and `.squad/config.json` has no `clients` array.
+ *
  * @module cli/core/clients
  */
 

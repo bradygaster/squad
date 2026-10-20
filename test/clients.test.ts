@@ -34,6 +34,8 @@ import {
   syncClients,
 } from '../packages/squad-cli/src/cli/core/clients.js';
 import { ensureGitignore, runUpgrade } from '../packages/squad-cli/src/cli/core/upgrade.js';
+import { runInit } from '../packages/squad-cli/src/cli/core/init.js';
+import * as clientEntry from '../packages/squad-sdk/src/client/index.js';
 
 import * as canonical from '../packages/squad-sdk/src/client/adapters/index.js';
 import * as deprecatedClients from '../packages/squad-sdk/src/clients/index.js';
@@ -1025,5 +1027,255 @@ describe('audit fixes (symlinked roots, EOL/indent preservation, JSONC, dry-run,
     expect(exists('.claude')).toBe(false);
     expect(exists('.mcp.json')).toBe(false);
     expect(readConfiguredClients(sq)).toEqual(['kiro']);
+  });
+});
+
+describe('PR #2251 review threads & reviewer gate regressions', () => {
+  it('Thread 1: quoted-dot TOML server names ([mcp_servers."squad_state.env"]) remain untouched on update and removal', () => {
+    const initial = [
+      '[mcp_servers."squad_state.env"]',
+      'command = "separate-quoted-dot-server"',
+      'args = ["--keep"]',
+      '',
+      '[mcp_servers]',
+      '"squad_state.env" = { command = "inline-quoted-dot" }',
+      '',
+      '[mcp_servers.squad_state]',
+      'command = "old"',
+      'args = ["old"]',
+      '',
+      '[mcp_servers.squad_state.env]',
+      'SQUAD_ENV = "child"',
+      '',
+    ].join('\n');
+
+    const updated = upsertTomlTable(
+      initial,
+      'mcp_servers.squad_state',
+      { command: '"squad"', args: '["state-mcp"]' },
+      { startup_timeout_sec: '60' },
+    );
+    expect(updated).toContain('[mcp_servers."squad_state.env"]\ncommand = "separate-quoted-dot-server"\nargs = ["--keep"]');
+    expect(updated).toContain('"squad_state.env" = { command = "inline-quoted-dot" }');
+    expect(updated).toContain('command = "squad"');
+    expect(updated).toContain('args = ["state-mcp"]');
+    expect(updated).toContain('[mcp_servers.squad_state.env]\nSQUAD_ENV = "child"');
+
+    const removed = removeTomlTable(updated, 'mcp_servers.squad_state');
+    expect(removed).toContain('[mcp_servers."squad_state.env"]\ncommand = "separate-quoted-dot-server"\nargs = ["--keep"]');
+    expect(removed).toContain('"squad_state.env" = { command = "inline-quoted-dot" }');
+    expect(removed).not.toContain('[mcp_servers.squad_state]');
+    expect(removed).not.toContain('[mcp_servers.squad_state.env]');
+    expect(removed).not.toContain('SQUAD_ENV');
+  });
+
+  it('Thread 2: TOML-looking headers and assignments inside multiline strings are untouched during update and removal', () => {
+    const withEmbeddedToml = [
+      'model = "o3"',
+      "developer_instructions = '''",
+      'Example configuration:',
+      '[mcp_servers.squad_state]',
+      'command = "example"',
+      'args = ["--demo"]',
+      "'''",
+      'notes = """',
+      '[mcp_servers.squad_state]',
+      'mcp_servers.squad_state.command = "inside-basic-multiline"',
+      '"""',
+      '',
+    ].join('\n');
+
+    const updated = upsertTomlTable(
+      withEmbeddedToml,
+      'mcp_servers.squad_state',
+      { command: '"squad"', args: '["state-mcp"]' },
+      { startup_timeout_sec: '60' },
+    );
+    // The embedded instructions and notes must remain byte-for-byte intact
+    expect(updated).toContain(withEmbeddedToml.trimEnd());
+    // And a real [mcp_servers.squad_state] section is appended after the multiline strings
+    const occurrences = updated.match(/^\[mcp_servers\.squad_state\]$/gm) ?? [];
+    expect(occurrences).toHaveLength(3);
+    expect(updated.endsWith('[mcp_servers.squad_state]\ncommand = "squad"\nargs = ["state-mcp"]\nstartup_timeout_sec = 60\n')).toBe(true);
+
+    // Refreshing again updates only the real table, not the embedded strings
+    const refreshed = upsertTomlTable(
+      updated,
+      'mcp_servers.squad_state',
+      { command: '"squad-v2"', args: '["state-mcp"]' },
+      { startup_timeout_sec: '60' },
+    );
+    expect(refreshed).toContain(withEmbeddedToml.trimEnd());
+    expect(refreshed).toContain('command = "squad-v2"');
+
+    // Removing the table removes only the real [mcp_servers.squad_state] section and restores the original text
+    const removed = removeTomlTable(refreshed, 'mcp_servers.squad_state');
+    expect(removed).toBe(withEmbeddedToml);
+  });
+
+  it('Thread 3: rejects enclosing ancestor inline tables (mcp_servers = { ... }) instead of producing invalid TOML', () => {
+    const ancestorInline = 'mcp_servers = { other = { command = "mine" } }\n';
+    expect(() =>
+      upsertTomlTable(ancestorInline, 'mcp_servers.squad_state', { command: '"squad"', args: '["state-mcp"]' }),
+    ).toThrow(/Refusing to extend inline or scalar "mcp_servers"/);
+
+    const scalarTarget = '[mcp_servers]\nsquad_state = "not-a-table"\n';
+    expect(() =>
+      upsertTomlTable(scalarTarget, 'mcp_servers.squad_state', { command: '"squad"', args: '["state-mcp"]' }),
+    ).toThrow(/Refusing to overwrite non-table "mcp_servers\.squad_state"/);
+
+    fs.mkdirSync(path.join(root, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.codex/config.toml'), ancestorInline);
+    const res = installClients(['codex'], ctx());
+    expect(res.find((r) => r.path === '.codex/config.toml')?.action).toBe('error');
+    expect(read('.codex/config.toml')).toBe(ancestorInline);
+  });
+
+  it('Thread 4: redacts bare credential prefixes (ghp_, github_pat_, sk-, with leading whitespace) from warnings and persistence', async () => {
+    const sq = path.join(root, '.squad');
+    fs.mkdirSync(sq);
+    const rawSecrets = [
+      'ghp_1234567890abcdef',
+      '  ghp_whitespaceSecret999',
+      'github_pat_11ABCDEF_secretValue',
+      '  github_pat_whitespaceValue',
+      'sk-proj-secretKey12345',
+      '  sk-ant-whitespaceKey67890',
+    ];
+    const norm = normalizeClientIds(['claude', 'future-client', ...rawSecrets]);
+    expect(norm.clients).toEqual(['claude']);
+    expect(JSON.stringify(norm.rejected)).not.toMatch(/ghp_|github_pat_|sk-proj|sk-ant|secret|whitespace/i);
+    expect(norm.rejected.filter((r) => r.reason === 'sensitive')).toHaveLength(rawSecrets.length);
+
+    fs.writeFileSync(path.join(sq, 'config.json'), JSON.stringify({ clients: ['claude', 'future-client', ...rawSecrets] }));
+    const warnings: string[] = [];
+    const prev = process.env['SQUAD_STANDALONE_HOME'];
+    delete process.env['SQUAD_STANDALONE_HOME'];
+    try {
+      await syncClients(root, sq, {
+        clients: ['kiro'],
+        version: '0.0.0',
+        warn: (m) => warnings.push(m),
+      });
+    } finally {
+      if (prev !== undefined) process.env['SQUAD_STANDALONE_HOME'] = prev;
+    }
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('future-client');
+    expect(warnings.join('\n')).not.toMatch(/ghp_|github_pat_|sk-/i);
+
+    const afterSync = JSON.parse(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')) as { clients: string[] };
+    expect(afterSync.clients).toEqual(['claude', 'kiro', 'future-client']);
+
+    persistClients(sq, ['claude', ...rawSecrets, 'future-two']);
+    const afterPersist = JSON.parse(fs.readFileSync(path.join(sq, 'config.json'), 'utf8')) as { clients: string[] };
+    expect(afterPersist.clients).toEqual(['claude', 'future-client', 'future-two']);
+    expect(JSON.stringify(afterPersist)).not.toMatch(/ghp_|github_pat_|sk-/i);
+  });
+
+  it('Thread 6: plain runInit and runUpgrade pipelines only bootstrap Copilot and make zero non-Copilot client changes', async () => {
+    const prevNonInteractive = process.env['SQUAD_NONINTERACTIVE'];
+    const prevNoColor = process.env['NO_COLOR'];
+    const prevStandalone = process.env['SQUAD_STANDALONE_HOME'];
+    process.env['SQUAD_NONINTERACTIVE'] = '1';
+    process.env['NO_COLOR'] = '1';
+    delete process.env['SQUAD_STANDALONE_HOME'];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await runInit(root, { includeWorkflows: false, includeVscodeDefault: false });
+
+      // Default Copilot bootstrap is written by runInit
+      expect(exists('.github/agents/squad.agent.md')).toBe(true);
+      expect(exists('.mcp.json')).toBe(true);
+
+      // Zero non-Copilot client projections or .gitignore / config.json client mutations
+      const nonCopilotPaths = [
+        '.claude',
+        'CLAUDE.md',
+        '.kiro',
+        '.opencode',
+        'opencode.json',
+        '.cursor',
+        '.codex',
+        'AGENTS.md',
+        '.agents',
+        'GEMINI.md',
+      ];
+      for (const p of nonCopilotPaths) expect(exists(p), `after runInit: ${p}`).toBe(false);
+      if (exists('.gitignore')) {
+        const gi = read('.gitignore');
+        expect(gi).not.toContain('.claude/worktrees/');
+        expect(gi.split(/\r?\n/).map((l) => l.trim())).not.toContain('NUL');
+      }
+      if (exists('.squad/config.json')) {
+        expect(readJson('.squad/config.json').clients).toBeUndefined();
+      }
+
+      // Now run plain runUpgrade (with force: true to exercise the full upgrade path)
+      const upgradeInfo = await runUpgrade(root, { force: true });
+      expect(upgradeInfo.filesUpdated.some((f) => f.startsWith('clients ('))).toBe(false);
+      for (const p of nonCopilotPaths) expect(exists(p), `after runUpgrade: ${p}`).toBe(false);
+      const giAfterUpgrade = read('.gitignore');
+      expect(giAfterUpgrade).not.toContain('.claude/worktrees/');
+      expect(giAfterUpgrade.split(/\r?\n/).map((l) => l.trim())).not.toContain('NUL');
+      if (exists('.squad/config.json')) {
+        expect(readJson('.squad/config.json').clients).toBeUndefined();
+      }
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      if (prevNonInteractive === undefined) delete process.env['SQUAD_NONINTERACTIVE'];
+      else process.env['SQUAD_NONINTERACTIVE'] = prevNonInteractive;
+      if (prevNoColor === undefined) delete process.env['NO_COLOR'];
+      else process.env['NO_COLOR'] = prevNoColor;
+      if (prevStandalone !== undefined) process.env['SQUAD_STANDALONE_HOME'] = prevStandalone;
+    }
+  }, 30_000);
+
+  it('Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts', () => {
+    // 1. /client and /clients export the exact same runtime references (===)
+    for (const k of Object.keys(deprecatedClients)) {
+      expect((clientEntry as Record<string, unknown>)[k], `export ${k}`).toBe(
+        (deprecatedClients as Record<string, unknown>)[k],
+      );
+    }
+
+    // 2. Host adapter sources are pure workspace projections (no runtime, state, backend, or auth imports)
+    const adaptersDir = path.resolve(__dirname, '../packages/squad-sdk/src/client/adapters');
+    for (const file of fs.readdirSync(adaptersDir).filter((f) => f.endsWith('.ts'))) {
+      const src = fs.readFileSync(path.join(adaptersDir, file), 'utf8');
+      expect(src, file).not.toMatch(/from\s+['"]\.\.\/\.\.\/(runtime|state|backend|adapter|sharing|ralph)/);
+    }
+
+    // 3. All 7 hosts preserve pre-existing user files and roll back byte-for-byte
+    const baselineFiles: Record<string, string> = {
+      '.mcp.json': '{\n  "mcpServers": {\n    "user_srv": {\n      "command": "u"\n    }\n  }\n}\n',
+      'CLAUDE.md': '# User Claude Notes\n\nKeep this paragraph.\n',
+      '.gitignore': 'node_modules/\ndist/\n',
+      '.kiro/settings/mcp.json': '{\n  "mcpServers": {\n    "user_kiro": {\n      "command": "k"\n    }\n  }\n}\n',
+      'opencode.json': '{\n  "model": "user-model",\n  "mcp": {\n    "user_oc": {\n      "type": "remote",\n      "url": "https://example.com"\n    }\n  }\n}\n',
+      '.cursor/mcp.json': '{\n  "mcpServers": {\n    "user_cursor": {\n      "command": "c"\n    }\n  }\n}\n',
+      'AGENTS.md': '# User Agents Guide\n\nExisting instructions.\n',
+      '.codex/config.toml': 'model = "o3"\n\n[mcp_servers.user_codex]\ncommand = "cx"\n',
+      'GEMINI.md': '# User Gemini Guide\n\nExisting Gemini notes.\n',
+    };
+    for (const [rel, content] of Object.entries(baselineFiles)) {
+      const abs = path.join(root, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content, 'utf8');
+    }
+
+    const installed = installClients([...CLIENT_IDS], ctx());
+    expect(installed.some((r) => r.action === 'error')).toBe(false);
+    const secondPass = installClients([...CLIENT_IDS], ctx());
+    expect(secondPass.every((r) => r.action === 'unchanged')).toBe(true);
+
+    const removed = uninstallClients([...CLIENT_IDS], ctx());
+    expect(removed.some((r) => r.action === 'error')).toBe(false);
+
+    for (const [rel, expectedContent] of Object.entries(baselineFiles)) {
+      expect(read(rel), `byte-exact rollback of ${rel}`).toBe(expectedContent);
+    }
   });
 });

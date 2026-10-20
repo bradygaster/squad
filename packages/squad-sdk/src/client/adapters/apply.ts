@@ -72,46 +72,122 @@ export function removeLines(existing: string, lines: readonly string[], id: stri
 
 const SECTION_RE = /^\s*(\[\[?)\s*([^\]\r\n]+?)\s*(\]\]?)\s*(?:#.*)?$/;
 
-/** A TOML section boundary: `[table]` or `[[array_table]]` (quotes/whitespace tolerant). */
-function sectionHeader(line: string): { key: string; array: boolean } | undefined {
+function segmentsEqual(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((s, idx) => s === b[idx]);
+}
+
+function segmentsStartWith(segments: readonly string[], prefix: readonly string[]): boolean {
+  return segments.length >= prefix.length && prefix.every((s, idx) => segments[idx] === s);
+}
+
+function isStrictSubpath(segments: readonly string[], prefix: readonly string[]): boolean {
+  return segments.length > prefix.length && prefix.every((s, idx) => segments[idx] === s);
+}
+
+function formatTomlKeySegment(seg: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(seg) ? seg : JSON.stringify(seg);
+}
+
+function formatTomlKeyPath(segments: readonly string[]): string {
+  return segments.map(formatTomlKeySegment).join('.');
+}
+
+/** A TOML section boundary: `[table]` or `[[array_table]]` (quotes/whitespace tolerant, preserving quoted dots). */
+function sectionHeader(line: string): { keys: string[]; array: boolean } | undefined {
   const m = SECTION_RE.exec(line);
   if (!m || m[1]!.length !== m[3]!.length) return undefined;
-  const key = m[2]!.split('.').map((s) => s.trim().replace(/^["']|["']$/g, '')).join('.');
-  return { key, array: m[1]!.length === 2 };
+  const keys = splitTomlDottedKey(m[2]!);
+  if (!keys) return undefined;
+  return { keys, array: m[1]!.length === 2 };
 }
 
-/** Normalized dotted key of a `[table]` header line, or undefined (including for `[[array]]` headers). */
-function tableHeaderKey(line: string): string | undefined {
+/** Normalized key segments of a `[table]` header line, or undefined (including for `[[array]]` headers). */
+function tableHeaderKeys(line: string): string[] | undefined {
   const h = sectionHeader(line);
-  return h && !h.array ? h.key : undefined;
+  return h && !h.array ? h.keys : undefined;
 }
 
-/** Unquoted key of a `key = value` line (bare, "basic" or 'literal'), or undefined. */
+/** Unquoted key of a single-segment `key = value` line (bare, "basic" or 'literal'), or undefined. */
 function assignmentKey(line: string): string | undefined {
   const m = /^\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=/.exec(line);
   return m ? (m[1] ?? m[2] ?? m[3]) : undefined;
 }
 
-/** Index of the last line of the assignment starting at `i` (handles multiline arrays and inline tables). */
+/** Index of the unquoted `=` in an assignment line, or -1 if the line is a comment, header, or non-assignment. */
+function findAssignmentEquals(line: string): number {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('[')) return -1;
+  let inStr: string | null = null;
+  for (let k = 0; k < line.length; k++) {
+    const ch = line[k]!;
+    if (inStr) {
+      if (ch === '\\' && inStr === '"') k++;
+      else if (ch === inStr) inStr = null;
+    } else if (ch === '"' || ch === "'") {
+      inStr = ch;
+    } else if (ch === '#') {
+      break;
+    } else if (ch === '=') {
+      return k;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Index of the last line of the assignment starting at `i`
+ * (handles multiline strings `"""`/`'''`, multiline arrays `[...]`, and inline tables `{...}`).
+ */
 function assignmentEnd(lines: string[], i: number): number {
   const first = lines[i]!;
-  const eq = first.indexOf('=');
+  const eq = findAssignmentEquals(first);
   if (eq === -1) return i;
   let depth = 0;
-  let inStr: string | null = null;
+  let inStr: '"""' | "'''" | '"' | "'" | null = null;
   for (let n = i; n < lines.length; n++) {
     const text = n === i ? first.slice(eq + 1) : lines[n]!;
     for (let k = 0; k < text.length; k++) {
       const ch = text[k]!;
-      if (inStr) {
-        if (ch === '\\' && inStr === '"') k++;
-        else if (ch === inStr) inStr = null;
-      } else if (ch === '"' || ch === "'") inStr = ch;
-      else if (ch === '#') break;
-      else if (ch === '[' || ch === '{') depth++;
-      else if (ch === ']' || ch === '}') depth--;
+      if (inStr === '"""') {
+        if (ch === '\\') {
+          k++;
+        } else if (text.startsWith('"""', k)) {
+          k += 2;
+          while (k + 1 < text.length && text[k + 1] === '"') k++;
+          inStr = null;
+        }
+      } else if (inStr === "'''") {
+        if (text.startsWith("'''", k)) {
+          k += 2;
+          while (k + 1 < text.length && text[k + 1] === "'") k++;
+          inStr = null;
+        }
+      } else if (inStr === '"') {
+        if (ch === '\\') k++;
+        else if (ch === '"') inStr = null;
+      } else if (inStr === "'") {
+        if (ch === "'") inStr = null;
+      } else {
+        if (text.startsWith('"""', k)) {
+          inStr = '"""';
+          k += 2;
+        } else if (text.startsWith("'''", k)) {
+          inStr = "'''";
+          k += 2;
+        } else if (ch === '"') {
+          inStr = '"';
+        } else if (ch === "'") {
+          inStr = "'";
+        } else if (ch === '#') {
+          break;
+        } else if (ch === '[' || ch === '{') {
+          depth++;
+        } else if (ch === ']' || ch === '}') {
+          depth--;
+        }
+      }
     }
-    if (depth <= 0) return n;
+    if (inStr === null && depth <= 0) return n;
   }
   return lines.length - 1;
 }
@@ -161,24 +237,7 @@ function parseDottedAssignment(
   nl: string,
 ): { keys: string[]; rhs: string; endLine: number } | undefined {
   const line = lines[i]!;
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('[')) return undefined;
-  let inStr: string | null = null;
-  let eqIdx = -1;
-  for (let k = 0; k < line.length; k++) {
-    const ch = line[k]!;
-    if (inStr) {
-      if (ch === '\\' && inStr === '"') k++;
-      else if (ch === inStr) inStr = null;
-    } else if (ch === '"' || ch === "'") {
-      inStr = ch;
-    } else if (ch === '#') {
-      break;
-    } else if (ch === '=') {
-      eqIdx = k;
-      break;
-    }
-  }
+  const eqIdx = findAssignmentEquals(line);
   if (eqIdx === -1) return undefined;
   const keys = splitTomlDottedKey(line.slice(0, eqIdx));
   if (!keys) return undefined;
@@ -264,7 +323,7 @@ function parseInlineTableEntries(rhs: string): Array<{ key: string; value: strin
     const keys = splitTomlDottedKey(item.slice(0, eq));
     const val = item.slice(eq + 1).trim();
     if (keys && val) {
-      out.push({ key: keys.join('.'), value: val });
+      out.push({ key: formatTomlKeyPath(keys), value: val });
     }
   }
   return out;
@@ -274,20 +333,21 @@ function parseInlineTableEntries(rhs: string): Array<{ key: string; value: strin
  * Strip top-level or parent-table dotted assignments (`mcp_servers.squad_state = ...`,
  * `mcp_servers.squad_state.<key> = ...`) and inline table assignments (`squad_state = { ... }`
  * inside `[mcp_servers]`) that conflict with `[table]`, returning any extracted key/value pairs.
+ * When `strictAncestorCheck` is true, throws if an ancestor of `table` is defined as an inline
+ * table or scalar (e.g. `mcp_servers = { other = ... }`) since TOML forbids extending inline tables.
  */
 function stripConflictingDottedAndInline(
   lines: string[],
-  table: string,
+  wantParts: readonly string[],
   nl: string,
+  strictAncestorCheck = false,
 ): { lines: string[]; extracted: Array<{ key: string; value: string }>; changed: boolean } {
-  const want = table.split('.').join('.');
-  const wantParts = want.split('.');
   const extracted: Array<{ key: string; value: string }> = [];
   let changed = false;
 
   interface Block {
     headerLine?: string;
-    section?: { key: string; array: boolean };
+    section?: { keys: string[]; array: boolean };
     body: string[];
     removedConflict: boolean;
   }
@@ -302,23 +362,30 @@ function stripConflictingDottedAndInline(
     }
     const curBlock = blocks[blocks.length - 1]!;
     const curSec = curBlock.section;
-    const inTargetTable =
-      curSec !== undefined && !curSec.array && (curSec.key === want || curSec.key.startsWith(`${want}.`));
-    if (!inTargetTable && !curSec?.array) {
-      const assign = parseDottedAssignment(lines, i, nl);
-      if (assign) {
-        const fullKeys = curSec ? [...curSec.key.split('.'), ...assign.keys] : assign.keys;
-        const fullKey = fullKeys.join('.');
-        if (fullKey === want) {
+    const assign = parseDottedAssignment(lines, i, nl);
+    if (assign) {
+      const inTargetTable =
+        curSec !== undefined && !curSec.array && segmentsStartWith(curSec.keys, wantParts);
+      if (!inTargetTable && !curSec?.array) {
+        const fullKeys = curSec ? [...curSec.keys, ...assign.keys] : assign.keys;
+        if (fullKeys.length < wantParts.length && segmentsStartWith(wantParts, fullKeys)) {
+          if (strictAncestorCheck) {
+            throw new Error(
+              `Refusing to extend inline or scalar "${formatTomlKeyPath(fullKeys)}" with [${formatTomlKeyPath(wantParts)}]; expected [${formatTomlKeyPath(fullKeys)}] to be a standard TOML table`,
+            );
+          }
+        } else if (segmentsEqual(fullKeys, wantParts)) {
           const inlineEntries = parseInlineTableEntries(assign.rhs);
+          if (!inlineEntries && strictAncestorCheck) {
+            throw new Error(`Refusing to overwrite non-table "${formatTomlKeyPath(wantParts)}"`);
+          }
           if (inlineEntries) extracted.push(...inlineEntries);
           curBlock.removedConflict = true;
           changed = true;
           i = assign.endLine;
           continue;
-        }
-        if (fullKey.startsWith(`${want}.`)) {
-          const relKey = fullKeys.slice(wantParts.length).join('.');
+        } else if (isStrictSubpath(fullKeys, wantParts)) {
+          const relKey = formatTomlKeyPath(fullKeys.slice(wantParts.length));
           extracted.push({ key: relKey, value: assign.rhs });
           curBlock.removedConflict = true;
           changed = true;
@@ -326,6 +393,9 @@ function stripConflictingDottedAndInline(
           continue;
         }
       }
+      for (let n = i; n <= assign.endLine; n++) curBlock.body.push(lines[n]!);
+      i = assign.endLine;
+      continue;
     }
     curBlock.body.push(line);
   }
@@ -347,17 +417,22 @@ function stripConflictingDottedAndInline(
   return { lines: out, extracted, changed: true };
 }
 
-/** [start, end) of the table with key `table` (start at its header), or undefined. */
-function findTable(lines: string[], table: string, from = 0): [number, number] | undefined {
-  const want = table.split('.').join('.');
+/** [start, end) of the table with key segments `wantParts` (start at its header), or undefined. */
+function findTable(lines: string[], wantParts: readonly string[], from = 0): [number, number] | undefined {
   for (let i = from; i < lines.length; i++) {
-    if (tableHeaderKey(lines[i]!) !== want) continue;
-    let end = lines.length;
-    for (let j = i + 1; j < lines.length; j++) {
-      if (sectionHeader(lines[j]!) !== undefined) { end = j; break; }
-      if (assignmentKey(lines[j]!) !== undefined) j = assignmentEnd(lines, j);
+    const hdr = tableHeaderKeys(lines[i]!);
+    if (hdr !== undefined) {
+      if (!segmentsEqual(hdr, wantParts)) continue;
+      let end = lines.length;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (sectionHeader(lines[j]!) !== undefined) { end = j; break; }
+        if (findAssignmentEquals(lines[j]!) !== -1) j = assignmentEnd(lines, j);
+      }
+      return [i, end];
     }
-    return [i, end];
+    if (sectionHeader(lines[i]!) === undefined && findAssignmentEquals(lines[i]!) !== -1) {
+      i = assignmentEnd(lines, i);
+    }
   }
   return undefined;
 }
@@ -376,8 +451,9 @@ export function upsertTomlTable(
   defaults: Record<string, string> = {},
 ): string {
   const nl = existing.includes('\r\n') ? '\r\n' : '\n';
+  const wantParts = splitTomlDottedKey(table) ?? table.split('.');
   const rawLines = existing === '' ? [] : existing.split(/\r?\n/);
-  const { lines, extracted } = stripConflictingDottedAndInline(rawLines, table, nl);
+  const { lines, extracted } = stripConflictingDottedAndInline(rawLines, wantParts, nl, true);
   const preservedFromInline: Record<string, string> = {};
   for (const { key, value } of extracted) {
     if (!(key in managed)) {
@@ -385,7 +461,7 @@ export function upsertTomlTable(
     }
   }
   const header = `[${table}]`;
-  const span = findTable(lines, table);
+  const span = findTable(lines, wantParts);
   if (!span) {
     const merged: Record<string, string> = { ...preservedFromInline, ...managed };
     for (const [k, v] of Object.entries(defaults)) {
@@ -404,7 +480,16 @@ export function upsertTomlTable(
   for (let i = start + 1; i < end; i++) {
     const line = lines[i]!;
     const k = assignmentKey(line);
-    if (k === undefined) { rewritten.push(line); continue; }
+    if (k === undefined) {
+      if (findAssignmentEquals(line) !== -1) {
+        const last = assignmentEnd(lines, i);
+        for (let n = i; n <= last; n++) rewritten.push(lines[n]!);
+        i = last;
+      } else {
+        rewritten.push(line);
+      }
+      continue;
+    }
     const last = assignmentEnd(lines, i);
     present.add(k);
     if (k in remaining) {
@@ -637,21 +722,31 @@ export function removeBlock(existing: string, id?: string): string {
 /** Remove a whole `[table]`, its `[table.*]` sub-tables, and any inline/dotted definitions; other tables are untouched. */
 export function removeTomlTable(existing: string, table: string): string {
   const nl = existing.includes('\r\n') ? '\r\n' : '\n';
-  const stripped = stripConflictingDottedAndInline(existing.split(/\r?\n/), table, nl);
+  const wantParts = splitTomlDottedKey(table) ?? table.split('.');
+  const stripped = stripConflictingDottedAndInline(existing.split(/\r?\n/), wantParts, nl, false);
   let lines = stripped.lines;
   const isOurs = (line: string) => {
     const h = sectionHeader(line);
-    return h !== undefined && (h.key === table || h.key.startsWith(`${table}.`)) && (!h.array || h.key !== table);
+    return (
+      h !== undefined &&
+      segmentsStartWith(h.keys, wantParts) &&
+      (!h.array || !segmentsEqual(h.keys, wantParts))
+    );
   };
   let changed = stripped.changed;
   for (;;) {
     let start = -1;
-    for (let i = 0; i < lines.length; i++) if (isOurs(lines[i]!)) { start = i; break; }
+    for (let i = 0; i < lines.length; i++) {
+      if (isOurs(lines[i]!)) { start = i; break; }
+      if (sectionHeader(lines[i]!) === undefined && findAssignmentEquals(lines[i]!) !== -1) {
+        i = assignmentEnd(lines, i);
+      }
+    }
     if (start === -1) break;
     let end = lines.length;
     for (let j = start + 1; j < lines.length; j++) {
       if (sectionHeader(lines[j]!) !== undefined) { end = j; break; }
-      if (assignmentKey(lines[j]!) !== undefined) j = assignmentEnd(lines, j);
+      if (findAssignmentEquals(lines[j]!) !== -1) j = assignmentEnd(lines, j);
     }
     const before = lines.slice(0, start);
     while (before.length > 0 && before[before.length - 1]!.trim() === '') before.pop();
