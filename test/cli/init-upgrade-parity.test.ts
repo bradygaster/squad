@@ -53,6 +53,7 @@ const EXPECTED_GITATTRIBUTES_RULES = [
   '.squad/agents/*/history.md merge=union',
   '.squad/log/** merge=union',
   '.squad/orchestration-log/** merge=union',
+  '.squad/casting/*.json text eol=lf',
 ];
 
 /**

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdir, rm, writeFile } from 'fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { execFileSync } from 'child_process';
@@ -23,6 +23,7 @@ import {
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 import { FSStorageProvider, OrphanBranchBackend } from '@bradygaster/squad-sdk';
 import { getPackageVersion } from '../../packages/squad-cli/src/cli/core/version.js';
+import { ensureCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
 
@@ -268,6 +269,22 @@ describe('squad doctor', () => {
     expect(checks.find(check => check.name === 'casting/registry.json exists'))
       .toMatchObject({ status: 'fail' });
   });
+
+  it('accepts manifest-backed casting files converted to CRLF by Git (#2266)', async () => {
+    await scaffold(TEST_ROOT);
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    const registryRaw = await readFile(join(castingDir, 'registry.json'), 'utf8');
+    const historyRaw = await readFile(join(castingDir, 'history.json'), 'utf8');
+    ensureCastingRegistryPair(castingDir, registryRaw, historyRaw, 'doctor CRLF test');
+    for (const name of ['registry.json', 'history.json', 'registry-history.commit.json']) {
+      const filePath = join(castingDir, name);
+      await writeFile(filePath, (await readFile(filePath, 'utf8')).replace(/\r?\n/g, '\r\n'));
+    }
+
+    const checks = await runDoctor(TEST_ROOT);
+    expect(checks.find(check => check.name === 'casting/registry.json exists'))
+      .toMatchObject({ status: 'pass' });
+  }, 15_000);
 
   it('detects remote mode from config.json with teamRoot', async () => {
     await scaffold(TEST_ROOT);

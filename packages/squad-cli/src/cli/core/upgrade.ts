@@ -678,6 +678,7 @@ const GITATTRIBUTES_RULES = [
   '.squad/agents/*/history.md merge=union',
   '.squad/log/** merge=union',
   '.squad/orchestration-log/** merge=union',
+  '.squad/casting/*.json text eol=lf',
 ];
 
 const GITIGNORE_ENTRIES = [
@@ -740,13 +741,29 @@ export function ensureGitattributes(dest: string, options: { dryRun?: boolean } 
       appendLinesPreservingEol(filePath, added);
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
-        warn('Could not update .gitattributes (read-only). Add merge=union entries manually.');
+        warn('Could not update .gitattributes (read-only). Add the required Squad entries manually.');
         return [];
       }
       throw err;
     }
   }
   return added;
+}
+
+export function normalizeCastingJsonLineEndings(dest: string): string[] {
+  const castingDir = path.join(dest, '.squad', 'casting');
+  if (!storage.existsSync(castingDir) || !storage.isDirectorySync(castingDir)) return [];
+  const normalized: string[] = [];
+  for (const name of storage.listSync(castingDir)) {
+    if (!name.endsWith('.json')) continue;
+    const filePath = path.join(castingDir, name);
+    if (storage.isDirectorySync(filePath)) continue;
+    const content = storage.readSync(filePath);
+    if (content === undefined || !content.includes('\r\n')) continue;
+    storage.writeSync(filePath, content.replace(/\r\n/g, '\n'));
+    normalized.push(`.squad/casting/${name}`);
+  }
+  return normalized;
 }
 
 /**
@@ -1172,6 +1189,11 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
   if (castingFiles.length > 0) {
     success(`scaffolded ${castingFiles.length} default casting files`);
     filesUpdated.push(...castingFiles);
+  }
+  const normalizedCasting = normalizeCastingJsonLineEndings(dest);
+  if (normalizedCasting.length > 0) {
+    success(`normalized ${normalizedCasting.length} casting JSON file(s) to LF`);
+    filesUpdated.push(...normalizedCasting);
   }
 
   const memoryFiles = ensureMemoryGovernanceUpgradeDefaults(dest);
