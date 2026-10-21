@@ -8,6 +8,9 @@
 # universe/roles, persistent name registry, universe assignment history).
 # They are committed to 'main' like team.md and routing.md, not to squad-state.
 # They do NOT need union merge and are intentionally NOT listed above.
+# Their commit manifest hashes canonical LF content, so Windows checkouts must
+# not rewrite the authoritative JSON files to CRLF.
+.squad/casting/*.json text eol=lf
 
 # Squad: union merge for append-only team state files
 .squad/decisions/decisions.md merge=union

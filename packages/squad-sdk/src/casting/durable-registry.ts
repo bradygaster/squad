@@ -253,6 +253,12 @@ function sha256(content: string | undefined): string | null {
     : createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
+/** Treat Git's CRLF worktree conversion as byte-equivalent to canonical LF JSON. */
+function matchesSha256(content: string | undefined, expected: string | null): boolean {
+  if (sha256(content) === expected) return true;
+  return content !== undefined && sha256(content.replace(/\r\n/g, '\n')) === expected;
+}
+
 function parseObject(raw: string | undefined, label: string): Record<string, unknown> | undefined {
   if (raw === undefined) return undefined;
   try {
@@ -1127,9 +1133,8 @@ function expectedState(
   nextHash: string,
   label: string,
 ): 'previous' | 'next' {
-  const actual = sha256(raw);
-  if (actual === previousHash) return 'previous';
-  if (actual === nextHash) return 'next';
+  if (matchesSha256(raw, previousHash)) return 'previous';
+  if (matchesSha256(raw, nextHash)) return 'next';
   throw new Error(`Cannot recover casting transaction: ${label} changed outside the journal`);
 }
 
@@ -1184,8 +1189,8 @@ export function recoverCastingRegistryTransaction(castingDir: string): void {
   if (
     nextRegistryRaw === undefined
     || nextHistoryRaw === undefined
-    || sha256(nextRegistryRaw) !== journal.registry.next_sha256
-    || sha256(nextHistoryRaw) !== journal.history.next_sha256
+    || !matchesSha256(nextRegistryRaw, journal.registry.next_sha256)
+    || !matchesSha256(nextHistoryRaw, journal.history.next_sha256)
   ) {
     throw new Error('Cannot recover casting transaction: durable payload is missing or corrupt');
   }
@@ -1197,7 +1202,7 @@ export function recoverCastingRegistryTransaction(castingDir: string): void {
     history_sha256: journal.history.next_sha256,
   };
   const nextManifestRaw = JSON.stringify(nextManifest, null, 2) + '\n';
-  if (sha256(nextManifestRaw) !== journal.manifest.next_sha256) {
+  if (!matchesSha256(nextManifestRaw, journal.manifest.next_sha256)) {
     throw new Error('Cannot recover casting transaction: manifest hash is corrupt');
   }
 
@@ -1857,8 +1862,8 @@ export function validateCastingRegistryPairRaw(
     || historyTransaction !== manifest.transaction_id
     || historyRevision !== manifest.registry_revision
     || revision !== manifest.registry_revision
-    || sha256(registryRaw) !== manifest.registry_sha256
-    || sha256(historyRaw) !== manifest.history_sha256
+    || !matchesSha256(registryRaw, manifest.registry_sha256)
+    || !matchesSha256(historyRaw, manifest.history_sha256)
   ) {
     throw new Error(
       'Cannot read a consistent casting registry/history pair: registry/history bytes do not match the stable commit manifest',
@@ -1927,8 +1932,8 @@ export function readCastingRegistryPair(
       && historyTransaction === manifest.transaction_id
       && historyRevision === manifest.registry_revision
       && revision === manifest.registry_revision
-      && sha256(registryRaw) === manifest.registry_sha256
-      && sha256(historyRaw) === manifest.history_sha256
+      && matchesSha256(registryRaw, manifest.registry_sha256)
+      && matchesSha256(historyRaw, manifest.history_sha256)
     ) {
       return {
         registryRaw,

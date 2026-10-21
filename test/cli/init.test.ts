@@ -272,6 +272,7 @@ describe('CLI: init command', () => {
     const content = await readFile(gitattributesPath, 'utf-8');
     expect(content).toContain('.squad/decisions.md merge=union');
     expect(content).toContain('.squad/orchestration-log/** merge=union');
+    expect(content).toContain('.squad/casting/*.json text eol=lf');
   });
 
   it('should append to .gitignore with runtime state exclusions', async () => {
