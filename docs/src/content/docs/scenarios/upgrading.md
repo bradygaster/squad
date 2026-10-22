@@ -137,8 +137,8 @@ Every row below is a real published artifact of an older Squad release driven th
 
 | Platform | Arch | Node | Target | Commit | Recorded | ✅ pass | 🔴 fail | ⏭️ skipped | ⚠️ with known findings |
 |----------|------|------|--------|--------|----------|---------|---------|-----------|------------------------|
-| Linux (`linux`) | x64 | v22.23.4 | v1.2.0-preview.1 | `21ecca77` | 2026-10-22 | 35 | 0 | 7 | 4 |
-| Windows (`win32`) | x64 | v24.14.0 | v1.2.0-preview.1 | `c815de87` | 2026-10-22 | 35 | 0 | 7 | 4 |
+| Linux (`linux`) | x64 | v22.23.4 | v1.2.0-preview.1 | `5be02453` | 2026-10-22 | 35 | 0 | 7 | 4 |
+| Windows (`win32`) | x64 | v24.14.0 | v1.2.0-preview.1 | `f66cc1d0` | 2026-10-22 | 35 | 0 | 7 | 4 |
 
 ### Producers
 
