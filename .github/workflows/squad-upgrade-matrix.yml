@@ -1,0 +1,88 @@
+name: Squad Upgrade Matrix
+
+# Old published Squad releases × OS × project state shape, upgraded with the CLI packed from this
+# tree. See test/squad-20-upgrade-matrix.test.ts and docs/src/content/docs/scenarios/upgrading.md
+# ("Tested upgrade paths"). Producers come from the registry npm is configured for on the runner
+# (set NPM_CONFIG_REGISTRY to point elsewhere) and from GitHub Release standalone bundles; a producer
+# that cannot be obtained is skipped loudly and recorded in the results artifact — never silently
+# passed. Known product defects are pinned in test-fixtures/spec/suite-v0.2/upgrade-matrix.json.
+
+on:
+  pull_request:
+    branches: [dev, main, 'squad2-*']
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      producers:
+        description: 'Comma-separated producer versions to run (default: all declared in upgrade-matrix.json)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade-matrix:
+    name: upgrade-matrix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        shell: bash
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm install; then success=true; break; fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
+          done
+          [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
+      - name: Build (no version bump)
+        shell: bash
+        run: npm run build
+        env:
+          SKIP_BUILD_BUMP: '1'
+      - name: Registry in use for old producers
+        shell: bash
+        run: |
+          echo "NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY:-<unset>}"
+          echo "npm config get registry → $(npm config get registry)"
+      - name: Run upgrade matrix
+        shell: bash
+        run: npx vitest run test/squad-20-upgrade-matrix.test.ts --reporter=default
+        env:
+          SQUAD_UPGRADE_MATRIX: '1'
+          SQUAD_UPGRADE_MATRIX_PRODUCERS: ${{ github.event.inputs.producers }}
+          SQUAD_UPGRADE_MATRIX_OUT: ${{ github.workspace }}/upgrade-matrix-results/results-${{ runner.os }}.json
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: upgrade-matrix-results-${{ runner.os }}
+          path: upgrade-matrix-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+  docs-in-sync:
+    name: upgrade-matrix docs in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+      - name: Rendered "Tested upgrade paths" section matches upgrade-matrix.json
+        run: node scripts/render-upgrade-matrix.mjs --check
