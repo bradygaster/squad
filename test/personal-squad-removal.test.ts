@@ -52,8 +52,10 @@ function fingerprint(dir: string): string {
   const walk = (d: string) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else entries.push(`${path.relative(dir, p).replace(/\\/g, '/')}:${createHash('sha256').update(fs.readFileSync(p)).digest('hex')}`);
+      const rel = path.relative(dir, p).replace(/\\/g, '/');
+      if (e.isSymbolicLink()) entries.push(`${rel}:link:${fs.readlinkSync(p)}`);
+      else if (e.isDirectory()) walk(p);
+      else entries.push(`${rel}:${createHash('sha256').update(fs.readFileSync(p)).digest('hex')}`);
     }
   };
   walk(dir);
@@ -224,6 +226,42 @@ describe('personal squad removal: working migration path (review follow-ups)', (
     } finally { io2.restore(); }
     expect(fingerprint(legacy)).toBe(before);
     expect(readJson(path.join(project, '.squad', 'config.json'))['teamRoot']).toBeUndefined();
+  }, 180_000);
+
+
+  it('refuses symlinked/junctioned agents in the legacy tree, copies no machine-specific paths, and dry-run leaves the project byte-identical', async () => {
+    const legacy = legacyPersonalSquadPath();
+    seedReal1xPersonalSquad(legacy);
+    const outside = path.join(tmp, 'outside-agent');
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, 'charter.md'), '# Outsider\n\n- **Name:** Outsider\n- **Role:** should never be imported\n');
+    let linked = false;
+    try {
+      fs.symlinkSync(outside, path.join(legacy, 'agents', 'outsider'), process.platform === 'win32' ? 'junction' : 'dir');
+      linked = true;
+    } catch { /* no link privilege */ }
+    const before = fingerprint(legacy);
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(project, { recursive: true });
+    const io = captureConsole();
+    try {
+      await runInit(project);
+      clearResolveSquadCache();
+      const projectBefore = fingerprint(path.join(project, '.squad'));
+      const preview = await runImportLegacyPersonal(project, { dryRun: true });
+      expect(fingerprint(path.join(project, '.squad')), 'dry-run must not change a single byte of the project').toBe(projectBefore);
+      if (linked) {
+        expect(preview.skipped.map((s) => s.slug)).toContain('outsider');
+        expect(preview.skipped.find((s) => s.slug === 'outsider')!.reason).toMatch(/symlink\/junction/);
+        expect(preview.imported.map((a) => a.slug)).not.toContain('outsider');
+      }
+      await runImportLegacyPersonal(project);
+    } finally { io.restore(); }
+    expect(fs.existsSync(path.join(project, '.squad', 'agents', 'outsider')), 'a linked agent is never imported').toBe(false);
+    const history = fs.readFileSync(path.join(project, '.squad', 'agents', 'ghostwriter', 'history.md'), 'utf8');
+    expect(history, 'no absolute source path is copied into the project').not.toContain(legacy);
+    expect(history).not.toMatch(/[A-Za-z]:\\|\/home\/|\/Users\//);
+    expect(fingerprint(legacy), 'legacy tree untouched, link included').toBe(before);
   }, 180_000);
 
   it('accepts an explicit directory (a former SQUAD_PERSONAL_DIR) and detection honours that variable too (FUP-6)', async () => {

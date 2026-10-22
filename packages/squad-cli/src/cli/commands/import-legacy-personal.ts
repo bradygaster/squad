@@ -13,6 +13,7 @@
  * @module cli/commands/import-legacy-personal
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { FSStorageProvider, legacyPersonalSquadPath } from '@bradygaster/squad-sdk';
 import { resolveSquadPaths, resolveExternalStateDir } from '@bradygaster/squad-sdk/resolution';
@@ -44,6 +45,37 @@ export interface LegacyPersonalImportResult {
   dryRun: boolean;
 }
 
+/** Largest charter/history accepted from a legacy tree. */
+const MAX_LEGACY_FILE_BYTES = 1024 * 1024;
+
+/**
+ * Read a regular file from the legacy tree without following links: lstat every component
+ * below `root`, refuse symlinks/junctions and oversized files, open-then-fstat to rule out a
+ * swap between the check and the read. Returns null when the path does not exist.
+ */
+function readLegacyFile(root: string, filePath: string): { text: string } | { refused: string } | null {
+  const rel = path.relative(root, filePath);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return { refused: `${filePath} is outside ${root}` };
+  let current = root;
+  let leaf: fs.Stats | null = null;
+  for (const seg of rel.split(path.sep).filter(Boolean)) {
+    current = path.join(current, seg);
+    try { leaf = fs.lstatSync(current); } catch { return null; }
+    if (leaf.isSymbolicLink()) return { refused: `${current} is a symlink/junction; links in the legacy tree are not followed` };
+  }
+  if (!leaf || !leaf.isFile()) return null;
+  if (leaf.size > MAX_LEGACY_FILE_BYTES) return { refused: `${filePath} is ${leaf.size} bytes (limit ${MAX_LEGACY_FILE_BYTES})` };
+  let fd: number;
+  try { fd = fs.openSync(filePath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0)); } catch { return { refused: `${filePath} could not be opened safely` }; }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.ino !== leaf.ino || st.dev !== leaf.dev || st.size !== leaf.size) return { refused: `${filePath} changed between stat and open` };
+    return { text: fs.readFileSync(fd, 'utf8') };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function parseIdentity(charter: string, slug: string): { name: string; role: string } {
   const name = /^\s*-\s*\*\*Name:\*\*\s*(.+?)\s*$/m.exec(charter)?.[1]
     ?? /^#\s+(.+?)(?:\s+[—-]\s+.*)?$/m.exec(charter)?.[1]
@@ -52,19 +84,32 @@ function parseIdentity(charter: string, slug: string): { name: string; role: str
   return { name: name.trim(), role: role.trim() };
 }
 
-/** Read the agents of a 1.x personal squad directory. Read-only. */
-export function readLegacyPersonalAgents(sourceDir: string): LegacyPersonalAgent[] {
-  const agentsDir = path.join(sourceDir, 'agents');
-  if (!storage.existsSync(agentsDir) || !storage.isDirectorySync(agentsDir)) return [];
+/**
+ * Read the agents of a 1.x personal squad directory. Read-only; never follows symlinks or
+ * junctions (an agent whose directory, charter or history is a link is reported as refused).
+ */
+export function readLegacyPersonalAgents(sourceDir: string): { agents: LegacyPersonalAgent[]; refused: Array<{ slug: string; reason: string }> } {
+  const root = path.resolve(sourceDir);
+  const agentsDir = path.join(root, 'agents');
   const agents: LegacyPersonalAgent[] = [];
-  for (const slug of storage.listSync(agentsDir).sort()) {
-    const charterPath = path.join(agentsDir, slug, 'charter.md');
-    const charter = storage.readSync(charterPath);
-    if (charter === undefined) continue;
-    const history = storage.readSync(path.join(agentsDir, slug, 'history.md')) ?? null;
-    agents.push({ slug, ...parseIdentity(charter, slug), charter, history });
+  const refused: Array<{ slug: string; reason: string }> = [];
+  let agentsStat: fs.Stats;
+  try { agentsStat = fs.lstatSync(agentsDir); } catch { return { agents, refused }; }
+  if (agentsStat.isSymbolicLink()) return { agents, refused: [{ slug: '(agents)', reason: `${agentsDir} is a symlink/junction` }] };
+  if (!agentsStat.isDirectory()) return { agents, refused };
+  for (const slug of fs.readdirSync(agentsDir).sort()) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(slug)) { refused.push({ slug, reason: 'agent directory name is not a safe slug' }); continue; }
+    const dirStat = fs.lstatSync(path.join(agentsDir, slug));
+    if (dirStat.isSymbolicLink()) { refused.push({ slug, reason: 'agent directory is a symlink/junction' }); continue; }
+    if (!dirStat.isDirectory()) continue;
+    const charter = readLegacyFile(root, path.join(agentsDir, slug, 'charter.md'));
+    if (charter === null) continue;
+    if ('refused' in charter) { refused.push({ slug, reason: charter.refused }); continue; }
+    const history = readLegacyFile(root, path.join(agentsDir, slug, 'history.md'));
+    if (history && 'refused' in history) { refused.push({ slug, reason: history.refused }); continue; }
+    agents.push({ slug, ...parseIdentity(charter.text, slug), charter: charter.text, history: history ? history.text : null });
   }
-  return agents;
+  return { agents, refused };
 }
 
 /**
@@ -88,8 +133,9 @@ export async function runImportLegacyPersonal(cwd: string, options: LegacyPerson
     fatal('The legacy directory is this project\'s own squad directory; nothing to import.');
   }
 
-  const agents = readLegacyPersonalAgents(source);
-  const result: LegacyPersonalImportResult = { source, imported: [], skipped: [], dryRun: options.dryRun ?? false };
+  const { agents, refused } = readLegacyPersonalAgents(source);
+  const result: LegacyPersonalImportResult = { source, imported: [], skipped: [...refused], dryRun: options.dryRun ?? false };
+  for (const r of refused) warn(`  skip ${r.slug}: ${r.reason}`);
   if (agents.length === 0) {
     warn(`No agents (agents/<name>/charter.md) found in ${source}; nothing to import.`);
     return result;
@@ -112,7 +158,8 @@ export async function runImportLegacyPersonal(cwd: string, options: LegacyPerson
     // Keep the author's charter and history verbatim instead of the generated defaults.
     storage.writeSync(added.charterPath, agent.charter);
     if (agent.history) {
-      storage.writeSync(added.historyPath, `${agent.history.trimEnd()}\n\n<!-- imported from ${source} by squad import --legacy-personal -->\n`);
+      // No machine-specific paths are copied into the project: only the author's text plus a neutral marker.
+      storage.writeSync(added.historyPath, `${agent.history.trimEnd()}\n\n<!-- imported by squad import --legacy-personal -->\n`);
     }
     result.imported.push(agent);
   }

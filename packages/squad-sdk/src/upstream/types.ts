@@ -103,6 +103,23 @@ export interface UpstreamResolution {
   maxDepth: number;
 }
 
+/** Traversal budget for ONE upstream snapshot, enforced from `lstat` sizes BEFORE any body is read. */
+export interface UpstreamReadLimits {
+  /** Per-file cap in bytes (default 1 MiB). */
+  maxFileBytes: number;
+  /** Cumulative bytes of all files read from one upstream (default 8 MiB). */
+  maxTotalBytes: number;
+  /** Files read from one upstream (default 2000). */
+  maxFiles: number;
+  /** Entries in any single directory listing (default 500). */
+  maxDirEntries: number;
+  /** Path depth below the snapshot root that reads may reach (default 8). */
+  maxPathDepth: number;
+}
+
+/** Test seam: invoked between the pre-open `lstat` chain check and `open()` of every file. */
+export type UpstreamReadHook = (filePath: string) => void;
+
 /** Options for {@link resolveUpstreams}. */
 export interface ResolveUpstreamsOptions {
   /** Maximum inheritance depth (direct upstreams are depth 1). Default 3. */
@@ -111,6 +128,10 @@ export interface ResolveUpstreamsOptions {
   staleAfterDays?: number;
   /** Clock used for staleness (tests). */
   now?: Date;
+  /** Override the per-snapshot read budget (see {@link UpstreamReadLimits}). */
+  readLimits?: Partial<UpstreamReadLimits>;
+  /** Test seam between stat and open; production callers leave it unset. */
+  beforeOpen?: UpstreamReadHook;
 }
 
 /** One inherited skill with provenance and precedence outcome. */

@@ -110,6 +110,18 @@ export function render(matrix) {
     lines.push(`| \`${h}\` | ${s.supported} | ${s.degraded} | ${s.unsupported} | ${s['n/a']} | ${s['validated-test']} | ${s['validated-manual']} | ${s['static-only']} | ${s.untested} | ${s.failing} | ${s.live} |`);
   }
   lines.push('');
+  if (Array.isArray(matrix.expectedFailures) && matrix.expectedFailures.length > 0) {
+    lines.push('## Expected failures (`it.fails`)');
+    lines.push('');
+    lines.push('These digest gaps are pinned as expected failures: the test turns red the moment a stack adds the section, and until then the cells stay **degraded** — they are never counted as supported.');
+    lines.push('');
+    lines.push('| Feature | Test | Meaning |');
+    lines.push('|---------|------|---------|');
+    for (const e of matrix.expectedFailures) {
+      lines.push(`| [${e.featureId}](#${e.featureId}) | \`${e.test.replace(/\|/g, '\\|')}\` (${e.kind}) | ${e.meaning} |`);
+    }
+    lines.push('');
+  }
   lines.push('## Matrix');
   lines.push('');
   const areas = [...new Set(matrix.features.map((f) => f.area))];

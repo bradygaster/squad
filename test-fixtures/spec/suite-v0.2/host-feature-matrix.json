@@ -410,47 +410,61 @@
           "status": "degraded",
           "mechanism": "`Task` has no per-call model; only subagent-definition `model:` frontmatter. Digest lacks the model-selection section.",
           "validation": [
-            "static-only"
-          ]
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "kiro": {
           "status": "degraded",
           "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
           "status": "degraded",
           "mechanism": "Model is set per agent in `opencode.json` (`agent.squad.model`), not per `task` call; reasoning/context tiers unsupported.",
           "validation": [
-            "static-only"
-          ]
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "cursor": {
           "status": "degraded",
           "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         }
       }
     },
@@ -2085,57 +2099,71 @@
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "claude": {
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "kiro": {
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
+          "notes": "Finding F2. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "cursor": {
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
+          "notes": "Finding F2. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
+          "notes": "Finding F2. No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F2. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
+          "notes": "Finding F2. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         }
       }
     },
@@ -2161,9 +2189,11 @@
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
             "validated-test:test/ralph-commands.test.ts::*",
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3: interactive Issues mode has no ADO branch in the prompt."
+          "notes": "Finding F3: interactive Issues mode has no ADO branch in the prompt. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "claude": {
           "status": "degraded",
@@ -2171,18 +2201,22 @@
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
             "static-only",
-            "validated-manual:lab:ado-platform@2026-10-22"
+            "validated-manual:lab:ado-platform@2026-10-22",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3. Live: detected ADO from the remote, read `issue-lifecycle.md`, proposed `az boards` commands, noted the template has no backlog-list command."
+          "notes": "Finding F3. Live: detected ADO from the remote, read `issue-lifecycle.md`, proposed `az boards` commands, noted the template has no backlog-list command. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "kiro": {
           "status": "degraded",
           "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
+          "notes": "Finding F3. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
           "status": "degraded",
@@ -2190,36 +2224,44 @@
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
             "static-only",
-            "validated-manual:lab:ado-platform@2026-10-22"
+            "validated-manual:lab:ado-platform@2026-10-22",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3. Live: detected ADO from the remote, read `issue-lifecycle.md`, proposed `az boards` commands, noted the template has no backlog-list command."
+          "notes": "Finding F3. Live: detected ADO from the remote, read `issue-lifecycle.md`, proposed `az boards` commands, noted the template has no backlog-list command. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "cursor": {
           "status": "degraded",
           "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
+          "notes": "Finding F3. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
+          "notes": "Finding F3. No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F3. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
+          "notes": "Finding F3. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         }
       }
     },
@@ -2528,9 +2570,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
           "status": "supported",
@@ -2550,9 +2594,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "codex": {
           "status": "degraded",
@@ -2560,9 +2606,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? No Codex binary or ChatGPT/API auth on the reference machine; static-only."
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "antigravity": {
           "status": "degraded",
@@ -2570,9 +2618,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         }
       }
     },
@@ -2619,9 +2669,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
+          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
           "status": "supported",
@@ -2640,9 +2692,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
+          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "codex": {
           "status": "degraded",
@@ -2650,9 +2704,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F4 candidate — validate. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
+          "notes": "Finding F4 candidate — validate. No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "antigravity": {
           "status": "degraded",
@@ -2660,9 +2716,11 @@
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
+          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         }
       }
     },
@@ -2977,47 +3035,61 @@
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
-            "static-only"
-          ]
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "kiro": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
-            "static-only"
-          ]
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "cursor": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
-            "static-only"
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         }
       }
     },
@@ -4590,6 +4662,44 @@
       "outcome": "blocked",
       "observedTools": [],
       "notes": "cursor-agent -p failed: \"You've hit your usage limit\"."
+    }
+  ],
+  "expectedFailures": [
+    {
+      "featureId": "monorepo-team-root",
+      "test": "test/clients.test.ts::digest gap (expected until the stack adds it; matrix cells: monorepo-team-root, dual-root-remote-mode): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)",
+      "kind": "it.fails",
+      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+    },
+    {
+      "featureId": "dual-root-remote-mode",
+      "test": "test/clients.test.ts::digest gap (expected until the stack adds it; matrix cells: monorepo-team-root, dual-root-remote-mode): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)",
+      "kind": "it.fails",
+      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+    },
+    {
+      "featureId": "azure-devops",
+      "test": "test/clients.test.ts::digest gap (expected until the stack adds it; matrix cells: azure-devops (F3)): Azure DevOps issue tracking (az boards / ADO)",
+      "kind": "it.fails",
+      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+    },
+    {
+      "featureId": "gitlab-issues",
+      "test": "test/clients.test.ts::digest gap (expected until the stack adds it; matrix cells: gitlab-issues (F2)): GitLab issue tracking (glab)",
+      "kind": "it.fails",
+      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+    },
+    {
+      "featureId": "model-selection",
+      "test": "test/clients.test.ts::digest gap (expected until the stack adds it; matrix cells: model-selection): per-agent model / reasoning / context-tier selection",
+      "kind": "it.fails",
+      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+    },
+    {
+      "featureId": "marketplace-plugins",
+      "test": "test/clients.test.ts::digest gap (expected until the stack adds it; matrix cells: marketplace-plugins): plugin marketplace browse on cast",
+      "kind": "it.fails",
+      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
     }
   ]
 }
