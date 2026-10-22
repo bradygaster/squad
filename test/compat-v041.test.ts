@@ -256,7 +256,7 @@ describe('Compat v0.4.1: Tool Registration', () => {
   it('ToolRegistry registers all built-in tools', () => {
     const registry = new ToolRegistry();
     const tools = registry.getTools();
-    expect(tools.length).toBe(18);
+    expect(tools.length).toBe(19);
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -270,6 +270,7 @@ describe('Compat v0.4.1: Tool Registration', () => {
         'squad_state_delete',
         'squad_state_list',
         'squad_state_health',
+        'squad_state_upstreams',
         'memory.classify',
         'memory.write',
         'memory.search',
@@ -305,7 +306,7 @@ describe('Compat v0.4.1: Tool Registration', () => {
   it('getToolsForAgent returns all when no filter', () => {
     const registry = new ToolRegistry();
     const all = registry.getToolsForAgent(undefined);
-    expect(all.length).toBe(18);
+    expect(all.length).toBe(19);
   });
 });
 

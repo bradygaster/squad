@@ -21,6 +21,7 @@ import type { SquadState } from '../state/squad-state.js';
 import { validateStateKey } from '../state-backend.js';
 import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
 import { LocalMemoryStore, type CopilotMemoryProviderClient, type MemoryClass } from '../memory/index.js';
+import { resolveUpstreams, buildEffectiveUpstreamContext, formatUpstreamReport } from '../upstream/resolver.js';
 
 const tracer = trace.getTracer('squad-sdk');
 
@@ -116,6 +117,11 @@ export interface StateListRequest {
 export interface StateCreateIfAbsentRequest {
   key: string;
   content: string;
+}
+
+export interface StateUpstreamsRequest {
+  /** When true, include the inherited decisions/routing/wisdom/skill bodies, not just the summary. */
+  detail?: boolean;
 }
 
 export interface StatusQuery {
@@ -311,6 +317,13 @@ export class ToolRegistry {
   private state?: SquadState;
   private fanOutDepsGetter?: () => FanOutDependencies | undefined;
   private memoryStore: LocalMemoryStore;
+  /**
+   * Where `upstream.json` and `_upstream_repos/` live. Upstream declarations are project-local:
+   * `squad upstream add|sync` writes them beside the project's `.squad/config.json` and
+   * `squad externalize` keeps them in the working tree, so in linked (remote-mode) projects this
+   * is the project `.squad/`, not the shared team root the state tools operate on.
+   */
+  private upstreamDir: string;
 
   constructor(
     squadRoot = '.squad',
@@ -319,12 +332,14 @@ export class ToolRegistry {
     state?: SquadState,
     fanOutDepsGetter?: () => FanOutDependencies | undefined,
     hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient,
+    options: { upstreamDir?: string } = {},
   ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
     this.storage = storage;
     this.state = state;
     this.fanOutDepsGetter = fanOutDepsGetter;
+    this.upstreamDir = options.upstreamDir ?? squadRoot;
     this.memoryStore = new LocalMemoryStore(storage, squadRoot, {
       rootKind: 'squad',
       hostInjectedCopilotAdapterClient,
@@ -848,6 +863,42 @@ export class ToolRegistry {
       }),
     });
 
+    const stateUpstreams = defineTool<StateUpstreamsRequest>({
+      name: 'squad_state_upstreams',
+      description: [
+        'Resolve the upstream squads declared in .squad/upstream.json from their locally materialized snapshots',
+        '(never fetches; run "squad upstream sync" to refresh). Returns every upstream with provenance',
+        '(upstream:<name>@<ref>), status and diagnostics, plus the effective inherited skills, decisions, routing,',
+        'wisdom and casting policy after precedence (local .squad/ wins, then declared order). Call once at session',
+        'start when upstream.json exists; pass detail=true to receive the inherited content bodies.',
+      ].join(' '),
+      parameters: {
+        type: 'object',
+        properties: {
+          detail: { type: 'boolean', description: 'Include inherited decisions/routing/wisdom/skill bodies (default false: summary only)' },
+        },
+      },
+      handler: async (args) => {
+        try {
+          const resolution = resolveUpstreams(this.upstreamDir);
+          const effective = buildEffectiveUpstreamContext(resolution, this.localSkillNames(), this.hasLocalCastingPolicy());
+          const detail = (args as Record<string, unknown> | undefined)?.['detail'] === true;
+          const statuses = resolution?.upstreams.map(u => `${u.name}=${u.status}`) ?? [];
+          return {
+            textResultForLlm: formatUpstreamReport(resolution, effective, { detail }),
+            resultType: 'success',
+            toolTelemetry: { upstreams: statuses.length, diagnostics: resolution?.diagnostics.length ?? 0 },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to resolve upstreams: ${sanitizeErrorForLlm(error, this.upstreamDir)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
     const memoryClassify = defineTool<GovernedMemoryRequest>({
       name: 'memory.classify',
       description: 'Classify proposed memory with Squad governance policy without persisting content.',
@@ -1296,6 +1347,7 @@ export class ToolRegistry {
     this.tools.set('squad_state_list', stateList);
     this.tools.set('squad_state_create_if_absent', stateCreateIfAbsent);
     this.tools.set('squad_state_health', stateHealth);
+    this.tools.set('squad_state_upstreams', stateUpstreams);
     this.tools.set('memory.classify', memoryClassify);
     this.tools.set('memory.write', memoryWrite);
     this.tools.set('memory.search', memorySearch);
@@ -1309,6 +1361,42 @@ export class ToolRegistry {
   /** Get all registered tools for session config */
   getTools(): SquadTool<any>[] {
     return Array.from(this.tools.values());
+  }
+
+  /**
+   * Skill names the local squad already owns (they win over inherited skills).
+   * Reads the working tree directly: skills are static config, not backend state.
+   */
+  private localSkillNames(): string[] {
+    const fsStorage = new FSStorageProvider();
+    const projectDir = path.dirname(path.resolve(this.upstreamDir));
+    const names = new Set<string>();
+    // Same roots, same order, as the coordinator's skill-aware routing (digest item 17).
+    const roots = [
+      path.join(this.upstreamDir, 'skills'),
+      ...(path.resolve(this.squadRoot) !== path.resolve(this.upstreamDir) ? [path.join(this.squadRoot, 'skills')] : []),
+      path.join(projectDir, '.copilot', 'skills'),
+      path.join(projectDir, '.github', 'skills'),
+      path.join(projectDir, '.claude', 'skills'),
+      path.join(projectDir, '.agents', 'skills'),
+    ];
+    for (const dir of roots) {
+      if (!fsStorage.existsSync(dir)) continue;
+      try {
+        for (const entry of fsStorage.listSync(dir)) {
+          if (fsStorage.existsSync(path.join(dir, entry, 'SKILL.md'))) names.add(entry);
+        }
+      } catch {
+        // unreadable skill dir: treat as no local skills from that root
+      }
+    }
+    return [...names];
+  }
+
+  private hasLocalCastingPolicy(): boolean {
+    const fsStorage = new FSStorageProvider();
+    return fsStorage.existsSync(path.join(this.squadRoot, 'casting', 'policy.json'))
+      || fsStorage.existsSync(path.join(this.upstreamDir, 'casting', 'policy.json'));
   }
 
   /** Get tools filtered by agent's allowed tool list */

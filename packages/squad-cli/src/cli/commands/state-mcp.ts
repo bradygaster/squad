@@ -40,6 +40,7 @@ const MCP_TOOL_ALIASES: Record<string, string> = {
   squad_state_list: 'squad_state_list',
   squad_state_create_if_absent: 'squad_state_create_if_absent',
   squad_state_health: 'squad_state_health',
+  squad_state_upstreams: 'squad_state_upstreams',
   'memory.classify': 'memory.classify',
   'memory.write': 'memory.write',
   'memory.search': 'memory.search',
@@ -77,7 +78,11 @@ export function createStateMcpToolRegistry(startDir: string): ToolRegistry {
   if (!context) {
     throw new Error(`No .squad directory found from ${startDir}`);
   }
-  return new ToolRegistry(context.paths.teamSquadDir, undefined, context.storage);
+  // State tools operate on the team root; upstream declarations stay project-local
+  // (`squad upstream add` writes them there, `squad externalize` keeps them there).
+  return new ToolRegistry(context.paths.teamSquadDir, undefined, context.storage, undefined, undefined, undefined, {
+    upstreamDir: context.paths.projectDir,
+  });
 }
 
 function normalizeToolResult(result: unknown): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
@@ -269,8 +274,10 @@ export function printStateMcpHelp(): void {
     'Usage: squad state-mcp [--experimental-backend]',
     '',
     'This command is intended to be launched by GitHub Copilot CLI through',
-    '.copilot/mcp-config.json. It exposes squad_decide and squad_state_* tools',
-    'backed by the configured Squad state backend. Pass --experimental-backend',
+    '.copilot/mcp-config.json. It exposes squad_decide, squad_state_* and',
+    'squad_state_upstreams (declared upstream inheritance, read from local',
+    'snapshots only) backed by the configured Squad state backend. Pass',
+    '--experimental-backend',
     '(or set SQUAD_EXPERIMENTAL_BACKEND=1) to also expose the experimental',
     'squad_backend_* conversation tools. SQUAD_BACKEND_URL alone does not',
     'enable them; once enabled it routes the tools to a remote durable backend',

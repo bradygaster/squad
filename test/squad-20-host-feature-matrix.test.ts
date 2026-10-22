@@ -338,6 +338,32 @@ describe('bridge scenarios: state-mcp resolution the host coordinator relies on'
     const health = await b.call('squad_state_health');
     expect(health.text, 'health text should name the backend, got the storage class instead').toMatch(/\borphan\b/);
   }, 180_000);
+
+  // Finding F1 (fixed in Squad 2.0): a host sees inherited skills/decisions through the bridge, with provenance,
+  // without any fetch — the same path every one of the 7 hosts uses (`squad state-mcp`).
+  it('squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches', async () => {
+    const org = path.join(tmp, 'upstream-org');
+    squadDir(org);
+    fs.mkdirSync(path.join(org, '.copilot', 'skills', 'org-logging'), { recursive: true });
+    fs.writeFileSync(path.join(org, '.copilot', 'skills', 'org-logging', 'SKILL.md'), '---\nname: org-logging\n---\nEmit JSON logs.\n');
+    fs.writeFileSync(path.join(org, '.squad', 'decisions.md'), '# Decisions\n\n### All services expose /healthz\n');
+    const repo = path.join(tmp, 'upstream-repo');
+    gitInit(repo);
+    squadDir(repo);
+    fs.writeFileSync(path.join(repo, '.squad', 'upstream.json'), JSON.stringify({ upstreams: [
+      { name: 'org', type: 'local', source: org, added_at: '2026-10-22T00:00:00.000Z', last_synced: null },
+      { name: 'platform', type: 'git', source: 'https://example.invalid/platform.git', ref: 'main', added_at: '2026-10-22T00:00:00.000Z', last_synced: null },
+    ] }, null, 2));
+    clearResolveSquadCache();
+    const b = await bridge(repo);
+    const r = await b.call('squad_state_upstreams', { detail: true });
+    expect(r.isError, r.text).toBe(false);
+    expect(r.text, 'inherited skill (even one living in .copilot/skills beside the upstream .squad) is visible').toContain('- org-logging — upstream:org@local — active');
+    expect(r.text, 'inherited decision body is served').toContain('All services expose /healthz');
+    expect(r.text, 'unsynced git upstream fails soft').toMatch(/platform .*unavailable \(not synced\)/);
+    expect(r.text).toContain('run "squad upstream sync platform"');
+    expect(fs.existsSync(path.join(repo, '.squad', '_upstream_repos')), 'session start must not clone').toBe(false);
+  }, 60_000);
 });
 
 // ─── 3./4. real host binaries (opt-in) ──────────────────────────────────────

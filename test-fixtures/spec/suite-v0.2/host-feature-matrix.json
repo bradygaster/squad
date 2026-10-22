@@ -2382,99 +2382,102 @@
       ],
       "cells": {
         "copilot": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
-            "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-test:test/upstream-e2e.test.ts::*"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0."
         },
         "claude": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
             "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-manual:lab:upstream@2026-10-22",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-manual:lab:upstream@2026-10-22"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live (Claude): found both upstream decision and skill, but only because the prompt pointed at `upstream.json`. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0. Live (Claude, pre-fix): found the inherited decision and skill only when prompted toward `upstream.json`; the tool now returns both unprompted."
         },
         "kiro": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
-            "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-test:test/upstream-e2e.test.ts::*"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
             "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-manual:lab:upstream@2026-10-22",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-manual:lab:upstream@2026-10-22"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live (OpenCode, partial): found the upstream decision but missed `.copilot/skills/org-logging` (outside the `.squad/` the upstream points at), which `resolveUpstreams()` would have returned. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0. Live (OpenCode, pre-fix, partial): missed `.copilot/skills/org-logging`; the bridge test now proves that skill is served with provenance."
         },
         "cursor": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
-            "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-test:test/upstream-e2e.test.ts::*"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
-            "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-test:test/upstream-e2e.test.ts::*"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
-          "capability": "unsupported",
+          "capability": "supported",
           "validation": "validated-test",
-          "expectedFailure": true,
-          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "mechanism": "Runtime inheritance: `squad_state_upstreams` (state-mcp bridge, all hosts) resolves `upstream.json` from local snapshots only (never fetches), with deterministic precedence (local `.squad/` wins, then declared order, depth-first, depth limit 3), cycle detection, soft failure for missing/stale/unavailable sources and `upstream:<name>@<ref>` provenance; canonical §Upstream Inheritance + digest §16a tell the coordinator to call it once per session. `squad doctor`/`squad status` surface the same resolution.",
           "evidence": [
+            "validated-test:test/upstream-runtime.test.ts::*",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_upstreams over the bridge serves inherited skills and decisions with provenance and never fetches",
+            "validated-test:test/clients.test.ts::digest carries the host-specific sections the live runs relied on",
             "validated-test:test/upstream.test.ts::*",
-            "validated-test:test/upstream-e2e.test.ts::*",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix",
-            "static-only"
+            "validated-test:test/upstream-e2e.test.ts::*"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): unsupported on this host until the section ships."
+          "notes": "F1 fixed in Squad 2.0. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
-      }
+      },
+      "canonicalSections": [
+        "Upstream Inheritance"
+      ]
     },
     {
       "id": "cross-squad-registry",
@@ -4979,22 +4982,6 @@
     {
       "featureId": "dual-root-remote-mode",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)",
-      "kind": "it.fails",
-      "perHost": true,
-      "hosts": [
-        "copilot",
-        "claude",
-        "kiro",
-        "opencode",
-        "cursor",
-        "codex",
-        "antigravity"
-      ],
-      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is `unsupported` for that host until then."
-    },
-    {
-      "featureId": "upstream-inheritance",
-      "test": "test/clients.test.ts::digest gap (expected until the stack adds it): upstream inheritance (upstream.json)",
       "kind": "it.fails",
       "perHost": true,
       "hosts": [

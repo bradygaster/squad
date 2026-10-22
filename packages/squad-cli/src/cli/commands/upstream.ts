@@ -28,6 +28,53 @@ function isValidGitRef(ref: string): boolean {
 function isValidUpstreamName(name: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(name);
 }
+
+/**
+ * Git sources are passed to a `git` subprocess, so they are restricted to an allow-list
+ * of transports. Anything that could be parsed as an option (leading dash), a remote
+ * helper (`ext::`, `fd::`), `file://`, plain `http://` or an unknown scheme is rejected.
+ * Returns null when safe, otherwise the reason.
+ */
+export function unsafeGitSourceReason(source: string): string | null {
+  const s = source.trim();
+  if (s.length === 0) return 'empty source';
+  if (s.startsWith('-')) return 'starts with "-" and could be parsed as a git option';
+  if (/^[a-z][a-z0-9+.-]*::/i.test(s)) return 'uses a git remote helper (ext::, fd::, …), which is not allowed';
+  if (/[\s\0\r\n\t]/.test(s)) return 'contains whitespace or control characters';
+  if (/^https:\/\/[^/]+\/./i.test(s)) return null;
+  if (/^ssh:\/\/[^/]+\/./i.test(s)) return null;
+  if (/^[a-z0-9._-]+@[a-z0-9.-]+:(?!\/)[^:]+$/i.test(s)) return null; // git@host:owner/repo
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return `uses an unsupported transport (${s.split('://')[0]}://); allowed: https://, ssh://, git@host:path`;
+  return 'is not an https://, ssh:// or git@host:path URL (local directories are added as "local" upstreams)';
+}
+
+/**
+ * Environment for every git subprocess run by `squad upstream`: remote helpers and the
+ * file protocol are disabled regardless of the user's global git config.
+ */
+export function gitSyncEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const params = [
+    "'protocol.allow=never'",
+    "'protocol.https.allow=always'",
+    "'protocol.ssh.allow=always'",
+    "'protocol.ext.allow=never'",
+    "'protocol.file.allow=never'",
+    "'core.sshCommand=ssh'",
+  ];
+  const existing = base['GIT_CONFIG_PARAMETERS'];
+  return {
+    ...base,
+    GIT_CONFIG_PARAMETERS: existing ? `${existing} ${params.join(' ')}` : params.join(' '),
+    GIT_TERMINAL_PROMPT: '0',
+  };
+}
+
+function assertSafeGitSource(source: string): void {
+  const reason = unsafeGitSourceReason(source);
+  if (reason) {
+    fatal(`Refusing git upstream source "${source}": ${reason}.`);
+  }
+}
 import type { UpstreamConfig, UpstreamSource } from '@bradygaster/squad-sdk';
 
 function readUpstreams(upstreamFile: string): UpstreamConfig {
@@ -47,8 +94,11 @@ function writeUpstreams(upstreamFile: string, data: UpstreamConfig): void {
 }
 
 function detectSourceType(source: string): 'local' | 'git' | 'export' {
+  if (source.startsWith('-')) {
+    fatal(`Refusing upstream source "${source}": starts with "-" and could be parsed as an option.`);
+  }
   if (source.endsWith('.json') && storage.existsSync(path.resolve(source))) return 'export';
-  if (source.startsWith('http://') || source.startsWith('https://') || source.startsWith('file://') || source.endsWith('.git')) return 'git';
+  if (/^[a-z][a-z0-9+.-]*:(\/\/|:)/i.test(source) || /^[a-z0-9._-]+@[a-z0-9.-]+:/i.test(source) || source.endsWith('.git')) return 'git';
   if (storage.existsSync(path.resolve(source))) return 'local';
   if (source.includes('/') && !source.includes('\\')) return 'git';
   throw new Error(`Cannot determine source type for "${source}". Provide a git URL, local path, or export JSON file.`);
@@ -99,6 +149,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
     }
 
     const type = detectSourceType(source);
+    if (type === 'git') assertSafeGitSource(source);
     const nameIdx = args.indexOf('--name');
     const name = (nameIdx !== -1 && args[nameIdx + 1]) ? args[nameIdx + 1]! : deriveName(source, type);
     if (!isValidUpstreamName(name)) {
@@ -139,7 +190,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
       try {
         const ref = entry.ref || 'main';
-        execFileSync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', source, cloneDir], { stdio: 'pipe', timeout: 60000 });
+        execFileSync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', '--', source, cloneDir], { stdio: 'pipe', timeout: 60000, env: gitSyncEnv() });
         entry.last_synced = new Date().toISOString();
         writeUpstreams(upstreamFile, data);
         success(`Cloned upstream repo to .squad/_upstream_repos/${name}`);
@@ -150,7 +201,9 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
     success(`Added upstream: ${name} (${type}: ${entry.source})`);
     if (type === 'local') {
-      info('The coordinator reads from this path live at session start — no sync needed.');
+      info('Sessions read this path from disk at startup (no sync needed); "squad upstream sync" just re-validates it.');
+    } else if (type === 'git') {
+      info('Sessions never fetch: they read .squad/_upstream_repos/' + name + '. Run "squad upstream sync" to refresh it.');
     }
   }
 
@@ -222,6 +275,16 @@ export async function upstreamCommand(args: string[]): Promise<void> {
         synced++;
         success(`${upstream.name} (${upstream.type} — read live): validated`);
       } else if (upstream.type === 'git') {
+        const unsafe = unsafeGitSourceReason(upstream.source);
+        if (unsafe) {
+          warn(`${upstream.name}: refusing to sync git source "${upstream.source}": ${unsafe}. Remove it with "squad upstream remove ${upstream.name}".`);
+          continue;
+        }
+        const refToSync = upstream.ref || 'main';
+        if (!isValidGitRef(refToSync)) {
+          warn(`${upstream.name}: refusing to sync: invalid git ref "${refToSync}".`);
+          continue;
+        }
         const reposDir = path.join(squadDir, '_upstream_repos');
         const cloneDir = path.join(reposDir, upstream.name);
         storage.mkdirSync(reposDir, { recursive: true });
@@ -229,11 +292,10 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
         try {
           if (storage.existsSync(path.join(cloneDir, '.git'))) {
-            execFileSync('git', ['-C', cloneDir, 'pull', '--ff-only'], { stdio: 'pipe', timeout: 60000 });
+            execFileSync('git', ['-C', cloneDir, 'pull', '--ff-only', '--', 'origin', refToSync], { stdio: 'pipe', timeout: 60000, env: gitSyncEnv() });
           } else {
             if (storage.existsSync(cloneDir)) storage.deleteDirSync(cloneDir);
-            const ref = upstream.ref || 'main';
-            execFileSync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', upstream.source, cloneDir], { stdio: 'pipe', timeout: 60000 });
+            execFileSync('git', ['clone', '--depth', '1', '--branch', refToSync, '--single-branch', '--', upstream.source, cloneDir], { stdio: 'pipe', timeout: 60000, env: gitSyncEnv() });
           }
           upstream.last_synced = new Date().toISOString();
           synced++;
