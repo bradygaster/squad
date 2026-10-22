@@ -41,13 +41,14 @@ export function summarize(matrix) {
   const hosts = Object.keys(matrix.hosts);
   const out = {};
   for (const h of hosts) {
-    const s = { supported: 0, degraded: 0, unsupported: 0, 'n/a': 0, 'validated-test': 0, 'validated-manual': 0, 'static-only': 0, untested: 0, failing: 0 };
+    const s = { supported: 0, degraded: 0, unsupported: 0, 'n/a': 0, 'validated-test': 0, 'validated-manual': 0, 'static-only': 0, untested: 0, failing: 0, live: 0 };
     for (const f of matrix.features) {
       const c = f.cells[h];
       s[c.status]++;
       const e = cellEvidence(c);
       if (e !== 'untested') s[e]++;
       if (hasLiveGap(c)) s.untested++;
+      if (c.validation.some((v) => validationKind(v) === 'validated-manual')) s.live++;
     }
     out[h] = s;
   }
@@ -102,11 +103,11 @@ export function render(matrix) {
   lines.push('## Summary');
   lines.push('');
   const sum = summarize(matrix);
-  lines.push('| Host | ✅ supported | ⚠️ degraded | ❌ unsupported | — n/a | 🧪 test | 🖥️ manual | 📄 static | ❔ untested | 🔴 failing |');
-  lines.push('|------|-------------|-------------|----------------|-------|---------|-----------|-----------|------------|------------|');
+  lines.push('| Host | ✅ supported | ⚠️ degraded | ❌ unsupported | — n/a | 🧪 test | 🖥️ manual (strongest) | 📄 static | ❔ untested | 🔴 failing | 🖥️ live-validated cells |');
+  lines.push('|------|-------------|-------------|----------------|-------|---------|------------------------|-----------|------------|------------|-------------------------|');
   for (const h of hosts) {
     const s = sum[h];
-    lines.push(`| \`${h}\` | ${s.supported} | ${s.degraded} | ${s.unsupported} | ${s['n/a']} | ${s['validated-test']} | ${s['validated-manual']} | ${s['static-only']} | ${s.untested} | ${s.failing} |`);
+    lines.push(`| \`${h}\` | ${s.supported} | ${s.degraded} | ${s.unsupported} | ${s['n/a']} | ${s['validated-test']} | ${s['validated-manual']} | ${s['static-only']} | ${s.untested} | ${s.failing} | ${s.live} |`);
   }
   lines.push('');
   lines.push('## Matrix');
@@ -129,7 +130,9 @@ export function render(matrix) {
   lines.push('## Per-feature detail');
   lines.push('');
   for (const f of matrix.features) {
-    lines.push(`### ${f.name} {#${f.id}}`);
+    lines.push(`### ${f.id}`);
+    lines.push('');
+    lines.push(`**${f.name}**`);
     lines.push('');
     const docs = (f.docs ?? []).map((d) => `[${d}](/squad/docs/${d}/)`).join(' · ');
     const sections = f.canonicalSections?.length ? ` · canonical sections: ${f.canonicalSections.map((s) => `\`${s}\``).join(', ')}` : '';
@@ -143,6 +146,17 @@ export function render(matrix) {
       const validation = c.validation.map((v) => `\`${v}\``).join('<br>');
       lines.push(`| \`${h}\` | ${STATUS_ICON[c.status]} ${c.status} | ${c.mechanism.replace(/\|/g, '\\|')}${notes.replace(/\|/g, '\\|')} | ${validation.replace(/\|/g, '\\|')} |`);
     }
+    lines.push('');
+  }
+  if (matrix.liveRuns?.length) {
+    lines.push('## Live run log');
+    lines.push('');
+    lines.push('Headless real-CLI runs behind the `validated-manual:lab:<scenario>` entries above. Each run drove the host\'s projected Squad coordinator against a real model in a throwaway repository; transcripts are kept outside the repository.');
+    lines.push('');
+    lines.push('| Date | Host | Scenario | Outcome | Observed tools | Notes |');
+    lines.push('|------|------|----------|---------|----------------|-------|');
+    const OUTCOME = { pass: '✅ pass', partial: '⚠️ partial', fail: '🔴 fail', blocked: '⛔ blocked' };
+    for (const r of matrix.liveRuns) lines.push(`| ${r.date} | \`${r.host}\` | ${r.scenario} | ${OUTCOME[r.outcome] ?? r.outcome} | ${(r.observedTools ?? []).map((t) => `\`${t}\``).join(', ') || '—'} | ${(r.notes ?? '').replace(/\|/g, '\\|')} |`);
     lines.push('');
   }
   return lines.join('\n') + '\n';

@@ -100,7 +100,7 @@
     "codex": {
       "name": "OpenAI Codex",
       "cli": "codex",
-      "installedOnReferenceMachine": true,
+      "installedOnReferenceMachine": false,
       "coordinatorFile": ".codex/agents/squad.toml (developer_instructions) + AGENTS.md pointer",
       "mcpConfig": ".codex/config.toml (mcp_servers.squad_state)",
       "runtime": {
@@ -163,8 +163,9 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
-            "untested"
-          ]
+            "validated-manual:lab:init-mode@2026-10-22"
+          ],
+          "notes": "Live: cast 4 members via `squad cast --name` (registry pair valid); ignored the requested descriptive universe and used Apollo 13 names."
         },
         "kiro": {
           "status": "supported",
@@ -174,7 +175,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -183,8 +185,9 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
-            "untested"
-          ]
+            "validated-manual:lab:init-mode@2026-10-22"
+          ],
+          "notes": "Live: cast 4 members via `squad cast --name` with descriptive names; registry pair valid."
         },
         "cursor": {
           "status": "supported",
@@ -194,7 +197,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -204,7 +208,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -214,7 +219,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -246,7 +252,7 @@
           "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:smoke-roster@2026-10-22"
           ]
         },
         "kiro": {
@@ -255,14 +261,15 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
           "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:smoke-roster@2026-10-22"
           ]
         },
         "cursor": {
@@ -271,7 +278,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -279,7 +287,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -287,7 +296,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -319,7 +329,8 @@
           "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:smoke-roster@2026-10-22",
+            "validated-manual:lab:ralph-no-repo@2026-10-22"
           ]
         },
         "kiro": {
@@ -328,14 +339,16 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
           "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:smoke-roster@2026-10-22",
+            "validated-manual:lab:ralph-no-repo@2026-10-22"
           ]
         },
         "cursor": {
@@ -344,7 +357,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -352,7 +366,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -360,7 +375,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -373,7 +389,9 @@
         "scenarios/switching-models"
       ],
       "canonicalSections": [
-        "Model Selection"
+        "Per-Agent Model Selection",
+        "Per-Agent Reasoning Effort",
+        "Per-Agent Context Tier"
       ],
       "dependsOn": [
         "b",
@@ -401,7 +419,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
@@ -416,7 +434,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -424,7 +442,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
@@ -432,7 +450,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -467,7 +485,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
-            "untested"
+            "validated-manual:lab:parallel-fanout@2026-10-22"
           ]
         },
         "kiro": {
@@ -477,7 +495,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -485,7 +504,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
-            "untested"
+            "validated-manual:lab:parallel-fanout@2026-10-22"
           ]
         },
         "cursor": {
@@ -495,7 +514,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -504,7 +524,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -513,7 +534,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -544,8 +566,10 @@
           "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
           "validation": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
-            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
-          ]
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-manual:lab:parallel-fanout@2026-10-22"
+          ],
+          "notes": "F7: Claude Code 2.1.296 actually ran the two specialist `Agent` spawns in the background (`subagent_stats.started_in_background`); the `background-runs` token is absent from the matrix, so Squad under-declares Claude here."
         },
         "kiro": {
           "status": "degraded",
@@ -561,7 +585,7 @@
           "validation": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
-            "untested"
+            "validated-manual:lab:parallel-fanout@2026-10-22"
           ]
         },
         "cursor": {
@@ -571,7 +595,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -623,7 +648,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
-            "untested"
+            "validated-manual:lab:parallel-fanout@2026-10-22"
           ]
         },
         "kiro": {
@@ -633,7 +658,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -641,7 +667,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
-            "untested"
+            "validated-manual:lab:parallel-fanout@2026-10-22"
           ]
         },
         "cursor": {
@@ -651,7 +677,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -660,7 +687,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -669,7 +697,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -701,7 +730,7 @@
           "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:directive-capture@2026-10-22"
           ]
         },
         "kiro": {
@@ -710,14 +739,15 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
           "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:directive-capture@2026-10-22"
           ]
         },
         "cursor": {
@@ -726,7 +756,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -734,7 +765,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -742,7 +774,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -777,7 +810,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
-            "untested"
+            "validated-manual:lab:state-orphan@2026-10-22"
           ]
         },
         "kiro": {
@@ -788,7 +821,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -797,7 +831,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
-            "untested"
+            "validated-manual:lab:state-orphan@2026-10-22"
           ]
         },
         "cursor": {
@@ -808,7 +842,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -818,7 +853,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -828,7 +864,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -858,7 +895,7 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "untested"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ]
         },
         "claude": {
@@ -869,8 +906,11 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "untested"
-          ]
+            "validated-manual:lab:state-orphan@2026-10-22",
+            "validated-manual:lab:state-twolayer@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
+          ],
+          "notes": "F6: `squad_state_health` answered \"State backend storage: StateBackendStorageAdapter\" instead of the backend name the digest promises."
         },
         "kiro": {
           "status": "supported",
@@ -880,7 +920,7 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "untested"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ]
         },
         "opencode": {
@@ -891,8 +931,11 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "untested"
-          ]
+            "validated-manual:lab:state-orphan@2026-10-22",
+            "validated-manual:lab:state-twolayer@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
+          ],
+          "notes": "F6: `squad_state_health` answered \"State backend storage: StateBackendStorageAdapter\" instead of the backend name the digest promises."
         },
         "cursor": {
           "status": "supported",
@@ -902,8 +945,10 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "static-only"
-          ]
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -913,7 +958,7 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "untested"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ]
         },
         "antigravity": {
@@ -924,7 +969,7 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "untested"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ]
         }
       }
@@ -958,7 +1003,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
-            "untested"
+            "validated-manual:lab:skills-precedence@2026-10-22"
           ]
         },
         "kiro": {
@@ -968,7 +1013,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -976,7 +1022,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
-            "untested"
+            "validated-manual:lab:skills-precedence@2026-10-22"
           ]
         },
         "cursor": {
@@ -986,7 +1032,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -995,7 +1042,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1004,7 +1052,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1035,7 +1084,7 @@
           "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:reviewer-lockout@2026-10-22"
           ]
         },
         "kiro": {
@@ -1044,14 +1093,15 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
           "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:reviewer-lockout@2026-10-22"
           ]
         },
         "cursor": {
@@ -1060,7 +1110,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1068,7 +1119,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1076,7 +1128,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1117,7 +1170,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1133,7 +1187,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1141,7 +1196,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1149,7 +1205,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1189,7 +1246,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1205,7 +1263,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1213,7 +1272,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1221,7 +1281,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1262,7 +1323,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1278,7 +1340,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1286,7 +1349,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1294,7 +1358,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1335,7 +1400,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1351,7 +1417,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1359,7 +1426,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1367,7 +1435,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1412,7 +1481,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/team-capabilities-lifecycle.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1430,7 +1500,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/team-capabilities-lifecycle.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1439,7 +1510,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/team-capabilities-lifecycle.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1448,7 +1520,8 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/team-capabilities-lifecycle.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1482,7 +1555,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:ralph-no-repo@2026-10-22"
           ]
         },
         "kiro": {
@@ -1492,7 +1565,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1500,7 +1574,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:ralph-no-repo@2026-10-22"
           ]
         },
         "cursor": {
@@ -1510,7 +1584,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1519,7 +1594,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1528,7 +1604,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1569,7 +1646,8 @@
           "validation": [
             "validated-test:test/ralph-triage.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
@@ -1585,7 +1663,8 @@
           "validation": [
             "validated-test:test/ralph-triage.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -1593,7 +1672,8 @@
           "validation": [
             "validated-test:test/ralph-triage.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
@@ -1601,7 +1681,8 @@
           "validation": [
             "validated-test:test/ralph-triage.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1614,7 +1695,8 @@
         "guide/personal-squad"
       ],
       "canonicalSections": [
-        "Team Mode"
+        "Personal Squad (Ambient Discovery)",
+        "Consult Mode Detection"
       ],
       "dependsOn": [
         "a",
@@ -1644,7 +1726,8 @@
           "validation": [
             "validated-test:test/personal-squad.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
@@ -1660,7 +1743,8 @@
           "validation": [
             "validated-test:test/personal-squad.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -1668,7 +1752,8 @@
           "validation": [
             "validated-test:test/personal-squad.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
@@ -1676,7 +1761,8 @@
           "validation": [
             "validated-test:test/personal-squad.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1716,7 +1802,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1732,7 +1819,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1740,7 +1828,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1748,7 +1837,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1782,7 +1872,7 @@
           "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:github-issues-readonly@2026-10-22"
           ]
         },
         "kiro": {
@@ -1791,14 +1881,15 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
           "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "untested"
+            "validated-manual:lab:github-issues-readonly@2026-10-22"
           ]
         },
         "cursor": {
@@ -1807,7 +1898,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1815,7 +1907,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1823,7 +1916,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -1859,7 +1953,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
-            "untested"
+            "validated-manual:lab:github-issues-readonly@2026-10-22"
           ]
         },
         "kiro": {
@@ -1869,7 +1963,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -1877,7 +1972,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
-            "untested"
+            "validated-manual:lab:github-issues-readonly@2026-10-22"
           ]
         },
         "cursor": {
@@ -1887,7 +1982,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -1896,7 +1992,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -1905,7 +2002,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2007,7 +2105,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
@@ -2023,7 +2121,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -2031,7 +2129,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
@@ -2039,7 +2137,7 @@
           "validation": [
             "static-only"
           ],
-          "notes": "Finding F2."
+          "notes": "Finding F2. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2074,9 +2172,10 @@
           "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:ado-platform@2026-10-22"
           ],
-          "notes": "Finding F3."
+          "notes": "Finding F3. Live: detected ADO from the remote, read `issue-lifecycle.md`, proposed `az boards` commands, noted the template has no backlog-list command."
         },
         "kiro": {
           "status": "degraded",
@@ -2085,16 +2184,17 @@
             "validated-test:test/platform-adapter.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F3."
+          "notes": "Finding F3. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
           "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/platform-adapter.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:ado-platform@2026-10-22"
           ],
-          "notes": "Finding F3."
+          "notes": "Finding F3. Live: detected ADO from the remote, read `issue-lifecycle.md`, proposed `az boards` commands, noted the template has no backlog-list command."
         },
         "cursor": {
           "status": "degraded",
@@ -2103,7 +2203,7 @@
             "validated-test:test/platform-adapter.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F3."
+          "notes": "Finding F3. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -2112,7 +2212,7 @@
             "validated-test:test/platform-adapter.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F3."
+          "notes": "Finding F3. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
@@ -2121,7 +2221,7 @@
             "validated-test:test/platform-adapter.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F3."
+          "notes": "Finding F3. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2153,9 +2253,10 @@
           "validation": [
             "validated-test:test/upstream.test.ts::*",
             "validated-test:test/upstream-e2e.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:upstream@2026-10-22"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live (Claude): found both upstream decision and skill, but only because the prompt pointed at `upstream.json`."
         },
         "kiro": {
           "status": "degraded",
@@ -2165,7 +2266,7 @@
             "validated-test:test/upstream-e2e.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
@@ -2173,9 +2274,10 @@
           "validation": [
             "validated-test:test/upstream.test.ts::*",
             "validated-test:test/upstream-e2e.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:upstream@2026-10-22"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live (OpenCode, partial): found the upstream decision but missed `.copilot/skills/org-logging` (outside the `.squad/` the upstream points at), which `resolveUpstreams()` would have returned."
         },
         "cursor": {
           "status": "degraded",
@@ -2185,7 +2287,7 @@
             "validated-test:test/upstream-e2e.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
@@ -2195,7 +2297,7 @@
             "validated-test:test/upstream-e2e.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
@@ -2205,7 +2307,7 @@
             "validated-test:test/upstream-e2e.test.ts::*",
             "static-only"
           ],
-          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2242,7 +2344,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
-            "untested"
+            "validated-manual:lab:cross-squad@2026-10-22"
           ]
         },
         "kiro": {
@@ -2253,7 +2355,8 @@
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -2262,7 +2365,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
-            "untested"
+            "validated-manual:lab:cross-squad@2026-10-22"
           ]
         },
         "cursor": {
@@ -2273,7 +2376,8 @@
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -2283,7 +2387,8 @@
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -2293,7 +2398,8 @@
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2385,15 +2491,19 @@
           "mechanism": "CLI honours `--team-root`/`SQUAD_TEAM_ROOT`; state-mcp walks up from cwd (`findSquadDir`); canonical §State & Team Root Resolution + `worktree-reference.md` resolve `TEAM_ROOT` and pass it to every spawn.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
           ]
         },
         "claude": {
-          "status": "degraded",
-          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "status": "supported",
+          "mechanism": "Claude discovers `.claude/agents/squad.md` and `.mcp.json` from a package subfolder; state-mcp walks up to the root `.squad/`. Headless (`-p`) runs need `--mcp-config <root>/.mcp.json` or a prior per-project approval (F5).",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:mono-subfolder@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::claude lists the root .mcp.json squad_state server from packages/api"
           ],
           "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
         },
@@ -2402,16 +2512,20 @@
           "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
-          "status": "degraded",
-          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "status": "supported",
+          "mechanism": "OpenCode resolves `opencode.json` (agent + MCP) from the repo root when launched in a package subfolder; state-mcp walks up to the root `.squad/`.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:mono-subfolder@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::opencode resolves the squad primary agent and the squad_state MCP entry from packages/api"
           ],
           "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
         },
@@ -2420,27 +2534,30 @@
           "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2466,62 +2583,71 @@
           "mechanism": "CLI writes `config.json.teamRoot`; state-mcp resolves `mode: remote`; canonical step 3 loads `team.md` from the team root.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ]
         },
         "claude": {
-          "status": "degraded",
-          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "status": "supported",
+          "mechanism": "The state bridge follows `config.json.teamRoot`, so the host coordinator read the team-root roster via `squad_state_read` and did not enter Init Mode, even though the digest has no team-root section.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:satellite-remote@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ],
-          "notes": "Finding F4 candidate — validate."
+          "notes": "Live: roster served from `..\\base`; no casting attempted."
         },
         "kiro": {
           "status": "degraded",
           "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ],
-          "notes": "Finding F4 candidate — validate."
+          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
-          "status": "degraded",
-          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "status": "supported",
+          "mechanism": "The state bridge follows `config.json.teamRoot`, so the host coordinator read the team-root roster via `squad_state_read` and did not enter Init Mode, even though the digest has no team-root section.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-manual:lab:satellite-remote@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ],
-          "notes": "Finding F4 candidate — validate."
+          "notes": "Live: roster served from `..\\base`; no casting attempted."
         },
         "cursor": {
           "status": "degraded",
           "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ],
-          "notes": "Finding F4 candidate — validate."
+          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ],
-          "notes": "Finding F4 candidate — validate."
+          "notes": "Finding F4 candidate — validate. No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
-            "static-only"
+            "static-only",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
           ],
-          "notes": "Finding F4 candidate — validate."
+          "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2556,7 +2682,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
-            "untested"
+            "validated-manual:lab:worktree-spawn@2026-10-22"
           ]
         },
         "kiro": {
@@ -2566,7 +2692,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -2574,7 +2701,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
-            "untested"
+            "validated-manual:lab:worktree-spawn@2026-10-22"
           ]
         },
         "cursor": {
@@ -2584,7 +2711,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -2593,7 +2721,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -2602,7 +2731,8 @@
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2840,7 +2970,8 @@
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "degraded",
@@ -2854,21 +2985,24 @@
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -2880,7 +3014,7 @@
         "features/mcp"
       ],
       "canonicalSections": [
-        "Team Mode"
+        "MCP Integration"
       ],
       "dependsOn": [
         "b",
@@ -2910,7 +3044,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -2928,7 +3063,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -2937,7 +3073,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -2946,7 +3083,8 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -3021,7 +3159,7 @@
         "features/vscode"
       ],
       "canonicalSections": [
-        "Team Mode"
+        "Client Compatibility"
       ],
       "dependsOn": [
         "d"
@@ -3047,7 +3185,8 @@
           "mechanism": "Copilot-specific surface.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "n/a",
@@ -3061,21 +3200,24 @@
           "mechanism": "Copilot-specific surface.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "n/a",
           "mechanism": "Copilot-specific surface.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "n/a",
           "mechanism": "Copilot-specific surface.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -3112,7 +3254,8 @@
           "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "n/a",
@@ -3126,21 +3269,24 @@
           "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "n/a",
           "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "n/a",
           "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -3397,7 +3543,8 @@
           "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "n/a",
@@ -3411,21 +3558,24 @@
           "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "n/a",
           "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "n/a",
           "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -3634,7 +3784,8 @@
             "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
             "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -3686,8 +3837,9 @@
           "validation": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
-            "untested",
-            "validated-test:test/clients-real-cli.test.ts::claude discovers the squad subagents and parses .mcp.json"
+            "validated-test:test/clients-real-cli.test.ts::claude discovers the squad subagents and parses .mcp.json",
+            "validated-manual:lab:smoke-roster@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::claude --agent squad reads the roster through mcp__squad_state__squad_state_read"
           ]
         },
         "kiro": {
@@ -3698,7 +3850,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "untested",
             "validated-test:test/clients-real-cli.test.ts::kiro validates and lists the squad agent"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -3706,8 +3859,9 @@
           "validation": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
-            "untested",
-            "validated-test:test/clients-real-cli.test.ts::opencode loads squad as a primary agent and connects the MCP server"
+            "validated-test:test/clients-real-cli.test.ts::opencode loads squad as a primary agent and connects the MCP server",
+            "validated-manual:lab:smoke-roster@2026-10-22",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::opencode --agent squad reads the roster through squad_state_squad_state_read"
           ]
         },
         "cursor": {
@@ -3718,7 +3872,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -3728,7 +3883,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "untested",
             "validated-test:test/clients-real-cli.test.ts::codex loads the project config (trusted), sees squad_state MCP, discovers the squad TOML role, and activates coordinator instructions on spawn"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -3738,7 +3894,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "untested",
             "validated-test:test/clients-real-cli.test.ts::antigravity discovers the squad agent"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -3930,7 +4087,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
@@ -3946,7 +4104,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
@@ -3954,7 +4113,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "supported",
@@ -3962,7 +4122,8 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
     },
@@ -3988,45 +4149,425 @@
           "status": "supported",
           "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
           "validation": [
-            "untested"
-          ]
+            "validated-manual:lab:parallel-fanout@2026-10-22"
+          ],
+          "notes": "Live: Galois/Fermat/Scribe each called `squad_state_*` tools from inside their spawn (history appended, inbox drained)."
         },
         "kiro": {
           "status": "supported",
           "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
           "validation": [
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
         },
         "opencode": {
           "status": "supported",
           "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
           "validation": [
-            "untested"
-          ]
+            "validated-manual:lab:parallel-fanout@2026-10-22"
+          ],
+          "notes": "Live: Galois/Fermat/Scribe each called `squad_state_*` tools from inside their spawn (history appended, inbox drained)."
         },
         "cursor": {
           "status": "supported",
           "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
           "validation": [
             "static-only"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
         "codex": {
           "status": "supported",
           "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
           "validation": [
             "untested"
-          ]
+          ],
+          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
         },
         "antigravity": {
           "status": "degraded",
           "mechanism": "`invoke_subagent` starts with a clean context; MCP attached via agent frontmatter may not propagate — specialists return results for the coordinator to persist.",
           "validation": [
             "untested"
-          ]
+          ],
+          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."
         }
       }
+    }
+  ],
+  "liveRuns": [
+    {
+      "host": "claude",
+      "scenario": "smoke-roster",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_read"
+      ],
+      "notes": "Roster + testing owner from team.md/routing.md through the bridge."
+    },
+    {
+      "host": "claude",
+      "scenario": "init-mode",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_read",
+        "Bash"
+      ],
+      "notes": "Empty roster → proposed 4 specialists, cast each with `squad cast --name`, stopped after reporting the roster."
+    },
+    {
+      "host": "claude",
+      "scenario": "upstream",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_read",
+        "Bash"
+      ],
+      "notes": "Found SEVEN-SECOND-TIMEOUT decision and ORG-LOG-PREFIX skill by reading the upstream path from upstream.json."
+    },
+    {
+      "host": "claude",
+      "scenario": "cross-squad",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Read",
+        "Bash"
+      ],
+      "notes": "Loaded cross-squad + cross-squad-communication skills, read squad-registry.json and peer manifest, prepared `squad delegate peer-b …`, no issue created, no ad-hoc subagents."
+    },
+    {
+      "host": "claude",
+      "scenario": "mono-subfolder",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_read"
+      ],
+      "notes": "From packages/api with --mcp-config <root>/.mcp.json; natively the server is \"Pending approval\" (F5)."
+    },
+    {
+      "host": "claude",
+      "scenario": "satellite-remote",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_read",
+        "Read"
+      ],
+      "notes": "Roster served from teamRoot ..\\base; no Init Mode."
+    },
+    {
+      "host": "claude",
+      "scenario": "ado-platform",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash",
+        "Read"
+      ],
+      "notes": "Detected Azure DevOps from the remote; consulted issue-lifecycle.md; proposed az boards/az repos commands; ran only read-only checks."
+    },
+    {
+      "host": "claude",
+      "scenario": "github-issues-readonly",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash",
+        "mcp__squad_state__squad_state_read"
+      ],
+      "notes": "gh prerequisites checked; 5 squad-labelled issues listed read-only and routed via routing.md (Lead triages unknown squad:* labels)."
+    },
+    {
+      "host": "claude",
+      "scenario": "state-orphan",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_health",
+        "mcp__squad_state__squad_decide",
+        "mcp__squad_state__squad_state_list"
+      ],
+      "notes": "Decision committed to the squad-state orphan branch; working tree untouched; health reported the storage class, not \"orphan\" (F6)."
+    },
+    {
+      "host": "claude",
+      "scenario": "state-twolayer",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_state_health",
+        "mcp__squad_state__squad_decide",
+        "mcp__squad_state__squad_state_list"
+      ],
+      "notes": "Decision committed to the squad-state branch (two-layer); health reported the storage class, not \"two-layer\" (F6)."
+    },
+    {
+      "host": "claude",
+      "scenario": "skills-precedence",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash"
+      ],
+      "notes": ".squad/skills/deploy-rules (DEPLOY-ALPHA) won over .github and .claude copies; no spawn in the dry run."
+    },
+    {
+      "host": "claude",
+      "scenario": "directive-capture",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "mcp__squad_state__squad_decide"
+      ],
+      "notes": "Persistent \"always use tabs\" directive recorded via squad_decide and acknowledged."
+    },
+    {
+      "host": "claude",
+      "scenario": "reviewer-lockout",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Agent",
+        "mcp__squad_state__squad_decide"
+      ],
+      "notes": "Galois authored, Fermat REJECTed (\"missing tests\"), Galois locked out, revision assigned to Noether, verdict recorded via squad_decide."
+    },
+    {
+      "host": "claude",
+      "scenario": "ralph-no-repo",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash"
+      ],
+      "notes": "No git remote → Ralph reported it and stopped without routing work."
+    },
+    {
+      "host": "claude",
+      "scenario": "worktree-spawn",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash",
+        "Read"
+      ],
+      "notes": "Created sibling worktree base-12 on squad/12-add-health per worktree-reference.md."
+    },
+    {
+      "host": "claude",
+      "scenario": "parallel-fanout",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Agent",
+        "mcp__squad_state__squad_state_append",
+        "mcp__squad_state__squad_state_health"
+      ],
+      "notes": "Two specialists spawned in one turn (Claude: background subagents), each appended its own history through the bridge; Scribe drained the inbox."
+    },
+    {
+      "host": "opencode",
+      "scenario": "smoke-roster",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_state_read"
+      ],
+      "notes": "Roster + testing owner from team.md/routing.md through the bridge."
+    },
+    {
+      "host": "opencode",
+      "scenario": "init-mode",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_state_read",
+        "Bash"
+      ],
+      "notes": "Empty roster → proposed 4 specialists, cast each with `squad cast --name`, stopped after reporting the roster."
+    },
+    {
+      "host": "opencode",
+      "scenario": "upstream",
+      "date": "2026-10-22",
+      "outcome": "partial",
+      "observedTools": [
+        "squad_state_squad_state_read",
+        "Bash"
+      ],
+      "notes": "Found the upstream decision; missed the `.copilot/skills` skill living beside the upstream `.squad/`."
+    },
+    {
+      "host": "opencode",
+      "scenario": "cross-squad",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Read",
+        "Bash"
+      ],
+      "notes": "Loaded cross-squad + cross-squad-communication skills, read squad-registry.json and peer manifest, prepared `squad delegate peer-b …`, no issue created, no ad-hoc subagents."
+    },
+    {
+      "host": "opencode",
+      "scenario": "mono-subfolder",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_state_read"
+      ],
+      "notes": "From packages/api; opencode.json and agent resolved from the repo root."
+    },
+    {
+      "host": "opencode",
+      "scenario": "satellite-remote",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_state_read",
+        "Read"
+      ],
+      "notes": "Roster served from teamRoot ..\\base; no Init Mode."
+    },
+    {
+      "host": "opencode",
+      "scenario": "ado-platform",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash",
+        "Read"
+      ],
+      "notes": "Detected Azure DevOps from the remote; consulted issue-lifecycle.md; proposed az boards/az repos commands; ran only read-only checks."
+    },
+    {
+      "host": "opencode",
+      "scenario": "github-issues-readonly",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash",
+        "squad_state_squad_state_read"
+      ],
+      "notes": "gh prerequisites checked; 5 squad-labelled issues listed read-only and routed via routing.md (Lead triages unknown squad:* labels)."
+    },
+    {
+      "host": "opencode",
+      "scenario": "state-orphan",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_state_health",
+        "squad_state_squad_decide",
+        "squad_state_squad_state_list"
+      ],
+      "notes": "Decision committed to the squad-state orphan branch; working tree untouched; health reported the storage class, not \"orphan\" (F6)."
+    },
+    {
+      "host": "opencode",
+      "scenario": "state-twolayer",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_state_health",
+        "squad_state_squad_decide",
+        "squad_state_squad_state_list"
+      ],
+      "notes": "Decision committed to the squad-state branch (two-layer); health reported the storage class, not \"two-layer\" (F6)."
+    },
+    {
+      "host": "opencode",
+      "scenario": "skills-precedence",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash"
+      ],
+      "notes": ".squad/skills/deploy-rules (DEPLOY-ALPHA) won over .github and .claude copies; no spawn in the dry run."
+    },
+    {
+      "host": "opencode",
+      "scenario": "directive-capture",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "squad_state_squad_decide"
+      ],
+      "notes": "Persistent \"always use tabs\" directive recorded via squad_decide and acknowledged."
+    },
+    {
+      "host": "opencode",
+      "scenario": "reviewer-lockout",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "task",
+        "squad_state_squad_decide"
+      ],
+      "notes": "Galois authored, Fermat REJECTed (\"missing tests\"), Galois locked out, revision assigned to Noether, verdict recorded via squad_decide."
+    },
+    {
+      "host": "opencode",
+      "scenario": "ralph-no-repo",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash"
+      ],
+      "notes": "No git remote → Ralph reported it and stopped without routing work."
+    },
+    {
+      "host": "opencode",
+      "scenario": "worktree-spawn",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "Bash",
+        "Read"
+      ],
+      "notes": "Created sibling worktree base-12 on squad/12-add-health per worktree-reference.md."
+    },
+    {
+      "host": "opencode",
+      "scenario": "parallel-fanout",
+      "date": "2026-10-22",
+      "outcome": "pass",
+      "observedTools": [
+        "task",
+        "squad_state_squad_state_append",
+        "squad_state_squad_state_health"
+      ],
+      "notes": "Two specialists spawned in one turn (Claude: background subagents), each appended its own history through the bridge; Scribe drained the inbox."
+    },
+    {
+      "host": "kiro",
+      "scenario": "smoke-roster",
+      "date": "2026-10-22",
+      "outcome": "blocked",
+      "observedTools": [],
+      "notes": "kiro-cli chat failed: \"The monthly usage limit has been reached\"."
+    },
+    {
+      "host": "antigravity",
+      "scenario": "smoke-roster",
+      "date": "2026-10-22",
+      "outcome": "blocked",
+      "observedTools": [],
+      "notes": "agy -p failed: RESOURCE_EXHAUSTED 429 \"Individual quota reached\" (resets in ~75h)."
+    },
+    {
+      "host": "cursor",
+      "scenario": "smoke-roster",
+      "date": "2026-10-22",
+      "outcome": "blocked",
+      "observedTools": [],
+      "notes": "cursor-agent -p failed: \"You've hit your usage limit\"."
     }
   ]
 }
