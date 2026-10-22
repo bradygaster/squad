@@ -3,7 +3,7 @@
  *
  * resolveSquad()            — find .squad/ by walking up from startDir to .git boundary
  * resolveSquadPaths()       — dual-root resolution (projectDir / teamDir) for remote squad mode
- * resolveGlobalSquadPath()  — platform-specific global config directory
+ * resolveGlobalSquadPath()  — platform-specific config directory (externalized project state only)
  *
  * Dual-root resolution and remote mode design ported from @spboyer (Shayne Boyer)'s
  * PR bradygaster/squad#131. Original concept: resolveSquadPaths() with config.json
@@ -111,10 +111,6 @@ export interface SquadDirConfig {
   version: number;
   teamRoot: string;
   projectKey: string | null;
-  /** True when in consult mode (personal squad consulting on external project) */
-  consult?: boolean;
-  /** True when extraction is disabled for consult sessions (read-only consultation) */
-  extractionDisabled?: boolean;
   /** Where state is stored: 'external' when moved out of the working tree */
   stateLocation?: string;
   /** State storage backend: local | external | git-notes | orphan */
@@ -145,8 +141,6 @@ export interface ResolvedSquadPaths {
    * `teamRoot` uses. Equals projectDir in local mode.
    */
   teamSquadDir: string;
-  /** User's personal squad dir, null if not found or disabled */
-  personalDir: string | null;
   config: SquadDirConfig | null;
   name: '.squad' | '.ai-team';
   isLegacy: boolean;
@@ -336,8 +330,6 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         version: parsed.version,
         teamRoot: parsed.teamRoot,
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
-        consult: parsed.consult === true ? true : undefined,
-        extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
         stateLocation: typeof parsed.stateLocation === 'string' ? parsed.stateLocation : undefined,
         stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
       };
@@ -346,13 +338,6 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Check if a config represents consult mode (personal squad consulting on external project).
- */
-export function isConsultMode(config: SquadDirConfig | null): boolean {
-  return config?.consult === true;
 }
 
 /**
@@ -409,7 +394,6 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
       projectDir,
       teamDir,
       teamSquadDir: resolveTeamSquadDir(teamDir, name),
-      personalDir: resolvePersonalSquadDir(),
       config,
       name,
       isLegacy,
@@ -422,7 +406,6 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     projectDir,
     teamDir: projectDir,
     teamSquadDir: projectDir,
-    personalDir: resolvePersonalSquadDir(),
     config,
     name,
     isLegacy,
@@ -430,7 +413,9 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
 }
 
 /**
- * Return the platform-specific global Squad configuration directory.
+ * Return the platform-specific Squad configuration directory. Squad 2.0 keeps only
+ * externalized project state here (`projects/<projectKey>/`, see `squad externalize`);
+ * no squad is ever initialized, read or resolved from this directory itself.
  *
  * | Platform | Path                                       |
  * |----------|--------------------------------------------|
@@ -440,7 +425,7 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
  *
  * The directory is created (recursively) if it does not already exist.
  *
- * @returns Absolute path to the global squad config directory.
+ * @returns Absolute path to the Squad config directory.
  */
 export function resolveGlobalSquadPath(): string {
   const platform = process.platform;
@@ -465,59 +450,6 @@ export function resolveGlobalSquadPath(): string {
   }
 
   return globalDir;
-}
-
-/**
- * Resolves the user's personal squad directory.
- * Returns null if SQUAD_NO_PERSONAL is set or directory doesn't exist.
- * 
- * Platform paths:
- * - Windows: %APPDATA%/squad/personal-squad
- * - macOS: ~/Library/Application Support/squad/personal-squad
- * - Linux: $XDG_CONFIG_HOME/squad/personal-squad or ~/.config/squad/personal-squad
- */
-export function resolvePersonalSquadDir(): string | null {
-  if (process.env['SQUAD_NO_PERSONAL']) return null;
-  
-  // Honor SQUAD_PERSONAL_DIR env var override
-  const envDir = process.env['SQUAD_PERSONAL_DIR'];
-  if (envDir) {
-    const resolved = path.resolve(envDir);
-    if (storage.existsSync(resolved) && storage.isDirectorySync(resolved)) return resolved;
-    return null;
-  }
-
-  const globalDir = resolveGlobalSquadPath();
-  const personalDir = path.join(globalDir, 'personal-squad');
-  
-  if (!storage.existsSync(personalDir)) return null;
-  return personalDir;
-}
-
-/**
- * Ensure the user's personal squad directory exists with the expected structure.
- * Creates `personal-squad/agents/` and `personal-squad/config.json` if missing.
- *
- * Idempotent — safe to call multiple times.
- *
- * @returns Absolute path to the personal squad directory.
- */
-export function ensurePersonalSquadDir(): string {
-  const globalDir = resolveGlobalSquadPath();
-  const personalDir = path.join(globalDir, 'personal-squad');
-  const agentsDir = path.join(personalDir, 'agents');
-
-  if (!storage.existsSync(agentsDir)) {
-    storage.mkdirSync(agentsDir, { recursive: true });
-  }
-
-  const configPath = path.join(personalDir, 'config.json');
-  if (!storage.existsSync(configPath)) {
-    const config = { defaultModel: 'auto', ghostProtocol: true };
-    storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
-  }
-
-  return personalDir;
 }
 
 /**
@@ -586,33 +518,6 @@ export function ensureSquadPathDual(filePath: string, projectDir: string, teamDi
   throw new Error(
     `Path "${resolved}" is outside both squad roots ("${resolvedProject}", "${resolvedTeam}"). ` +
     'All squad scratch/temp/state files must be written inside a squad directory or the system temp directory.'
-  );
-}
-
-/**
- * Validates a file path is inside one of three allowed directories:
- * projectDir, teamDir, personalDir, or system temp.
- * Extends ensureSquadPathDual() for triple-root (project + team + personal).
- */
-export function ensureSquadPathTriple(
-  filePath: string,
-  projectDir: string,
-  teamDir: string,
-  personalDir: string | null
-): string {
-  const resolved = path.resolve(filePath);
-  const tmpDir = os.tmpdir();
-  
-  const allowed = [projectDir, teamDir, personalDir, tmpDir].filter(Boolean) as string[];
-  
-  for (const dir of allowed) {
-    if (resolved.startsWith(path.resolve(dir) + path.sep) || resolved === path.resolve(dir)) {
-      return resolved;
-    }
-  }
-  
-  throw new Error(
-    `Path "${resolved}" is outside all allowed directories: ${allowed.join(', ')}`
   );
 }
 

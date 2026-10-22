@@ -6,7 +6,7 @@ const SOURCE_DIR = '.squad-templates';
 const AGENT_TEMPLATE = 'squad.agent.md';
 
 const targetExtras = {
-  templates: ['ghost-protocol.md', 'loop.md', 'personal-charter.md'],
+  templates: ['loop.md'],
   'packages/squad-cli/templates': ['loop.md'],
   'packages/squad-sdk/templates': ['schedule.json'],
 } as const;

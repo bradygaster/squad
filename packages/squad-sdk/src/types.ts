@@ -63,11 +63,6 @@ export type { ConfigValidationError } from './runtime/config.js';
 export type { SquadSessionConfig } from './adapter/types.js';
 export type { SquadCustomAgentConfig } from './adapter/types.js';
 
-// --- Multi-squad types (multi-squad.ts) ---
-export type { SquadEntry } from './multi-squad.js';
-export type { MultiSquadConfig } from './multi-squad.js';
-export type { SquadInfo } from './multi-squad.js';
-
 // --- SubSquad types (streams/types.ts) ---
 export type { SubSquadDefinition } from './streams/types.js';
 export type { SubSquadConfig } from './streams/types.js';

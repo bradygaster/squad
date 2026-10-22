@@ -50,7 +50,7 @@
       "mcpConfig": ".mcp.json",
       "runtime": {
         "subagents": true,
-        "backgroundRuns": false,
+        "backgroundRuns": true,
         "perSpawnModel": false,
         "sqlTool": false,
         "shell": true,
@@ -621,15 +621,15 @@
           ]
         },
         "claude": {
-          "capability": "degraded",
+          "capability": "supported",
           "validation": "validated-live",
-          "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
+          "mechanism": "`background-runs` token declared (F7): Claude Code runs `Agent` spawns in the background (`subagent_stats.started_in_background` in the parallel-fanout live run).",
           "evidence": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
             "validated-manual:lab:parallel-fanout@2026-10-22"
           ],
-          "notes": "F7: Claude Code 2.1.296 actually ran the two specialist `Agent` spawns in the background (`subagent_stats.started_in_background`); the `background-runs` token is absent from the matrix, so Squad under-declares Claude here."
+          "notes": "F7 fixed: token added to capability-matrix.json and CAPABILITY_TOKENS_BY_HOST after the 2026-10-22 live run showed background subagents."
         },
         "kiro": {
           "capability": "degraded",
@@ -977,6 +977,7 @@
           "validation": "validated-test",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
@@ -989,6 +990,7 @@
           "validation": "validated-live",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
@@ -997,13 +999,14 @@
             "validated-manual:lab:state-twolayer@2026-10-22",
             "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ],
-          "notes": "F6: `squad_state_health` answered \"State backend storage: StateBackendStorageAdapter\" instead of the backend name the digest promises."
+          "notes": "F6 fixed: `squad_state_health` now reports `State backend: local|orphan|two-layer` plus the storage class and team squad dir. F8 fixed: `squad_state_list` without `dir` lists the root on orphan/two-layer."
         },
         "kiro": {
           "capability": "supported",
           "validation": "validated-test",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
@@ -1016,6 +1019,7 @@
           "validation": "validated-live",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
@@ -1024,18 +1028,20 @@
             "validated-manual:lab:state-twolayer@2026-10-22",
             "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ],
-          "notes": "F6: `squad_state_health` answered \"State backend storage: StateBackendStorageAdapter\" instead of the backend name the digest promises."
+          "notes": "F6 fixed: `squad_state_health` now reports `State backend: local|orphan|two-layer` plus the storage class and team squad dir. F8 fixed: `squad_state_list` without `dir` lists the root on orphan/two-layer."
         },
         "cursor": {
           "capability": "supported",
           "validation": "validated-test",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree",
+            "static-only"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1044,6 +1050,7 @@
           "validation": "validated-test",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
@@ -1056,6 +1063,7 @@
           "validation": "validated-test",
           "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
           "evidence": [
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
@@ -1265,7 +1273,7 @@
         "claude": {
           "capability": "supported",
           "validation": "validated-test",
-          "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
+          "mechanism": "Digest §13; runs in the background (`background-runs` declared since F7).",
           "evidence": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "static-only"
@@ -4183,6 +4191,7 @@
           "evidence": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "static-only"
           ]
         },
@@ -4195,7 +4204,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::claude discovers the squad subagents and parses .mcp.json",
             "validated-manual:lab:smoke-roster@2026-10-22",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::claude --agent squad reads the roster through mcp__squad_state__squad_state_read"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::claude --agent squad reads the roster through mcp__squad_state__squad_state_read",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises"
           ]
         },
         "kiro": {
@@ -4206,6 +4216,7 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::kiro validates and lists the squad agent",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "static-only"
           ],
           "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine."
@@ -4219,7 +4230,8 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::opencode loads squad as a primary agent and connects the MCP server",
             "validated-manual:lab:smoke-roster@2026-10-22",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::opencode --agent squad reads the roster through squad_state_squad_state_read"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::opencode --agent squad reads the roster through squad_state_squad_state_read",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises"
           ]
         },
         "cursor": {
@@ -4230,6 +4242,7 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "static-only"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
@@ -4242,6 +4255,7 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::codex loads the project config (trusted), sees squad_state MCP, discovers the squad TOML role, and activates coordinator instructions on spawn",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "static-only"
           ],
           "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only."
@@ -4254,6 +4268,7 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::antigravity discovers the squad agent",
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_state_health names the configured backend (orphan) as the coordinator digest promises",
             "static-only"
           ],
           "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine."

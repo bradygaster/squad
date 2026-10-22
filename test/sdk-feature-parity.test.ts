@@ -10,7 +10,6 @@ import {
   resolveSquadPaths, 
   resolveSquad, 
   loadDirConfig,
-  isConsultMode,
   ensureSquadPathDual,
   type ResolvedSquadPaths,
   type SquadDirConfig,
@@ -107,28 +106,6 @@ describe('SDK Feature: Worktree Awareness', () => {
     expect(result?.teamDir).toContain('team-identity');
     
     rmSync(testRoot, { recursive: true, force: true });
-  });
-
-  it('isConsultMode() returns true when config.consult is true', () => {
-    const config: SquadDirConfig = {
-      version: 1,
-      teamRoot: '../personal-squad',
-      projectKey: null,
-      consult: true,
-    };
-    
-    expect(isConsultMode(config)).toBe(true);
-  });
-
-  it('isConsultMode() returns false when config.consult is false or missing', () => {
-    const config: SquadDirConfig = {
-      version: 1,
-      teamRoot: '../team',
-      projectKey: 'project',
-    };
-    
-    expect(isConsultMode(config)).toBe(false);
-    expect(isConsultMode(null)).toBe(false);
   });
 
   it('ensureSquadPathDual() allows paths in projectDir', () => {

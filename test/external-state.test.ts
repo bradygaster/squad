@@ -13,7 +13,7 @@ const origXdgConfig = process.env['XDG_CONFIG_HOME'];
 
 beforeEach(() => {
   mkdirSync(TEST_ROOT, { recursive: true });
-  // Redirect global squad dir into test root so we never touch real user state
+  // Redirect the platform config dir into the test root so we never touch real user state
   if (process.platform === 'win32') {
     process.env['APPDATA'] = TEST_ROOT;
   } else {
@@ -215,13 +215,13 @@ describe('runExternalize / runInternalize', () => {
     writeFileSync(path.join(squadDir, 'team.md'), '# Team\n');
     writeFileSync(
       path.join(squadDir, 'config.json'),
-      JSON.stringify({ version: 1, consult: true, stateBackend: 'fs' }),
+      JSON.stringify({ version: 1, customField: 'keep-me', stateBackend: 'fs' }),
     );
 
     runExternalize(projectDir);
 
     const config = JSON.parse(readFileSync(path.join(squadDir, 'config.json'), 'utf-8'));
-    expect(config.consult).toBe(true);
+    expect(config.customField).toBe('keep-me');
     expect(config.stateBackend).toBe('fs');
     expect(config.stateLocation).toBe('external');
     expect(config.projectKey).toBe(deriveProjectKey(projectDir));
@@ -277,7 +277,7 @@ describe('runExternalize / runInternalize', () => {
     // Seed config with an extra field so config.json survives (not deleted)
     writeFileSync(
       path.join(squadDir, 'config.json'),
-      JSON.stringify({ version: 1, consult: true }),
+      JSON.stringify({ version: 1, customField: 'keep-me' }),
     );
     writeFileSync(path.join(squadDir, 'team.md'), '# Team\n');
 
@@ -296,7 +296,7 @@ describe('runExternalize / runInternalize', () => {
     expect(intConfig.stateLocation).toBeUndefined();
     expect(intConfig.projectKey).toBeUndefined();
     expect(intConfig.teamRoot).toBeUndefined();
-    expect(intConfig.consult).toBe(true);
+    expect(intConfig.customField).toBe('keep-me');
   });
 
   // T6: runExternalize on empty .squad/ — succeeds with nothing to move

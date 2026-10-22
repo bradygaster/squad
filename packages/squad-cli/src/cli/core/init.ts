@@ -11,7 +11,7 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolveGlobalSquadPath, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
@@ -167,16 +167,12 @@ function showDeprecationWarning(): void {
 export interface RunInitOptions {
   /** Project description prompt — stored for REPL auto-casting. */
   prompt?: string;
-  /** If true, disable extraction from consult sessions (read-only consultations) */
-  extractionDisabled?: boolean;
   /** If false, skip GitHub workflow installation (default: true) */
   includeWorkflows?: boolean;
   /** If true, generate squad.config.ts with SDK builder syntax (default: false) */
   sdk?: boolean;
   /** If true, use built-in base roles instead of fictional universe casting (default: false) */
   roles?: boolean;
-  /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
-  isGlobal?: boolean;
   /** State backend to configure at init time (local, orphan, two-layer) */
   stateBackend?: string;
   /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
@@ -310,7 +306,6 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     projectType: projectType as any,
     version,
     prompt: options.prompt,
-    extractionDisabled: options.extractionDisabled,
     roles: options.roles,
     stateBackend: options.stateBackend,
   };
@@ -355,27 +350,6 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     ensureUserOwnedTemplates(dest, templatesDir);
   } catch {
     // Non-fatal: if templates dir is not found (unusual install), skip silently.
-  }
-
-  // ── Personal squad linking ─────────────────────────────────────────
-  // When a personal squad directory exists and this is a repo init (not global),
-  // set teamRoot in config.json to point to the global squad root that contains
-  // `.squad/`. This enables "remote mode" resolution so the project inherits
-  // team identity from the personal squad. (See #984, #1010)
-  if (!options.isGlobal) {
-    const personalDir = resolvePersonalSquadDir();
-    if (personalDir) {
-      const configPath = path.join(squadDir, 'config.json');
-      let config: Record<string, unknown> = {};
-      try {
-        const raw = storage.readSync(configPath);
-        if (raw) config = JSON.parse(raw);
-      } catch { /* start fresh */ }
-      if (!config['teamRoot']) {
-        config['teamRoot'] = resolveGlobalSquadPath();
-        storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
-      }
-    }
   }
 
   // Ensure version is fully stamped in squad.agent.md
@@ -513,7 +487,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     // best-effort: .mcp.json write failure does not block init
   }
 
-  if (options.clients && options.clients.length > 0 && !options.isGlobal) {
+  if (options.clients && options.clients.length > 0) {
     try {
       const synced = await applyClientProjectionsForInit(dest, squadDir, { clients: options.clients, version });
       reportClientResults(synced.results, (m) => console.log(m.startsWith('⚠') ? `${YELLOW}${m}${RESET}` : `${GREEN}${m}${RESET}`));
@@ -523,7 +497,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   }
 
   // Apply VS Code default chat session mode (opt-out: --no-vscode-default)
-  if (options.includeVscodeDefault !== false && !options.isGlobal) {
+  if (options.includeVscodeDefault !== false) {
     try {
       await applyVscodeDefaultMode(dest);
     } catch {
@@ -608,22 +582,6 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   console.log(`${DIM}Tip: for non-interactive scripts that need squad_state tools, add to package.json:${RESET}`);
   console.log(`${DIM}  "squad:copilot": "copilot --agent squad --additional-mcp-config @.mcp.json"${RESET}`);
   console.log();
-
-  // ── Personal squad bridge ───────────────────────────────────────────
-  if (options.isGlobal) {
-    // Global init: ensure personal-squad/ directory exists alongside .squad/
-    const personalDir = ensurePersonalSquadDir();
-    console.log(`${GREEN}${BOLD}✓${RESET} Personal squad initialized at ${DIM}${personalDir}${RESET}`);
-    console.log(`${DIM}  Add agents with: squad personal add <name> --role <role>${RESET}`);
-    console.log();
-  } else {
-    // Repo init: inform user if personal squad is available
-    const personalDir = resolvePersonalSquadDir();
-    if (personalDir) {
-      console.log(`${GREEN}${BOLD}✓${RESET} Personal squad detected — your personal agents will be available here.`);
-      console.log();
-    }
-  }
 
   if (squadInfo.isLegacy) {
     showDeprecationWarning();

@@ -323,10 +323,8 @@ describe('bridge scenarios: state-mcp resolution the host coordinator relies on'
     expect(wtInbox.filter((f) => f.includes(`${backend}-decision`)), `${backend}: working tree must not receive the decision`).toEqual([]);
   }, 180_000);
 
-  // Finding F6: the digest promises `squad_state_health` "reports the backend: local, orphan, two-layer", but the tool
-  // returns the storage class name. This stays `it.fails` until the SDK tool reports `backend.name`; flipping it green
-  // then is the signal to drop `.fails` and update the matrix cell.
-  it.fails('squad_state_health names the configured backend (orphan) as the coordinator digest promises', async () => {
+  // Finding F6 (fixed in Squad 2.0): `squad_state_health` names the configured backend, as the digest promises.
+  it('squad_state_health names the configured backend (orphan) as the coordinator digest promises', async () => {
     const repo = path.join(tmp, 'health-orphan');
     const git = gitInit(repo);
     squadDir(repo);
@@ -336,7 +334,11 @@ describe('bridge scenarios: state-mcp resolution the host coordinator relies on'
     clearResolveSquadCache();
     const b = await bridge(repo);
     const health = await b.call('squad_state_health');
-    expect(health.text, 'health text should name the backend, got the storage class instead').toMatch(/\borphan\b/);
+    expect(health.text, 'health text should name the backend, not only the storage class').toMatch(/State backend: orphan\b/);
+    // Finding F8 (fixed): listing the root without `dir` works on non-local backends too.
+    const root = await b.call('squad_state_list');
+    expect(root.isError, `squad_state_list without dir on orphan: ${root.text}`).toBe(false);
+    expect(root.text, 'root listing of the squad-state branch').toMatch(/decisions\.md/);
   }, 180_000);
 
   // Finding F1 (fixed in Squad 2.0): a host sees inherited skills/decisions through the bridge, with provenance,
@@ -385,7 +387,7 @@ function run(bin: string, args: string[], cwd: string, timeout = 180_000) {
   const viaCmd = process.platform === 'win32' && /\.(cmd|bat|ps1)$/i.test(bin);
   const file = viaCmd ? (process.env['ComSpec'] ?? 'cmd.exe') : bin;
   const argv = viaCmd ? ['/d', '/s', '/c', `""${bin}" ${args.map((a) => `"${a.replace(/"/g, "'")}"`).join(' ')}"`] : args;
-  return spawnSync(file, argv, { cwd, encoding: 'utf8', timeout, windowsVerbatimArguments: viaCmd, env: { ...process.env, SQUAD_NO_PERSONAL: '1' } });
+  return spawnSync(file, argv, { cwd, encoding: 'utf8', timeout, windowsVerbatimArguments: viaCmd, env: { ...process.env } });
 }
 const CLAUDE = REAL_CLI ? which('claude') : undefined;
 const OPENCODE = REAL_CLI ? which('opencode') : undefined;

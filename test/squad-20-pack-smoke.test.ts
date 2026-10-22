@@ -80,7 +80,6 @@ describe('Squad 2.0 npm pack clean-install and v1.1.0 → 2.0 upgrade/rollback s
       ...buildEnv,
       CI: '1',
       SQUAD_NONINTERACTIVE: '1',
-      SQUAD_NO_PERSONAL: '1',
       NODE_PATH: `${join(stagingDir, 'node_modules')}${delimiter}${join(cwd, 'node_modules')}${existingNodePath}`,
     };
   }, 60_000);

@@ -14,7 +14,8 @@ import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
 import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
-import { resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquad, resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
+import { fatal } from '../core/errors.js';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
 import { resolveUpstreams } from '@bradygaster/squad-sdk/upstream';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
@@ -910,6 +911,9 @@ export function printDoctorReport(checks: DoctorCheck[], mode: DoctorMode): void
  */
 export async function doctorCommand(cwd?: string): Promise<void> {
   const resolvedCwd = cwd ?? process.cwd();
+  if (!fileExists(path.join(resolvedCwd, '.squad')) && !resolveSquad(resolvedCwd)) {
+    fatal(`No squad in this directory (searched from ${resolvedCwd}). Run "squad init" here, or use --team-root to point at the project.`);
+  }
   const mode = getDoctorMode(resolvedCwd);
   const checks = await runDoctor(resolvedCwd);
   printDoctorReport(checks, mode);
