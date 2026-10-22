@@ -183,6 +183,8 @@ describe('runExternalize / runInternalize', () => {
     const externalDir = resolveExternalStateDir(key, false);
     expect(existsSync(path.join(externalDir, 'team.md'))).toBe(true);
     expect(existsSync(path.join(externalDir, 'agents', 'bot.md'))).toBe(true);
+    const owner = JSON.parse(readFileSync(path.join(externalDir, '.owner.json'), 'utf-8'));
+    expect(owner.projectPath).toBe(path.resolve(projectDir));
     // KEEP_LOCAL entries must NOT be externalized
     expect(existsSync(path.join(externalDir, 'manifest.json'))).toBe(false);
     expect(existsSync(path.join(externalDir, 'workstreams.json'))).toBe(false);
@@ -246,6 +248,7 @@ describe('runExternalize / runInternalize', () => {
     expect(readFileSync(path.join(squadDir, 'team.md'), 'utf-8')).toBe('# My Team\n');
     expect(readFileSync(path.join(squadDir, 'custom-data.json'), 'utf-8')).toBe('{"round":"trip"}');
     expect(readFileSync(path.join(squadDir, 'log', 'session.md'), 'utf-8')).toBe('## Session 1\n');
+    expect(existsSync(path.join(squadDir, '.owner.json'))).toBe(false);
   });
 
   // T4b: binary files survive externalize → internalize byte-for-byte (#1489)
@@ -312,5 +315,47 @@ describe('runExternalize / runInternalize', () => {
     // config.json is still there with external marker
     const config = JSON.parse(readFileSync(path.join(squadDir, 'config.json'), 'utf-8'));
     expect(config.stateLocation).toBe('external');
+  });
+
+  it('refuses to overwrite state owned by another project with the same key', () => {
+    writeFileSync(path.join(squadDir, 'team.md'), '# First project\n');
+    runExternalize(projectDir);
+
+    const externalDir = resolveExternalStateDir(deriveProjectKey(projectDir), false);
+    const otherProjectDir = path.join(TEST_ROOT, 'another-parent', path.basename(projectDir));
+    const otherSquadDir = path.join(otherProjectDir, '.squad');
+    mkdirSync(otherSquadDir, { recursive: true });
+    writeFileSync(path.join(otherSquadDir, 'team.md'), '# Second project\n');
+
+    expect(() => runExternalize(otherProjectDir)).toThrow(/already belongs.*--key/);
+    expect(readFileSync(path.join(externalDir, 'team.md'), 'utf-8')).toBe('# First project\n');
+    expect(readFileSync(path.join(otherSquadDir, 'team.md'), 'utf-8')).toBe('# Second project\n');
+  });
+
+  it('refuses an occupied legacy directory without a matching external config', () => {
+    const externalDir = resolveExternalStateDir(deriveProjectKey(projectDir), false);
+    mkdirSync(externalDir, { recursive: true });
+    writeFileSync(path.join(externalDir, 'team.md'), '# Existing state\n');
+    writeFileSync(path.join(squadDir, 'team.md'), '# Local state\n');
+
+    expect(() => runExternalize(projectDir)).toThrow(/no ownership marker/);
+    expect(readFileSync(path.join(externalDir, 'team.md'), 'utf-8')).toBe('# Existing state\n');
+    expect(readFileSync(path.join(squadDir, 'team.md'), 'utf-8')).toBe('# Local state\n');
+  });
+
+  it('adopts a populated legacy directory already referenced by this project', () => {
+    const key = deriveProjectKey(projectDir);
+    const externalDir = resolveExternalStateDir(key, false);
+    mkdirSync(externalDir, { recursive: true });
+    writeFileSync(path.join(externalDir, 'team.md'), '# Existing state\n');
+    writeFileSync(
+      path.join(squadDir, 'config.json'),
+      JSON.stringify({ stateLocation: 'external', projectKey: key }),
+    );
+
+    expect(() => runExternalize(projectDir)).not.toThrow();
+    const owner = JSON.parse(readFileSync(path.join(externalDir, '.owner.json'), 'utf-8'));
+    expect(owner.projectPath).toBe(path.resolve(projectDir));
+    expect(readFileSync(path.join(externalDir, 'team.md'), 'utf-8')).toBe('# Existing state\n');
   });
 });
