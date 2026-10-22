@@ -90,7 +90,9 @@ jobs:
           || needs.changes.result != 'success'
           || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Setup alone (npm installs + Playwright browser download) has taken 10-12 min on slow
+    # runners, cancelling the test run mid-way; the suite itself needs ~6 min.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
@@ -131,8 +133,23 @@ jobs:
           done
           [ "$success" = true ] || { echo "::error::npm ci failed after 3 attempts"; exit 1; }
         working-directory: docs
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        # Browser download is the slow part; with a cache hit only the OS deps are installed.
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install chromium --with-deps
+          fi
       - name: "🔒 Source tree canary check"
         run: |
           MISSING=0
