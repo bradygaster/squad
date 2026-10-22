@@ -137,8 +137,8 @@ Every row below is a real published artifact of an older Squad release driven th
 
 | Platform | Arch | Node | Target | Commit | Recorded | ✅ pass | 🔴 fail | ⏭️ skipped | ⚠️ with known findings |
 |----------|------|------|--------|--------|----------|---------|---------|-----------|------------------------|
-| Linux (`linux`) | x64 | v22.23.4 | v1.2.0-preview.1 | `ce5f9359` | 2026-10-22 | 35 | 0 | 7 | 28 |
-| Windows (`win32`) | x64 | v24.14.0 | v1.2.0-preview.1 | `ce5f9359` | 2026-10-22 | 35 | 0 | 7 | 28 |
+| Linux (`linux`) | x64 | v22.23.3 | v1.2.0-preview.1 | `f67551a` | 2026-10-22 | 35 | 0 | 7 | 28 |
+| Windows (`win32`) | x64 | v22.23.3 | v1.2.0-preview.1 | `f67551a` | 2026-10-22 | 35 | 0 | 7 | 28 |
 
 ### Producers
 
@@ -283,7 +283,7 @@ Recorded, not asserted beyond "the dry-run modified nothing": what each old CLI 
 
 | Platform | Producer | Shapes | Observed |
 |----------|----------|--------|----------|
-| `linux` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …) |
+| `linux` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 84 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …) |
 | `linux` | 0.13.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
 | `linux` | 1.0.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
 | `linux` | 1.0.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
