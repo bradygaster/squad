@@ -2,7 +2,8 @@ name: Squad CI
 
 on:
   pull_request:
-    branches: [dev, main]
+    # squad2-* / stack-* are stacked-PR bases: run the same gates on each layer's own head.
+    branches: [dev, main, "squad2-*", "stack-*"]
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [dev]
