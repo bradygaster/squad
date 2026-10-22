@@ -85,7 +85,7 @@
     "cursor": {
       "name": "Cursor",
       "cli": "cursor-agent",
-      "installedOnReferenceMachine": false,
+      "installedOnReferenceMachine": true,
       "coordinatorFile": ".cursor/rules/squad.mdc (alwaysApply: false) + .cursor/agents/squad.md",
       "mcpConfig": ".cursor/mcp.json",
       "runtime": {
@@ -95,7 +95,8 @@
         "sqlTool": false,
         "shell": true,
         "mcpInheritedBySubagents": true
-      }
+      },
+      "referenceMachineNote": "installed; the live smoke run was blocked by a usage limit (see live run log), so cells without a dedicated test are untested"
     },
     "codex": {
       "name": "OpenAI Codex",
@@ -196,7 +197,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
             "validated-test:test/cli/init.test.ts::*",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -277,7 +278,7 @@
           "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -356,7 +357,7 @@
           "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -399,12 +400,15 @@
       ],
       "cells": {
         "copilot": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "Canonical §Model Selection + `task` tool `model`/`reasoning_effort`/`context_tier` params; `.squad/config.json` overrides.",
           "validation": [
             "validated-test:test/model-selector-policy.test.ts::*",
-            "static-only"
-          ]
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The CLI/SDK side works, but the projected digest carries no section for it, so the coordinator is not told about it on this host. Degraded, not counted as supported, until the section ships."
         },
         "claude": {
           "status": "degraded",
@@ -527,7 +531,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -607,8 +611,7 @@
           "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
           "validation": [
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
-            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
-            "static-only"
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -690,7 +693,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -769,7 +772,7 @@
           "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -855,7 +858,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
             "validated-test:test/memory-governance.test.ts::*",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -959,7 +962,6 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
             "validated-test:test/state-backend.test.ts::*",
             "validated-test:test/upgrade-state-backend.test.ts::*",
-            "static-only",
             "validated-test:test/squad-20-host-feature-matrix.test.ts::squad_decide over the bridge lands in the squad-state branch for the %s backend, not the working tree"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
@@ -1045,7 +1047,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/skills.test.ts::*",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1123,7 +1125,7 @@
           "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1200,7 +1202,7 @@
           "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1276,7 +1278,7 @@
           "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1353,7 +1355,7 @@
           "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1430,7 +1432,7 @@
           "mechanism": "Digest §21.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1597,7 +1599,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1701,100 +1703,6 @@
       }
     },
     {
-      "id": "consult-personal-squad",
-      "name": "Personal squad & consult mode (`squad personal`, `squad consult`, `squad extract`)",
-      "area": "Advanced",
-      "docs": [
-        "features/consult-mode",
-        "guide/personal-squad"
-      ],
-      "canonicalSections": [
-        "Personal Squad (Ambient Discovery)",
-        "Consult Mode Detection"
-      ],
-      "dependsOn": [
-        "a",
-        "b"
-      ],
-      "cells": {
-        "copilot": {
-          "status": "supported",
-          "mechanism": "CLI manages the personal squad; canonical §Personal Squad (Ambient Discovery) + §Consult Mode Detection route personal agents as advisors.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "validated-test:test/sdk/consult.test.ts::*",
-            "static-only"
-          ]
-        },
-        "claude": {
-          "status": "degraded",
-          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "static-only",
-            "failing",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
-          ],
-          "notes": "Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
-        },
-        "kiro": {
-          "status": "degraded",
-          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "static-only",
-            "failing",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
-          ],
-          "notes": "Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
-        },
-        "opencode": {
-          "status": "degraded",
-          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "static-only",
-            "failing",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
-          ],
-          "notes": "Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
-        },
-        "cursor": {
-          "status": "degraded",
-          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "static-only",
-            "failing",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
-          ],
-          "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
-        },
-        "codex": {
-          "status": "degraded",
-          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "static-only",
-            "failing",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
-          ],
-          "notes": "No Codex binary or ChatGPT/API auth on the reference machine; static-only. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
-        },
-        "antigravity": {
-          "status": "degraded",
-          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
-          "validation": [
-            "validated-test:test/personal-squad.test.ts::*",
-            "static-only",
-            "failing",
-            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
-          ],
-          "notes": "Live run blocked on 2026-10-22: antigravity quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
-        }
-      }
-    },
-    {
       "id": "prd-mode",
       "name": "PRD mode (decompose → approve → dependency-aware dispatch)",
       "area": "Advanced",
@@ -1846,7 +1754,7 @@
           "mechanism": "Digest §19; `prd-intake.md` template on demand.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -1925,7 +1833,7 @@
           "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -2009,7 +1917,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/ralph-triage.test.ts::*",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -2445,7 +2353,7 @@
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
             "validated-test:test/cross-squad-registry.test.ts::*",
             "validated-test:test/cross-squad.test.ts::*",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -2557,25 +2465,30 @@
       ],
       "cells": {
         "copilot": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "CLI honours `--team-root`/`SQUAD_TEAM_ROOT`; state-mcp walks up from cwd (`findSquadDir`); canonical §State & Team Root Resolution + `worktree-reference.md` resolve `TEAM_ROOT` and pass it to every spawn.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder"
-          ]
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The runtime path works (state-mcp walks up to the root `.squad/` / follows `teamRoot`; see the live run where recorded), but the projected digest carries no team-root section, so the coordinator is not told how resolution works. Degraded, not counted as supported, until the section ships."
         },
         "claude": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "Claude discovers `.claude/agents/squad.md` and `.mcp.json` from a package subfolder; state-mcp walks up to the root `.squad/`. Headless (`-p`) runs need `--mcp-config <root>/.mcp.json` or a prior per-project approval (F5).",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
             "validated-manual:lab:mono-subfolder@2026-10-22",
             "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::claude lists the root .mcp.json squad_state server from packages/api"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::claude lists the root .mcp.json squad_state server from packages/api",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The runtime path works (state-mcp walks up to the root `.squad/` / follows `teamRoot`; see the live run where recorded), but the projected digest carries no team-root section, so the coordinator is not told how resolution works. Degraded, not counted as supported, until the section ships."
         },
         "kiro": {
           "status": "degraded",
@@ -2590,16 +2503,18 @@
           "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "OpenCode resolves `opencode.json` (agent + MCP) from the repo root when launched in a package subfolder; state-mcp walks up to the root `.squad/`.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
             "validated-manual:lab:mono-subfolder@2026-10-22",
             "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp resolves the root .squad when launched from a monorepo subfolder",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::opencode resolves the squad primary agent and the squad_state MCP entry from packages/api"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::opencode resolves the squad primary agent and the squad_state MCP entry from packages/api",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd? Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The runtime path works (state-mcp walks up to the root `.squad/` / follows `teamRoot`; see the live run where recorded), but the projected digest carries no team-root section, so the coordinator is not told how resolution works. Degraded, not counted as supported, until the section ships."
         },
         "cursor": {
           "status": "degraded",
@@ -2657,24 +2572,29 @@
       ],
       "cells": {
         "copilot": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "CLI writes `config.json.teamRoot`; state-mcp resolves `mode: remote`; canonical step 3 loads `team.md` from the team root.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
-          ]
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The runtime path works (state-mcp walks up to the root `.squad/` / follows `teamRoot`; see the live run where recorded), but the projected digest carries no team-root section, so the coordinator is not told how resolution works. Degraded, not counted as supported, until the section ships."
         },
         "claude": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "The state bridge follows `config.json.teamRoot`, so the host coordinator read the team-root roster via `squad_state_read` and did not enter Init Mode, even though the digest has no team-root section.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
             "validated-manual:lab:satellite-remote@2026-10-22",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Live: roster served from `..\\base`; no casting attempted."
+          "notes": "Live: roster served from `..\\base`; no casting attempted. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The runtime path works (state-mcp walks up to the root `.squad/` / follows `teamRoot`; see the live run where recorded), but the projected digest carries no team-root section, so the coordinator is not told how resolution works. Degraded, not counted as supported, until the section ships."
         },
         "kiro": {
           "status": "degraded",
@@ -2689,15 +2609,17 @@
           "notes": "Finding F4 candidate — validate. Live run blocked on 2026-10-22: kiro quota/usage limit reached on the reference machine. Expected-fail digest gap (it.fails in test/clients.test.ts); not counted as supported."
         },
         "opencode": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "The state bridge follows `config.json.teamRoot`, so the host coordinator read the team-root roster via `squad_state_read` and did not enter Init Mode, even though the digest has no team-root section.",
           "validation": [
             "validated-test:test/resolution.test.ts::*",
             "static-only",
             "validated-manual:lab:satellite-remote@2026-10-22",
-            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)"
+            "validated-test:test/squad-20-host-feature-matrix.test.ts::state-mcp follows config.json teamRoot from a satellite repo (remote mode)",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
           ],
-          "notes": "Live: roster served from `..\\base`; no casting attempted."
+          "notes": "Live: roster served from `..\\base`; no casting attempted. Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The runtime path works (state-mcp walks up to the root `.squad/` / follows `teamRoot`; see the live run where recorded), but the projected digest carries no team-root section, so the coordinator is not told how resolution works. Degraded, not counted as supported, until the section ships."
         },
         "cursor": {
           "status": "degraded",
@@ -2796,7 +2718,7 @@
           "validation": [
             "validated-test:test/clients.test.ts::coordinator Ralph mode",
             "validated-test:test/worktree.test.ts::*",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -3038,11 +2960,14 @@
       ],
       "cells": {
         "copilot": {
-          "status": "supported",
+          "status": "degraded",
           "mechanism": "CLI + canonical \"check plugin marketplaces when adding a member\" step.",
           "validation": [
-            "static-only"
-          ]
+            "static-only",
+            "failing",
+            "validated-test:test/clients.test.ts::coordinator digest vs. host feature matrix"
+          ],
+          "notes": "Expected-fail digest gap (per-host it.fails in test/clients.test.ts): The CLI/SDK side works, but the projected digest carries no section for it, so the coordinator is not told about it on this host. Degraded, not counted as supported, until the section ships."
         },
         "claude": {
           "status": "degraded",
@@ -3882,8 +3807,7 @@
             "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
-            "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
-            "static-only"
+            "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -3971,7 +3895,7 @@
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
             "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
             "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -4203,7 +4127,7 @@
           "mechanism": "Digest §22–23.",
           "validation": [
             "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -4273,7 +4197,7 @@
           "status": "supported",
           "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
           "validation": [
-            "static-only"
+            "untested"
           ],
           "notes": "Live run blocked on 2026-10-22: cursor quota/usage limit reached on the reference machine."
         },
@@ -4675,49 +4599,118 @@
       "featureId": "monorepo-team-root",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     },
     {
       "featureId": "dual-root-remote-mode",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     },
     {
       "featureId": "upstream-inheritance",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): upstream inheritance (upstream.json)",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     },
     {
       "featureId": "azure-devops",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): Azure DevOps issue tracking (az boards / ADO)",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     },
     {
       "featureId": "gitlab-issues",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): GitLab issue tracking (glab)",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
-    },
-    {
-      "featureId": "consult-personal-squad",
-      "test": "test/clients.test.ts::digest gap (expected until the stack adds it): personal squad / consult mode",
-      "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     },
     {
       "featureId": "model-selection",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): per-agent model / reasoning / context-tier selection",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     },
     {
       "featureId": "marketplace-plugins",
       "test": "test/clients.test.ts::digest gap (expected until the stack adds it): plugin marketplace browse on cast",
       "kind": "it.fails",
-      "meaning": "The projected digest lacks this canonical section on every host; the test turns red when a stack adds it. The cell is degraded, never supported."
+      "perHost": true,
+      "hosts": [
+        "copilot",
+        "claude",
+        "kiro",
+        "opencode",
+        "cursor",
+        "codex",
+        "antigravity"
+      ],
+      "meaning": "The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported."
     }
+  ],
+  "limitations": [
+    "Expected failures are pinned per host and per gap (one `it.fails` per `<gap> [<host>]` pair), so a section landing for a single host turns exactly that host's test red.",
+    "Live-model evidence (`validated-manual:lab:*`, `SQUAD_REAL_MODEL_TESTS=1`) records one successful turn on the reference machine on the given date; it is opt-in and not a continuous gate. The headless coordinator tests verify the bridge through a tee'd `squad state-mcp` transcript (a successful `tools/call` of `squad_state_read` with `key: \"team.md\"`), not by matching stdout.",
+    "Hosts without a passing live run (`kiro`, `codex`, `antigravity`, `cursor`) are validated statically and by host-independent bridge tests only; their cells carry `untested` until a live run is recorded."
   ]
 }

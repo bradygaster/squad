@@ -97,7 +97,8 @@ export function render(matrix) {
   for (const h of hosts) {
     const m = matrix.hosts[h];
     const yn = (b) => (b ? 'yes' : 'no');
-    lines.push(`| **${m.name}** (\`${h}\`) | \`${m.cli}\`${m.installedOnReferenceMachine ? '' : ' (not on the reference machine → static-only)'} | ${m.coordinatorFile} | ${m.mcpConfig} | ${yn(m.runtime.subagents)} | ${yn(m.runtime.backgroundRuns)} | ${yn(m.runtime.perSpawnModel)} | ${yn(m.runtime.mcpInheritedBySubagents)} |`);
+    const cliNote = m.installedOnReferenceMachine ? (m.referenceMachineNote ? ` (${m.referenceMachineNote})` : '') : ' (not on the reference machine → static-only)';
+    lines.push(`| **${m.name}** (\`${h}\`) | \`${m.cli}\`${cliNote} | ${m.coordinatorFile} | ${m.mcpConfig} | ${yn(m.runtime.subagents)} | ${yn(m.runtime.backgroundRuns)} | ${yn(m.runtime.perSpawnModel)} | ${yn(m.runtime.mcpInheritedBySubagents)} |`);
   }
   lines.push('');
   lines.push('## Summary');
@@ -113,13 +114,19 @@ export function render(matrix) {
   if (Array.isArray(matrix.expectedFailures) && matrix.expectedFailures.length > 0) {
     lines.push('## Expected failures (`it.fails`)');
     lines.push('');
-    lines.push('These digest gaps are pinned as expected failures: the test turns red the moment a stack adds the section, and until then the cells stay **degraded** — they are never counted as supported.');
+    lines.push('These digest gaps are pinned as expected failures, one test per host and gap: the `[<host>]` test turns red the moment a stack adds the section for that host, and until then that cell stays **degraded** — expected failures are never counted as supported.');
     lines.push('');
-    lines.push('| Feature | Test | Meaning |');
-    lines.push('|---------|------|---------|');
+    lines.push('| Feature | Test (title + ` [<host>]`) | Hosts | Meaning |');
+    lines.push('|---------|-----------------------------|-------|---------|');
     for (const e of matrix.expectedFailures) {
-      lines.push(`| [${e.featureId}](#${e.featureId}) | \`${e.test.replace(/\|/g, '\\|')}\` (${e.kind}) | ${e.meaning} |`);
+      lines.push(`| [${e.featureId}](#${e.featureId}) | \`${e.test.replace(/\|/g, '\\|')}\` (${e.kind}${e.perHost ? ', per host' : ''}) | ${(e.hosts ?? []).map((h) => `\`${h}\``).join(' ')} | ${e.meaning} |`);
     }
+    lines.push('');
+  }
+  if (Array.isArray(matrix.limitations) && matrix.limitations.length > 0) {
+    lines.push('## Known limitations of this evidence');
+    lines.push('');
+    for (const l of matrix.limitations) lines.push(`- ${l}`);
     lines.push('');
   }
   lines.push('## Matrix');

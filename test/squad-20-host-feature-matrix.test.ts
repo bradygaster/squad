@@ -36,11 +36,14 @@ type Status = 'supported' | 'degraded' | 'unsupported' | 'n/a';
 interface Cell { status: Status; mechanism: string; validation: string[]; notes?: string }
 interface Feature { id: string; name: string; area: string; dependsOn: string[]; hostIndependent?: boolean; cells: Record<string, Cell> }
 interface LiveRun { host: string; scenario: string; date: string; outcome: 'pass' | 'partial' | 'fail' | 'blocked'; observedTools?: string[]; notes?: string }
+interface ExpectedFailure { featureId: string; test: string; kind: string; perHost?: boolean; hosts?: string[]; meaning: string }
 interface Matrix {
   protocol: string;
-  hosts: Record<string, { cli: string; installedOnReferenceMachine: boolean; runtime: { subagents: boolean; backgroundRuns: boolean } }>;
+  hosts: Record<string, { cli: string; installedOnReferenceMachine: boolean; referenceMachineNote?: string; runtime: { subagents: boolean; backgroundRuns: boolean } }>;
   features: Feature[];
   liveRuns: LiveRun[];
+  expectedFailures: ExpectedFailure[];
+  limitations?: string[];
 }
 
 const matrix = JSON.parse(fs.readFileSync(MATRIX_PATH, 'utf8')) as Matrix;
@@ -103,16 +106,64 @@ describe('host-feature-matrix.json integrity', () => {
     }
   });
 
-  it('cells marked failing carry a note, and no live run that failed backs a supported cell', () => {
+  it('cells marked failing carry a note and are never supported, and no live run that failed backs a supported cell', () => {
     for (const f of matrix.features) for (const h of HOSTS) {
       const c = f.cells[h]!;
-      if (c.validation.includes('failing')) expect(c.notes, `${f.id}/${h}: failing cell needs a note`).toBeTruthy();
+      if (c.validation.includes('failing')) {
+        expect(c.notes, `${f.id}/${h}: failing cell needs a note`).toBeTruthy();
+        expect(c.status, `${f.id}/${h}: a failing cell must not be counted as supported`).not.toBe('supported');
+      }
     }
     for (const r of matrix.liveRuns.filter((r) => r.outcome === 'fail')) {
       for (const f of matrix.features) {
         const c = f.cells[r.host]!;
         if (c.validation.some((v) => v.includes(`lab:${r.scenario}`))) expect(c.status, `${f.id}/${r.host}: backed by failed run ${r.scenario}`).not.toBe('supported');
       }
+    }
+  });
+
+  it('every expected failure resolves to one it.fails title per listed host, and every failing cell is an expected failure', () => {
+    expect(Array.isArray(matrix.expectedFailures)).toBe(true);
+    expect(matrix.expectedFailures.length).toBeGreaterThan(0);
+    const cache = new Map<string, string>();
+    const read = (rel: string) => {
+      if (!cache.has(rel)) cache.set(rel, fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+      return cache.get(rel)!;
+    };
+    const covered = new Set<string>();
+    for (const e of matrix.expectedFailures) {
+      const feat = matrix.features.find((f) => f.id === e.featureId);
+      expect(feat, `expected failure for unknown feature ${e.featureId}`).toBeDefined();
+      expect(e.kind).toBe('it.fails');
+      const [, file, title] = /^([^:]+)::(.+)$/.exec(e.test)!;
+      const src = read(file!);
+      const hosts = e.perHost ? e.hosts ?? [] : [''];
+      expect(hosts.length, `${e.featureId}: perHost expected failure lists no hosts`).toBeGreaterThan(0);
+      // Per-host titles are generated as `${PREFIX}${name} [${id}]` for every id in CLIENT_IDS; the matrix stores
+      // the title without the host suffix. Resolve it against the gap name literal and the generating template.
+      const PREFIX = 'digest gap (expected until the stack adds it): ';
+      if (e.perHost) {
+        expect(title!.startsWith(PREFIX), `${e.featureId}: per-host expected failure title must start with "${PREFIX}"`).toBe(true);
+        const gapName = title!.slice(PREFIX.length);
+        expect(src.includes(`['${gapName}', `), `${e.featureId}: gap "${gapName}" is not registered in ${file}`).toBe(true);
+        expect(src.includes(`it.fails(\`${PREFIX}\${name} [\${id}]\``), `${file}: per-host it.fails template changed; update the matrix`).toBe(true);
+        expect(src.includes('for (const id of CLIENT_IDS) {\n      it.fails('), `${file}: per-host it.fails must iterate CLIENT_IDS`).toBe(true);
+        for (const h of hosts) expect(CLIENT_IDS, `${e.featureId}: host ${h} is not a client id`).toContain(h);
+      } else {
+        expect(src.includes(title!), `${e.featureId}: it.fails title "${title}" not found in ${file}`).toBe(true);
+      }
+      for (const h of hosts) {
+        if (e.perHost) {
+          const c = feat!.cells[h];
+          expect(c, `${e.featureId}/${h}: no cell for a listed host`).toBeDefined();
+          expect(c!.validation, `${e.featureId}/${h}: expected-failure cell must carry failing`).toContain('failing');
+          expect(c!.status, `${e.featureId}/${h}: expected-failure cell must not be supported`).not.toBe('supported');
+          covered.add(`${e.featureId}/${h}`);
+        }
+      }
+    }
+    for (const f of matrix.features) for (const h of HOSTS) {
+      if (f.cells[h]!.validation.includes('failing')) expect(covered.has(`${f.id}/${h}`), `${f.id}/${h} is failing but has no expectedFailures entry`).toBe(true);
     }
   });
 
@@ -321,8 +372,62 @@ describe.skipIf(!REAL_CLI)('real host binaries read root projections from a mono
   }, 120_000);
 });
 
+/**
+ * Tee for the real `squad state-mcp` bridge: forwards stdio untouched and appends every JSON-RPC line in both
+ * directions to the transcript file given as its first argument. The live-model tests assert on the transcript
+ * (a successful `tools/call` of the roster tool with `key: "team.md"`), not on what the model printed.
+ */
+const MCP_TEE = `
+  const { spawn } = require('node:child_process');
+  const fs = require('node:fs');
+  const log = process.argv[2];
+  const child = spawn(process.execPath, process.argv.slice(3), { stdio: ['pipe', 'pipe', 'inherit'] });
+  const tee = (dir) => (chunk) => { if (log) fs.appendFileSync(log, String(chunk).split(/\\r?\\n/).filter(Boolean).map((l) => dir + ' ' + l).join('\\n') + '\\n'); };
+  process.stdin.on('data', (c) => { tee('>')(c); child.stdin.write(c); });
+  process.stdin.on('end', () => child.stdin.end());
+  child.stdout.on('data', (c) => { tee('<')(c); process.stdout.write(c); });
+  child.on('exit', (code) => process.exit(code ?? 0));
+`;
+
+/** Parse a tee transcript and return the ids of successful roster reads (`squad_state_read` with key team.md). */
+function successfulRosterReads(transcript: string): number[] {
+  const requests = new Map<string | number, { name: string; key?: string }>();
+  const ok: number[] = [];
+  for (const line of transcript.split(/\r?\n/)) {
+    const m = /^([<>]) (\{.*\})$/.exec(line);
+    if (!m) continue;
+    let msg: { id?: string | number; method?: string; params?: { name?: string; arguments?: { key?: string } }; result?: { isError?: boolean }; error?: unknown };
+    try { msg = JSON.parse(m[2]!); } catch { continue; }
+    if (m[1] === '>' && msg.method === 'tools/call' && msg.id !== undefined && msg.params?.name) {
+      requests.set(msg.id, { name: msg.params.name, key: msg.params.arguments?.key });
+    } else if (m[1] === '<' && msg.id !== undefined && requests.has(msg.id) && !msg.error && !msg.result?.isError) {
+      const req = requests.get(msg.id)!;
+      if (/squad_state_read$/.test(req.name) && req.key === 'team.md') ok.push(Number(msg.id));
+    }
+  }
+  return ok;
+}
+
+describe('tee transcript parser (host-independent)', () => {
+  it('counts only successful squad_state_read calls for team.md', () => {
+    const t = [
+      '> {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mcp__squad_state__squad_state_read","arguments":{"key":"team.md"}}}',
+      '< {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"roster"}]}}',
+      '> {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"squad_state_read","arguments":{"key":"routing.md"}}}',
+      '< {"jsonrpc":"2.0","id":2,"result":{"content":[]}}',
+      '> {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"squad_state_read","arguments":{"key":"team.md"}}}',
+      '< {"jsonrpc":"2.0","id":3,"result":{"isError":true,"content":[]}}',
+      '> {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"squad_state_read","arguments":{"key":"team.md"}}}',
+      '< {"jsonrpc":"2.0","id":4,"error":{"code":-1,"message":"nope"}}',
+    ].join('\n');
+    expect(successfulRosterReads(t)).toEqual([1]);
+    expect(successfulRosterReads('Noether mcp__squad_state__squad_state_read team.md')).toEqual([]);
+  });
+});
+
 describe.skipIf(!REAL_MODEL)('headless coordinator turn against a real model (SQUAD_REAL_MODEL_TESTS=1)', () => {
   let repo: string;
+  let teeLog: string;
   const PROMPT = 'Who is on the team? Answer in one line (Direct mode) and name the exact squad_state tool you used to read the roster.';
   beforeAll(() => {
     repo = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-hfm-model-'));
@@ -331,7 +436,10 @@ describe.skipIf(!REAL_MODEL)('headless coordinator turn against a real model (SQ
     // real bridge: the CLI source through the repo's tsx-free loader is overkill here; use the built CLI when present
     const cli = path.join(ROOT, 'packages', 'squad-cli', 'dist', 'cli-entry.js');
     expect(fs.existsSync(cli), 'SQUAD_REAL_MODEL_TESTS needs a built CLI (npm run build) for the squad_state bridge').toBe(true);
-    const results = installClients(['claude', 'opencode'], { root: repo, mcp: { command: process.execPath, args: [cli, 'state-mcp'] } });
+    teeLog = path.join(repo, 'mcp-transcript.log');
+    const teeScript = path.join(repo, 'mcp-tee.cjs');
+    fs.writeFileSync(teeScript, MCP_TEE);
+    const results = installClients(['claude', 'opencode'], { root: repo, mcp: { command: process.execPath, args: [teeScript, teeLog, cli, 'state-mcp'] } });
     expect(results.filter((r) => r.action === 'error')).toEqual([]);
   });
   afterAll(() => {
@@ -343,13 +451,15 @@ describe.skipIf(!REAL_MODEL)('headless coordinator turn against a real model (SQ
     const r = run(CLAUDE!, ['-p', PROMPT, '--agent', 'squad', '--mcp-config', path.join(repo, '.mcp.json'), '--output-format', 'json', '--permission-mode', 'bypassPermissions', '--max-turns', '8'], repo, 300_000);
     const text = r.stdout;
     expect(text, `claude run failed: ${r.stderr.slice(-500)}`).toMatch(/Noether/);
-    expect(text).toMatch(/mcp__squad_state__squad_state_read/);
+    const transcript = fs.existsSync(teeLog) ? fs.readFileSync(teeLog, 'utf8') : '';
+    expect(successfulRosterReads(transcript).length, `claude: no successful squad_state_read(team.md) over the bridge; transcript:\n${transcript.slice(-2000)}`).toBeGreaterThan(0);
   }, 320_000);
 
   it.skipIf(!OPENCODE)('opencode --agent squad reads the roster through squad_state_squad_state_read', () => {
     const r = run(OPENCODE!, ['run', '--agent', 'squad', '--format', 'json', '--auto', PROMPT], repo, 300_000);
     expect(r.stdout, `opencode run failed: ${r.stderr.slice(-500)}`).toMatch(/Noether/);
-    expect(r.stdout).toMatch(/squad_state_squad_state_read/);
+    const transcript = fs.existsSync(teeLog) ? fs.readFileSync(teeLog, 'utf8') : '';
+    expect(successfulRosterReads(transcript).length, `opencode: no successful squad_state_read(team.md) over the bridge; transcript:\n${transcript.slice(-2000)}`).toBeGreaterThan(0);
   }, 320_000);
 });
 

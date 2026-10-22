@@ -273,9 +273,10 @@ describe('coordinator behavioral-contract parity', () => {
 /**
  * Host feature matrix (test-fixtures/spec/suite-v0.2/host-feature-matrix.json): the projected digest is the only
  * coordinator text non-Copilot hosts load by default. These assertions pin what the live runs on Claude Code and
- * OpenCode proved the digest carries, and record (as `it.fails`) the canonical sections it still lacks. When the
- * stack adds one of those sections, its `it.fails` turns red: drop `.fails` and flip the matrix cells from
- * `degraded` to `supported`.
+ * OpenCode proved the digest carries, and record (as one `it.fails` per host and gap) the canonical sections it
+ * still lacks. When the stack adds one of those sections for a host, that host's `it.fails` turns red: drop
+ * `.fails` for it and flip the matrix cell from `degraded` to `supported`. The matrix's `expectedFailures[].test`
+ * is the title below without the ` [<host>]` suffix; `test/squad-20-host-feature-matrix.test.ts` checks both.
  */
 describe('coordinator digest vs. host feature matrix', () => {
   const sections: Array<[string, RegExp[]]> = [
@@ -296,14 +297,15 @@ describe('coordinator digest vs. host feature matrix', () => {
     ['upstream inheritance (upstream.json)', /upstream\.json/, 'upstream-inheritance (F1)'],
     ['Azure DevOps issue tracking (az boards / ADO)', /az boards|Azure DevOps/, 'azure-devops (F3)'],
     ['GitLab issue tracking (glab)', /glab|GitLab/, 'gitlab-issues (F2)'],
-    ['personal squad / consult mode', /[Pp]ersonal [Ss]quad|[Cc]onsult [Mm]ode/, 'consult-personal-squad'],
     ['per-agent model / reasoning / context-tier selection', /reasoning[- ]effort|context[- ]tier|defaultModel/, 'model-selection'],
     ['plugin marketplace browse on cast', /marketplace/, 'marketplace-plugins'],
   ];
   for (const [name, pat, cells] of gaps) {
-    it.fails(`digest gap (expected until the stack adds it; matrix cells: ${cells}): ${name}`, () => {
-      for (const id of CLIENT_IDS) expect(buildCoordinatorInstructions(id), `${id}: ${name}`).toMatch(pat);
-    });
+    for (const id of CLIENT_IDS) {
+      it.fails(`digest gap (expected until the stack adds it): ${name} [${id}]`, () => {
+        expect(buildCoordinatorInstructions(id), `${id}: ${name} (matrix cells: ${cells})`).toMatch(pat);
+      });
+    }
   }
 });
 
