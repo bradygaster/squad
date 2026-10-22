@@ -14,8 +14,8 @@
  * to walk into the home directory. Tests that need a specific profile location still
  * `vi.stubEnv()` these variables themselves; this guard only sets the default.
  *
- * The incident this prevents: a test on the 1.x code path rewrote the real
- * `%APPDATA%\squad\personal-squad\config.json` on a reviewer's machine.
+ * The incident this prevents: a test on the 1.x code path rewrote a real file under
+ * `%APPDATA%\squad\` on a reviewer's machine.
  */
 
 import fs from 'node:fs';

@@ -207,6 +207,43 @@ export function resolveSquad(startDir?: string): string | null {
   return result;
 }
 
+/**
+ * Platform config directory for Squad WITHOUT creating it (see {@link resolveGlobalSquadPath}).
+ */
+function platformSquadConfigDir(): string | null {
+  try {
+    const platform = process.platform;
+    let base: string;
+    if (platform === 'win32') {
+      base = process.env['APPDATA'] ?? process.env['LOCALAPPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming');
+    } else if (platform === 'darwin') {
+      base = path.join(os.homedir(), 'Library', 'Application Support');
+    } else {
+      base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
+    }
+    return path.resolve(path.join(base, 'squad'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when `teamDir` (absolute) is a location Squad 1.x used for the removed profile-level
+ * squads: the platform config `squad/` dir (or anything beneath it), `~/.squad` / `SQUAD_HOME`,
+ * or the home directory itself. Squad 2.0 never resolves a team from these; a project
+ * `config.json` still carrying such a `teamRoot` is treated as local and `squad upgrade`
+ * removes the key.
+ */
+export function isRetiredProfileTeamRoot(teamDir: string): boolean {
+  const target = path.resolve(teamDir);
+  const { homeDir, squadHome } = profileBoundary();
+  const under = (root: string | null) => root !== null && (samePath(target, root) || isAncestorOf(root, target));
+  if (homeDir && samePath(target, homeDir)) return true;
+  if (homeDir && under(path.join(homeDir, '.squad'))) return true;
+  if (squadHome && under(squadHome)) return true;
+  return under(platformSquadConfigDir());
+}
+
 /** Directories that are never project squads: the home dir and the roaming SQUAD_HOME root. */
 function profileBoundary(): { homeDir: string | null; squadHome: string | null } {
   let homeDir: string | null = null;
@@ -425,6 +462,19 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     // too high).
     const projectRoot = path.resolve(projectDir, '..');
     const teamDir = path.resolve(projectRoot, config.teamRoot);
+    // A 1.x init linked projects to the (removed) profile squad; such a teamRoot is stale,
+    // never followed, and `squad upgrade` removes it. Genuine dual-root targets are kept.
+    if (isRetiredProfileTeamRoot(teamDir)) {
+      return {
+        mode: 'local',
+        projectDir,
+        teamDir: projectRoot,
+        teamSquadDir: projectDir,
+        config: { ...config, teamRoot: '.' },
+        name,
+        isLegacy,
+      };
+    }
     return {
       mode: 'remote',
       projectDir,

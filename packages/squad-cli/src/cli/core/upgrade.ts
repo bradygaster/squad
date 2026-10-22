@@ -8,6 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
+import { clearResolveSquadCache, isRetiredProfileTeamRoot } from '@bradygaster/squad-sdk/resolution';
 import {
   backfillCastingRegistryFromTeam,
   ensureCastingRegistryPair,
@@ -249,6 +250,48 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
   return true;
 }
 
+/**
+ * Squad 1.x `init` pointed a project's `teamRoot` at the user-profile squad that 2.0 removed.
+ * Such a project would resolve in remote mode against a directory Squad no longer reads.
+ * Remove the key (nothing else in config.json changes); genuine dual-root targets stay.
+ */
+function stripRetiredProfileTeamRoot(squadDir: string, dest: string, dryRun: boolean): void {
+  const configPath = path.join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) return;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(storage.readSync(configPath) ?? '') as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const teamRoot = parsed['teamRoot'];
+  if (typeof teamRoot !== 'string' || teamRoot.length === 0 || teamRoot === '.') return;
+  const target = path.resolve(dest, teamRoot);
+  if (!isRetiredProfileTeamRoot(target)) return;
+  if (dryRun) {
+    info(`Would remove stale teamRoot pointing to ${target}; project state would be local`);
+    return;
+  }
+  delete parsed['teamRoot'];
+  storage.writeSync(configPath, JSON.stringify(parsed, null, 2) + '\n');
+  clearResolveSquadCache();
+  info(`Removed stale teamRoot pointing to ${target}; project state is now local`);
+}
+
+/**
+ * Remove every machine-written stamp from a coordinator file so two copies that differ only
+ * by version/package-spec markers compare equal (an upgrade must not read its own stamps as
+ * a user customization).
+ */
+export function stripAgentStamps(s: string): string {
+  return s
+    .replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '')
+    .replace(/<!-- version: [^>]+ -->/g, '<!-- version: X -->')
+    .replace(/- \*\*Version:\*\* [^\n]+/g, '- **Version:** X')
+    .replace(/`Squad v[^`]+`/g, '`Squad vX`')
+    .replace(/@bradygaster\/squad-cli@[^\s"'\]]+/g, '@bradygaster/squad-cli@X');
+}
+
 function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean, options?: { dryRun?: boolean; squadDir?: string }): void {
   let agentContent = storage.readSync(agentSrc) ?? '';
   if (mcpConfigMode === 'agent-frontmatter') {
@@ -258,11 +301,9 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
   // Back up locally-customized squad.agent.md before overwriting (#1052)
   if (storage.existsSync(agentDest)) {
     const existing = storage.readSync(agentDest) ?? '';
-    // Strip the version stamp before comparing (version line changes every upgrade)
-    const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
-    // Strip the generated Team Capabilities block too (#1608) — it is machine
-    // written on every cast change and must not read as a user customization.
-    const normalize = (s: string) => stripTeamCapabilitiesBlock(stripVersion(s));
+    // Strip every stamp form before comparing (they change on every upgrade), and the
+    // generated Team Capabilities block (#1608) — machine written on every cast change.
+    const normalize = (s: string) => stripTeamCapabilitiesBlock(stripAgentStamps(s));
     const normalizedExisting = normalize(existing.replace(/\r\n/g, '\n'));
     const normalizedTemplate = normalize(agentContent.replace(/\r\n/g, '\n'));
 
@@ -272,7 +313,10 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
         warn(`squad.agent.md has local customizations — would back up to ${path.basename(backupPath)}`);
         return;
       }
-      storage.writeSync(backupPath, existing);
+      // Keep an existing backup when it already holds this exact content.
+      if ((storage.existsSync(backupPath) ? storage.readSync(backupPath) : null) !== existing) {
+        storage.writeSync(backupPath, existing);
+      }
       warn(`squad.agent.md has local customizations — backed up to ${path.basename(backupPath)}`);
       info(`  To restore: copy ${path.basename(backupPath)} → ${path.basename(agentDest)}`);
     } else if (options?.dryRun) {
@@ -1307,6 +1351,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
   const oldVersion = readInstalledVersion(agentDest) ?? '0.0.0';
+  stripRetiredProfileTeamRoot(squadDirInfo.path, dest, options.dryRun === true);
   const squadConfig = readSquadConfig(squadDirInfo.path);
   const mcpConfigMode = detectMcpConfigMode(squadConfig, agentDest);
   const isGitHubForMcp = detectIsGitHubForMcp(dest, squadConfig);

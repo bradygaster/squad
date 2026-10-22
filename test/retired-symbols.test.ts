@@ -45,6 +45,7 @@ const ALLOWLIST: Record<string, string> = {
   'docs/src/content/docs/guide/contributors.md': 'contributor credit for a 1.x PR',
   'test/profile-squad-tombstone.test.ts': 'tombstone test must name the directories it proves untouched',
   'test/cli-outside-project.test.ts': 'tombstone test must name the directories it proves untouched',
+  'test/upgrade-profile-teamroot.test.ts': 'tombstone test must name the directories it proves untouched',
   'test/retired-symbols.test.ts': 'this gate',
 };
 

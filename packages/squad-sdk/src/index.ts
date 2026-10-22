@@ -10,7 +10,7 @@ const pkg = require('../package.json');
 export const VERSION: string = pkg.version;
 
 // Export public API
-export { resolveSquad, resolveGlobalSquadPath, ensureSquadPath, loadDirConfig, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadHome, ensureSquadHome, resolvePresetsDir, resolveSquadState, clearResolveSquadCache } from './resolution.js';
+export { resolveSquad, resolveGlobalSquadPath, isRetiredProfileTeamRoot, ensureSquadPath, loadDirConfig, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadHome, ensureSquadHome, resolvePresetsDir, resolveSquadState, clearResolveSquadCache } from './resolution.js';
 export type { ResolvedSquadPaths, SquadDirConfig, SquadStateContext } from './resolution.js';
 export * from './config/index.js';
 export * from './agents/onboarding.js';
