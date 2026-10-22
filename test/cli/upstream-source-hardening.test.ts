@@ -50,6 +50,8 @@ describe('unsafeGitSourceReason: transport allow-list', () => {
     ['https://dev.azure.com/org/project/_git/repo', null],
     ['ssh://git@github.com/acme/platform.git', null],
     ['git@github.com:acme/platform.git', null],
+    ['ssh://git@ssh.dev.azure.com:22/v3/org/project/repo', null],
+    ['https://user:token@ghe.example.com/acme/platform.git', null],
   ])('accepts %s', (src, expected) => {
     expect(unsafeGitSourceReason(src)).toBe(expected);
   });
@@ -63,6 +65,15 @@ describe('unsafeGitSourceReason: transport allow-list', () => {
     ['http://example.com/repo.git', /unsupported transport \(http:\/\/\)/],
     ['git@github.com:acme/platform.git extra', /whitespace/],
     ['acme/platform', /not an https:\/\/, ssh:\/\/ or git@host:path URL/],
+    // LB-3: option-looking components that git's own URL parser would otherwise hand to ssh/curl
+    ['ssh://-oProxyCommand=calc.exe/repo.git', /option-injection guard/],
+    ['ssh://git@-oProxyCommand=calc.exe/repo.git', /option-injection guard/],
+    ['git@-x:acme/platform.git', /option-injection guard/],
+    ['-x@github.com:acme/platform.git', /starts with "-"/],
+    ['git@github.com:-oProxyCommand=calc.exe', /option-injection guard/],
+    ['https://github.com/-oProxyCommand=calc.exe', /option-injection guard/],
+    ['https://-oProxyCommand=calc.exe/x', /option-injection guard/],
+    ['ssh://git@github.com:notaport/x', /option-injection guard/],
   ])('refuses %s', (src, pattern) => {
     expect(unsafeGitSourceReason(src)).toMatch(pattern);
   });

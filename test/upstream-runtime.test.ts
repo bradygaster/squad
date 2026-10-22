@@ -473,7 +473,21 @@ describe('resolveUpstreams: TOCTOU-safe reads and traversal budgets (Q review)',
     }
   }
 
-  it('refuses when a directory on the path is swapped for a junction/symlink between the lstat check and open (deterministic hook)', () => {
+  const canLink = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-link-probe-'));
+    try {
+      fs.mkdirSync(path.join(probe, 'target'));
+      fs.symlinkSync(path.join(probe, 'target'), path.join(probe, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+      return true;
+    } catch {
+      return false;
+    } finally {
+      fs.rmSync(probe, { recursive: true, force: true });
+    }
+  })();
+
+  // Skips LOUDLY (reason in the reporter) when this host cannot create links; it never passes vacuously.
+  it.skipIf(!canLink)('refuses when a directory on the path is swapped for a junction/symlink between the lstat check and open (deterministic hook) [needs symlink/junction privilege]', () => {
     const outside = path.join(tmp, 'outside-squad');
     fs.mkdirSync(outside, { recursive: true });
     fs.writeFileSync(path.join(outside, 'decisions.md'), '# OUTSIDE-SWAPPED-IN\n');
@@ -489,7 +503,7 @@ describe('resolveUpstreams: TOCTOU-safe reads and traversal budgets (Q review)',
         swapped = tryLink(outside, org, 'dir');
       },
     })!;
-    if (!swapped) return; // no link privilege on this host
+    expect(swapped, 'the swap must have happened for this test to prove anything').toBe(true);
     const u = res.upstreams[0]!;
     expect(u.status, u.diagnostic ?? '').toBe('invalid');
     expect(u.diagnostic).toMatch(/changed between stat and open|outside the upstream snapshot|symlink\/junction|could not be opened safely/);
@@ -583,6 +597,96 @@ describe('resolveUpstreams: TOCTOU-safe reads and traversal budgets (Q review)',
     const within = resolveUpstreams(repo)!.upstreams[0]!;
     expect(within.status, 'defaults are generous enough for a normal squad').toBe('ok');
     expect(within.skills).toHaveLength(12);
+  });
+
+  it('a git snapshot cannot point nested local/export declarations at other paths on this machine (LB-1, Worf repro)', () => {
+    // Victim: another project on the same machine, never declared by the user.
+    const victim = squad(path.join(tmp, 'victim'), { decisions: '# VICTIM-PRIVATE-DECISIONS\n', skills: { secret: 'VICTIM-SECRET-SKILL' } });
+    const arbitraryJson = path.join(tmp, 'arbitrary.json');
+    fs.writeFileSync(arbitraryJson, JSON.stringify({ skills: [{ name: 'injected', content: 'ARBITRARY-JSON-SKILL' }], casting: { policy: { pwned: true } } }));
+    // Attacker: a synced git upstream whose own upstream.json declares local + export entries.
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [{ name: 'evil', type: 'git', source: 'https://example.com/evil.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: new Date().toISOString() }] });
+    const clone = path.join(repo, '_upstream_repos', 'evil');
+    squad(clone, { decisions: '# evil-own\n', upstreams: [
+      local('steal-local', path.dirname(victim)),
+      { name: 'steal-export', type: 'export', source: arbitraryJson, added_at: '2026-01-01T00:00:00.000Z', last_synced: null },
+      local('steal-abs-squad', victim),
+    ] });
+
+    const res = resolveUpstreams(repo)!;
+    const evil = res.upstreams.find((u) => u.name === 'evil')!;
+    expect(evil.status).toBe('ok');
+    const nested = res.upstreams.filter((u) => u.depth === 2);
+    expect(nested.map((u) => [u.name, u.status])).toEqual([['steal-local', 'invalid'], ['steal-export', 'invalid'], ['steal-abs-squad', 'invalid']]);
+    for (const u of nested) {
+      expect(u.diagnostic, u.name).toMatch(/nested (local|export) upstream declared inside the git snapshot of evil/);
+      expect(u.skills).toEqual([]);
+      expect(u.decisions).toBeNull();
+      expect(u.castingPolicy).toBeNull();
+    }
+    const report = formatUpstreamReport(res, buildEffectiveUpstreamContext(res, []), { detail: true });
+    expect(report).not.toMatch(/VICTIM-PRIVATE-DECISIONS|VICTIM-SECRET-SKILL|ARBITRARY-JSON-SKILL/);
+    expect(res.diagnostics.length).toBe(3);
+    // Doctor must not report this as healthy.
+    expect(checkUpstreams(repo)!.status).not.toBe('pass');
+  });
+
+  it('user-declared local chains still inherit through nested local declarations (only git snapshots are third-party)', () => {
+    const grand = squad(path.join(tmp, 'grand'), { decisions: '# grand\n' });
+    const org = squad(path.join(tmp, 'org'), { upstreams: [local('grand', path.dirname(grand))] });
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('org', path.dirname(org))] });
+    const res = resolveUpstreams(repo)!;
+    expect(res.upstreams.map((u) => [u.name, u.depth, u.status])).toEqual([['org', 1, 'ok'], ['grand', 2, 'ok']]);
+  });
+
+  it('a git snapshot can only carry nested git upstreams it synced itself, under a plain-identifier name', () => {
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [{ name: 'org', type: 'git', source: 'https://example.com/org.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: new Date().toISOString() }] });
+    const orgClone = path.join(repo, '_upstream_repos', 'org');
+    squad(orgClone, { decisions: '# org\n', upstreams: [
+      { name: 'platform', type: 'git', source: 'https://example.com/platform.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: new Date().toISOString() },
+      { name: '../../../escape', type: 'git', source: 'https://example.com/x.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: null },
+    ] });
+    squad(path.join(orgClone, '.squad', '_upstream_repos', 'platform'), { decisions: '# platform\n' });
+    const res = resolveUpstreams(repo)!;
+    expect(res.upstreams.map((u) => [u.name, u.depth, u.status])).toEqual([['org', 1, 'ok'], ['platform', 2, 'ok'], ['../../../escape', 2, 'invalid']]);
+    expect(res.upstreams[2]!.diagnostic).toMatch(/not a plain identifier/);
+  });
+
+  it('reads a nested upstream.json through the confined reader: links are refused, it is capped at 256 KiB, and byte/file budgets are cumulative across the whole resolution (LB-2)', () => {
+    // (a) nested upstream.json that is a symlink to a file outside the snapshot
+    const outsideCfg = path.join(tmp, 'outside-upstream.json');
+    fs.writeFileSync(outsideCfg, JSON.stringify({ upstreams: [local('x', tmp)] }));
+    const org = squad(path.join(tmp, 'org'), { decisions: '# org\n' });
+    const linked = tryLink(outsideCfg, path.join(org, 'upstream.json'), 'file');
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('org', path.dirname(org))] });
+    const res = resolveUpstreams(repo)!;
+    expect(res.upstreams[0]!.status).toBe('ok');
+    if (linked) {
+      const refused = res.upstreams.find((u) => u.name === 'org/upstream.json');
+      expect(refused?.status, 'linked nested upstream.json must be refused, not followed').toBe('invalid');
+      expect(refused?.diagnostic).toMatch(/symlink\/junction/);
+      expect(res.upstreams.some((u) => u.name === 'x')).toBe(false);
+    }
+
+    // (b) oversized nested upstream.json
+    const big = squad(path.join(tmp, 'big'), { decisions: '# big\n' });
+    fs.writeFileSync(path.join(big, 'upstream.json'), JSON.stringify({ upstreams: [], pad: 'x'.repeat(300 * 1024) }));
+    const repo2 = squad(path.join(tmp, 'repo2'), { upstreams: [local('big', path.dirname(big))] });
+    const res2 = resolveUpstreams(repo2)!;
+    expect(res2.upstreams[0]!.status).toBe('ok');
+    expect(res2.upstreams.find((u) => u.name === 'big/upstream.json')?.diagnostic).toMatch(/above the 262144-byte per-file cap/);
+
+    // (c) cumulative budget: two upstreams of 600 KiB each against a 1 MiB total → the second is refused
+    const a = squad(path.join(tmp, 'a'), { decisions: 'a'.repeat(600 * 1024) });
+    const b = squad(path.join(tmp, 'b'), { decisions: 'b'.repeat(600 * 1024) });
+    const repo3 = squad(path.join(tmp, 'repo3'), { upstreams: [local('a', path.dirname(a)), local('b', path.dirname(b))] });
+    const res3 = resolveUpstreams(repo3, undefined, { readLimits: { maxTotalBytes: 1024 * 1024 } })!;
+    expect(res3.upstreams.map((u) => [u.name, u.status])).toEqual([['a', 'ok'], ['b', 'invalid']]);
+    expect(res3.upstreams[1]!.diagnostic).toMatch(/cumulative snapshot size exceeds .*shared by every upstream/);
+    // and the file-count budget spans upstreams too
+    const res4 = resolveUpstreams(repo3, undefined, { readLimits: { maxFiles: 1 } })!;
+    expect(res4.upstreams.map((u) => u.status)).toEqual(['ok', 'invalid']);
+    expect(res4.upstreams[1]!.diagnostic).toMatch(/more than 1 files across the upstream snapshots/);
   });
 
   it('the squad_state_upstreams tool output fences a malicious payload and states fences are not a sandbox', async () => {

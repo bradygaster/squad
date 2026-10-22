@@ -44,6 +44,8 @@ export const DEFAULT_UPSTREAM_MAX_DEPTH = 3;
 export const DEFAULT_UPSTREAM_STALE_DAYS = 30;
 /** Largest single file (bytes) read from an upstream snapshot; bigger files invalidate the upstream. */
 export const UPSTREAM_MAX_FILE_BYTES = 1024 * 1024;
+/** Largest nested `upstream.json` (bytes) read from inside a snapshot. */
+export const UPSTREAM_MAX_NESTED_CONFIG_BYTES = 256 * 1024;
 
 export const DEFAULT_UPSTREAM_READ_LIMITS: Readonly<UpstreamReadLimits> = Object.freeze({
   maxFileBytes: UPSTREAM_MAX_FILE_BYTES,
@@ -62,6 +64,16 @@ class UpstreamReadRefused extends Error {
 }
 
 /**
+ * Byte/file budget shared by every snapshot read in ONE resolution, so N nested upstreams
+ * cannot multiply the limits (the caps are for the whole session, not per upstream).
+ */
+class ReadBudget {
+  filesRead = 0;
+  bytesPlanned = 0;
+  constructor(readonly limits: UpstreamReadLimits) {}
+}
+
+/**
  * Reads files of ONE upstream snapshot, confined to `root`, without check-then-use races.
  *
  * Upstreams are third-party content by design. For every file:
@@ -71,23 +83,29 @@ class UpstreamReadRefused extends Error {
  *    require `dev`/`ino`/`size` to match the pre-open `lstat` (a swap between the two is refused);
  * 4. re-verify the directory chain's `realpath` is inside `root` AFTER the open;
  * 5. read through the descriptor only.
- * Directory listings are capped at `maxDirEntries`; path depth at `maxPathDepth`.
+ * Directory listings are capped at `maxDirEntries`; path depth at `maxPathDepth`. The byte and
+ * file budget is shared across every reader of one resolution (see {@link ReadBudget}).
  */
 class ContainedReader {
   private readonly realRoot: string;
   private readonly absRoot: string;
-  private filesRead = 0;
-  private bytesPlanned = 0;
+  private readonly limits: UpstreamReadLimits;
 
   constructor(
     readonly root: string,
     private readonly storage: StorageProvider,
     private readonly fsBacked: boolean,
-    private readonly limits: UpstreamReadLimits = DEFAULT_UPSTREAM_READ_LIMITS,
+    private readonly budget: ReadBudget = new ReadBudget(DEFAULT_UPSTREAM_READ_LIMITS),
     private readonly beforeOpen?: UpstreamReadHook,
   ) {
+    this.limits = budget.limits;
     this.absRoot = path.resolve(root);
     this.realRoot = fsBacked ? (safeRealpath(root) ?? this.absRoot) : this.absRoot;
+  }
+
+  /** True when `p` (resolved) lies under this reader's root. */
+  contains(p: string): boolean {
+    return isWithin(this.absRoot, path.resolve(p));
   }
 
   /** Relative segments of `target` under the root; refuses escapes and excessive depth. */
@@ -129,7 +147,10 @@ class ContainedReader {
 
   private assertDirChainInsideRoot(target: string): void {
     const real = safeRealpath(path.dirname(path.resolve(target)));
-    if (real && !isWithin(this.realRoot, real)) {
+    if (real === null) {
+      throw new UpstreamReadRefused(`${target}: the directory chain could not be canonicalized after open; refusing to read`);
+    }
+    if (!isWithin(this.realRoot, real)) {
       throw new UpstreamReadRefused(`${target} lives under ${real}, outside the upstream snapshot ${this.root}`);
     }
   }
@@ -156,25 +177,33 @@ class ContainedReader {
     return entries;
   }
 
-  /** Read a text file, or null when it does not exist. */
-  readOptional(p: string): string | null {
+  /**
+   * Read a text file, or null when it does not exist. `maxBytes` tightens the per-file cap
+   * for files that must stay small (nested `upstream.json`).
+   */
+  readOptional(p: string, maxBytes: number = this.limits.maxFileBytes): string | null {
     const st = this.lstatChain(p);
     if (!this.fsBacked) {
-      return this.storage.existsSync(p) ? (this.storage.readSync(p) ?? null) : null;
+      const text = this.storage.existsSync(p) ? (this.storage.readSync(p) ?? null) : null;
+      if (text !== null && Buffer.byteLength(text, 'utf8') > maxBytes) {
+        throw new UpstreamReadRefused(`${p} is above the ${maxBytes}-byte cap`);
+      }
+      return text;
     }
     if (st === null) return null;
     if (!st.isFile()) {
       throw new UpstreamReadRefused(`${p} is not a regular file`);
     }
-    // Budget from lstat sizes, before any open/read.
-    if (st.size > this.limits.maxFileBytes) {
-      throw new UpstreamReadRefused(`${p} is ${st.size} bytes, above the ${this.limits.maxFileBytes}-byte per-file cap`);
+    // Budget from lstat sizes, before any open/read; the file/byte totals span the whole resolution.
+    const cap = Math.min(maxBytes, this.limits.maxFileBytes);
+    if (st.size > cap) {
+      throw new UpstreamReadRefused(`${p} is ${st.size} bytes, above the ${cap}-byte per-file cap`);
     }
-    if (this.filesRead + 1 > this.limits.maxFiles) {
-      throw new UpstreamReadRefused(`more than ${this.limits.maxFiles} files in one upstream snapshot`);
+    if (this.budget.filesRead + 1 > this.limits.maxFiles) {
+      throw new UpstreamReadRefused(`more than ${this.limits.maxFiles} files across the upstream snapshots of this resolution`);
     }
-    if (this.bytesPlanned + st.size > this.limits.maxTotalBytes) {
-      throw new UpstreamReadRefused(`cumulative snapshot size exceeds the ${this.limits.maxTotalBytes}-byte limit at ${p}`);
+    if (this.budget.bytesPlanned + st.size > this.limits.maxTotalBytes) {
+      throw new UpstreamReadRefused(`cumulative snapshot size exceeds the ${this.limits.maxTotalBytes}-byte limit (shared by every upstream in this resolution) at ${p}`);
     }
     this.beforeOpen?.(p);
 
@@ -194,8 +223,8 @@ class ContainedReader {
         throw new UpstreamReadRefused(`${p} changed between stat and open (dev/ino/size mismatch); refusing to read`);
       }
       this.assertDirChainInsideRoot(p);
-      this.filesRead += 1;
-      this.bytesPlanned += st.size;
+      this.budget.filesRead += 1;
+      this.budget.bytesPlanned += st.size;
       return fs.readFileSync(fd, 'utf8');
     } finally {
       fs.closeSync(fd);
@@ -230,6 +259,22 @@ export function readUpstreamConfig(squadDir: string, storage: StorageProvider = 
 
   try {
     const raw = storage.readSync(configPath) ?? '';
+    const parsed = JSON.parse(raw) as UpstreamConfig;
+    if (!parsed.upstreams || !Array.isArray(parsed.upstreams)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a snapshot's own `upstream.json` through its confined reader (no symlink following,
+ * 256 KiB cap, counted against the shared budget). Malformed or oversized → null.
+ */
+function readNestedUpstreamConfig(squadDir: string, reader: ContainedReader): UpstreamConfig | null {
+  const raw = reader.readOptional(path.join(squadDir, 'upstream.json'), UPSTREAM_MAX_NESTED_CONFIG_BYTES);
+  if (raw === null) return null;
+  try {
     const parsed = JSON.parse(raw) as UpstreamConfig;
     if (!parsed.upstreams || !Array.isArray(parsed.upstreams)) return null;
     return parsed;
@@ -316,6 +361,8 @@ interface Frame {
   via: string[];
   /** Identities (resolved squad dirs) already on the inheritance chain, root first. */
   chain: string[];
+  /** True once a git (third-party) snapshot is on the chain: its declarations are untrusted. */
+  thirdParty: boolean;
 }
 
 function emptyUpstream(entry: UpstreamSource, frame: Frame, status: UpstreamStatus, diagnostic: string | null): ResolvedUpstream {
@@ -427,6 +474,8 @@ function cycleDiagnostic(entry: UpstreamSource, frame: Frame, dir: string): stri
   return `${entry.name}: cycle detected (${[...frame.via, entry.name].join(' -> ')} resolves back to ${dir}); not read`;
 }
 
+interface ResolvedWithReader { resolved: ResolvedUpstream; reader: ContainedReader | null }
+
 function resolveOne(
   squadDir: string,
   entry: UpstreamSource,
@@ -434,61 +483,76 @@ function resolveOne(
   storage: StorageProvider,
   staleAfterDays: number,
   now: Date,
-  limits: UpstreamReadLimits,
+  budget: ReadBudget,
   beforeOpen?: UpstreamReadHook,
-): ResolvedUpstream {
+): ResolvedWithReader {
   // Relative sources resolve against the declaring squad's project root, never the cwd,
   // so a bridge launched from a monorepo subfolder sees the same upstreams as the root.
   const declaringRoot = path.dirname(path.resolve(squadDir));
   const fsBacked = storage instanceof FSStorageProvider;
-  const contained = (root: string) => new ContainedReader(root, storage, fsBacked, limits, beforeOpen);
+  const contained = (root: string) => new ContainedReader(root, storage, fsBacked, budget, beforeOpen);
+  const done = (resolved: ResolvedUpstream, reader: ContainedReader | null = null): ResolvedWithReader => ({ resolved, reader });
 
   try {
+    // Declarations found INSIDE a third-party (git) snapshot must not be able to point the reader
+    // at an arbitrary path on this machine: only git upstreams that the snapshot itself carries
+    // (synced into its own `_upstream_repos/`) are followed; nested local/export paths are not.
+    // Chains made only of user-declared local directories keep working.
+    if (frame.thirdParty && entry.type !== 'git') {
+      return done(emptyUpstream(entry, frame, 'invalid',
+        `${entry.name}: nested ${entry.type} upstream declared inside the git snapshot of ${frame.via[frame.via.length - 1]} (depth ${frame.depth}) is not inherited — a synced snapshot may only reference git upstreams it carries itself; not read`));
+    }
+
     if (entry.type === 'local') {
       const source = path.resolve(declaringRoot, entry.source);
       const reader = contained(snapshotRoot(source));
       const upstreamSquadDir = findSquadDir(source, reader);
       if (!upstreamSquadDir) {
-        return emptyUpstream(entry, frame, 'missing',
-          `${entry.name}: local source not found (${entry.source}); fix the path or run "squad upstream remove ${entry.name}"`);
+        return done(emptyUpstream(entry, frame, 'missing',
+          `${entry.name}: local source not found (${entry.source}); fix the path or run "squad upstream remove ${entry.name}"`));
       }
       if (frame.chain.includes(identityOf(upstreamSquadDir))) {
-        return emptyUpstream(entry, frame, 'cycle', cycleDiagnostic(entry, frame, upstreamSquadDir));
+        return done(emptyUpstream(entry, frame, 'cycle', cycleDiagnostic(entry, frame, upstreamSquadDir)));
       }
-      return resolveFromSquadDir(entry, upstreamSquadDir, frame, 'ok', null, reader);
+      return done(resolveFromSquadDir(entry, upstreamSquadDir, frame, 'ok', null, reader), reader);
     }
 
     if (entry.type === 'git') {
+      // A clone name with separators would escape `_upstream_repos/`; the CLI rejects such names,
+      // but a nested snapshot's upstream.json is untrusted, so check here too.
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry.name)) {
+        return done(emptyUpstream(entry, frame, 'invalid', `${entry.name}: upstream name is not a plain identifier; not read`));
+      }
       const cloneDir = path.join(squadDir, '_upstream_repos', entry.name);
       const reader = contained(cloneDir);
       const cloneSquadDir = findSquadDir(cloneDir, reader);
       if (!cloneSquadDir) {
-        return emptyUpstream(entry, frame, 'unavailable',
-          `${entry.name}: git upstream is not materialized locally (${path.join('.squad', '_upstream_repos', entry.name)} missing); run "squad upstream sync ${entry.name}" — session start never fetches`);
+        return done(emptyUpstream(entry, frame, 'unavailable',
+          `${entry.name}: git upstream is not materialized locally (${path.join('.squad', '_upstream_repos', entry.name)} missing); run "squad upstream sync ${entry.name}" — session start never fetches`));
       }
       if (frame.chain.includes(identityOf(cloneSquadDir))) {
-        return emptyUpstream(entry, frame, 'cycle', cycleDiagnostic(entry, frame, cloneSquadDir));
+        return done(emptyUpstream(entry, frame, 'cycle', cycleDiagnostic(entry, frame, cloneSquadDir)));
       }
       const stale = staleReason(entry, staleAfterDays, now);
-      return resolveFromSquadDir(
+      return done(resolveFromSquadDir(
         entry,
         cloneSquadDir,
         frame,
         stale ? 'stale' : 'ok',
         stale ? `${entry.name}: using the local clone but it may be out of date (${stale}); run "squad upstream sync ${entry.name}" to refresh` : null,
         reader,
-      );
+      ), reader);
     }
 
     const exportPath = path.resolve(declaringRoot, entry.source);
     const reader = contained(path.dirname(exportPath));
     if (!reader.exists(exportPath)) {
-      return emptyUpstream(entry, frame, 'missing',
-        `${entry.name}: export file not found (${entry.source}); fix the path or run "squad upstream remove ${entry.name}"`);
+      return done(emptyUpstream(entry, frame, 'missing',
+        `${entry.name}: export file not found (${entry.source}); fix the path or run "squad upstream remove ${entry.name}"`));
     }
-    return resolveFromExport(entry, exportPath, frame, reader);
+    return done(resolveFromExport(entry, exportPath, frame, reader), reader);
   } catch (err) {
-    return emptyUpstream(entry, frame, 'invalid', `${entry.name}: refused to read snapshot (${(err as Error).message}); nothing inherited from it`);
+    return done(emptyUpstream(entry, frame, 'invalid', `${entry.name}: refused to read snapshot (${(err as Error).message}); nothing inherited from it`));
   }
 }
 
@@ -518,6 +582,7 @@ export function resolveUpstreams(
   const staleAfterDays = options.staleAfterDays ?? DEFAULT_UPSTREAM_STALE_DAYS;
   const now = options.now ?? new Date();
   const limits: UpstreamReadLimits = { ...DEFAULT_UPSTREAM_READ_LIMITS, ...(options.readLimits ?? {}) };
+  const budget = new ReadBudget(limits);
   const results: ResolvedUpstream[] = [];
   const diagnostics: string[] = [];
   // Squad dirs already read in this resolution: a diamond (repo -> org, repo -> team -> org)
@@ -538,7 +603,7 @@ export function resolveUpstreams(
         continue;
       }
 
-      const resolved = resolveOne(dir, raw, frame, storage, staleAfterDays, now, limits, options.beforeOpen);
+      const { resolved, reader } = resolveOne(dir, raw, frame, storage, staleAfterDays, now, budget, options.beforeOpen);
       const readable = resolved.status === 'ok' || resolved.status === 'stale';
       if (readable && resolved.squadDir) {
         const id = identityOf(resolved.squadDir);
@@ -547,15 +612,25 @@ export function resolveUpstreams(
       }
       push(resolved);
 
-      if (!readable || resolved.type === 'export' || !resolved.squadDir) continue;
+      if (!readable || resolved.type === 'export' || !resolved.squadDir || !reader) continue;
 
-      const nested = readUpstreamConfig(resolved.squadDir, storage);
+      // The snapshot's own upstream.json is third-party content: read it through the same
+      // confined reader (no links, small cap, shared budget), never through raw storage.
+      let nested: UpstreamConfig | null;
+      try {
+        nested = readNestedUpstreamConfig(resolved.squadDir, reader);
+      } catch (err) {
+        push(emptyUpstream({ name: `${raw.name}/upstream.json`, type: raw.type, source: raw.source, added_at: '', last_synced: null }, frame, 'invalid',
+          `${raw.name}: its upstream.json was refused (${(err as Error).message}); its nested upstreams are not followed`));
+        continue;
+      }
       if (!nested || nested.upstreams.length === 0) continue;
 
       const nextFrame: Frame = {
         depth: frame.depth + 1,
         via: [...frame.via, raw.name],
         chain: [...frame.chain, identityOf(resolved.squadDir)],
+        thirdParty: frame.thirdParty || resolved.type === 'git',
       };
       if (nextFrame.depth > maxDepth) {
         for (const n of nested.upstreams) {
@@ -569,7 +644,7 @@ export function resolveUpstreams(
     }
   };
 
-  visit(squadDir, config, { depth: 1, via: [], chain: [identityOf(squadDir)] });
+  visit(squadDir, config, { depth: 1, via: [], chain: [identityOf(squadDir)], thirdParty: false });
   return { upstreams: results, diagnostics, maxDepth };
 }
 

@@ -41,9 +41,17 @@ export function unsafeGitSourceReason(source: string): string | null {
   if (s.startsWith('-')) return 'starts with "-" and could be parsed as a git option';
   if (/^[a-z][a-z0-9+.-]*::/i.test(s)) return 'uses a git remote helper (ext::, fd::, …), which is not allowed';
   if (/[\s\0\r\n\t]/.test(s)) return 'contains whitespace or control characters';
-  if (/^https:\/\/[^/]+\/./i.test(s)) return null;
-  if (/^ssh:\/\/[^/]+\/./i.test(s)) return null;
-  if (/^[a-z0-9._-]+@[a-z0-9.-]+:(?!\/)[^:]+$/i.test(s)) return null; // git@host:owner/repo
+  // Host: letters/digits/dots/dashes, must not start with a dash or dot, optional :port.
+  // User: letters/digits/._-, must not start with a dash. Path: must not start with a dash.
+  const HOST = '[A-Za-z0-9][A-Za-z0-9.-]*(?::\\d{1,5})?';
+  const USER = '[A-Za-z0-9._][A-Za-z0-9._-]*';
+  const PATH_NO_DASH = '(?!-)[^\\s]+';
+  if (new RegExp(`^https://(?:${USER}(?::[^@/\\s]*)?@)?${HOST}/${PATH_NO_DASH}$`).test(s)) return null;
+  if (new RegExp(`^ssh://(?:${USER}@)?${HOST}/${PATH_NO_DASH}$`).test(s)) return null;
+  if (new RegExp(`^${USER}@[A-Za-z0-9][A-Za-z0-9.-]*:(?![/-])[^:\\s]+$`).test(s)) return null; // git@host:owner/repo
+  if (/^(https|ssh):\/\//i.test(s) || /^[^@\s]+@[^:\s]+:/.test(s)) {
+    return 'has a user, host or path component that is empty, starts with "-" or contains characters outside [A-Za-z0-9._-] (option-injection guard)';
+  }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return `uses an unsupported transport (${s.split('://')[0]}://); allowed: https://, ssh://, git@host:path`;
   return 'is not an https://, ssh:// or git@host:path URL (local directories are added as "local" upstreams)';
 }
