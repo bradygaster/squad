@@ -1708,7 +1708,7 @@
       "cells": {
         "copilot": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],
@@ -1716,7 +1716,7 @@
         },
         "claude": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],
@@ -1724,7 +1724,7 @@
         },
         "kiro": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],
@@ -1732,7 +1732,7 @@
         },
         "opencode": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],
@@ -1740,7 +1740,7 @@
         },
         "cursor": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],
@@ -1748,7 +1748,7 @@
         },
         "codex": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],
@@ -1756,7 +1756,7 @@
         },
         "antigravity": {
           "status": "n/a",
-          "mechanism": "Removed in Squad 2.0 (Brady: \"personal squads can die a fiery death\"). `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
+          "mechanism": "Removed in Squad 2.0. `squad personal|consult|extract` print a one-time notice and exit non-zero; `squad init` never writes outside the project `.squad/`; `squad doctor`/`squad upgrade` report untouched 1.x leftovers; `squad import --legacy-personal` copies agents out of the 1.x directory read-only. Cross-project sharing: upstream inheritance or `squad export`/`squad import`.",
           "validation": [
             "validated-test:test/personal-squad-removal.test.ts::*"
           ],

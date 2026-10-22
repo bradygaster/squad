@@ -12,6 +12,7 @@ import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { printPersonalSquadMigrationNoticeIfNeeded } from './personal-squad-notice.js';
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
@@ -584,6 +585,10 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   console.log(`${DIM}Tip: for non-interactive scripts that need squad_state tools, add to package.json:${RESET}`);
   console.log(`${DIM}  "squad:copilot": "copilot --agent squad --additional-mcp-config @.mcp.json"${RESET}`);
   console.log();
+
+  // Squad 2.0 removed personal squads: a 1.x init would have linked this project to one.
+  // Say so once (read-only detection; nothing is touched) so the user knows how to migrate.
+  if (!options.isGlobal) printPersonalSquadMigrationNoticeIfNeeded(null);
 
   if (squadInfo.isLegacy) {
     showDeprecationWarning();

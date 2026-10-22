@@ -20,6 +20,7 @@ import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runUpgrade } from '@bradygaster/squad-cli/core/upgrade';
 import { runCastAdd } from '@bradygaster/squad-cli/commands/cast';
 import { checkLegacyPersonalSquad } from '@bradygaster/squad-cli/commands/doctor';
+import { runImportLegacyPersonal } from '../packages/squad-cli/src/cli/commands/import-legacy-personal.js';
 import { printPersonalSquadRemovedNotice, printPersonalSquadMigrationNoticeIfNeeded, PERSONAL_SQUAD_REMOVED_HEADLINE } from '../packages/squad-cli/src/cli/core/personal-squad-notice.js';
 import { installClients, uninstallClients } from '@bradygaster/squad-sdk/client';
 import { clearResolveSquadCache, detectLegacyPersonalSquad, legacyPersonalSquadPath, resolveSquadPaths } from '@bradygaster/squad-sdk/resolution';
@@ -105,6 +106,7 @@ describe('personal squad removal: legacy data is never touched, projects stay se
     expect(resolveSquadPaths(project)?.mode, 'a fresh project resolves in local mode').toBe('local');
     expect(fingerprint(legacy), 'init must not write into the legacy personal squad').toBe(before);
     expect(io.lines.join('\n'), 'init no longer advertises personal agents').not.toMatch(/[Pp]ersonal squad detected/);
+    expect(io.lines.join('\n'), 'init tells the user about the leftover once').toContain(PERSONAL_SQUAD_REMOVED_HEADLINE);
 
     const io2 = captureConsole();
     try {
@@ -124,8 +126,8 @@ describe('personal squad removal: legacy data is never touched, projects stay se
     expect(upgradeOut, 'upgrade prints the one-time migration notice').toContain(PERSONAL_SQUAD_REMOVED_HEADLINE);
     expect(upgradeOut).toContain(legacy);
     expect(upgradeOut).toMatch(/untouched/);
-    expect(upgradeOut).toMatch(/squad export/);
-    expect(upgradeOut).toMatch(/squad import/);
+    expect(upgradeOut).toContain('squad import --legacy-personal');
+    expect(upgradeOut).not.toMatch(/squad export --output/);
 
     // Idempotent: a second upgrade changes nothing in the legacy dir and still only informs.
     const io4 = captureConsole();
@@ -169,6 +171,105 @@ describe('personal squad removal: legacy data is never touched, projects stay se
   }, 180_000);
 });
 
+
+describe('personal squad removal: working migration path (review follow-ups)', () => {
+  /** A real 1.x layout: agents/ at the root, config.json, NO team.md and no casting pair. */
+  function seedReal1xPersonalSquad(dir: string): void {
+    fs.mkdirSync(path.join(dir, 'agents', 'ghostwriter'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'agents', 'navigator'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ defaultModel: 'auto', ghostProtocol: true }, null, 2) + '\n');
+    fs.writeFileSync(path.join(dir, 'agents', 'ghostwriter', 'charter.md'), '# Ghostwriter\n\n## Identity\n- **Name:** Ghostwriter\n- **Role:** Personal advisor\n\n## Rules\n- Always cite sources.\n');
+    fs.writeFileSync(path.join(dir, 'agents', 'ghostwriter', 'history.md'), '# History\n\n- learned something personal\n');
+    fs.writeFileSync(path.join(dir, 'agents', 'navigator', 'charter.md'), '# Navigator — Pathfinder\n\nNo identity block on purpose.\n');
+  }
+
+  it('squad import --legacy-personal copies agents from the real 1.x layout into the project (dry-run first), leaves the source byte-identical and skips existing names', async () => {
+    const legacy = legacyPersonalSquadPath();
+    seedReal1xPersonalSquad(legacy);
+    expect(fs.existsSync(path.join(legacy, 'team.md')), 'fixture must mirror 1.x: no team.md').toBe(false);
+    const before = fingerprint(legacy);
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(project, { recursive: true });
+    const io = captureConsole();
+    try {
+      await runInit(project);
+      clearResolveSquadCache();
+
+      const preview = await runImportLegacyPersonal(project, { dryRun: true });
+      expect(preview.dryRun).toBe(true);
+      expect(preview.imported.map((a) => a.slug)).toEqual(['ghostwriter', 'navigator']);
+      expect(fs.existsSync(path.join(project, '.squad', 'agents', 'ghostwriter')), 'dry run writes nothing').toBe(false);
+      expect(fingerprint(legacy)).toBe(before);
+
+      const result = await runImportLegacyPersonal(project);
+      expect(result.source).toBe(path.resolve(legacy));
+      expect(result.imported.map((a) => `${a.name}|${a.role}`)).toEqual(['Ghostwriter|Personal advisor', 'Navigator|agent']);
+      expect(result.skipped).toEqual([]);
+    } finally { io.restore(); }
+
+    const charter = fs.readFileSync(path.join(project, '.squad', 'agents', 'ghostwriter', 'charter.md'), 'utf8');
+    expect(charter, 'the author\'s charter text is kept verbatim').toContain('Always cite sources.');
+    expect(fs.readFileSync(path.join(project, '.squad', 'agents', 'ghostwriter', 'history.md'), 'utf8')).toContain('learned something personal');
+    expect(fs.readFileSync(path.join(project, '.squad', 'team.md'), 'utf8')).toMatch(/Ghostwriter/);
+    expect(fs.readFileSync(path.join(project, '.squad', 'team.md'), 'utf8')).toMatch(/Navigator/);
+    expect(fs.readFileSync(path.join(project, '.squad', 'casting', 'registry.json'), 'utf8')).toMatch(/ghostwriter/i);
+    expect(fingerprint(legacy), 'the 1.x directory is only read').toBe(before);
+
+    // Re-running skips what is already there and still never touches the source.
+    const io2 = captureConsole();
+    try {
+      const again = await runImportLegacyPersonal(project);
+      expect(again.imported).toEqual([]);
+      expect(again.skipped.map((s) => s.slug)).toEqual(['ghostwriter', 'navigator']);
+    } finally { io2.restore(); }
+    expect(fingerprint(legacy)).toBe(before);
+    expect(readJson(path.join(project, '.squad', 'config.json'))['teamRoot']).toBeUndefined();
+  }, 180_000);
+
+  it('accepts an explicit directory (a former SQUAD_PERSONAL_DIR) and detection honours that variable too (FUP-6)', async () => {
+    const custom = path.join(tmp, 'my-personal-squad');
+    seedReal1xPersonalSquad(custom);
+    vi.stubEnv('SQUAD_PERSONAL_DIR', custom);
+    const info = detectLegacyPersonalSquad();
+    expect(info?.personalDir, 'detection must see a 1.x SQUAD_PERSONAL_DIR override').toBe(custom);
+
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(project, { recursive: true });
+    const io = captureConsole();
+    try {
+      await runInit(project);
+      clearResolveSquadCache();
+      const result = await runImportLegacyPersonal(project, { from: custom });
+      expect(result.imported.map((a) => a.slug)).toEqual(['ghostwriter', 'navigator']);
+    } finally { io.restore(); }
+    expect(fs.existsSync(path.join(project, '.squad', 'agents', 'navigator', 'charter.md'))).toBe(true);
+  }, 180_000);
+
+  it('the notice is printed by squad init and by the already-up-to-date upgrade path, and names the working command (FUP-5)', async () => {
+    seedReal1xPersonalSquad(legacyPersonalSquadPath());
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(project, { recursive: true });
+    const io = captureConsole();
+    try {
+      await runInit(project);
+    } finally { io.restore(); }
+    const initOut = io.lines.join('\n');
+    expect(initOut, 'init prints the notice').toContain(PERSONAL_SQUAD_REMOVED_HEADLINE);
+    expect(initOut).toContain('squad import --legacy-personal');
+    expect(initOut, 'the old broken recipe is gone').not.toMatch(/squad export --output/);
+
+    clearResolveSquadCache();
+    const io2 = captureConsole();
+    try {
+      await runUpgrade(project, {});
+    } finally { io2.restore(); }
+    const upOut = io2.lines.join('\n');
+    expect(upOut, 'already-current path').toMatch(/Already up to date/);
+    expect(upOut).toContain(PERSONAL_SQUAD_REMOVED_HEADLINE);
+    expect(upOut).toContain('squad import --legacy-personal');
+  }, 180_000);
+});
+
 describe('personal squad removal: explicit, read-only migration notice', () => {
   it('detection is read-only: it never creates the legacy directory and returns null when nothing is left over', () => {
     const legacy = legacyPersonalSquadPath();
@@ -193,6 +294,7 @@ describe('personal squad removal: explicit, read-only migration notice', () => {
     expect(check.message).toContain('removed in Squad 2.0');
     expect(check.message).toContain(legacy);
     expect(check.message).toMatch(/untouched/);
+    expect(check.message).toContain('squad import --legacy-personal');
     expect(check.message).toContain(`teamRoot (${globalRoot})`);
     expect(check.message).toMatch(/remove the key .* or keep it/);
 
@@ -224,7 +326,7 @@ describe('personal squad removal: explicit, read-only migration notice', () => {
     const out = io2.lines.join('\n');
     expect(out).toContain(PERSONAL_SQUAD_REMOVED_HEADLINE);
     expect(out).toContain(legacy);
-    expect(out).toMatch(/squad import/);
+    expect(out).toContain('squad import --legacy-personal');
     expect(fingerprint(legacy), 'printing a notice must not touch the directory').toBe(before);
   });
 });

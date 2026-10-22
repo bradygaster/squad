@@ -488,9 +488,13 @@ export interface LegacyPersonalSquadInfo {
  *
  * `teamRoot` is the project's configured team root, if any: a 1.x `squad init`
  * silently pointed it at the global squad root when a personal squad existed.
+ * A still-set `SQUAD_PERSONAL_DIR` (the 1.x override) is checked first.
  */
 export function detectLegacyPersonalSquad(teamRoot?: string | null): LegacyPersonalSquadInfo | null {
-  const personalDir = legacyPersonalSquadPath();
+  // 1.x honoured SQUAD_PERSONAL_DIR as an override; users who relied on it have their data there.
+  const override = process.env['SQUAD_PERSONAL_DIR'];
+  const candidates = [override ? path.resolve(override) : null, legacyPersonalSquadPath()].filter((p): p is string => !!p);
+  const personalDir = candidates.find(p => storage.existsSync(p) && storage.isDirectorySync(p)) ?? legacyPersonalSquadPath();
   const hasPersonal = storage.existsSync(personalDir) && storage.isDirectorySync(personalDir);
   const globalRoot = path.dirname(personalDir);
   const norm = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));

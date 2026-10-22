@@ -780,7 +780,7 @@ export function checkLegacyPersonalSquad(squadDir: string): DoctorCheck | undefi
   if (!info) return undefined;
   const parts: string[] = ['personal squads were removed in Squad 2.0.'];
   if (info.personalDir) {
-    parts.push(`Your personal squad at ${info.personalDir} is untouched (Squad 2.0 never reads, writes or deletes it); copy agents you want into this project with "squad export" there and "squad import" here.`);
+    parts.push(`Your personal squad at ${info.personalDir} is untouched (Squad 2.0 never reads, writes or deletes it); copy its agents into this project with "squad import --legacy-personal" (read-only source), then delete it yourself when you no longer need it.`);
   }
   if (info.teamRootPointsAtGlobal) {
     parts.push(`config.json teamRoot (${teamRoot}) still points at the legacy global squad root (${path.dirname(legacyPersonalSquadPath())}); remove the key to make this project self-contained, or keep it if the shared team root is intentional.`);
@@ -803,7 +803,9 @@ export function checkUpstreams(squadDir: string): DoctorCheck | undefined {
   if (resolution.diagnostics.length === 0) {
     return { name: 'upstream inheritance', status: 'pass', message: summary };
   }
-  const hard = resolution.upstreams.some(u => u.status !== 'ok' && u.status !== 'stale');
+  // `unavailable` is the normal state of a fresh clone before `squad upstream sync`; `stale` is read
+  // anyway. Only declarations that can never resolve as written (missing/invalid/cycle/depth) fail.
+  const hard = resolution.upstreams.some(u => u.status === 'missing' || u.status === 'invalid' || u.status === 'cycle' || u.status === 'depth-exceeded');
   return {
     name: 'upstream inheritance',
     status: hard ? 'fail' : 'warn',
@@ -853,8 +855,10 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     const rateLimitCheck = checkRateLimitStatus(squadDir);
     if (rateLimitCheck) checks.push(rateLimitCheck);
 
-    // Upstream inheritance (resolved from local snapshots; never fetches)
-    const upstreamCheck = checkUpstreams(stateDir);
+    // Upstream inheritance: declarations are project-local (`squad upstream add` writes them
+    // beside config.json and `squad externalize` keeps them in the working tree), so read
+    // the local .squad/, not the externalized/remote state dir. Never fetches.
+    const upstreamCheck = checkUpstreams(squadDir);
     if (upstreamCheck) checks.push(upstreamCheck);
 
     // Squad 2.0: personal squads removed — report (never touch) 1.x leftovers

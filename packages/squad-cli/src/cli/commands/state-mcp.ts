@@ -78,8 +78,11 @@ export function createStateMcpToolRegistry(startDir: string): ToolRegistry {
   if (!context) {
     throw new Error(`No .squad directory found from ${startDir}`);
   }
+  // State tools operate on the team root; upstream declarations stay project-local
+  // (`squad upstream add` writes them there, `squad externalize` keeps them there).
   return new ToolRegistry(context.paths.teamSquadDir, undefined, context.storage, undefined, undefined, undefined, {
     backendName: context.backend.name,
+    upstreamDir: context.paths.projectDir,
   });
 }
 

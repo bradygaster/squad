@@ -168,8 +168,9 @@ if (isMain) {
   if (process.argv.includes('--summary')) {
     console.log(JSON.stringify(summarize(matrix), null, 2));
   } else if (process.argv.includes('--check')) {
-    const expected = render(matrix);
-    const actual = fs.existsSync(PAGE_PATH) ? fs.readFileSync(PAGE_PATH, 'utf8') : '';
+    // Compare line-ending-insensitively: autocrlf checkouts store the page with CRLF.
+    const expected = render(matrix).replace(/\r\n/g, '\n');
+    const actual = (fs.existsSync(PAGE_PATH) ? fs.readFileSync(PAGE_PATH, 'utf8') : '').replace(/\r\n/g, '\n');
     if (expected !== actual) {
       console.error(`${path.relative(ROOT, PAGE_PATH)} is stale; run: node scripts/render-host-feature-matrix.mjs`);
       process.exit(1);

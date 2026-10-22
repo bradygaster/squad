@@ -121,16 +121,16 @@ What upgrade does, and does not do:
 
 - **Nothing is deleted, moved or rewritten.** Your old personal squad directory stays exactly as it was. Squad 2.0 never reads agent content from it, never writes to it, and never changes `config.json` of either side on your behalf.
 - **You get told once.** `squad upgrade` and `squad doctor` print a notice when the legacy directory exists or when this project's `.squad/config.json` still has a `teamRoot` that a 1.x `squad init` pointed at the global squad root. `squad personal`, `squad consult` and `squad extract` print the same notice and exit non-zero.
-- **Migration is explicit and reversible:**
+- **Migration is explicit and reversible.** A 1.x personal squad is not a project `.squad/` (it holds `agents/<name>/charter.md` at its root, no `team.md`, no casting pair), so `squad export` cannot read it. Use the dedicated, read-only importer from inside the project:
 
   ```bash
-  # inside the old personal squad directory
-  squad export --output personal-squad.json
-  # inside the project
-  squad import personal-squad.json
+  squad import --legacy-personal --dry-run   # preview: lists the agents it would add
+  squad import --legacy-personal             # adds each agent through the normal cast flow
+  # or point at a non-default location (e.g. a former SQUAD_PERSONAL_DIR):
+  squad import --legacy-personal /path/to/personal-squad
   ```
 
-  Review the imported charters, run `squad cast` to confirm the roster, then delete the old directory yourself when you no longer need it.
+  Each agent is registered with `squad cast` semantics (charter, history, `team.md`, `routing.md`, casting registry), keeping the original charter and history text; agents whose name already exists in the project are skipped, never overwritten. The source directory is only read. Review the imported charters, run `squad cast` to confirm the roster, then delete the old directory yourself when you no longer need it.
 - **`teamRoot` left over from 1.x:** remove the key from `.squad/config.json` to make the project self-contained (its own `.squad/` already holds the team), or keep it if several projects intentionally share that team root. Squad does not pick for you.
 - **`squad init --global` still exists.** It creates the *global* squad under the platform config directory, used only when no repository `.squad/` is found; it no longer creates `personal-squad/` or links new projects to it.
 

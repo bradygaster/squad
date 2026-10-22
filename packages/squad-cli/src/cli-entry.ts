@@ -219,6 +219,7 @@ async function main(): Promise<void> {
     console.log(`             Default: squad-export.json (use --out <path> to override)`);
     console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
     console.log(`             Usage: import <file> [--force]`);
+    console.log(`                    import --legacy-personal [<dir>] [--dry-run]`);
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
     console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
     console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser`);
@@ -849,6 +850,16 @@ async function main(): Promise<void> {
     const branchArg = (branchIdx !== -1 && args[branchIdx + 1]) ? args[branchIdx + 1] : undefined;
     const repoOptions = repoArg ? { repo: repoArg, branch: branchArg } : undefined;
     await runExport(getSquadStartDir(), outPath, repoOptions);
+    return;
+  }
+
+  if (cmd === 'import' && args.includes('--legacy-personal')) {
+    // Squad 2.0: copy agents out of a 1.x personal squad (read-only source) via the cast flow.
+    const { runImportLegacyPersonal } = await import('./cli/commands/import-legacy-personal.js');
+    const flagIdx = args.indexOf('--legacy-personal');
+    const next = args[flagIdx + 1];
+    const from = next && !next.startsWith('--') ? next : undefined;
+    await runImportLegacyPersonal(getSquadStartDir(), { from, dryRun: args.includes('--dry-run') });
     return;
   }
 

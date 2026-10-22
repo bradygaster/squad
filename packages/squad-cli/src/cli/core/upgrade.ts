@@ -1418,6 +1418,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     await runEnsureChecks(dest, templatesDir, filesUpdated);
     await refreshClients(dest, squadDirInfo.path, options, filesUpdated);
 
+    // Squad 2.0 removed personal squads: report 1.x leftovers on this path too, never touch them.
+    printPersonalSquadMigrationNoticeIfNeeded(typeof squadConfig['teamRoot'] === 'string' ? squadConfig['teamRoot'] : null);
+
     return {
       fromVersion: oldVersion,
       toVersion: cliVersion,

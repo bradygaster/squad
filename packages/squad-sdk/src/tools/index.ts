@@ -318,6 +318,13 @@ export class ToolRegistry {
   private fanOutDepsGetter?: () => FanOutDependencies | undefined;
   private memoryStore: LocalMemoryStore;
   private backendName: string;
+  /**
+   * Where `upstream.json` and `_upstream_repos/` live. Upstream declarations are project-local:
+   * `squad upstream add|sync` writes them beside the project's `.squad/config.json` and
+   * `squad externalize` keeps them in the working tree, so in linked (remote-mode) projects this
+   * is the project `.squad/`, not the shared team root the state tools operate on.
+   */
+  private upstreamDir: string;
 
   constructor(
     squadRoot = '.squad',
@@ -326,7 +333,7 @@ export class ToolRegistry {
     state?: SquadState,
     fanOutDepsGetter?: () => FanOutDependencies | undefined,
     hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient,
-    options: { backendName?: string } = {},
+    options: { backendName?: string; upstreamDir?: string } = {},
   ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
@@ -335,6 +342,7 @@ export class ToolRegistry {
     this.fanOutDepsGetter = fanOutDepsGetter;
     // Plain FS storage is the `local` backend; adapters wrap a named git backend.
     this.backendName = options.backendName ?? (storage instanceof FSStorageProvider ? 'local' : 'unknown');
+    this.upstreamDir = options.upstreamDir ?? squadRoot;
     this.memoryStore = new LocalMemoryStore(storage, squadRoot, {
       rootKind: 'squad',
       hostInjectedCopilotAdapterClient,
@@ -875,7 +883,7 @@ export class ToolRegistry {
       },
       handler: async (args) => {
         try {
-          const resolution = resolveUpstreams(this.squadRoot);
+          const resolution = resolveUpstreams(this.upstreamDir);
           const effective = buildEffectiveUpstreamContext(resolution, this.localSkillNames(), this.hasLocalCastingPolicy());
           const detail = (args as Record<string, unknown> | undefined)?.['detail'] === true;
           const statuses = resolution?.upstreams.map(u => `${u.name}=${u.status}`) ?? [];
@@ -886,7 +894,7 @@ export class ToolRegistry {
           };
         } catch (error) {
           return {
-            textResultForLlm: `Failed to resolve upstreams: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            textResultForLlm: `Failed to resolve upstreams: ${sanitizeErrorForLlm(error, this.upstreamDir)}`,
             resultType: 'failure',
             error: String(error),
           };
@@ -1364,9 +1372,18 @@ export class ToolRegistry {
    */
   private localSkillNames(): string[] {
     const fsStorage = new FSStorageProvider();
-    const projectDir = path.dirname(path.resolve(this.squadRoot));
+    const projectDir = path.dirname(path.resolve(this.upstreamDir));
     const names = new Set<string>();
-    for (const dir of [path.join(this.squadRoot, 'skills'), path.join(projectDir, '.copilot', 'skills')]) {
+    // Same roots, same order, as the coordinator's skill-aware routing (digest item 17).
+    const roots = [
+      path.join(this.upstreamDir, 'skills'),
+      ...(path.resolve(this.squadRoot) !== path.resolve(this.upstreamDir) ? [path.join(this.squadRoot, 'skills')] : []),
+      path.join(projectDir, '.copilot', 'skills'),
+      path.join(projectDir, '.github', 'skills'),
+      path.join(projectDir, '.claude', 'skills'),
+      path.join(projectDir, '.agents', 'skills'),
+    ];
+    for (const dir of roots) {
       if (!fsStorage.existsSync(dir)) continue;
       try {
         for (const entry of fsStorage.listSync(dir)) {
@@ -1380,7 +1397,9 @@ export class ToolRegistry {
   }
 
   private hasLocalCastingPolicy(): boolean {
-    return new FSStorageProvider().existsSync(path.join(this.squadRoot, 'casting', 'policy.json'));
+    const fsStorage = new FSStorageProvider();
+    return fsStorage.existsSync(path.join(this.squadRoot, 'casting', 'policy.json'))
+      || fsStorage.existsSync(path.join(this.upstreamDir, 'casting', 'policy.json'));
   }
 
   /** Get tools filtered by agent's allowed tool list */

@@ -22,9 +22,9 @@ export function formatPersonalSquadMigrationNotice(info: LegacyPersonalSquadInfo
   const lines: string[] = [`${YELLOW}${BOLD}⚠ ${PERSONAL_SQUAD_REMOVED_HEADLINE}${RESET}`];
   if (info.personalDir) {
     lines.push(`  Your personal squad at ${BOLD}${info.personalDir}${RESET} is untouched: Squad 2.0 never reads, writes or deletes it.`);
-    lines.push(`  To keep agents from it, copy them into this project explicitly:`);
-    lines.push(`${DIM}    squad export --output personal-squad.json   (run inside ${info.personalDir})${RESET}`);
-    lines.push(`${DIM}    squad import personal-squad.json           (run inside this project)${RESET}`);
+    lines.push(`  To keep its agents, copy them into this project explicitly (the source is only read):`);
+    lines.push(`${DIM}    squad import --legacy-personal --dry-run   (run inside this project; preview)${RESET}`);
+    lines.push(`${DIM}    squad import --legacy-personal             (adds each agent via the normal cast flow)${RESET}`);
     lines.push(`  Delete the old directory yourself when you no longer need it.`);
   }
   if (info.teamRootPointsAtGlobal) {
@@ -52,6 +52,6 @@ export function printPersonalSquadRemovedNotice(command: string): void {
   if (info) {
     for (const line of formatPersonalSquadMigrationNotice(info)) console.error(line);
   } else {
-    console.error(`${DIM}  Agents live in the project's .squad/ now. Share them with "squad export" / "squad import".${RESET}`);
+    console.error(`${DIM}  Agents live in the project's .squad/ now. Share them between projects with "squad export" / "squad import" or upstream inheritance.${RESET}`);
   }
 }

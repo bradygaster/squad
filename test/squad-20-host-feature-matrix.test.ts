@@ -215,7 +215,7 @@ describe('bridge scenarios: state-mcp resolution the host coordinator relies on'
     const sat = path.join(tmp, 'satellite');
     gitInit(sat);
     fs.mkdirSync(path.join(sat, '.squad'), { recursive: true });
-    fs.writeFileSync(path.join(sat, '.squad', 'config.json'), JSON.stringify({ version: 1, teamRoot: '..\\base', projectKey: null }, null, 2) + '\n');
+    fs.writeFileSync(path.join(sat, '.squad', 'config.json'), JSON.stringify({ version: 1, teamRoot: '../base', projectKey: null }, null, 2) + '\n');
     clearResolveSquadCache();
     const b = await bridge(sat);
     const team = await b.call('squad_state_read', { key: 'team.md' });

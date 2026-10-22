@@ -21,6 +21,7 @@ export {
   DEFAULT_UPSTREAM_MAX_DEPTH,
   DEFAULT_UPSTREAM_STALE_DAYS,
   UPSTREAM_REPORT_MAX_CHARS,
+  UPSTREAM_MAX_FILE_BYTES,
   readUpstreamConfig,
   resolveUpstreams,
   upstreamProvenance,

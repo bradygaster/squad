@@ -46,49 +46,71 @@ describe('squad status routing logic', () => {
     expect(activeType).toBe('repo');
   });
 
+  /**
+   * Point every platform's config-dir lookup at a scratch directory so these tests
+   * never create or delete the developer's real global squad (`squad init --global`).
+   */
+  function stubConfigHome(): string {
+    const home = join(TMP, 'config-home');
+    mkdirSync(home, { recursive: true });
+    vi.stubEnv('APPDATA', home);
+    vi.stubEnv('LOCALAPPDATA', home);
+    vi.stubEnv('XDG_CONFIG_HOME', home);
+    if (process.platform === 'darwin') vi.stubEnv('HOME', home);
+    return home;
+  }
+
   it('identifies "none" when no .squad/ exists and no global squad', () => {
-    scaffold('.git');
-    const repoSquad = resolveSquad(TMP);
-    expect(repoSquad).toBeNull();
-    // Without a global .squad/ dir, status shows "none"
-    const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
-    // When repo squad is null and global .squad doesn't exist → "none"
-    const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'global' : 'none';
-    expect(activeType).toBe(activeType === 'global' ? 'global' : 'none');
-    // At minimum, repoSquad must be null
-    expect(repoSquad).toBeNull();
+    const home = stubConfigHome();
+    try {
+      scaffold('.git');
+      const repoSquad = resolveSquad(TMP);
+      expect(repoSquad).toBeNull();
+      const globalPath = resolveGlobalSquadPath();
+      expect(globalPath.startsWith(home), `global path must be under the stubbed home: ${globalPath}`).toBe(true);
+      const globalSquadDir = join(globalPath, '.squad');
+      const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'global' : 'none';
+      expect(activeType).toBe('none');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it('identifies "global" when no repo .squad/ but global .squad/ exists', () => {
-    scaffold('.git');
-    const repoSquad = resolveSquad(TMP);
-    expect(repoSquad).toBeNull();
+  it('identifies "global" when no repo .squad/ but a global .squad/ exists', () => {
+    const home = stubConfigHome();
+    try {
+      scaffold('.git');
+      const repoSquad = resolveSquad(TMP);
+      expect(repoSquad).toBeNull();
 
-    const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
-    // Create a .squad/ inside the global path
-    mkdirSync(globalSquadDir, { recursive: true });
+      const globalPath = resolveGlobalSquadPath();
+      expect(globalPath.startsWith(home)).toBe(true);
+      const globalSquadDir = join(globalPath, '.squad');
+      mkdirSync(globalSquadDir, { recursive: true });
 
-    const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'global' : 'none';
-    expect(activeType).toBe('global');
-
-    // Cleanup global .squad dir we created
-    rmSync(globalSquadDir, { recursive: true, force: true });
+      const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'global' : 'none';
+      expect(activeType).toBe('global');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('repo squad takes priority over the global squad', () => {
-    scaffold('.git', '.squad');
-    const repoSquad = resolveSquad(TMP);
-    const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
-    mkdirSync(globalSquadDir, { recursive: true });
+    const home = stubConfigHome();
+    try {
+      scaffold('.git', '.squad');
+      const repoSquad = resolveSquad(TMP);
+      const globalPath = resolveGlobalSquadPath();
+      expect(globalPath.startsWith(home)).toBe(true);
+      const globalSquadDir = join(globalPath, '.squad');
+      mkdirSync(globalSquadDir, { recursive: true });
 
-    // Same logic as status command — repo wins
-    const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'global' : 'none';
-    expect(activeType).toBe('repo');
-
-    rmSync(globalSquadDir, { recursive: true, force: true });
+      // Same logic as status command — repo wins
+      const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'global' : 'none';
+      expect(activeType).toBe('repo');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

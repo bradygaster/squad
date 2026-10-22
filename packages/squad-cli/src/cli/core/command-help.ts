@@ -181,9 +181,13 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
 
   import: (version) => {
     header('import', version, 'Import squad from an export file');
-    console.log(`Usage: squad import <file> [--force]\n`);
+    console.log(`Usage: squad import <file> [--force]`);
+    console.log(`       squad import --legacy-personal [<dir>] [--dry-run]\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--force${RESET}                     Overwrite existing files in target\n`);
+    console.log(`  ${BOLD}--force${RESET}                     Overwrite existing files in target`);
+    console.log(`  ${BOLD}--legacy-personal [<dir>]${RESET}   Copy agents from a Squad 1.x personal squad`);
+    console.log(`                              (read-only source; default: platform 1.x path)`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   With --legacy-personal: preview, write nothing\n`);
   },
 
   'scrub-emails': (version) => {

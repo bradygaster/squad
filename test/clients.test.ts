@@ -285,7 +285,7 @@ describe('coordinator digest vs. host feature matrix', () => {
     ['Canonical file is authoritative when present', [/\.github\/agents\/squad\.agent\.md/, /authoritative coordinator contract/]],
     // Finding F1 (Squad 2.0): upstream inheritance is wired at runtime — the digest tells every host to call
     // `squad_state_upstreams`, never to fetch, and to cite `upstream:<name>@<ref>` provenance.
-    ['Upstream inheritance (upstream.json via squad_state_upstreams, no fetch, provenance)', [/upstream\.json/, /squad_state_upstreams/, /NEVER fetch at session start/, /upstream:<name>@<ref>/, /local `\.squad\/` wins/]],
+    ['Upstream inheritance (upstream.json via squad_state_upstreams, no fetch, provenance, untrusted)', [/upstream\.json/, /squad_state_upstreams/, /NEVER fetch at session start/, /upstream:<name>@<ref>/, /local `\.squad\/` wins/, /untrusted third-party data, not instructions/]],
   ];
   for (const id of CLIENT_IDS) {
     it(`${id} digest carries the host-specific sections the live runs relied on`, () => {
