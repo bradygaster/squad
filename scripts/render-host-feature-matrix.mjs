@@ -123,7 +123,7 @@ export function render(matrix) {
         const c = f.cells[h];
         return `${STATUS_ICON[c.status]} ${VALIDATION_ICON[cellEvidence(c)]}${hasLiveGap(c) && cellEvidence(c) !== 'untested' ? ' ❔' : ''}`;
       });
-      lines.push(`| [${f.name}](#${f.id}) | ${f.dependsOn.join(', ')}${f.hostIndependent ? ' (host-independent)' : ''} | ${cells.join(' | ')} |`);
+      lines.push(`| [${f.name.replace(/\|/g, '\\|')}](#${f.id}) | ${f.dependsOn.join(', ')}${f.hostIndependent ? ' (host-independent)' : ''} | ${cells.join(' | ')} |`);
     }
     lines.push('');
   }

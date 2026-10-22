@@ -115,7 +115,7 @@ Then remove the corresponding slug(s) from `clients` in `.squad/config.json`.
 
 ### Personal squads removed
 
-Squad 2.0 removes the 1.x **personal squad** (`squad personal`, `squad consult`, `squad extract`, the ambient `~/.config/squad/personal-squad` roster, the Ghost Protocol spawn rules, and the `SQUAD_NO_PERSONAL` / `SQUAD_PERSONAL_DIR` switches). Agents now live only in the project `.squad/`; cross-project sharing is done with [upstream inheritance](/features/upstream-inheritance/) or `squad export` / `squad import`.
+Squad 2.0 removes the 1.x **personal squad** (`squad personal`, `squad consult`, `squad extract`, the ambient `~/.config/squad/personal-squad` roster, the Ghost Protocol spawn rules, and the `SQUAD_NO_PERSONAL` / `SQUAD_PERSONAL_DIR` switches). Agents now live only in the project `.squad/`; cross-project sharing is done with [upstream inheritance](../features/upstream-inheritance.md) or `squad export` / `squad import`.
 
 What upgrade does, and does not do:
 

@@ -20,6 +20,7 @@ export type {
 export {
   DEFAULT_UPSTREAM_MAX_DEPTH,
   DEFAULT_UPSTREAM_STALE_DAYS,
+  UPSTREAM_REPORT_MAX_CHARS,
   readUpstreamConfig,
   resolveUpstreams,
   upstreamProvenance,

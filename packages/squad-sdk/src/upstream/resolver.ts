@@ -442,18 +442,23 @@ function summarizeContent(u: ResolvedUpstream): string {
   return parts.join(', ');
 }
 
+/** Upper bound on the text `squad_state_upstreams` returns, so inherited bodies cannot blow the host prompt. */
+export const UPSTREAM_REPORT_MAX_CHARS = 48_000;
+
 /**
  * Render a resolution as text for the `squad_state_upstreams` tool and the CLI.
  *
  * Always lists every upstream with provenance, status and diagnostic, followed by the
  * effective inherited skills (with the winner on name conflicts). With `detail`, the
  * inherited decisions, routing, wisdom and skill bodies are appended under provenance
- * headers so a coordinator can load them without touching the filesystem.
+ * headers so a coordinator can load them without touching the filesystem. Output is
+ * capped at `maxChars` (default {@link UPSTREAM_REPORT_MAX_CHARS}); when the cap is hit
+ * the detail section is truncated with an explicit marker and the summary is kept intact.
  */
 export function formatUpstreamReport(
   resolution: UpstreamResolution | null,
   effective: EffectiveUpstreamContext,
-  options: { detail?: boolean } = {},
+  options: { detail?: boolean; maxChars?: number } = {},
 ): string {
   if (!resolution) return 'No upstream.json: this squad inherits nothing.';
   if (resolution.upstreams.length === 0) return 'upstream.json declares no upstreams: this squad inherits nothing.';
@@ -491,18 +496,27 @@ export function formatUpstreamReport(
   lines.push(`Inherited casting policy: ${effective.castingPolicy ? effective.castingPolicy.provenance : 'none (local policy applies)'}`);
 
   if (options.detail) {
+    const maxChars = options.maxChars ?? UPSTREAM_REPORT_MAX_CHARS;
+    const summary = lines.join('\n');
+    const detail: string[] = [];
     for (const [label, items] of docs) {
       for (const d of items) {
-        lines.push('', `--- ${label} from ${d.provenance} ---`, d.content.trimEnd());
+        detail.push('', `--- ${label} from ${d.provenance} ---`, d.content.trimEnd());
       }
     }
     for (const s of effective.skills) {
       if (s.overriddenBy) continue;
-      lines.push('', `--- skill ${s.name} from ${s.provenance} ---`, s.content.trimEnd());
+      detail.push('', `--- skill ${s.name} from ${s.provenance} ---`, s.content.trimEnd());
     }
     if (effective.castingPolicy) {
-      lines.push('', `--- casting policy from ${effective.castingPolicy.provenance} ---`, JSON.stringify(effective.castingPolicy.policy, null, 2));
+      detail.push('', `--- casting policy from ${effective.castingPolicy.provenance} ---`, JSON.stringify(effective.castingPolicy.policy, null, 2));
     }
+    const body = detail.join('\n');
+    const budget = maxChars - summary.length;
+    if (body.length <= budget) return summary + body;
+    const marker = `\n\n[truncated: inherited content exceeds ${maxChars} characters; read the remaining files directly from the upstream paths listed above]`;
+    const keep = Math.max(0, budget - marker.length);
+    return summary + body.slice(0, keep) + marker;
   }
 
   return lines.join('\n');

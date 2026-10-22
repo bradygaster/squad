@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   DEFAULT_UPSTREAM_MAX_DEPTH,
+  UPSTREAM_REPORT_MAX_CHARS,
   buildEffectiveUpstreamContext,
   formatUpstreamReport,
   resolveUpstreams,
@@ -190,6 +191,21 @@ describe('resolveUpstreams: soft failures and no implicit fetch', () => {
     expect(detail).toContain('use structured logs');
 
     expect(formatUpstreamReport(null, buildEffectiveUpstreamContext(null))).toMatch(/No upstream.json/);
+  });
+
+  it('formatUpstreamReport bounds the detail output and keeps the summary intact when inherited bodies are huge', () => {
+    const org = squad(path.join(tmp, 'org'), { skills: { big: 'x'.repeat(100_000) }, decisions: '# org\n' + 'y'.repeat(100_000) });
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('org', path.dirname(org))] });
+    const res = resolveUpstreams(repo);
+    const effective = buildEffectiveUpstreamContext(res, []);
+    const full = formatUpstreamReport(res, effective, { detail: true });
+    expect(full.length, `default cap ${UPSTREAM_REPORT_MAX_CHARS}`).toBeLessThanOrEqual(UPSTREAM_REPORT_MAX_CHARS);
+    expect(full).toContain('- big — upstream:org@local — active');
+    expect(full).toMatch(/\[truncated: inherited content exceeds \d+ characters/);
+    const small = formatUpstreamReport(res, effective, { detail: true, maxChars: 2_000 });
+    expect(small.length).toBeLessThanOrEqual(2_000);
+    expect(small, 'summary survives even a tiny budget').toContain('Inherited decisions: upstream:org@local');
+    expect(formatUpstreamReport(res, effective).length, 'summary mode is never truncated').toBeLessThan(2_000);
   });
 });
 

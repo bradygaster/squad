@@ -317,6 +317,7 @@ export class ToolRegistry {
   private state?: SquadState;
   private fanOutDepsGetter?: () => FanOutDependencies | undefined;
   private memoryStore: LocalMemoryStore;
+  private backendName: string;
 
   constructor(
     squadRoot = '.squad',
@@ -325,12 +326,15 @@ export class ToolRegistry {
     state?: SquadState,
     fanOutDepsGetter?: () => FanOutDependencies | undefined,
     hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient,
+    options: { backendName?: string } = {},
   ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
     this.storage = storage;
     this.state = state;
     this.fanOutDepsGetter = fanOutDepsGetter;
+    // Plain FS storage is the `local` backend; adapters wrap a named git backend.
+    this.backendName = options.backendName ?? (storage instanceof FSStorageProvider ? 'local' : 'unknown');
     this.memoryStore = new LocalMemoryStore(storage, squadRoot, {
       rootKind: 'squad',
       hostInjectedCopilotAdapterClient,
@@ -845,12 +849,12 @@ export class ToolRegistry {
 
     const stateHealth = defineTool<Record<string, never>>({
       name: 'squad_state_health',
-      description: 'Report the active Squad state storage layer so agents can verify they are using runtime-owned state instead of manual git/file choreography.',
+      description: 'Report the active Squad state backend (local, orphan, two-layer, ...) and storage layer so agents can verify they are using runtime-owned state instead of manual git/file choreography.',
       parameters: { type: 'object', properties: {} },
       handler: async () => ({
-        textResultForLlm: `State backend storage: ${this.storage.constructor.name}`,
+        textResultForLlm: `State backend: ${this.backendName}\nState backend storage: ${this.storage.constructor.name}\nTeam squad dir: ${this.squadRoot}`,
         resultType: 'success',
-        toolTelemetry: { storage: this.storage.constructor.name },
+        toolTelemetry: { backend: this.backendName, storage: this.storage.constructor.name },
       }),
     });
 

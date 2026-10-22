@@ -193,7 +193,7 @@ npm install @bradygaster/squad-sdk@latest
 `squad init --global` creates a squad under your platform config directory. It is
 only used when no repository `.squad/` is found (`squad status` shows which one is
 active). To share agents or conventions *between* repositories, use
-[upstream inheritance](/features/upstream-inheritance/) or `squad export` /
+[upstream inheritance](../features/upstream-inheritance.md) or `squad export` /
 `squad import` instead; personal squads were removed in Squad 2.0.
 
 ```bash

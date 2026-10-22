@@ -306,7 +306,7 @@ describe('Compat v0.4.1: Tool Registration', () => {
   it('getToolsForAgent returns all when no filter', () => {
     const registry = new ToolRegistry();
     const all = registry.getToolsForAgent(undefined);
-    expect(all.length).toBe(18);
+    expect(all.length).toBe(19);
   });
 });
 
