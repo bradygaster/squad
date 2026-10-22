@@ -229,6 +229,18 @@ function rmrf(p: string): void {
   try { fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort on Windows */ }
 }
 
+/**
+ * Extract an archive. On Windows prefer the system bsdtar: under GitHub's bash shell `tar` on PATH is
+ * Git's GNU tar, which reads `D:\...` as a `host:path` remote spec. Paths are passed relative to `cwd`
+ * so either implementation accepts them.
+ */
+function extract(archive: string, dest: string): void {
+  const sysTar = PLATFORM === 'win32' ? path.join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'tar.exe') : null;
+  const bin = sysTar && fs.existsSync(sysTar) ? sysTar : 'tar';
+  const cwd = path.dirname(archive);
+  execFileSync(bin, ['-xf', path.basename(archive), '-C', path.relative(cwd, dest) || '.'], { cwd, stdio: 'pipe' });
+}
+
 const GIT_ENV = {
   GIT_AUTHOR_NAME: 'Squad Matrix', GIT_AUTHOR_EMAIL: 'matrix@example.invalid',
   GIT_COMMITTER_NAME: 'Squad Matrix', GIT_COMMITTER_EMAIL: 'matrix@example.invalid',
@@ -321,7 +333,7 @@ async function resolveReleaseProducer(spec: ProducerSpec): Promise<Producer> {
       if (want !== got) throw new Error(`checksum mismatch for ${asset.name}: expected ${want}, got ${got}`);
       const archive = path.join(dir, asset.name);
       fs.writeFileSync(archive, bytes);
-      execFileSync('tar', ['-xf', archive, '-C', dir], { stdio: 'ignore' });
+      extract(archive, dir);
       fs.rmSync(archive, { force: true });
       if (!fs.existsSync(launcher)) throw new Error(`bundle did not contain ${path.basename(launcher)}`);
       if (PLATFORM !== 'win32') fs.chmodSync(launcher, 0o755);
@@ -365,8 +377,8 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
       return path.join(tarballs, out.split(/\r?\n/).filter(Boolean).pop()!.trim());
     };
     const unpack = (tarball: string, dest: string) => {
-      const tmp = fs.mkdtempSync(path.join(staging, 'x-'));
-      execFileSync('tar', ['-xzf', tarball, '-C', tmp], { stdio: 'ignore' });
+      const tmp = fs.mkdtempSync(path.join(tarballs, 'x-'));
+      extract(tarball, tmp);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.renameSync(path.join(tmp, 'package'), dest);
       rmrf(tmp);
