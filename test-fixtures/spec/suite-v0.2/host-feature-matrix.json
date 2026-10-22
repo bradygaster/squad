@@ -1,0 +1,4032 @@
+{
+  "protocol": "squad-protocol-v2.0-rc1",
+  "description": "Feature × host matrix for Squad: what each Squad capability depends on, how it is realised per host, and how (if at all) it has been validated.",
+  "statuses": {
+    "supported": "Works on this host through the stated mechanism.",
+    "degraded": "Works with a documented limitation or only via an on-demand/manual path.",
+    "unsupported": "Cannot work on this host.",
+    "n/a": "Not applicable to this host."
+  },
+  "validationKinds": {
+    "validated-test:<file>::<name>": "An automated test (name `*` = the whole file) covers the cell. CLI-only evidence is host-independent.",
+    "validated-manual:<evidence>": "Validated by a recorded headless real-CLI run (artifact path or demo index).",
+    "static-only": "Only the projected/canonical text or source code was inspected.",
+    "untested": "No evidence beyond static inspection for this host; candidate for the real-CLI lane.",
+    "failing": "A real run showed the cell does not behave as the mechanism claims."
+  },
+  "dependencyClasses": {
+    "a": "squad CLI only (host-agnostic; the host is not involved)",
+    "b": "coordinator-prompt behaviour (the section must be present in the host's coordinator file or reachable on demand)",
+    "c": "squad_state / memory.* MCP tools (state-mcp bridge reachable from the host)",
+    "d": "host runtime capability (subagent spawn, background tasks, shell, file ops, sql, per-spawn model, MCP inheritance by subagents)",
+    "e": "platform CLI or MCP availability in the host (gh / glab / az / ADO MCP / GitHub MCP)"
+  },
+  "hosts": {
+    "copilot": {
+      "name": "GitHub Copilot (CLI / app / VS Code)",
+      "cli": "copilot",
+      "installedOnReferenceMachine": true,
+      "coordinatorFile": ".github/agents/squad.agent.md (canonical)",
+      "mcpConfig": ".mcp.json",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": true,
+        "perSpawnModel": true,
+        "sqlTool": true,
+        "shell": true,
+        "mcpInheritedBySubagents": true
+      }
+    },
+    "claude": {
+      "name": "Claude Code",
+      "cli": "claude",
+      "installedOnReferenceMachine": true,
+      "coordinatorFile": ".claude/agents/squad.md (digest) + CLAUDE.md block",
+      "mcpConfig": ".mcp.json",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": false,
+        "perSpawnModel": false,
+        "sqlTool": false,
+        "shell": true,
+        "mcpInheritedBySubagents": true
+      }
+    },
+    "kiro": {
+      "name": "Kiro CLI",
+      "cli": "kiro-cli",
+      "installedOnReferenceMachine": true,
+      "coordinatorFile": ".kiro/agents/squad.json + .kiro/steering/squad.md (manual)",
+      "mcpConfig": ".kiro/settings/mcp.json",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": false,
+        "perSpawnModel": false,
+        "sqlTool": false,
+        "shell": true,
+        "mcpInheritedBySubagents": true
+      }
+    },
+    "opencode": {
+      "name": "OpenCode",
+      "cli": "opencode",
+      "installedOnReferenceMachine": true,
+      "coordinatorFile": ".opencode/agents/squad.md (primary)",
+      "mcpConfig": "opencode.json (mcp.squad_state)",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": true,
+        "perSpawnModel": false,
+        "sqlTool": false,
+        "shell": true,
+        "mcpInheritedBySubagents": true
+      }
+    },
+    "cursor": {
+      "name": "Cursor",
+      "cli": "cursor-agent",
+      "installedOnReferenceMachine": false,
+      "coordinatorFile": ".cursor/rules/squad.mdc (alwaysApply: false) + .cursor/agents/squad.md",
+      "mcpConfig": ".cursor/mcp.json",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": false,
+        "perSpawnModel": false,
+        "sqlTool": false,
+        "shell": true,
+        "mcpInheritedBySubagents": true
+      }
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "cli": "codex",
+      "installedOnReferenceMachine": true,
+      "coordinatorFile": ".codex/agents/squad.toml (developer_instructions) + AGENTS.md pointer",
+      "mcpConfig": ".codex/config.toml (mcp_servers.squad_state)",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": false,
+        "perSpawnModel": false,
+        "sqlTool": false,
+        "shell": true,
+        "mcpInheritedBySubagents": true
+      }
+    },
+    "antigravity": {
+      "name": "Google Antigravity",
+      "cli": "agy",
+      "installedOnReferenceMachine": true,
+      "coordinatorFile": ".agents/agents/squad.md + GEMINI.md block",
+      "mcpConfig": "agent frontmatter mcpServers (or `agy mcp add`)",
+      "runtime": {
+        "subagents": true,
+        "backgroundRuns": false,
+        "perSpawnModel": false,
+        "sqlTool": false,
+        "shell": true,
+        "mcpInheritedBySubagents": false
+      }
+    }
+  },
+  "features": [
+    {
+      "id": "init-mode-casting",
+      "name": "Init Mode & casting (`squad init`, `squad cast --name`, casting registry)",
+      "area": "Core",
+      "docs": [
+        "features/team-setup",
+        "concepts/your-team"
+      ],
+      "canonicalSections": [
+        "Init Mode",
+        "Casting & Persistent Naming"
+      ],
+      "dependsOn": [
+        "a",
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "CLI scaffolds `.squad/`; coordinator Init Mode (digest §0) uses `squad_state_read team.md`, auto-confirms headless, casts via `squad cast --name`, never hand-edits `.squad/casting/`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::field findings from the live demo: Init Mode, scratch files, casting registry",
+            "validated-test:test/cli/init.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "routing-ownership",
+      "name": "Work routing by ownership (`routing.md`, one accountable owner, named requests)",
+      "area": "Core",
+      "docs": [
+        "features/routing"
+      ],
+      "canonicalSections": [
+        "Routing",
+        "Scope Control"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §2–3: route by `routing.md`, exactly one owner, explicit deliverables/exclusions.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "response-modes",
+      "name": "Response modes (Direct / Lightweight / Standard / Full) + \"feels heard\" acknowledgement",
+      "area": "Core",
+      "docs": [
+        "features/response-modes"
+      ],
+      "canonicalSections": [
+        "Response Mode Selection",
+        "Acknowledge Immediately — \"Feels Heard\""
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §10 carries all four modes and the acknowledge-then-spawn rule.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "model-selection",
+      "name": "Model / reasoning-effort / context-tier selection per spawn",
+      "area": "Core",
+      "docs": [
+        "features/model-selection",
+        "scenarios/switching-models"
+      ],
+      "canonicalSections": [
+        "Model Selection"
+      ],
+      "dependsOn": [
+        "b",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Canonical §Model Selection + `task` tool `model`/`reasoning_effort`/`context_tier` params; `.squad/config.json` overrides.",
+          "validation": [
+            "validated-test:test/model-selector-policy.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "`Task` has no per-call model; only subagent-definition `model:` frontmatter. Digest lacks the model-selection section.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "Model is set per agent in `opencode.json` (`agent.squad.model`), not per `task` call; reasoning/context tiers unsupported.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "Digest has no model-selection section (only `model-selection-reference.md` on demand); host dispatch primitive has no per-spawn model parameter, so the session model is inherited.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Record as a host limitation, not a bug: `squad.agent.md` already says not to rely on per-spawn model control cross-platform."
+        }
+      }
+    },
+    {
+      "id": "parallel-fanout",
+      "name": "Parallel fan-out of independent specialists",
+      "area": "Core",
+      "docs": [
+        "features/parallel-execution",
+        "concepts/parallel-work"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "b",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §6 + every dispatch adapter says to issue independent spawns in one turn; all hosts declare the `subagents` token.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "background-agents",
+      "name": "Background agents (Scribe/Rai run non-blocking)",
+      "area": "Core",
+      "docs": [
+        "features/parallel-execution"
+      ],
+      "canonicalSections": [
+        "Shared Decision Architecture — Drop-Box Pattern"
+      ],
+      "dependsOn": [
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`background-runs` token; `task` mode=background / `read_agent`.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
+          ]
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "`background-runs` token declared; `task` subagents run as child sessions.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
+          ]
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "No `background-runs` token: Scribe/Rai run synchronously as the last spawn of the turn instead of in the background.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts"
+          ]
+        }
+      }
+    },
+    {
+      "id": "scribe-decisions-history",
+      "name": "Scribe, decisions drop-box, agent history, orchestration log",
+      "area": "Memory",
+      "docs": [
+        "features/memory",
+        "concepts/memory-and-knowledge"
+      ],
+      "canonicalSections": [
+        "Shared Decision Architecture — Drop-Box Pattern",
+        "Built-in Support Agents"
+      ],
+      "dependsOn": [
+        "b",
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §5/§11; writes go through `squad_decide` / `squad_state_append`; Scribe merges inbox → `decisions.md`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "directive-capture",
+      "name": "Directive capture (\"always…/never…\" → `squad_decide`)",
+      "area": "Memory",
+      "docs": [
+        "features/directives"
+      ],
+      "canonicalSections": [
+        "Directive Capture"
+      ],
+      "dependsOn": [
+        "b",
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §16 captures persistent directives via `squad_decide` and dispatches implementation separately.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "memory-governance",
+      "name": "Memory governance (`memory.*` tools, classes, promote/audit)",
+      "area": "Memory",
+      "docs": [
+        "features/memory"
+      ],
+      "canonicalSections": [
+        "Memory Governance Tools"
+      ],
+      "dependsOn": [
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "`memory.*` aliases live in the same `squad_state` MCP server; digest §16 prefers them when exposed.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/memory-governance.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "state-backends",
+      "name": "State backends (`local` / `orphan` / `two-layer`) + handshake",
+      "area": "Memory",
+      "docs": [
+        "features/state-backends",
+        "reference/state-backend-selection"
+      ],
+      "canonicalSections": [
+        "State & Team Root Resolution (before mode check)",
+        "Memory Governance Tools"
+      ],
+      "dependsOn": [
+        "a",
+        "c",
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "`squad init|upgrade --state-backend`; state-mcp resolves the backend from `config.json`; digest §16 requires `squad_state_health` before writes and halts without the bridge.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::R3-9: createMcpBackend honors a configured (non-local) state backend instead of writing .squad/backend",
+            "validated-test:test/state-backend.test.ts::*",
+            "validated-test:test/upgrade-state-backend.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "skills-precedence",
+      "name": "Skills (5 roots, precedence, untrusted-data rule)",
+      "area": "Core",
+      "docs": [
+        "features/skills"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §17 lists `.squad/skills/` → `.copilot/skills/` → `.github/skills/` → `.claude/skills/` → `.agents/skills/` with earlier-wins precedence.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/skills.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "reviewer-lockout",
+      "name": "Reviewer rejection protocol & strict author lockout",
+      "area": "Quality",
+      "docs": [
+        "features/reviewer-protocol"
+      ],
+      "canonicalSections": [
+        "Reviewer Rejection Protocol"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §12: REJECT locks out the author; revision reassigned; re-review required.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "rai",
+      "name": "Rai — Responsible-AI reviewer (🟢/🟡/🔴)",
+      "area": "Quality",
+      "docs": [
+        "features/reviewer-protocol"
+      ],
+      "canonicalSections": [
+        "Rai — RAI Reviewer"
+      ],
+      "dependsOn": [
+        "b",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Canonical §Rai; background by default.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §13; background capable.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §13; runs synchronously where `background-runs` is absent (see background-agents).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fact-checker",
+      "name": "Fact Checker — verification & devil's advocate",
+      "area": "Quality",
+      "docs": [
+        "features/reviewer-protocol"
+      ],
+      "canonicalSections": [
+        "Fact Checker — Verification & Devil's Advocate"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §14 with ✅/⚠️/❌/🔍 ratings, steelman and pre-mortem.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ceremonies",
+      "name": "Ceremonies (before/after/manual, cooldowns)",
+      "area": "Advanced",
+      "docs": [
+        "features/ceremonies"
+      ],
+      "canonicalSections": [
+        "Ceremonies"
+      ],
+      "dependsOn": [
+        "b",
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §15 reads `ceremonies.md`, spawns a facilitator, records via `squad_decide`.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "human-members",
+      "name": "Human team members (never spawned; routed as requests)",
+      "area": "Advanced",
+      "docs": [
+        "features/human-team-members",
+        "scenarios/team-of-humans"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §21.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "copilot-coding-agent",
+      "name": "@copilot coding agent member (`squad copilot`, GitHub assignment)",
+      "area": "GitHub",
+      "docs": [
+        "features/copilot-coding-agent"
+      ],
+      "canonicalSections": [
+        "Copilot Coding Agent Member"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "CLI toggles the member; digest §21 says never spawn it, review its PRs. Assignment happens on GitHub, independent of the local host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/team-capabilities-lifecycle.test.ts::*",
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ralph-coordinator-loop",
+      "name": "Ralph — interactive work monitor (\"Ralph, go\")",
+      "area": "GitHub",
+      "docs": [
+        "features/ralph"
+      ],
+      "canonicalSections": [
+        "Ralph — Work Monitor"
+      ],
+      "dependsOn": [
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §9: coordinator runs the loop itself via `gh`; circuit breaker template. Requires `gh` authenticated inside the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ralph-cli-triage-watch",
+      "name": "Ralph CLI (`squad triage` / `watch` / `loop` --execute)",
+      "area": "GitHub",
+      "docs": [
+        "features/ralph",
+        "features/labels"
+      ],
+      "dependsOn": [
+        "a",
+        "e"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Default `agentCmd` is the Copilot CLI (`copilot -p …`).",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "validated-test:test/ralph-monitor.test.ts::*",
+            "validated-test:test/watch-fleet-dispatch.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "Scanning/routing is host-agnostic, but `--execute` dispatches through the Copilot CLI unless `agentCmd` (`--agent-cmd \"<host> … {prompt}\"`) is configured; no built-in preset for this host.",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "Scanning/routing is host-agnostic, but `--execute` dispatches through the Copilot CLI unless `agentCmd` (`--agent-cmd \"<host> … {prompt}\"`) is configured; no built-in preset for this host.",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "Scanning/routing is host-agnostic, but `--execute` dispatches through the Copilot CLI unless `agentCmd` (`--agent-cmd \"<host> … {prompt}\"`) is configured; no built-in preset for this host.",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "Scanning/routing is host-agnostic, but `--execute` dispatches through the Copilot CLI unless `agentCmd` (`--agent-cmd \"<host> … {prompt}\"`) is configured; no built-in preset for this host.",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "Scanning/routing is host-agnostic, but `--execute` dispatches through the Copilot CLI unless `agentCmd` (`--agent-cmd \"<host> … {prompt}\"`) is configured; no built-in preset for this host.",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "Scanning/routing is host-agnostic, but `--execute` dispatches through the Copilot CLI unless `agentCmd` (`--agent-cmd \"<host> … {prompt}\"`) is configured; no built-in preset for this host.",
+          "validation": [
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "consult-personal-squad",
+      "name": "Personal squad & consult mode (`squad personal`, `squad consult`, `squad extract`)",
+      "area": "Advanced",
+      "docs": [
+        "features/consult-mode",
+        "guide/personal-squad"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "a",
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI manages the personal squad; canonical §Personal Squad (Ambient Discovery) + §Consult Mode Detection route personal agents as advisors.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "validated-test:test/sdk/consult.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "CLI side works everywhere; the digest has no Personal-Squad / Consult-Mode section, so ambient discovery of `~/.squad` personal agents depends on the host reading the canonical file on demand.",
+          "validation": [
+            "validated-test:test/personal-squad.test.ts::*",
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "prd-mode",
+      "name": "PRD mode (decompose → approve → dependency-aware dispatch)",
+      "area": "Advanced",
+      "docs": [
+        "features/prd-mode"
+      ],
+      "canonicalSections": [
+        "PRD Mode"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §19; `prd-intake.md` template on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "github-issues-mode",
+      "name": "GitHub Issues mode (connect, list, route, branch → PR → merge)",
+      "area": "GitHub",
+      "docs": [
+        "features/github-issues",
+        "concepts/github-workflow",
+        "scenarios/issue-driven-dev"
+      ],
+      "canonicalSections": [
+        "GitHub Issues Mode"
+      ],
+      "dependsOn": [
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §18 with `gh` prerequisites, `squad/{issue}-{slug}` branches, `gh pr create`; `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "labels-triage",
+      "name": "Labels & triage (`squad` / `squad:<member>` taxonomy)",
+      "area": "GitHub",
+      "docs": [
+        "features/labels"
+      ],
+      "canonicalSections": [
+        "GitHub Issues Mode",
+        "Ralph — Work Monitor"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 route by `squad:<member>` labels; CLI triage applies the same taxonomy.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/ralph-triage.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "project-boards",
+      "name": "Project boards (`squad triage --board`)",
+      "area": "GitHub",
+      "docs": [
+        "features/project-boards"
+      ],
+      "dependsOn": [
+        "a",
+        "e"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "CLI capability, GitHub Projects via `gh`; the local host is not involved.",
+          "validation": [
+            "validated-test:test/ralph-board.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "gitlab-issues",
+      "name": "GitLab Issues mode (experimental, `glab`)",
+      "area": "Platforms",
+      "docs": [
+        "features/gitlab-issues"
+      ],
+      "dependsOn": [
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "Docs-only: no `gitlab` PlatformType in the SDK, no `glab` path in `squad triage|watch`, and neither the canonical agent nor the digest has a GitLab section. Works only if the model follows the docs page ad hoc with `glab`.",
+          "validation": [
+            "static-only"
+          ],
+          "notes": "Finding F2."
+        }
+      }
+    },
+    {
+      "id": "azure-devops",
+      "name": "Azure DevOps platform (work items, PRs, `az boards`, ADO MCP)",
+      "area": "Platforms",
+      "docs": [
+        "features/enterprise-platforms"
+      ],
+      "canonicalSections": [
+        "GitHub Issues Mode"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "degraded",
+          "mechanism": "`squad triage|watch` auto-detect ADO from the remote (or `config.platform: azure-devops`) and use `az`; `squad upgrade` seeds an `EXAMPLE-azure-devops` MCP server in `.mcp.json`. The coordinator section is GitHub-only (`gh`); ADO commands exist only in `issue-lifecycle.md`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3: interactive Issues mode has no ADO branch in the prompt."
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3."
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3."
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3."
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3."
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3."
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "CLI triage/watch on ADO is host-agnostic. In-host Issues mode: digest §18 is `gh`-only and the ADO MCP example is only seeded into Copilot's `.mcp.json`; ADO commands reachable only via `issue-lifecycle.md` on demand.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F3."
+        }
+      }
+    },
+    {
+      "id": "upstream-inheritance",
+      "name": "Upstream inheritance (`squad upstream add|sync`, inherited skills/decisions/wisdom/routing)",
+      "area": "Multi-squad",
+      "docs": [
+        "features/upstream-inheritance"
+      ],
+      "dependsOn": [
+        "a",
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "CLI config/clone/sync is host-agnostic and tested. Runtime inheritance is not wired: `resolveUpstreams()` has no CLI/MCP caller, and neither the canonical agent nor the digest tells the coordinator to read `upstream.json` (only the `cross-squad` skill mentions it).",
+          "validation": [
+            "validated-test:test/upstream.test.ts::*",
+            "validated-test:test/upstream-e2e.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F1: docs promise \"coordinator reads upstreams at session start\" but no prompt/CLI path implements it on any host."
+        }
+      }
+    },
+    {
+      "id": "cross-squad-registry",
+      "name": "Multiple squads / cross-squad (`squad registry|discover|delegate`, cross-squad skills)",
+      "area": "Multi-squad",
+      "docs": [
+        "scenarios/multiple-squads"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §20 routes peer-squad requests through the `cross-squad` / `cross-squad-communication` skills; CLI registry + delegate (GitHub issue handoff via `gh`).",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "validated-test:test/cross-squad-registry.test.ts::*",
+            "validated-test:test/cross-squad.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "subsquads",
+      "name": "SubSquads / workstreams (`squad subsquads`, multi-Codespace)",
+      "area": "Multi-squad",
+      "docs": [
+        "scenarios/multi-codespace",
+        "scenarios/scaling-workstreams",
+        "features/streams"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "CLI + watch discovery; host not involved.",
+          "validation": [
+            "validated-test:test/watch-subsquad-discovery.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "monorepo-team-root",
+      "name": "Monorepo / team-root resolution (`--team-root`, `SQUAD_TEAM_ROOT`, launch from a subfolder)",
+      "area": "Multi-squad",
+      "docs": [
+        "scenarios/monorepo",
+        "features/worktrees"
+      ],
+      "canonicalSections": [
+        "State & Team Root Resolution (before mode check)"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI honours `--team-root`/`SQUAD_TEAM_ROOT`; state-mcp walks up from cwd (`findSquadDir`); canonical §State & Team Root Resolution + `worktree-reference.md` resolve `TEAM_ROOT` and pass it to every spawn.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "CLI/MCP resolution is host-agnostic, but the digest has no team-root section (only `worktree-reference.md` on demand) and the host discovers its projected agent/MCP config from its own project root, so launching from a package subfolder may not load the Squad coordinator at all.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Validate per host: does the host find root-level projections from a subfolder cwd?"
+        }
+      }
+    },
+    {
+      "id": "dual-root-remote-mode",
+      "name": "Dual-root remote mode (`squad init --mode remote`, `link`, `externalize` / `internalize`)",
+      "area": "Multi-squad",
+      "docs": [
+        "features/dual-mode-deployment",
+        "scenarios/team-state-storage"
+      ],
+      "canonicalSections": [
+        "State & Team Root Resolution (before mode check)"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI writes `config.json.teamRoot`; state-mcp resolves `mode: remote`; canonical step 3 loads `team.md` from the team root.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F4 candidate — validate."
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F4 candidate — validate."
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F4 candidate — validate."
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F4 candidate — validate."
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F4 candidate — validate."
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "State tools follow `teamRoot` transparently, but the digest reads `.squad/team.md` literally and never mentions `teamRoot`/`stateLocation`, so a satellite repo may look like Init Mode to the host coordinator.",
+          "validation": [
+            "validated-test:test/resolution.test.ts::*",
+            "static-only"
+          ],
+          "notes": "Finding F4 candidate — validate."
+        }
+      }
+    },
+    {
+      "id": "git-worktrees",
+      "name": "Git worktrees & worktree mode (issue worktrees, `WORKTREE_PATH`)",
+      "area": "Advanced",
+      "docs": [
+        "features/worktrees"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "a",
+        "b",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §9/§18 prefer an isolated worktree per issue and point to `worktree-reference.md`; needs shell access in the host.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator Ralph mode",
+            "validated-test:test/worktree.test.ts::*",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "export-import",
+      "name": "Export / import (`squad export`, `squad import`, team portability)",
+      "area": "Advanced",
+      "docs": [
+        "features/export-import",
+        "scenarios/team-portability",
+        "concepts/portability"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Pure CLI; portable `clients[]` hygiene strips host secrets.",
+          "validation": [
+            "validated-test:test/cli/export-import.test.ts::*",
+            "validated-test:test/clients.test.ts::portable clients[] hygiene"
+          ]
+        }
+      }
+    },
+    {
+      "id": "storage-provider",
+      "name": "Storage provider abstraction (FS / SQLite / external state)",
+      "area": "Infrastructure",
+      "docs": [
+        "features/storage-provider"
+      ],
+      "dependsOn": [
+        "a",
+        "c"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "SDK/CLI layer under state-mcp; host not involved.",
+          "validation": [
+            "validated-test:test/state-backend.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "notifications",
+      "name": "Notifications (`watch --notify-level`, Teams/email monitors)",
+      "area": "Infrastructure",
+      "docs": [
+        "features/notifications"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "CLI watch capability.",
+          "validation": [
+            "validated-test:test/watch-notify-level.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "marketplace-plugins",
+      "name": "Marketplace & plugins (`squad plugin marketplace …`, skill install on cast)",
+      "area": "Advanced",
+      "docs": [
+        "features/marketplace",
+        "features/plugins"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "a",
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI + canonical \"check plugin marketplaces when adding a member\" step.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "degraded",
+          "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "degraded",
+          "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "degraded",
+          "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "degraded",
+          "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "degraded",
+          "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "CLI works; the digest Init/cast flow does not include the marketplace-browse step.",
+          "validation": [
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mcp-integration",
+      "name": "MCP integration (user MCP servers discovered; MCP → CLI fallback)",
+      "area": "Advanced",
+      "docs": [
+        "features/mcp"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "b",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Canonical §MCP Integration with tool-prefix discovery and `gh`/`az` fallbacks; `.mcp.json`.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Host loads its own MCP config; `squad_state` is merged without clobbering user servers. Digest lacks the discovery/fallback table but hosts expose MCP tools natively.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Host loads its own MCP config; `squad_state` is merged without clobbering user servers. Digest lacks the discovery/fallback table but hosts expose MCP tools natively.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Host loads its own MCP config; `squad_state` is merged without clobbering user servers. Digest lacks the discovery/fallback table but hosts expose MCP tools natively.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Host loads its own MCP config; `squad_state` is merged without clobbering user servers. Digest lacks the discovery/fallback table but hosts expose MCP tools natively.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Host loads its own MCP config; `squad_state` is merged without clobbering user servers. Digest lacks the discovery/fallback table but hosts expose MCP tools natively.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Host loads its own MCP config; `squad_state` is merged without clobbering user servers. Digest lacks the discovery/fallback table but hosts expose MCP tools natively.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "standalone-install",
+      "name": "Standalone install (no npm; `squad.exe state-mcp` launch spec)",
+      "area": "Core",
+      "docs": [
+        "features/standalone-install"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "`mcp-spec.ts` picks the standalone binary for the state-mcp launch spec in every projection.",
+          "validation": [
+            "validated-test:test/cli/upgrade.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "vscode",
+      "name": "VS Code (`runSubagent`, settings default agent)",
+      "area": "Core",
+      "docs": [
+        "features/vscode"
+      ],
+      "canonicalSections": [
+        "Team Mode"
+      ],
+      "dependsOn": [
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Canonical §Client Compatibility micro-playbook; `squad init` writes `.vscode/settings.json`.",
+          "validation": [
+            "validated-test:test/cli/init.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "n/a",
+          "mechanism": "Copilot-specific surface.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "n/a",
+          "mechanism": "Copilot-specific surface.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "n/a",
+          "mechanism": "Copilot-specific surface.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "n/a",
+          "mechanism": "Copilot-specific surface.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "n/a",
+          "mechanism": "Copilot-specific surface.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "n/a",
+          "mechanism": "Copilot-specific surface.",
+          "validation": [
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "squad-rc-start",
+      "name": "Squad RC / `squad start` (remote control bridge, tunnels)",
+      "area": "Advanced",
+      "docs": [
+        "features/squad-rc",
+        "scenarios/remote-qa"
+      ],
+      "dependsOn": [
+        "a",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`squad start|rc` wrap the Copilot CLI with phone/browser access.",
+          "validation": [
+            "validated-test:test/cli/rc.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "n/a",
+          "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "n/a",
+          "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "n/a",
+          "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "n/a",
+          "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "n/a",
+          "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "n/a",
+          "mechanism": "Bridges the Copilot CLI (ACP stdio); other hosts are not wrapped.",
+          "validation": [
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "enterprise-platforms",
+      "name": "Enterprise platforms (ADO + Planner work items, Teams/ADO discussions)",
+      "area": "Infrastructure",
+      "docs": [
+        "features/enterprise-platforms"
+      ],
+      "dependsOn": [
+        "a",
+        "e"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Platform adapters in `@bradygaster/squad-sdk/platform`, consumed by `squad triage|watch`.",
+          "validation": [
+            "validated-test:test/platform-adapter.test.ts::*",
+            "validated-test:test/ralph-commands.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "distributed-mesh",
+      "name": "Distributed mesh, capability routing, rate limiting, KEDA autoscaling",
+      "area": "Infrastructure",
+      "docs": [
+        "features/distributed-mesh",
+        "features/capability-routing",
+        "features/rate-limiting",
+        "features/keda-scaling"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Fleet/watch-side features; the interactive host is not involved.",
+          "validation": [
+            "validated-test:test/watch-fleet-dispatch.test.ts::*",
+            "validated-test:test/rate-limiting.test.ts::*",
+            "validated-test:test/watch-rate-limit.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aspire-dashboard",
+      "name": "Aspire dashboard / OTel observability (`squad aspire`)",
+      "area": "Infrastructure",
+      "docs": [
+        "scenarios/aspire-dashboard",
+        "scenarios/production-observability"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "CLI launches the dashboard; OTel export from the SDK runtime.",
+          "validation": [
+            "validated-test:test/aspire-command.test.ts::*",
+            "validated-test:test/otel-export.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "gh-aw",
+      "name": "GitHub Agentic Workflows (gh-aw) integration",
+      "area": "GitHub",
+      "docs": [
+        "guide/gh-aw"
+      ],
+      "dependsOn": [
+        "e"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Workflows in `workflows/*.md`; verifier + e2e scripts.",
+          "validation": [
+            "validated-test:test/gh-aw-enlistment-skill.test.ts::*",
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "n/a",
+          "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "kiro": {
+          "status": "n/a",
+          "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "opencode": {
+          "status": "n/a",
+          "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "cursor": {
+          "status": "n/a",
+          "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "n/a",
+          "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "antigravity": {
+          "status": "n/a",
+          "mechanism": "Runs in GitHub Actions with the Copilot engine; the local host is irrelevant.",
+          "validation": [
+            "static-only"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sdk-first-mode",
+      "name": "SDK-first mode (`squad.config.ts`, `squad build`, `squad migrate`)",
+      "area": "Core",
+      "docs": [
+        "sdk-first-mode",
+        "reference/sdk"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Compiles to the same `.squad/` markdown every host consumes.",
+          "validation": [
+            "validated-test:test/migrate.test.ts::*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "doctor-health-nap",
+      "name": "Maintenance CLIs (`squad doctor`, `squad health`, `squad nap`, `squad upgrade`)",
+      "area": "Core",
+      "docs": [
+        "reference/cli",
+        "scenarios/upgrading",
+        "scenarios/troubleshooting"
+      ],
+      "dependsOn": [
+        "a"
+      ],
+      "hostIndependent": true,
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Pure CLI; `upgrade --client` refreshes every configured host projection.",
+          "validation": [
+            "validated-test:test/cli/doctor.test.ts::*",
+            "validated-test:test/cli/upgrade.test.ts::*",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::RC1→stable exit 1: upgrade and rollback from a v0.1 workspace"
+          ]
+        }
+      }
+    },
+    {
+      "id": "client-projection",
+      "name": "Squad 2.0 `--client` projection (coordinator file + MCP config per host, rollback)",
+      "area": "Squad 2.0",
+      "docs": [
+        "concepts/squad-2-0-architecture",
+        "scenarios/using-squad-across-clients",
+        "scenarios/client-compatibility"
+      ],
+      "dependsOn": [
+        "a",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
+            "validated-test:test/clients-real-cli.test.ts::claude discovers the squad subagents and parses .mcp.json"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
+            "validated-test:test/clients-real-cli.test.ts::kiro validates and lists the squad agent"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
+            "validated-test:test/clients-real-cli.test.ts::opencode loads squad as a primary agent and connects the MCP server"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
+            "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
+            "validated-test:test/clients-real-cli.test.ts::codex loads the project config (trusted), sees squad_state MCP, discovers the squad TOML role, and activates coordinator instructions on spawn"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "`installClients()` writes host-native files idempotently; real CLIs load them.",
+          "validation": [
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 1: client projections and --client",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients.test.ts::Reviewer gate (@Bubu): /client <-> /clients export identity (===), pure projection boundary, and byte-exact rollback across all 7 hosts",
+            "validated-test:test/clients-real-cli.test.ts::antigravity discovers the squad agent"
+          ]
+        }
+      }
+    },
+    {
+      "id": "squad-state-mcp-bridge",
+      "name": "`squad_state` MCP bridge reachable from the host (stdio, host-prefixed tool names)",
+      "area": "Squad 2.0",
+      "docs": [
+        "concepts/squad-2-0-architecture",
+        "reference/tools-and-hooks"
+      ],
+      "dependsOn": [
+        "c",
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "untested",
+            "validated-test:test/clients-real-cli.test.ts::claude discovers the squad subagents and parses .mcp.json"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "untested",
+            "validated-test:test/clients-real-cli.test.ts::kiro validates and lists the squad agent"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "untested",
+            "validated-test:test/clients-real-cli.test.ts::opencode loads squad as a primary agent and connects the MCP server"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "validated-test:test/clients-real-cli.test.ts::cursor-agent lists the squad_state server from .cursor/mcp.json (read-only)",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "untested",
+            "validated-test:test/clients-real-cli.test.ts::codex loads the project config (trusted), sees squad_state MCP, discovers the squad TOML role, and activates coordinator instructions on spawn"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Projected launch spec `npx -y @bradygaster/squad-cli@<ver> state-mcp` (or standalone binary); digest §4 documents the host prefixes.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::executes squad_state tools against the workspace .squad directory",
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::writes the host config and agent files each client reads",
+            "untested",
+            "validated-test:test/clients-real-cli.test.ts::antigravity discovers the squad agent"
+          ]
+        }
+      }
+    },
+    {
+      "id": "capability-negotiation",
+      "name": "Capability negotiation (client ∩ backend ∩ policy)",
+      "area": "Squad 2.0",
+      "docs": [
+        "concepts/squad-2-0-architecture"
+      ],
+      "dependsOn": [
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "`CAPABILITY_TOKENS_BY_HOST` 1:1 with `capability-matrix.json`; negotiated over real JSON-RPC.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::negotiates capabilities for the client per capability-matrix.json",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::12. capability tokens match capability-matrix.json for all 7 hosts",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 2: cross-plane capability intersection"
+          ]
+        }
+      }
+    },
+    {
+      "id": "experimental-backend",
+      "name": "Experimental conversation backend (`squad_backend_*`, durable-http, approvals, resume)",
+      "area": "Squad 2.0",
+      "docs": [
+        "concepts/squad-2-0-architecture"
+      ],
+      "dependsOn": [
+        "c"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Opt-in tools over the same MCP server; backend semantics are host-independent.",
+          "validation": [
+            "validated-test:test/squad-20-real-clients-stdio.e2e.test.ts::completes the MCP handshake and lists squad_state_* and all squad_backend_* tools when opted in",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Scenario 4: DurableHttpSquadBackend full HTTP lifecycle",
+            "validated-test:test/squad-20-all-scenarios.e2e.test.ts::Full non-bypass journey: host adapter → broker → harness → approval → restart/reconnect"
+          ]
+        }
+      }
+    },
+    {
+      "id": "process-hygiene",
+      "name": "Process hygiene (never kill by image name; PID-only)",
+      "area": "Core",
+      "docs": [
+        "scenarios/troubleshooting"
+      ],
+      "canonicalSections": [
+        "Constraints"
+      ],
+      "dependsOn": [
+        "b"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "supported",
+          "mechanism": "Digest §22–23.",
+          "validation": [
+            "validated-test:test/clients.test.ts::coordinator behavioral-contract parity",
+            "untested"
+          ]
+        }
+      }
+    },
+    {
+      "id": "subagent-mcp-inheritance",
+      "name": "Specialists (subagents) can reach `squad_state` tools themselves",
+      "area": "Squad 2.0",
+      "docs": [
+        "concepts/squad-2-0-architecture"
+      ],
+      "dependsOn": [
+        "d"
+      ],
+      "cells": {
+        "copilot": {
+          "status": "supported",
+          "mechanism": "`task` subagents inherit the session MCP servers.",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "claude": {
+          "status": "supported",
+          "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
+          "validation": [
+            "untested"
+          ]
+        },
+        "kiro": {
+          "status": "supported",
+          "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
+          "validation": [
+            "untested"
+          ]
+        },
+        "opencode": {
+          "status": "supported",
+          "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
+          "validation": [
+            "untested"
+          ]
+        },
+        "cursor": {
+          "status": "supported",
+          "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
+          "validation": [
+            "static-only"
+          ]
+        },
+        "codex": {
+          "status": "supported",
+          "mechanism": "Subagents inherit MCP servers (Claude `Task`, Codex `spawn_agent`, OpenCode child sessions, Kiro subagents).",
+          "validation": [
+            "untested"
+          ]
+        },
+        "antigravity": {
+          "status": "degraded",
+          "mechanism": "`invoke_subagent` starts with a clean context; MCP attached via agent frontmatter may not propagate — specialists return results for the coordinator to persist.",
+          "validation": [
+            "untested"
+          ]
+        }
+      }
+    }
+  ]
+}

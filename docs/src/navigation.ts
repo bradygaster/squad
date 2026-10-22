@@ -164,6 +164,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Config', slug: 'reference/config' },
       { title: 'Container Image', slug: 'reference/container-image' },
       { title: 'State Backend Selection', slug: 'reference/state-backend-selection' },
+      { title: 'Host Feature Matrix', slug: 'reference/host-feature-matrix' },
       { title: 'Glossary', slug: 'reference/glossary' },
     ],
   },
