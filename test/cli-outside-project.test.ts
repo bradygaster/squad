@@ -47,8 +47,7 @@ async function runSquad(args: string[], extraEnv: NodeJS.ProcessEnv = {}, workDi
         NO_COLOR: '1',
         APPDATA: configHome,
         LOCALAPPDATA: configHome,
-        XDG_CONFIG_HOME: configHome,
-        ...(process.platform === 'darwin' ? { HOME: configHome } : {}),
+        XDG_CONFIG_HOME: configHome, // honoured on Linux and macOS, so the child resolves configHome/squad everywhere
         ...extraEnv,
       },
       timeout: 60_000,
@@ -64,7 +63,8 @@ async function runSquad(args: string[], extraEnv: NodeJS.ProcessEnv = {}, workDi
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), 'squad-outside-project-'));
   configHome = join(tmp, 'config-home');
-  // A fully formed squad where 1.x would have looked for a global fallback.
+  // A fully formed squad where 1.x would have looked for a global fallback. With APPDATA (Windows)
+  // and XDG_CONFIG_HOME (Linux, macOS) both set to configHome, the child resolves exactly this path.
   profileSquadRoot = join(configHome, 'squad');
   const profileSquad = join(profileSquadRoot, '.squad');
   mkdirSync(join(profileSquad, 'agents', 'globetrotter'), { recursive: true });
@@ -117,12 +117,16 @@ describe.skipIf(!cliBuilt)('state commands outside a project fail clearly and ne
     const env = { HOME: fakeHome, USERPROFILE: fakeHome, SQUAD_HOME: homeSquad };
     const before = fingerprint(fakeHome);
 
-    for (const args of [['cast', '--name', 'Probe', '--role', 'developer'], ['status'], ['doctor'], ['cost']]) {
-      const r = await runSquad(args, env, work);
-      const output = `${r.stdout}\n${r.stderr}`;
-      expect(r.code, `squad ${args[0]} must fail; output:\n${output}`).not.toBe(0);
-      expect(output).toMatch(/No squad (in this directory|found)[\s\S]*squad init/i);
-      expect(output).not.toMatch(/Homebody/);
+    // From a directory beneath the home dir, and directly from the home dir itself (where a bare
+    // existence check for ./.squad would succeed and bypass the resolver's profile boundary).
+    for (const dir of [work, fakeHome]) {
+      for (const args of [['cast', '--name', 'Probe', '--role', 'developer'], ['status'], ['doctor'], ['cost']]) {
+        const r = await runSquad(args, env, dir);
+        const output = `${r.stdout}\n${r.stderr}`;
+        expect(r.code, `squad ${args[0]} (cwd ${dir === fakeHome ? 'home' : 'below home'}) must fail; output:\n${output}`).not.toBe(0);
+        expect(output).toMatch(/No squad in this directory[\s\S]*squad init/i);
+        expect(output).not.toMatch(/Homebody|Mode: /);
+      }
     }
     expect(existsSync(join(homeSquad, 'agents', 'probe')), 'cast must never write into ~/.squad').toBe(false);
     expect(existsSync(join(work, '.squad'))).toBe(false);

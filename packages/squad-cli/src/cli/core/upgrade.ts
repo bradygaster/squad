@@ -258,13 +258,16 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
 function stripRetiredProfileTeamRoot(squadDir: string, dest: string, dryRun: boolean): void {
   const configPath = path.join(squadDir, 'config.json');
   if (!storage.existsSync(configPath)) return;
-  let parsed: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(storage.readSync(configPath) ?? '') as Record<string, unknown>;
+    parsed = JSON.parse(storage.readSync(configPath) ?? '');
   } catch {
     return;
   }
-  const teamRoot = parsed['teamRoot'];
+  // readSquadConfig() tolerates null/non-object config.json; so must this preflight.
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+  const record = parsed as Record<string, unknown>;
+  const teamRoot = record['teamRoot'];
   if (typeof teamRoot !== 'string' || teamRoot.length === 0 || teamRoot === '.') return;
   const target = path.resolve(dest, teamRoot);
   if (!isRetiredProfileTeamRoot(target)) return;
@@ -272,8 +275,8 @@ function stripRetiredProfileTeamRoot(squadDir: string, dest: string, dryRun: boo
     info(`Would remove stale teamRoot pointing to ${target}; project state would be local`);
     return;
   }
-  delete parsed['teamRoot'];
-  storage.writeSync(configPath, JSON.stringify(parsed, null, 2) + '\n');
+  delete record['teamRoot'];
+  storage.writeSync(configPath, JSON.stringify(record, null, 2) + '\n');
   clearResolveSquadCache();
   info(`Removed stale teamRoot pointing to ${target}; project state is now local`);
 }
@@ -287,7 +290,7 @@ export function stripAgentStamps(s: string): string {
   return s
     .replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '')
     .replace(/<!-- version: [^>]+ -->/g, '<!-- version: X -->')
-    .replace(/- \*\*Version:\*\* [^\n]+/g, '- **Version:** X')
+    .replace(/- \*\*Version:\*\* \S+/g, '- **Version:** X')
     .replace(/`Squad v[^`]+`/g, '`Squad vX`')
     .replace(/@bradygaster\/squad-cli@[^\s"'\]]+/g, '@bradygaster/squad-cli@X');
 }

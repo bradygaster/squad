@@ -7,7 +7,8 @@
  *
  *  - `SQUAD_HOME`                      → roaming squad home (`resolveSquadHome`)
  *  - `APPDATA`, `LOCALAPPDATA`         → Windows config dir (`resolveGlobalSquadPath`)
- *  - `XDG_CONFIG_HOME`                 → Linux config dir (`resolveGlobalSquadPath`)
+ *  - `XDG_CONFIG_HOME`                 → Linux and macOS config dir (`resolveGlobalSquadPath`
+ *                                         honours it on macOS too, so the Library path is never used)
  *
  * `HOME` / `USERPROFILE` are deliberately left alone: git, gh and the host CLIs spawned
  * by tests read their own configuration from there, and `resolveSquad()` already refuses

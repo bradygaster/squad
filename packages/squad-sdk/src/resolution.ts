@@ -217,7 +217,7 @@ function platformSquadConfigDir(): string | null {
     if (platform === 'win32') {
       base = process.env['APPDATA'] ?? process.env['LOCALAPPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming');
     } else if (platform === 'darwin') {
-      base = path.join(os.homedir(), 'Library', 'Application Support');
+      base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), 'Library', 'Application Support');
     } else {
       base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
     }
@@ -506,7 +506,7 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
  * | Platform | Path                                       |
  * |----------|--------------------------------------------|
  * | Windows  | `%APPDATA%/squad/`                         |
- * | macOS    | `~/Library/Application Support/squad/`      |
+ * | macOS    | `$XDG_CONFIG_HOME/squad/` if set, else `~/Library/Application Support/squad/` |
  * | Linux    | `$XDG_CONFIG_HOME/squad/` (default `~/.config/squad/`) |
  *
  * The directory is created (recursively) if it does not already exist.
@@ -523,7 +523,8 @@ export function resolveGlobalSquadPath(): string {
       ?? process.env['LOCALAPPDATA']
       ?? path.join(os.homedir(), 'AppData', 'Roaming');
   } else if (platform === 'darwin') {
-    base = path.join(os.homedir(), 'Library', 'Application Support');
+    // macOS: an explicit XDG_CONFIG_HOME overrides the Library location (same override as Linux).
+    base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), 'Library', 'Application Support');
   } else {
     // Linux / other POSIX — respect XDG_CONFIG_HOME
     base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');

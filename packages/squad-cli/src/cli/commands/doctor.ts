@@ -911,7 +911,9 @@ export function printDoctorReport(checks: DoctorCheck[], mode: DoctorMode): void
  */
 export async function doctorCommand(cwd?: string): Promise<void> {
   const resolvedCwd = cwd ?? process.cwd();
-  if (!fileExists(path.join(resolvedCwd, '.squad')) && !resolveSquad(resolvedCwd)) {
+  // The resolver is the single admission check: it applies the profile boundary (a ~/.squad
+  // in the home directory is never a project), so a bare existence check must not short-circuit it.
+  if (!resolveSquad(resolvedCwd)) {
     fatal(`No squad in this directory (searched from ${resolvedCwd}). Run "squad init" here, or use --team-root to point at the project.`);
   }
   const mode = getDoctorMode(resolvedCwd);

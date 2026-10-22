@@ -156,6 +156,19 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
     expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
   }, 180_000);
 
+  it('a config.json holding JSON null or an array does not crash the preflight (readSquadConfig tolerance is preserved)', async () => {
+    for (const body of ['null\n', '[]\n', '"nope"\n']) {
+      const project = await initProject(`odd-${Buffer.from(body).toString('hex')}`);
+      const configPath = path.join(project, '.squad', 'config.json');
+      fs.writeFileSync(configPath, body);
+      const io = captureConsole();
+      try {
+        await expect(runUpgrade(project, { force: true, dryRun: true })).resolves.toBeDefined();
+      } finally { io.restore(); }
+      expect(fs.readFileSync(configPath, 'utf8'), 'dry-run must not rewrite an odd config.json').toBe(body);
+    }
+  }, 180_000);
+
   it('a genuine dual-root teamRoot (another repository) is preserved and still resolves in remote mode', async () => {
     const shared = await initProject('shared-team');
     const satellite = await initProject('satellite');
@@ -174,6 +187,14 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
 });
 
 describe('UM-F2: version stamps are not customizations', () => {
+  it('stripAgentStamps normalizes only the version token on the Version line, so an edited instruction is still a customization', () => {
+    const tpl = '- **Version:** 1.0.0 (see HTML comment above). Include it as `Squad v{version}` in your first response.\n';
+    const restamped = '- **Version:** 2.0.0 (see HTML comment above). Include it as `Squad v{version}` in your first response.\n';
+    const edited = '- **Version:** 2.0.0 (see HTML comment above). Never include it as `Squad v{version}` in your first response.\n';
+    expect(stripAgentStamps(tpl)).toBe(stripAgentStamps(restamped));
+    expect(stripAgentStamps(edited)).not.toBe(stripAgentStamps(tpl));
+  });
+
   it('stripAgentStamps normalizes every stamp form the upgrader writes', () => {
     const a = '<!-- version: 1.0.0 -->\n- **Version:** 1.0.0\nRun `Squad v1.0.0`\n  pkg: @bradygaster/squad-cli@1.0.0\n<!-- squad-cli v1.0.0 -->\nbody\n';
     const b = '<!-- version: 2.0.0-preview.1 -->\n- **Version:** 2.0.0-preview.1\nRun `Squad v2.0.0-preview.1`\n  pkg: @bradygaster/squad-cli@2.0.0-preview.1\nbody\n';

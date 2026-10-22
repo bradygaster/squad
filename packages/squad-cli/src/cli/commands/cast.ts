@@ -316,7 +316,7 @@ export async function runCastAdd(cwd: string, options: CastAddOptions): Promise<
 
   const paths = resolveSquadPaths(cwd);
   if (!paths) {
-    fatal('No squad found. Run "squad init" first.');
+    fatal(`No squad in this directory (searched from ${cwd}). Run "squad init" here, or use --team-root to point at the project.`);
   }
 
   const externalSquadDir =
@@ -379,7 +379,7 @@ export async function runCast(cwd: string): Promise<void> {
   // Resolve squad paths
   const paths = resolveSquadPaths(cwd);
   if (!paths) {
-    fatal('No squad found. Run "squad init" first.');
+    fatal(`No squad in this directory (searched from ${cwd}). Run "squad init" here, or use --team-root to point at the project.`);
   }
   
   // Discover project agents.

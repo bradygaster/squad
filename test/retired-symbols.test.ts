@@ -168,20 +168,27 @@ describe('retired-symbol gate: no trace of personal squads, consult mode, Ghost 
 
   it('the allowlisted files still exist and the BREAKING entry is exactly one line', () => {
     for (const rel of Object.keys(ALLOWLIST)) {
-      if (rel.endsWith('CHANGELOG.md')) continue; // created by changesets at release time
+      // CHANGELOGs are written, and the changeset fragment consumed, by `changeset version` at release.
+      if (rel.endsWith('CHANGELOG.md') || rel.startsWith('.changeset/')) continue;
       expect(existsSync(join(ROOT, rel)), `${rel} is allowlisted but missing — prune the allowlist`).toBe(true);
     }
-    const changeset = readFileSync(join(ROOT, '.changeset/squad2-c-personal-removal-and-fixes.md'), 'utf8');
-    const lines = changeset.split(/\r?\n/);
-    const breaking = lines.filter((l) => /\*\*BREAKING:\*\*/.test(l));
-    expect(breaking, 'exactly one BREAKING line').toHaveLength(1);
-    expect(breaking[0]).toContain(BREAKING_LINE);
-    // The release notes and upgrading guide repeat that exact sentence once each, and nothing more.
+    // Durable: the release notes and upgrading guide repeat the exact sentence once each, and nothing more.
     for (const rel of BREAKING_LINE_ONLY) {
       const text = readFileSync(join(ROOT, rel), 'utf8');
       expect(text.split(BREAKING_LINE).length - 1, `${rel} must carry the BREAKING sentence exactly once`).toBe(1);
     }
-    const mentioning = lines.filter((l) => RETIRED_PATTERNS.some(([, re]) => re.test(l)));
-    expect(mentioning, 'only the BREAKING line may name the retired concepts').toEqual(breaking);
+    // Pre-release: the pending fragment carries the sentence exactly once and nothing else retired.
+    const fragment = join(ROOT, '.changeset/squad2-c-personal-removal-and-fixes.md');
+    if (existsSync(fragment)) {
+      const lines = readFileSync(fragment, 'utf8').split(/\r?\n/);
+      const breaking = lines.filter((l) => /\*\*BREAKING:\*\*/.test(l));
+      expect(breaking, 'exactly one BREAKING line').toHaveLength(1);
+      expect(breaking[0]).toContain(BREAKING_LINE);
+      const mentioning = lines.filter((l) => RETIRED_PATTERNS.some(([, re]) => re.test(l)));
+      expect(mentioning, 'only the BREAKING line may name the retired concepts').toEqual(breaking);
+    } else {
+      // Post-release: the sentence must have landed in the CLI changelog.
+      expect(readFileSync(join(ROOT, 'packages/squad-cli/CHANGELOG.md'), 'utf8')).toContain(BREAKING_LINE);
+    }
   });
 });
