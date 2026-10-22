@@ -70,7 +70,7 @@ interface ExpectedFailure {
   /** For set-valued checks: the exact detail that is known/expected. Any other failure is a real `fail`. */
   knownDetail?: string;
 }
-interface Finding { id: string; title: string; severity: string; layer: string; repro: string[]; observed: string }
+interface Finding { id: string; title: string; severity: string; layer: string; repro: string[]; observed: string; resolved?: string }
 interface Run { platform: string; arch: string; node: string; target: string; commit: string; recordedAt: string; results: ScenarioResult[] }
 interface Matrix {
   protocol: string;
@@ -129,6 +129,9 @@ describe('upgrade-matrix.json integrity', () => {
     for (const f of matrix.findings) {
       expect(f.repro.length, `finding ${f.id} needs a repro`).toBeGreaterThan(0);
       expect(f.observed.length, `finding ${f.id} needs an observed outcome`).toBeGreaterThan(0);
+      const pinned = matrix.expectedFailures.some((xf) => xf.finding === f.id);
+      expect(pinned || !!f.resolved, `finding ${f.id} is neither pinned as an expected failure nor marked resolved`).toBe(true);
+      expect(!(pinned && f.resolved), `finding ${f.id} is marked resolved but still pinned — remove its expectedFailures entries`).toBe(true);
     }
   });
 

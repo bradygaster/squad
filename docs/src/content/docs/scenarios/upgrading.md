@@ -137,8 +137,8 @@ Every row below is a real published artifact of an older Squad release driven th
 
 | Platform | Arch | Node | Target | Commit | Recorded | ✅ pass | 🔴 fail | ⏭️ skipped | ⚠️ with known findings |
 |----------|------|------|--------|--------|----------|---------|---------|-----------|------------------------|
-| Linux (`linux`) | x64 | v22.23.3 | v1.2.0-preview.1 | `f67551a` | 2026-10-22 | 35 | 0 | 7 | 28 |
-| Windows (`win32`) | x64 | v22.23.3 | v1.2.0-preview.1 | `f67551a` | 2026-10-22 | 35 | 0 | 7 | 28 |
+| Linux (`linux`) | x64 | v22.23.4 | v1.2.0-preview.1 | `21ecca77` | 2026-10-22 | 35 | 0 | 7 | 4 |
+| Windows (`win32`) | x64 | v24.14.0 | v1.2.0-preview.1 | `c815de87` | 2026-10-22 | 35 | 0 | 7 | 4 |
 
 ### Producers
 
@@ -167,40 +167,40 @@ Every row below is a real published artifact of an older Squad release driven th
 
 | Producer | Shape | Linux | Windows |
 |----------|-------|---|---|
-| **0.9.1** | `default` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
-| **0.9.1** | `profile` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
-| **0.9.1** | `legacy-casting` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
+| **0.9.1** | `default` | ✅ pass ⚠️ known F3 | ✅ pass ⚠️ known F3 |
+| **0.9.1** | `profile` | ✅ pass ⚠️ known F3 | ✅ pass ⚠️ known F3 |
+| **0.9.1** | `legacy-casting` | ✅ pass ⚠️ known F3 | ✅ pass ⚠️ known F3 |
 | **0.9.1** | `orphan` | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) |
 | **0.9.1** | `two-layer` | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) |
-| **0.9.1** | `ai-team` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
+| **0.9.1** | `ai-team` | ✅ pass ⚠️ known F3 | ✅ pass ⚠️ known F3 |
 | **0.9.1** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.9.1 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.9.1 cannot declare upstream.json) |
-| **0.13.1** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **0.13.1** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
-| **0.13.1** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **0.13.1** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **0.13.1** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **0.13.1** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **0.13.1** | `default` | ✅ pass | ✅ pass |
+| **0.13.1** | `profile` | ✅ pass | ✅ pass |
+| **0.13.1** | `legacy-casting` | ✅ pass | ✅ pass |
+| **0.13.1** | `orphan` | ✅ pass | ✅ pass |
+| **0.13.1** | `two-layer` | ✅ pass | ✅ pass |
+| **0.13.1** | `ai-team` | ✅ pass | ✅ pass |
 | **0.13.1** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.13.1 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.13.1 cannot declare upstream.json) |
-| **1.0.0** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.0** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
-| **1.0.0** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.0** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.0** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.0** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.0** | `default` | ✅ pass | ✅ pass |
+| **1.0.0** | `profile` | ✅ pass | ✅ pass |
+| **1.0.0** | `legacy-casting` | ✅ pass | ✅ pass |
+| **1.0.0** | `orphan` | ✅ pass | ✅ pass |
+| **1.0.0** | `two-layer` | ✅ pass | ✅ pass |
+| **1.0.0** | `ai-team` | ✅ pass | ✅ pass |
 | **1.0.0** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.0 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.0 cannot declare upstream.json) |
-| **1.0.1** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.1** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
-| **1.0.1** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.1** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.1** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.0.1** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.1** | `default` | ✅ pass | ✅ pass |
+| **1.0.1** | `profile` | ✅ pass | ✅ pass |
+| **1.0.1** | `legacy-casting` | ✅ pass | ✅ pass |
+| **1.0.1** | `orphan` | ✅ pass | ✅ pass |
+| **1.0.1** | `two-layer` | ✅ pass | ✅ pass |
+| **1.0.1** | `ai-team` | ✅ pass | ✅ pass |
 | **1.0.1** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.1 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.1 cannot declare upstream.json) |
-| **1.1.0** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.1.0** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
-| **1.1.0** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.1.0** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.1.0** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
-| **1.1.0** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.1.0** | `default` | ✅ pass | ✅ pass |
+| **1.1.0** | `profile` | ✅ pass | ✅ pass |
+| **1.1.0** | `legacy-casting` | ✅ pass | ✅ pass |
+| **1.1.0** | `orphan` | ✅ pass | ✅ pass |
+| **1.1.0** | `two-layer` | ✅ pass | ✅ pass |
+| **1.1.0** | `ai-team` | ✅ pass | ✅ pass |
 | **1.1.0** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.1.0 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.1.0 cannot declare upstream.json) |
 | **HEAD** | `default` | ✅ pass | ✅ pass |
 | **HEAD** | `profile` | ✅ pass | ✅ pass |
@@ -232,11 +232,11 @@ Every row below is a real published artifact of an older Squad release driven th
 
 ### Findings
 
-Real upgrade defects observed by the suite. Each is pinned as an expected failure until fixed; the fix lands in the layer named, not in this test-only layer.
+Real upgrade defects observed by the suite. An open finding is pinned as an expected failure until fixed (the fix lands in the layer named, not in this test-only layer); a resolved finding keeps its repro here so the matrix row that used to carry it documents the regression guard.
 
 #### F1 — Stale `teamRoot` written by 0.13.x–1.x `init` survives `squad upgrade`; the upgraded project resolves in remote mode against the removed profile squad
 
-**Severity:** high · **Owner:** C — personal-squad removal (`runUpgrade` / `resolveSquadPaths`)
+**Severity:** high · **Owner:** C — personal-squad removal (`runUpgrade` / `resolveSquadPaths`) · **Status:** ✅ resolved
 
 Repro:
 
@@ -247,11 +247,11 @@ Repro:
 
 Observed: `team-root-absent` fails (`teamRoot=<config-home>/squad`) and `doctor` fails for the `profile` shape on every 0.13.1+ producer. The profile tree itself stays sha256-identical (`profile-untouched` passes), so this is a resolution defect, not a write: Squad 2.0 keeps honouring a link to a directory it no longer supports. Expected: `squad upgrade` drops (or refuses with guidance) a `teamRoot` that points at the platform config dir, and the project resolves in local mode.
 
-Pinned checks: `team-root-absent` (0.13.1, 1.0.0, 1.0.1, 1.1.0 × profile × all platforms); `doctor` (0.13.1, 1.0.0, 1.0.1, 1.1.0 × profile × all platforms).
+Resolved: Fixed on squad2-c @ 21ecca77 (PR #2279): `squad upgrade` removes a `teamRoot` that resolves to the platform config dir / `~/.squad` / `SQUAD_HOME` (`isRetiredProfileTeamRoot()` in `@bradygaster/squad-sdk/resolution`) and prints `Removed stale teamRoot pointing to <path>; project state is now local`; `--dry-run` previews it; `resolveSquadPaths` treats such a teamRoot as local mode. Dual-root targets are untouched. Verified by this matrix: `team-root-absent` and `doctor` now pass for every 0.13.1+ producer × `profile` on both OSes (the former pins produced `xpass` before removal).
 
 #### F2 — `squad upgrade` never recognizes its own stamped coordinator: every run reports "local customizations" and overwrites `squad.agent.md.local-backup`
 
-**Severity:** medium · **Owner:** CLI core — `packages/squad-cli/src/cli/core/upgrade.ts` `writeAgentTemplate`
+**Severity:** medium · **Owner:** CLI core — `packages/squad-cli/src/cli/core/upgrade.ts` `writeAgentTemplate` · **Status:** ✅ resolved
 
 Repro:
 
@@ -261,11 +261,11 @@ Repro:
 
 Observed: `idempotent-second-upgrade` fails with exactly `.github/agents/squad.agent.md.local-backup` for every old producer × shape × platform. On a project initialized by the 2.0 CLI itself the warning is printed on every run too (`Already up to date` + `⚠️ … local customizations`), but the overwritten backup is byte-identical, so the HEAD rows are not pinned. Cause: `writeAgentTemplate` strips `<!-- squad-cli vX -->` before comparing, but `stampVersion` writes `<!-- version: X -->`, `- **Version:** X` and `Squad vX`, so a stamped coordinator never equals the template. Expected: a second `squad upgrade` is a byte-for-byte no-op, prints no customization warning, and never touches an existing `.local-backup`.
 
-Pinned checks: `idempotent-second-upgrade` (0.9.1, 0.13.1, 1.0.0, 1.0.1, 1.1.0 × all shapes × all platforms).
+Resolved: Fixed on squad2-c @ 21ecca77 (PR #2279): `stripAgentStamps()` (`@bradygaster/squad-cli/core/upgrade`) normalizes `<!-- version: X -->`, the `- **Version:**` token, `` `Squad vX` ``, `@bradygaster/squad-cli@X` and the legacy `<!-- squad-cli vX -->` before the customization compare, and an identical `.local-backup` is not rewritten. Verified by this matrix: `idempotent-second-upgrade` now passes for every producer × shape on both OSes.
 
 #### F3 — Squad 0.9.1 `squad upgrade --dry-run` is not dry: pointed at a 2.0 project it silently downgrades the coordinator, skills, workflows and templates in place
 
-**Severity:** info (historical producer defect — not fixable in 2.0; recorded for the downgrade story) · **Owner:** none — behavior of the published 0.9.1 CLI
+**Severity:** info (historical producer defect — not fixable in 2.0; recorded for the downgrade story) · **Owner:** none — behavior of the published 0.9.1 CLI · **Status:** 🔴 open
 
 Repro:
 
@@ -283,7 +283,7 @@ Recorded, not asserted beyond "the dry-run modified nothing": what each old CLI 
 
 | Platform | Producer | Shapes | Observed |
 |----------|----------|--------|----------|
-| `linux` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 84 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …) |
+| `linux` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …) |
 | `linux` | 0.13.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
 | `linux` | 1.0.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
 | `linux` | 1.0.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |

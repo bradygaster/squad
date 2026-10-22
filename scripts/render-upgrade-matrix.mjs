@@ -135,12 +135,12 @@ export function renderSection(matrix) {
   if (matrix.findings.length) {
     lines.push('### Findings');
     lines.push('');
-    lines.push('Real upgrade defects observed by the suite. Each is pinned as an expected failure until fixed; the fix lands in the layer named, not in this test-only layer.');
+    lines.push('Real upgrade defects observed by the suite. An open finding is pinned as an expected failure until fixed (the fix lands in the layer named, not in this test-only layer); a resolved finding keeps its repro here so the matrix row that used to carry it documents the regression guard.');
     lines.push('');
     for (const f of matrix.findings) {
       lines.push(`#### ${f.id} — ${f.title}`);
       lines.push('');
-      lines.push(`**Severity:** ${f.severity} · **Owner:** ${f.layer}`);
+      lines.push(`**Severity:** ${f.severity} · **Owner:** ${f.layer} · **Status:** ${f.resolved ? '✅ resolved' : '🔴 open'}`);
       lines.push('');
       lines.push('Repro:');
       lines.push('');
@@ -148,6 +148,10 @@ export function renderSection(matrix) {
       lines.push('');
       lines.push(`Observed: ${f.observed}`);
       lines.push('');
+      if (f.resolved) {
+        lines.push(`Resolved: ${f.resolved}`);
+        lines.push('');
+      }
       const pins = matrix.expectedFailures.filter((x) => x.finding === f.id);
       if (pins.length) {
         lines.push(`Pinned checks: ${pins.map((x) => `\`${x.check}\` (${x.producers === '*' ? 'all producers' : x.producers.join(', ')} × ${x.shapes === '*' ? 'all shapes' : x.shapes.join(', ')} × ${x.platforms === '*' ? 'all platforms' : x.platforms.join(', ')})`).join('; ')}.`);
