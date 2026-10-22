@@ -234,6 +234,8 @@
     "worktree",
     "worktrees",
     "xarray",
+    "xfail",
+    "xpass",
     "ZUAER"
   ],
   "dictionaries": [

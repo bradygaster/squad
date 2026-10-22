@@ -125,6 +125,159 @@ Squad does not support downgrading in place. Older CLIs have no "newer workspace
 
 ---
 
+<!-- UPGRADE-MATRIX:START -->
+
+<!-- GENERATED from test-fixtures/spec/suite-v0.2/upgrade-matrix.json by scripts/render-upgrade-matrix.mjs. Edit the JSON (or merge new suite results), then re-run the script. -->
+
+## Tested upgrade paths
+
+Every row below is a real published artifact of an older Squad release driven through `squad init` under a given project state shape, then upgraded with the CLI packed from the current tree (`npm pack` of `@bradygaster/squad-sdk` + `@bradygaster/squad-cli`) by `test/squad-20-upgrade-matrix.test.ts`. Statuses are honest: **pass** means every check passed, **fail** lists the failing checks, **skipped** carries the reason (the suite never silently passes a producer it could not obtain). ⚠️ *known* marks checks pinned to a recorded finding below (`xfail`); the suite fails the moment a pinned check starts passing so the pin cannot go stale. Machine-readable source: `test-fixtures/spec/suite-v0.2/upgrade-matrix.json` (protocol `upgrade-matrix/v1`).
+
+### Runs
+
+_No runs recorded yet. Run `SQUAD_UPGRADE_MATRIX=1 npx vitest run test/squad-20-upgrade-matrix.test.ts` and merge the results with `node scripts/render-upgrade-matrix.mjs --merge <results.json>`._
+
+### Producers
+
+| Version | Artifact | Why it is in the matrix | `--state-backend` |
+|---------|----------|-------------------------|-------------------|
+| **0.9.1** | npm tarball (`@bradygaster/squad-cli`) | Oldest 0.x line that still installs on Node 22 (engines >=22.5) and scaffolds .squad/ with a casting registry; predates --state-backend. | no |
+| **0.13.1** | npm tarball (`@bradygaster/squad-cli`) | Last 0.x stable; first line with --state-backend (local\|orphan\|two-layer) and personal squads (writes teamRoot when a profile squad exists). | yes |
+| **1.0.0** | npm tarball (`@bradygaster/squad-cli`) | First 1.x stable; last version published to npm (dist-tag latest). | yes |
+| **1.0.1** | GitHub Release standalone bundle | Patch release whose CLI never reached npm (release run 37222633918: SDK publish failed, CLI publish skipped); only the standalone bundles exist. | yes |
+| **1.1.0** | GitHub Release standalone bundle | Latest 1.x release; npm CLI publish failed in release run 39442663504 ("Could not verify @bradygaster/squad-cli@1.1.0 on npm dist-tag 'latest' after 20 attempts"), so the standalone bundle is the only published artifact. | yes |
+| **HEAD** | packed from this tree | Same-version idempotency: the CLI packed from this tree scaffolds and then upgrades itself. | yes |
+
+### State shapes
+
+| Shape | Setup |
+|-------|-------|
+| `default` | `squad init` with an empty profile directory, plus a custom agent (`agents/probe/`), an appended decision, a hand-written `.mcp.json` server, `AGENTS.md`, `CLAUDE.md` and a `.gitignore` rule. |
+| `profile` | As `default`, but the platform config dir is pre-seeded with a 1.x `squad/personal-squad/` roster and a global `squad/.squad/`; the whole tree must stay sha256-identical and the project must not be linked to it. |
+| `legacy-casting` | As `default`, then `.squad/casting/` is replaced by a hand-written `registry.json` (`{universe, agents:[{name, role, status}]}`) with no history — the shape an agent-edited 1.x registry has. |
+| `orphan` | `squad init --state-backend orphan` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive. |
+| `two-layer` | `squad init --state-backend two-layer` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive. |
+| `ai-team` | As `default`, then `.squad/` is renamed to the legacy `.ai-team/` and the upgrade runs with `--migrate-directory`. |
+| `upstream` | HEAD only: a second squad is declared via `squad upstream add <path> --name org`; `upstream.json` must survive the upgrade byte-exact. |
+
+### Results (version × shape × OS)
+
+| Producer | Shape | (no runs yet) |
+|----------|-------|---|
+| **0.9.1** | `default` | — |
+| **0.9.1** | `profile` | — |
+| **0.9.1** | `legacy-casting` | — |
+| **0.9.1** | `orphan` | — |
+| **0.9.1** | `two-layer` | — |
+| **0.9.1** | `ai-team` | — |
+| **0.9.1** | `upstream` | — |
+| **0.13.1** | `default` | — |
+| **0.13.1** | `profile` | — |
+| **0.13.1** | `legacy-casting` | — |
+| **0.13.1** | `orphan` | — |
+| **0.13.1** | `two-layer` | — |
+| **0.13.1** | `ai-team` | — |
+| **0.13.1** | `upstream` | — |
+| **1.0.0** | `default` | — |
+| **1.0.0** | `profile` | — |
+| **1.0.0** | `legacy-casting` | — |
+| **1.0.0** | `orphan` | — |
+| **1.0.0** | `two-layer` | — |
+| **1.0.0** | `ai-team` | — |
+| **1.0.0** | `upstream` | — |
+| **1.0.1** | `default` | — |
+| **1.0.1** | `profile` | — |
+| **1.0.1** | `legacy-casting` | — |
+| **1.0.1** | `orphan` | — |
+| **1.0.1** | `two-layer` | — |
+| **1.0.1** | `ai-team` | — |
+| **1.0.1** | `upstream` | — |
+| **1.1.0** | `default` | — |
+| **1.1.0** | `profile` | — |
+| **1.1.0** | `legacy-casting` | — |
+| **1.1.0** | `orphan` | — |
+| **1.1.0** | `two-layer` | — |
+| **1.1.0** | `ai-team` | — |
+| **1.1.0** | `upstream` | — |
+| **HEAD** | `default` | — |
+| **HEAD** | `profile` | — |
+| **HEAD** | `legacy-casting` | — |
+| **HEAD** | `orphan` | — |
+| **HEAD** | `two-layer` | — |
+| **HEAD** | `ai-team` | — |
+| **HEAD** | `upstream` | — |
+
+### Checks
+
+| Check | Meaning |
+|-------|---------|
+| `producer-init` | The OLD CLI scaffolds the project non-interactively (exit 0, `.squad/team.md` present). |
+| `upgrade-plain` | `squad upgrade` (plus `--migrate-directory` for `ai-team`) with the NEW packed CLI exits 0. |
+| `coordinator-is-new-template` | `.github/agents/squad.agent.md` carries the new version stamp (`<!-- version: X -->`, `Squad (vX)`). |
+| `user-state-preserved` | `decisions.md`, `agents/probe/charter.md`, `agents/probe/history.md` and `team.md` are byte-identical to the pre-upgrade bytes. |
+| `casting-pair-valid` | `readCastingRegistryPair` from the packed SDK reads a numbered registry + history; for `legacy-casting` the hand-written original is archived and `probe` is in the repaired registry. |
+| `state-backend-preserved` | `config.json` `stateBackend` is unchanged; for `orphan`/`two-layer` the `squad-state` branch still exists. |
+| `ai-team-migrated` | `.ai-team/` is gone and `.squad/team.md` exists (only for the `ai-team` shape). |
+| `team-root-absent` | `config.json` has no `teamRoot` after the upgrade (Squad 2.0 never links a project to a profile directory). |
+| `profile-untouched` | The seeded `squad/personal-squad/` + `squad/.squad/` profile tree is sha256-identical after every step (only for `profile`). |
+| `idempotent-second-upgrade` | A second plain `squad upgrade` changes no file (sha256 of every file outside `.git/`). |
+| `downgrade-probe` | The OLD CLI's `upgrade --dry-run` against a copy of the upgraded project modifies nothing; its exit code and message are recorded as a note. |
+| `clients-projected` | `squad upgrade --client all --force` exits 0, `config.json` `clients` lists all 7 hosts, and every host projection exists. |
+| `user-config-preserved` | After projection the user's `.mcp.json` server, `AGENTS.md`/`CLAUDE.md` paragraphs and `.gitignore` rule are intact (for `upstream`: `upstream.json` is byte-identical). |
+| `doctor` | `squad doctor` exits 0 with no ❌ line. |
+| `rollback-byte-exact` | `uninstallClients(CLIENT_IDS)` from the packed SDK removes every projection and restores `AGENTS.md`, `CLAUDE.md`, `.gitignore` and the user's `.mcp.json` server byte-exact; preserved state is still untouched. |
+
+### Findings
+
+Real upgrade defects observed by the suite. Each is pinned as an expected failure until fixed; the fix lands in the layer named, not in this test-only layer.
+
+#### F1 — Stale `teamRoot` written by 0.13.x–1.x `init` survives `squad upgrade`; the upgraded project resolves in remote mode against the removed profile squad
+
+**Severity:** high · **Owner:** C — personal-squad removal (`runUpgrade` / `resolveSquadPaths`)
+
+Repro:
+
+1. Seed a 1.x profile tree under the platform config dir: `<config>/squad/personal-squad/` and `<config>/squad/.squad/` (APPDATA on Windows, XDG_CONFIG_HOME on Linux).
+1. `squad init` with @bradygaster/squad-cli 0.13.1 or 1.0.0 (npm) or the 1.0.1 / 1.1.0 standalone bundle: it prints `✓ Personal squad detected` and writes `.squad/config.json` → `{ "version": 1, "teamRoot": "<config>\\squad" }`.
+1. Upgrade with the 2.0 CLI packed from this tree: `squad upgrade` (exit 0, no warning about teamRoot).
+1. `cat .squad/config.json` still contains `teamRoot: <config>/squad`; `squad doctor` reports `Mode: remote` and ❌ `routing.md`, `casting/registry.json`, `decisions.md` not found — it is reading `<config>/squad/.squad/`, not the project.
+
+Observed: `team-root-absent` fails (`teamRoot=<config-home>/squad`) and `doctor` fails for the `profile` shape on every 0.13.1+ producer. The profile tree itself stays sha256-identical (`profile-untouched` passes), so this is a resolution defect, not a write: Squad 2.0 keeps honouring a link to a directory it no longer supports. Expected: `squad upgrade` drops (or refuses with guidance) a `teamRoot` that points at the platform config dir, and the project resolves in local mode.
+
+Pinned checks: `team-root-absent` (0.13.1, 1.0.0, 1.0.1, 1.1.0 × profile × all platforms); `doctor` (0.13.1, 1.0.0, 1.0.1, 1.1.0 × profile × all platforms).
+
+#### F2 — `squad upgrade` never recognizes its own stamped coordinator: every run reports "local customizations" and overwrites `squad.agent.md.local-backup`
+
+**Severity:** medium · **Owner:** CLI core — `packages/squad-cli/src/cli/core/upgrade.ts` `writeAgentTemplate`
+
+Repro:
+
+1. `squad init` (any producer, including the 2.0 CLI itself), then `squad upgrade` once — a genuine pre-upgrade coordinator is saved to `.github/agents/squad.agent.md.local-backup`.
+1. Run `squad upgrade` again with nothing changed.
+1. Output again says `⚠️ squad.agent.md has local customizations — backed up to squad.agent.md.local-backup`; the backup is overwritten with the pristine current coordinator, so the user's real pre-upgrade copy is gone. The only file whose sha256 changes between run 1 and run 2 is `.github/agents/squad.agent.md.local-backup`.
+
+Observed: `idempotent-second-upgrade` fails with exactly `.github/agents/squad.agent.md.local-backup` for every old producer × shape × platform. On a project initialized by the 2.0 CLI itself the warning is printed on every run too (`Already up to date` + `⚠️ … local customizations`), but the overwritten backup is byte-identical, so the HEAD rows are not pinned. Cause: `writeAgentTemplate` strips `<!-- squad-cli vX -->` before comparing, but `stampVersion` writes `<!-- version: X -->`, `- **Version:** X` and `Squad vX`, so a stamped coordinator never equals the template. Expected: a second `squad upgrade` is a byte-for-byte no-op, prints no customization warning, and never touches an existing `.local-backup`.
+
+Pinned checks: `idempotent-second-upgrade` (0.9.1, 0.13.1, 1.0.0, 1.0.1, 1.1.0 × all shapes × all platforms).
+
+#### F3 — Squad 0.9.1 `squad upgrade --dry-run` is not dry: pointed at a 2.0 project it silently downgrades the coordinator, skills, workflows and templates in place
+
+**Severity:** info (historical producer defect — not fixable in 2.0; recorded for the downgrade story) · **Owner:** none — behavior of the published 0.9.1 CLI
+
+Repro:
+
+1. Scaffold with 0.9.1 (`npm install @bradygaster/squad-cli@0.9.1`), upgrade with the 2.0 CLI, copy the project.
+1. In the copy run the 0.9.1 CLI: `squad upgrade --dry-run`.
+1. It exits 0, prints the normal upgrade summary (`Preserves user state: …`) and rewrites ~90 files: `.github/agents/squad.agent.md` (back to 0.9.1), `.copilot/skills/*`, `.github/workflows/squad-*.yml`, `.squad/templates/*`, plus stray `.squad/charter.md`, `.squad/roster.md`, `.squad/history.md` … at the state root.
+
+Observed: `downgrade-probe` fails for every 0.9.1 row because the dry-run modified files and printed `Upgrade complete: v1.2.0-preview.1 → v0.9.1`; 0.13.1, 1.0.0, 1.0.1 and 1.1.0 honor `--dry-run` (`Run without --dry-run to apply.`, nothing modified) but their preview lists `overwrite .github/workflows/squad-*.yml` etc. — none of the old CLIs has a newer-version guard, so running any of them for real against a 2.0 project downgrades the Squad-owned files. Guidance for users: never run an older CLI against an upgraded repository; re-run `squad upgrade` with the 2.0 CLI to repair a downgraded coordinator (team state is not touched by the downgrade).
+
+Pinned checks: `downgrade-probe` (0.9.1 × all shapes × all platforms).
+
+<!-- UPGRADE-MATRIX:END -->
+
+---
+
 ## Migrations
 
 Some upgrades require additive changes to your team state directory — like creating a new subdirectory that didn't exist in older versions.
