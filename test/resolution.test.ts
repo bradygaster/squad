@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { resolveSquad, resolveGlobalSquadPath, ensureSquadPath, ensurePersonalSquadDir, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquad, resolveGlobalSquadPath, ensureSquadPath, legacyPersonalSquadPath, detectLegacyPersonalSquad, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-resolution-${randomBytes(4).toString('hex')}`);
 
@@ -200,44 +200,28 @@ describe('ensureSquadPath()', () => {
   });
 });
 
-describe('ensurePersonalSquadDir()', () => {
+describe('legacy personal squad detection (Squad 2.0 removed personal squads)', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('creates personal-squad/agents/ and config.json', () => {
-    const dir = ensurePersonalSquadDir();
-    expect(existsSync(dir)).toBe(true);
-    expect(existsSync(join(dir, 'agents'))).toBe(true);
-    expect(existsSync(join(dir, 'config.json'))).toBe(true);
-
-    const config = JSON.parse(
-      require('node:fs').readFileSync(join(dir, 'config.json'), 'utf-8'),
-    );
-    expect(config.defaultModel).toBe('auto');
-    expect(config.ghostProtocol).toBe(true);
-  });
-
-  it('is idempotent — does not overwrite existing config', () => {
-    const dir = ensurePersonalSquadDir();
-    const configPath = join(dir, 'config.json');
-
-    // Write custom config
-    const custom = { defaultModel: 'test-model', ghostProtocol: true, custom: true };
-    require('node:fs').writeFileSync(configPath, JSON.stringify(custom), 'utf-8');
-
-    // Call again — should not overwrite
-    ensurePersonalSquadDir();
-    const config = JSON.parse(
-      require('node:fs').readFileSync(configPath, 'utf-8'),
-    );
-    expect(config.custom).toBe(true);
-    expect(config.defaultModel).toBe('test-model');
-  });
-
-  it('returns path inside resolveGlobalSquadPath()', () => {
+  it('legacyPersonalSquadPath() sits under the platform config dir and never creates it', () => {
     const globalDir = resolveGlobalSquadPath();
-    const personalDir = ensurePersonalSquadDir();
-    expect(personalDir).toBe(join(globalDir, 'personal-squad'));
+    const legacy = legacyPersonalSquadPath();
+    expect(legacy).toBe(join(globalDir, 'personal-squad'));
+    if (!existsSync(legacy)) {
+      expect(detectLegacyPersonalSquad()).toBeNull();
+      expect(existsSync(legacy), 'detection must not create the legacy directory').toBe(false);
+    }
+  });
+
+  it('detectLegacyPersonalSquad() reports a teamRoot that still points at the global root, without touching anything', () => {
+    const globalDir = resolveGlobalSquadPath();
+    const info = detectLegacyPersonalSquad(globalDir);
+    expect(info?.teamRootPointsAtGlobal).toBe(true);
+    expect(detectLegacyPersonalSquad(join(globalDir, '.squad'))?.teamRootPointsAtGlobal).toBe(true);
+    // '.' is the externalize sentinel, never a global link (the real legacy dir may exist on a dev machine).
+    expect(detectLegacyPersonalSquad('.')?.teamRootPointsAtGlobal ?? false).toBe(false);
+    expect(detectLegacyPersonalSquad('../some-team')?.teamRootPointsAtGlobal ?? false).toBe(false);
   });
 });

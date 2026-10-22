@@ -113,6 +113,27 @@ uninstallClients(['claude', 'cursor', 'codex'], {
 
 Then remove the corresponding slug(s) from `clients` in `.squad/config.json`.
 
+### Personal squads removed
+
+Squad 2.0 removes the 1.x **personal squad** (`squad personal`, `squad consult`, `squad extract`, the ambient `~/.config/squad/personal-squad` roster, the Ghost Protocol spawn rules, and the `SQUAD_NO_PERSONAL` / `SQUAD_PERSONAL_DIR` switches). Agents now live only in the project `.squad/`; cross-project sharing is done with [upstream inheritance](/features/upstream-inheritance/) or `squad export` / `squad import`.
+
+What upgrade does, and does not do:
+
+- **Nothing is deleted, moved or rewritten.** Your old personal squad directory stays exactly as it was. Squad 2.0 never reads agent content from it, never writes to it, and never changes `config.json` of either side on your behalf.
+- **You get told once.** `squad upgrade` and `squad doctor` print a notice when the legacy directory exists or when this project's `.squad/config.json` still has a `teamRoot` that a 1.x `squad init` pointed at the global squad root. `squad personal`, `squad consult` and `squad extract` print the same notice and exit non-zero.
+- **Migration is explicit and reversible:**
+
+  ```bash
+  # inside the old personal squad directory
+  squad export --output personal-squad.json
+  # inside the project
+  squad import personal-squad.json
+  ```
+
+  Review the imported charters, run `squad cast` to confirm the roster, then delete the old directory yourself when you no longer need it.
+- **`teamRoot` left over from 1.x:** remove the key from `.squad/config.json` to make the project self-contained (its own `.squad/` already holds the team), or keep it if several projects intentionally share that team root. Squad does not pick for you.
+- **`squad init --global` still exists.** It creates the *global* squad under the platform config directory, used only when no repository `.squad/` is found; it no longer creates `personal-squad/` or links new projects to it.
+
 ---
 
 ## Migrations

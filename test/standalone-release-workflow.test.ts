@@ -29,7 +29,6 @@ const publicCliDocs = [
   'docs/src/content/docs/guide.md',
   'docs/src/content/docs/features/vscode.md',
   'docs/src/content/docs/features/standalone-install.md',
-  'docs/src/content/docs/guide/personal-squad.md',
   'docs/src/content/docs/insider-program.md',
   'docs/src/content/docs/scenarios/production-troubleshooting.md',
   'docs/src/content/docs/scenarios/troubleshooting.md',

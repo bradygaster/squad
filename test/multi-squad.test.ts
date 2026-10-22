@@ -1,7 +1,7 @@
 /**
  * Multi-squad resolution and migration tests — Issue #652
  *
- * Proactive tests for Phase 1: multiple personal squads.
+ * Proactive tests for Phase 1: multiple squads under the global config directory.
  * Tests written from spec while Fenster implements the module.
  * Import path may need adjustment once implementation lands.
  *

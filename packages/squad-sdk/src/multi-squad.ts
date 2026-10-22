@@ -1,7 +1,7 @@
 /**
  * Multi-squad resolution, configuration, and migration.
  *
- * Supports multiple personal squads via a global config directory:
+ * Supports multiple squads via a global config directory:
  *   - Windows: %APPDATA%/squad/
  *   - macOS:   ~/Library/Application Support/squad/
  *   - Linux:   $XDG_CONFIG_HOME/squad/ (default ~/.config/squad/)

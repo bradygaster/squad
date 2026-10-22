@@ -273,8 +273,6 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     'start',
     'nap',
     'doctor',
-    'consult',
-    'extract',
     'aspire',
     'link',
     'rc',

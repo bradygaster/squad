@@ -298,7 +298,6 @@ describe('coordinator digest vs. host feature matrix', () => {
     ['team-root resolution (teamRoot / stateLocation / TEAM_ROOT)', /teamRoot|stateLocation|TEAM_ROOT/, 'monorepo-team-root, dual-root-remote-mode'],
     ['Azure DevOps issue tracking (az boards / ADO)', /az boards|Azure DevOps/, 'azure-devops (F3)'],
     ['GitLab issue tracking (glab)', /glab|GitLab/, 'gitlab-issues (F2)'],
-    ['personal squad / consult mode', /[Pp]ersonal [Ss]quad|[Cc]onsult [Mm]ode/, 'consult-personal-squad'],
     ['per-agent model / reasoning / context-tier selection', /reasoning[- ]effort|context[- ]tier|defaultModel/, 'model-selection'],
     ['plugin marketplace browse on cast', /marketplace/, 'marketplace-plugins'],
   ];

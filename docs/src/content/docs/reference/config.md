@@ -184,7 +184,7 @@ Squad finds `.squad/` by walking up:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (up to project root)
-3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
+3. Global squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
 4. Global CLI default (fallback)
 
 First match wins.

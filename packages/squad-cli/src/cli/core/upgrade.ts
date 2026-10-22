@@ -27,6 +27,7 @@ import { copyManagedFile, syncCopilotInstructionsFile, writeManagedText } from '
 export { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 import { applyClientProjectionsForUpgrade, reportClientResults, type ClientId } from './clients.js';
+import { printPersonalSquadMigrationNoticeIfNeeded } from './personal-squad-notice.js';
 
 const storage = new FSStorageProvider();
 
@@ -1511,6 +1512,10 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     dim('Preserves user state: team.md, decisions/, agents/*/history.md');
   }
   console.log();
+
+  // Squad 2.0 removed personal squads: report 1.x leftovers, never touch them.
+  const configuredTeamRoot = typeof squadConfig['teamRoot'] === 'string' ? squadConfig['teamRoot'] : null;
+  printPersonalSquadMigrationNoticeIfNeeded(configuredTeamRoot);
 
   return {
     fromVersion: fromLabel,

@@ -88,7 +88,7 @@ Every host gets one coordinator file. Team members are not projected as separate
 ## Troubleshooting
 
 - **`squad cast --name` writes nothing:** an old published `squad` is first on `PATH`. Put the current build first.
-- **Team files appear in your personal squad folder:** `squad init` links a repo to an existing personal squad; set `SQUAD_NO_PERSONAL=1` to skip that.
+- **Team files appeared in `%APPDATA%\squad` / `~/.config/squad` after `squad init`:** that was Squad 1.x linking the repo to a personal squad. Squad 2.0 removed personal squads and never writes outside the project `.squad/`; run `squad doctor` to see whether this project's `teamRoot` still points there.
 - **Cursor:** run `cursor-agent mcp enable squad_state` once so the generated MCP server is approved.
 - **Models:** each host needs its own model access (a Copilot license covers Copilot and, through the GitHub Copilot provider, OpenCode; Kiro, Antigravity and Cursor need their own sign-in).
 

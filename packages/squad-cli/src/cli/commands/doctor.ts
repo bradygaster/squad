@@ -17,6 +17,7 @@ import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
 import { resolveUpstreams } from '@bradygaster/squad-sdk/upstream';
+import { detectLegacyPersonalSquad, legacyPersonalSquadPath } from '@bradygaster/squad-sdk/resolution';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
@@ -769,6 +770,25 @@ export function checkWorktreeEol(cwd: string): DoctorCheck | undefined {
 // ── public API ──────────────────────────────────────────────────────
 
 /**
+ * Squad 2.0 removed personal squads. Report 1.x leftovers (the legacy directory, or a
+ * `teamRoot` that a 1.x init pointed at the global squad root) without touching them.
+ */
+export function checkLegacyPersonalSquad(squadDir: string): DoctorCheck | undefined {
+  const cfg = tryReadJson(path.join(squadDir, 'config.json')) as Record<string, unknown> | undefined;
+  const teamRoot = cfg && typeof cfg['teamRoot'] === 'string' ? cfg['teamRoot'] : null;
+  const info = detectLegacyPersonalSquad(teamRoot);
+  if (!info) return undefined;
+  const parts: string[] = ['personal squads were removed in Squad 2.0.'];
+  if (info.personalDir) {
+    parts.push(`Your personal squad at ${info.personalDir} is untouched (Squad 2.0 never reads, writes or deletes it); copy agents you want into this project with "squad export" there and "squad import" here.`);
+  }
+  if (info.teamRootPointsAtGlobal) {
+    parts.push(`config.json teamRoot (${teamRoot}) still points at the legacy global squad root (${path.dirname(legacyPersonalSquadPath())}); remove the key to make this project self-contained, or keep it if the shared team root is intentional.`);
+  }
+  return { name: 'legacy personal squad', status: 'warn', message: parts.join(' ') };
+}
+
+/**
  * Upstream inheritance (`.squad/upstream.json`): resolve from local snapshots only
  * (never fetch) and surface every upstream that could not be read.
  */
@@ -836,6 +856,10 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     // Upstream inheritance (resolved from local snapshots; never fetches)
     const upstreamCheck = checkUpstreams(stateDir);
     if (upstreamCheck) checks.push(upstreamCheck);
+
+    // Squad 2.0: personal squads removed — report (never touch) 1.x leftovers
+    const legacyPersonal = checkLegacyPersonalSquad(squadDir);
+    if (legacyPersonal) checks.push(legacyPersonal);
 
     // Hook presence check (only for two-layer / orphan backends)
     const hookCheck = checkGitSyncHooks(resolvedCwd, squadDir);

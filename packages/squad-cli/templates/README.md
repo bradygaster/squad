@@ -35,7 +35,7 @@ of these — they are NOT loaded on every turn.
 | `ralph-reference.md` | Coordinator | Ralph work-monitor lifecycle and board format |
 | `raw-agent-output.md` | Coordinator | Raw agent output appendix format |
 | `session-init-reference.md` | Coordinator | Procedures run at every session start |
-| `spawn-reference.md` | Coordinator | Full agent spawn template and Ghost Protocol |
+| `spawn-reference.md` | Coordinator | Full agent spawn template and post-work instructions |
 | `worktree-reference.md` | Coordinator | Worktree strategies, lifecycle, and pre-spawn setup |
 
 ### Agent bootstrap templates

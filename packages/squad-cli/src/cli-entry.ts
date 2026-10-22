@@ -152,11 +152,11 @@ async function main(): Promise<void> {
     console.log(`Usage: squad [command] [options]\n`);
     console.log(`Commands:`);
     console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
-    console.log(`             Flags: --global (init in personal squad directory)`);
+    console.log(`             Flags: --global (init the global squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
     console.log(`             Flags: --sdk (SDK builder syntax)`);
     console.log(`                    --roles (use base roles)`);
-    console.log(`                    --global (personal squad dir)`);
+    console.log(`                    --global (global squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
     console.log(`                    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
-    console.log(`             Flags: --global (upgrade personal squad)`);
+    console.log(`             Flags: --global (upgrade the global squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
     console.log(`                    --client <list> (add client hosts; refresh configured)`);
@@ -209,7 +209,7 @@ async function main(): Promise<void> {
     console.log(`             Flags: --init (generate boilerplate loop.md)`);
     console.log(`                    --file <path> (custom loop file)`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
-    console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
+    console.log(`  ${BOLD}cast${RESET}       Show current session cast`);
     console.log(`             Usage: cast [--name <name>] [--role <role>] (alias: hire)`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
@@ -237,10 +237,6 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
     console.log(`  ${BOLD}health${RESET}     Validate team state for CI (team, registry, routing, backend, env)`);
     console.log(`             Flags: --json (structured output for CI)`);
-    console.log(`  ${BOLD}consult${RESET}    Enter consult mode with your personal squad`);
-    console.log(`             Flags: --status, --check`);
-    console.log(`  ${BOLD}extract${RESET}    Extract learnings from consult mode session`);
-    console.log(`             Flags: --dry-run, --clean, --yes, --accept-risks`);
     console.log(`  ${BOLD}subsquads${RESET}  Manage Squad SubSquads (multi-Codespace scaling)`);
     console.log(`             Usage: subsquads <list|status|activate <name>>`);
     console.log(`             Aliases: workstreams, streams (deprecated)`);
@@ -255,9 +251,6 @@ async function main(): Promise<void> {
     console.log(`             Flags: --docker (force Docker), --port <n> (dashboard port)`);
     console.log(`  ${BOLD}schedule${RESET}   Manage scheduled tasks`);
     console.log(`             Usage: schedule list | run <id> | init | status`);
-    console.log(`  ${BOLD}personal${RESET}   Manage your personal squad (ambient agents)`);
-    console.log(`             Usage: personal init | list | add <name>`);
-    console.log(`                    --role <role> | remove <name>`);
     console.log(`  ${BOLD}preset${RESET}     Manage squad presets (curated agent collections)`);
     console.log(`             Usage: preset list | show <name>`);
     console.log(`                    apply <name> [--force] | save <name>`);
@@ -292,7 +285,7 @@ async function main(): Promise<void> {
     console.log(`\nFlags:`);
     console.log(`  ${BOLD}--version, -v${RESET}  Print version`);
     console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
-    console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
+    console.log(`  ${BOLD}--global${RESET}       Use the global squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
     console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
     console.log(`\nInstallation:`);
@@ -376,7 +369,7 @@ async function main(): Promise<void> {
     // Parse --state-backend flag for init
     const sbIdx = args.indexOf('--state-backend');
     const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
-    // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
+    // Global init: suppress workflows (no GitHub CI in ~/.config/squad/)
     runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, clients: initClients, includeVscodeDefault: !noVscodeDefault }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
@@ -920,9 +913,9 @@ async function main(): Promise<void> {
       console.log(`  Path:         ${repoSquad}`);
       console.log(`  Reason:       Found .squad/ in repository tree`);
     } else if (globalExists) {
-      console.log(`  Active squad: ${BOLD}personal (global)${RESET}`);
+      console.log(`  Active squad: ${BOLD}global${RESET}`);
       console.log(`  Path:         ${globalSquadDir}`);
-      console.log(`  Reason:       No repo .squad/ found; personal squad exists at global path`);
+      console.log(`  Reason:       No repo .squad/ found; global squad exists at global path`);
     } else {
       console.log(`  Active squad: ${DIM}none${RESET}`);
       console.log(`  Reason:       No .squad/ found in repo tree or at global path`);
@@ -1030,15 +1023,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === 'consult') {
-    const { runConsult } = await import('./cli/commands/consult.js');
-    await runConsult(getSquadStartDir(), args.slice(1));
-    return;
-  }
-
-  if (cmd === 'extract') {
-    const { runExtract } = await import('./cli/commands/extract.js');
-    await runExtract(getSquadStartDir(), args.slice(1));
+  if (cmd === 'consult' || cmd === 'extract' || cmd === 'personal') {
+    const { printPersonalSquadRemovedNotice } = await import('./cli/core/personal-squad-notice.js');
+    printPersonalSquadRemovedNotice(cmd);
+    process.exitCode = 1;
     return;
   }
 
@@ -1128,12 +1116,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === 'personal') {
-    const { runPersonal } = await import('./cli/commands/personal.js');
-    const subcommand = args[1] || 'list';
-    await runPersonal(getSquadStartDir(), subcommand, args.slice(2));
-    return;
-  }
 
   if (cmd === 'preset') {
     const { runPreset } = await import('./cli/commands/preset.js');

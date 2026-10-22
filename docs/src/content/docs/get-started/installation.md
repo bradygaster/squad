@@ -188,10 +188,13 @@ If you use the SDK, update it separately:
 npm install @bradygaster/squad-sdk@latest
 ```
 
-## Optional: Personal squad
+## Optional: Global squad
 
-A personal squad lets projects inherit shared agent configuration without
-running `squad init` in each repository:
+`squad init --global` creates a squad under your platform config directory. It is
+only used when no repository `.squad/` is found (`squad status` shows which one is
+active). To share agents or conventions *between* repositories, use
+[upstream inheritance](/features/upstream-inheritance/) or `squad export` /
+`squad import` instead; personal squads were removed in Squad 2.0.
 
 ```bash
 squad init --global
@@ -219,8 +222,8 @@ Releases, then switch to WinGet after the package becomes available.
 
 ### `Cannot find .squad/ directory`
 
-Run `squad init` from the repository root, or `squad init --global` for a
-personal squad.
+Run `squad init` from the repository root, or `squad init --global` for the
+global squad.
 
 ### Version mismatch between CLI and SDK
 
