@@ -37,10 +37,10 @@ function fingerprint(dir: string): string {
   return out.join('\n');
 }
 
-async function runSquad(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runSquad(args: string[], extraEnv: NodeJS.ProcessEnv = {}, workDir: string = cwd): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
     const r = await execFileAsync('node', [cliEntry, ...args], {
-      cwd,
+      cwd: workDir,
       env: {
         ...process.env,
         NODE_NO_WARNINGS: '1',
@@ -49,6 +49,7 @@ async function runSquad(args: string[]): Promise<{ code: number; stdout: string;
         LOCALAPPDATA: configHome,
         XDG_CONFIG_HOME: configHome,
         ...(process.platform === 'darwin' ? { HOME: configHome } : {}),
+        ...extraEnv,
       },
       timeout: 60_000,
       maxBuffer: 4 * 1024 * 1024,
@@ -101,6 +102,46 @@ describe.skipIf(!cliBuilt)('state commands outside a project fail clearly and ne
       expect(fingerprint(profileSquadRoot), 'profile squad must be byte-identical').toBe(before);
     }, 90_000);
   }
+
+  it('with NO .git anywhere up the chain and HOME/USERPROFILE/SQUAD_HOME pointing at a seeded profile, cast/status fail and the profile is untouched (LC-2)', async () => {
+    // A fake home directory holding ~/.squad (the roaming SQUAD_HOME root) with a full roster,
+    // and a working directory beneath it with no repository marker anywhere on the way up.
+    const fakeHome = join(tmp, 'fake-home');
+    const homeSquad = join(fakeHome, '.squad');
+    mkdirSync(join(homeSquad, 'agents', 'homebody'), { recursive: true });
+    writeFileSync(join(homeSquad, 'config.json'), '{"version":1}\n');
+    writeFileSync(join(homeSquad, 'team.md'), '# Home\n\n## Members\n\n| Name | Role |\n|---|---|\n| Homebody | Advisor |\n');
+    writeFileSync(join(homeSquad, 'agents', 'homebody', 'charter.md'), '# Homebody\n');
+    const work = join(fakeHome, 'work', 'proj');
+    mkdirSync(work, { recursive: true });
+    const env = { HOME: fakeHome, USERPROFILE: fakeHome, SQUAD_HOME: homeSquad };
+    const before = fingerprint(fakeHome);
+
+    for (const args of [['cast', '--name', 'Probe', '--role', 'developer'], ['status'], ['doctor'], ['cost']]) {
+      const r = await runSquad(args, env, work);
+      const output = `${r.stdout}\n${r.stderr}`;
+      expect(r.code, `squad ${args[0]} must fail; output:\n${output}`).not.toBe(0);
+      expect(output).toMatch(/No squad (in this directory|found)[\s\S]*squad init/i);
+      expect(output).not.toMatch(/Homebody/);
+    }
+    expect(existsSync(join(homeSquad, 'agents', 'probe')), 'cast must never write into ~/.squad').toBe(false);
+    expect(existsSync(join(work, '.squad'))).toBe(false);
+    expect(fingerprint(fakeHome), 'the profile tree must be byte-identical').toBe(before);
+  }, 240_000);
+
+  it('squad init --global / squad upgrade --global are rejected as unknown options and run nothing (LC-3)', async () => {
+    const dir = join(tmp, 'global-flag');
+    mkdirSync(dir, { recursive: true });
+    const before = fingerprint(profileSquadRoot);
+    for (const args of [['init', '--global'], ['upgrade', '--global'], ['init', '--no-workflows', '--global']]) {
+      const r = await runSquad(args, {}, dir);
+      const output = `${r.stdout}\n${r.stderr}`;
+      expect(r.code, `squad ${args.join(' ')} must fail; output:\n${output}`).not.toBe(0);
+      expect(output).toMatch(/Unknown option: --global/);
+      expect(existsSync(join(dir, '.squad')), `squad ${args.join(' ')} must not run the project form`).toBe(false);
+    }
+    expect(fingerprint(profileSquadRoot)).toBe(before);
+  }, 180_000);
 
   it('squad status inside a project still reports the repo squad', async () => {
     const project = join(tmp, 'real-project');

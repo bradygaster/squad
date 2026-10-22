@@ -48,10 +48,29 @@ const ALLOWLIST: Record<string, string> = {
   'test/retired-symbols.test.ts': 'this gate',
 };
 
+/** The one sentence of history the product keeps about the removal. */
+const BREAKING_LINE = 'Personal squads, consult mode and the global squad (`--global`) were removed; existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually.';
+
+/**
+ * Files that may contain the BREAKING sentence verbatim (and nothing else about the retired
+ * concepts): the 2.0 release notes and the upgrading guide. Lines containing the exact
+ * sentence are exempt; every other line is scanned.
+ */
+const BREAKING_LINE_ONLY = new Set<string>([
+  'docs/src/content/docs/whatsnew.md',
+  'docs/src/content/docs/scenarios/upgrading.md',
+]);
+
 /** Whatsnew: only the current (2.0) section is documentation; older sections are history. */
 const PARTIAL_SCAN: Record<string, (content: string) => string> = {
   'docs/src/content/docs/whatsnew.md': (c) => c.slice(0, c.indexOf('\n## v1.1.0')),
 };
+
+/** Module paths that must not exist as package exports or shipped files. */
+const RETIRED_PATHS = /(^|\/)(commands\/(extract|personal|consult|import-legacy-personal)|agents\/personal|sharing\/consult|multi-squad|personal-squad-notice)(\.|\/|$)/;
+
+/** Pre-existing dangling export on dev (not introduced here); tracked separately. */
+const KNOWN_DANGLING_EXPORTS = new Set(['@bradygaster/squad-cli:./shell/sdk-bridge']);
 
 const SKIP_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.pdf', '.tgz', '.zip', '.lock']);
 const SKIP_FILES = new Set(['package-lock.json']);
@@ -91,6 +110,7 @@ function scan(files: string[]): string[] {
     if (rel in PARTIAL_SCAN) content = PARTIAL_SCAN[rel]!(content);
     const lines = content.split(/\r?\n/);
     lines.forEach((line, i) => {
+      if (BREAKING_LINE_ONLY.has(rel) && line.includes(BREAKING_LINE)) return;
       for (const [label, re] of RETIRED_PATTERNS) {
         if (re.test(line)) hits.push(`${rel}:${i + 1} [${label}] ${line.trim().slice(0, 140)}`);
       }
@@ -112,6 +132,39 @@ describe('retired-symbol gate: no trace of personal squads, consult mode, Ghost 
     expect(hits, `retired terms found in built output (stale dist? run the build):\n${hits.join('\n')}`).toEqual([]);
   }, 120_000);
 
+  it('package.json exports name no retired module and every export target exists in dist', () => {
+    for (const pkg of ['packages/squad-sdk', 'packages/squad-cli']) {
+      const manifest = JSON.parse(readFileSync(join(ROOT, pkg, 'package.json'), 'utf8')) as { name: string; exports?: Record<string, unknown>; files?: string[] };
+      const distBuilt = existsSync(join(ROOT, pkg, 'dist'));
+      for (const [key, value] of Object.entries(manifest.exports ?? {})) {
+        const targets = typeof value === 'string' ? [value] : Object.values(value as Record<string, string>);
+        for (const t of [key, ...targets]) {
+          expect(RETIRED_PATHS.test(t), `${manifest.name}: export "${key}" -> ${t} names a retired module`).toBe(false);
+          for (const [label, re] of RETIRED_PATTERNS) expect(re.test(t), `${manifest.name}: export "${key}" -> ${t} [${label}]`).toBe(false);
+        }
+        if (distBuilt && !KNOWN_DANGLING_EXPORTS.has(`${manifest.name}:${key}`)) {
+          for (const t of targets) {
+            expect(existsSync(join(ROOT, pkg, t)), `${manifest.name}: export "${key}" points at ${t}, which is not in dist (removed module still exported?)`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('the packed tarballs ship no retired module', () => {
+    for (const pkg of ['packages/squad-sdk', 'packages/squad-cli']) {
+      if (!existsSync(join(ROOT, pkg, 'dist'))) continue; // CI builds before testing
+      const out = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+        cwd: join(ROOT, pkg), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const parsed = JSON.parse(out) as Array<{ files: Array<{ path: string }> }>;
+      const shipped = parsed[0]!.files.map((x) => x.path);
+      expect(shipped.length).toBeGreaterThan(10);
+      const bad = shipped.filter((p) => RETIRED_PATHS.test(p) || RETIRED_PATTERNS.some(([, re]) => re.test(p)));
+      expect(bad, `${pkg} tarball would ship retired files:\n${bad.join('\n')}`).toEqual([]);
+    }
+  }, 240_000);
+
   it('the allowlisted files still exist and the BREAKING entry is exactly one line', () => {
     for (const rel of Object.keys(ALLOWLIST)) {
       if (rel.endsWith('CHANGELOG.md')) continue; // created by changesets at release time
@@ -121,7 +174,12 @@ describe('retired-symbol gate: no trace of personal squads, consult mode, Ghost 
     const lines = changeset.split(/\r?\n/);
     const breaking = lines.filter((l) => /\*\*BREAKING:\*\*/.test(l));
     expect(breaking, 'exactly one BREAKING line').toHaveLength(1);
-    expect(breaking[0]).toContain('Personal squads, consult mode and the global squad (`--global`) were removed; existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually.');
+    expect(breaking[0]).toContain(BREAKING_LINE);
+    // The release notes and upgrading guide repeat that exact sentence once each, and nothing more.
+    for (const rel of BREAKING_LINE_ONLY) {
+      const text = readFileSync(join(ROOT, rel), 'utf8');
+      expect(text.split(BREAKING_LINE).length - 1, `${rel} must carry the BREAKING sentence exactly once`).toBe(1);
+    }
     const mentioning = lines.filter((l) => RETIRED_PATTERNS.some(([, re]) => re.test(l)));
     expect(mentioning, 'only the BREAKING line may name the retired concepts').toEqual(breaking);
   });

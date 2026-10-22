@@ -141,10 +141,6 @@
       "types": "./dist/cli/commands/rc.d.ts",
       "import": "./dist/cli/commands/rc.js"
     },
-    "./commands/extract": {
-      "types": "./dist/cli/commands/extract.d.ts",
-      "import": "./dist/cli/commands/extract.js"
-    },
     "./commands/copilot": {
       "types": "./dist/cli/commands/copilot.d.ts",
       "import": "./dist/cli/commands/copilot.js"
@@ -160,10 +156,6 @@
     "./commands/copilot-bridge": {
       "types": "./dist/cli/commands/copilot-bridge.d.ts",
       "import": "./dist/cli/commands/copilot-bridge.js"
-    },
-    "./commands/personal": {
-      "types": "./dist/cli/commands/personal.d.ts",
-      "import": "./dist/cli/commands/personal.js"
     },
     "./commands/cast": {
       "types": "./dist/cli/commands/cast.d.ts",

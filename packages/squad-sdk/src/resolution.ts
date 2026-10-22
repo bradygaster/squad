@@ -190,6 +190,10 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
  * 1. Walk up from `startDir` checking for `.squad/` — stops at `.git` directory boundary
  * 2. If `.git` is a file (worktree), check the main checkout for `.squad/`
  *
+ * The walk never reaches the user profile: it stops at the home directory (so `~/.squad`,
+ * the roaming `SQUAD_HOME` root, is never treated as a project squad) and a candidate equal
+ * to `SQUAD_HOME` is ignored. Outside a project the result is `null`.
+ *
  * @param startDir - Directory to start searching from. Defaults to `process.cwd()`.
  * @returns Absolute path to `.squad/` or `null`.
  */
@@ -203,14 +207,40 @@ export function resolveSquad(startDir?: string): string | null {
   return result;
 }
 
+/** Directories that are never project squads: the home dir and the roaming SQUAD_HOME root. */
+function profileBoundary(): { homeDir: string | null; squadHome: string | null } {
+  let homeDir: string | null = null;
+  try { homeDir = path.resolve(os.homedir()); } catch { homeDir = null; }
+  const envHome = process.env['SQUAD_HOME'];
+  const squadHome = envHome ? path.resolve(envHome) : (homeDir ? path.join(homeDir, '.squad') : null);
+  return { homeDir, squadHome };
+}
+
+/** True when `dir` is a strict ancestor of `descendant`. */
+function isAncestorOf(dir: string, descendant: string): boolean {
+  const rel = path.relative(dir, descendant);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+function samePath(a: string, b: string): boolean {
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 function resolveSquadUncached(startDir: string): string | null {
   let current = startDir;
+  const { homeDir, squadHome } = profileBoundary();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Profile boundary: the home directory (and anything above it) is never a project.
+    if (homeDir && (samePath(current, homeDir) || isAncestorOf(current, homeDir))) {
+      return null;
+    }
+
     const candidate = path.join(current, '.squad');
 
-    if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
+    if (!(squadHome && samePath(path.resolve(candidate), squadHome))
+      && storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
       return candidate;
     }
 
@@ -271,11 +301,17 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
 
 function findSquadDirUncached(startDir: string): { dir: string; name: '.squad' | '.ai-team' } | null {
   let current = startDir;
+  const { homeDir, squadHome } = profileBoundary();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Same profile boundary as resolveSquad(): the home directory is never a project.
+    if (homeDir && (samePath(current, homeDir) || isAncestorOf(current, homeDir))) {
+      return null;
+    }
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
+      if (squadHome && samePath(path.resolve(candidate), squadHome)) continue;
       if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
         return { dir: candidate, name };
       }
@@ -655,15 +691,16 @@ export function resolveExternalStateDir(projectKey: string, create: boolean = tr
 // ============================================================================
 
 /**
- * Resolve the squad home directory — a roaming squad root for personal agents
- * and presets that follows the user across machines.
+ * Resolve the squad home directory — a roaming root for presets and
+ * machine-independent configuration that follows the user across machines.
  *
  * Resolution order:
  * 1. `SQUAD_HOME` env var (explicit override, e.g. a synced folder)
  * 2. `~/.squad/` (conventional default — user's home dir)
  *
  * Unlike `resolveGlobalSquadPath()` (which returns platform-specific app config),
- * squad home is a **squad root** — it can contain `agents/`, `presets/`, etc.
+ * squad home holds `presets/` and similar roaming configuration. It is never
+ * resolved as a project squad (see {@link resolveSquad}).
  *
  * @param create - Whether to create the directory if missing (default: false).
  * @returns Absolute path to the squad home directory, or null if it doesn't

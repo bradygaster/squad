@@ -136,6 +136,12 @@ async function main(): Promise<void> {
   const rawCmd = args[0];
   const cmd = rawCmd?.trim() || '';
 
+  // Retired in 2.0: there is no user-profile squad any more. Refuse loudly rather than
+  // silently running the project form of the command.
+  if (args.includes('--global')) {
+    fatal(`Unknown option: --global\n       Squad 2.0 keeps teams in the project .squad/ only. Run "squad ${cmd || 'init'}" inside the project.`);
+  }
+
   // --version / -v / version
   // Investigated: routing is correct — cmd matches 'version' directly.
   // "Unknown command: version" reports may be shell-specific (e.g. alias/wrapper
@@ -231,7 +237,7 @@ async function main(): Promise<void> {
     console.log(`             Diagnostics: --log-level info|debug or --verbose`);
     console.log(`  ${BOLD}state-mcp${RESET}  MCP bridge exposing Squad runtime state tools`);
     console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
-    console.log(`  ${BOLD}health${RESET}     Validate team state for CI (team, registry, routing, backend, env)`);
+    console.log(`  ${BOLD}health${RESET}     Validate team state for CI (team/registry/routing/backend/env)`);
     console.log(`             Flags: --json (structured output for CI)`);
     console.log(`  ${BOLD}subsquads${RESET}  Manage Squad SubSquads (multi-Codespace scaling)`);
     console.log(`             Usage: subsquads <list|status|activate <name>>`);

@@ -113,6 +113,10 @@ uninstallClients(['claude', 'cursor', 'codex'], {
 
 Then remove the corresponding slug(s) from `clients` in `.squad/config.json`.
 
+### Removed in 2.0
+
+Personal squads, consult mode and the global squad (`--global`) were removed; existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually. There is no migration tool; copy anything you still want into a project `.squad/` by hand. Outside a project, `squad status`, `squad doctor`, `squad cast` and `squad cost` now exit with `No squad in this directory` instead of falling back to a user-profile directory.
+
 ---
 
 ## Migrations

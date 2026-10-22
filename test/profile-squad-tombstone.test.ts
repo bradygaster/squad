@@ -196,6 +196,41 @@ describe('user-profile squads are never read, written, moved or deleted (tombsto
     expect(fingerprint(root)).toBe(before);
   }, 180_000);
 
+  it('resolveSquad never returns ~/.squad or SQUAD_HOME, and stops at the home directory even with no .git on the way up (LC-2)', () => {
+    const fakeHome = path.join(tmp, 'fake-home');
+    const homeSquad = path.join(fakeHome, '.squad');
+    fs.mkdirSync(homeSquad, { recursive: true });
+    fs.writeFileSync(path.join(homeSquad, 'team.md'), '# Home\n');
+    const work = path.join(fakeHome, 'work', 'proj');
+    fs.mkdirSync(work, { recursive: true });
+    vi.stubEnv('HOME', fakeHome);
+    vi.stubEnv('USERPROFILE', fakeHome);
+    vi.stubEnv('SQUAD_HOME', homeSquad);
+    clearResolveSquadCache();
+    expect(os.homedir()).toBe(fakeHome);
+    const watch = watchForbiddenFsAccess(homeSquad);
+    try {
+      expect(resolveSquad(work), 'no .git on the way up: the walk must stop at the home dir, not pick ~/.squad').toBeNull();
+      expect(resolveSquad(fakeHome), 'cwd = home dir').toBeNull();
+    } finally { watch.stop(); }
+    expect(watch.hits).toEqual([]);
+
+    // SQUAD_HOME somewhere else, laid out so the walk would hit it: still ignored.
+    const roam = path.join(tmp, 'roam');
+    fs.mkdirSync(path.join(roam, '.squad'), { recursive: true });
+    fs.writeFileSync(path.join(roam, '.squad', 'team.md'), '# roam\n');
+    fs.mkdirSync(path.join(roam, 'inner'), { recursive: true });
+    vi.stubEnv('SQUAD_HOME', path.join(roam, '.squad'));
+    clearResolveSquadCache();
+    expect(resolveSquad(path.join(roam, 'inner')), 'SQUAD_HOME is never a project squad').toBeNull();
+
+    // A real project under the fake home still resolves.
+    const proj = path.join(fakeHome, 'src', 'real');
+    fs.mkdirSync(path.join(proj, '.squad'), { recursive: true });
+    clearResolveSquadCache();
+    expect(resolveSquad(path.join(proj))).toBe(path.join(proj, '.squad'));
+  });
+
   it('a directory without .squad/ never resolves to the profile squad', () => {
     const { root } = seedLegacyProfileTree();
     const before = fingerprint(root);
