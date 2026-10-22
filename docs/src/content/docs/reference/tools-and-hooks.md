@@ -91,7 +91,9 @@ Squad ships 5 policies configured via `PolicyConfig`:
 4. **Rate limits** — Cap tool invocations per agent per interval
 5. **PII filters** — Redact sensitive data before model calls
 
-Configure policies in `squad.config.ts` under the `hooks` key:
+> ⚠️ **Legacy compatibility only.** The `squad.config.ts` authoring mode is deprecated and will be removed in v2. Use markdown-first `squad init` for new teams. The example below remains for existing projects.
+
+Existing SDK-first projects can configure policies under the `hooks` key:
 
 ```typescript
 export default defineConfig({
