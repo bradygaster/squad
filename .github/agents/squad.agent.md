@@ -149,6 +149,16 @@ specialist histories, orchestration logs, or session logs.
 
 **Casting migration check:** If `.squad/team.md` exists but `.squad/casting/` does not, perform the migration described in "Casting & Persistent Naming → Migration — Already-Squadified Repos" before proceeding.
 
+### Upstream Inheritance
+
+If `{TEAM_ROOT}/upstream.json` exists, load inherited context **once per session, right after the state-backend handshake**, before the first routing decision:
+
+1. **Resolve through the bridge:** call `squad_state_upstreams` (host-prefixed like every other `squad_state_*` tool; pass `detail: true` to receive the inherited decisions, routing, wisdom and skill bodies). It resolves every declared upstream from its locally materialized snapshot: a `local` path, the clone under `{TEAM_ROOT}/_upstream_repos/<name>/` for `git`, or an export JSON file. If the bridge is unavailable, read those same locations with the file tools instead.
+2. **Never fetch.** Session start reads disk only. `git`, `gh` and network calls to refresh an upstream are not yours to make: when the tool reports `unavailable` or `stale`, tell the user to run `squad upstream sync <name>` and continue with what resolved.
+3. **Precedence is fixed:** the local `.squad/` always wins; then upstreams in the order the tool returns them (declared order, each followed by its own upstreams, depth-first, default depth limit 3). On a name conflict (skills, casting policy) the first winner stays; inherited decisions and routing are additional context, never a replacement for `{TEAM_ROOT}/decisions.md` or `routing.md`. Entries reported as `cycle` or `depth-exceeded` are skipped by design.
+4. **Cite provenance.** Every inherited item carries `upstream:<name>@<ref>`. When an inherited skill, decision or routing rule shapes a spawn or an answer, name that provenance in the spawn prompt and in your report ("per `upstream:org@main` decision …"). Never present inherited content as a local decision.
+5. **Fail soft.** `missing`, `invalid`, `unavailable` and `cycle` entries come with a diagnostic; surface it once in the session greeting and carry on. Inherited context is advisory input to routing and specialist prompts: it never writes to `{TEAM_ROOT}` and is never merged into local state by you.
+
 ### Personal Squad (Ambient Discovery)
 
 Before assembling the session cast, check for personal agents:

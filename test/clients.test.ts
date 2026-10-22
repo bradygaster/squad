@@ -283,6 +283,9 @@ describe('coordinator digest vs. host feature matrix', () => {
     ['Host-prefixed tool names (Claude, OpenCode, Kiro)', [/mcp__squad_state__squad_state_read/, /squad_state_squad_state_read/, /@squad_state\/squad_state_read/]],
     ['Worktree + issue-lifecycle references', [/worktree-reference\.md/, /issue-lifecycle\.md/]],
     ['Canonical file is authoritative when present', [/\.github\/agents\/squad\.agent\.md/, /authoritative coordinator contract/]],
+    // Finding F1 (Squad 2.0): upstream inheritance is wired at runtime — the digest tells every host to call
+    // `squad_state_upstreams`, never to fetch, and to cite `upstream:<name>@<ref>` provenance.
+    ['Upstream inheritance (upstream.json via squad_state_upstreams, no fetch, provenance)', [/upstream\.json/, /squad_state_upstreams/, /NEVER fetch at session start/, /upstream:<name>@<ref>/, /local `\.squad\/` wins/]],
   ];
   for (const id of CLIENT_IDS) {
     it(`${id} digest carries the host-specific sections the live runs relied on`, () => {
@@ -293,7 +296,6 @@ describe('coordinator digest vs. host feature matrix', () => {
 
   const gaps: Array<[string, RegExp, string]> = [
     ['team-root resolution (teamRoot / stateLocation / TEAM_ROOT)', /teamRoot|stateLocation|TEAM_ROOT/, 'monorepo-team-root, dual-root-remote-mode'],
-    ['upstream inheritance (upstream.json)', /upstream\.json/, 'upstream-inheritance (F1)'],
     ['Azure DevOps issue tracking (az boards / ADO)', /az boards|Azure DevOps/, 'azure-devops (F3)'],
     ['GitLab issue tracking (glab)', /glab|GitLab/, 'gitlab-issues (F2)'],
     ['personal squad / consult mode', /[Pp]ersonal [Ss]quad|[Cc]onsult [Mm]ode/, 'consult-personal-squad'],

@@ -150,7 +150,9 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
     success(`Added upstream: ${name} (${type}: ${entry.source})`);
     if (type === 'local') {
-      info('The coordinator reads from this path live at session start — no sync needed.');
+      info('Sessions read this path from disk at startup (no sync needed); "squad upstream sync" just re-validates it.');
+    } else if (type === 'git') {
+      info('Sessions never fetch: they read .squad/_upstream_repos/' + name + '. Run "squad upstream sync" to refresh it.');
     }
   }
 

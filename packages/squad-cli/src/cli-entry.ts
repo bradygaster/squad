@@ -934,6 +934,15 @@ async function main(): Promise<void> {
     console.log(`  ${DIM}Global squad:      ${globalExists ? globalSquadDir : 'not initialized'}${RESET}`);
     console.log();
 
+    // Upstream inheritance: read from local snapshots only (never fetches).
+    if (repoSquad) {
+      const upstreamDisplay = sdk.buildSessionDisplay(sdk.resolveUpstreams(repoSquad));
+      if (upstreamDisplay) {
+        console.log(upstreamDisplay.split('\n').map(line => `  ${line}`).join('\n'));
+        console.log();
+      }
+    }
+
     return;
   }
 

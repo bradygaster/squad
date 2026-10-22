@@ -128,6 +128,7 @@ describe('ToolRegistry', () => {
     'squad_state_delete',
     'squad_state_list',
     'squad_state_health',
+    'squad_state_upstreams',
     'memory.classify',
     'memory.write',
     'memory.search',
