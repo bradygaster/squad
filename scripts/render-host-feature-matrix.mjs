@@ -116,7 +116,7 @@ export function render(matrix) {
     lines.push('');
     lines.push('These digest gaps are pinned as expected failures, one test per host and gap: the `[<host>]` test turns red the moment a stack adds the section for that host, and until then that cell stays **degraded** — expected failures are never counted as supported.');
     lines.push('');
-    lines.push('| Feature | Test (title + ` [<host>]`) | Hosts | Meaning |');
+    lines.push('| Feature | Test (title; each generated test appends the host as `[<host>]`) | Hosts | Meaning |');
     lines.push('|---------|-----------------------------|-------|---------|');
     for (const e of matrix.expectedFailures) {
       lines.push(`| [${e.featureId}](#${e.featureId}) | \`${e.test.replace(/\|/g, '\\|')}\` (${e.kind}${e.perHost ? ', per host' : ''}) | ${(e.hosts ?? []).map((h) => `\`${h}\``).join(' ')} | ${e.meaning} |`);

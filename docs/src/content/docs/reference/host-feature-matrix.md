@@ -69,7 +69,7 @@ Each cell below shows **status / strongest evidence**, plus ❔ when the cell st
 
 These digest gaps are pinned as expected failures, one test per host and gap: the `[<host>]` test turns red the moment a stack adds the section for that host, and until then that cell stays **degraded** — expected failures are never counted as supported.
 
-| Feature | Test (title + ` [<host>]`) | Hosts | Meaning |
+| Feature | Test (title; each generated test appends the host as `[<host>]`) | Hosts | Meaning |
 |---------|-----------------------------|-------|---------|
 | [monorepo-team-root](#monorepo-team-root) | `test/clients.test.ts::digest gap (expected until the stack adds it): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)` (it.fails, per host) | `copilot` `claude` `kiro` `opencode` `cursor` `codex` `antigravity` | The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported. |
 | [dual-root-remote-mode](#dual-root-remote-mode) | `test/clients.test.ts::digest gap (expected until the stack adds it): team-root resolution (teamRoot / stateLocation / TEAM_ROOT)` (it.fails, per host) | `copilot` `claude` `kiro` `opencode` `cursor` `codex` `antigravity` | The projected digest lacks this canonical section on the listed hosts; one it.fails per host (title suffixed `[<host>]`) turns red the moment a stack adds it. Every listed cell is degraded and never counted as supported. |
