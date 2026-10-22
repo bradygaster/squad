@@ -176,5 +176,5392 @@
       "platforms": "*"
     }
   ],
-  "runs": []
+  "runs": [
+    {
+      "platform": "linux",
+      "arch": "x64",
+      "node": "v22.23.4",
+      "target": "1.2.0-preview.1",
+      "commit": "ce5f9359",
+      "recordedAt": "2026-10-22T19:49:24.131Z",
+      "results": [
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "orphan",
+          "status": "skipped",
+          "reason": "producer 0.9.1 has no --state-backend flag",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "two-layer",
+          "status": "skipped",
+          "reason": "producer 0.9.1 has no --state-backend flag",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 0.9.1 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>/squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>/squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 0.13.1 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>/squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>/squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 1.0.0 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>/squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>/squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 1.0.1 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 1.1.0 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>/squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>/squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "upstream",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "node": "v24.14.0",
+      "target": "1.2.0-preview.1",
+      "commit": "ce5f9359",
+      "recordedAt": "2026-10-22T19:56:14.579Z",
+      "results": [
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "orphan",
+          "status": "skipped",
+          "reason": "producer 0.9.1 has no --state-backend flag",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "two-layer",
+          "status": "skipped",
+          "reason": "producer 0.9.1 has no --state-backend flag",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 0.9.1 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.9.1",
+          "source": "npm",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "xfail",
+              "detail": "dry-run MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.9.1 upgrade --dry-run on upgraded project: exit 0, last lines \"\u001b[32m✓\u001b[0m refreshed .squad/templates/ | Upgrade complete: v1.2.0-preview.1 → v0.9.1 | \u001b[2mPreserves user state: team.md, decisions/, agents/*/history.md\u001b[0m\"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …)",
+            "downgrade-probe: F3"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 0.13.1 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>\\squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>\\squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>\\squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>\\squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "0.13.1",
+          "source": "npm",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 0.13.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 1.0.0 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>\\squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>\\squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 1.0.1 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "1.0.0",
+          "source": "npm",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "xfail",
+              "detail": "teamRoot=<config-home>\\squad"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "xfail",
+              "detail": "❌  routing.md found — file not found | ❌  casting/registry.json exists — file not found | ❌  decisions.md exists — file not found"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "producer wrote teamRoot=<config-home>\\squad at init",
+            "team-root-absent: F1",
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing",
+            "doctor: F1"
+          ]
+        },
+        {
+          "producer": "1.0.1",
+          "source": "github-release",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.0.1 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "upstream",
+          "status": "skipped",
+          "reason": "upstream inheritance is a Squad 2.0 feature; producer 1.1.0 cannot declare upstream.json",
+          "checks": [],
+          "notes": []
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "default",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "profile",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "legacy-casting",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "1.1.0",
+          "source": "github-release",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "xfail",
+              "detail": ".github/agents/squad.agent.md.local-backup"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "pass"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": [
+            "idempotent-second-upgrade: F2",
+            "old 1.1.0 upgrade --dry-run on upgraded project: exit 0, last lines \"overwrite  ../.github/workflows/squad-triage.yml | overwrite  ../.github/workflows/sync-squad-labels.yml | Run without --dry-run to apply.\"; modified nothing"
+          ]
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "ai-team",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "pass"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "orphan",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "upstream",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        },
+        {
+          "producer": "HEAD",
+          "source": "pack",
+          "shape": "two-layer",
+          "status": "pass",
+          "checks": [
+            {
+              "id": "producer-init",
+              "status": "pass"
+            },
+            {
+              "id": "upgrade-plain",
+              "status": "pass"
+            },
+            {
+              "id": "coordinator-is-new-template",
+              "status": "pass"
+            },
+            {
+              "id": "user-state-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "casting-pair-valid",
+              "status": "pass"
+            },
+            {
+              "id": "state-backend-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "ai-team-migrated",
+              "status": "skipped",
+              "detail": "not an .ai-team shape"
+            },
+            {
+              "id": "team-root-absent",
+              "status": "pass"
+            },
+            {
+              "id": "profile-untouched",
+              "status": "skipped",
+              "detail": "no profile squad seeded in this shape"
+            },
+            {
+              "id": "idempotent-second-upgrade",
+              "status": "pass"
+            },
+            {
+              "id": "downgrade-probe",
+              "status": "skipped",
+              "detail": "producer is the target version"
+            },
+            {
+              "id": "clients-projected",
+              "status": "pass"
+            },
+            {
+              "id": "user-config-preserved",
+              "status": "pass"
+            },
+            {
+              "id": "doctor",
+              "status": "pass"
+            },
+            {
+              "id": "rollback-byte-exact",
+              "status": "pass"
+            }
+          ],
+          "notes": []
+        }
+      ]
+    }
+  ]
 }

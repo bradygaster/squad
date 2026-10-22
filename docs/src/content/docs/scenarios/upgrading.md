@@ -135,7 +135,10 @@ Every row below is a real published artifact of an older Squad release driven th
 
 ### Runs
 
-_No runs recorded yet. Run `SQUAD_UPGRADE_MATRIX=1 npx vitest run test/squad-20-upgrade-matrix.test.ts` and merge the results with `node scripts/render-upgrade-matrix.mjs --merge <results.json>`._
+| Platform | Arch | Node | Target | Commit | Recorded | ✅ pass | 🔴 fail | ⏭️ skipped | ⚠️ with known findings |
+|----------|------|------|--------|--------|----------|---------|---------|-----------|------------------------|
+| Linux (`linux`) | x64 | v22.23.4 | v1.2.0-preview.1 | `ce5f9359` | 2026-10-22 | 35 | 0 | 7 | 28 |
+| Windows (`win32`) | x64 | v24.14.0 | v1.2.0-preview.1 | `ce5f9359` | 2026-10-22 | 35 | 0 | 7 | 28 |
 
 ### Producers
 
@@ -162,50 +165,50 @@ _No runs recorded yet. Run `SQUAD_UPGRADE_MATRIX=1 npx vitest run test/squad-20-
 
 ### Results (version × shape × OS)
 
-| Producer | Shape | (no runs yet) |
-|----------|-------|---|
-| **0.9.1** | `default` | — |
-| **0.9.1** | `profile` | — |
-| **0.9.1** | `legacy-casting` | — |
-| **0.9.1** | `orphan` | — |
-| **0.9.1** | `two-layer` | — |
-| **0.9.1** | `ai-team` | — |
-| **0.9.1** | `upstream` | — |
-| **0.13.1** | `default` | — |
-| **0.13.1** | `profile` | — |
-| **0.13.1** | `legacy-casting` | — |
-| **0.13.1** | `orphan` | — |
-| **0.13.1** | `two-layer` | — |
-| **0.13.1** | `ai-team` | — |
-| **0.13.1** | `upstream` | — |
-| **1.0.0** | `default` | — |
-| **1.0.0** | `profile` | — |
-| **1.0.0** | `legacy-casting` | — |
-| **1.0.0** | `orphan` | — |
-| **1.0.0** | `two-layer` | — |
-| **1.0.0** | `ai-team` | — |
-| **1.0.0** | `upstream` | — |
-| **1.0.1** | `default` | — |
-| **1.0.1** | `profile` | — |
-| **1.0.1** | `legacy-casting` | — |
-| **1.0.1** | `orphan` | — |
-| **1.0.1** | `two-layer` | — |
-| **1.0.1** | `ai-team` | — |
-| **1.0.1** | `upstream` | — |
-| **1.1.0** | `default` | — |
-| **1.1.0** | `profile` | — |
-| **1.1.0** | `legacy-casting` | — |
-| **1.1.0** | `orphan` | — |
-| **1.1.0** | `two-layer` | — |
-| **1.1.0** | `ai-team` | — |
-| **1.1.0** | `upstream` | — |
-| **HEAD** | `default` | — |
-| **HEAD** | `profile` | — |
-| **HEAD** | `legacy-casting` | — |
-| **HEAD** | `orphan` | — |
-| **HEAD** | `two-layer` | — |
-| **HEAD** | `ai-team` | — |
-| **HEAD** | `upstream` | — |
+| Producer | Shape | Linux | Windows |
+|----------|-------|---|---|
+| **0.9.1** | `default` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
+| **0.9.1** | `profile` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
+| **0.9.1** | `legacy-casting` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
+| **0.9.1** | `orphan` | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) |
+| **0.9.1** | `two-layer` | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) | ⏭️ skipped (producer 0.9.1 has no --state-backend flag) |
+| **0.9.1** | `ai-team` | ✅ pass ⚠️ known F2, F3 | ✅ pass ⚠️ known F2, F3 |
+| **0.9.1** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.9.1 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.9.1 cannot declare upstream.json) |
+| **0.13.1** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **0.13.1** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
+| **0.13.1** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **0.13.1** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **0.13.1** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **0.13.1** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **0.13.1** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.13.1 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 0.13.1 cannot declare upstream.json) |
+| **1.0.0** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.0** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
+| **1.0.0** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.0** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.0** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.0** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.0** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.0 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.0 cannot declare upstream.json) |
+| **1.0.1** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.1** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
+| **1.0.1** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.1** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.1** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.1** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.0.1** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.1 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.0.1 cannot declare upstream.json) |
+| **1.1.0** | `default` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.1.0** | `profile` | ✅ pass ⚠️ known F1, F2 | ✅ pass ⚠️ known F1, F2 |
+| **1.1.0** | `legacy-casting` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.1.0** | `orphan` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.1.0** | `two-layer` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.1.0** | `ai-team` | ✅ pass ⚠️ known F2 | ✅ pass ⚠️ known F2 |
+| **1.1.0** | `upstream` | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.1.0 cannot declare upstream.json) | ⏭️ skipped (upstream inheritance is a Squad 2.0 feature; producer 1.1.0 cannot declare upstream.json) |
+| **HEAD** | `default` | ✅ pass | ✅ pass |
+| **HEAD** | `profile` | ✅ pass | ✅ pass |
+| **HEAD** | `legacy-casting` | ✅ pass | ✅ pass |
+| **HEAD** | `orphan` | ✅ pass | ✅ pass |
+| **HEAD** | `two-layer` | ✅ pass | ✅ pass |
+| **HEAD** | `ai-team` | ✅ pass | ✅ pass |
+| **HEAD** | `upstream` | ✅ pass | ✅ pass |
 
 ### Checks
 
@@ -273,6 +276,23 @@ Repro:
 Observed: `downgrade-probe` fails for every 0.9.1 row because the dry-run modified files and printed `Upgrade complete: v1.2.0-preview.1 → v0.9.1`; 0.13.1, 1.0.0, 1.0.1 and 1.1.0 honor `--dry-run` (`Run without --dry-run to apply.`, nothing modified) but their preview lists `overwrite .github/workflows/squad-*.yml` etc. — none of the old CLIs has a newer-version guard, so running any of them for real against a 2.0 project downgrades the Squad-owned files. Guidance for users: never run an older CLI against an upgraded repository; re-run `squad upgrade` with the 2.0 CLI to repair a downgraded coordinator (team state is not touched by the downgrade).
 
 Pinned checks: `downgrade-probe` (0.9.1 × all shapes × all platforms).
+
+### Downgrade behavior (old CLI against an upgraded project)
+
+Recorded, not asserted beyond "the dry-run modified nothing": what each old CLI does when pointed at a project that is already on the new version.
+
+| Platform | Producer | Shapes | Observed |
+|----------|----------|--------|----------|
+| `linux` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …) |
+| `linux` | 0.13.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `linux` | 1.0.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `linux` | 1.0.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `linux` | 1.1.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 83 files (36 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/agent-conduct/SKILL.md, .copilot/skills/architectural-proposals/SKILL.md …) |
+| `win32` | 0.13.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 1.0.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 1.0.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 1.1.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
 
 <!-- UPGRADE-MATRIX:END -->
 
