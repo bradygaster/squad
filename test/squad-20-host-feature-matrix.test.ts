@@ -127,7 +127,7 @@ describe('host-feature-matrix.json integrity', () => {
     expect(matrix.expectedFailures.length).toBeGreaterThan(0);
     const cache = new Map<string, string>();
     const read = (rel: string) => {
-      if (!cache.has(rel)) cache.set(rel, fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+      if (!cache.has(rel)) cache.set(rel, fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n'));
       return cache.get(rel)!;
     };
     const covered = new Set<string>();
