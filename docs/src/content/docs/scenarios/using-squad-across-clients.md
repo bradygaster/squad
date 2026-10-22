@@ -48,7 +48,7 @@ Every host gets one coordinator file. Team members are not projected as separate
 2. Open `.claude/agents/squad.md` to inspect the coordinator prompt.
 3. Confirm `.mcp.json` contains `squad_state` and `.gitignore` contains the managed `.claude/worktrees/` block.
 4. Check `CLAUDE.md` for the managed Squad marker block (`<!-- squad:begin ... -->` / `<!-- squad:end -->`); your notes outside the block are preserved.
-5. Run `claude --agent squad --mcp-config .mcp.json` or delegate to the `squad` subagent. Interactive Claude Code does not load project-scoped `.mcp.json` servers until they are approved, so pass the config explicitly.
+5. Run `claude --agent squad --mcp-config .mcp.json` or delegate to the `squad` subagent. Claude Code does not load project-scoped `.mcp.json` servers until they are approved (`claude mcp list` shows `squad_state … Pending approval`); approve them once interactively, or always pass the config explicitly. **Headless runs (`claude -p …`, CI, scripts) must pass `--mcp-config .mcp.json`:** without it the coordinator has no `squad_state_*` tools, falls back to reading `.squad/team.md` directly, and halts on the state-backend handshake for `orphan` / `two-layer` backends. Squad deliberately does not write `enableAllProjectMcpServers: true` into `.claude/settings.json` for you.
 
 ## Kiro walkthrough
 
