@@ -6,14 +6,14 @@
     "specification": {
       "artifact": "docs/specification/charter-v0.1.md",
       "algorithm": "sha256",
-      "digest": "sha256:9bdc6440b83fbd087d7ac01129146dda067d86501b7d3ecf2e81134d5b7ce7c2"
+      "digest": "sha256:0a99be56da3602b3b71dd07410792922b8c658b707db6686f786b8dff0523158"
     },
     "evidence": {
       "artifact": "test-fixtures/spec/charter-v0.1/manifest.json",
       "algorithm": "sha256",
       "canonicalization": "rfc8785",
       "scope": "manifest-excluding-revision",
-      "digest": "sha256:1f09c1954e056ea2072e3c79e286869790ae69751cba0ca4cfd58fd2fa0a92bb"
+      "digest": "sha256:993f14232e2f8afe0a1b0c9a777f9f30a7f6567574d655d8668abeb12ae49dda"
     }
   },
   "capabilities": [
@@ -59,6 +59,7 @@
           "ownership": "- Cross-package architecture and compatibility strategy.",
           "boundaries": "- Routine implementation owned by domain specialists.",
           "collaboration": "- Adjudicates compatibility disputes.",
+          "examples": null,
           "modelPreference": "auto",
           "modelRationale": null,
           "modelFallback": null,
@@ -115,6 +116,7 @@
           "ownership": "- Cross-package architecture and compatibility strategy.",
           "boundaries": "- Routine implementation owned by domain specialists.",
           "collaboration": "- Adjudicates compatibility disputes.",
+          "examples": null,
           "modelPreference": "auto",
           "modelRationale": null,
           "modelFallback": null,
@@ -253,6 +255,7 @@
           "ownership": "- Legacy compatibility.",
           "boundaries": "- Does not own architecture.",
           "collaboration": "- Works with the lead.",
+          "examples": null,
           "modelPreference": "auto",
           "modelRationale": null,
           "modelFallback": null,
@@ -321,6 +324,7 @@
           "ownership": "- Integration behavior.",
           "boundaries": "- Extension interpretation.",
           "collaboration": "- Coordinates with extension owners.",
+          "examples": null,
           "modelPreference": null,
           "modelRationale": null,
           "modelFallback": null,
@@ -387,6 +391,7 @@
           "ownership": "- Integration behavior.",
           "boundaries": "- Extension interpretation.",
           "collaboration": "- Coordinates with extension owners.",
+          "examples": null,
           "modelPreference": null,
           "modelRationale": null,
           "modelFallback": null,
@@ -453,6 +458,7 @@
           "ownership": "- Test CRLF.",
           "boundaries": "- LF normalization.",
           "collaboration": "- Review byte preservation.",
+          "examples": null,
           "modelPreference": null,
           "modelRationale": null,
           "modelFallback": null,
@@ -511,6 +517,7 @@
           "ownership": "- Test runtime selection.",
           "boundaries": "- Select literal auto identifiers.",
           "collaboration": "- Review runtime preferences.",
+          "examples": null,
           "modelPreference": "auto",
           "modelRationale": null,
           "modelFallback": null,
@@ -1285,6 +1292,458 @@
         },
         "parsed": null,
         "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "examples-without-model-no-op",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": "positive/examples.md",
+        "text": null,
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": []
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null,
+          "examples": "```yaml\nexamples:\n  - id: greeting\n    input: Ada\n    assertions:\n      - id: greeting-text\n        type: contains\n        value: Hello, Ada\n```"
+        },
+        "serialization": {
+          "output": null,
+          "outputFixture": "positive/examples.md",
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "examples-preserved-on-known-field-edit",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": "positive/examples.md",
+        "text": null,
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Keep architecture and conformance coherent."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null,
+          "examples": "```yaml\nexamples:\n  - id: greeting\n    input: Ada\n    assertions:\n      - id: greeting-text\n        type: contains\n        value: Hello, Ada\n```"
+        },
+        "serialization": {
+          "output": "# Architect — Lead Architect\n\n## Identity\n\n- **ID:** `architect`\n- **Purpose:** Keep architecture and conformance coherent.\n\n## Accountable Responsibilities\n\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n\n- Adjudicates compatibility disputes.\n\n## Examples\n\n```yaml\nexamples:\n  - id: greeting\n    input: Ada\n    assertions:\n      - id: greeting-text\n        type: contains\n        value: Hello, Ada\n```\n",
+          "outputFixture": null,
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "duplicate-examples",
+      "capabilities": [
+        "squad-charter/v0.1/validate"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Architect — Lead Architect\n\n## Identity\n- **ID:** `architect`\n- **Purpose:** Keep cross-package architecture coherent.\n\n## Accountable Responsibilities\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n- Adjudicates compatibility disputes.\n\n## Examples\n\n```yaml\nexamples:\n  - id: greeting\n    input: Ada\n    assertions:\n      - id: greeting-text\n        type: contains\n        value: Hello, Ada\n```\n\n## examples\nAgain.\n",
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": null,
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": false,
+          "conforms": false,
+          "classification": "invalid",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": [
+            {
+              "code": "SQC011",
+              "severity": "error",
+              "start": {
+                "line": 28,
+                "column": 1
+              },
+              "end": {
+                "line": 28,
+                "column": 11
+              },
+              "path": "agents/architect/charter.md"
+            }
+          ]
+        },
+        "parsed": null,
+        "serialization": null,
+        "runtime": null
+      }
+    },
+    {
+      "id": "indented-identity-examples-preserved-lf",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Architect — Lead Architect\n\n## Identity\n- **ID:** `architect`\n- **Purpose:** Keep cross-package architecture coherent.\n\n## Accountable Responsibilities\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n- Adjudicates compatibility disputes.\n\n## Examples\n\n \t\n    ## Identity\n    This is example code, not a charter section.\n \t\n",
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Keep architecture and conformance coherent."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null,
+          "examples": "    ## Identity\n    This is example code, not a charter section."
+        },
+        "serialization": {
+          "output": "# Architect — Lead Architect\n\n## Identity\n\n- **ID:** `architect`\n- **Purpose:** Keep architecture and conformance coherent.\n\n## Accountable Responsibilities\n\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n\n- Adjudicates compatibility disputes.\n\n## Examples\n\n    ## Identity\n    This is example code, not a charter section.\n",
+          "outputFixture": null,
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "indented-model-examples-preserved-lf",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Architect — Lead Architect\n\n## Identity\n- **ID:** `architect`\n- **Purpose:** Keep cross-package architecture coherent.\n\n## Accountable Responsibilities\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n- Adjudicates compatibility disputes.\n\n## Examples\n\n \t\n    ## Model\n    This is example code, not a charter section.\n \t\n",
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Keep architecture and conformance coherent."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null,
+          "examples": "    ## Model\n    This is example code, not a charter section."
+        },
+        "serialization": {
+          "output": "# Architect — Lead Architect\n\n## Identity\n\n- **ID:** `architect`\n- **Purpose:** Keep architecture and conformance coherent.\n\n## Accountable Responsibilities\n\n- Cross-package architecture and compatibility strategy.\n\n## Non-Responsibilities\n\n- Routine implementation owned by domain specialists.\n\n## Collaboration and Review Authority\n\n- Adjudicates compatibility disputes.\n\n## Examples\n\n    ## Model\n    This is example code, not a charter section.\n",
+          "outputFixture": null,
+          "eol": "LF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "indented-identity-examples-preserved-crlf",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Architect — Lead Architect\r\n\r\n## Identity\r\n- **ID:** `architect`\r\n- **Purpose:** Keep cross-package architecture coherent.\r\n\r\n## Accountable Responsibilities\r\n- Cross-package architecture and compatibility strategy.\r\n\r\n## Non-Responsibilities\r\n- Routine implementation owned by domain specialists.\r\n\r\n## Collaboration and Review Authority\r\n- Adjudicates compatibility disputes.\r\n\r\n## Examples\r\n\r\n \t\r\n    ## Identity\r\n    This is example code, not a charter section.\r\n \t\r\n",
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Keep architecture and conformance coherent."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null,
+          "examples": "    ## Identity\n    This is example code, not a charter section."
+        },
+        "serialization": {
+          "output": "# Architect — Lead Architect\r\n\r\n## Identity\r\n\r\n- **ID:** `architect`\r\n- **Purpose:** Keep architecture and conformance coherent.\r\n\r\n## Accountable Responsibilities\r\n\r\n- Cross-package architecture and compatibility strategy.\r\n\r\n## Non-Responsibilities\r\n\r\n- Routine implementation owned by domain specialists.\r\n\r\n## Collaboration and Review Authority\r\n\r\n- Adjudicates compatibility disputes.\r\n\r\n## Examples\r\n\r\n    ## Identity\n    This is example code, not a charter section.\r\n",
+          "outputFixture": null,
+          "eol": "CRLF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
+        "runtime": null
+      }
+    },
+    {
+      "id": "indented-model-examples-preserved-crlf",
+      "capabilities": [
+        "squad-charter/v0.1/parse",
+        "squad-charter/v0.1/validate",
+        "squad-charter/v0.1/edit"
+      ],
+      "input": {
+        "fixture": null,
+        "text": "# Architect — Lead Architect\r\n\r\n## Identity\r\n- **ID:** `architect`\r\n- **Purpose:** Keep cross-package architecture coherent.\r\n\r\n## Accountable Responsibilities\r\n- Cross-package architecture and compatibility strategy.\r\n\r\n## Non-Responsibilities\r\n- Routine implementation owned by domain specialists.\r\n\r\n## Collaboration and Review Authority\r\n- Adjudicates compatibility disputes.\r\n\r\n## Examples\r\n\r\n \t\r\n    ## Model\r\n    This is example code, not a charter section.\r\n \t\r\n",
+        "path": "agents/architect/charter.md",
+        "profile": "squad-charter/v0.1",
+        "validationApi": "conformance"
+      },
+      "serialization": {
+        "mode": "canonical",
+        "edits": [
+          {
+            "field": "identity.purpose",
+            "value": "Keep architecture and conformance coherent."
+          }
+        ]
+      },
+      "expected": {
+        "validation": {
+          "profile": "squad-charter/v0.1",
+          "accepted": true,
+          "conforms": true,
+          "classification": "canonical",
+          "capabilities": [
+            "squad-charter/v0.1/validate"
+          ],
+          "diagnostics": []
+        },
+        "parsed": {
+          "identity": {
+            "id": "architect",
+            "purpose": "Keep cross-package architecture coherent.",
+            "name": "Architect",
+            "role": "Lead Architect",
+            "expertise": null,
+            "style": null
+          },
+          "ownership": "- Cross-package architecture and compatibility strategy.",
+          "boundaries": "- Routine implementation owned by domain specialists.",
+          "collaboration": "- Adjudicates compatibility disputes.",
+          "modelPreference": null,
+          "modelRationale": null,
+          "modelFallback": null,
+          "reasoningEffort": null,
+          "authoredReasoningEffort": null,
+          "contextTier": null,
+          "authoredContextTier": null,
+          "examples": "    ## Model\n    This is example code, not a charter section."
+        },
+        "serialization": {
+          "output": "# Architect — Lead Architect\r\n\r\n## Identity\r\n\r\n- **ID:** `architect`\r\n- **Purpose:** Keep architecture and conformance coherent.\r\n\r\n## Accountable Responsibilities\r\n\r\n- Cross-package architecture and compatibility strategy.\r\n\r\n## Non-Responsibilities\r\n\r\n- Routine implementation owned by domain specialists.\r\n\r\n## Collaboration and Review Authority\r\n\r\n- Adjudicates compatibility disputes.\r\n\r\n## Examples\r\n\r\n    ## Model\n    This is example code, not a charter section.\r\n",
+          "outputFixture": null,
+          "eol": "CRLF",
+          "validation": {
+            "accepted": true,
+            "conforms": true,
+            "classification": "canonical",
+            "diagnostics": []
+          }
+        },
         "runtime": null
       }
     }

@@ -1,6 +1,6 @@
 # Squad Charter Profile v0.1
 
-<!-- cspell:ignore xhigh -->
+<!-- cspell:ignore xhigh Waza -->
 
 **Status:** Working Draft
 
@@ -101,10 +101,10 @@ unsupported-profile error and MUST NOT reinterpret the document as v0.1.
 ```
 
 The H1, `Identity`, and three canonical responsibility sections define the
-canonical presentation. `Model` is optional. Producers MUST emit canonical
+canonical presentation. `Model` and `Examples` are optional. Producers MUST emit canonical
 sections in this order: `Identity`, `Accountable Responsibilities`,
 `Non-Responsibilities`, `Collaboration and Review Authority`, optional
-`Model`, then extensions. Producers MUST use the em dash (`—`) H1 separator
+`Model`, optional `Examples`, then extensions. Producers MUST use the em dash (`—`) H1 separator
 and canonical responsibility headings unless an API caller explicitly requests
 legacy output.
 
@@ -191,6 +191,45 @@ status. Legacy output requires an explicit editor mode. Canonical known-field
 edits emit standard sections in the order defined by §4. If required canonical
 identity semantics are unavailable, the editor preserves compatibility fields
 and the result remains noncanonical-compatible rather than inventing values.
+
+### 7.1 Optional Examples
+
+A charter MAY contain one `## Examples` section after the responsibility
+sections and optional `## Model`, before namespaced extensions. It contains
+representative requests and expected behavior as Markdown. Editors MUST
+recognize and preserve this section during unrelated known-field edits and
+parse/serialize round trips. As with other known sections, canonical edits MAY
+normalize blank separator lines and line endings, but MUST preserve content
+indentation. Canonical no-op round trips MUST return the original bytes. Duplicate Examples sections produce `SQC011`.
+The deterministic Markdown rules in §5 apply, including fenced headings and
+the opaque extension tail.
+
+For example, a consumer that supports structured examples can use this shape:
+
+````markdown
+## Examples
+```yaml
+examples:
+  - id: greeting
+    input: Ada
+    assertions:
+      - id: greeting-text
+        type: contains
+        value: Hello, Ada
+```
+````
+
+The YAML shape above is informative, not a required runner schema. Core charter
+handling preserves Markdown without executing examples or validating assertions.
+Examples grant no tools, permissions, model access, or approval authority. When
+included in a compiled charter prompt, they are authored guidance, not held-out
+evaluation cases. Their presence does not establish a passing result.
+
+**Informative evaluation guidance:** Examples support quick “did I break it?”
+checks during authoring. Waza covers deeper and release evaluations. Results
+from either should be bound to the exact package digest tested, not a mutable
+name or tag. Runner formats, Waza conversion, and result storage are outside
+this profile; this section does not add a runner or an integration.
 
 ## 8. Extensions
 

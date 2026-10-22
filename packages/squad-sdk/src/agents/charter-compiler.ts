@@ -115,6 +115,8 @@ export interface ParsedCharter {
   authoredContextTier?: string;
   /** Collaboration and Review Authority content, or legacy Collaboration */
   collaboration?: string;
+  /** Optional Examples section as Markdown, not executable test configuration */
+  examples?: string;
   /** Full charter content */
   fullContent: string;
   /** Source metadata used by lossless charter editors */
@@ -417,6 +419,17 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     'Collaboration',
   );
 
+  const examples = scan.sections.find(section => section.name.toLowerCase() === 'examples');
+  if (examples) {
+    // Only blank separator lines are disposable; content indentation is Markdown syntax.
+    const lines = examples.raw.replace(/\r\n?/g, '\n').split('\n').slice(1);
+    let start = 0;
+    let end = lines.length;
+    while (start < end && /^[ \t]*$/.test(lines[start] ?? '')) start += 1;
+    while (end > start && /^[ \t]*$/.test(lines[end - 1] ?? '')) end -= 1;
+    result.examples = lines.slice(start, end).join('\n');
+  }
+
   Object.defineProperty(result, 'source', {
     configurable: false,
     enumerable: false,
@@ -448,6 +461,7 @@ export function charterSemanticKey(charter: ParsedCharter): string {
     contextTier: charter.contextTier,
     authoredContextTier: charter.authoredContextTier,
     collaboration: charter.collaboration,
+    examples: charter.examples,
   });
 }
 
@@ -497,7 +511,8 @@ function hasCanonicalShape(scan: CharterMarkdownScan): boolean {
     'non-responsibilities',
     'collaboration and review authority',
   ];
-  if (names.length === expected.length + 1) expected.push('model');
+  if (names.includes('model')) expected.push('model');
+  if (names.includes('examples')) expected.push('examples');
   if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
     return false;
   }
@@ -508,7 +523,10 @@ function hasCanonicalShape(scan: CharterMarkdownScan): boolean {
   if (!canonicalExtensions) return false;
 
   const compatibilityFields = new Set(['name', 'role', 'expertise', 'style', 'fallback']);
-  if (scan.fields.some(field => compatibilityFields.has(field.name.toLowerCase()))) {
+  if (scan.fields.some(field =>
+    (field.section.toLowerCase() === 'identity' || field.section.toLowerCase() === 'model')
+    && compatibilityFields.has(field.name.toLowerCase()),
+  )) {
     return false;
   }
 
