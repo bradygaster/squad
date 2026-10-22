@@ -68,6 +68,9 @@ export function gitSyncEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proces
     "'protocol.ext.allow=never'",
     "'protocol.file.allow=never'",
     "'core.sshCommand=ssh'",
+    // Never materialize symlinks from an upstream repository: a committed link could point
+    // the resolver's snapshot root at another path on this machine.
+    "'core.symlinks=false'",
   ];
   const existing = base['GIT_CONFIG_PARAMETERS'];
   return {

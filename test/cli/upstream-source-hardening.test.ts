@@ -83,7 +83,7 @@ describe('gitSyncEnv: remote helpers and file protocol disabled for the subproce
   it('sets protocol.allow=never with https/ssh re-enabled, ext/file never, and disables terminal prompts', () => {
     const env = gitSyncEnv({ PATH: 'x', GIT_CONFIG_PARAMETERS: "'user.name=existing'" });
     const params = env['GIT_CONFIG_PARAMETERS']!;
-    for (const p of ["'protocol.allow=never'", "'protocol.https.allow=always'", "'protocol.ssh.allow=always'", "'protocol.ext.allow=never'", "'protocol.file.allow=never'"]) {
+    for (const p of ["'protocol.allow=never'", "'protocol.https.allow=always'", "'protocol.ssh.allow=always'", "'protocol.ext.allow=never'", "'protocol.file.allow=never'", "'core.symlinks=false'"]) {
       expect(params, p).toContain(p);
     }
     expect(params, 'existing parameters are preserved').toContain("'user.name=existing'");

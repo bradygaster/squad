@@ -155,6 +155,19 @@ class ContainedReader {
     }
   }
 
+  /**
+   * Require `dir` to be a real directory reached from this reader's root through regular
+   * directories only (no link at any component, including the last). Used to vet the root
+   * of a nested snapshot before a new reader is anchored there.
+   */
+  assertRegularDirectory(dir: string): void {
+    const st = this.lstatChain(dir);
+    if (!this.fsBacked) return;
+    if (st === null || !st.isDirectory()) {
+      throw new UpstreamReadRefused(`${dir} is not a directory inside the upstream snapshot ${this.root}`);
+    }
+  }
+
   exists(p: string): boolean {
     const st = this.lstatChain(p);
     if (!this.fsBacked) return this.storage.existsSync(p);
@@ -485,6 +498,7 @@ function resolveOne(
   now: Date,
   budget: ReadBudget,
   beforeOpen?: UpstreamReadHook,
+  parentReader: ContainedReader | null = null,
 ): ResolvedWithReader {
   // Relative sources resolve against the declaring squad's project root, never the cwd,
   // so a bridge launched from a monorepo subfolder sees the same upstreams as the root.
@@ -524,6 +538,10 @@ function resolveOne(
         return done(emptyUpstream(entry, frame, 'invalid', `${entry.name}: upstream name is not a plain identifier; not read`));
       }
       const cloneDir = path.join(squadDir, '_upstream_repos', entry.name);
+      // A nested clone lives inside a third-party snapshot: every component from the PARENT
+      // snapshot root down to `_upstream_repos/<name>` (included) must be a regular directory,
+      // otherwise a committed link could anchor the new reader anywhere on this machine.
+      if (parentReader) parentReader.assertRegularDirectory(cloneDir);
       const reader = contained(cloneDir);
       const cloneSquadDir = findSquadDir(cloneDir, reader);
       if (!cloneSquadDir) {
@@ -594,7 +612,7 @@ export function resolveUpstreams(
     if (u.status !== 'ok' && u.diagnostic) diagnostics.push(u.diagnostic);
   };
 
-  const visit = (dir: string, cfg: UpstreamConfig, frame: Frame): void => {
+  const visit = (dir: string, cfg: UpstreamConfig, frame: Frame, parentReader: ContainedReader | null): void => {
     for (const raw of cfg.upstreams) {
       if (!isValidEntry(raw)) {
         const entry = placeholderEntry(raw);
@@ -603,7 +621,7 @@ export function resolveUpstreams(
         continue;
       }
 
-      const { resolved, reader } = resolveOne(dir, raw, frame, storage, staleAfterDays, now, budget, options.beforeOpen);
+      const { resolved, reader } = resolveOne(dir, raw, frame, storage, staleAfterDays, now, budget, options.beforeOpen, parentReader);
       const readable = resolved.status === 'ok' || resolved.status === 'stale';
       if (readable && resolved.squadDir) {
         const id = identityOf(resolved.squadDir);
@@ -640,11 +658,11 @@ export function resolveUpstreams(
         }
         continue;
       }
-      visit(resolved.squadDir, nested, nextFrame);
+      visit(resolved.squadDir, nested, nextFrame, reader);
     }
   };
 
-  visit(squadDir, config, { depth: 1, via: [], chain: [identityOf(squadDir)], thirdParty: false });
+  visit(squadDir, config, { depth: 1, via: [], chain: [identityOf(squadDir)], thirdParty: false }, null);
   return { upstreams: results, diagnostics, maxDepth };
 }
 
