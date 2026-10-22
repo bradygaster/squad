@@ -32,9 +32,15 @@ const inside = (p: string | undefined): boolean => {
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 };
 
-for (const name of ['SQUAD_HOME', 'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME'] as const) {
+// SQUAD_HOME keeps the real shape (<fake home>/.squad): code and tests reason about that segment.
+const layout: Record<string, string> = {
+  SQUAD_HOME: path.join(guardRoot, 'home', '.squad'),
+  APPDATA: path.join(guardRoot, 'appdata'),
+  LOCALAPPDATA: path.join(guardRoot, 'localappdata'),
+  XDG_CONFIG_HOME: path.join(guardRoot, 'xdg-config'),
+};
+for (const [name, dir] of Object.entries(layout)) {
   if (inside(process.env[name])) continue; // an outer harness already isolated it
-  const dir = path.join(guardRoot, name.toLowerCase());
   fs.mkdirSync(dir, { recursive: true });
   process.env[name] = dir;
 }

@@ -13,6 +13,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -221,7 +222,7 @@ function platformSquadConfigDir(): string | null {
     } else {
       base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
     }
-    return path.resolve(path.join(base, 'squad'));
+    return canonicalDir(path.join(base, 'squad'));
   } catch {
     return null;
   }
@@ -235,7 +236,7 @@ function platformSquadConfigDir(): string | null {
  * removes the key.
  */
 export function isRetiredProfileTeamRoot(teamDir: string): boolean {
-  const target = path.resolve(teamDir);
+  const target = canonicalDir(teamDir);
   const { homeDir, squadHome } = profileBoundary();
   const under = (root: string | null) => root !== null && (samePath(target, root) || isAncestorOf(root, target));
   if (homeDir && samePath(target, homeDir)) return true;
@@ -247,10 +248,40 @@ export function isRetiredProfileTeamRoot(teamDir: string): boolean {
 /** Directories that are never project squads: the home dir and the roaming SQUAD_HOME root. */
 function profileBoundary(): { homeDir: string | null; squadHome: string | null } {
   let homeDir: string | null = null;
-  try { homeDir = path.resolve(os.homedir()); } catch { homeDir = null; }
+  try { homeDir = canonicalDir(os.homedir()); } catch { homeDir = null; }
   const envHome = process.env['SQUAD_HOME'];
-  const squadHome = envHome ? path.resolve(envHome) : (homeDir ? path.join(homeDir, '.squad') : null);
+  const squadHome = envHome ? canonicalDir(envHome) : (homeDir ? path.join(homeDir, '.squad') : null);
   return { homeDir, squadHome };
+}
+
+/**
+ * Canonical absolute form of a directory for boundary comparisons: resolves 8.3 short
+ * names on Windows (`C:\Users\TAMIRD~1` vs `C:\Users\tamirdresher`) and symlinked homes.
+ * Falls back to `path.resolve` when the path does not exist.
+ */
+function canonicalDir(p: string): string {
+  const resolved = path.resolve(p);
+  // Canonicalize the longest existing prefix, then re-append the missing tail.
+  const tail: string[] = [];
+  let cur = resolved;
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native(cur);
+      return tail.length ? path.join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = path.dirname(cur);
+      if (parent === cur) return resolved;
+      tail.push(path.basename(cur));
+      cur = parent;
+    }
+  }
+}
+
+/** True when `current` (any spelling) is the home directory or one of its ancestors. */
+function atOrAboveProfileRoot(current: string, homeDir: string | null): boolean {
+  if (!homeDir) return false;
+  const c = canonicalDir(current);
+  return samePath(c, homeDir) || isAncestorOf(c, homeDir);
 }
 
 /** True when `dir` is a strict ancestor of `descendant`. */
@@ -270,13 +301,13 @@ function resolveSquadUncached(startDir: string): string | null {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     // Profile boundary: the home directory (and anything above it) is never a project.
-    if (homeDir && (samePath(current, homeDir) || isAncestorOf(current, homeDir))) {
+    if (atOrAboveProfileRoot(current, homeDir)) {
       return null;
     }
 
     const candidate = path.join(current, '.squad');
 
-    if (!(squadHome && samePath(path.resolve(candidate), squadHome))
+    if (!(squadHome && samePath(canonicalDir(candidate), squadHome))
       && storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
       return candidate;
     }
@@ -343,12 +374,12 @@ function findSquadDirUncached(startDir: string): { dir: string; name: '.squad' |
   // eslint-disable-next-line no-constant-condition
   while (true) {
     // Same profile boundary as resolveSquad(): the home directory is never a project.
-    if (homeDir && (samePath(current, homeDir) || isAncestorOf(current, homeDir))) {
+    if (atOrAboveProfileRoot(current, homeDir)) {
       return null;
     }
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
-      if (squadHome && samePath(path.resolve(candidate), squadHome)) continue;
+      if (squadHome && samePath(canonicalDir(candidate), squadHome)) continue;
       if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
         return { dir: candidate, name };
       }

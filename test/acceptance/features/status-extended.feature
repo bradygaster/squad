@@ -8,8 +8,9 @@ Feature: Status command extended
     And the output contains "Path:"
     And the exit code is 0
 
-  Scenario: Status in directory without squad shows no active squad
+  Scenario: Status in directory without squad fails instead of resolving a profile squad
     Given a directory without a ".squad" directory
     When I run "squad status" in the temp directory
-    Then the output does not contain "Active squad:  repo"
-    And the exit code is 0
+    Then the output does not contain "Active squad:"
+    And the output contains "No squad in this directory"
+    And the exit code is 1
