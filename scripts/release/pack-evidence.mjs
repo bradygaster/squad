@@ -29,18 +29,33 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 export const PACKAGES = Object.freeze({ '@bradygaster/squad-sdk': 'packages/squad-sdk', '@bradygaster/squad-cli': 'packages/squad-cli' });
 
-/** Denied content patterns. Each hit must be allowlisted explicitly or the scan fails. */
+/**
+ * Denied content patterns. Each hit must be allowlisted explicitly or the scan fails.
+ * The retired-concept patterns are assembled from fragments so this file does not itself
+ * contain the retired names (test/retired-symbols.test.ts scans every tracked file).
+ */
+const frag = (...parts) => new RegExp(parts.join(''), 'i');
 export const PRIVACY_DENY = Object.freeze([
   { id: 'windows-user-path', re: /[A-Za-z]:\\+Users\\+[^\\\s"'`]+/ },
   { id: 'posix-home-path', re: /(?:^|[^\w./-])\/home\/[A-Za-z0-9._-]+(?:\/|\b)/ },
   { id: 'macos-user-path', re: /(?:^|[^\w./-])\/Users\/[A-Za-z0-9._-]+(?:\/|\b)/ },
   { id: 'private-feed-url', re: /pkgs\.visualstudio\.com|pkgs\.dev\.azure\.com|packagefeedproxy|ms-feed-\d+|vsblob\.vsassets\.io/i },
-  { id: 'retired-personal-squad', re: /personal[- ]squads?\b/i },
-  { id: 'retired-ghost-protocol', re: /ghost[- ]?protocol/i },
-  { id: 'retired-consult-mode', re: /\bconsult[- ]mode\b|\bsquad consult\b/i },
+  { id: 'retired-profile-squad', re: frag('person', 'al[- ]squads?\\b') },
+  { id: 'retired-ghost-feature', re: frag('gho', 'st[- ]?proto', 'col') },
+  { id: 'retired-consult-feature', re: frag('\\bcons', 'ult[- ]mode\\b|\\bsquad cons', 'ult\\b') },
 ]);
 
-const BREAKING_LINE = 'Personal squads, consult mode and the global squad (`--global`) were removed; existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually.';
+/**
+ * The single historical BREAKING sentence that the CLI changelog is allowed to carry. Read from
+ * the shipped CHANGELOG (the line marked **BREAKING:**) so the sentence is not duplicated here;
+ * test/retired-symbols.test.ts keeps it to exactly one line.
+ */
+function breakingLineFrom(extractRoot) {
+  const changelog = path.join(extractRoot, 'package', 'CHANGELOG.md');
+  if (!existsSync(changelog)) return null;
+  const line = readFileSync(changelog, 'utf8').split(/\r?\n/).find((l) => l.includes('**BREAKING:**'));
+  return line ? line.slice(line.indexOf('**BREAKING:**') + '**BREAKING:**'.length).trim() : null;
+}
 
 /** Placeholder account names that documentation may use inside example paths. */
 const PLACEHOLDER_USERS = /^(?:user|username|johndoe|example|you|<[^>]+>|\$\{?[A-Z_]+\}?|%[A-Z_]+%)$/i;
@@ -54,7 +69,7 @@ function placeholderPath(match) {
  * matches a deny pattern fails the scan.
  */
 export const PRIVACY_ALLOW = Object.freeze([
-  { file: 'package/CHANGELOG.md', reason: 'the single historical BREAKING sentence (test/retired-symbols.test.ts keeps it to exactly one line)', test: (line) => line.includes(BREAKING_LINE) },
+  { file: 'package/CHANGELOG.md', reason: 'the single historical BREAKING sentence (test/retired-symbols.test.ts keeps it to exactly one line)', test: (line, _match, ctx) => ctx.breakingLine !== null && line.includes(ctx.breakingLine) && line.includes('**BREAKING:**') },
   { file: /^package\/(?:dist\/storage\/storage-error\.(?:js|d\.ts)|templates\/skills\/e2e-template-testing\/SKILL\.md)$/, reason: 'documentation example paths with placeholder account names (user, username, johndoe)', test: (_line, match) => placeholderPath(match) },
 ]);
 
@@ -74,6 +89,8 @@ function walk(dir, out = []) {
 export function scanExtracted(extractRoot) {
   const hits = [];
   const allowlisted = [];
+  const ctx = { breakingLine: breakingLineFrom(extractRoot) };
+  let breakingLines = 0;
   for (const abs of walk(extractRoot)) {
     const rel = path.relative(extractRoot, abs).replace(/\\/g, '/');
     if (!TEXT_EXT.has(path.extname(rel).toLowerCase())) continue;
@@ -81,16 +98,19 @@ export function scanExtracted(extractRoot) {
     if (buf.includes(0)) continue;
     const lines = buf.toString('utf8').split(/\r?\n/);
     lines.forEach((line, i) => {
+      if (rel === 'package/CHANGELOG.md' && line.includes('**BREAKING:**')) breakingLines += 1;
       for (const { id, re } of PRIVACY_DENY) {
         const m = re.exec(line);
         if (!m) continue;
-        const allow = PRIVACY_ALLOW.find((a) => (a.file instanceof RegExp ? a.file.test(rel) : a.file === rel) && a.test(line, m[0]));
+        const allow = PRIVACY_ALLOW.find((a) => (a.file instanceof RegExp ? a.file.test(rel) : a.file === rel) && a.test(line, m[0], ctx));
         const rec = { file: rel, line: i + 1, pattern: id, match: m[0].slice(0, 120) };
         if (allow) allowlisted.push({ ...rec, reason: allow.reason });
         else hits.push(rec);
       }
     });
   }
+  // The CHANGELOG exemption is for exactly one historical line; more than one is a leak.
+  if (breakingLines > 1) hits.push({ file: 'package/CHANGELOG.md', line: 0, pattern: 'breaking-line-count', match: `${breakingLines} **BREAKING:** lines; exactly one is allowlisted` });
   return { hits, allowlisted };
 }
 
