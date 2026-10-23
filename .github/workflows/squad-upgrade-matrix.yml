@@ -146,7 +146,10 @@ jobs:
         shell: bash
         run: |
           [[ "${{ inputs.evidence_run_id }}" =~ ^[0-9]+$ ]]
-          [[ "${{ inputs.evidence_artifact }}" == release-evidence-* ]]
+          case "${{ inputs.evidence_artifact }}" in
+            release-evidence-*) ;;
+            *) echo "::error::evidence_artifact must begin with release-evidence-"; exit 1 ;;
+          esac
           [[ "${{ inputs.target_sha }}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${{ inputs.cli_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
           [[ "${{ inputs.sdk_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
