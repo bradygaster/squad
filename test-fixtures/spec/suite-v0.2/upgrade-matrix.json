@@ -306,7 +306,8 @@
         "Run the 2.0 CLI `squad upgrade`: it prints `⚠️ Could not refresh squad.agent.md team capabilities: Cannot read a consistent casting registry/history pair: both files are required`, then creates the casting pair later in the same run.",
         "Run `squad upgrade` again: `✓ upgraded squad.agent.md` — the coordinator gains the 17-line `<!-- squad:capabilities … -->` block that run 1 could not render. Nothing else changes."
       ],
-      "observed": "`idempotent-second-upgrade` fails with exactly `.github/agents/squad.agent.md` for 0.9.1 × `default`/`profile`/`ai-team` on both OSes. 0.9.1 × `legacy-casting` is unaffected because the hand-written registry is repaired in the preflight, so the pair exists before the coordinator is written. The project is correct after the second run; the defect is ordering — the capabilities sync should run after the casting pair is ensured (or the pair should be ensured in the preflight)."
+      "observed": "`idempotent-second-upgrade` fails with exactly `.github/agents/squad.agent.md` for 0.9.1 × `default`/`profile`/`ai-team` on both OSes. 0.9.1 × `legacy-casting` is unaffected because the hand-written registry is repaired in the preflight, so the pair exists before the coordinator is written. The project is correct after the second run; the defect is ordering — the capabilities sync should run after the casting pair is ensured (or the pair should be ensured in the preflight).",
+      "resolved": "Fixed on squad2-c @ 50afa91a (PR #2279): `runUpgrade` runs `preflightCastingPair()` (ensureCastingDefaults) before `writeAgentTemplate` in both the already-current and the normal path, so a 0.9.x project with an empty `.squad/casting/` gets the `<!-- squad:capabilities -->` block on the first upgrade and the second upgrade is byte-identical (C test: `test/upgrade-profile-teamroot.test.ts` › \"F4: a 0.9.x project (empty casting/) upgrades in ONE pass\"). Verified by this matrix: with the pin still in place, `idempotent-second-upgrade` produced `xpass` on exactly 0.9.1 × default/profile/ai-team; the pin is removed."
     }
   ],
   "expectedFailures": [
@@ -318,20 +319,6 @@
       ],
       "shapes": "*",
       "platforms": "*"
-    },
-    {
-      "finding": "F4",
-      "check": "idempotent-second-upgrade",
-      "producers": [
-        "0.9.1"
-      ],
-      "shapes": [
-        "default",
-        "profile",
-        "ai-team"
-      ],
-      "platforms": "*",
-      "knownDetail": ".github/agents/squad.agent.md"
     }
   ],
   "runs": []

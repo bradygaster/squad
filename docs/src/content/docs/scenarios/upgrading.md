@@ -252,7 +252,6 @@ Each pin names an open finding; the suite reports the check as `xfail` and **fai
 | Check | Producers | Shapes | Platforms | Finding |
 |-------|-----------|--------|-----------|---------|
 | `downgrade-probe` | 0.9.1 | all | all | [F3](#f3) |
-| `idempotent-second-upgrade` | 0.9.1 | `default`, `profile`, `ai-team` | all | [F4](#f4) |
 
 ### Checks
 
@@ -346,7 +345,7 @@ Pinned checks: `downgrade-probe` (0.9.1 × all shapes × all platforms).
 
 #### F4 — First `squad upgrade` of a 0.9.x project (empty `.squad/casting/`) does not converge: the coordinator's team-capabilities block is only rendered by the second upgrade
 
-**Severity:** medium · **Owner:** CLI core — `packages/squad-cli/src/cli/core/upgrade.ts` (coordinator write + `syncTeamCapabilities` run before the casting pair is scaffolded) · **Status:** 🔴 open
+**Severity:** medium · **Owner:** CLI core — `packages/squad-cli/src/cli/core/upgrade.ts` (coordinator write + `syncTeamCapabilities` run before the casting pair is scaffolded) · **Status:** ✅ resolved
 
 Repro:
 
@@ -356,7 +355,7 @@ Repro:
 
 Observed: `idempotent-second-upgrade` fails with exactly `.github/agents/squad.agent.md` for 0.9.1 × `default`/`profile`/`ai-team` on both OSes. 0.9.1 × `legacy-casting` is unaffected because the hand-written registry is repaired in the preflight, so the pair exists before the coordinator is written. The project is correct after the second run; the defect is ordering — the capabilities sync should run after the casting pair is ensured (or the pair should be ensured in the preflight).
 
-Pinned checks: `idempotent-second-upgrade` (0.9.1 × default, profile, ai-team × all platforms).
+Resolved: Fixed on squad2-c @ 50afa91a (PR #2279): `runUpgrade` runs `preflightCastingPair()` (ensureCastingDefaults) before `writeAgentTemplate` in both the already-current and the normal path, so a 0.9.x project with an empty `.squad/casting/` gets the `<!-- squad:capabilities -->` block on the first upgrade and the second upgrade is byte-identical (C test: `test/upgrade-profile-teamroot.test.ts` › "F4: a 0.9.x project (empty casting/) upgrades in ONE pass"). Verified by this matrix: with the pin still in place, `idempotent-second-upgrade` produced `xpass` on exactly 0.9.1 × default/profile/ai-team; the pin is removed.
 
 <!-- UPGRADE-MATRIX:END -->
 
