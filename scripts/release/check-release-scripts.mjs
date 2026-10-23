@@ -54,7 +54,7 @@ function quotedArgumentSpansNewline(source, start) {
 
 export function findWorkflowJavaScriptViolations(text, file = '<workflow>') {
   const violations = [];
-  const evalPattern = /\bnode(?:\.exe)?(?:(?:[ \t]+|\\\r?\n[ \t]*)+--[A-Za-z0-9-]+(?:=[^ \t\r\n]+)?)*(?:[ \t]+|\\\r?\n[ \t]*)+(?:-e|--eval|-p)(?=[ \t=\\\r\n]|$)/g;
+  const evalPattern = /\bnode(?:\.exe)?(?:(?:[ \t]+|\\\r?\n[ \t]*)+--[A-Za-z0-9-]+(?:=[^ \t\r\n]+)?)*(?:[ \t]+|\\\r?\n[ \t]*)+(?:--eval|--print|-(?:pe|ep|e|p))(?=[ \t=\\\r\n"']|$)/g;
   const heredocPattern = /\bnode(?:\.exe)?\s+(?:-\s+)?<<['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/g;
   for (const scalar of runScalars(text, file)) {
     for (const match of scalar.source.matchAll(heredocPattern)) {

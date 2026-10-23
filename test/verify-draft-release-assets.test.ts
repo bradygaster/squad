@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   STANDALONE_ASSETS,
   parseChecksumManifest,
+  validateDraftReleaseAssetNames,
   verifyDraftReleaseAssets,
 } from '../scripts/release/verify-draft-release-assets.mjs';
 
@@ -56,6 +57,21 @@ function fixture() {
 }
 
 describe('draft release asset verification', () => {
+  it('requires exactly seven unique, safe, allowlisted GitHub release asset names', () => {
+    const expected = ['SHA256SUMS.txt', ...STANDALONE_ASSETS];
+    expect(() => validateDraftReleaseAssetNames(expected)).not.toThrow();
+    expect(() => validateDraftReleaseAssetNames([...expected, expected[1]]))
+      .toThrow(/Duplicate draft release asset names/);
+    expect(() => validateDraftReleaseAssetNames(expected.slice(1)))
+      .toThrow(/missing=SHA256SUMS\.txt/);
+    expect(() => validateDraftReleaseAssetNames([...expected.slice(0, -1), 'extra.zip']))
+      .toThrow(/extra=extra\.zip/);
+    for (const malformed of ['../squad-linux-x64.tar.gz', 'nested/asset.zip', 'nested\\asset.zip', '', 'bad name.zip']) {
+      expect(() => validateDraftReleaseAssetNames([...expected.slice(0, -1), malformed]))
+        .toThrow(/Unsafe or malformed draft asset filename/);
+    }
+  });
+
   it('binds the exact six archives, draft checksum asset, and two npm tarball hashes', () => {
     const item = fixture();
     try {

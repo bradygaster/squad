@@ -537,10 +537,11 @@ describe('reusable npm publication', () => {
     const publishStep = stepNamed(publishDraft, 'Validate and publish the existing draft').run ?? '';
     expect(publishStep).toContain('must already exist as a draft; recovery never recreates a release');
     expect(publishStep).toContain('draft release target does not match source_sha');
-    expect(publishStep).toContain('missing_assets');
-    expect(publishStep).toContain('unexpected_assets');
+    expect(publishStep).toContain('--release-json "$release_json_path"');
     expect(publishStep).toContain('gh release download "$TAG"');
-    expect(publishStep.indexOf('verify-draft-release-assets.mjs'))
+    expect(publishStep.indexOf('--release-json "$release_json_path"'))
+      .toBeLessThan(publishStep.indexOf('gh release download "$TAG"'));
+    expect(publishStep.lastIndexOf('verify-draft-release-assets.mjs'))
       .toBeLessThan(publishStep.lastIndexOf('assert-publish-identity.mjs'));
     expect(publishStep.lastIndexOf('assert-publish-identity.mjs'))
       .toBeLessThan(publishStep.indexOf('gh release edit "$TAG" --draft=false'));

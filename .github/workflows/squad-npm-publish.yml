@@ -517,15 +517,6 @@ jobs:
             --dispatch-sha "${{ github.sha }}" \
             --workflow-sha "${{ github.workflow_sha }}" \
             --tag "$TAG"
-          required_assets=(
-            squad-linux-x64.tar.gz
-            squad-linux-arm64.tar.gz
-            squad-darwin-x64.tar.gz
-            squad-darwin-arm64.tar.gz
-            squad-win32-x64.zip
-            squad-win32-arm64.zip
-            SHA256SUMS.txt
-          )
           release_json="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,targetCommitish,assets)"
           test "$(printf '%s' "$release_json" | jq -r '.isDraft')" = true || {
             echo "::error::release $TAG must already exist as a draft; recovery never recreates a release"; exit 1;
@@ -538,23 +529,9 @@ jobs:
           test "$(printf '%s' "$release_json" | jq -r '.isPrerelease')" = "$expected_prerelease" || {
             echo "::error::draft release prerelease state is unexpected"; exit 1;
           }
-          mapfile -t published_assets < <(printf '%s' "$release_json" | jq -r '.assets[].name')
-          missing_assets=()
-          for asset in "${required_assets[@]}"; do
-            printf '%s\n' "${published_assets[@]}" | grep -Fxq "$asset" || missing_assets+=("$asset")
-          done
-          if [ "${#missing_assets[@]}" -gt 0 ]; then
-            printf '::error::draft release %s is incomplete; missing: %s\n' "$TAG" "${missing_assets[*]}"
-            exit 1
-          fi
-          unexpected_assets=()
-          for asset in "${published_assets[@]}"; do
-            printf '%s\n' "${required_assets[@]}" | grep -Fxq "$asset" || unexpected_assets+=("$asset")
-          done
-          if [ "${#unexpected_assets[@]}" -gt 0 ]; then
-            printf '::error::draft release %s has unexpected assets: %s\n' "$TAG" "${unexpected_assets[*]}"
-            exit 1
-          fi
+          release_json_path="$RUNNER_TEMP/draft-release.json"
+          printf '%s' "$release_json" > "$release_json_path"
+          node "$RELEASE_SCRIPTS_ROOT/verify-draft-release-assets.mjs" --release-json "$release_json_path"
           mkdir -p "$DRAFT_ASSETS_DIR"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$DRAFT_ASSETS_DIR"
           node "$RELEASE_SCRIPTS_ROOT/verify-draft-release-assets.mjs"

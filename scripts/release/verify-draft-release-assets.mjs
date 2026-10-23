@@ -12,6 +12,33 @@ export const STANDALONE_ASSETS = [
   'squad-win32-x64.zip',
   'squad-win32-arm64.zip',
 ];
+export const DRAFT_RELEASE_ASSETS = ['SHA256SUMS.txt', ...STANDALONE_ASSETS];
+
+function validateSafeFilename(filename, context) {
+  if (typeof filename !== 'string'
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(filename)
+    || path.basename(filename) !== filename
+    || filename === '.'
+    || filename === '..') {
+    throw new Error(`Unsafe or malformed ${context} filename '${String(filename)}'`);
+  }
+}
+
+export function validateDraftReleaseAssetNames(names) {
+  if (!Array.isArray(names)) throw new Error('Draft release assets must be an array');
+  for (const name of names) validateSafeFilename(name, 'draft asset');
+  const counts = new Map();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  const duplicates = [...counts].filter(([, count]) => count > 1).map(([name]) => name);
+  if (duplicates.length) throw new Error(`Duplicate draft release asset names: ${duplicates.join(',')}`);
+  const expected = new Set(DRAFT_RELEASE_ASSETS);
+  const actual = new Set(names);
+  const missing = [...expected].filter((name) => !actual.has(name));
+  const extra = [...actual].filter((name) => !expected.has(name));
+  if (names.length !== DRAFT_RELEASE_ASSETS.length || missing.length || extra.length) {
+    throw new Error(`Draft release asset names differ; count=${names.length}; missing=${missing.join(',') || '<none>'}; extra=${extra.join(',') || '<none>'}`);
+  }
+}
 
 export function parseChecksumManifest(content) {
   const lines = content.replace(/\r\n/g, '\n').split('\n');
@@ -22,9 +49,7 @@ export function parseChecksumManifest(content) {
     const match = line.match(/^([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]*)$/);
     if (!match) throw new Error(`Malformed checksum entry at line ${index + 1}: '${line}'`);
     const [, sha256, filename] = match;
-    if (filename.includes('/') || filename.includes('\\') || filename === '.' || filename === '..') {
-      throw new Error(`Unsafe checksum filename '${filename}'`);
-    }
+    validateSafeFilename(filename, 'checksum');
     if (entries.has(filename)) throw new Error(`Duplicate checksum entry for ${filename}`);
     entries.set(filename, sha256);
   }
@@ -53,9 +78,7 @@ export function verifyDraftReleaseAssets({
     if (!entry?.filename || !/^[0-9a-f]{64}$/.test(entry.sha256 ?? '')) {
       throw new Error('pack-evidence.json has an invalid npm package checksum entry');
     }
-    if (path.basename(entry.filename) !== entry.filename) {
-      throw new Error(`Unsafe npm checksum filename '${entry.filename}'`);
-    }
+    validateSafeFilename(entry.filename, 'npm checksum');
   }
 
   const expectedChecksumFiles = new Set([
@@ -76,7 +99,7 @@ export function verifyDraftReleaseAssets({
   }
 
   const draftEntries = readdirSync(draftAssetsDir, { withFileTypes: true });
-  const expectedDraftFiles = new Set(['SHA256SUMS.txt', ...STANDALONE_ASSETS]);
+  const expectedDraftFiles = new Set(DRAFT_RELEASE_ASSETS);
   const actualDraftFiles = new Set(draftEntries.map((entry) => entry.name));
   const missingAssets = [...expectedDraftFiles].filter((file) => !actualDraftFiles.has(file));
   const extraAssets = [...actualDraftFiles].filter((file) => !expectedDraftFiles.has(file));
@@ -99,6 +122,15 @@ export function verifyDraftReleaseAssets({
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
+  const releaseJsonIndex = process.argv.indexOf('--release-json');
+  if (releaseJsonIndex >= 0) {
+    const releaseJsonPath = process.argv[releaseJsonIndex + 1];
+    if (!releaseJsonPath) throw new Error('Missing value for --release-json');
+    const release = JSON.parse(readFileSync(releaseJsonPath, 'utf8'));
+    validateDraftReleaseAssetNames(release.assets?.map((asset) => asset.name));
+    console.log(`Verified ${DRAFT_RELEASE_ASSETS.length} unique safe draft release asset names.`);
+    process.exit(0);
+  }
   const required = (name) => {
     const value = process.env[name];
     if (!value) throw new Error(`Missing required ${name}`);
