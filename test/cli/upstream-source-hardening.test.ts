@@ -19,7 +19,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   return { ...actual, execFileSync: (...args: unknown[]) => execFileSync(...args) };
 });
 
-import { upstreamCommand, unsafeGitSourceReason, gitSyncEnv } from '../../packages/squad-cli/src/cli/commands/upstream.js';
+import { upstreamCommand, unsafeGitSourceReason, gitSyncEnv, redactGitSource } from '../../packages/squad-cli/src/cli/commands/upstream.js';
 import { SquadError } from '../../packages/squad-cli/src/cli/core/errors.js';
 
 let tmp: string;
@@ -130,6 +130,43 @@ describe('squad upstream add: dangerous sources fail safely', () => {
     const before = fs.readFileSync(upstreamJson(), 'utf8');
     await expect(upstreamCommand(['add', 'https://github.com/acme/platform.git', '--name', 'platform'])).rejects.toThrow(SquadError);
     expect(fs.readFileSync(upstreamJson(), 'utf8')).toBe(before);
+  });
+
+  it('never deletes a pre-existing destination on clone failure: "--name .." and an existing clone dir are refused before git runs (Copilot P1)', async () => {
+    execFileSync.mockImplementation(() => { throw new Error('fatal: destination path already exists'); });
+    fs.writeFileSync(upstreamJson(), JSON.stringify({ upstreams: [] }, null, 2) + '\n');
+    fs.writeFileSync(path.join(tmp, '.squad', 'decisions.md'), '# keep me\n');
+    const existing = path.join(tmp, '.squad', '_upstream_repos', 'platform');
+    fs.mkdirSync(existing, { recursive: true });
+    fs.writeFileSync(path.join(existing, 'README.md'), 'unregistered clone, keep me\n');
+    for (const name of ['..', '.', 'a/b', 'a\\b']) {
+      await expect(upstreamCommand(['add', 'https://github.com/acme/platform.git', '--name', name])).rejects.toThrow(SquadError);
+    }
+    await expect(upstreamCommand(['add', 'https://github.com/acme/platform.git', '--name', 'platform'])).rejects.toThrow(/Refusing to clone into existing/);
+    expect(execFileSync, 'git never runs for a reserved name or an existing destination').not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(tmp, '.squad', 'decisions.md'), 'utf8')).toBe('# keep me\n');
+    expect(fs.readFileSync(path.join(existing, 'README.md'), 'utf8')).toBe('unregistered clone, keep me\n');
+    expect(fs.existsSync(path.join(tmp, '.squad', 'team.md'))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(upstreamJson(), 'utf8')).upstreams).toEqual([]);
+  });
+
+  it('accepts a leading-dot name like .github end to end (Copilot P2: CLI and resolver agree)', async () => {
+    execFileSync.mockImplementation(() => Buffer.from(''));
+    await upstreamCommand(['add', 'https://github.com/acme/.github.git']);
+    const recorded = JSON.parse(fs.readFileSync(upstreamJson(), 'utf8'));
+    expect(recorded.upstreams[0].name).toBe('.github');
+  });
+
+  it('redacts credentials even when the source has leading whitespace (Copilot P2)', async () => {
+    const SECRET = 'ghp_PADDED_SECRET_7c1';
+    const log = vi.mocked(console.log), warn = vi.mocked(console.warn), err = vi.mocked(console.error);
+    let thrown: unknown;
+    try { await upstreamCommand(['add', `  https://alice:${SECRET}@github.com/acme/platform.git`, '--name', 'leak']); } catch (e) { thrown = e; }
+    expect(thrown).toBeInstanceOf(SquadError);
+    expect(String((thrown as Error).message)).not.toContain(SECRET);
+    const printed = [...log.mock.calls, ...warn.mock.calls, ...err.mock.calls].flat().map(String).join('\n');
+    expect(printed).not.toContain(SECRET);
+    expect(redactGitSource(`  https://alice:${SECRET}@github.com/x`)).toBe('https://***@github.com/x');
   });
 
   it('clones an allowed https source with "--" before the positionals and the hardened environment', async () => {

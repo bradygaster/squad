@@ -29,6 +29,7 @@ export {
   readUpstreamConfig,
   resolveUpstreams,
   upstreamProvenance,
+  isSafeUpstreamName,
   buildEffectiveUpstreamContext,
   formatUpstreamReport,
   buildInheritedContextBlock,

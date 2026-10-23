@@ -19,8 +19,10 @@ import {
   formatUpstreamReport,
   resolveUpstreams,
   upstreamProvenance,
+  isSafeUpstreamName,
 } from '../packages/squad-sdk/src/upstream/index.js';
 import { ToolRegistry } from '../packages/squad-sdk/src/tools/index.js';
+import { FSStorageProvider } from '../packages/squad-sdk/src/storage/index.js';
 import { createStateMcpSession } from '../packages/squad-cli/src/cli/commands/state-mcp.js';
 import { checkUpstreams } from '../packages/squad-cli/src/cli/commands/doctor.js';
 import { runUpgrade } from '../packages/squad-cli/src/cli/core/upgrade.js';
@@ -782,6 +784,96 @@ describe('resolveUpstreams: TOCTOU-safe reads and traversal budgets (Q review)',
       expect(org.decisions, target).toBeNull();
       const report = formatUpstreamReport(res, buildEffectiveUpstreamContext(res, []), { detail: true });
       expect(report, target).not.toContain('VICTIM-PRIVATE-DECISIONS');
+    }
+  });
+
+  it('honours a confined storage provider: an export declared outside the provider root is refused, not read natively (Copilot P1)', () => {
+    const outside = path.join(tmp, 'outside');
+    fs.mkdirSync(outside, { recursive: true });
+    const exportPath = path.join(outside, 'leak.json');
+    fs.writeFileSync(exportPath, JSON.stringify({ skills: ['---\nname: leaked\n---\nOUTSIDE-EXPORT-BODY\n'] }));
+    const projectRoot = path.join(tmp, 'project');
+    const repo = squad(projectRoot, { upstreams: [{ name: 'ex', type: 'export', source: exportPath, added_at: '2026-01-01T00:00:00.000Z', last_synced: null }] });
+    const confined = new FSStorageProvider(projectRoot);
+    const res = resolveUpstreams(repo, confined)!;
+    expect(res.upstreams[0]!.status).toMatch(/invalid|missing/);
+    expect(res.upstreams[0]!.skills).toEqual([]);
+    const report = formatUpstreamReport(res, buildEffectiveUpstreamContext(res, []), { detail: true });
+    expect(report).not.toContain('OUTSIDE-EXPORT-BODY');
+    // The same declaration with an unconfined provider resolves (containment is a separate axis).
+    expect(resolveUpstreams(repo)!.upstreams[0]!.status).toBe('ok');
+  });
+
+  it('bounds the descriptor read: a file enlarged after fstat is refused and never loaded past the admitted size (Copilot P1)', () => {
+    const org = squad(path.join(tmp, 'org'), { decisions: '# small\n' });
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('org', path.dirname(org))] });
+    let grown = false;
+    const res = resolveUpstreams(repo, undefined, {
+      beforeRead: (file) => {
+        if (grown || path.basename(file) !== 'decisions.md') return;
+        grown = true;
+        fs.appendFileSync(file, 'X'.repeat(64 * 1024)); // same inode, now much larger
+      },
+    })!;
+    expect(grown).toBe(true);
+    expect(res.upstreams[0]!.status).toBe('invalid');
+    expect(res.upstreams[0]!.diagnostic).toMatch(/changed while being read/);
+    expect(res.upstreams[0]!.decisions).toBeNull();
+  });
+
+  it.skipIf(!canLink)('a local source directory that is itself a junction/symlink is refused (Copilot P2) [needs symlink/junction privilege]', () => {
+    const real = squad(path.join(tmp, 'real-org'), { decisions: '# REAL-ORG-DECISIONS\n' });
+    const link = path.join(tmp, 'linked-org');
+    expect(tryLink(path.dirname(real), link, 'dir')).toBe(true);
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('org', link)] });
+    const res = resolveUpstreams(repo)!;
+    expect(res.upstreams[0]!.status, res.upstreams[0]!.diagnostic ?? '').toBe('invalid');
+    expect(res.upstreams[0]!.diagnostic).toMatch(/symlink\/junction/);
+    expect(res.upstreams[0]!.decisions).toBeNull();
+    // the documented "../org/.squad" form through a link is refused too
+    const repo2 = squad(path.join(tmp, 'repo2'), { upstreams: [local('org', path.join(link, '.squad'))] });
+    expect(resolveUpstreams(repo2)!.upstreams[0]!.status).toBe('invalid');
+    // and a .squad that is a link inside a real directory
+    const host = path.join(tmp, 'host-org'); fs.mkdirSync(host, { recursive: true });
+    expect(tryLink(real, path.join(host, '.squad'), 'dir')).toBe(true);
+    const repo3 = squad(path.join(tmp, 'repo3'), { upstreams: [local('org', host)] });
+    expect(resolveUpstreams(repo3)!.upstreams[0]!.status).toBe('invalid');
+  });
+
+  it('follows a nested git upstream named .github but still rejects . and .. (Copilot P2 name alignment)', () => {
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [{ name: '.github', type: 'git', source: 'https://example.com/.github.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: new Date().toISOString() }, { name: '..', type: 'git', source: 'https://example.com/x.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: null }] });
+    squad(path.join(repo, '_upstream_repos', '.github'), { decisions: '# dotgithub\n' });
+    const res = resolveUpstreams(repo)!;
+    expect(res.upstreams.map((u) => [u.name, u.status])).toEqual([['.github', 'ok'], ['..', 'invalid']]);
+    expect(isSafeUpstreamName('.github')).toBe(true);
+    expect(isSafeUpstreamName('_x')).toBe(true);
+    for (const bad of ['.', '..', 'a/b', 'a\\b', '']) expect(isSafeUpstreamName(bad), bad).toBe(false);
+  });
+
+  it('a diamond is de-duplicated by identity before any body is read, so the shared upstream costs the budget once (Copilot P2)', () => {
+    const shared = squad(path.join(tmp, 'shared'), { decisions: 's'.repeat(600 * 1024) });
+    const team = squad(path.join(tmp, 'team'), { decisions: '# team\n', upstreams: [local('shared', path.dirname(shared))] });
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('shared', path.dirname(shared)), local('team', path.dirname(team))] });
+    const res = resolveUpstreams(repo, undefined, { readLimits: { maxTotalBytes: 1024 * 1024 } })!;
+    expect(res.upstreams.map((u) => [u.name, u.depth, u.status])).toEqual([['shared', 1, 'ok'], ['team', 1, 'ok']]);
+    expect(res.diagnostics).toEqual([]);
+    // with a budget that fits exactly one copy, the second visit must not have been charged
+    const tight = resolveUpstreams(repo, undefined, { readLimits: { maxTotalBytes: 620 * 1024 } })!;
+    expect(tight.upstreams.map((u) => [u.name, u.status])).toEqual([['shared', 'ok'], ['team', 'ok']]);
+  });
+
+  it('formatUpstreamReport caps the summary too (many skills), in summary-only and detail mode, keeping the UNTRUSTED header (Copilot P2)', () => {
+    const skills: Record<string, string> = {};
+    for (let i = 0; i < 500; i++) skills[`skill-${'x'.repeat(90)}-${i}`] = 'body';
+    const org = squad(path.join(tmp, 'org'), { skills });
+    const repo = squad(path.join(tmp, 'repo'), { upstreams: [local('org', path.dirname(org))] });
+    const res = resolveUpstreams(repo)!;
+    const eff = buildEffectiveUpstreamContext(res, []);
+    for (const detail of [false, true]) {
+      const out = formatUpstreamReport(res, eff, { detail, maxChars: 20_000 });
+      expect(out.length, `detail=${detail}`).toBeLessThanOrEqual(20_000);
+      expect(out).toContain('UNTRUSTED CONTENT');
+      expect(out).toMatch(/\[truncated: upstream summary exceeds 20000 characters/);
     }
   });
 

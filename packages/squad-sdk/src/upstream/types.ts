@@ -137,6 +137,8 @@ export interface ResolveUpstreamsOptions {
    * reader (deterministic root-swap races); production callers leave it unset.
    */
   beforeAnchor?: UpstreamReadHook;
+  /** Test seam between the post-open fstat and the bounded read (deterministic growth races). */
+  beforeRead?: UpstreamReadHook;
 }
 
 /** One inherited skill with provenance and precedence outcome. */

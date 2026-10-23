@@ -13,6 +13,7 @@
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { isSafeUpstreamName } from '@bradygaster/squad-sdk/upstream';
 
 const storage = new FSStorageProvider();
 import { success, warn, info } from '../core/output.js';
@@ -26,7 +27,7 @@ function isValidGitRef(ref: string): boolean {
 
 /** Validate an upstream name — alphanumeric, hyphens, underscores, dots. */
 function isValidUpstreamName(name: string): boolean {
-  return /^[a-zA-Z0-9._-]+$/.test(name);
+  return isSafeUpstreamName(name);
 }
 
 /**
@@ -85,7 +86,7 @@ export function gitSyncEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proces
 
 /** Display form of a source for messages: user:secret@ becomes ***@ so secrets never reach stdout/stderr. */
 export function redactGitSource(source: string): string {
-  return source.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1***@');
+  return source.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1***@');
 }
 
 function assertSafeGitSource(source: string): void {
@@ -203,12 +204,24 @@ export async function upstreamCommand(args: string[]): Promise<void> {
     if (type === 'git') {
       const reposDir = path.join(squadDir, '_upstream_repos');
       const cloneDir = path.join(reposDir, name);
+      // The destination must be a fresh directory inside _upstream_repos that this invocation
+      // owns: never clone into (or later delete) something that already exists.
+      const rel = path.relative(reposDir, cloneDir);
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(path.sep)) {
+        fatal(`Invalid upstream name "${name}": it must be a single path segment.`);
+        return;
+      }
+      if (storage.existsSync(cloneDir)) {
+        fatal(`Refusing to clone into existing ${path.join('.squad', '_upstream_repos', name)}; remove it first or pick another --name.`);
+        return;
+      }
       storage.mkdirSync(reposDir, { recursive: true });
       ensureGitignoreEntry(repoDir, '.squad/_upstream_repos/');
       const ref = entry.ref || 'main';
       try {
         execFileSync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', '--', source, cloneDir], { stdio: 'pipe', timeout: 60000, env: gitSyncEnv() });
       } catch (err) {
+        // Only the directory git may have created for THIS clone is cleaned up (it did not exist above).
         if (storage.existsSync(cloneDir)) { try { storage.deleteDirSync(cloneDir); } catch { /* best effort */ } }
         fatal(`Clone failed; upstream "${name}" was not added (upstream.json unchanged). Fix the source or network and re-run "squad upstream add". git: ${(err as Error).message.split('\n')[0]}`);
         return;
