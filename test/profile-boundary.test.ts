@@ -161,11 +161,11 @@ describe('profile boundary: only the profile itself is rejected', () => {
 
   it('the platform config dir (%APPDATA%\\squad, ~/.config/squad) is never admitted as a project, at any spelling (LC-11)', () => {
     const cfg = resolveGlobalSquadPath(); // redirected by the test profile guard
-    const legacyGlobal = mkSquad(cfg); // what 1.x `squad init --global` left behind
+    const legacyGlobal = mkSquad(cfg); // a leftover team directory under the platform config dir
     fs.mkdirSync(path.join(cfg, 'projects', 'abc'), { recursive: true });
     for (const start of [cfg, path.join(cfg, 'projects', 'abc'), legacyGlobal, cfg.toUpperCase(), cfg.replace(/\\/g, '/')]) {
       clearResolveSquadCache();
-      expect(resolveSquad(start), `${start} must not resolve the retired global squad`).toBeNull();
+      expect(resolveSquad(start), `${start} must not resolve a team from the platform config dir`).toBeNull();
       expect(resolveSquadPaths(start), `${start} (resolveSquadPaths)`).toBeNull();
     }
     expect(isRetiredProfileTeamRoot(cfg)).toBe(true);
