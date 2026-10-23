@@ -157,7 +157,12 @@ Every row below is a pinned, published artifact of an older Squad release driven
 
 ### Runs
 
-_No runs recorded yet. The CI workflow `squad-upgrade-matrix.yml` records a run per OS at the tree under test; fold both artifacts with `node scripts/render-upgrade-matrix.mjs --merge <results.json>`._
+All recorded runs executed against **one tree**, commit `9da01a2e41ba15794d31b0b8251ddaa3abd34ba8`, with harness hash `bca27c39dc2dcbff…` (sha256 over the suite, renderer, workflow, fs hook and this fixture minus `runs`; the integrity test refuses a recorded run whose harness differs from the committed one, so folding results may change nothing but the runs data).
+
+| Platform | Arch | Node | Target | Tree (targetSha) | Trigger | Recorded | Outcome |
+|----------|------|------|--------|------------------|---------|----------|---------|
+| Linux (`linux`) | x64 | v22.23.3 | v1.2.0-preview.1 | `9da01a2e41ba` | [workflow_dispatch](https://github.com/bradygaster/squad/actions/runs/39903943542) | 2026-10-23 | 35 rows passed all non-xfail assertions; 4 of them carry a known expected failure (F3: Squad 0.9.1 squad upgrade --dry-run is not dry); 0 rows failed; 7 rows are structurally inapplicable (listed below). |
+| Windows (`win32`) | x64 | v22.23.4 | v1.2.0-preview.1 | `9da01a2e41ba` | [workflow_dispatch](https://github.com/bradygaster/squad/actions/runs/39903943542) | 2026-10-23 | 35 rows passed all non-xfail assertions; 4 of them carry a known expected failure (F3: Squad 0.9.1 squad upgrade --dry-run is not dry); 0 rows failed; 7 rows are structurally inapplicable (listed below). |
 
 ### Producers (pinned, immutable provenance)
 
@@ -186,50 +191,50 @@ npm tarballs are fetched by exact version through the registry npm is configured
 
 ### Results (version × shape × OS)
 
-| Producer | Provenance | Shape | (no runs yet) |
-|----------|------------|-------|---|
-| **0.9.1** | npm | `default` | — |
-| **0.9.1** | npm | `profile` | — |
-| **0.9.1** | npm | `legacy-casting` | — |
-| **0.9.1** | npm | `orphan` | ⏭️ not applicable (see below) |
-| **0.9.1** | npm | `two-layer` | ⏭️ not applicable (see below) |
-| **0.9.1** | npm | `ai-team` | — |
-| **0.9.1** | npm | `upstream` | ⏭️ not applicable (see below) |
-| **0.13.1** | npm | `default` | — |
-| **0.13.1** | npm | `profile` | — |
-| **0.13.1** | npm | `legacy-casting` | — |
-| **0.13.1** | npm | `orphan` | — |
-| **0.13.1** | npm | `two-layer` | — |
-| **0.13.1** | npm | `ai-team` | — |
-| **0.13.1** | npm | `upstream` | ⏭️ not applicable (see below) |
-| **1.0.0** | npm | `default` | — |
-| **1.0.0** | npm | `profile` | — |
-| **1.0.0** | npm | `legacy-casting` | — |
-| **1.0.0** | npm | `orphan` | — |
-| **1.0.0** | npm | `two-layer` | — |
-| **1.0.0** | npm | `ai-team` | — |
-| **1.0.0** | npm | `upstream` | ⏭️ not applicable (see below) |
-| **1.0.1** | GitHub Release | `default` | — |
-| **1.0.1** | GitHub Release | `profile` | — |
-| **1.0.1** | GitHub Release | `legacy-casting` | — |
-| **1.0.1** | GitHub Release | `orphan` | — |
-| **1.0.1** | GitHub Release | `two-layer` | — |
-| **1.0.1** | GitHub Release | `ai-team` | — |
-| **1.0.1** | GitHub Release | `upstream` | ⏭️ not applicable (see below) |
-| **1.1.0** | GitHub Release | `default` | — |
-| **1.1.0** | GitHub Release | `profile` | — |
-| **1.1.0** | GitHub Release | `legacy-casting` | — |
-| **1.1.0** | GitHub Release | `orphan` | — |
-| **1.1.0** | GitHub Release | `two-layer` | — |
-| **1.1.0** | GitHub Release | `ai-team` | — |
-| **1.1.0** | GitHub Release | `upstream` | ⏭️ not applicable (see below) |
-| **HEAD** | local HEAD (pack) | `default` | — |
-| **HEAD** | local HEAD (pack) | `profile` | — |
-| **HEAD** | local HEAD (pack) | `legacy-casting` | — |
-| **HEAD** | local HEAD (pack) | `orphan` | — |
-| **HEAD** | local HEAD (pack) | `two-layer` | — |
-| **HEAD** | local HEAD (pack) | `ai-team` | — |
-| **HEAD** | local HEAD (pack) | `upstream` | — |
+| Producer | Provenance | Shape | Linux | Windows |
+|----------|------------|-------|---|---|
+| **0.9.1** | npm | `default` | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) |
+| **0.9.1** | npm | `profile` | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) |
+| **0.9.1** | npm | `legacy-casting` | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) |
+| **0.9.1** | npm | `orphan` | ⏭️ not applicable — `@bradygaster/squad-cli@0.9.1` has no `--state-backend` flag (first shipped in 0.13.x), so an orphan-backend project cannot be produced by it. | ⏭️ not applicable — `@bradygaster/squad-cli@0.9.1` has no `--state-backend` flag (first shipped in 0.13.x), so an orphan-backend project cannot be produced by it. |
+| **0.9.1** | npm | `two-layer` | ⏭️ not applicable — `@bradygaster/squad-cli@0.9.1` has no `--state-backend` flag (first shipped in 0.13.x), so a two-layer-backend project cannot be produced by it. | ⏭️ not applicable — `@bradygaster/squad-cli@0.9.1` has no `--state-backend` flag (first shipped in 0.13.x), so a two-layer-backend project cannot be produced by it. |
+| **0.9.1** | npm | `ai-team` | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) | ✅⚠️ pass WITH known destructive downgrade-probe failure (F3) |
+| **0.9.1** | npm | `upstream` | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 0.9.1 cannot declare an upstream, so there is nothing for the upgrade to preserve. | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 0.9.1 cannot declare an upstream, so there is nothing for the upgrade to preserve. |
+| **0.13.1** | npm | `default` | ✅ pass | ✅ pass |
+| **0.13.1** | npm | `profile` | ✅ pass | ✅ pass |
+| **0.13.1** | npm | `legacy-casting` | ✅ pass | ✅ pass |
+| **0.13.1** | npm | `orphan` | ✅ pass | ✅ pass |
+| **0.13.1** | npm | `two-layer` | ✅ pass | ✅ pass |
+| **0.13.1** | npm | `ai-team` | ✅ pass | ✅ pass |
+| **0.13.1** | npm | `upstream` | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 0.13.1 cannot declare an upstream, so there is nothing for the upgrade to preserve. | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 0.13.1 cannot declare an upstream, so there is nothing for the upgrade to preserve. |
+| **1.0.0** | npm | `default` | ✅ pass | ✅ pass |
+| **1.0.0** | npm | `profile` | ✅ pass | ✅ pass |
+| **1.0.0** | npm | `legacy-casting` | ✅ pass | ✅ pass |
+| **1.0.0** | npm | `orphan` | ✅ pass | ✅ pass |
+| **1.0.0** | npm | `two-layer` | ✅ pass | ✅ pass |
+| **1.0.0** | npm | `ai-team` | ✅ pass | ✅ pass |
+| **1.0.0** | npm | `upstream` | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 1.0.0 cannot declare an upstream, so there is nothing for the upgrade to preserve. | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 1.0.0 cannot declare an upstream, so there is nothing for the upgrade to preserve. |
+| **1.0.1** | GitHub Release | `default` | ✅ pass | ✅ pass |
+| **1.0.1** | GitHub Release | `profile` | ✅ pass | ✅ pass |
+| **1.0.1** | GitHub Release | `legacy-casting` | ✅ pass | ✅ pass |
+| **1.0.1** | GitHub Release | `orphan` | ✅ pass | ✅ pass |
+| **1.0.1** | GitHub Release | `two-layer` | ✅ pass | ✅ pass |
+| **1.0.1** | GitHub Release | `ai-team` | ✅ pass | ✅ pass |
+| **1.0.1** | GitHub Release | `upstream` | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 1.0.1 cannot declare an upstream, so there is nothing for the upgrade to preserve. | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 1.0.1 cannot declare an upstream, so there is nothing for the upgrade to preserve. |
+| **1.1.0** | GitHub Release | `default` | ✅ pass | ✅ pass |
+| **1.1.0** | GitHub Release | `profile` | ✅ pass | ✅ pass |
+| **1.1.0** | GitHub Release | `legacy-casting` | ✅ pass | ✅ pass |
+| **1.1.0** | GitHub Release | `orphan` | ✅ pass | ✅ pass |
+| **1.1.0** | GitHub Release | `two-layer` | ✅ pass | ✅ pass |
+| **1.1.0** | GitHub Release | `ai-team` | ✅ pass | ✅ pass |
+| **1.1.0** | GitHub Release | `upstream` | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 1.1.0 cannot declare an upstream, so there is nothing for the upgrade to preserve. | ⏭️ not applicable — Upstream inheritance (`.squad/upstream.json`, `squad upstream add`) is a Squad 2.0 feature; 1.1.0 cannot declare an upstream, so there is nothing for the upgrade to preserve. |
+| **HEAD** | local HEAD (pack) | `default` | ✅ pass | ✅ pass |
+| **HEAD** | local HEAD (pack) | `profile` | ✅ pass | ✅ pass |
+| **HEAD** | local HEAD (pack) | `legacy-casting` | ✅ pass | ✅ pass |
+| **HEAD** | local HEAD (pack) | `orphan` | ✅ pass | ✅ pass |
+| **HEAD** | local HEAD (pack) | `two-layer` | ✅ pass | ✅ pass |
+| **HEAD** | local HEAD (pack) | `ai-team` | ✅ pass | ✅ pass |
+| **HEAD** | local HEAD (pack) | `upstream` | ✅ pass | ✅ pass |
 
 ### Not-applicable cells, each explained
 
@@ -356,6 +361,23 @@ Repro:
 Observed: `idempotent-second-upgrade` fails with exactly `.github/agents/squad.agent.md` for 0.9.1 × `default`/`profile`/`ai-team` on both OSes. 0.9.1 × `legacy-casting` is unaffected because the hand-written registry is repaired in the preflight, so the pair exists before the coordinator is written. The project is correct after the second run; the defect is ordering — the capabilities sync should run after the casting pair is ensured (or the pair should be ensured in the preflight).
 
 Resolved: Fixed on squad2-c @ 50afa91a (PR #2279): `runUpgrade` runs `preflightCastingPair()` (ensureCastingDefaults) before `writeAgentTemplate` in both the already-current and the normal path, so a 0.9.x project with an empty `.squad/casting/` gets the `<!-- squad:capabilities -->` block on the first upgrade and the second upgrade is byte-identical (C test: `test/upgrade-profile-teamroot.test.ts` › "F4: a 0.9.x project (empty casting/) upgrades in ONE pass"). Verified by this matrix: with the pin still in place, `idempotent-second-upgrade` produced `xpass` on exactly 0.9.1 × default/profile/ai-team; the pin is removed.
+
+### Unsupported downgrade — what each old CLI does to an upgraded repository
+
+Recorded by the `downgrade-probe` check (dry-run on a copy; the only assertion is "modified nothing"). This is **not** a supported path — see the warning at the top of this section.
+
+| Platform | Producer | Shapes | Observed |
+|----------|----------|--------|----------|
+| `linux` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 45 files (20 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/cross-squad/SKILL.md, .copilot/skills/git-workflow/SKILL.md …) |
+| `linux` | 0.13.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `linux` | 1.0.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `linux` | 1.0.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `linux` | 1.1.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 0.9.1 | all 4 shapes | exit 0, last lines "[32m✓[0m refreshed .squad/templates/ \| Upgrade complete: v1.2.0-preview.1 → v0.9.1 \| [2mPreserves user state: team.md, decisions/, agents/*/history.md[0m"; MODIFIED 44 files (20 coordinator/templates/workflows, e.g. .copilot/skills/agent-collaboration/SKILL.md, .copilot/skills/cross-squad/SKILL.md, .copilot/skills/git-workflow/SKILL.md …) |
+| `win32` | 0.13.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 1.0.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 1.0.1 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
+| `win32` | 1.1.0 | all 6 shapes | exit 0, last lines "overwrite  ../.github/workflows/squad-triage.yml \| overwrite  ../.github/workflows/sync-squad-labels.yml \| Run without --dry-run to apply."; modified nothing |
 
 <!-- UPGRADE-MATRIX:END -->
 
