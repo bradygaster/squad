@@ -96,50 +96,116 @@ function serialized(job: WorkflowJob): string {
 const squadWorkflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8');
 
 describe('standalone release handoff', () => {
-  it('publishes on-demand prereleases from dev and automatic stable releases from main', () => {
+  it('is human-only: dispatch with the confirming tag and the exact reviewed SHA', () => {
     expect(release).toMatch(/workflow_dispatch:\r?\n\s+inputs:\r?\n\s+confirm_tag:/);
     expect(release).toContain(
-      "description: 'Confirm the release tag (for example v0.14.0-preview.1 or v0.14.0)'",
+      "description: 'Confirm the release tag (for example v2.0.0-preview.1 or v2.0.0)'",
     );
-    expect(releaseWorkflow.on?.push?.branches).toEqual(['main']);
+    expect(releaseWorkflow.on?.push).toBeUndefined();
+    expect(releaseWorkflow.on?.workflow_dispatch?.inputs).toHaveProperty('expected_sha');
+    expect((releaseWorkflow.on?.workflow_dispatch?.inputs as Record<string, { required?: boolean }>).expected_sha.required).toBe(true);
     expect(release).toContain('RELEASE_REF: ${{ github.ref }}');
-    expect(release).toContain('if [ "$RELEASE_REF" = "refs/heads/dev" ]; then');
-    expect(release).toContain('elif [ "$RELEASE_REF" = "refs/heads/main" ]; then');
-    expect(release).toContain('if [ "$RELEASE_REF" != "refs/heads/main" ]; then');
-    expect(release).toContain('Manual dev releases require a prerelease version');
-    expect(release).toContain('Manual main releases require a stable MAJOR.MINOR.PATCH version');
-    expect(release).toContain('The main branch requires a stable MAJOR.MINOR.PATCH version');
+    expect(release).toContain('refs/heads/dev|refs/heads/main) branch=');
+    expect(release).toContain('Releases from dev require X.Y.Z-preview.N');
+    expect(release).toContain('Releases from main require a stable MAJOR.MINOR.PATCH version');
     expect(release).toContain('-preview\\.(0|[1-9][0-9]*)');
-    expect(release).toContain('Preview releases require the CLI SDK dependency');
     expect(release).toContain('--prerelease');
     expect(release).toContain('--latest=false');
-    expect(releaseWorkflow.jobs.release.outputs?.stable_release).toBe(
-      '${{ steps.version.outputs.stable_release }}',
+    expect(releaseWorkflow.jobs.guard.outputs?.stable_release).toBe(
+      '${{ steps.channel.outputs.stable_release }}',
     );
   });
 
-  it('calls the reusable bundle workflow after creating a release', () => {
-    expect(release).toMatch(/release:\r?\n\s+runs-on:[\s\S]*?\s+outputs:/);
-    expect(release).toContain("created: ${{ steps.check_tag.outputs.exists == 'false' }}");
-    expect(release).toContain('tag: ${{ steps.version.outputs.tag }}');
-    expect(release).toMatch(
-      /standalone:\r?\n\s+name: Publish standalone bundles\r?\n\s+needs: release/,
-    );
-    expect(release).toContain("if: needs.release.outputs.created == 'true'");
-    expect(release).toContain('uses: ./.github/workflows/squad-standalone-release.yml');
-    expect(release).toContain('release_tag: ${{ needs.release.outputs.tag }}');
-    expect(release).toContain('source_ref: ${{ needs.release.outputs.tag }}');
+  it('asserts dispatch SHA, workflow SHA, checkout HEAD and live branch tip before any side effect, and again right before tagging', () => {
+    const guard = stepNamed(releaseWorkflow.jobs.guard, 'Assert dispatch SHA, workflow SHA, checkout HEAD and live branch tip all equal expected_sha');
+    expect(guard.env).toMatchObject({
+      EXPECTED_SHA: '${{ inputs.expected_sha }}',
+      DISPATCH_SHA: '${{ github.sha }}',
+      WORKFLOW_SHA: '${{ github.workflow_sha }}',
+    });
+    expect(guard.run).toContain('[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]');
+    expect(guard.run).toContain('git ls-remote --exit-code origin "refs/heads/${branch}"');
+    for (const name of ['dispatch', 'workflow-definition', 'checkout-HEAD', 'live-${branch}-tip']) {
+      expect(guard.run).toContain(name);
+    }
+    const reassert = stepNamed(releaseWorkflow.jobs.release, 'Re-assert exact SHA immediately before the first side effect');
+    expect(reassert.run).toContain('git ls-remote --exit-code origin "refs/heads/${BRANCH}"');
+    expect(reassert.run).toContain('refusing release');
+    for (const checkout of [releaseWorkflow.jobs.guard, releaseWorkflow.jobs.release]) {
+      expect(checkout.steps?.find((s) => s.uses?.startsWith('actions/checkout@'))?.with?.ref).toBe('${{ inputs.expected_sha }}');
+    }
+  });
+
+  it('runs the full verification bundle at the exact SHA before the tag, draft release and publishers', () => {
+    const verify = releaseWorkflow.jobs.verify;
+    expect(verify.uses).toBe('./.github/workflows/squad-release-verify.yml');
+    expect(verify.needs).toBe('guard');
+    expect(verify.with).toEqual({
+      source_sha: '${{ inputs.expected_sha }}',
+      expected_version: '${{ needs.guard.outputs.version }}',
+    });
+    expect(releaseWorkflow.jobs.release.needs).toEqual(['guard', 'verify']);
+    expect(releaseWorkflow.jobs.npm.needs).toEqual(['guard', 'verify', 'release']);
+    expect(releaseWorkflow.jobs.standalone.needs).toEqual(['guard', 'verify', 'release']);
+  });
+
+  it('never moves a tag, drafts the GitHub release first and publishes it only after npm reconciliation', () => {
+    const tag = stepNamed(releaseWorkflow.jobs.release, 'Create or reconcile the release tag (must target expected_sha)');
+    expect(tag.run).toContain('A tag must never be moved');
+    expect(tag.run).toContain('git tag -a "$TAG" -m "Release $TAG" "$EXPECTED_SHA"');
+    const draft = stepNamed(releaseWorkflow.jobs.release, 'Create the GitHub release as a DRAFT (published only after npm reconciliation)');
+    expect(draft.run).toContain('--draft');
+    expect(draft.run).toContain('--target "$EXPECTED_SHA"');
+    const publish = releaseWorkflow.jobs['publish-release'];
+    expect(publish.needs).toEqual(['guard', 'npm']);
+    expect(stepNamed(publish, 'Undraft and verify the release').run).toContain('gh release edit "$TAG" --draft=false');
+  });
+
+  it('defaults preview channels to insider with a preview alias, both as dispatch inputs', () => {
+    const inputs = releaseWorkflow.on?.workflow_dispatch?.inputs as Record<string, Record<string, unknown>>;
+    expect(inputs.npm_dist_tag).toMatchObject({ default: 'insider', type: 'choice', options: ['insider', 'preview'] });
+    expect(inputs.add_preview_alias).toMatchObject({ default: true, type: 'boolean' });
+    const channel = stepNamed(releaseWorkflow.jobs.guard, 'Resolve release channel').run ?? '';
+    expect(channel).toContain('dist_tag="$INPUT_DIST_TAG"');
+    expect(channel).toContain('dist_tag=latest');
+    expect(channel).toContain('[ "$dist_tag" = preview ] && add_preview_alias=false');
+    expect(releaseWorkflow.jobs.npm.with).toEqual({
+      version: '${{ needs.guard.outputs.version }}',
+      source_sha: '${{ inputs.expected_sha }}',
+      source_branch: '${{ needs.guard.outputs.branch }}',
+      dist_tag: '${{ needs.guard.outputs.dist_tag }}',
+      add_preview_alias: "${{ needs.guard.outputs.add_preview_alias == 'true' }}",
+      evidence_artifact: '${{ needs.verify.outputs.evidence_artifact }}',
+    });
+    expect(releaseWorkflow.jobs.npm.secrets).toEqual({ NPM_TOKEN: '${{ secrets.NPM_TOKEN }}' });
+    expect(releaseWorkflow.jobs.npm.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+  });
+
+  it('keeps standalone bundles as artifacts by default and never lets them block the npm outcome', () => {
+    const inputs = releaseWorkflow.on?.workflow_dispatch?.inputs as Record<string, Record<string, unknown>>;
+    expect(inputs.build_standalone).toMatchObject({ default: true, type: 'boolean' });
+    expect(inputs.publish_standalone).toMatchObject({ default: false, type: 'boolean' });
+    expect(inputs.publish_package_managers).toMatchObject({ default: false, type: 'boolean' });
+    const standaloneJob = releaseWorkflow.jobs.standalone;
+    expect(standaloneJob.if).toBe('inputs.build_standalone');
+    expect(standaloneJob.uses).toBe('./.github/workflows/squad-standalone-release.yml');
+    expect(standaloneJob.with).toEqual({
+      upload: '${{ inputs.publish_standalone }}',
+      publish_package_managers: '${{ inputs.publish_standalone && inputs.publish_package_managers }}',
+      release_tag: '${{ needs.guard.outputs.tag }}',
+      source_ref: '${{ inputs.expected_sha }}',
+    });
+    expect(releaseWorkflow.jobs['publish-release'].needs).not.toContain('standalone');
+    expect(releaseWorkflow.jobs.npm.needs).not.toContain('standalone');
   });
 
   it('keeps an incomplete stable release out of latest until standalone assets exist', () => {
-    const create = stepNamed(releaseWorkflow.jobs.release, 'Create GitHub Release');
     const promotion = releaseWorkflow.jobs['promote-latest'];
     const promote = stepNamed(promotion, 'Verify standalone assets and promote latest').run ?? '';
 
-    expect(create.run).toContain('--latest=false');
-    expect(promotion.needs).toEqual(['release', 'npm', 'standalone']);
+    expect(promotion.needs).toEqual(['guard', 'publish-release', 'standalone']);
     expect(promotion.if).toBe(
-      "needs.release.outputs.created == 'true' && needs.release.outputs.stable_release == 'true'",
+      "needs.guard.outputs.stable_release == 'true' && inputs.publish_standalone",
     );
     for (const asset of [
       'squad-linux-x64.tar.gz',
@@ -176,6 +242,7 @@ describe('standalone release handoff', () => {
       'release_tag:',
       'source_ref:',
       'package_version:',
+      'publish_package_managers:',
     ]) {
       const inputName = input.slice(0, -1);
       expect(standaloneWorkflow.on?.workflow_call?.inputs).toHaveProperty(inputName);
@@ -204,29 +271,6 @@ describe('standalone release handoff', () => {
       stepNamed(standaloneWorkflow.jobs.packaging, 'Generate manifests').env?.TAG,
     ).toBe(tagExpression);
   });
-
-  it('calls the reusable npm workflow after creating a release', () => {
-    expect(releaseWorkflow.jobs.release.outputs?.version).toBe(
-      '${{ steps.version.outputs.version }}',
-    );
-
-    const caller = releaseWorkflow.jobs.npm;
-    expect(caller.needs).toBe('release');
-    expect(caller.if).toBe("needs.release.outputs.created == 'true'");
-    expect(caller.uses).toBe('./.github/workflows/squad-npm-publish.yml');
-    expect(caller.with).toEqual({
-      version: '${{ needs.release.outputs.version }}',
-      source_ref: '${{ needs.release.outputs.tag }}',
-    });
-    expect(caller.secrets).toEqual({
-      NPM_TOKEN: '${{ secrets.NPM_TOKEN }}',
-    });
-    expect(caller.permissions).toEqual({
-      contents: 'write',
-      'id-token': 'write',
-      'pull-requests': 'write',
-    });
-  });
 });
 
 describe('stable promotion', () => {
@@ -254,6 +298,9 @@ describe('stable promotion', () => {
     expect(
       stepNamed(promoteWorkflow.jobs['dev-to-main'], 'Push main and start stable release').run,
     ).toContain('-f confirm_tag="v${VERSION}"');
+    expect(
+      stepNamed(promoteWorkflow.jobs['dev-to-main'], 'Push main and start stable release').run,
+    ).toContain('-f expected_sha="$(git rev-parse HEAD)"');
     expect(promotion).not.toContain('origin/preview');
     expect(promoteWorkflow.permissions).toEqual({
       actions: 'write',
@@ -296,158 +343,126 @@ describe('stable promotion', () => {
 });
 
 describe('reusable npm publication', () => {
-  it('preserves direct triggers and declares only the required npm credential', () => {
-    expect(npmPublishWorkflow.on?.release?.types).toContain('published');
+  const publishJob = () => npmPublishWorkflow.jobs.publish;
+
+  it('has no automatic trigger, requires the exact source SHA, and declares only the npm credential', () => {
+    expect(npmPublishWorkflow.on?.release).toBeUndefined();
     expect(npmPublishWorkflow.on?.workflow_dispatch?.inputs).toHaveProperty('version');
-    expect(npmPublishWorkflow.on?.workflow_call?.inputs?.version).toMatchObject({
-      required: true,
-      type: 'string',
-    });
-    expect(npmPublishWorkflow.on?.workflow_call?.inputs?.source_ref).toMatchObject({
-      required: false,
-      type: 'string',
-    });
-    expect(Object.keys(npmPublishWorkflow.on?.workflow_call?.secrets ?? {})).toEqual([
-      'NPM_TOKEN',
-    ]);
+    expect(npmPublishWorkflow.on?.workflow_dispatch?.inputs).toHaveProperty('source_sha');
+    for (const input of ['version', 'source_sha', 'source_branch', 'dist_tag']) {
+      expect(npmPublishWorkflow.on?.workflow_call?.inputs?.[input], input).toMatchObject({ required: true, type: 'string' });
+    }
+    expect(npmPublishWorkflow.on?.workflow_call?.inputs?.add_preview_alias).toMatchObject({ type: 'boolean', default: false });
+    expect(Object.keys(npmPublishWorkflow.on?.workflow_call?.secrets ?? {})).toEqual(['NPM_TOKEN']);
     expect(npmPublishWorkflow.on?.workflow_call?.secrets?.NPM_TOKEN?.required).toBe(true);
     expect(npmPublishWorkflow.permissions).toEqual({ contents: 'read' });
     expect(npmPublishWorkflow.concurrency).toEqual({
       group: 'squad-npm-publication',
       'cancel-in-progress': false,
     });
+    expect(npmPublish).not.toContain('github.event.inputs.version');
   });
 
-  it('uses the requested source ref for publication and promotion', () => {
-    for (const jobName of [
-      'preflight',
-      'smoke-test',
-      'publish-sdk',
-      'publish-cli',
-      'promote-insider-tag-sdk',
-      'promote-insider-tag-cli',
-    ]) {
-      const checkout = npmPublishWorkflow.jobs[jobName].steps?.find((step) =>
-        step.uses?.startsWith('actions/checkout@'),
-      );
-      expect(checkout?.with?.ref, jobName).toBe('${{ inputs.source_ref || github.ref }}');
+  it('checks out the exact source SHA everywhere and re-asserts it immediately before publish', () => {
+    for (const jobName of ['preflight', 'publish', 'promote-insider-tag']) {
+      const checkout = npmPublishWorkflow.jobs[jobName].steps?.find((step) => step.uses?.startsWith('actions/checkout@'));
+      expect(checkout?.with?.ref, jobName).toBe('${{ inputs.source_sha }}');
     }
-
+    const guard = stepNamed(publishJob(), 'Exact-SHA guard immediately before publish (checkout, workflow definition, tag target, live branch tip)');
+    expect(guard.env?.WORKFLOW_SHA).toBe('${{ github.workflow_sha }}');
+    expect(guard.run).toContain('test "$head" = "$SOURCE_SHA"');
+    expect(guard.run).toContain('git rev-list -n 1 "refs/tags/${TAG}"');
+    expect(guard.run).toContain('git ls-remote --exit-code origin "refs/heads/${SOURCE_BRANCH}"');
+    expect(guard.run).toContain('Tag $TAG targets $tag_target, not $SOURCE_SHA; refusing to publish');
+    expect(guard.run).toContain('mode=reconcile');
+    const steps = publishJob().steps ?? [];
+    const guardIndex = steps.findIndex((s) => s.name?.startsWith('Exact-SHA guard'));
+    const firstPublish = steps.findIndex((s) => (s.run ?? '').includes('publish --access public'));
+    expect(guardIndex).toBeGreaterThan(-1);
+    expect(firstPublish).toBeGreaterThan(guardIndex);
     expect(npmPublishWorkflow.jobs).not.toHaveProperty('bump-activation-pin');
   });
 
-  it('builds release-tag workspaces without contributor-only prebuild inputs', () => {
-    const build = stepNamed(npmPublishWorkflow.jobs['smoke-test'], 'Build');
-    expect(build.run).toBe(
+  it('asserts manifests, lockfile entries, CHANGELOG, the CLI->SDK pair and the publish allowlist before publishing', () => {
+    const assertStep = stepNamed(npmPublishWorkflow.jobs.preflight, 'Assert checkout HEAD == source_sha and version inputs match the tree');
+    for (const needle of ['package-lock.json SDK workspace', 'package-lock.json CLI workspace', "CHANGELOG.md lacks '## [${version}]'", 'CLI->SDK dependency pair invalid', "file: dependency"]) {
+      expect(assertStep.run).toContain(needle);
+    }
+    expect(stepNamed(npmPublishWorkflow.jobs.preflight, 'Gate: release policy (allowlist = exactly squad-sdk + squad-cli, root private, no bypass)').run).toContain('scripts/release/policy-gates.mjs --mode=release');
+    expect(stepNamed(npmPublishWorkflow.jobs.preflight, 'Gate: lockfiles resolve only to registry.npmjs.org').run).toContain('check-lockfile-registry.mjs');
+    const install = stepNamed(publishJob(), 'Install dependencies (committed lockfile, public registry, no repair)');
+    expect(install.run).toContain('npm ci --registry="$PUBLIC_REGISTRY"');
+    expect(install.run).toContain('git diff --quiet -- package-lock.json');
+    expect(npmPublish).not.toContain('Fix stale lockfile entries');
+  });
+
+  it('builds release-tag workspaces without contributor-only prebuild inputs and pins the SDK exactly', () => {
+    expect(stepNamed(publishJob(), 'Build squad-sdk and squad-cli').run).toBe(
       'npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build',
     );
+    expect(stepNamed(publishJob(), 'Pin squad-sdk dependency to the exact published version (#1588)').run).toContain('pkg.dependencies["@bradygaster/squad-sdk"] = process.env.VERSION');
+    const pack = stepNamed(publishJob(), 'Pack both packages and assert the tarball manifests').run ?? '';
+    expect(pack).toContain('tarball version ${manifest.version} != ${V}');
+    expect(pack).toContain('is not the exact pin');
+    expect(pack).toContain('SDK pack sha256');
   });
 
-  it('validates reusable and manual versions without expression injection', () => {
-    expect(npmPublish).not.toContain('github.event.inputs.version');
-
-    for (const jobName of [
-      'publish-sdk',
-      'publish-cli',
-      'promote-insider-tag-sdk',
-      'promote-insider-tag-cli',
-    ]) {
-      const normalize = npmPublishWorkflow.jobs[jobName].steps?.find(
-        (step) => step.name === 'Determine and validate version',
-      );
-      expect(normalize?.env?.INPUT_VERSION, jobName).toBe('${{ inputs.version }}');
-      expect(normalize?.run, jobName).not.toContain('${{ inputs.version');
-      expect(normalize?.run, jobName).toContain("semver_re='^(0|[1-9][0-9]*)");
-      expect(normalize?.run, jobName).toContain('=~');
-    }
-  });
-
-  it('guards preview publication against stale workspace SDK resolution', () => {
-    const guard = stepNamed(
-      npmPublishWorkflow.jobs.preflight,
-      'Validate workspace release dependency',
-    );
-    expect(guard.run).toContain('const expected = `>=${sdk.version}`');
-    expect(guard.run).toContain('lockDependency !== expected');
-  });
-
-  it('skips each existing package and polls for a stale dist-tag', () => {
-    const packages = [
-      ['publish-sdk', '@bradygaster/squad-sdk'],
-      ['publish-cli', '@bradygaster/squad-cli'],
+  it('stages the pair, verifies, promotes both, aliases preview, and reconciles fail-closed', () => {
+    const steps = publishJob().steps ?? [];
+    const names = steps.map((s) => s.name ?? '');
+    const order = [
+      'Reconcile existing registry state (existing version must match local integrity)',
+      'Stage the pair under the per-run staging dist-tag (publish only what is missing)',
+      'Verify the staged pair (version, integrity, tag, readability, isolated-prefix install)',
+      'Promote BOTH packages to the channel dist-tag and verify',
+      'Add the `preview` compatibility alias to BOTH packages and verify',
+      'Final two-package reconciliation (always runs; PARTIAL_PUBLISH or UNKNOWN fails the job)',
+      'Remove the staging dist-tag (success only)',
     ];
+    const indices = order.map((n) => names.indexOf(n));
+    expect(indices.every((i) => i >= 0), `missing steps: ${order.filter((_, k) => indices[k] < 0).join(', ')}`).toBe(true);
+    expect([...indices].sort((a, b) => a - b)).toEqual(indices);
 
-    for (const [jobName, packageName] of packages) {
-      const steps = npmPublishWorkflow.jobs[jobName].steps ?? [];
-      const publishIndex = steps.findIndex((step) => step.name?.startsWith('Publish '));
-      const verifyIndex = steps.findIndex((step) => step.name === 'Verify npm publication');
-      const publish = steps[publishIndex];
-
-      expect(publish.run, jobName).toContain(
-        `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
-      );
-      expect(publish.run, jobName).toContain('already exists; skipping npm publish');
-      expect(publish.run, jobName).toContain(
-        "verification step will wait for npm dist-tag '${NPM_DIST_TAG}' to converge",
-      );
-      expect(publish.run, jobName).not.toContain('"dist-tags.${NPM_DIST_TAG}"');
-      expect(publish.run, jobName).not.toContain('Refusing to move it implicitly');
-      expect(publish.run, jobName).toContain('publish --access public --provenance');
-      expect(verifyIndex, jobName).toBeGreaterThan(publishIndex);
-      const verify = steps[verifyIndex].run;
-      expect(verify, jobName).toContain(
-        `npm view "${packageName}@\${PACKAGE_VERSION}" version`,
-      );
-      expect(verify, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
-      expect(verify, jobName).toContain('for i in $(seq 1 20)');
-      expect(verify, jobName).toContain('Registry attempt $i/20');
-      expect(verify, jobName).toContain('sleep 15');
-      expect(verify, jobName).toContain('after 20 attempts');
-    }
+    const existing = stepNamed(publishJob(), order[0]).run ?? '';
+    expect(existing).toContain('A different tree was published under this version; refusing to continue');
+    const stage = stepNamed(publishJob(), order[1]).run ?? '';
+    expect(stage).toContain('npm -w packages/squad-sdk publish --access public --provenance --tag "$STAGING_TAG"');
+    expect(stage).toContain('npm -w packages/squad-cli publish --access public --provenance --tag "$STAGING_TAG"');
+    expect(stage).toContain('npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$STAGING_TAG"');
+    expect(stage).not.toContain('--tag "$DIST_TAG"');
+    expect(stepNamed(publishJob(), order[2]).run).toContain('--install-check');
+    const promote = stepNamed(publishJob(), order[3]).run ?? '';
+    expect(promote).toContain('npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$DIST_TAG"');
+    expect(promote).toContain('npm dist-tag add "@bradygaster/squad-cli@${VERSION}" "$DIST_TAG"');
+    expect(stepNamed(publishJob(), order[4]).if).toBe("inputs.add_preview_alias && inputs.dist_tag != 'preview'");
+    const final = stepNamed(publishJob(), order[5]);
+    expect(final.if).toBe('always()');
+    expect(final.run).toContain('--classify');
+    expect(final.run).toContain('npm publication outcome is $outcome');
+    expect(final.run).toContain('reconcile idempotently');
+    expect(stepNamed(publishJob(), order[6]).if).toBe('success()');
+    expect(publishJob().env?.STAGING_TAG).toBe('staging-${{ github.run_id }}-${{ github.run_attempt }}');
+    expect(publishJob().outputs?.outcome).toBe('${{ steps.reconcile.outputs.outcome }}');
+    expect(npmPublish).not.toContain('dist_tag=preview');
   });
 
-  it('publishes stable versions to latest and prereleases to preview', () => {
-    for (const jobName of ['publish-sdk', 'publish-cli']) {
-      const job = npmPublishWorkflow.jobs[jobName];
-      const normalize = stepNamed(job, 'Determine and validate version');
-      const publish = job.steps?.find((step) => step.name?.startsWith('Publish '));
-      const verify = stepNamed(job, 'Verify npm publication');
-
-      expect(job.outputs?.dist_tag, jobName).toBe('${{ steps.version.outputs.dist_tag }}');
-      expect(job.outputs?.stable_release, jobName).toBe(
-        '${{ steps.version.outputs.stable_release }}',
-      );
-      expect(normalize.run, jobName).toContain('dist_tag=preview');
-      expect(normalize.run, jobName).toContain('dist_tag=latest');
-      expect(normalize.run, jobName).toContain('expected MAJOR.MINOR.PATCH-preview.N');
-      expect(publish?.env?.NPM_DIST_TAG, jobName).toBe(
-        '${{ steps.version.outputs.dist_tag }}',
-      );
-      expect(publish?.run, jobName).toContain('--tag "$NPM_DIST_TAG"');
-      expect(verify.run, jobName).toContain('"dist-tags.${NPM_DIST_TAG}"');
-    }
-
-    expect(npmPublishWorkflow.jobs['promote-insider-tag-sdk'].if).toBe(
-      "needs.publish-sdk.outputs.stable_release == 'true'",
-    );
-    expect(npmPublishWorkflow.jobs['promote-insider-tag-cli'].if).toBe(
-      "needs.publish-cli.outputs.stable_release == 'true'",
-    );
+  it('promotes insider dist-tags only after the pair reconciled COMPLETE on a stable release', () => {
+    const promotion = npmPublishWorkflow.jobs['promote-insider-tag'];
+    expect(promotion.needs).toBe('publish');
+    expect(promotion.if).toBe("needs.publish.outputs.stable_release == 'true' && needs.publish.outputs.outcome == 'COMPLETE'");
+    expect(serialized(promotion)).toContain('@bradygaster/squad-sdk');
+    expect(serialized(promotion)).toContain('@bradygaster/squad-cli');
+    expect(npmPublishWorkflow.jobs).not.toHaveProperty('promote-insider-tag-sdk');
+    expect(npmPublishWorkflow.jobs).not.toHaveProperty('promote-insider-tag-cli');
   });
 
   it('uses least privilege for publication provenance', () => {
-    for (const jobName of [
-      'publish-sdk',
-      'publish-cli',
-    ]) {
-      expect(npmPublishWorkflow.jobs[jobName].permissions, jobName).toEqual({
-        'id-token': 'write',
-        contents: 'read',
-      });
-    }
-    for (const jobName of ['promote-insider-tag-sdk', 'promote-insider-tag-cli']) {
-      expect(npmPublishWorkflow.jobs[jobName].permissions).toBeUndefined();
-    }
+    expect(publishJob().permissions).toEqual({
+      'id-token': 'write',
+      contents: 'read',
+    });
+    expect(npmPublishWorkflow.jobs['promote-insider-tag'].permissions).toBeUndefined();
+    expect(npmPublishWorkflow.jobs.preflight.permissions).toBeUndefined();
   });
 });
 
@@ -602,8 +617,8 @@ describe('automated package publication', () => {
     expect(generate).toContain('channel=insider');
     expect(generate).toContain('homebrew_cask=squad-preview');
     expect(generate).toContain('winget_identifier=bradygaster.Squad.Insider');
-    expect(homebrew.if).toBeUndefined();
-    expect(winget.if).toBeUndefined();
+    expect(homebrew.if).toBe('inputs.publish_package_managers');
+    expect(winget.if).toBe('inputs.publish_package_managers');
   });
 
   it('checks out packaging at the same explicit source ref as the build', () => {

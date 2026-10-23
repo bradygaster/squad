@@ -246,16 +246,20 @@ jobs:
 
   # ── Consolidated policy gates ───────────────────────────────────────────
   # Runs changelog, changelog-protection, workspace-integrity,
-  # prerelease-version-guard, publish-policy, and scope-check on one runner.
+  # prerelease-version-guard, publish-policy, publish-allowlist and scope-check on
+  # one runner. PR-diff gates (changelog, write protection, scope) are PR-only; the
+  # tree-level gates also run on every dev push through scripts/release/policy-gates.mjs,
+  # which the release path (squad-release-verify.yml) executes again at the exact
+  # release SHA with no label or variable bypass.
   policy-gates:
     name: Policy Gates
     needs: changes
     if: >-
-      github.event_name == 'pull_request'
-      && !cancelled()
-      && (needs.changes.outputs.code == 'true'
-          || needs.changes.outputs.workflows == 'true'
-          || needs.changes.result == 'failure')
+      !cancelled()
+      && (github.event_name == 'push'
+          || needs.changes.result != 'success'
+          || needs.changes.outputs.code == 'true'
+          || needs.changes.outputs.workflows == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -267,6 +271,7 @@ jobs:
           node-version: 22
       - name: Fetch PR labels
         id: labels
+        if: github.event_name == 'pull_request'
         run: |
           LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
           echo "all<<EOF" >> "$GITHUB_OUTPUT"
@@ -282,6 +287,7 @@ jobs:
       - name: "Gate: Changelog"
         if: >-
           always()
+          && github.event_name == 'pull_request'
           && steps.labels.outputs.skip_changelog != 'true'
           && vars.SQUAD_CHANGELOG_CHECK != 'false'
         run: |
@@ -320,7 +326,7 @@ jobs:
 
       # ─── CHANGELOG Write Protection ────────────────────────────────────
       - name: "Gate: CHANGELOG Write Protection"
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         env:
           APPROVED_AUTHORS: 'bradygaster tamirdresher github-actions[bot] copilot-swe-agent[bot]'
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -461,10 +467,23 @@ jobs:
           fi
           echo "✅ All npm publish commands are workspace-scoped"
 
+      # ─── Release policy (shared with the release path; no bypass) ───────
+      - name: "Gate: Release policy (workspace integrity, prerelease guard, publish allowlist, changelog heading)"
+        if: always()
+        run: |
+          set -o pipefail
+          echo "## 🛡️ Release policy" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/release/policy-gates.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: "Gate: Lockfiles resolve only to registry.npmjs.org"
+        if: always()
+        run: node scripts/release/check-lockfile-registry.mjs
+
       # ─── Scope Check (repo-health PRs only) ────────────────────────────
       - name: "Gate: Repo-health scope boundary"
         if: >-
           always()
+          && github.event_name == 'pull_request'
           && contains(github.event.pull_request.labels.*.name, 'repo-health')
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"

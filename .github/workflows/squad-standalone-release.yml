@@ -39,6 +39,11 @@ on:
         required: false
         default: ''
         type: string
+      publish_package_managers:
+        description: 'Publish the Homebrew cask and WinGet manifests (opt-in; each job runs a no-side-effect credential preflight first)'
+        required: false
+        default: false
+        type: boolean
     secrets:
       HOMEBREW_TAP_TOKEN:
         description: 'Classic PAT with public_repo and write access to bradygaster/homebrew-squad'
@@ -73,6 +78,11 @@ on:
         required: false
         default: ''
         type: string
+      publish_package_managers:
+        description: 'Publish the Homebrew cask and WinGet manifests (opt-in; each job runs a no-side-effect credential preflight first)'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: squad-standalone-release-publication
@@ -409,6 +419,7 @@ jobs:
   publish-homebrew:
     name: Publish Homebrew cask
     needs: packaging
+    if: inputs.publish_package_managers
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -573,6 +584,7 @@ jobs:
   publish-winget:
     name: Publish WinGet manifests
     needs: packaging
+    if: inputs.publish_package_managers
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

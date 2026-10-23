@@ -315,11 +315,15 @@ jobs:
           git commit -m "chore: promote dev to main (v${VERSION})"
           git push origin HEAD:main
           # Pushes authenticated with GITHUB_TOKEN do not emit another workflow
-          # run, so explicitly dispatch the stable release at the pushed ref.
+          # run, so explicitly dispatch the stable release at the pushed ref,
+          # pinning the exact commit so the release guard can refuse a moved main.
           gh workflow run squad-release.yml \
             --ref main \
-            -f confirm_tag="v${VERSION}"
-          echo "Pushed main and dispatched stable release v${VERSION}."
+            -f confirm_tag="v${VERSION}" \
+            -f expected_sha="$(git rev-parse HEAD)" \
+            -f publish_standalone=true \
+            -f publish_package_managers=true
+          echo "Pushed main and dispatched stable release v${VERSION} at $(git rev-parse HEAD)."
 
       - name: Report dry run
         if: steps.prepare.outputs.changed == 'true' && inputs.dry_run == 'true'
