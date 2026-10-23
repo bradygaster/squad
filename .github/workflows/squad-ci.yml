@@ -702,7 +702,7 @@ jobs:
             test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 20
             test -f .github/workflows/squad-agent-binding-check.yml
             test "$(find .github/skills/gh-aw-enlistment -type f | wc -l | tr -d ' ')" = 1
-            node scripts/release/compile-pinned-actions.mjs
+            node "$GITHUB_WORKSPACE/scripts/release/compile-pinned-actions.mjs"
             gh aw compile --strict --approve --no-check-update
             for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do
               gh aw compile "$workflow" --strict --no-check-update

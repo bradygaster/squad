@@ -79,11 +79,14 @@ function sha256(content: Buffer): string {
 
 function withSource(content: Buffer, source: string, revision: string): Buffer {
   const text = content.toString('utf8');
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const normalized = text.replace(/\r\n/g, '\n');
   const marker = '\n---\n';
-  const end = text.indexOf(marker, 4);
-  if (!text.startsWith('---\n') || end < 0) throw new Error(`Invalid workflow source: ${source}`);
+  const end = normalized.indexOf(marker, 4);
+  if (!normalized.startsWith('---\n') || end < 0) throw new Error(`Invalid workflow source: ${source}`);
   return Buffer.from(
-    `${text.slice(0, end)}\nsource: bradygaster/squad/${source}@${revision}${text.slice(end)}`,
+    `${normalized.slice(0, end)}\nsource: bradygaster/squad/${source}@${revision}${normalized.slice(end)}`
+      .replace(/\n/g, eol),
   );
 }
 
