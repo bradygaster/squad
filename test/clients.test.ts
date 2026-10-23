@@ -275,7 +275,7 @@ describe('coordinator behavioral-contract parity', () => {
  * coordinator text non-Copilot hosts load by default. These assertions pin what the live runs on Claude Code and
  * OpenCode proved the digest carries, and record (as one `it.fails` per host and gap) the canonical sections it
  * still lacks. When the stack adds one of those sections for a host, that host's `it.fails` turns red: drop
- * `.fails` for it and flip the matrix cell from `degraded` to `supported`. The matrix's `expectedFailures[].test`
+ * `.fails` for it and flip the matrix cell's capability from `unsupported` to `supported`. The matrix's `expectedFailures[].test`
  * is the title below without the ` [<host>]` suffix; `test/squad-20-host-feature-matrix.test.ts` checks both.
  */
 describe('coordinator digest vs. host feature matrix', () => {

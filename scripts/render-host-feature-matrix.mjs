@@ -18,37 +18,32 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const MATRIX_PATH = path.join(ROOT, 'test-fixtures', 'spec', 'suite-v0.2', 'host-feature-matrix.json');
 export const PAGE_PATH = path.join(ROOT, 'docs', 'src', 'content', 'docs', 'reference', 'host-feature-matrix.md');
 
-const STATUS_ICON = { supported: '✅', degraded: '⚠️', unsupported: '❌', 'n/a': '—' };
-const VALIDATION_ICON = { 'validated-test': '🧪', 'validated-manual': '🖥️', 'static-only': '📄', untested: '❔', failing: '🔴' };
+/** Capability axis: what the host can do. */
+export const CAPABILITIES = ['supported', 'degraded', 'unsupported', 'n/a'];
+/** Validation axis: how confident the capability claim is. */
+export const VALIDATION_LEVELS = ['validated-live', 'validated-test', 'static-only', 'untested', 'blocked'];
+const CAPABILITY_ICON = { supported: '✅', degraded: '⚠️', unsupported: '❌', 'n/a': '—' };
+const VALIDATION_ICON = { 'validated-live': '🖥️', 'validated-test': '🧪', 'static-only': '📄', untested: '❔', blocked: '⛔' };
 
-export function validationKind(entry) {
+export function evidenceKind(entry) {
   return entry.split(':')[0];
 }
 
-/** Strongest evidence wins: failing > validated-test > validated-manual > static-only > untested. */
-export function cellEvidence(cell) {
-  const kinds = new Set(cell.validation.map(validationKind));
-  for (const k of ['failing', 'validated-test', 'validated-manual', 'static-only', 'untested']) if (kinds.has(k)) return k;
-  return 'untested';
-}
-
-/** True when the cell still carries an `untested` marker (no live-host evidence yet), whatever else it has. */
-export function hasLiveGap(cell) {
-  return cell.validation.some((v) => validationKind(v) === 'untested');
+/** True when the cell lists a recorded live run (`validated-manual:lab:…`) in its evidence. */
+export function hasLiveRun(cell) {
+  return cell.evidence.some((v) => evidenceKind(v) === 'validated-manual');
 }
 
 export function summarize(matrix) {
   const hosts = Object.keys(matrix.hosts);
   const out = {};
   for (const h of hosts) {
-    const s = { supported: 0, degraded: 0, unsupported: 0, 'n/a': 0, 'validated-test': 0, 'validated-manual': 0, 'static-only': 0, untested: 0, failing: 0, live: 0 };
+    const s = { supported: 0, degraded: 0, unsupported: 0, 'n/a': 0, 'validated-live': 0, 'validated-test': 0, 'static-only': 0, untested: 0, blocked: 0, expectedFailures: 0 };
     for (const f of matrix.features) {
       const c = f.cells[h];
-      s[c.status]++;
-      const e = cellEvidence(c);
-      if (e !== 'untested') s[e]++;
-      if (hasLiveGap(c)) s.untested++;
-      if (c.validation.some((v) => validationKind(v) === 'validated-manual')) s.live++;
+      s[c.capability]++;
+      s[c.validation]++;
+      if (c.expectedFailure) s.expectedFailures++;
     }
     out[h] = s;
   }
@@ -80,15 +75,21 @@ export function render(matrix) {
   lines.push('');
   lines.push('## Legend');
   lines.push('');
-  lines.push('| Status | Meaning |');
-  lines.push('|--------|---------|');
-  for (const [k, v] of Object.entries(matrix.statuses)) lines.push(`| ${STATUS_ICON[k]} \`${k}\` | ${v} |`);
+  lines.push('Every cell has two independent values. **Capability** says what the host can do; **validation** says how that claim was established. Neither implies the other: a `supported` cell may be only `static-only`, and an `unsupported` cell can be `validated-test` (a test proves the gap).');
+  lines.push('');
+  lines.push('| Capability | Meaning |');
+  lines.push('|------------|---------|');
+  for (const [k, v] of Object.entries(matrix.capabilities)) lines.push(`| ${CAPABILITY_ICON[k]} \`${k}\` | ${v} |`);
   lines.push('');
   lines.push('| Validation | Meaning |');
   lines.push('|------------|---------|');
-  for (const [k, v] of Object.entries(matrix.validationKinds)) lines.push(`| ${VALIDATION_ICON[validationKind(k)]} \`${k}\` | ${v} |`);
+  for (const [k, v] of Object.entries(matrix.validationLevels)) lines.push(`| ${VALIDATION_ICON[k]} \`${k}\` | ${v} |`);
   lines.push('');
-  lines.push('Each cell below shows **status / strongest evidence**, plus ❔ when the cell still lacks any live-host run (e.g. `✅ 🧪` = supported and covered by an automated test; `✅ 🧪 ❔` = the projection is tested but the host has not been driven for real; `⚠️ 📄` = degraded, only statically inspected). The **❔ untested** column in the summary counts every cell that still carries that marker.');
+  lines.push('| Evidence entry | Meaning |');
+  lines.push('|----------------|---------|');
+  for (const [k, v] of Object.entries(matrix.evidenceKinds)) lines.push(`| \`${k}\` | ${v} |`);
+  lines.push('');
+  lines.push('Each matrix cell shows **capability validation** (for example `✅ 🧪` = supported, covered by an automated test; `❌ 🧪` = unsupported, proven by an expected-failure test; `✅ 📄` = supported, statically inspected only; `✅ ⛔` = supported on paper, the live attempt for this host was blocked).');
   lines.push('');
   lines.push('## Hosts');
   lines.push('');
@@ -104,17 +105,19 @@ export function render(matrix) {
   lines.push('## Summary');
   lines.push('');
   const sum = summarize(matrix);
-  lines.push('| Host | ✅ supported | ⚠️ degraded | ❌ unsupported | — n/a | 🧪 test | 🖥️ manual (strongest) | 📄 static | ❔ untested | 🔴 failing | 🖥️ live-validated cells |');
-  lines.push('|------|-------------|-------------|----------------|-------|---------|------------------------|-----------|------------|------------|-------------------------|');
+  lines.push('Capability counts and validation counts are independent breakdowns of the same cells (each row sums to the feature count twice).');
+  lines.push('');
+  lines.push('| Host | ✅ supported | ⚠️ degraded | ❌ unsupported | — n/a | 🖥️ validated-live | 🧪 validated-test | 📄 static-only | ❔ untested | ⛔ blocked | of which expected-failure gaps |');
+  lines.push('|------|-------------|-------------|----------------|-------|-------------------|-------------------|----------------|------------|------------|--------------------------------|');
   for (const h of hosts) {
     const s = sum[h];
-    lines.push(`| \`${h}\` | ${s.supported} | ${s.degraded} | ${s.unsupported} | ${s['n/a']} | ${s['validated-test']} | ${s['validated-manual']} | ${s['static-only']} | ${s.untested} | ${s.failing} | ${s.live} |`);
+    lines.push(`| \`${h}\` | ${s.supported} | ${s.degraded} | ${s.unsupported} | ${s['n/a']} | ${s['validated-live']} | ${s['validated-test']} | ${s['static-only']} | ${s.untested} | ${s.blocked} | ${s.expectedFailures} |`);
   }
   lines.push('');
   if (Array.isArray(matrix.expectedFailures) && matrix.expectedFailures.length > 0) {
     lines.push('## Expected failures (`it.fails`)');
     lines.push('');
-    lines.push('These digest gaps are pinned as expected failures, one test per host and gap: the `[<host>]` test turns red the moment a stack adds the section for that host, and until then that cell stays **degraded** — expected failures are never counted as supported.');
+    lines.push('These digest gaps are pinned as expected failures, one test per host and gap: the `[<host>]` test turns red the moment a stack adds the section for that host. Until then the cell is **unsupported** for that host (validated by the failing test), never degraded or supported.');
     lines.push('');
     lines.push('| Feature | Test (title; each generated test appends the host as `[<host>]`) | Hosts | Meaning |');
     lines.push('|---------|-----------------------------|-------|---------|');
@@ -140,7 +143,7 @@ export function render(matrix) {
     for (const f of matrix.features.filter((x) => x.area === area)) {
       const cells = hosts.map((h) => {
         const c = f.cells[h];
-        return `${STATUS_ICON[c.status]} ${VALIDATION_ICON[cellEvidence(c)]}${hasLiveGap(c) && cellEvidence(c) !== 'untested' ? ' ❔' : ''}`;
+        return `${CAPABILITY_ICON[c.capability]} ${VALIDATION_ICON[c.validation]}`;
       });
       lines.push(`| [${f.name.replace(/\|/g, '\\|')}](#${f.id}) | ${f.dependsOn.join(', ')}${f.hostIndependent ? ' (host-independent)' : ''} | ${cells.join(' | ')} |`);
     }
@@ -157,20 +160,21 @@ export function render(matrix) {
     const sections = f.canonicalSections?.length ? ` · canonical sections: ${f.canonicalSections.map((s) => `\`${s}\``).join(', ')}` : '';
     lines.push(`Depends on: **${f.dependsOn.join(', ')}**${f.hostIndependent ? ' (host-independent)' : ''}${docs ? ` · docs: ${docs}` : ''}${sections}`);
     lines.push('');
-    lines.push('| Host | Status | Mechanism | Validation |');
-    lines.push('|------|--------|-----------|------------|');
+    lines.push('| Host | Capability | Validation | Mechanism | Evidence |');
+    lines.push('|------|------------|------------|-----------|----------|');
     for (const h of hosts) {
       const c = f.cells[h];
       const notes = c.notes ? ` _${c.notes}_` : '';
-      const validation = c.validation.map((v) => `\`${v}\``).join('<br>');
-      lines.push(`| \`${h}\` | ${STATUS_ICON[c.status]} ${c.status} | ${c.mechanism.replace(/\|/g, '\\|')}${notes.replace(/\|/g, '\\|')} | ${validation.replace(/\|/g, '\\|')} |`);
+      const flags = [c.expectedFailure ? ' (expected failure)' : '', c.blockedReason ? ` — ${c.blockedReason}` : ''].join('');
+      const evidence = c.evidence.map((v) => `\`${v}\``).join('<br>') || '—';
+      lines.push(`| \`${h}\` | ${CAPABILITY_ICON[c.capability]} ${c.capability} | ${VALIDATION_ICON[c.validation]} ${c.validation}${flags.replace(/\|/g, '\\|')} | ${c.mechanism.replace(/\|/g, '\\|')}${notes.replace(/\|/g, '\\|')} | ${evidence.replace(/\|/g, '\\|')} |`);
     }
     lines.push('');
   }
   if (matrix.liveRuns?.length) {
     lines.push('## Live run log');
     lines.push('');
-    lines.push('Headless real-CLI runs behind the `validated-manual:lab:<scenario>` entries above. Each run drove the host\'s projected Squad coordinator against a real model in a throwaway repository; transcripts are kept outside the repository.');
+    lines.push('Headless real-CLI runs behind the `validated-manual:lab:<scenario>` evidence entries above (only `pass`/`partial` runs raise a cell to `validated-live`). Each run drove the host\'s projected Squad coordinator against a real model in a throwaway repository; transcripts are kept outside the repository.');
     lines.push('');
     lines.push('| Date | Host | Scenario | Outcome | Observed tools | Notes |');
     lines.push('|------|------|----------|---------|----------------|-------|');
@@ -187,7 +191,7 @@ if (isMain) {
   if (process.argv.includes('--summary')) {
     console.log(JSON.stringify(summarize(matrix), null, 2));
   } else if (process.argv.includes('--check')) {
-    // Compare line-ending-insensitively: autocrlf checkouts store the page with CRLF.
+    // Compare line-ending-insensitively (LF and CRLF checkouts both pass): autocrlf stores the page with CRLF.
     const expected = render(matrix).replace(/\r\n/g, '\n');
     const actual = (fs.existsSync(PAGE_PATH) ? fs.readFileSync(PAGE_PATH, 'utf8') : '').replace(/\r\n/g, '\n');
     if (expected !== actual) {

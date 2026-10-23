@@ -32,8 +32,9 @@ const MATRIX_PATH = path.join(ROOT, 'test-fixtures', 'spec', 'suite-v0.2', 'host
 const PAGE_PATH = path.join(ROOT, 'docs', 'src', 'content', 'docs', 'reference', 'host-feature-matrix.md');
 const RENDERER = pathToFileURL(path.join(ROOT, 'scripts', 'render-host-feature-matrix.mjs')).href;
 
-type Status = 'supported' | 'degraded' | 'unsupported' | 'n/a';
-interface Cell { status: Status; mechanism: string; validation: string[]; notes?: string }
+type Capability = 'supported' | 'degraded' | 'unsupported' | 'n/a';
+type Validation = 'validated-live' | 'validated-test' | 'static-only' | 'untested' | 'blocked';
+interface Cell { capability: Capability; validation: Validation; blockedReason?: string; expectedFailure?: boolean; mechanism: string; evidence: string[]; notes?: string }
 interface Feature { id: string; name: string; area: string; dependsOn: string[]; hostIndependent?: boolean; cells: Record<string, Cell> }
 interface LiveRun { host: string; scenario: string; date: string; outcome: 'pass' | 'partial' | 'fail' | 'blocked'; observedTools?: string[]; notes?: string }
 interface ExpectedFailure { featureId: string; test: string; kind: string; perHost?: boolean; hosts?: string[]; meaning: string }
@@ -44,12 +45,18 @@ interface Matrix {
   liveRuns: LiveRun[];
   expectedFailures: ExpectedFailure[];
   limitations?: string[];
+  capabilities: Record<string, string>;
+  validationLevels: Record<string, string>;
+  evidenceKinds: Record<string, string>;
 }
 
 const matrix = JSON.parse(fs.readFileSync(MATRIX_PATH, 'utf8')) as Matrix;
 const HOSTS = Object.keys(matrix.hosts);
-const STATUSES: Status[] = ['supported', 'degraded', 'unsupported', 'n/a'];
-const VALIDATION_RE = /^(validated-test:[^:]+::.+|validated-manual:.+|static-only|untested|failing)$/;
+const CAPABILITIES: Capability[] = ['supported', 'degraded', 'unsupported', 'n/a'];
+const VALIDATION_LEVELS: Validation[] = ['validated-live', 'validated-test', 'static-only', 'untested', 'blocked'];
+const EVIDENCE_RE = /^(validated-test:[^:]+::.+|validated-manual:lab:[a-z0-9-]+@\d{4}-\d{2}-\d{2}|static-only)$/;
+/** Hosts with a passing live run on the reference machine; only these may carry `validated-live`. */
+const LIVE_HOSTS = new Set(['claude', 'opencode']);
 
 const ROSTER = '| Name | Role | Charter | Status |\n|---|---|---|---|\n| Noether | Lead Architect | `.squad/agents/noether/charter.md` | ✅ Active |\n| Galois | Backend Engineer | `.squad/agents/galois/charter.md` | ✅ Active |\n';
 const THIS_FILE = 'test/squad-20-host-feature-matrix.test.ts';
@@ -69,12 +76,28 @@ describe('host-feature-matrix.json integrity', () => {
       for (const h of HOSTS) {
         const c = f.cells[h];
         expect(c, `${f.id}: missing cell for ${h}`).toBeDefined();
-        expect(STATUSES, `${f.id}/${h}: status ${c!.status}`).toContain(c!.status);
+        expect(CAPABILITIES, `${f.id}/${h}: capability ${c!.capability}`).toContain(c!.capability);
+        expect(VALIDATION_LEVELS, `${f.id}/${h}: validation ${c!.validation}`).toContain(c!.validation);
         expect(c!.mechanism.length, `${f.id}/${h}: mechanism`).toBeGreaterThan(10);
-        expect(c!.validation.length, `${f.id}/${h}: validation`).toBeGreaterThan(0);
-        for (const v of c!.validation) expect(v, `${f.id}/${h}: validation entry ${v}`).toMatch(VALIDATION_RE);
+        expect(Array.isArray(c!.evidence), `${f.id}/${h}: evidence array`).toBe(true);
+        for (const v of c!.evidence) expect(v, `${f.id}/${h}: evidence entry ${v}`).toMatch(EVIDENCE_RE);
+        // The validation level must be backed by evidence of that kind — the two axes stay honest.
+        const kinds = new Set(c!.evidence.map((v) => v.split(':')[0]));
+        if (c!.validation === 'validated-live') {
+          expect(LIVE_HOSTS.has(h), `${f.id}/${h}: validated-live is only possible for hosts with a passing live run (Claude Code, OpenCode)`).toBe(true);
+          expect(kinds.has('validated-manual'), `${f.id}/${h}: validated-live needs a validated-manual:lab entry`).toBe(true);
+        }
+        if (c!.validation === 'validated-test') expect(kinds.has('validated-test'), `${f.id}/${h}: validated-test needs a validated-test entry`).toBe(true);
+        if (c!.validation === 'static-only' || c!.validation === 'untested' || c!.validation === 'blocked') {
+          expect(kinds.has('validated-test') || kinds.has('validated-manual'), `${f.id}/${h}: ${c!.validation} cell must not list test/live evidence`).toBe(false);
+        }
+        if (c!.validation === 'blocked') expect(c!.blockedReason, `${f.id}/${h}: blocked needs blockedReason`).toBeTruthy();
+        else expect(c!.blockedReason, `${f.id}/${h}: blockedReason only with blocked`).toBeUndefined();
+        if (c!.capability === 'n/a') expect(c!.validation, `${f.id}/${h}: n/a cells are static-only`).toBe('static-only');
       }
     }
+    for (const k of CAPABILITIES) expect(matrix.capabilities[k], `capability "${k}" is not defined on the page`).toBeTruthy();
+    for (const k of VALIDATION_LEVELS) expect(matrix.validationLevels[k], `validation level "${k}" is not defined on the page`).toBeTruthy();
   });
 
   it('every validated-test reference names a test that exists', () => {
@@ -87,7 +110,7 @@ describe('host-feature-matrix.json integrity', () => {
       }
       return cache.get(rel)!;
     };
-    for (const f of matrix.features) for (const h of HOSTS) for (const v of f.cells[h]!.validation) {
+    for (const f of matrix.features) for (const h of HOSTS) for (const v of f.cells[h]!.evidence) {
       if (!v.startsWith('validated-test:')) continue;
       const [, file, name] = /^validated-test:([^:]+)::(.+)$/.exec(v)!;
       const src = read(file!);
@@ -97,7 +120,7 @@ describe('host-feature-matrix.json integrity', () => {
 
   it('every validated-manual:lab reference has a recorded live run for that host', () => {
     expect(Array.isArray(matrix.liveRuns)).toBe(true);
-    for (const f of matrix.features) for (const h of HOSTS) for (const v of f.cells[h]!.validation) {
+    for (const f of matrix.features) for (const h of HOSTS) for (const v of f.cells[h]!.evidence) {
       const m = /^validated-manual:lab:([a-z0-9-]+)(?:@.*)?$/.exec(v);
       if (!m) continue;
       const run = matrix.liveRuns.find((r) => r.host === h && r.scenario === m[1]);
@@ -106,18 +129,18 @@ describe('host-feature-matrix.json integrity', () => {
     }
   });
 
-  it('cells marked failing carry a note and are never supported, and no live run that failed backs a supported cell', () => {
+  it('expected-failure cells are unsupported with a note, and no failed or blocked live run raises a cell to validated-live', () => {
     for (const f of matrix.features) for (const h of HOSTS) {
       const c = f.cells[h]!;
-      if (c.validation.includes('failing')) {
-        expect(c.notes, `${f.id}/${h}: failing cell needs a note`).toBeTruthy();
-        expect(c.status, `${f.id}/${h}: a failing cell must not be counted as supported`).not.toBe('supported');
+      if (c.expectedFailure) {
+        expect(c.notes, `${f.id}/${h}: expected-failure cell needs a note`).toBeTruthy();
+        expect(c.capability, `${f.id}/${h}: a digest gap is unsupported for that host, not degraded or supported`).toBe('unsupported');
       }
     }
-    for (const r of matrix.liveRuns.filter((r) => r.outcome === 'fail')) {
+    for (const r of matrix.liveRuns.filter((r) => r.outcome === 'fail' || r.outcome === 'blocked')) {
       for (const f of matrix.features) {
         const c = f.cells[r.host]!;
-        if (c.validation.some((v) => v.includes(`lab:${r.scenario}`))) expect(c.status, `${f.id}/${r.host}: backed by failed run ${r.scenario}`).not.toBe('supported');
+        if (c.evidence.some((v) => v.includes(`lab:${r.scenario}`))) expect(c.validation, `${f.id}/${r.host}: ${r.outcome} run ${r.scenario} cannot make the cell validated-live`).not.toBe('validated-live');
       }
     }
   });
@@ -156,14 +179,15 @@ describe('host-feature-matrix.json integrity', () => {
         if (e.perHost) {
           const c = feat!.cells[h];
           expect(c, `${e.featureId}/${h}: no cell for a listed host`).toBeDefined();
-          expect(c!.validation, `${e.featureId}/${h}: expected-failure cell must carry failing`).toContain('failing');
-          expect(c!.status, `${e.featureId}/${h}: expected-failure cell must not be supported`).not.toBe('supported');
+          expect(c!.expectedFailure, `${e.featureId}/${h}: expected-failure cell must be flagged expectedFailure`).toBe(true);
+          expect(c!.capability, `${e.featureId}/${h}: expected-failure cell is unsupported`).toBe('unsupported');
+          expect(c!.evidence.some((v) => v.startsWith(`validated-test:${file}::`)), `${e.featureId}/${h}: evidence must cite the gap test in ${file}`).toBe(true);
           covered.add(`${e.featureId}/${h}`);
         }
       }
     }
     for (const f of matrix.features) for (const h of HOSTS) {
-      if (f.cells[h]!.validation.includes('failing')) expect(covered.has(`${f.id}/${h}`), `${f.id}/${h} is failing but has no expectedFailures entry`).toBe(true);
+      if (f.cells[h]!.expectedFailure) expect(covered.has(`${f.id}/${h}`), `${f.id}/${h} is flagged expectedFailure but has no expectedFailures entry`).toBe(true);
     }
   });
 
@@ -185,7 +209,7 @@ describe('host-feature-matrix.json integrity', () => {
 
   it('hosts without the background-runs token are never "supported" for background-agents', () => {
     const f = matrix.features.find((x) => x.id === 'background-agents')!;
-    for (const h of CLIENT_IDS) if (!CAPABILITY_TOKENS_BY_HOST[h].includes('background-runs')) expect(f.cells[h]!.status, h).not.toBe('supported');
+    for (const h of CLIENT_IDS) if (!CAPABILITY_TOKENS_BY_HOST[h].includes('background-runs')) expect(f.cells[h]!.capability, h).not.toBe('supported');
   });
 
   it('the rendered reference page is up to date with the JSON', async () => {
