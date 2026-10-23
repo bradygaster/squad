@@ -17,6 +17,8 @@ const workflowSha = arg('--workflow-sha');
 const tag = arg('--tag');
 const evidenceDir = arg('--evidence-dir', false);
 const repo = arg('--repo', false) || process.cwd();
+const recovery = process.env.SQUAD_RELEASE_RECOVERY === 'true';
+const controlRepo = process.env.SQUAD_RELEASE_CONTROL_REPO ?? '';
 
 if (!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error(`Invalid source SHA '${sourceSha}'`);
 if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(preview|insider)\.(0|[1-9]\d*))?$/.test(tag)) {
@@ -40,13 +42,31 @@ const remoteRefs = git('ls-remote', '--exit-code', '--tags', 'origin', directRef
 const byRef = new Map(remoteRefs);
 const remoteTag = byRef.get(peeledRef) ?? byRef.get(directRef);
 if (!remoteTag) throw new Error(`Remote tag ${tag} did not resolve to a commit`);
-for (const [name, value] of [
-  ['dispatch SHA', dispatchSha],
-  ['workflow definition SHA', workflowSha],
-  ['checkout HEAD', head],
-  [`remote tag ${tag}`, remoteTag],
-]) {
+for (const [name, value] of [['checkout HEAD', head], [`remote tag ${tag}`, remoteTag]]) {
   if (value !== sourceSha) throw new Error(`${name} is ${value}, expected ${sourceSha}`);
+}
+if (recovery) {
+  if (!controlRepo) throw new Error('SQUAD_RELEASE_CONTROL_REPO is required in recovery mode');
+  if (!/^[0-9a-f]{40}$/.test(dispatchSha) || dispatchSha !== workflowSha) {
+    throw new Error(`recovery dispatch SHA ${dispatchSha} must equal workflow definition SHA ${workflowSha}`);
+  }
+  const controlGit = (...args) => execFileSync('git', ['-C', controlRepo, ...args], { encoding: 'utf8' }).trim();
+  const controlHead = controlGit('rev-parse', 'HEAD');
+  if (controlHead !== workflowSha) {
+    throw new Error(`recovery control checkout HEAD is ${controlHead}, expected workflow definition SHA ${workflowSha}`);
+  }
+  try {
+    controlGit('merge-base', '--is-ancestor', sourceSha, workflowSha);
+  } catch {
+    throw new Error(`recovery workflow definition ${workflowSha} is not a descendant of release source ${sourceSha}`);
+  }
+} else {
+  for (const [name, value] of [
+    ['dispatch SHA', dispatchSha],
+    ['workflow definition SHA', workflowSha],
+  ]) {
+    if (value !== sourceSha) throw new Error(`${name} is ${value}, expected ${sourceSha}`);
+  }
 }
 
 if (evidenceDir) {

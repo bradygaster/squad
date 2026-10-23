@@ -16,8 +16,10 @@ const GIT_ENV = {
 describe('assert-publish-identity tag resolution', () => {
   let tempRoot: string;
   let repo: string;
+  let controlRepo: string;
   let firstCommit: string;
   let sourceSha: string;
+  let workflowSha: string;
 
   const git = (...args: string[]): string => execFileSync('git', ['-C', repo, ...args], {
     encoding: 'utf8',
@@ -62,6 +64,15 @@ describe('assert-publish-identity tag resolution', () => {
     git('tag', 'v9.9.2', sourceSha);
     git('tag', '-a', 'v9.9.3', '-m', 'wrong release', firstCommit);
     git('push', 'origin', 'refs/tags/v9.9.1', 'refs/tags/v9.9.2', 'refs/tags/v9.9.3');
+
+    controlRepo = path.join(tempRoot, 'control');
+    execFileSync('git', ['clone', '--branch', 'main', remote, controlRepo], { env: GIT_ENV, stdio: 'ignore' });
+    execFileSync('git', ['-C', controlRepo, 'config', 'user.name', 'Release Test'], { env: GIT_ENV });
+    execFileSync('git', ['-C', controlRepo, 'config', 'user.email', 'release-test@example.invalid'], { env: GIT_ENV });
+    writeFileSync(path.join(controlRepo, 'workflow-fix.txt'), 'fixed workflow\n');
+    execFileSync('git', ['-C', controlRepo, 'add', 'workflow-fix.txt'], { env: GIT_ENV });
+    execFileSync('git', ['-C', controlRepo, 'commit', '-m', 'workflow fix'], { env: GIT_ENV, stdio: 'ignore' });
+    workflowSha = execFileSync('git', ['-C', controlRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
   }, 60_000);
 
   afterAll(() => {
@@ -112,5 +123,24 @@ describe('assert-publish-identity tag resolution', () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('ls-remote');
     expect(result.stdout).not.toContain('Release identity verified');
+  });
+
+  it('binds recovery workflow identity separately while keeping the release tag at sourceSha', () => {
+    const output = execFileSync(process.execPath, [
+      SCRIPT,
+      '--repo', repo,
+      '--source-sha', sourceSha,
+      '--dispatch-sha', workflowSha,
+      '--workflow-sha', workflowSha,
+      '--tag', 'v9.9.1',
+    ], {
+      encoding: 'utf8',
+      env: {
+        ...GIT_ENV,
+        SQUAD_RELEASE_RECOVERY: 'true',
+        SQUAD_RELEASE_CONTROL_REPO: controlRepo,
+      },
+    });
+    expect(output).toContain(`Release identity verified at ${sourceSha}`);
   });
 });
