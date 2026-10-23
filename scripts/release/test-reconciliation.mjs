@@ -42,6 +42,7 @@ export const CATEGORY_RULES = Object.freeze([
   { category: 'env-gated', file: /(aspire-integration|cli\/aspire)\.test\.ts$/, reason: 'aspire CLI absent' },
   { category: 'env-gated', file: /gh-aw-(quality|cast-validator)\.test\.ts$/, reason: 'gh-aw extension absent (CI installs it; gate hard-fails there)' },
   { category: 'env-gated', file: /(package-exports-targets|bench-runner|cli-outside-project|cli\/command-help|upstream-runtime|cli\/upgrade)\.test\.ts$/, reason: 'requires a built dist/ (CI builds before testing)' },
+  { category: 'env-gated', file: /release-pack-install\.test\.ts$/, reason: 'SQUAD_RELEASE_PACK_INSTALL=1 not set for the plain suite run; the release-verify workflow runs it as a dedicated step against the packed tarballs' },
   { category: 'env-gated', file: /(squad-agent-roster|state-backend-handshake)\.test\.ts$/, title: /file does not exist in this checkout/, reason: 'contributor-only .squad file absent from this checkout' },
   { category: 'f3-xfail', file: /squad-20-upgrade-matrix\.test\.ts$/, status: 'xfail', reason: 'finding F3: Squad 0.9.1 upgrade --dry-run is not dry (pinned xfail; xpass fails the suite)' },
   { category: 'digest-gap', file: /clients\.test\.ts$/, status: 'xfail', title: /^digest gap/, reason: 'test/clients.test.ts: per-host coordinator digest gap declared with it.fails' },
@@ -75,7 +76,11 @@ export function reconcile(report, { baseline } = {}) {
   const nonPassing = tests.filter((t) => t.status !== 'passed');
   const categorized = nonPassing.map((t) => {
     let category = 'unexplained'; let reason = 'no reviewed rule matches this test';
-    if (t.status === 'todo') { category = TODO_BLOCKERS.includes(t.title) ? 'todo-blocking' : 'todo'; reason = 'it.todo placeholder'; }
+    if (t.status === 'pending' || t.status === 'disabled') {
+      // Collected but never reached a terminal state (e.g. a describe.skip nested inside a skipped
+      // describe). The console summary silently drops these; they are never acceptable.
+      reason = `vitest status '${t.status}': collected but never ran or skipped; flatten the skip decision`;
+    } else if (t.status === 'todo') { category = TODO_BLOCKERS.includes(t.title) ? 'todo-blocking' : 'todo'; reason = 'it.todo placeholder'; }
     else {
       for (const rule of CATEGORY_RULES) {
         if (!rule.file.test(t.file)) continue;
