@@ -17,7 +17,7 @@ Create a normal release-preparation PR targeting `dev`. Keep the root, SDK, and
 CLI versions in lockstep:
 
 ```bash
-VERSION=1.2.0-preview.1
+VERSION=2.0.0-preview.1
 npm version "$VERSION" --workspaces --include-workspace-root --no-git-tag-version
 npm pkg set "dependencies.@bradygaster/squad-sdk=>=$VERSION" \
   --workspace @bradygaster/squad-cli
@@ -27,7 +27,7 @@ npm install --package-lock-only
 Add an exact changelog heading:
 
 ```markdown
-## [1.2.0-preview.1] - YYYY-MM-DD
+## [2.0.0-preview.1] - YYYY-MM-DD
 ```
 
 Before merging, verify:
@@ -45,10 +45,10 @@ Wait for `dev` CI to pass after the PR merges.
 
 ## Publish a preview
 
-Use a unique prerelease version such as `1.2.0-preview.1`:
+Use a unique prerelease version such as `2.0.0-preview.1`:
 
 ```bash
-VERSION=1.2.0-preview.1
+VERSION=2.0.0-preview.1
 gh workflow run squad-release.yml \
   --ref dev \
   -f confirm_tag="v$VERSION"
@@ -93,8 +93,8 @@ updates `squad-insider` in Homebrew, and opens or reuses the
 ## Publish stable
 
 Prepare another PR that changes all package versions and the changelog heading
-from the prerelease version to stable `1.2.0`. A preview version cannot be
-converted in place after publication; `1.2.0-preview.1` and `1.2.0` are
+from the prerelease version to stable `2.0.0`. A preview version cannot be
+converted in place after publication; `2.0.0-preview.1` and `2.0.0` are
 different releases.
 
 After the stable preparation lands on `dev`, a human must run the promotion

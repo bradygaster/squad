@@ -6,6 +6,12 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ## v2.0.0 — Multi-Host Clients & Experimental Backend Contract
 
+### v2.0.0-preview.1 — preview channel
+
+`v2.0.0-preview.1` is the first Squad 2.0 build. It is published to the npm `preview` dist-tag (`npm install -g @bradygaster/squad-cli@preview`); `latest` stays at v1.1.0 until 2.0.0 ships stable. Before upgrading an existing project read [Upgrading to Squad 2.0](./scenarios/upgrading.md#upgrading-to-squad-20) and the [tested upgrade paths](./scenarios/upgrading.md#tested-upgrade-paths); the full list of breaking changes is in the [table below](#breaking--behavior-changes-v200).
+
+### Highlights (v2.0.0)
+
 - **Seven AI hosts via `--client`** — `squad init --client <list>` and `squad upgrade [--dry-run] --client <list>` project the Squad coordinator and `squad_state` MCP wiring across GitHub Copilot (`copilot`), Claude Code (`claude`), Kiro (`kiro`), OpenCode (`opencode`), Cursor (`cursor`), OpenAI Codex (`codex`), and Google Antigravity (`antigravity`), or `all`, persisting portable slugs in `.squad/config.json` `clients[]`
 - **Shared charters & capability negotiation (`@bradygaster/squad-sdk/client`)** — Every host uses one coordinator that dispatches specialists from shared `.squad/agents/<member>/charter.md` files; `HostProjection`, `ClientAdapter`, and `CAPABILITY_TOKENS_BY_HOST` negotiate effective capabilities as `client ∩ backend ∩ policy` (`@bradygaster/squad-sdk/clients` remains as a deprecated alias)
 - **Transactional casting repair & roster backfill** — `squad upgrade` normalizes handwritten `.squad/casting/registry.json` files per record (preserving retired/inactive agents and extra metadata), backfills empty registries from `team.md` using `.squad/agents/<id>/charter.md` folder IDs, archives pre-repair originals under `.squad/casting/handwritten-archive-<sha256>/`, and fails closed with an explicit `dropped` list when entries cannot be proven
