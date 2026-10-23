@@ -301,9 +301,10 @@ jobs:
           PUBLISH_PACKAGE_MANAGERS: ${{ inputs.publish_package_managers }}
         run: |
           set -euo pipefail
-          [ "$NPM_RESULT" = success ] && [ "$NPM_OUTCOME" = COMPLETE ] || {
-            echo "::error::npm did not reconcile COMPLETE (job=$NPM_RESULT outcome=$NPM_OUTCOME)"; exit 1;
-          }
+          if [ "$NPM_RESULT" != success ] || [ "$NPM_OUTCOME" != COMPLETE ]; then
+            echo "::error::npm did not reconcile COMPLETE (job=$NPM_RESULT outcome=$NPM_OUTCOME)"
+            exit 1
+          fi
           if [ "$BUILD_STANDALONE" = true ] || [ "$PUBLISH_STANDALONE" = true ] || [ "$PUBLISH_PACKAGE_MANAGERS" = true ]; then
             [ "$STANDALONE_RESULT" = success ] || {
               echo "::error::selected standalone/package-manager channels did not complete (job=$STANDALONE_RESULT)"; exit 1;
