@@ -41,10 +41,6 @@
       "types": "./dist/cli/shell/stream-bridge.d.ts",
       "import": "./dist/cli/shell/stream-bridge.js"
     },
-    "./shell/sdk-bridge": {
-      "types": "./dist/cli/shell/sdk-bridge.d.ts",
-      "import": "./dist/cli/shell/sdk-bridge.js"
-    },
     "./shell/router": {
       "types": "./dist/cli/shell/router.d.ts",
       "import": "./dist/cli/shell/router.js"
