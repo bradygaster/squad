@@ -85,8 +85,8 @@ jobs:
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full lowercase 40-hex SHA, got '$SOURCE_SHA'"; exit 1; }
           head="$(git rev-parse HEAD)"
           test "$head" = "$SOURCE_SHA" || { echo "::error::checkout HEAD $head != requested $SOURCE_SHA"; exit 1; }
-          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
-          echo "Verifying $SOURCE_SHA (tree $(git rev-parse HEAD^{tree}))"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          echo "Verifying $SOURCE_SHA (tree $(git rev-parse 'HEAD^{tree}'))"
           mkdir -p "$EVIDENCE_DIR"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
@@ -224,7 +224,7 @@ jobs:
           node scripts/release/pack-evidence.mjs --out "$EVIDENCE_DIR" --expect-version "$VERSION" --expect-sdk-dep ">=$VERSION"
           node -e '
             const p = require(process.env.EVIDENCE_DIR + "/pack-evidence.json").packages;
-            const out = require("fs"); out.appendFileSync(process.env.GITHUB_OUTPUT, `sdk_sha256=${p["@bradygaster/squad-sdk"].sha256}\ncli_sha256=${p["@bradygaster/squad-cli"].sha256}\n`);
+            const out = require("fs"); out.appendFileSync(process.env.GITHUB_OUTPUT, "sdk_sha256=" + p["@bradygaster/squad-sdk"].sha256 + "\ncli_sha256=" + p["@bradygaster/squad-cli"].sha256 + "\n");
           '
 
       - name: Isolated-prefix install of the exact packed pair (self-upgrade shape)
