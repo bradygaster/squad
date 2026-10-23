@@ -1593,16 +1593,35 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 // Self-upgrade: upgrade the CLI package itself
 // ============================================================================
 
+export type SelfUpgradePackageManager = 'npm' | 'pnpm' | 'yarn';
+
+/** Minimal shape of `child_process.execSync` used by the self-upgrade; injectable for tests. */
+export type SelfUpgradeExec = (command: string, options: { stdio: 'inherit' }) => unknown;
+
 export interface SelfUpgradeOptions {
   insider?: boolean;
   force?: boolean;
+  /** Override the detected package manager (tests, or a future `--pm` flag). */
+  packageManager?: SelfUpgradePackageManager;
+  /** Override the shell-out; defaults to `child_process.execSync`. */
+  exec?: SelfUpgradeExec;
+}
+
+/** The exact command `selfUpgradeCli` runs for a package manager and dist-tag. */
+export function selfUpgradeCommand(packageManager: SelfUpgradePackageManager, insider: boolean): string {
+  const pkg = `@bradygaster/squad-cli@${insider ? 'insider' : 'latest'}`;
+  switch (packageManager) {
+    case 'pnpm': return `pnpm add -g ${pkg}`;
+    case 'yarn': return `yarn global add ${pkg}`;
+    default: return `npm install -g ${pkg}`;
+  }
 }
 
 /**
  * Detect the package manager that installed the CLI.
  * Returns 'npm', 'pnpm', 'yarn', or 'npm' as fallback.
  */
-function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
+export function detectPackageManager(): SelfUpgradePackageManager {
   const execPath = process.env['npm_execpath'] ?? '';
   if (execPath.includes('pnpm')) return 'pnpm';
   if (execPath.includes('yarn')) return 'yarn';
@@ -1621,28 +1640,14 @@ function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
  * the detected installer name.
  */
 export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
-  const { execSync } = await import('node:child_process');
-  const tag = options.insider ? 'insider' : 'latest';
-  const pkg = `@bradygaster/squad-cli@${tag}`;
-  const pm = detectPackageManager();
-
-  let cmd: string;
-  switch (pm) {
-    case 'pnpm':
-      cmd = `pnpm add -g ${pkg}`;
-      break;
-    case 'yarn':
-      cmd = `yarn global add ${pkg}`;
-      break;
-    default:
-      cmd = `npm install -g ${pkg}`;
-      break;
-  }
+  const exec: SelfUpgradeExec = options.exec ?? (await import('node:child_process')).execSync;
+  const pm = options.packageManager ?? detectPackageManager();
+  const cmd = selfUpgradeCommand(pm, options.insider === true);
 
   info(`Self-upgrading via ${pm}: ${cmd}`);
 
   try {
-    execSync(cmd, { stdio: 'inherit' });
+    exec(cmd, { stdio: 'inherit' });
   } catch (err: unknown) {
     // UPGRADE-EPERM-FALSE-SUCCESS fix: do NOT swallow self-upgrade failures.
     // Previously this only printed a warning and returned, causing the caller

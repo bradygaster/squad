@@ -278,7 +278,7 @@ function isProfileOwned(canonical: string, b: ProfileBoundary): boolean {
 
 /**
  * Canonical absolute form of a directory for boundary comparisons: resolves 8.3 short
- * names on Windows (`C:\Users\TAMIRD~1` vs `C:\Users\tamirdresher`) and symlinked homes.
+ * names on Windows (`C:\PROGRA~1` vs `C:\Program Files`) and symlinked homes.
  * Falls back to `path.resolve` when the path does not exist.
  */
 function canonicalDir(p: string): string | null {

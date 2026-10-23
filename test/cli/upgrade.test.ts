@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, ensureCastingDefaults, selfUpgradeCli, migrateLegacyRaiAgent } from '@bradygaster/squad-cli/core/upgrade';
+import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, ensureCastingDefaults, selfUpgradeCli, selfUpgradeCommand, detectPackageManager, migrateLegacyRaiAgent } from '@bradygaster/squad-cli/core/upgrade';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
@@ -513,7 +513,61 @@ describe('CLI: upgrade command', () => {
 
   /* ── --self flag (selfUpgradeCli) ──────────────────────────── */
 
-  it.todo('selfUpgradeCli shells out with correct package tag (ESM spy limitation)');
+  describe('selfUpgradeCli shells out with the correct package manager and dist-tag', () => {
+    const EXPECTED: Record<'npm' | 'pnpm' | 'yarn', Record<'latest' | 'insider', string>> = {
+      npm: { latest: 'npm install -g @bradygaster/squad-cli@latest', insider: 'npm install -g @bradygaster/squad-cli@insider' },
+      pnpm: { latest: 'pnpm add -g @bradygaster/squad-cli@latest', insider: 'pnpm add -g @bradygaster/squad-cli@insider' },
+      yarn: { latest: 'yarn global add @bradygaster/squad-cli@latest', insider: 'yarn global add @bradygaster/squad-cli@insider' },
+    };
+
+    for (const pm of ['npm', 'pnpm', 'yarn'] as const) {
+      for (const tag of ['latest', 'insider'] as const) {
+        it(`${pm} × ${tag}: runs exactly "${EXPECTED[pm][tag]}" with inherited stdio`, async () => {
+          const exec = vi.fn();
+          await selfUpgradeCli({ insider: tag === 'insider', packageManager: pm, exec });
+          expect(exec).toHaveBeenCalledTimes(1);
+          expect(exec).toHaveBeenCalledWith(EXPECTED[pm][tag], { stdio: 'inherit' });
+          expect(selfUpgradeCommand(pm, tag === 'insider')).toBe(EXPECTED[pm][tag]);
+        });
+      }
+    }
+
+    it('detects the package manager from npm_execpath / npm_config_user_agent (npm fallback)', async () => {
+      const saved = { execpath: process.env['npm_execpath'], ua: process.env['npm_config_user_agent'] };
+      try {
+        const cases: Array<[string | undefined, string | undefined, 'npm' | 'pnpm' | 'yarn']> = [
+          ['/usr/lib/node_modules/pnpm/bin/pnpm.cjs', undefined, 'pnpm'],
+          ['/usr/lib/node_modules/yarn/bin/yarn.js', undefined, 'yarn'],
+          ['/usr/lib/node_modules/npm/bin/npm-cli.js', 'npm/10.9.0 node/v22.0.0', 'npm'],
+          [undefined, 'pnpm/9.0.0 npm/? node/v22.0.0', 'pnpm'],
+          [undefined, 'yarn/1.22.0 npm/? node/v22.0.0', 'yarn'],
+          [undefined, undefined, 'npm'],
+        ];
+        for (const [execpath, ua, expected] of cases) {
+          if (execpath === undefined) delete process.env['npm_execpath']; else process.env['npm_execpath'] = execpath;
+          if (ua === undefined) delete process.env['npm_config_user_agent']; else process.env['npm_config_user_agent'] = ua;
+          expect(detectPackageManager(), `execpath=${execpath} ua=${ua}`).toBe(expected);
+          const exec = vi.fn();
+          await selfUpgradeCli({ insider: true, exec });
+          expect(exec).toHaveBeenCalledWith(EXPECTED[expected].insider, { stdio: 'inherit' });
+        }
+      } finally {
+        if (saved.execpath === undefined) delete process.env['npm_execpath']; else process.env['npm_execpath'] = saved.execpath;
+        if (saved.ua === undefined) delete process.env['npm_config_user_agent']; else process.env['npm_config_user_agent'] = saved.ua;
+      }
+    });
+
+    it('surfaces package-manager failures as a thrown error with the retry command (no false success)', async () => {
+      const eacces = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      await expect(selfUpgradeCli({ packageManager: 'npm', exec: () => { throw eacces; } }))
+        .rejects.toThrow(/Self-upgrade failed: Permission denied\. Try: sudo npm install -g @bradygaster\/squad-cli@latest/);
+      const ebusy = Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+      await expect(selfUpgradeCli({ insider: true, packageManager: 'pnpm', exec: () => { throw ebusy; } }))
+        .rejects.toThrow(/in use .*pnpm add -g @bradygaster\/squad-cli@insider/);
+      await expect(selfUpgradeCli({ packageManager: 'yarn', exec: () => { throw new Error('boom'); } }))
+        .rejects.toThrow(/Upgrade failed\. Try running manually: yarn global add @bradygaster\/squad-cli@latest/);
+    });
+  });
 
   /* ── ensureDirectories includes .squad/casting ──────────────── */
 
