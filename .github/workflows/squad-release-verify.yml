@@ -210,6 +210,7 @@ jobs:
         run: node --test test/*.test.cjs
 
       - name: Reconcile skip / todo / xfail buckets (counts must sum)
+        if: always()
         run: node scripts/release/test-reconciliation.mjs --report "$EVIDENCE_DIR/vitest-report.json" --out "$EVIDENCE_DIR" --fail-on-unexplained
 
       - name: Build docs site
@@ -253,12 +254,14 @@ jobs:
 
       - name: Name evidence artifact
         id: artifact
+        if: always()
         run: echo "name=release-evidence-${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload evidence bundle
+      - name: Upload evidence bundle (also on failure, for diagnosis)
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: evidence/
           retention-days: 90
-          if-no-files-found: error
+          if-no-files-found: warn
