@@ -163,6 +163,27 @@ describe('standalone release handoff', () => {
     expect(stepNamed(publish, 'Re-assert tag identity, publish and verify the release').run).toContain('gh release edit "$TAG" --draft=false');
   });
 
+  it('uses the shared publish-identity helper for release, npm recovery, and standalone paths', () => {
+    const releaseGuard = stepNamed(
+      releaseWorkflow.jobs.release,
+      'Re-assert tag identity and create the GitHub release as a draft',
+    ).run ?? '';
+    const npmGuard = stepNamed(
+      npmPublishWorkflow.jobs.prepare,
+      'Validate inputs and immutable release identity',
+    ).run ?? '';
+    const standaloneGuard = stepNamed(standaloneWorkflow.jobs.guard, 'Validate inputs').run ?? '';
+    for (const [name, guard] of [
+      ['release', releaseGuard],
+      ['npm recovery', npmGuard],
+      ['standalone', standaloneGuard],
+    ] as const) {
+      expect(guard, name).toContain('scripts/release/assert-publish-identity.mjs');
+    }
+    expect(npmGuard).not.toMatch(/git (fetch|rev-list).*refs\/tags/);
+    expect(standaloneGuard).not.toMatch(/git ls-remote.*refs\/tags/);
+  });
+
   it('defaults preview channels to insider with a preview alias, both as dispatch inputs', () => {
     const inputs = releaseWorkflow.on?.workflow_dispatch?.inputs as Record<string, Record<string, unknown>>;
     expect(inputs.npm_dist_tag).toMatchObject({ default: 'insider', type: 'choice', options: ['insider', 'preview'] });

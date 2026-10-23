@@ -131,8 +131,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout HEAD differs from source_sha"; exit 1; }
           test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA $DISPATCH_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
           test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition $WORKFLOW_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
-          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --no-tags
-          test "$(git rev-list -n 1 "refs/tags/${TAG}")" = "$SOURCE_SHA" || { echo "::error::tag $TAG does not target source_sha"; exit 1; }
+          node scripts/release/assert-publish-identity.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --dispatch-sha "$DISPATCH_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" \
+            --tag "$TAG"
 
           stable_release=false
           if [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then

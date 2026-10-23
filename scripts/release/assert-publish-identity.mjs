@@ -25,7 +25,21 @@ if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(preview|insider)\.(0|[1-9]\d*
 
 const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
 const head = git('rev-parse', 'HEAD');
-const remoteTag = git('ls-remote', '--exit-code', 'origin', `refs/tags/${tag}`).split(/\s+/)[0];
+const directRef = `refs/tags/${tag}`;
+const peeledRef = `${directRef}^{}`;
+const remoteRefs = git('ls-remote', '--exit-code', '--tags', 'origin', directRef, peeledRef)
+  .split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => {
+    const [sha, ref, ...extra] = line.trim().split(/\s+/);
+    if (!/^[0-9a-f]{40}$/.test(sha ?? '') || !ref || extra.length) {
+      throw new Error(`Invalid git ls-remote output for ${tag}: '${line}'`);
+    }
+    return [ref, sha];
+  });
+const byRef = new Map(remoteRefs);
+const remoteTag = byRef.get(peeledRef) ?? byRef.get(directRef);
+if (!remoteTag) throw new Error(`Remote tag ${tag} did not resolve to a commit`);
 for (const [name, value] of [
   ['dispatch SHA', dispatchSha],
   ['workflow definition SHA', workflowSha],

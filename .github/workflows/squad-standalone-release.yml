@@ -142,7 +142,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout differs from source_sha"; exit 1; }
           test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA differs from source_sha"; exit 1; }
           test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition differs from source_sha"; exit 1; }
-          test "$(git ls-remote --exit-code origin "refs/tags/${tag}" | cut -f1)" = "$SOURCE_SHA" || { echo "::error::release tag does not target source_sha"; exit 1; }
+          node scripts/release/assert-publish-identity.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --dispatch-sha "$DISPATCH_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" \
+            --tag "$tag"
           if [ "${{ inputs.publish_package_managers }}" = true ] && [ "${{ inputs.upload }}" != true ]; then
             echo "::error::publish_package_managers requires upload=true"; exit 1
           fi
