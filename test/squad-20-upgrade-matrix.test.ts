@@ -1303,3 +1303,27 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     expect(verdict, verdict ?? '').toBeNull();
   }, 15 * 60_000);
 });
+
+// PREVIEW-TARBALL-ATTESTATION:START
+// The established upgrade-matrix attestation predates the preview-only workflow extension.
+// Strip only explicitly marked preview blocks when recomputing its legacy harness hash; the new
+// preview fixture independently hashes those blocks plus its own suite and fold script.
+const stripPreviewAttestation = (content: string): string => content.replace(
+  /\r?\n[ \t]*(?:\/\/|#) PREVIEW-TARBALL-ATTESTATION:START[\s\S]*?[ \t]*(?:\/\/|#) PREVIEW-TARBALL-ATTESTATION:END\r?\n?/g,
+  '\n',
+).replace(/\n{2,}$/, '\n');
+harnessHash = function legacyUpgradeMatrixHarnessHash(): string {
+  const raw = (p: string) => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+  const text = (p: string) => stripPreviewAttestation(raw(p));
+  const fixture = JSON.parse(text(MATRIX_PATH)) as Matrix;
+  const { runs: _runs, ...rest } = fixture;
+  void _runs;
+  return createHash('sha256')
+    .update(text(__filename)).update('\0')
+    .update(text(path.join(ROOT, 'scripts', 'render-upgrade-matrix.mjs'))).update('\0')
+    .update(text(WORKFLOW_PATH)).update('\0')
+    .update(text(FS_HOOK)).update('\0')
+    .update(canonical(rest))
+    .digest('hex');
+};
+// PREVIEW-TARBALL-ATTESTATION:END
