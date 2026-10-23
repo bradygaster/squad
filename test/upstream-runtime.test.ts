@@ -487,6 +487,11 @@ describe('resolveUpstreams: TOCTOU-safe reads and traversal budgets (Q review)',
   })();
 
   // Skips LOUDLY (reason in the reporter) when this host cannot create links; it never passes vacuously.
+  // On CI (ubuntu runners can always symlink) a skip would hide the whole containment suite, so fail instead.
+  it('link-based containment tests are exercised on CI (symlinks available)', () => {
+    if (process.env['CI'] && process.platform !== 'win32') expect(canLink, 'CI runner cannot create symlinks; the containment tests would be skipped silently').toBe(true);
+  });
+
   it.skipIf(!canLink)('refuses when a directory on the path is swapped for a junction/symlink between the lstat check and open (deterministic hook) [needs symlink/junction privilege]', () => {
     const outside = path.join(tmp, 'outside-squad');
     fs.mkdirSync(outside, { recursive: true });
@@ -726,6 +731,58 @@ describe('resolveUpstreams: TOCTOU-safe reads and traversal budgets (Q review)',
       const rel = path.relative(path.join(outerSquad, '_upstream_repos'), victimRoot);
       return tryLink(rel, path.join(outerSquad, '_upstream_repos', 'inner'), 'dir');
     });
+  });
+
+  it.skipIf(!canLink)('depth 1: a link at the project\'s own _upstream_repos or _upstream_repos/<name> is refused before anything is followed (Bubu containment gate) [needs symlink/junction privilege]', () => {
+    const victim = squad(path.join(tmp, 'victim'), { decisions: '# VICTIM-PRIVATE-DECISIONS\n', skills: { secret: 'VICTIM-SECRET-SKILL' } });
+    const victimRoot = path.dirname(victim);
+    const gitEntry = { name: 'org', type: 'git', source: 'https://example.com/org.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: new Date().toISOString() };
+    const scenario = (label: string, plant: (repoSquad: string) => boolean): void => {
+      const repo = squad(path.join(tmp, `repo-${label}`), { upstreams: [gitEntry] });
+      expect(plant(repo), `${label}: fixture link could not be created`).toBe(true);
+      const res = resolveUpstreams(repo)!;
+      const org = res.upstreams[0]!;
+      expect(org.status, `${label}: ${org.diagnostic ?? ''}`).toBe('invalid');
+      expect(org.diagnostic, label).toMatch(/symlink\/junction|not a directory inside the upstream snapshot|does not canonicalize inside/);
+      expect(org.skills, label).toEqual([]);
+      expect(org.decisions, label).toBeNull();
+      const report = formatUpstreamReport(res, buildEffectiveUpstreamContext(res, []), { detail: true });
+      expect(report, label).not.toMatch(/VICTIM-PRIVATE-DECISIONS|VICTIM-SECRET-SKILL/);
+      expect(report, `${label}: the report must not disclose the link target`).not.toContain(victimRoot);
+      expect(checkUpstreams(repo)!.status, label).not.toBe('pass');
+    };
+    // absolute link at <name>
+    scenario('link-at-name', (sq) => { fs.mkdirSync(path.join(sq, '_upstream_repos'), { recursive: true }); return tryLink(victimRoot, path.join(sq, '_upstream_repos', 'org'), 'dir'); });
+    // relative link at <name> (as a committed symlink in the user's checkout would be)
+    scenario('relative-link-at-name', (sq) => { fs.mkdirSync(path.join(sq, '_upstream_repos'), { recursive: true }); return tryLink(path.relative(path.join(sq, '_upstream_repos'), victimRoot), path.join(sq, '_upstream_repos', 'org'), 'dir'); });
+    // link at _upstream_repos itself
+    scenario('link-at-upstream-repos', (sq) => { const elsewhere = path.join(tmp, `elsewhere-${Math.random().toString(36).slice(2)}`); fs.mkdirSync(elsewhere, { recursive: true }); return tryLink(victimRoot, path.join(elsewhere, 'org'), 'dir') && tryLink(elsewhere, path.join(sq, '_upstream_repos'), 'dir'); });
+  });
+
+  it.skipIf(!canLink)('root-level TOCTOU: swapping _upstream_repos/<name> (or _upstream_repos) for a link between vetting and anchoring the reader is refused (Q) [needs symlink/junction privilege]', () => {
+    const victim = squad(path.join(tmp, 'victim'), { decisions: '# VICTIM-PRIVATE-DECISIONS\n' });
+    const victimRoot = path.dirname(victim);
+    const gitEntry = { name: 'org', type: 'git', source: 'https://example.com/org.git', added_at: '2026-01-01T00:00:00.000Z', last_synced: new Date().toISOString() };
+    for (const target of ['name', 'repos'] as const) {
+      const repo = squad(path.join(tmp, `repo-swap-${target}`), { upstreams: [gitEntry] });
+      squad(path.join(repo, '_upstream_repos', 'org'), { decisions: '# genuine\n' });
+      let swapped = false;
+      const res = resolveUpstreams(repo, undefined, {
+        beforeAnchor: (cloneDir) => {
+          if (swapped) return;
+          // Race: validation passed on real directories; now replace the root (or its parent) with a link.
+          if (target === 'name') { fs.rmSync(cloneDir, { recursive: true, force: true }); swapped = tryLink(victimRoot, cloneDir, 'dir'); }
+          else { const reposDir = path.dirname(cloneDir); fs.rmSync(reposDir, { recursive: true, force: true }); const elsewhere = path.join(tmp, `elsewhere-swap-${target}`); fs.mkdirSync(elsewhere, { recursive: true }); swapped = tryLink(victimRoot, path.join(elsewhere, 'org'), 'dir') && tryLink(elsewhere, reposDir, 'dir'); }
+        },
+      })!;
+      expect(swapped, `${target}: the swap must have happened for this test to prove anything`).toBe(true);
+      const org = res.upstreams[0]!;
+      expect(org.status, `${target}: ${org.diagnostic ?? ''}`).toBe('invalid');
+      expect(org.diagnostic, target).toMatch(/changed between validation and read|no longer a regular directory|symlink\/junction|outside the upstream snapshot|does not canonicalize/);
+      expect(org.decisions, target).toBeNull();
+      const report = formatUpstreamReport(res, buildEffectiveUpstreamContext(res, []), { detail: true });
+      expect(report, target).not.toContain('VICTIM-PRIVATE-DECISIONS');
+    }
   });
 
   it('a regular nested clone directory (no links on the chain) is still inherited', () => {

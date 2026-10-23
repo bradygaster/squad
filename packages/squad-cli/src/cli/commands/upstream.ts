@@ -41,12 +41,15 @@ export function unsafeGitSourceReason(source: string): string | null {
   if (s.startsWith('-')) return 'starts with "-" and could be parsed as a git option';
   if (/^[a-z][a-z0-9+.-]*::/i.test(s)) return 'uses a git remote helper (ext::, fd::, …), which is not allowed';
   if (/[\s\0\r\n\t]/.test(s)) return 'contains whitespace or control characters';
+  // Embedded credentials (https://user:token@host/…, ssh://user:pw@host/…) are never accepted:
+  // they would be persisted in upstream.json and passed on the git command line.
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]*@/i.test(s)) return 'embeds credentials in the URL (user:secret@host); use a credential helper or SSH key instead';
   // Host: letters/digits/dots/dashes, must not start with a dash or dot, optional :port.
   // User: letters/digits/._-, must not start with a dash. Path: must not start with a dash.
   const HOST = '[A-Za-z0-9][A-Za-z0-9.-]*(?::\\d{1,5})?';
   const USER = '[A-Za-z0-9._][A-Za-z0-9._-]*';
   const PATH_NO_DASH = '(?!-)[^\\s]+';
-  if (new RegExp(`^https://(?:${USER}(?::[^@/\\s]*)?@)?${HOST}/${PATH_NO_DASH}$`).test(s)) return null;
+  if (new RegExp(`^https://(?:${USER}@)?${HOST}/${PATH_NO_DASH}$`).test(s)) return null;
   if (new RegExp(`^ssh://(?:${USER}@)?${HOST}/${PATH_NO_DASH}$`).test(s)) return null;
   if (new RegExp(`^${USER}@[A-Za-z0-9][A-Za-z0-9.-]*:(?![/-])[^:\\s]+$`).test(s)) return null; // git@host:owner/repo
   if (/^(https|ssh):\/\//i.test(s) || /^[^@\s]+@[^:\s]+:/.test(s)) {
@@ -80,10 +83,15 @@ export function gitSyncEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proces
   };
 }
 
+/** Display form of a source for messages: user:secret@ becomes ***@ so secrets never reach stdout/stderr. */
+export function redactGitSource(source: string): string {
+  return source.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1***@');
+}
+
 function assertSafeGitSource(source: string): void {
   const reason = unsafeGitSourceReason(source);
   if (reason) {
-    fatal(`Refusing git upstream source "${source}": ${reason}.`);
+    fatal(`Refusing git upstream source "${redactGitSource(source)}": ${reason}.`);
   }
 }
 import type { UpstreamConfig, UpstreamSource } from '@bradygaster/squad-sdk';
@@ -189,26 +197,28 @@ export async function upstreamCommand(args: string[]): Promise<void> {
       entry.ref = ref;
     }
 
-    data.upstreams.push(entry);
-    writeUpstreams(upstreamFile, data);
-
-    // Auto-clone for git sources
+    // Transactional: a git upstream is registered only once its clone exists. A failed clone
+    // leaves upstream.json untouched (no "registered but broken" state); a failed explicit
+    // `squad upstream sync` of an already-registered entry is the allowed, different case.
     if (type === 'git') {
       const reposDir = path.join(squadDir, '_upstream_repos');
       const cloneDir = path.join(reposDir, name);
       storage.mkdirSync(reposDir, { recursive: true });
       ensureGitignoreEntry(repoDir, '.squad/_upstream_repos/');
-
+      const ref = entry.ref || 'main';
       try {
-        const ref = entry.ref || 'main';
         execFileSync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', '--', source, cloneDir], { stdio: 'pipe', timeout: 60000, env: gitSyncEnv() });
-        entry.last_synced = new Date().toISOString();
-        writeUpstreams(upstreamFile, data);
-        success(`Cloned upstream repo to .squad/_upstream_repos/${name}`);
       } catch (err) {
-        warn(`Clone failed — run "squad upstream sync" to retry: ${(err as Error).message}`);
+        if (storage.existsSync(cloneDir)) { try { storage.deleteDirSync(cloneDir); } catch { /* best effort */ } }
+        fatal(`Clone failed; upstream "${name}" was not added (upstream.json unchanged). Fix the source or network and re-run "squad upstream add". git: ${(err as Error).message.split('\n')[0]}`);
+        return;
       }
+      entry.last_synced = new Date().toISOString();
+      success(`Cloned upstream repo to .squad/_upstream_repos/${name}`);
     }
+
+    data.upstreams.push(entry);
+    writeUpstreams(upstreamFile, data);
 
     success(`Added upstream: ${name} (${type}: ${entry.source})`);
     if (type === 'local') {
@@ -288,7 +298,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
       } else if (upstream.type === 'git') {
         const unsafe = unsafeGitSourceReason(upstream.source);
         if (unsafe) {
-          warn(`${upstream.name}: refusing to sync git source "${upstream.source}": ${unsafe}. Remove it with "squad upstream remove ${upstream.name}".`);
+          warn(`${upstream.name}: refusing to sync git source "${redactGitSource(upstream.source)}": ${unsafe}. Remove it with "squad upstream remove ${upstream.name}".`);
           continue;
         }
         const refToSync = upstream.ref || 'main';

@@ -132,6 +132,11 @@ export interface ResolveUpstreamsOptions {
   readLimits?: Partial<UpstreamReadLimits>;
   /** Test seam between stat and open; production callers leave it unset. */
   beforeOpen?: UpstreamReadHook;
+  /**
+   * Test seam between vetting a nested snapshot root and re-validating the anchored
+   * reader (deterministic root-swap races); production callers leave it unset.
+   */
+  beforeAnchor?: UpstreamReadHook;
 }
 
 /** One inherited skill with provenance and precedence outcome. */

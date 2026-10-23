@@ -51,7 +51,6 @@ describe('unsafeGitSourceReason: transport allow-list', () => {
     ['ssh://git@github.com/acme/platform.git', null],
     ['git@github.com:acme/platform.git', null],
     ['ssh://git@ssh.dev.azure.com:22/v3/org/project/repo', null],
-    ['https://user:token@ghe.example.com/acme/platform.git', null],
   ])('accepts %s', (src, expected) => {
     expect(unsafeGitSourceReason(src)).toBe(expected);
   });
@@ -74,6 +73,10 @@ describe('unsafeGitSourceReason: transport allow-list', () => {
     ['https://github.com/-oProxyCommand=calc.exe', /option-injection guard/],
     ['https://-oProxyCommand=calc.exe/x', /option-injection guard/],
     ['ssh://git@github.com:notaport/x', /option-injection guard/],
+    // Q: embedded credentials are never accepted (they would be persisted and passed on argv)
+    ['https://user:ghp_SECRET123@github.com/acme/platform.git', /embeds credentials/],
+    ['https://:ghp_SECRET123@github.com/acme/platform.git', /embeds credentials/],
+    ['ssh://user:pw@github.com/acme/platform.git', /embeds credentials/],
   ])('refuses %s', (src, pattern) => {
     expect(unsafeGitSourceReason(src)).toMatch(pattern);
   });
@@ -104,6 +107,31 @@ describe('squad upstream add: dangerous sources fail safely', () => {
     expect(execFileSync, 'git is never spawned for a refused source').not.toHaveBeenCalled();
   });
 
+  it('never persists, prints or passes an embedded secret: add refuses before any write or spawn (Q credentials)', async () => {
+    const SECRET = 'ghp_SECRET_SHOULD_NEVER_LEAK_8f3a';
+    const log = vi.mocked(console.log), warn = vi.mocked(console.warn), err = vi.mocked(console.error);
+    let thrown: unknown;
+    try { await upstreamCommand(['add', `https://alice:${SECRET}@github.com/acme/platform.git`, '--name', 'leak']); } catch (e) { thrown = e; }
+    expect(thrown).toBeInstanceOf(SquadError);
+    expect(String((thrown as Error).message), 'the error must not echo the secret').not.toContain(SECRET);
+    expect(fs.existsSync(upstreamJson()), 'upstream.json must not be written').toBe(false);
+    expect(execFileSync, 'git must not be spawned').not.toHaveBeenCalled();
+    const printed = [...log.mock.calls, ...warn.mock.calls, ...err.mock.calls].flat().map(String).join('\n');
+    expect(printed, 'nothing printed may contain the secret').not.toContain(SECRET);
+  });
+
+  it('is transactional: a failed clone leaves upstream.json unchanged and the clone dir absent (Q 3a)', async () => {
+    execFileSync.mockImplementation(() => { throw new Error('fatal: could not read from remote repository'); });
+    await expect(upstreamCommand(['add', 'https://github.com/acme/platform.git', '--name', 'platform'])).rejects.toThrow(/was not added \(upstream\.json unchanged\)/);
+    expect(fs.existsSync(upstreamJson()), 'no config written when the clone fails').toBe(false);
+    expect(fs.existsSync(path.join(tmp, '.squad', '_upstream_repos', 'platform'))).toBe(false);
+    // An existing config is left byte-identical too.
+    fs.writeFileSync(upstreamJson(), JSON.stringify({ upstreams: [{ name: 'org', type: 'local', source: tmp, added_at: 'x', last_synced: null }] }, null, 2) + '\n');
+    const before = fs.readFileSync(upstreamJson(), 'utf8');
+    await expect(upstreamCommand(['add', 'https://github.com/acme/platform.git', '--name', 'platform'])).rejects.toThrow(SquadError);
+    expect(fs.readFileSync(upstreamJson(), 'utf8')).toBe(before);
+  });
+
   it('clones an allowed https source with "--" before the positionals and the hardened environment', async () => {
     execFileSync.mockImplementation(() => Buffer.from(''));
     await upstreamCommand(['add', 'https://github.com/acme/platform.git', '--name', 'platform', '--ref', 'main']);
@@ -118,6 +146,15 @@ describe('squad upstream add: dangerous sources fail safely', () => {
     expect(opts.env?.['GIT_CONFIG_PARAMETERS']).toContain("'protocol.file.allow=never'");
     const recorded = JSON.parse(fs.readFileSync(upstreamJson(), 'utf8'));
     expect(recorded.upstreams[0].source).toBe('https://github.com/acme/platform.git');
+    expect(recorded.upstreams[0].last_synced, 'registered only after a successful clone, with last_synced set').toBeTruthy();
+  });
+
+  it('the component regexes run before spawn: a URL that passes the scheme check but fails the component check never reaches git', async () => {
+    for (const src of ['ssh://-oProxyCommand=calc.exe/repo.git', 'git@-x:acme/platform.git', 'https://github.com/-oProxyCommand=x']) {
+      await expect(upstreamCommand(['add', src, '--name', 'x'])).rejects.toThrow(SquadError);
+    }
+    expect(execFileSync).not.toHaveBeenCalled();
+    expect(fs.existsSync(upstreamJson())).toBe(false);
   });
 });
 

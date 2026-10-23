@@ -158,14 +158,37 @@ class ContainedReader {
   /**
    * Require `dir` to be a real directory reached from this reader's root through regular
    * directories only (no link at any component, including the last). Used to vet the root
-   * of a nested snapshot before a new reader is anchored there.
+   * of a snapshot before a new reader is anchored there. Returns the canonical path of the
+   * vetted directory so the caller can re-check it after constructing the new reader.
    */
-  assertRegularDirectory(dir: string): void {
-    const st = this.lstatChain(dir);
-    if (!this.fsBacked) return;
-    if (st === null || !st.isDirectory()) {
+  assertRegularDirectory(dir: string): string | null {
+    const st = this.lstatChain(dir); // throws on any link in the chain
+    if (!this.fsBacked) return path.resolve(dir);
+    if (st === null) return null; // absent: the caller reports "not materialized"
+    if (!st.isDirectory()) {
       throw new UpstreamReadRefused(`${dir} is not a directory inside the upstream snapshot ${this.root}`);
     }
+    const real = safeRealpath(dir);
+    if (real === null || !isWithin(this.realRoot, real)) {
+      throw new UpstreamReadRefused(`${dir} does not canonicalize inside the upstream snapshot ${this.root}`);
+    }
+    return real;
+  }
+
+  /**
+   * Close the check-then-use window between vetting a directory and anchoring a reader at
+   * it: the new reader's canonical root must still equal the pre-validated canonical path.
+   */
+  assertRootStill(expectedReal: string): void {
+    if (!this.fsBacked) return;
+    const real = safeRealpath(this.absRoot);
+    if (real === null || !samePathCI(real, expectedReal)) {
+      throw new UpstreamReadRefused(`${this.root} changed between validation and read (${real ?? 'unresolvable'} ≠ ${expectedReal}); refusing`);
+    }
+    // Also re-walk: a link may have been introduced at the root itself.
+    let st: fs.Stats;
+    try { st = fs.lstatSync(this.absRoot); } catch { throw new UpstreamReadRefused(`${this.root} vanished between validation and read`); }
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new UpstreamReadRefused(`${this.root} is no longer a regular directory; refusing`);
   }
 
   exists(p: string): boolean {
@@ -251,6 +274,10 @@ function safeRealpath(p: string): string | null {
   } catch {
     return null;
   }
+}
+
+function samePathCI(a: string, b: string): boolean {
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
 function isWithin(root: string, target: string): boolean {
@@ -499,6 +526,7 @@ function resolveOne(
   budget: ReadBudget,
   beforeOpen?: UpstreamReadHook,
   parentReader: ContainedReader | null = null,
+  options?: Pick<ResolveUpstreamsOptions, 'beforeAnchor'>,
 ): ResolvedWithReader {
   // Relative sources resolve against the declaring squad's project root, never the cwd,
   // so a bridge launched from a monorepo subfolder sees the same upstreams as the root.
@@ -538,13 +566,25 @@ function resolveOne(
         return done(emptyUpstream(entry, frame, 'invalid', `${entry.name}: upstream name is not a plain identifier; not read`));
       }
       const cloneDir = path.join(squadDir, '_upstream_repos', entry.name);
-      // A nested clone lives inside a third-party snapshot: every component from the PARENT
-      // snapshot root down to `_upstream_repos/<name>` (included) must be a regular directory,
-      // otherwise a committed link could anchor the new reader anywhere on this machine.
-      if (parentReader) parentReader.assertRegularDirectory(cloneDir);
-      const reader = contained(cloneDir);
-      const cloneSquadDir = findSquadDir(cloneDir, reader);
-      if (!cloneSquadDir) {
+      // Every component from the enclosing root down to `_upstream_repos/<name>` (included) must
+      // be a regular directory BEFORE anything is followed: at depth 1 the enclosing root is the
+      // project's own `.squad/` (a link planted in the user's checkout must not re-anchor the
+      // reader), at depth > 1 it is the parent snapshot (a committed link in a clone must not
+      // either — `core.symlinks=false` only protects clones we make ourselves).
+      const gate = parentReader ?? contained(squadDir);
+      const reposVetted = gate.assertRegularDirectory(path.join(squadDir, '_upstream_repos'));
+      const vettedRoot = reposVetted === null ? null : gate.assertRegularDirectory(cloneDir);
+      let cloneSquadDir: string | null = null;
+      let reader: ContainedReader | null = null;
+      if (vettedRoot !== null) {
+        reader = contained(cloneDir);
+        // Root-level TOCTOU: re-validate the freshly anchored reader against the vetted canonical
+        // path before the first read; every file read then re-verifies via open → fstat identity.
+        options?.beforeAnchor?.(cloneDir);
+        reader.assertRootStill(vettedRoot);
+        cloneSquadDir = findSquadDir(cloneDir, reader);
+      }
+      if (!cloneSquadDir || !reader) {
         return done(emptyUpstream(entry, frame, 'unavailable',
           `${entry.name}: git upstream is not materialized locally (${path.join('.squad', '_upstream_repos', entry.name)} missing); run "squad upstream sync ${entry.name}" — session start never fetches`));
       }
@@ -621,7 +661,7 @@ export function resolveUpstreams(
         continue;
       }
 
-      const { resolved, reader } = resolveOne(dir, raw, frame, storage, staleAfterDays, now, budget, options.beforeOpen, parentReader);
+      const { resolved, reader } = resolveOne(dir, raw, frame, storage, staleAfterDays, now, budget, options.beforeOpen, parentReader, options);
       const readable = resolved.status === 'ok' || resolved.status === 'stale';
       if (readable && resolved.squadDir) {
         const id = identityOf(resolved.squadDir);
