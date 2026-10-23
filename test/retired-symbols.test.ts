@@ -70,9 +70,6 @@ const PARTIAL_SCAN: Record<string, (content: string) => string> = {
 /** Module paths that must not exist as package exports or shipped files. */
 const RETIRED_PATHS = /(^|\/)(commands\/(extract|personal|consult|import-legacy-personal)|agents\/personal|sharing\/consult|multi-squad|personal-squad-notice)(\.|\/|$)/;
 
-/** Pre-existing dangling export on dev (not introduced here); tracked separately. */
-const KNOWN_DANGLING_EXPORTS = new Set(['@bradygaster/squad-cli:./shell/sdk-bridge']);
-
 const SKIP_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.pdf', '.tgz', '.zip', '.lock']);
 const SKIP_FILES = new Set(['package-lock.json']);
 
@@ -143,7 +140,7 @@ describe('retired-symbol gate: no trace of personal squads, consult mode, Ghost 
           expect(RETIRED_PATHS.test(t), `${manifest.name}: export "${key}" -> ${t} names a retired module`).toBe(false);
           for (const [label, re] of RETIRED_PATTERNS) expect(re.test(t), `${manifest.name}: export "${key}" -> ${t} [${label}]`).toBe(false);
         }
-        if (distBuilt && !KNOWN_DANGLING_EXPORTS.has(`${manifest.name}:${key}`)) {
+        if (distBuilt) {
           for (const t of targets) {
             expect(existsSync(join(ROOT, pkg, t)), `${manifest.name}: export "${key}" points at ${t}, which is not in dist (removed module still exported?)`).toBe(true);
           }
