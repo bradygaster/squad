@@ -66,6 +66,10 @@ jobs:
           SQUAD_UPGRADE_MATRIX: '1'
           SQUAD_UPGRADE_MATRIX_PRODUCERS: ${{ github.event.inputs.producers }}
           SQUAD_UPGRADE_MATRIX_OUT: ${{ github.workspace }}/upgrade-matrix-results/results-${{ runner.os }}.json
+          # The tree under test: the PR head (a PR checkout is a merge ref), or the dispatched/pushed commit.
+          SQUAD_UPGRADE_MATRIX_TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Read-only; lets release-asset downloads by id use the authenticated rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7

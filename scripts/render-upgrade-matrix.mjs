@@ -46,33 +46,82 @@ export function pinnedFindings(result) {
   return [...ids].sort();
 }
 
-/** One cell: status icon + pinned finding ids, or failing checks, or the skip reason. */
-export function cell(result) {
+/** Short provenance label for a row: npm / GitHub Release / local HEAD. */
+export function provenanceLabel(source) {
+  return source === 'npm' ? 'npm' : source === 'github-release' ? 'GitHub Release' : 'local HEAD (pack)';
+}
+
+/**
+ * One cell. Vocabulary is deliberate: a row "passes" only when every non-xfail assertion passed;
+ * a row with pinned findings is "pass WITH known … failure (F<n>)", never a bare pass.
+ */
+export function cell(result, matrix) {
   if (!result) return '—';
-  if (result.status === 'skipped') return `${STATUS_ICON.skipped} skipped (${esc(result.reason)})`;
+  if (result.status === 'skipped') return `⏭️ not applicable — ${esc(result.reason)}`;
   const known = pinnedFindings(result);
   const fails = result.checks.filter((c) => c.status === 'fail' || c.status === 'xpass').map((c) => `${c.id}${c.detail ? `: ${c.detail}` : ''}`);
-  const parts = [`${STATUS_ICON[result.status]} ${result.status}`];
-  if (known.length) parts.push(`⚠️ known ${known.join(', ')}`);
-  if (fails.length) parts.push(esc(fails.join('; ')));
-  return parts.join(' ');
+  if (result.status === 'fail') return `🔴 fail — ${esc(fails.join('; ') || result.reason)}`;
+  if (known.length) {
+    const labels = known.map((id) => {
+      const checks = [...new Set(result.checks.filter((c) => c.status === 'xfail').map((c) => c.id))];
+      const f = (matrix?.findings ?? []).find((x) => x.id === id);
+      const destructive = f && /destructive|mutat|rewrit/i.test(`${f.title} ${f.observed}`) ? 'destructive ' : '';
+      return `${destructive}${checks.join('/')} failure (${id})`;
+    });
+    return `✅⚠️ pass WITH known ${labels.join(' and ')}`;
+  }
+  return '✅ pass';
 }
 
 export function summarize(matrix) {
   const out = {};
   for (const run of matrix.runs) {
-    const s = { pass: 0, fail: 0, skipped: 0, xfail: 0, target: run.target, commit: run.commit, recordedAt: run.recordedAt, node: run.node };
+    const s = {
+      passedAllNonXfail: 0, withKnownFailures: 0, failed: 0, inapplicable: 0, knownFindings: new Set(),
+      target: run.target, targetSha: run.targetSha, harnessHash: run.harnessHash, event: run.event, runUrl: run.runUrl, recordedAt: run.recordedAt, node: run.node, arch: run.arch,
+    };
     for (const r of run.results) {
-      s[r.status]++;
-      if (r.checks.some((c) => c.status === 'xfail')) s.xfail++;
+      if (r.status === 'pass') {
+        s.passedAllNonXfail++;
+        const k = pinnedFindings(r);
+        if (k.length) { s.withKnownFailures++; k.forEach((id) => s.knownFindings.add(id)); }
+      } else if (r.status === 'fail') s.failed++;
+      else s.inapplicable++;
     }
+    s.knownFindings = [...s.knownFindings].sort();
     out[run.platform] = s;
   }
   return out;
 }
 
+/** The one sentence a run summary must use (never "N pass / 0 fail" without the qualifier). */
+export function summarySentence(s, matrix) {
+  const findingLabel = (id) => {
+    const f = (matrix?.findings ?? []).find((x) => x.id === id);
+    return f ? `${id}: ${f.title.split(':')[0].replace(/`/g, '')}` : id;
+  };
+  const known = s.withKnownFailures
+    ? `; ${s.withKnownFailures} of them carry a known expected failure (${s.knownFindings.map(findingLabel).join('; ')})`
+    : '';
+  return `${s.passedAllNonXfail} rows passed all non-xfail assertions${known}; ${s.failed} rows failed; ${s.inapplicable} rows are structurally inapplicable (listed below).`;
+}
+
+function artifactCell(p) {
+  if (p.source === 'npm') {
+    const reg = p.artifacts.registry;
+    return Object.entries(reg).map(([n, a]) => `\`${n}@${a.version}\`<br>sha1 \`${a.shasum}\`<br>\`${a.integrity}\``).join('<br>');
+  }
+  if (p.source === 'github-release') {
+    const rel = p.artifacts.release;
+    return `[${rel.repository} ${rel.tag}](https://github.com/${rel.repository}/releases/tag/${rel.tag}) — assets by immutable id:<br>` +
+      Object.entries(rel.assets).map(([n, a]) => `\`${n}\` id \`${a.id}\` sha256 \`${a.sha256}\``).join('<br>');
+  }
+  return esc(p.artifacts.pack);
+}
+
 export function renderSection(matrix) {
   const platforms = platformsOf(matrix);
+  const sum = summarize(matrix);
   const lines = [];
   lines.push(START);
   lines.push('');
@@ -80,31 +129,44 @@ export function renderSection(matrix) {
   lines.push('');
   lines.push('## Tested upgrade paths');
   lines.push('');
-  lines.push(`Every row below is a real published artifact of an older Squad release driven through \`squad init\` under a given project state shape, then upgraded with the CLI packed from the current tree (\`npm pack\` of \`@bradygaster/squad-sdk\` + \`@bradygaster/squad-cli\`) by \`test/squad-20-upgrade-matrix.test.ts\`. Statuses are honest: **pass** means every check passed, **fail** lists the failing checks, **skipped** carries the reason (the suite never silently passes a producer it could not obtain). ⚠️ *known* marks checks pinned to a recorded finding below (\`xfail\`); the suite fails the moment a pinned check starts passing so the pin cannot go stale. Machine-readable source: \`${path.relative(ROOT, MATRIX_PATH).replace(/\\/g, '/')}\` (protocol \`${matrix.protocol}\`).`);
+  lines.push(`Every row below is a pinned, published artifact of an older Squad release driven through \`squad init\` under a given project state shape, then **upgraded** with the CLI packed from the tree under test (\`npm pack\` of \`@bradygaster/squad-sdk\` + \`@bradygaster/squad-cli\`) by \`test/squad-20-upgrade-matrix.test.ts\`. A row **passes** only when every non-xfail assertion passed; a row that carries a pinned finding is reported as **pass WITH known … failure (F<n>)**, never as a bare pass; **fail** names the failing checks; **not applicable** cells are each explained individually below (none means "not run"). Machine-readable source: \`${path.relative(ROOT, MATRIX_PATH).replace(/\\/g, '/')}\` (protocol \`${matrix.protocol}\`).`);
+  lines.push('');
+  lines.push('### Three different things');
+  lines.push('');
+  lines.push('| Term | Meaning |');
+  lines.push('|------|---------|');
+  for (const [k, v] of Object.entries(matrix.concepts)) lines.push(`| **${k}** | ${esc(v)} |`);
+  lines.push('');
+  lines.push('> ⚠️ **Never run an older Squad CLI against an upgraded repository.** There is no supported downgrade. The `downgrade-probe` rows record what each old CLI does: 0.9.1 `squad upgrade --dry-run` is **not trustworthy** — it rewrites the coordinator, skills, workflows and templates in place (F3); 0.13.1–1.1.0 preview overwriting them. If an old CLI has already touched an upgraded repository, re-run `squad upgrade` with the current CLI to repair the Squad-owned files; your `.squad/` team state is not changed by either direction. `uninstallClients()` removes host projections only — it is **not** a way back to an older Squad.');
   lines.push('');
   lines.push('### Runs');
   lines.push('');
   if (matrix.runs.length === 0) {
-    lines.push('_No runs recorded yet. Run `SQUAD_UPGRADE_MATRIX=1 npx vitest run test/squad-20-upgrade-matrix.test.ts` and merge the results with `node scripts/render-upgrade-matrix.mjs --merge <results.json>`._');
+    lines.push('_No runs recorded yet. The CI workflow `squad-upgrade-matrix.yml` records a run per OS at the tree under test; fold both artifacts with `node scripts/render-upgrade-matrix.mjs --merge <results.json>`._');
     lines.push('');
   } else {
-    lines.push('| Platform | Arch | Node | Target | Commit | Recorded | ✅ pass | 🔴 fail | ⏭️ skipped | ⚠️ with known findings |');
-    lines.push('|----------|------|------|--------|--------|----------|---------|---------|-----------|------------------------|');
-    const sum = summarize(matrix);
+    const shas = [...new Set(matrix.runs.map((r) => r.targetSha))];
+    const hashes = [...new Set(matrix.runs.map((r) => r.harnessHash))];
+    lines.push(`All recorded runs executed against **one tree**, commit \`${shas.join('`, `')}\`, with harness hash \`${hashes.map((h) => h.slice(0, 16)).join('`, `')}…\` (sha256 over the suite, renderer, workflow, fs hook and this fixture minus \`runs\`; the integrity test refuses a recorded run whose harness differs from the committed one, so folding results may change nothing but the runs data).`);
+    lines.push('');
+    lines.push('| Platform | Arch | Node | Target | Tree (targetSha) | Trigger | Recorded | Outcome |');
+    lines.push('|----------|------|------|--------|------------------|---------|----------|---------|');
     for (const run of matrix.runs) {
       const s = sum[run.platform];
-      lines.push(`| ${PLATFORM_LABEL[run.platform] ?? run.platform} (\`${run.platform}\`) | ${run.arch} | ${run.node} | v${run.target} | \`${run.commit}\` | ${run.recordedAt.slice(0, 10)} | ${s.pass} | ${s.fail} | ${s.skipped} | ${s.xfail} |`);
+      const trigger = run.runUrl ? `[${run.event}](${run.runUrl})` : run.event;
+      lines.push(`| ${PLATFORM_LABEL[run.platform] ?? run.platform} (\`${run.platform}\`) | ${run.arch} | ${run.node} | v${run.target} | \`${run.targetSha.slice(0, 12)}\` | ${trigger} | ${run.recordedAt.slice(0, 10)} | ${esc(summarySentence(s, matrix))} |`);
     }
     lines.push('');
   }
-  lines.push('### Producers');
+  lines.push('### Producers (pinned, immutable provenance)');
   lines.push('');
-  lines.push('| Version | Artifact | Why it is in the matrix | `--state-backend` |');
-  lines.push('|---------|----------|-------------------------|-------------------|');
+  lines.push('| Version | Provenance | Artifact pins | Why it is in the matrix | `--state-backend` |');
+  lines.push('|---------|------------|---------------|-------------------------|-------------------|');
   for (const p of matrix.producers) {
-    const artifact = p.source === 'npm' ? 'npm tarball (`@bradygaster/squad-cli`)' : p.source === 'github-release' ? 'GitHub Release standalone bundle' : 'packed from this tree';
-    lines.push(`| **${p.version}** | ${artifact} | ${esc(p.why)} | ${p.supports.stateBackend ? 'yes' : 'no'} |`);
+    lines.push(`| **${p.version}** | ${provenanceLabel(p.source)} | ${artifactCell(p)} | ${esc(p.why)} | ${p.supports.stateBackend ? 'yes' : 'no'} |`);
   }
+  lines.push('');
+  lines.push('npm tarballs are fetched by exact version through the registry npm is configured for and verified against the recorded sha1 + sha512 before use; GitHub Release bundles are downloaded by immutable asset id and verified against the recorded sha256. A verification mismatch **fails** the producer\'s rows (it is never a skip); only an unreachable registry/release yields a skip, and that skip carries the reason.');
   lines.push('');
   lines.push('### State shapes');
   lines.push('');
@@ -115,22 +177,46 @@ export function renderSection(matrix) {
   lines.push('### Results (version × shape × OS)');
   lines.push('');
   const header = platforms.length ? platforms.map((p) => PLATFORM_LABEL[p] ?? p) : ['(no runs yet)'];
-  lines.push(`| Producer | Shape | ${header.join(' | ')} |`);
-  lines.push(`|----------|-------|${header.map(() => '---').join('|')}|`);
+  lines.push(`| Producer | Provenance | Shape | ${header.join(' | ')} |`);
+  lines.push(`|----------|------------|-------|${header.map(() => '---').join('|')}|`);
   for (const p of matrix.producers) {
     for (const shape of Object.keys(matrix.shapes)) {
       const cells = platforms.length
-        ? platforms.map((pl) => cell(resultFor(matrix.runs.find((r) => r.platform === pl), p.version, shape)))
-        : ['—'];
-      lines.push(`| **${p.version}** | \`${shape}\` | ${cells.join(' | ')} |`);
+        ? platforms.map((pl) => cell(resultFor(matrix.runs.find((r) => r.platform === pl), p.version, shape), matrix))
+        : [inapplicableFor(matrix, p.version, shape) ? '⏭️ not applicable (see below)' : '—'];
+      lines.push(`| **${p.version}** | ${provenanceLabel(p.source)} | \`${shape}\` | ${cells.join(' | ')} |`);
     }
   }
   lines.push('');
+  lines.push('### Not-applicable cells, each explained');
+  lines.push('');
+  lines.push(`These ${matrix.inapplicable.length} cells are structurally impossible to exercise — the old producer cannot create that project shape — so they are **not** "not run"; the suite asserts the recorded skipped rows are exactly this list.`);
+  lines.push('');
+  lines.push('| Producer | Shape | Why it cannot apply |');
+  lines.push('|----------|-------|---------------------|');
+  for (const x of matrix.inapplicable) lines.push(`| **${x.producer}** | \`${x.shape}\` | ${esc(x.reason)} |`);
+  lines.push('');
+  if (matrix.expectedFailures.length) {
+    lines.push('### Expected failures (pinned)');
+    lines.push('');
+    lines.push('Each pin names an open finding; the suite reports the check as `xfail` and **fails the moment it starts passing** (`xpass`), so a pin cannot outlive its bug.');
+    lines.push('');
+    lines.push('| Check | Producers | Shapes | Platforms | Finding |');
+    lines.push('|-------|-----------|--------|-----------|---------|');
+    for (const x of matrix.expectedFailures) {
+      lines.push(`| \`${x.check}\` | ${x.producers === '*' ? 'all' : x.producers.join(', ')} | ${x.shapes === '*' ? 'all' : x.shapes.map((s) => `\`${s}\``).join(', ')} | ${x.platforms === '*' ? 'all' : x.platforms.join(', ')} | [${x.finding}](#${x.finding.toLowerCase()}) |`);
+    }
+    lines.push('');
+  }
   lines.push('### Checks');
   lines.push('');
   lines.push('| Check | Meaning |');
   lines.push('|-------|---------|');
   for (const [id, d] of Object.entries(matrix.checks)) lines.push(`| \`${id}\` | ${esc(d)} |`);
+  lines.push('');
+  lines.push('Paths a plain `squad upgrade` may create or rewrite (the only changes `user-state-preserved` accepts):');
+  lines.push('');
+  for (const re of matrix.squadOwned) lines.push(`- \`${re}\``);
   lines.push('');
   if (matrix.findings.length) {
     lines.push('### Findings');
@@ -171,9 +257,9 @@ export function renderSection(matrix) {
     }
   }
   if (downgrade.length) {
-    lines.push('### Downgrade behavior (old CLI against an upgraded project)');
+    lines.push('### Unsupported downgrade — what each old CLI does to an upgraded repository');
     lines.push('');
-    lines.push('Recorded, not asserted beyond "the dry-run modified nothing": what each old CLI does when pointed at a project that is already on the new version.');
+    lines.push('Recorded by the `downgrade-probe` check (dry-run on a copy; the only assertion is "modified nothing"). This is **not** a supported path — see the warning at the top of this section.');
     lines.push('');
     lines.push('| Platform | Producer | Shapes | Observed |');
     lines.push('|----------|----------|--------|----------|');
@@ -182,6 +268,10 @@ export function renderSection(matrix) {
   }
   lines.push(END);
   return lines.join('\n') + '\n';
+}
+
+function inapplicableFor(matrix, producer, shape) {
+  return matrix.inapplicable.find((x) => x.producer === producer && x.shape === shape);
 }
 
 export function extractSection(page) {
@@ -193,7 +283,10 @@ export function extractSection(page) {
 
 export function splice(page, section) {
   const existing = extractSection(page);
-  if (existing) return page.replace(existing, section);
+  if (existing) {
+    const at = page.indexOf(existing);
+    return page.slice(0, at) + section + page.slice(at + existing.length);
+  }
   // First render: insert before "## Migrations".
   const anchor = page.indexOf('\n## Migrations');
   if (anchor === -1) return page.trimEnd() + '\n\n---\n\n' + section;
@@ -202,11 +295,13 @@ export function splice(page, section) {
 
 export function mergeRun(matrix, run) {
   if (!run || typeof run.platform !== 'string' || !Array.isArray(run.results)) throw new Error('results file must contain {platform, results[]}');
+  if (!/^[0-9a-f]{40}$/.test(run.targetSha ?? '') || !/^[0-9a-f]{64}$/.test(run.harnessHash ?? '')) throw new Error('results file must carry targetSha (40 hex) and harnessHash (64 hex) — produced by the suite, not hand-written');
   const known = new Set(matrix.producers.map((p) => p.version));
   for (const r of run.results) if (!known.has(r.producer)) throw new Error(`results reference unknown producer ${r.producer}`);
-  matrix.runs = matrix.runs.filter((r) => r.platform !== run.platform);
-  matrix.runs.push(run);
-  matrix.runs.sort((a, b) => a.platform.localeCompare(b.platform));
+  const others = matrix.runs.filter((r) => r.platform !== run.platform);
+  const foreign = others.find((r) => r.targetSha !== run.targetSha);
+  if (foreign) throw new Error(`run for ${run.platform} targets ${run.targetSha} but the recorded ${foreign.platform} run targets ${foreign.targetSha}; all recorded runs must come from one tree — re-record every platform`);
+  matrix.runs = [...others, run].sort((a, b) => a.platform.localeCompare(b.platform));
   return matrix;
 }
 

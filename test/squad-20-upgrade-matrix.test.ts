@@ -37,6 +37,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { parse as tomlParse } from 'smol-toml';
+import { parse as yamlParse } from 'yaml';
 
 const execFileAsync = promisify(execFile);
 
@@ -58,6 +60,8 @@ interface ScenarioResult {
   shape: string;
   status: ScenarioStatus;
   reason?: string;
+  /** Exact artifact that was executed for this row (pinned version + integrity, or release tag + asset id + sha256). */
+  provenance?: string;
   checks: Check[];
   notes: string[];
 }
@@ -71,18 +75,31 @@ interface ExpectedFailure {
   knownDetail?: string;
 }
 interface Finding { id: string; title: string; severity: string; layer: string; repro: string[]; observed: string; resolved?: string }
-interface Run { platform: string; arch: string; node: string; target: string; commit: string; recordedAt: string; results: ScenarioResult[] }
+interface Inapplicable { producer: string; shape: string; reason: string }
+interface Run {
+  platform: string; arch: string; node: string; target: string;
+  /** Commit of the tree under test (branch head, not the PR merge ref). */
+  targetSha: string;
+  /** sha256 over the harness files (suite, renderer, workflow, fixture minus `runs`) the run executed with. */
+  harnessHash: string;
+  event: string; runUrl?: string; recordedAt: string; results: ScenarioResult[];
+}
 interface Matrix {
   protocol: string;
   producers: ProducerSpec[];
   shapes: Record<string, string>;
   checks: Record<string, string>;
+  /** Regexes (as strings) of paths a plain `squad upgrade` may create or rewrite. */
+  squadOwned: string[];
+  inapplicable: Inapplicable[];
   expectedFailures: ExpectedFailure[];
   findings: Finding[];
   runs: Run[];
 }
 
 type ProducerSource = 'npm' | 'github-release' | 'pack';
+interface RegistryArtifact { version: string; shasum: string; integrity: string }
+interface ReleaseAsset { id: number; sha256: string }
 interface ProducerSpec {
   version: string;
   source: ProducerSource;
@@ -90,12 +107,62 @@ interface ProducerSpec {
   why: string;
   /** Feature support of the OLD CLI (determines which shapes are attempted). */
   supports: { stateBackend: boolean; dryRun: boolean };
+  /** Immutable provenance of the artifact that is executed. */
+  artifacts:
+    | { registry: Record<string, RegistryArtifact> }
+    | { release: { repository: string; tag: string; assets: Record<string, ReleaseAsset> } }
+    | { pack: string };
 }
 
 const matrix = JSON.parse(fs.readFileSync(MATRIX_PATH, 'utf8')) as Matrix;
 const SHAPES = Object.keys(matrix.shapes);
 const CHECK_IDS = Object.keys(matrix.checks);
 const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 'antigravity'];
+const WORKFLOW_PATH = path.join(ROOT, '.github', 'workflows', 'squad-upgrade-matrix.yml');
+const FS_HOOK = path.join(ROOT, 'test', 'fixtures', 'upgrade-matrix', 'fs-access-log.cjs');
+
+/**
+ * Why a producer × shape cell cannot be exercised, derived from the producers' capabilities.
+ * The fixture's `inapplicable` list must match this exactly (asserted below), so every skip the
+ * suite emits is explained on the rendered page and none reads as "not run".
+ */
+function structuralSkip(spec: ProducerSpec, shape: string): string | null {
+  if ((shape === 'orphan' || shape === 'two-layer') && !spec.supports.stateBackend) return `producer ${spec.version} has no --state-backend flag`;
+  if (shape === 'upstream' && spec.source !== 'pack') return `upstream inheritance is a Squad 2.0 feature; producer ${spec.version} cannot declare upstream.json`;
+  return null;
+}
+
+function inapplicableReason(producer: string, shape: string): string | undefined {
+  return matrix.inapplicable.find((x) => x.producer === producer && x.shape === shape)?.reason;
+}
+
+/** Canonical JSON (sorted keys) so the hash is independent of key order and formatting. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Attestation hash of the harness: the suite, the renderer, the CI workflow and the fixture without
+ * its `runs`. A recorded run is only accepted when its `harnessHash` equals this value, so the fold
+ * commit that merges CI results may change nothing but the runs data.
+ */
+function harnessHash(): string {
+  const text = (p: string) => fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+  const fixture = JSON.parse(text(MATRIX_PATH)) as Matrix;
+  const { runs: _runs, ...rest } = fixture;
+  void _runs;
+  return createHash('sha256')
+    .update(text(__filename)).update('\0')
+    .update(text(path.join(ROOT, 'scripts', 'render-upgrade-matrix.mjs'))).update('\0')
+    .update(text(WORKFLOW_PATH)).update('\0')
+    .update(text(FS_HOOK)).update('\0')
+    .update(canonical(rest))
+    .digest('hex');
+}
 
 // ─── 1. integrity (always) ──────────────────────────────────────────────────
 
@@ -113,9 +180,50 @@ describe('upgrade-matrix.json integrity', () => {
     }
     for (const id of ['producer-init', 'upgrade-plain', 'coordinator-is-new-template', 'user-state-preserved', 'casting-pair-valid',
       'state-backend-preserved', 'ai-team-migrated', 'team-root-absent', 'profile-untouched', 'idempotent-second-upgrade',
-      'clients-projected', 'user-config-preserved', 'doctor', 'rollback-byte-exact', 'downgrade-probe']) {
+      'clients-projected', 'user-config-preserved', 'doctor', 'projection-uninstall-byte-exact', 'downgrade-probe']) {
       expect(CHECK_IDS, `check ${id} must be declared`).toContain(id);
     }
+    expect(CHECK_IDS, 'uninstallClients restores host projections; it is not a rollback — the check must not be called one').not.toContain('rollback-byte-exact');
+    expect(matrix.squadOwned.length, 'squadOwned patterns').toBeGreaterThan(5);
+    for (const p of matrix.squadOwned) expect(() => new RegExp(p), `squadOwned pattern ${p} must be a valid RegExp`).not.toThrow();
+    expect(fs.existsSync(FS_HOOK), 'fs access hook must exist').toBe(true);
+  });
+
+  it('every producer carries immutable provenance (exact version + integrity, or release tag + asset id + sha256)', () => {
+    for (const p of matrix.producers) {
+      if (p.source === 'npm') {
+        expect('registry' in p.artifacts, `${p.version}: npm producer needs artifacts.registry`).toBe(true);
+        const reg = (p.artifacts as { registry: Record<string, RegistryArtifact> }).registry;
+        for (const name of ['@bradygaster/squad-cli', '@bradygaster/squad-sdk']) {
+          const a = reg[name];
+          expect(a, `${p.version}: missing pinned ${name}`).toBeDefined();
+          expect(a!.version, `${p.version}: ${name} must be pinned to the exact producer version`).toBe(p.version);
+          expect(a!.shasum, `${p.version}: ${name} sha1 shasum`).toMatch(/^[0-9a-f]{40}$/);
+          expect(a!.integrity, `${p.version}: ${name} sha512 integrity`).toMatch(/^sha512-[A-Za-z0-9+/]{86}==$/);
+        }
+      } else if (p.source === 'github-release') {
+        expect('release' in p.artifacts, `${p.version}: release producer needs artifacts.release`).toBe(true);
+        const rel = (p.artifacts as { release: { repository: string; tag: string; assets: Record<string, ReleaseAsset> } }).release;
+        expect(rel.repository).toBe('bradygaster/squad');
+        expect(rel.tag).toBe(`v${p.version}`);
+        for (const name of ['squad-linux-x64.tar.gz', 'squad-linux-arm64.tar.gz', 'squad-darwin-x64.tar.gz', 'squad-darwin-arm64.tar.gz', 'squad-win32-x64.zip', 'squad-win32-arm64.zip']) {
+          const a = rel.assets[name];
+          expect(a, `${p.version}: missing asset ${name}`).toBeDefined();
+          expect(Number.isInteger(a!.id) && a!.id > 0, `${p.version}: ${name} needs a GitHub asset id`).toBe(true);
+          expect(a!.sha256, `${p.version}: ${name} sha256`).toMatch(/^[0-9a-f]{64}$/);
+        }
+      } else {
+        expect('pack' in p.artifacts, `${p.version}: pack producer describes its provenance`).toBe(true);
+      }
+    }
+  });
+
+  it('every structurally inapplicable cell is explained individually, and nothing else is', () => {
+    const derived = matrix.producers.flatMap((p) => SHAPES.filter((s) => structuralSkip(p, s) !== null).map((s) => `${p.version} × ${s}`)).sort();
+    const declared = matrix.inapplicable.map((x) => `${x.producer} × ${x.shape}`).sort();
+    expect(declared, 'fixture `inapplicable` must list exactly the cells the suite cannot exercise (derived from producer capabilities)').toEqual(derived);
+    for (const x of matrix.inapplicable) expect(x.reason.length, `${x.producer} × ${x.shape}: reason`).toBeGreaterThan(40);
+    expect(derived).toHaveLength(7);
   });
 
   it('every expected failure names a declared check and a recorded finding', () => {
@@ -135,14 +243,22 @@ describe('upgrade-matrix.json integrity', () => {
     }
   });
 
-  it('recorded runs only use declared producers/shapes/checks and honest statuses', () => {
+  it('recorded runs are attributable to one target SHA, ran with this exact harness, and use honest statuses', () => {
+    const hash = harnessHash();
+    const targets = new Set(matrix.runs.map((r) => r.targetSha));
+    expect(targets.size <= 1, `recorded runs must all come from one target SHA, found ${[...targets].join(', ')}`).toBe(true);
     for (const run of matrix.runs) {
       expect(run.platform).toMatch(/^(win32|linux|darwin)$/);
+      expect(run.targetSha, `${run.platform}: targetSha`).toMatch(/^[0-9a-f]{40}$/);
+      expect(run.harnessHash, `${run.platform}: recorded run executed with a different harness (suite/renderer/workflow/fixture) than the one committed — re-run the matrix at this head and fold the results`).toBe(hash);
       for (const r of run.results) {
         expect(matrix.producers.map((p) => p.version), `${run.platform}: unknown producer ${r.producer}`).toContain(r.producer);
         expect(SHAPES, `${run.platform}: unknown shape ${r.shape}`).toContain(r.shape);
         expect(['pass', 'fail', 'skipped']).toContain(r.status);
-        if (r.status === 'skipped') expect(r.reason, `${run.platform} ${r.producer}/${r.shape}: skipped without a reason`).toBeTruthy();
+        if (r.status === 'skipped') {
+          expect(r.reason, `${run.platform} ${r.producer}/${r.shape}: skipped without a reason`).toBeTruthy();
+          expect(inapplicableReason(r.producer, r.shape), `${run.platform} ${r.producer}/${r.shape}: skipped for a reason that is not a declared structural inapplicability: ${r.reason}`).toBeDefined();
+        }
         for (const c of r.checks) {
           expect(CHECK_IDS, `${run.platform} ${r.producer}/${r.shape}: unknown check ${c.id}`).toContain(c.id);
           expect(['pass', 'fail', 'xfail', 'xpass', 'skipped']).toContain(c.status);
@@ -150,6 +266,8 @@ describe('upgrade-matrix.json integrity', () => {
         const failed = r.checks.filter((c) => c.status === 'fail' || c.status === 'xpass');
         if (r.status === 'pass') expect(failed, `${run.platform} ${r.producer}/${r.shape} recorded as pass but has failing checks`).toEqual([]);
       }
+      const skipped = run.results.filter((r) => r.status === 'skipped').map((r) => `${r.producer} × ${r.shape}`).sort();
+      expect(skipped, `${run.platform}: the skipped rows must be exactly the declared inapplicable cells`).toEqual(matrix.inapplicable.map((x) => `${x.producer} × ${x.shape}`).sort());
     }
   });
 
@@ -273,68 +391,138 @@ interface Producer {
   spec: ProducerSpec;
   /** How to invoke the OLD CLI: [file, ...leadingArgs] */
   exec: { file: string; args: string[]; env: NodeJS.ProcessEnv } | null;
+  /** Artifact could not be obtained (network / not published for this platform): every row is skipped loudly. */
   skipReason?: string;
-  detail?: string;
+  /** Artifact was obtained but failed verification (integrity / checksum): every row FAILS. */
+  failReason?: string;
+  /** Human-readable provenance of what is executed, recorded per row. */
+  provenance?: string;
 }
 
 const CACHE_ROOT = path.join(ROOT, 'node_modules', '.cache', 'squad-upgrade-matrix');
-const RELEASE_BASE = process.env['SQUAD_UPGRADE_MATRIX_RELEASE_BASE'] ?? 'https://github.com/bradygaster/squad/releases/download';
+const GITHUB_API = process.env['SQUAD_UPGRADE_MATRIX_GITHUB_API'] ?? 'https://api.github.com';
 
-function releaseAsset(): { name: string; ext: 'zip' | 'tar.gz' } | null {
+function releaseAssetName(): string | null {
   const arch = process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : null;
   if (!arch) return null;
-  if (PLATFORM === 'win32') return { name: `squad-win32-${arch}.zip`, ext: 'zip' };
-  if (PLATFORM === 'linux') return { name: `squad-linux-${arch}.tar.gz`, ext: 'tar.gz' };
-  if (PLATFORM === 'darwin') return { name: `squad-darwin-${arch}.tar.gz`, ext: 'tar.gz' };
+  if (PLATFORM === 'win32') return `squad-win32-${arch}.zip`;
+  if (PLATFORM === 'linux') return `squad-linux-${arch}.tar.gz`;
+  if (PLATFORM === 'darwin') return `squad-darwin-${arch}.tar.gz`;
   return null;
 }
 
-async function fetchBuffer(url: string): Promise<Buffer> {
-  const res = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'squad-upgrade-matrix' } });
+async function fetchBuffer(url: string, headers: Record<string, string> = {}): Promise<Buffer> {
+  const res = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'squad-upgrade-matrix', ...headers } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return Buffer.from(await res.arrayBuffer());
 }
 
+function sha512Integrity(buf: Buffer): string {
+  return `sha512-${createHash('sha512').update(buf).digest('base64')}`;
+}
+
+function sha1(buf: Buffer): string {
+  return createHash('sha1').update(buf).digest('hex');
+}
+
+async function npmCmd(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<Cmd> {
+  const npm = PLATFORM === 'win32' ? 'npm.cmd' : 'npm';
+  // Absolute tarball paths: a bare `dir/file.tgz` would be read by npm as a GitHub `owner/repo` shorthand.
+  const quoted = args.map((a) => (/\s/.test(a) ? `"${a}"` : a));
+  return PLATFORM === 'win32'
+    ? run(process.env['ComSpec'] ?? 'cmd.exe', ['/d', '/s', '/c', `${npm} ${quoted.join(' ')}`], { cwd, env, timeout: 600_000 })
+    : run(npm, args, { cwd, env, timeout: 600_000 });
+}
+
+/**
+ * npm producer: fetch the exact pinned tarballs of @bradygaster/squad-cli and @bradygaster/squad-sdk
+ * (`npm pack`, through whatever registry npm is configured for), verify sha1 + sha512 against the
+ * fixture (mismatch → FAIL, not skip), then install both tarballs into an isolated prefix so the old
+ * CLI runs against the SDK version it shipped with — never a floating `>=` resolution.
+ */
 async function resolveNpmProducer(spec: ProducerSpec): Promise<Producer> {
+  const reg = (spec.artifacts as { registry: Record<string, RegistryArtifact> }).registry;
   const dir = path.join(CACHE_ROOT, 'producers', `npm-${spec.version}`);
   const entry = path.join(dir, 'node_modules', '@bradygaster', 'squad-cli', 'dist', 'cli-entry.js');
   const registry = process.env['NPM_CONFIG_REGISTRY'] ?? process.env['npm_config_registry'];
-  if (!fs.existsSync(entry)) {
+  const provenance = Object.entries(reg).map(([n, a]) => `${n}@${a.version} ${a.integrity}`).join('; ');
+  const verifiedMarker = path.join(dir, '.verified');
+  if (!fs.existsSync(entry) || !fs.existsSync(verifiedMarker)) {
     rmrf(dir);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'squad-upgrade-matrix-producer', private: true }, null, 2) + '\n');
     const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
     if (registry) env['NPM_CONFIG_REGISTRY'] = registry;
-    const npm = PLATFORM === 'win32' ? 'npm.cmd' : 'npm';
-    const args = ['install', '--prefix', dir, `@bradygaster/squad-cli@${spec.version}`, '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock', '--loglevel=error'];
-    const r = PLATFORM === 'win32'
-      ? await run(process.env['ComSpec'] ?? 'cmd.exe', ['/d', '/s', '/c', `${npm} ${args.join(' ')}`], { cwd: dir, env, timeout: 600_000 })
-      : await run(npm, args, { cwd: dir, env, timeout: 600_000 });
-    if (r.code !== 0 || !fs.existsSync(entry)) {
+    const tarballs = path.join(dir, 'tarballs');
+    fs.mkdirSync(tarballs);
+    const specs = Object.entries(reg).map(([n, a]) => `${n}@${a.version}`);
+    const packed = await npmCmd(['pack', ...specs, '--pack-destination', tarballs, '--ignore-scripts', '--loglevel=error'], dir, env);
+    const files = fs.existsSync(tarballs) ? fs.readdirSync(tarballs).filter((f) => f.endsWith('.tgz')) : [];
+    if (packed.code !== 0 || files.length !== specs.length) {
       rmrf(dir);
-      return { spec, exec: null, skipReason: `npm install @bradygaster/squad-cli@${spec.version} failed via ${registry ?? 'the npm-configured registry'}: ${tail(r.stderr || r.stdout, 2) || `exit ${r.code}`}` };
+      return { spec, exec: null, skipReason: `could not fetch ${specs.join(' + ')} via ${registry ?? 'the npm-configured registry'}: ${tail(packed.stderr || packed.stdout, 2) || `exit ${packed.code}`}` };
     }
+    for (const [name, a] of Object.entries(reg)) {
+      const file = files.find((f) => f.startsWith(`${name.replace('@', '').replace('/', '-')}-${a.version}.tgz`));
+      if (!file) return { spec, exec: null, failReason: `npm pack produced no tarball for ${name}@${a.version} (got ${files.join(', ')})` };
+      const bytes = fs.readFileSync(path.join(tarballs, file));
+      const gotIntegrity = sha512Integrity(bytes);
+      const gotShasum = sha1(bytes);
+      if (gotIntegrity !== a.integrity || gotShasum !== a.shasum) {
+        rmrf(dir);
+        return { spec, exec: null, failReason: `integrity mismatch for ${name}@${a.version}: expected ${a.integrity} / ${a.shasum}, got ${gotIntegrity} / ${gotShasum}` };
+      }
+    }
+    const installed = await npmCmd(['install', '--prefix', dir, ...files.map((f) => path.join(tarballs, f)), '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock', '--loglevel=error'], dir, env);
+    if (installed.code !== 0 || !fs.existsSync(entry)) {
+      rmrf(dir);
+      return { spec, exec: null, skipReason: `npm install of the verified ${spec.version} tarballs failed: ${tail(installed.stderr || installed.stdout, 2) || `exit ${installed.code}`}` };
+    }
+    const sdkVersion = readJson<{ version: string }>(path.join(dir, 'node_modules', '@bradygaster', 'squad-sdk', 'package.json'))?.version;
+    if (sdkVersion !== reg['@bradygaster/squad-sdk']!.version) {
+      rmrf(dir);
+      return { spec, exec: null, failReason: `installed @bradygaster/squad-sdk@${sdkVersion ?? '?'} instead of the pinned ${reg['@bradygaster/squad-sdk']!.version}` };
+    }
+    fs.writeFileSync(verifiedMarker, provenance + '\n');
   }
-  return { spec, exec: { file: process.execPath, args: [entry], env: {} }, detail: `npm tarball via ${registry ?? 'npm-configured registry'}` };
+  return { spec, exec: { file: process.execPath, args: [entry], env: {} }, provenance: `npm: ${provenance}` };
 }
 
+/**
+ * GitHub Release producer: download the bundle by immutable asset id
+ * (`/repos/<owner>/<repo>/releases/assets/<id>`), verify sha256 against the fixture (mismatch → FAIL,
+ * not skip), extract, and run the real launcher.
+ */
 async function resolveReleaseProducer(spec: ProducerSpec): Promise<Producer> {
-  const asset = releaseAsset();
-  if (!asset) return { spec, exec: null, skipReason: `no standalone bundle is published for ${PLATFORM}/${process.arch}` };
+  const rel = (spec.artifacts as { release: { repository: string; tag: string; assets: Record<string, ReleaseAsset> } }).release;
+  const assetName = releaseAssetName();
+  const asset = assetName ? rel.assets[assetName] : undefined;
+  if (!assetName || !asset) return { spec, exec: null, skipReason: `no standalone bundle is published for ${PLATFORM}/${process.arch} in ${rel.tag}` };
+  const provenance = `github-release: ${rel.repository}@${rel.tag} asset ${assetName} id ${asset.id} sha256 ${asset.sha256}`;
   const dir = path.join(CACHE_ROOT, 'producers', `release-${spec.version}`);
-  const bundleDir = path.join(dir, asset.name.replace(/\.(zip|tar\.gz)$/, ''));
+  const bundleDir = path.join(dir, assetName.replace(/\.(zip|tar\.gz)$/, ''));
   const launcher = PLATFORM === 'win32' ? path.join(bundleDir, 'squad.exe') : path.join(bundleDir, 'squad');
-  if (!fs.existsSync(launcher)) {
+  const verifiedMarker = path.join(dir, '.verified');
+  if (!fs.existsSync(launcher) || !fs.existsSync(verifiedMarker)) {
     rmrf(dir);
     fs.mkdirSync(dir, { recursive: true });
+    let bytes: Buffer;
     try {
-      const base = `${RELEASE_BASE}/v${spec.version}`;
-      const [sums, bytes] = await Promise.all([fetchBuffer(`${base}/SHA256SUMS.txt`), fetchBuffer(`${base}/${asset.name}`)]);
-      const want = sums.toString('utf8').split(/\r?\n/).find((l) => l.trim().endsWith(asset.name))?.trim().split(/\s+/)[0];
-      const got = sha256(bytes);
-      if (!want) throw new Error(`${asset.name} is not listed in SHA256SUMS.txt`);
-      if (want !== got) throw new Error(`checksum mismatch for ${asset.name}: expected ${want}, got ${got}`);
-      const archive = path.join(dir, asset.name);
+      const token = process.env['SQUAD_UPGRADE_MATRIX_GITHUB_TOKEN'] ?? process.env['GITHUB_TOKEN'] ?? process.env['GH_TOKEN'];
+      const headers: Record<string, string> = { accept: 'application/octet-stream', 'x-github-api-version': '2022-11-28' };
+      if (token) headers['authorization'] = `Bearer ${token}`;
+      bytes = await fetchBuffer(`${GITHUB_API}/repos/${rel.repository}/releases/assets/${asset.id}`, headers);
+    } catch (err) {
+      rmrf(dir);
+      return { spec, exec: null, skipReason: `GitHub Release ${rel.tag} asset ${assetName} (id ${asset.id}) unavailable: ${(err as Error).message}` };
+    }
+    const got = sha256(bytes);
+    if (got !== asset.sha256) {
+      rmrf(dir);
+      return { spec, exec: null, failReason: `sha256 mismatch for ${rel.tag} ${assetName} (asset id ${asset.id}): expected ${asset.sha256}, got ${got}` };
+    }
+    try {
+      const archive = path.join(dir, assetName);
       fs.writeFileSync(archive, bytes);
       extract(archive, dir);
       fs.rmSync(archive, { force: true });
@@ -342,14 +530,15 @@ async function resolveReleaseProducer(spec: ProducerSpec): Promise<Producer> {
       if (PLATFORM !== 'win32') fs.chmodSync(launcher, 0o755);
     } catch (err) {
       rmrf(dir);
-      return { spec, exec: null, skipReason: `GitHub Release v${spec.version} ${asset.name} unavailable: ${(err as Error).message}` };
+      return { spec, exec: null, failReason: `verified bundle ${assetName} could not be extracted: ${(err as Error).message}` };
     }
+    fs.writeFileSync(verifiedMarker, provenance + '\n');
   }
   const info = readJson<{ nodeVersion?: string }>(path.join(bundleDir, 'BUNDLE-INFO.json'));
   return {
     spec,
     exec: { file: launcher, args: [], env: { SQUAD_STANDALONE_HOME: bundleDir + path.sep } },
-    detail: `standalone bundle ${asset.name} (bundled node ${info?.nodeVersion ?? '?'})`,
+    provenance: `${provenance} (bundled node ${info?.nodeVersion ?? '?'})`,
   };
 }
 
@@ -402,25 +591,47 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
         producers.set(spec.version, { spec, exec: null, skipReason: `excluded by SQUAD_UPGRADE_MATRIX_PRODUCERS=${only.join(',')}` });
         return;
       }
-      const p = spec.source === 'pack'
-        ? { spec, exec: newCli, detail: `packed from this tree (v${newVersion})` }
+      const p: Producer = spec.source === 'pack'
+        ? { spec, exec: newCli, provenance: `pack: npm pack of packages/squad-sdk + packages/squad-cli at ${targetSha()} (v${newVersion})` }
         : spec.source === 'npm' ? await resolveNpmProducer(spec) : await resolveReleaseProducer(spec);
       producers.set(spec.version, p);
-      if (p.skipReason) console.warn(`⏭️  upgrade-matrix: producer ${spec.version} skipped — ${p.skipReason}`);
-      else process.stdout.write(`✅ upgrade-matrix: producer ${spec.version} ready — ${p.detail}\n`);
+      if (p.failReason) console.error(`❌ upgrade-matrix: producer ${spec.version} FAILED verification — ${p.failReason}`);
+      else if (p.skipReason) console.warn(`⏭️  upgrade-matrix: producer ${spec.version} skipped — ${p.skipReason}`);
+      else process.stdout.write(`✅ upgrade-matrix: producer ${spec.version} ready — ${p.provenance}\n`);
     }));
   }, 20 * 60_000);
 
+  /** Branch head under test: CI passes it explicitly (PR checkouts are merge refs); locally it is HEAD. */
+  function targetSha(): string {
+    const fromEnv = process.env['SQUAD_UPGRADE_MATRIX_TARGET_SHA'];
+    if (fromEnv && /^[0-9a-f]{40}$/.test(fromEnv)) return fromEnv;
+    try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return 'unknown'; }
+  }
+
   afterAll(() => {
     const out = process.env['SQUAD_UPGRADE_MATRIX_OUT'] ?? path.join(CACHE_ROOT, `results-${PLATFORM}.json`);
-    let commit = 'unknown';
-    try { commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { /* no git */ }
-    const run: Run = { platform: PLATFORM, arch: process.arch, node: process.version, target: newVersion ?? 'unbuilt', commit, recordedAt: new Date().toISOString(), results };
+    const runUrl = process.env['GITHUB_RUN_ID'] && process.env['GITHUB_REPOSITORY']
+      ? `${process.env['GITHUB_SERVER_URL'] ?? 'https://github.com'}/${process.env['GITHUB_REPOSITORY']}/actions/runs/${process.env['GITHUB_RUN_ID']}`
+      : undefined;
+    const run: Run = {
+      platform: PLATFORM, arch: process.arch, node: process.version, target: newVersion ?? 'unbuilt',
+      targetSha: targetSha(), harnessHash: harnessHash(),
+      event: process.env['GITHUB_EVENT_NAME'] ?? 'local', ...(runUrl ? { runUrl } : {}),
+      recordedAt: new Date().toISOString(), results,
+    };
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, JSON.stringify(run, null, 2) + '\n');
-    const counts = { pass: 0, fail: 0, skipped: 0 };
-    for (const r of results) counts[r.status]++;
-    const lines = [`\nupgrade-matrix (${PLATFORM}/${process.arch}, target v${run.target}): ${counts.pass} pass, ${counts.fail} fail, ${counts.skipped} skipped → ${path.relative(ROOT, out)}`];
+    const passed = results.filter((r) => r.status === 'pass');
+    const withKnown = passed.filter((r) => r.checks.some((c) => c.status === 'xfail'));
+    const knownIds = [...new Set(withKnown.flatMap((r) => r.notes.map((n) => /^[\w-]+: (F\d+)$/.exec(n)?.[1]).filter((x): x is string => !!x)))].sort();
+    const failed = results.filter((r) => r.status === 'fail');
+    const skipped = results.filter((r) => r.status === 'skipped');
+    const inapplicable = skipped.filter((r) => inapplicableReason(r.producer, r.shape) !== undefined);
+    const unavailable = skipped.length - inapplicable.length;
+    const lines = [
+      `\nupgrade-matrix (${PLATFORM}/${process.arch}, target v${run.target} @ ${run.targetSha.slice(0, 8)}, harness ${run.harnessHash.slice(0, 12)}):`,
+      `  ${passed.length} rows passed all non-xfail assertions; ${withKnown.length} of them carry known expected failures${knownIds.length ? ` (${knownIds.join(', ')})` : ''}; ${failed.length} rows failed; ${inapplicable.length} rows are structurally inapplicable${unavailable ? `; ${unavailable} rows SKIPPED because the producer was unavailable/excluded (never counts as a pass)` : ''} → ${path.relative(ROOT, out)}`,
+    ];
     for (const r of results) {
       const bad = r.checks.filter((c) => c.status !== 'pass' && c.status !== 'skipped').map((c) => `${c.id}=${c.status}${c.detail ? ` (${c.detail})` : ''}`);
       lines.push(`  ${r.status.padEnd(7)} ${r.producer.padEnd(8)} ${r.shape.padEnd(15)}${r.reason ? ` ${r.reason}` : ''}${bad.length ? ` ${bad.join('; ')}` : ''}`);
@@ -462,7 +673,12 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
 
     result(status?: ScenarioStatus, reason?: string): ScenarioResult {
       const failed = this.checks.some((c) => c.status === 'fail' || c.status === 'xpass');
-      return { producer: this.producer.spec.version, source: this.producer.spec.source, shape: this.shape, status: status ?? (failed ? 'fail' : 'pass'), reason, checks: this.checks, notes: this.notes };
+      return {
+        producer: this.producer.spec.version, source: this.producer.spec.source, shape: this.shape,
+        status: status ?? (failed ? 'fail' : 'pass'), reason,
+        ...(this.producer.provenance ? { provenance: this.producer.provenance } : {}),
+        checks: this.checks, notes: this.notes,
+      };
     }
   }
 
@@ -500,12 +716,102 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     return run('git', args, { cwd, env, timeout: 30_000 });
   }
 
+  /** Every ref OID, the porcelain status and the `squad-state` commit count: idempotency must hold here too. */
+  async function gitState(cwd: string, env: NodeJS.ProcessEnv): Promise<{ refs: string; status: string; stateCommits: string }> {
+    const refs = await git(cwd, env, 'for-each-ref', '--format=%(refname) %(objectname)');
+    const status = await git(cwd, env, 'status', '--porcelain=v1', '--untracked-files=all');
+    const branch = await git(cwd, env, 'show-ref', '--verify', '--quiet', 'refs/heads/squad-state');
+    const count = branch.code === 0 ? await git(cwd, env, 'rev-list', '--count', 'squad-state') : null;
+    return { refs: refs.stdout.trim(), status: status.stdout.trim(), stateCommits: count ? count.stdout.trim() : 'no squad-state branch' };
+  }
+
+  function gitDiff(a: { refs: string; status: string; stateCommits: string }, b: { refs: string; status: string; stateCommits: string }): string[] {
+    const out: string[] = [];
+    if (a.refs !== b.refs) {
+      const before = new Map(a.refs.split('\n').filter(Boolean).map((l) => l.split(' ') as [string, string]));
+      const after = new Map(b.refs.split('\n').filter(Boolean).map((l) => l.split(' ') as [string, string]));
+      for (const [ref, oid] of after) if (before.get(ref) !== oid) out.push(`ref ${ref} ${before.get(ref)?.slice(0, 8) ?? '(new)'} → ${oid.slice(0, 8)}`);
+      for (const ref of before.keys()) if (!after.has(ref)) out.push(`ref ${ref} deleted`);
+    }
+    if (a.status !== b.status) out.push(`worktree status changed: ${JSON.stringify(b.status.slice(0, 200))}`);
+    if (a.stateCommits !== b.stateCommits) out.push(`squad-state commits ${a.stateCommits} → ${b.stateCommits}`);
+    return out;
+  }
+
+  /** Squad-owned paths that a plain `squad upgrade` may legitimately create or rewrite (documented in the fixture). */
+  const SQUAD_OWNED: RegExp[] = matrix.squadOwned.map((p) => new RegExp(p));
+  const isSquadOwned = (rel: string) => SQUAD_OWNED.some((re) => re.test(rel));
+
+  function parseFrontmatter(text: string): Record<string, unknown> | null {
+    const m = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(text);
+    if (!m) return null;
+    try { return (yamlParse(m[1]!) ?? {}) as Record<string, unknown>; } catch { return null; }
+  }
+
+  /**
+   * Host projections must *parse* with the format each host uses, not merely exist
+   * (mirrors the per-host assertions in test/clients.test.ts).
+   */
+  function validateProjections(project: string): string[] {
+    const problems: string[] = [];
+    const json = (rel: string, check: (v: Record<string, unknown>) => string | null) => {
+      const raw = read(path.join(project, rel));
+      if (raw === null) return problems.push(`${rel} missing`);
+      try { const v = JSON.parse(raw) as Record<string, unknown>; const why = check(v); if (why) problems.push(`${rel}: ${why}`); } catch (e) { problems.push(`${rel}: invalid JSON (${(e as Error).message})`); }
+    };
+    const toml = (rel: string, check: (v: Record<string, unknown>) => string | null) => {
+      const raw = read(path.join(project, rel));
+      if (raw === null) return problems.push(`${rel} missing`);
+      try { const v = tomlParse(raw) as Record<string, unknown>; const why = check(v); if (why) problems.push(`${rel}: ${why}`); } catch (e) { problems.push(`${rel}: invalid TOML (${(e as Error).message})`); }
+    };
+    const agentMd = (rel: string, requiredKeys: string[] = ['name', 'description']) => {
+      const raw = read(path.join(project, rel));
+      if (raw === null) return problems.push(`${rel} missing`);
+      const fm = parseFrontmatter(raw);
+      if (!fm) return problems.push(`${rel}: no parseable YAML frontmatter`);
+      if (!requiredKeys.some((k) => fm[k] !== undefined && fm[k] !== null)) problems.push(`${rel}: frontmatter lacks ${requiredKeys.join('/')}`);
+      if (!/Squad/i.test(raw)) problems.push(`${rel}: body does not mention Squad`);
+    };
+    const hasSquadState = (v: Record<string, unknown>, key = 'mcpServers') => {
+      const servers = v[key] as Record<string, unknown> | undefined;
+      return servers && typeof servers === 'object' && 'squad_state' in servers ? null : `no ${key}.squad_state entry`;
+    };
+    // copilot
+    agentMd('.github/agents/squad.agent.md');
+    json('.mcp.json', (v) => hasSquadState(v));
+    // claude
+    agentMd('.claude/agents/squad.md');
+    // kiro
+    agentMd('.kiro/steering/squad.md', ['inclusion']);
+    json('.kiro/agents/squad.json', (v) => (typeof v['name'] === 'string' ? null : 'agent definition lacks name'));
+    json('.kiro/settings/mcp.json', (v) => hasSquadState(v));
+    // opencode
+    agentMd('.opencode/agent/squad.md');
+    json('opencode.json', (v) => hasSquadState(v, 'mcp'));
+    // cursor
+    agentMd('.cursor/agents/squad.md');
+    agentMd('.cursor/rules/squad.mdc', ['description', 'alwaysApply', 'globs']);
+    json('.cursor/mcp.json', (v) => hasSquadState(v));
+    // codex
+    toml('.codex/agents/squad.toml', (v) => (typeof v['name'] === 'string' || typeof v['description'] === 'string' ? null : 'agent definition lacks name/description'));
+    toml('.codex/config.toml', (v) => {
+      const servers = v['mcp_servers'] as Record<string, unknown> | undefined;
+      return servers && 'squad_state' in servers ? null : 'no mcp_servers.squad_state table';
+    });
+    if (read(path.join(project, 'AGENTS.md')) === null) problems.push('AGENTS.md missing');
+    // antigravity
+    agentMd('.agents/agents/squad.md');
+    if (read(path.join(project, 'GEMINI.md')) === null) problems.push('GEMINI.md missing');
+    return problems;
+  }
+
   async function runScenario(producer: Producer, shape: string): Promise<ScenarioResult> {
     const s = new Scenario(producer, shape);
     const { spec } = producer;
+    const structural = structuralSkip(spec, shape);
+    if (structural) return s.result('skipped', inapplicableReason(spec.version, shape) ?? structural);
+    if (producer.failReason) return s.result('fail', `producer artifact failed verification: ${producer.failReason}`);
     if (!producer.exec) return s.result('skipped', producer.skipReason);
-    if ((shape === 'orphan' || shape === 'two-layer') && !spec.supports.stateBackend) return s.result('skipped', `producer ${spec.version} has no --state-backend flag`);
-    if (shape === 'upstream' && spec.source !== 'pack') return s.result('skipped', `upstream inheritance is a Squad 2.0 feature; producer ${spec.version} cannot declare upstream.json`);
 
     const work = fs.mkdtempSync(path.join(os.tmpdir(), `squad-um-${spec.version.replace(/[^\w.]/g, '_')}-${shape}-`));
     workRoots.push(work);
@@ -513,16 +819,25 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     const configHome = path.join(work, 'config-home');
     fs.mkdirSync(project);
     fs.mkdirSync(configHome);
+    const profileRoot = path.join(configHome, 'squad');
+    const fsLog = path.join(work, 'profile-fs-access.log');
     const oldEnv = isolatedEnv(configHome, producer.exec.env);
-    const newEnv = isolatedEnv(configHome, newCli.env);
+    // Every Squad 2.0 process (upgrade, doctor, projection, uninstall) runs with the fs access logger
+    // pointed at the retired profile tree: zero reads, probes or writes may land there.
+    const newEnv = isolatedEnv(configHome, {
+      ...newCli.env,
+      NODE_OPTIONS: `--require ${JSON.stringify(FS_HOOK)}`,
+      SQUAD_MATRIX_FS_WATCH_ROOT: profileRoot,
+      SQUAD_MATRIX_FS_WATCH_LOG: fsLog,
+    });
     const oldCli = (...args: string[]) => run(producer.exec!.file, [...producer.exec!.args, ...args], { cwd: project, env: oldEnv, timeout: 180_000 });
     const squad = (cwd: string, ...args: string[]) => run(newCli.file, [...newCli.args, ...args], { cwd, env: newEnv, timeout: 180_000 });
 
     await git(project, newEnv, 'init', '-q', '-b', 'main');
     await git(project, newEnv, 'commit', '-q', '--allow-empty', '-m', 'init');
 
-    const profileRoot = shape === 'profile' ? seedProfile(configHome) : null;
-    const profileBefore = profileRoot ? fingerprint(profileRoot) : null;
+    const seededProfile = shape === 'profile' ? seedProfile(configHome) : null;
+    const profileBefore = seededProfile ? fingerprint(seededProfile) : null;
 
     // 1. OLD CLI scaffolds the project ─────────────────────────────────────
     const initArgs = ['init', ...(shape === 'orphan' || shape === 'two-layer' ? ['--state-backend', shape] : [])];
@@ -534,13 +849,32 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     const cfgAfterInit = readJson(path.join(project, '.squad', 'config.json')) ?? {};
     if (typeof cfgAfterInit['teamRoot'] === 'string') s.notes.push(`producer wrote teamRoot=${String(cfgAfterInit['teamRoot']).replace(configHome, '<config-home>')} at init`);
 
-    // 2. Seed user state + user-owned config ───────────────────────────────
-    const agentDir = path.join(project, '.squad', 'agents', 'probe');
-    fs.mkdirSync(agentDir, { recursive: true });
-    fs.writeFileSync(path.join(agentDir, 'charter.md'), PROBE_CHARTER);
-    fs.writeFileSync(path.join(agentDir, 'history.md'), PROBE_HISTORY);
-    fs.appendFileSync(path.join(project, '.squad', 'decisions.md'), '\n## Matrix decision\n\n- recorded before upgrade; must survive byte-exact\n');
-    fs.appendFileSync(teamMd, '| Probe | Upgrade Probe | .squad/agents/probe/charter.md | ✅ Active |\n');
+    // 2. Seed user state (active + retired agents, nested unknown files, spaces/Unicode, custom config keys) ─
+    const squadDir = path.join(project, '.squad');
+    const userFiles: Record<string, string> = {
+      'agents/probe/charter.md': PROBE_CHARTER,
+      'agents/probe/history.md': PROBE_HISTORY,
+      'agents/probe/notes/日本語 メモ.md': '# メモ\n\nUnicode filename under an agent folder.\n',
+      'agents/emeritus/charter.md': '# Emeritus\n\n## Identity\n- **Name:** Emeritus\n- **Role:** Retired Advisor\n- **Status:** retired\n',
+      'agents/emeritus/history.md': '# History\n\n- retired before the upgrade; must survive untouched\n',
+      'skills/custom-review/SKILL.md': '---\nname: custom-review\ndescription: user-authored skill\n---\n\nUser skill body.\n',
+      'notes/file with spaces.md': 'Spaces in the filename.\n',
+      'decisions/2026-10 ünïcödé décision.md': '# Décision\n\nAccents in the filename.\n',
+      'orchestration/unknown-tool.json': '{"vendor":"user","keep":true}\n',
+    };
+    for (const [rel, content] of Object.entries(userFiles)) {
+      fs.mkdirSync(path.dirname(path.join(squadDir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(squadDir, rel), content);
+    }
+    fs.appendFileSync(path.join(squadDir, 'decisions.md'), '\n## Matrix decision\n\n- recorded before upgrade; must survive byte-exact\n');
+    fs.appendFileSync(teamMd, '| Probe | Upgrade Probe | .squad/agents/probe/charter.md | ✅ Active |\n| Emeritus | Retired Advisor | .squad/agents/emeritus/charter.md | 🪦 Retired |\n');
+    fs.appendFileSync(path.join(squadDir, 'routing.md'), '\n**Upgrade probes** → Probe\n');
+    const cfgPath = path.join(squadDir, 'config.json');
+    const cfgSeed = readJson(cfgPath) ?? {};
+    const CUSTOM_KEY = { owner: 'matrix', nested: { keep: true, list: [1, 2, 3] } };
+    cfgSeed['userCustom'] = CUSTOM_KEY;
+    fs.writeFileSync(cfgPath, JSON.stringify(cfgSeed, null, 2) + '\n');
+    for (const rel of ['decisions.md', 'team.md', 'routing.md']) userFiles[rel] = read(path.join(squadDir, rel))!;
     const mcpPath = path.join(project, '.mcp.json');
     const mcp = readJson<{ mcpServers?: Record<string, unknown> }>(mcpPath) ?? { mcpServers: {} };
     mcp.mcpServers = { ...(mcp.mcpServers ?? {}), 'user-custom': USER_MCP_SERVER };
@@ -550,12 +884,12 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     fs.appendFileSync(path.join(project, '.gitignore'), `\n# user rule\n${USER_GITIGNORE_LINE}\n`);
 
     if (shape === 'legacy-casting') {
-      const casting = path.join(project, '.squad', 'casting');
+      const casting = path.join(squadDir, 'casting');
       for (const f of fs.readdirSync(casting)) fs.rmSync(path.join(casting, f), { recursive: true, force: true });
-      fs.writeFileSync(path.join(casting, 'registry.json'), JSON.stringify({ universe: 'Star Trek', agents: [{ name: 'Probe', role: 'Upgrade Probe', status: 'active' }] }, null, 2) + '\n');
+      fs.writeFileSync(path.join(casting, 'registry.json'), JSON.stringify({ universe: 'Star Trek', agents: [{ name: 'Probe', role: 'Upgrade Probe', status: 'active' }, { name: 'Emeritus', role: 'Retired Advisor', status: 'retired' }] }, null, 2) + '\n');
     }
     if (shape === 'ai-team') {
-      fs.renameSync(path.join(project, '.squad'), path.join(project, '.ai-team'));
+      fs.renameSync(squadDir, path.join(project, '.ai-team'));
     }
     let upstreamJsonBefore: string | null = null;
     if (shape === 'upstream') {
@@ -569,9 +903,10 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     }
 
     const stateDirBefore = shape === 'ai-team' ? '.ai-team' : '.squad';
-    const preserved = ['decisions.md', 'agents/probe/charter.md', 'agents/probe/history.md', 'team.md'];
-    const before = snapshot(project);
-    const preservedBefore = Object.fromEntries(preserved.map((rel) => [rel, before.get(`${stateDirBefore}/${rel}`)]));
+    // Manifest before the upgrade, with the legacy state dir already mapped onto `.squad/` so the
+    // migration itself is not counted as a change.
+    const beforeRaw = snapshot(project);
+    const before = new Map([...beforeRaw].map(([k, v]) => [k.startsWith(`${stateDirBefore}/`) ? `.squad/${k.slice(stateDirBefore.length + 1)}` : k, v]));
     const backendBefore = (readJson(path.join(project, stateDirBefore, 'config.json')) ?? {})['stateBackend'];
 
     // 3. NEW CLI: plain upgrade ────────────────────────────────────────────
@@ -580,12 +915,25 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
       return s.result('fail', `squad upgrade failed: exit ${up.code} — ${tail(up.stderr || up.stdout)}`);
     }
     const afterPlain = snapshot(project);
+    const gitAfterPlain = await gitState(project, newEnv);
     const coordinator = read(path.join(project, '.github', 'agents', 'squad.agent.md')) ?? '';
     const stampRe = /<!-- version: ([^\s>]+) -->/.exec(coordinator);
     s.check('coordinator-is-new-template', stampRe?.[1] === newVersion && coordinator.includes(`- **Version:** ${newVersion}`), `coordinator stamp is ${stampRe?.[1] ?? 'missing'}, expected ${newVersion}`);
 
-    const changedPreserved = preserved.filter((rel) => afterPlain.get(`.squad/${rel}`) !== preservedBefore[rel]);
-    s.check('user-state-preserved', changedPreserved.length === 0, changedPreserved.length ? `rewritten: ${changedPreserved.join(', ')}` : undefined);
+    // Full manifest delta: every seeded user file byte-identical, every changed path Squad-owned,
+    // custom config keys kept.
+    const delta = diffSnapshots(before, afterPlain);
+    const userTouched = Object.keys(userFiles).map((rel) => `.squad/${rel}`).filter((rel) => afterPlain.get(rel) !== before.get(rel));
+    const unexplained = delta.filter((rel) => !isSquadOwned(rel));
+    const cfgAfter = readJson(path.join(project, '.squad', 'config.json')) ?? {};
+    const customKept = JSON.stringify(cfgAfter['userCustom']) === JSON.stringify(CUSTOM_KEY);
+    const stateProblems = [
+      ...userTouched.map((rel) => `user file rewritten: ${rel}`),
+      ...unexplained.map((rel) => `changed path is not Squad-owned: ${rel}`),
+      ...(customKept ? [] : ['config.json custom key `userCustom` lost or altered']),
+    ];
+    s.check('user-state-preserved', stateProblems.length === 0, stateProblems.join('; ') || undefined);
+    s.notes.push(`plain upgrade changed ${delta.length} path(s), all Squad-owned: ${delta.length <= 6 ? delta.join(', ') : `${delta.slice(0, 4).join(', ')} … (+${delta.length - 4})`}`);
 
     const castingScript = [
       'import { readCastingRegistryPair } from "@bradygaster/squad-sdk/casting";',
@@ -598,10 +946,9 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     const castingInfo = casting.code === 0 ? (JSON.parse(casting.stdout.trim()) as { revision: number; agents: string[] }) : null;
     const castingDir = path.join(project, '.squad', 'casting');
     const archive = fs.existsSync(castingDir) ? fs.readdirSync(castingDir).find((n) => /^(handwritten|legacy)-archive-/.test(n)) : undefined;
-    const castingOk = casting.code === 0 && (shape !== 'legacy-casting' || (!!archive && !!castingInfo?.agents.includes('probe')));
-    s.check('casting-pair-valid', castingOk, casting.code !== 0 ? tail(casting.stderr, 1) : shape === 'legacy-casting' && !archive ? 'handwritten registry was not archived' : !castingInfo?.agents.includes('probe') && shape === 'legacy-casting' ? `probe missing from repaired registry (${castingInfo?.agents.join(',')})` : undefined);
+    const legacyOk = shape !== 'legacy-casting' || (!!archive && !!castingInfo?.agents.includes('probe') && !!castingInfo?.agents.includes('emeritus'));
+    s.check('casting-pair-valid', casting.code === 0 && legacyOk, casting.code !== 0 ? tail(casting.stderr, 1) : !legacyOk ? (!archive ? 'handwritten registry was not archived' : `repaired registry lacks probe/emeritus (${castingInfo?.agents.join(',')})`) : undefined);
 
-    const cfgAfter = readJson(path.join(project, '.squad', 'config.json')) ?? {};
     if (shape === 'orphan' || shape === 'two-layer') {
       const branch = await git(project, newEnv, 'show-ref', '--verify', '--quiet', 'refs/heads/squad-state');
       s.check('state-backend-preserved', cfgAfter['stateBackend'] === shape && branch.code === 0, `stateBackend=${String(cfgAfter['stateBackend'])} (was ${String(backendBefore)}), squad-state branch ${branch.code === 0 ? 'present' : 'missing'}`);
@@ -617,23 +964,19 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
 
     s.check('team-root-absent', !('teamRoot' in cfgAfter), 'teamRoot' in cfgAfter ? `teamRoot=${String(cfgAfter['teamRoot']).replace(configHome, '<config-home>')}` : undefined);
 
-    if (profileRoot) {
-      s.check('profile-untouched', fingerprint(profileRoot) === profileBefore, 'profile tree changed after upgrade');
-    } else {
-      s.skip('profile-untouched', 'no profile squad seeded in this shape');
-    }
-
     if (shape === 'upstream') {
       const upstreamAfter = read(path.join(project, '.squad', 'upstream.json'));
       s.check('user-config-preserved', upstreamAfter === upstreamJsonBefore, 'upstream.json rewritten by upgrade');
     }
 
-    // 4. Idempotency: a second plain upgrade must not change anything ──────
+    // 4. Idempotency: a second plain upgrade changes neither the working tree nor git state ──
     const again = await squad(project, 'upgrade');
     const changedAgain = diffSnapshots(afterPlain, snapshot(project));
-    s.check('idempotent-second-upgrade', again.code === 0 && changedAgain.length === 0, again.code !== 0 ? `exit ${again.code}` : changedAgain.join(', ') || undefined);
+    const gitChangedAgain = gitDiff(gitAfterPlain, await gitState(project, newEnv));
+    const idemProblems = [...(again.code !== 0 ? [`exit ${again.code}`] : []), ...changedAgain, ...gitChangedAgain];
+    s.check('idempotent-second-upgrade', idemProblems.length === 0, idemProblems.join(', ') || undefined);
 
-    // 5. Downgrade probe: OLD CLI against the upgraded project (dry-run, on a copy) ─
+    // 5. Downgrade probe: OLD CLI against the upgraded project (dry-run, on a copy) — unsupported path, recorded ─
     if (spec.source === 'pack') {
       s.skip('downgrade-probe', 'producer is the target version');
     } else if (!spec.supports.dryRun) {
@@ -652,12 +995,12 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
       s.check('downgrade-probe', dgChanged.length === 0, dgChanged.length ? `dry-run ${modified}` : undefined);
     }
 
-    // 6. Project all 7 hosts ───────────────────────────────────────────────
+    // 6. Project all 7 hosts — and prove every projection parses ──────────
     const clients = await squad(project, 'upgrade', '--client', 'all', '--force');
     const cfgClients = (readJson(path.join(project, '.squad', 'config.json')) ?? {})['clients'];
-    const projected = ['.claude/agents/squad.md', '.kiro/agents/squad.json', '.opencode/agent/squad.md', '.cursor/agents/squad.md', '.codex/agents/squad.toml', '.agents/agents/squad.md', '.github/agents/squad.agent.md', 'GEMINI.md'];
-    const missing = projected.filter((rel) => !fs.existsSync(path.join(project, rel)));
-    s.check('clients-projected', clients.code === 0 && JSON.stringify(cfgClients) === JSON.stringify(CLIENT_IDS) && missing.length === 0, clients.code !== 0 ? `exit ${clients.code}: ${tail(clients.stderr || clients.stdout)}` : missing.length ? `missing ${missing.join(', ')}` : `clients=${JSON.stringify(cfgClients)}`);
+    const projectionProblems = clients.code === 0 ? validateProjections(project) : [];
+    s.check('clients-projected', clients.code === 0 && JSON.stringify(cfgClients) === JSON.stringify(CLIENT_IDS) && projectionProblems.length === 0,
+      clients.code !== 0 ? `exit ${clients.code}: ${tail(clients.stderr || clients.stdout)}` : projectionProblems.length ? projectionProblems.join('; ') : `clients=${JSON.stringify(cfgClients)}`);
 
     const mergedMcp = readJson<{ mcpServers?: Record<string, unknown> }>(mcpPath);
     const agentsNow = read(path.join(project, 'AGENTS.md')) ?? '';
@@ -677,24 +1020,37 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     const failedLines = doctor.stdout.split(/\r?\n/).filter((l) => /^❌/.test(l.trim())).map((l) => l.trim());
     s.check('doctor', doctor.code === 0 && failedLines.length === 0, failedLines.length ? failedLines.join(' | ') : doctor.code !== 0 ? `exit ${doctor.code}: ${tail(doctor.stderr || doctor.stdout)}` : undefined);
 
-    // 8. Rollback all projections byte-exact ───────────────────────────────
-    const rollbackScript = [
+    // 8. Projection uninstall (uninstallClients) restores shared files byte-exact — this is NOT a downgrade ─
+    const uninstallScript = [
       'import { uninstallClients, CLIENT_IDS } from "@bradygaster/squad-sdk/client";',
       `const res = uninstallClients(CLIENT_IDS, { root: ${JSON.stringify(project)}, mcp: { command: "squad", args: ["state-mcp"] } });`,
       'const errors = res.filter(r => r.action === "error"); if (errors.length) throw new Error(JSON.stringify(errors));',
     ].join(' ');
-    const rb = await run(process.execPath, ['--input-type=module', '-e', rollbackScript], { cwd: staging, env: newEnv, timeout: 30_000 });
-    const rbProblems = [
-      rb.code !== 0 ? `uninstallClients failed: ${tail(rb.stderr, 1)}` : null,
+    const un = await run(process.execPath, ['--input-type=module', '-e', uninstallScript], { cwd: staging, env: newEnv, timeout: 30_000 });
+    const afterUninstall = snapshot(project);
+    const unProblems = [
+      un.code !== 0 ? `uninstallClients failed: ${tail(un.stderr, 1)}` : null,
       read(path.join(project, 'AGENTS.md')) !== USER_AGENTS_MD ? 'AGENTS.md not restored byte-exact' : null,
       read(path.join(project, 'CLAUDE.md')) !== USER_CLAUDE_MD ? 'CLAUDE.md not restored byte-exact' : null,
-      sha256(read(path.join(project, '.gitignore')) ?? '') !== afterPlain.get('.gitignore') ? '.gitignore not restored to its pre-projection bytes' : null,
-      JSON.stringify(readJson<{ mcpServers?: Record<string, unknown> }>(mcpPath)?.mcpServers?.['user-custom']) !== JSON.stringify(USER_MCP_SERVER) ? '.mcp.json user-custom server lost on rollback' : null,
+      afterUninstall.get('.gitignore') !== afterPlain.get('.gitignore') ? '.gitignore not restored to its pre-projection bytes' : null,
+      JSON.stringify(readJson<{ mcpServers?: Record<string, unknown> }>(mcpPath)?.mcpServers?.['user-custom']) !== JSON.stringify(USER_MCP_SERVER) ? '.mcp.json user-custom server lost on uninstall' : null,
       ...['.claude/agents/squad.md', '.codex/agents/squad.toml', '.agents/agents/squad.md', '.cursor/agents/squad.md', '.kiro/agents/squad.json', '.opencode/agent/squad.md']
-        .filter((rel) => fs.existsSync(path.join(project, rel))).map((rel) => `${rel} still present`),
-      ...preserved.filter((rel) => sha256(read(path.join(project, '.squad', rel)) ?? '') !== preservedBefore[rel] && !changedPreserved.includes(rel)).map((rel) => `.squad/${rel} changed by projection/rollback`),
+        .filter((rel) => afterUninstall.has(rel)).map((rel) => `${rel} still present`),
+      ...Object.keys(userFiles).map((rel) => `.squad/${rel}`).filter((rel) => afterUninstall.get(rel) !== before.get(rel)).map((rel) => `${rel} changed by projection/uninstall`),
     ].filter((x): x is string => x !== null);
-    s.check('rollback-byte-exact', rbProblems.length === 0, rbProblems.join('; ') || undefined);
+    s.check('projection-uninstall-byte-exact', unProblems.length === 0, unProblems.join('; ') || undefined);
+
+    // 9. Profile integrity: no writes (fingerprint) AND no reads/probes (fs access log) by any 2.0 process ─
+    if (seededProfile) {
+      const hits = (read(fsLog) ?? '').split(/\r?\n/).filter(Boolean);
+      const problems = [
+        fingerprint(seededProfile) !== profileBefore ? 'profile tree changed (sha256 fingerprint differs)' : null,
+        hits.length ? `${hits.length} fs access(es) under the profile root by Squad 2.0 processes, e.g. ${hits.slice(0, 3).map((h) => h.replace(configHome, '<config-home>')).join('; ')}` : null,
+      ].filter((x): x is string => x !== null);
+      s.check('profile-untouched', problems.length === 0, problems.join('; ') || undefined);
+    } else {
+      s.skip('profile-untouched', 'no profile squad seeded in this shape');
+    }
 
     return s.result();
   }
@@ -713,5 +1069,6 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     expect(xpass, `${version} × ${shape}: ${xpass.map((c) => c.id).join(', ')} now PASS — remove the matching expectedFailures pin(s) from ${path.relative(ROOT, MATRIX_PATH)}`).toEqual([]);
     const failed = result.checks.filter((c) => c.status === 'fail');
     expect(failed.map((c) => `${c.id}: ${c.detail ?? ''}`), `${version} (${producer.spec.source}) × ${shape} on ${PLATFORM}${result.reason ? ` — ${result.reason}` : ''}`).toEqual([]);
+    expect(result.status, `${version} × ${shape} on ${PLATFORM}: ${result.reason ?? 'row failed'}`).toBe('pass');
   }, 15 * 60_000);
 });
