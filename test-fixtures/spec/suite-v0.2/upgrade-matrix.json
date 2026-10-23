@@ -14,7 +14,7 @@
     {
       "version": "0.13.1",
       "source": "npm",
-      "why": "Last 0.x stable; first line with --state-backend (local|orphan|two-layer) and personal squads (writes teamRoot when a profile squad exists).",
+      "why": "Last 0.x stable; first line with --state-backend (local|orphan|two-layer) and user-profile squads (writes teamRoot when a profile squad exists).",
       "supports": {
         "stateBackend": true,
         "dryRun": true
@@ -59,7 +59,7 @@
   ],
   "shapes": {
     "default": "`squad init` with an empty profile directory, plus a custom agent (`agents/probe/`), an appended decision, a hand-written `.mcp.json` server, `AGENTS.md`, `CLAUDE.md` and a `.gitignore` rule.",
-    "profile": "As `default`, but the platform config dir is pre-seeded with a 1.x `squad/personal-squad/` roster and a global `squad/.squad/`; the whole tree must stay sha256-identical and the project must not be linked to it.",
+    "profile": "As `default`, but the platform config dir is pre-seeded with the 1.x user-profile layout (a roster directory and a `.squad/` under `<config>/squad/`); the whole tree must stay sha256-identical and the project must not be linked to it.",
     "legacy-casting": "As `default`, then `.squad/casting/` is replaced by a hand-written `registry.json` (`{universe, agents:[{name, role, status}]}`) with no history — the shape an agent-edited 1.x registry has.",
     "orphan": "`squad init --state-backend orphan` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive.",
     "two-layer": "`squad init --state-backend two-layer` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive.",
@@ -75,7 +75,7 @@
     "state-backend-preserved": "`config.json` `stateBackend` is unchanged; for `orphan`/`two-layer` the `squad-state` branch still exists.",
     "ai-team-migrated": "`.ai-team/` is gone and `.squad/team.md` exists (only for the `ai-team` shape).",
     "team-root-absent": "`config.json` has no `teamRoot` after the upgrade (Squad 2.0 never links a project to a profile directory).",
-    "profile-untouched": "The seeded `squad/personal-squad/` + `squad/.squad/` profile tree is sha256-identical after every step (only for `profile`).",
+    "profile-untouched": "The seeded 1.x `<config>/squad/` profile tree (roster directory + `.squad/`) is sha256-identical after every step (only for `profile`).",
     "idempotent-second-upgrade": "A second plain `squad upgrade` changes no file (sha256 of every file outside `.git/`).",
     "downgrade-probe": "The OLD CLI's `upgrade --dry-run` against a copy of the upgraded project modifies nothing; its exit code and message are recorded as a note.",
     "clients-projected": "`squad upgrade --client all --force` exits 0, `config.json` `clients` lists all 7 hosts, and every host projection exists.",
@@ -88,10 +88,10 @@
       "id": "F1",
       "title": "Stale `teamRoot` written by 0.13.x–1.x `init` survives `squad upgrade`; the upgraded project resolves in remote mode against the removed profile squad",
       "severity": "high",
-      "layer": "C — personal-squad removal (`runUpgrade` / `resolveSquadPaths`)",
+      "layer": "C — user-profile squad removal (`runUpgrade` / `resolveSquadPaths`)",
       "repro": [
-        "Seed a 1.x profile tree under the platform config dir: `<config>/squad/personal-squad/` and `<config>/squad/.squad/` (APPDATA on Windows, XDG_CONFIG_HOME on Linux).",
-        "`squad init` with @bradygaster/squad-cli 0.13.1 or 1.0.0 (npm) or the 1.0.1 / 1.1.0 standalone bundle: it prints `✓ Personal squad detected` and writes `.squad/config.json` → `{ \"version\": 1, \"teamRoot\": \"<config>\\\\squad\" }`.",
+        "Seed a 1.x profile tree under the platform config dir: the user-profile roster directory and `.squad/` under `<config>/squad/` (APPDATA on Windows, XDG_CONFIG_HOME on Linux).",
+        "`squad init` with @bradygaster/squad-cli 0.13.1 or 1.0.0 (npm) or the 1.0.1 / 1.1.0 standalone bundle: it prints its profile-detected notice and writes `.squad/config.json` → `{ \"version\": 1, \"teamRoot\": \"<config>\\\\squad\" }`.",
         "Upgrade with the 2.0 CLI packed from this tree: `squad upgrade` (exit 0, no warning about teamRoot).",
         "`cat .squad/config.json` still contains `teamRoot: <config>/squad`; `squad doctor` reports `Mode: remote` and ❌ `routing.md`, `casting/registry.json`, `decisions.md` not found — it is reading `<config>/squad/.squad/`, not the project."
       ],

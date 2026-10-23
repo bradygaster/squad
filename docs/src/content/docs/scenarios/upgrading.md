@@ -145,7 +145,7 @@ Every row below is a real published artifact of an older Squad release driven th
 | Version | Artifact | Why it is in the matrix | `--state-backend` |
 |---------|----------|-------------------------|-------------------|
 | **0.9.1** | npm tarball (`@bradygaster/squad-cli`) | Oldest 0.x line that still installs on Node 22 (engines >=22.5) and scaffolds .squad/ with a casting registry; predates --state-backend. | no |
-| **0.13.1** | npm tarball (`@bradygaster/squad-cli`) | Last 0.x stable; first line with --state-backend (local\|orphan\|two-layer) and personal squads (writes teamRoot when a profile squad exists). | yes |
+| **0.13.1** | npm tarball (`@bradygaster/squad-cli`) | Last 0.x stable; first line with --state-backend (local\|orphan\|two-layer) and user-profile squads (writes teamRoot when a profile squad exists). | yes |
 | **1.0.0** | npm tarball (`@bradygaster/squad-cli`) | First 1.x stable; last version published to npm (dist-tag latest). | yes |
 | **1.0.1** | GitHub Release standalone bundle | Patch release whose CLI never reached npm (release run 37222633918: SDK publish failed, CLI publish skipped); only the standalone bundles exist. | yes |
 | **1.1.0** | GitHub Release standalone bundle | Latest 1.x release; npm CLI publish failed in release run 39442663504 ("Could not verify @bradygaster/squad-cli@1.1.0 on npm dist-tag 'latest' after 20 attempts"), so the standalone bundle is the only published artifact. | yes |
@@ -156,7 +156,7 @@ Every row below is a real published artifact of an older Squad release driven th
 | Shape | Setup |
 |-------|-------|
 | `default` | `squad init` with an empty profile directory, plus a custom agent (`agents/probe/`), an appended decision, a hand-written `.mcp.json` server, `AGENTS.md`, `CLAUDE.md` and a `.gitignore` rule. |
-| `profile` | As `default`, but the platform config dir is pre-seeded with a 1.x `squad/personal-squad/` roster and a global `squad/.squad/`; the whole tree must stay sha256-identical and the project must not be linked to it. |
+| `profile` | As `default`, but the platform config dir is pre-seeded with the 1.x user-profile layout (a roster directory and a `.squad/` under `<config>/squad/`); the whole tree must stay sha256-identical and the project must not be linked to it. |
 | `legacy-casting` | As `default`, then `.squad/casting/` is replaced by a hand-written `registry.json` (`{universe, agents:[{name, role, status}]}`) with no history — the shape an agent-edited 1.x registry has. |
 | `orphan` | `squad init --state-backend orphan` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive. |
 | `two-layer` | `squad init --state-backend two-layer` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive. |
@@ -222,7 +222,7 @@ Every row below is a real published artifact of an older Squad release driven th
 | `state-backend-preserved` | `config.json` `stateBackend` is unchanged; for `orphan`/`two-layer` the `squad-state` branch still exists. |
 | `ai-team-migrated` | `.ai-team/` is gone and `.squad/team.md` exists (only for the `ai-team` shape). |
 | `team-root-absent` | `config.json` has no `teamRoot` after the upgrade (Squad 2.0 never links a project to a profile directory). |
-| `profile-untouched` | The seeded `squad/personal-squad/` + `squad/.squad/` profile tree is sha256-identical after every step (only for `profile`). |
+| `profile-untouched` | The seeded 1.x `<config>/squad/` profile tree (roster directory + `.squad/`) is sha256-identical after every step (only for `profile`). |
 | `idempotent-second-upgrade` | A second plain `squad upgrade` changes no file (sha256 of every file outside `.git/`). |
 | `downgrade-probe` | The OLD CLI's `upgrade --dry-run` against a copy of the upgraded project modifies nothing; its exit code and message are recorded as a note. |
 | `clients-projected` | `squad upgrade --client all --force` exits 0, `config.json` `clients` lists all 7 hosts, and every host projection exists. |
@@ -236,12 +236,12 @@ Real upgrade defects observed by the suite. An open finding is pinned as an expe
 
 #### F1 — Stale `teamRoot` written by 0.13.x–1.x `init` survives `squad upgrade`; the upgraded project resolves in remote mode against the removed profile squad
 
-**Severity:** high · **Owner:** C — personal-squad removal (`runUpgrade` / `resolveSquadPaths`) · **Status:** ✅ resolved
+**Severity:** high · **Owner:** C — user-profile squad removal (`runUpgrade` / `resolveSquadPaths`) · **Status:** ✅ resolved
 
 Repro:
 
-1. Seed a 1.x profile tree under the platform config dir: `<config>/squad/personal-squad/` and `<config>/squad/.squad/` (APPDATA on Windows, XDG_CONFIG_HOME on Linux).
-1. `squad init` with @bradygaster/squad-cli 0.13.1 or 1.0.0 (npm) or the 1.0.1 / 1.1.0 standalone bundle: it prints `✓ Personal squad detected` and writes `.squad/config.json` → `{ "version": 1, "teamRoot": "<config>\\squad" }`.
+1. Seed a 1.x profile tree under the platform config dir: the user-profile roster directory and `.squad/` under `<config>/squad/` (APPDATA on Windows, XDG_CONFIG_HOME on Linux).
+1. `squad init` with @bradygaster/squad-cli 0.13.1 or 1.0.0 (npm) or the 1.0.1 / 1.1.0 standalone bundle: it prints its profile-detected notice and writes `.squad/config.json` → `{ "version": 1, "teamRoot": "<config>\\squad" }`.
 1. Upgrade with the 2.0 CLI packed from this tree: `squad upgrade` (exit 0, no warning about teamRoot).
 1. `cat .squad/config.json` still contains `teamRoot: <config>/squad`; `squad doctor` reports `Mode: remote` and ❌ `routing.md`, `casting/registry.json`, `decisions.md` not found — it is reading `<config>/squad/.squad/`, not the project.
 

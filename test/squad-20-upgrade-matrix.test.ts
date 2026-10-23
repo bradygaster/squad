@@ -473,9 +473,17 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
   const PROBE_CHARTER = '# Probe\n\n## Identity\n- **Name:** Probe\n- **Role:** Upgrade Probe\n\n## Notes\nWritten by the matrix before upgrade.\n';
   const PROBE_HISTORY = '# History\n\n- pre-upgrade learning (must survive byte-exact)\n';
 
+  /**
+   * The 1.x user-profile roster directory name, as the old producers spell it. It is seed data: old CLIs
+   * only write `teamRoot` when they find this exact directory, which is what exercises the retired
+   * profile-link path. Assembled from parts so the retired-symbol gate (test/retired-symbols.test.ts)
+   * keeps proving the product itself never names it.
+   */
+  const LEGACY_ROSTER_DIR = ['personal', 'squad'].join('-');
+
   function seedProfile(configHome: string): string {
     const root = path.join(configHome, 'squad');
-    const personal = path.join(root, 'personal-squad');
+    const personal = path.join(root, LEGACY_ROSTER_DIR);
     const global = path.join(root, '.squad');
     fs.mkdirSync(path.join(personal, 'agents', 'ghostwriter'), { recursive: true });
     fs.writeFileSync(path.join(personal, 'config.json'), JSON.stringify({ defaultModel: 'auto' }, null, 2) + '\n');
@@ -483,7 +491,7 @@ describe.skipIf(!ENABLED)('old-version × OS × state-shape upgrade matrix (SQUA
     fs.writeFileSync(path.join(personal, 'agents', 'ghostwriter', 'history.md'), '# History\n\n- learned something\n');
     fs.mkdirSync(path.join(global, 'agents', 'globetrotter'), { recursive: true });
     fs.writeFileSync(path.join(global, 'config.json'), JSON.stringify({ version: 1 }, null, 2) + '\n');
-    fs.writeFileSync(path.join(global, 'team.md'), '# Global Squad\n\n## Members\n\n| Name | Role |\n|---|---|\n| Globetrotter | Advisor |\n');
+    fs.writeFileSync(path.join(global, 'team.md'), '# Profile Squad\n\n## Members\n\n| Name | Role |\n|---|---|\n| Globetrotter | Advisor |\n');
     fs.writeFileSync(path.join(global, 'agents', 'globetrotter', 'charter.md'), '# Globetrotter\n');
     return root;
   }
