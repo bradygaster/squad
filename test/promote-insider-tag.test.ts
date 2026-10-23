@@ -121,7 +121,8 @@ describe('publish workflow insider promotion graph (Issue #1497, superseded by p
     // only when both packages are readable at the version on the channel tag.
     const promotion = workflowJobBlock('promote-insider-tag');
 
-    expect(promotion).toContain('needs: publish');
+    expect(promotion).toContain('needs: [prepare, publish]');
+    expect(promotion).toContain("needs.prepare.outputs.stable_release == 'true'");
     expect(promotion).toContain("needs.publish.outputs.outcome == 'COMPLETE'");
     expect(promotion).toContain('@bradygaster/squad-sdk');
     expect(promotion).toContain('@bradygaster/squad-cli');

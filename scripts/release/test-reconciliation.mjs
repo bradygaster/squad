@@ -32,6 +32,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 export const CATEGORY_RULES = Object.freeze([
   { category: 'structural', file: /squad-20-upgrade-matrix\.test\.ts$/, title: /structurally inapplicable|not applicable|×.*: (no |cannot|does not)/i, reason: 'upgrade matrix: structurally inapplicable cell (7 declared in test-fixtures/spec/suite-v0.2/upgrade-matrix.json)' },
   { category: 'env-gated', file: /squad-20-upgrade-matrix\.test\.ts$/, reason: 'SQUAD_UPGRADE_MATRIX=1 not set (matrix runs only in squad-upgrade-matrix.yml)' },
+  { category: 'env-gated', file: /squad-20-preview-tarball-matrix\.test\.ts$/, reason: 'SQUAD_PREVIEW_TARBALL_MATRIX=1 not set (exact-tarball matrix runs only in the attested preview workflow mode)' },
   { category: 'env-gated', file: /clients-real-cli\.test\.ts$/, reason: 'SQUAD_REAL_CLI_TESTS=1 not set / host CLI binaries absent' },
   { category: 'env-gated', file: /squad-20-real-clients-stdio\.e2e\.test\.ts$/, reason: 'SQUAD_REAL_CLI_TESTS=1 not set / host CLI binaries absent' },
   { category: 'env-gated', file: /squad-20-host-feature-matrix\.test\.ts$/, reason: 'live host evidence requires the real CLI binaries' },
