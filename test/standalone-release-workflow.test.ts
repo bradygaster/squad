@@ -507,6 +507,7 @@ describe('reusable npm publication', () => {
     expect(publishStep).toContain('must already exist as a draft; recovery never recreates a release');
     expect(publishStep).toContain('draft release target does not match source_sha');
     expect(publishStep).toContain('missing_assets');
+    expect(publishStep).toContain('unexpected_assets');
     expect(publishStep).toContain('gh release edit "$TAG" --draft=false');
   });
 

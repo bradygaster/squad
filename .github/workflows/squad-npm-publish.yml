@@ -3,9 +3,9 @@ name: Squad npm Publish
 # Publishes exactly the two tarballs produced by Squad Release Verify.
 #
 # The workflow uses fail-closed reconciliation with idempotent partial-release
-# recovery. Direct dispatch is recovery-only: it must run from the immutable
-# release tag and cite a successful Squad Release Verify run plus its matching
-# evidence artifact at the same SHA.
+# recovery. Direct dispatch is recovery-only: it must run from the live merged
+# dev/main workflow definition and cite the immutable release source, successful
+# Squad Release Verify run, and matching evidence artifact separately.
 
 on:
   workflow_call:
@@ -495,6 +495,14 @@ jobs:
           done
           if [ "${#missing_assets[@]}" -gt 0 ]; then
             printf '::error::draft release %s is incomplete; missing: %s\n' "$TAG" "${missing_assets[*]}"
+            exit 1
+          fi
+          unexpected_assets=()
+          for asset in "${published_assets[@]}"; do
+            printf '%s\n' "${required_assets[@]}" | grep -Fxq "$asset" || unexpected_assets+=("$asset")
+          done
+          if [ "${#unexpected_assets[@]}" -gt 0 ]; then
+            printf '::error::draft release %s has unexpected assets: %s\n' "$TAG" "${unexpected_assets[*]}"
             exit 1
           fi
           gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
