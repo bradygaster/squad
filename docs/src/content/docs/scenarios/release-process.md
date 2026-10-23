@@ -54,7 +54,11 @@ SHA=$(git rev-parse origin/dev)   # the reviewed dev tip, full 40-hex SHA
 gh workflow run squad-release.yml \
   --ref dev \
   -f confirm_tag="v$VERSION" \
-  -f expected_sha="$SHA"
+  -f expected_sha="$SHA" \
+  -f npm_dist_tag=insider \
+  -f add_preview_alias=true \
+  -f publish_standalone=true \
+  -f publish_package_managers=true
 gh run watch
 ```
 
@@ -79,16 +83,21 @@ version is not stable. It then:
    promoted together to `insider`, then `preview` is added as an alias; a final
    two-package reconciliation fails the run as `PARTIAL_PUBLISH` or `UNKNOWN`
    if either package is missing or unconfirmed.
-4. Publishes the GitHub prerelease only after npm reconciled `COMPLETE`.
+4. Preflights Homebrew and WinGet authentication plus push access before the
+   tag, npm, release, or standalone publication when package managers are
+   selected.
 5. Builds standalone archives for macOS, Linux and Windows as workflow
    artifacts. They are attached to the release, and `squad-preview` /
    `bradygaster.Squad.Preview` are updated, only when `publish_standalone`
-   and `publish_package_managers` are set. Their outcome never gates npm.
+   and `publish_package_managers` are set.
+6. Publishes the GitHub prerelease only after npm reconciles `COMPLETE` and
+   every selected standalone, Homebrew, and WinGet channel completes.
 
 If a registry read times out the outcome is `UNKNOWN`, not a failure to
-publish: re-dispatch `squad-npm-publish.yml` with the same `version`,
-`source_sha`, `source_branch` and `dist_tag`; it publishes only a genuinely
-missing package and otherwise reconciles idempotently.
+publish. Recovery is allowed only from the immutable tag and requires the run
+ID plus exact `release-evidence-<sha>` artifact from a successful Squad Release
+Verify run at that SHA. It publishes only a genuinely missing package and
+otherwise reconciles idempotently.
 
 Install the preview with:
 
@@ -201,24 +210,27 @@ and create or reuse its WinGet PR:
 
 ## Recover a failed publication
 
-Do not recreate the tag or GitHub Release. npm publication is not atomic; the
-publish workflow reconciles fail-closed and recovers idempotently, so rerun it
-with the same exact inputs. A registry timeout is an `UNKNOWN` outcome, not
-proof that a package is missing; the rerun checks version and integrity first
-and publishes only what is genuinely absent:
+Do not recreate the tag or GitHub Release. The publish workflow uses
+fail-closed reconciliation with idempotent partial-release recovery. A registry
+timeout is an `UNKNOWN` outcome, not proof that a package is missing. The rerun
+checks version and integrity first and publishes only what is genuinely absent:
 
 ```bash
 VERSION=2.0.0
 SHA=$(git rev-list -n 1 "v$VERSION")   # the tag target; the branch may have moved on
-gh workflow run squad-npm-publish.yml --ref main \
-  -f version="$VERSION" -f source_sha="$SHA" -f source_branch=main -f dist_tag=latest
-gh workflow run squad-standalone-release.yml --ref main \
-  -f upload=true -f release_tag="v$VERSION" -f source_ref="$SHA"
+VERIFY_RUN_ID=<successful-release-verify-run-id>
+EVIDENCE_ARTIFACT="release-evidence-$SHA"
+gh workflow run squad-npm-publish.yml --ref "v$VERSION" \
+  -f version="$VERSION" -f source_sha="$SHA" -f dist_tag=latest \
+  -f verify_run_id="$VERIFY_RUN_ID" -f evidence_artifact="$EVIDENCE_ARTIFACT"
+gh workflow run squad-standalone-release.yml --ref "v$VERSION" \
+  -f upload=true -f release_tag="v$VERSION" -f source_ref="$SHA" -f source_sha="$SHA"
 ```
 
-Use `--ref dev`, `-f source_branch=dev` and `-f dist_tag=insider` for
+Use the preview tag ref and `-f dist_tag=insider -f add_preview_alias=true` for
 preview-release recovery. A tag that points at a different commit than
-`source_sha` fails the run; tags are never moved.
+`source_sha`, a non-successful verify run, or mismatched evidence fails the run;
+tags are never moved.
 
 ## After stable
 

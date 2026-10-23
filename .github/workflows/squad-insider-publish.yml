@@ -234,4 +234,5 @@ jobs:
       upload: true
       release_tag: ${{ needs.release.outputs.tag }}
       source_ref: ${{ needs.publish.outputs.source_sha }}
+      source_sha: ${{ needs.publish.outputs.source_sha }}
       package_version: ${{ needs.publish.outputs.insider_version }}

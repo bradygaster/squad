@@ -1,27 +1,11 @@
 name: Squad npm Publish
 
-# Publishes exactly @bradygaster/squad-sdk and @bradygaster/squad-cli from one exact commit.
+# Publishes exactly the two tarballs produced by Squad Release Verify.
 #
-# npm has no cross-package transaction, so this workflow implements FAIL-CLOSED RECONCILIATION
-# WITH IDEMPOTENT PARTIAL-RELEASE RECOVERY instead of pretending to be atomic:
-#
-#   1. exact-SHA guard immediately before any publish (checkout HEAD, workflow definition,
-#      tag target and live branch tip must all equal source_sha; a tag that already targets
-#      source_sha permits a reconciliation re-run even after the branch moved on);
-#   2. reconcile registry state first: a version that already exists must have the same
-#      integrity as the local pack (otherwise a different tree was published under this
-#      version and the job fails); only a genuinely missing package is published;
-#   3. publish BOTH packs under a per-run staging dist-tag, verify the pair (version,
-#      integrity/shasum, CLI->SDK exact pin, readability via `npm view` and a clean
-#      isolated-prefix install from the staging tag);
-#   4. promote BOTH to the channel tag, verify; add `preview` as a compatibility alias when
-#      requested, verify; final two-package reconciliation (always runs) uploads a JSON result
-#      and fails the job as PARTIAL_PUBLISH or UNKNOWN when either package is missing or
-#      unconfirmed. A registry read timeout is an UNKNOWN outcome, never evidence of absence:
-#      re-dispatch with the same inputs and the run reconciles idempotently.
-#
-# Entry points: workflow_call from squad-release.yml, or workflow_dispatch for recovery with
-# the same exact inputs. There is no automatic trigger.
+# The workflow uses fail-closed reconciliation with idempotent partial-release
+# recovery. Direct dispatch is recovery-only: it must run from the immutable
+# release tag and cite a successful Squad Release Verify run plus its matching
+# evidence artifact at the same SHA.
 
 on:
   workflow_call:
@@ -31,11 +15,7 @@ on:
         required: true
         type: string
       source_sha:
-        description: 'Full 40-hex commit SHA to publish from'
-        required: true
-        type: string
-      source_branch:
-        description: 'Branch the release was dispatched from (dev or main)'
+        description: 'Full 40-hex commit SHA targeted by the release tag'
         required: true
         type: string
       dist_tag:
@@ -43,18 +23,22 @@ on:
         required: true
         type: string
       add_preview_alias:
-        description: 'Also point `preview` at this version after the primary tag verifies'
+        description: 'Also point preview at this version after the primary tag verifies'
         required: false
         default: false
         type: boolean
       evidence_artifact:
-        description: 'Name of the release-evidence artifact from squad-release-verify.yml (same workflow run) to compare pack hashes against'
+        description: 'Exact release-evidence-<source_sha> artifact from Squad Release Verify'
+        required: true
+        type: string
+      verify_run_id:
+        description: 'Empty for the orchestrated release; required for direct recovery'
         required: false
         default: ''
         type: string
     secrets:
       NPM_TOKEN:
-        description: 'npm automation token used to publish both Squad packages'
+        description: 'npm automation token used only by registry mutation steps'
         required: true
     outputs:
       outcome:
@@ -62,23 +46,17 @@ on:
         value: ${{ jobs.publish.outputs.outcome }}
       stable_release:
         description: 'true when the version is a stable MAJOR.MINOR.PATCH'
-        value: ${{ jobs.publish.outputs.stable_release }}
+        value: ${{ jobs.prepare.outputs.stable_release }}
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish / reconcile (for example 2.0.0-preview.1)'
+        description: 'Version to reconcile (for example 2.0.0-preview.1)'
         required: true
         type: string
       source_sha:
-        description: 'Full 40-hex commit SHA the release tag targets'
+        description: 'Full 40-hex commit SHA targeted by the existing release tag'
         required: true
         type: string
-      source_branch:
-        description: 'Branch the release was dispatched from'
-        required: true
-        default: dev
-        type: choice
-        options: [dev, main]
       dist_tag:
         description: 'Primary npm dist-tag'
         required: true
@@ -86,10 +64,18 @@ on:
         type: choice
         options: [insider, preview, latest]
       add_preview_alias:
-        description: 'Also point `preview` at this version after the primary tag verifies'
+        description: 'Also point preview at this version after the primary tag verifies'
         required: false
         default: true
         type: boolean
+      verify_run_id:
+        description: 'Successful Squad Release Verify run ID at source_sha'
+        required: true
+        type: string
+      evidence_artifact:
+        description: 'Exact release-evidence-<source_sha> artifact from that run'
+        required: true
+        type: string
 
 concurrency:
   group: squad-npm-publication
@@ -102,10 +88,25 @@ env:
   PUBLIC_REGISTRY: https://registry.npmjs.org/
 
 jobs:
-  preflight:
-    name: Pre-publish validation at exact SHA
+  prepare:
+    name: Validate tag, verification proof and exact tarballs
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      publish_artifact: ${{ steps.publish-artifact.outputs.name }}
+      stable_release: ${{ steps.inputs.outputs.stable_release }}
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      DIST_TAG: ${{ inputs.dist_tag }}
+      EVIDENCE_ARTIFACT: ${{ inputs.evidence_artifact }}
+      VERIFY_RUN_ID: ${{ inputs.verify_run_id }}
+      TAG: v${{ inputs.version }}
+      EVIDENCE_DIR: ${{ github.workspace }}/verified-evidence
+      PUBLISH_DIR: ${{ github.workspace }}/publish-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -115,69 +116,151 @@ jobs:
         with:
           node-version: 22
 
-      - name: Assert checkout HEAD == source_sha and version inputs match the tree
+      - name: Validate inputs and immutable release identity
+        id: inputs
         env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          VERSION: ${{ inputs.version }}
-          DIST_TAG: ${{ inputs.dist_tag }}
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUN_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full lowercase 40-hex SHA"; exit 1; }
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout HEAD $(git rev-parse HEAD) != $SOURCE_SHA"; exit 1; }
-          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
           [[ "$VERSION" =~ $semver_re ]] || { echo "::error::Invalid version '$VERSION'"; exit 1; }
+          [ "$EVIDENCE_ARTIFACT" = "release-evidence-${SOURCE_SHA}" ] || { echo "::error::evidence_artifact must be release-evidence-${SOURCE_SHA}"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout HEAD differs from source_sha"; exit 1; }
+          test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA $DISPATCH_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
+          test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition $WORKFLOW_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --no-tags
+          test "$(git rev-list -n 1 "refs/tags/${TAG}")" = "$SOURCE_SHA" || { echo "::error::tag $TAG does not target source_sha"; exit 1; }
+
+          stable_release=false
           if [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            [ "$DIST_TAG" = latest ] || { echo "::error::Stable $VERSION must publish to latest, not $DIST_TAG"; exit 1; }
+            stable_release=true
+            [ "$DIST_TAG" = latest ] || { echo "::error::stable releases must use latest"; exit 1; }
           else
-            [[ "$VERSION" =~ -preview\.[0-9]+$ ]] || { echo "::error::Unsupported prerelease '$VERSION'; expected MAJOR.MINOR.PATCH-preview.N"; exit 1; }
-            [[ "$DIST_TAG" =~ ^(insider|preview)$ ]] || { echo "::error::Prerelease $VERSION must publish to insider or preview, not $DIST_TAG"; exit 1; }
+            [[ "$VERSION" =~ -preview\.(0|[1-9][0-9]*)$ ]] || { echo "::error::unsupported prerelease '$VERSION'"; exit 1; }
+            [[ "$DIST_TAG" =~ ^(insider|preview)$ ]] || { echo "::error::preview releases must use insider or preview"; exit 1; }
           fi
+
+          if [ -n "$VERIFY_RUN_ID" ]; then
+            [[ "$VERIFY_RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::verify_run_id must contain digits only"; exit 1; }
+            [ "$RUN_REF" = "refs/tags/${TAG}" ] || { echo "::error::direct recovery must be dispatched from refs/tags/${TAG}, not $RUN_REF"; exit 1; }
+          fi
+          echo "stable_release=$stable_release" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the cited Squad Release Verify run and artifact
+        if: inputs.verify_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}"
+          test "$(gh api "$api" --jq '.head_sha')" = "$SOURCE_SHA" || { echo "::error::verify run head_sha does not match source_sha"; exit 1; }
+          test "$(gh api "$api" --jq '.status')" = completed || { echo "::error::verify run is not completed"; exit 1; }
+          test "$(gh api "$api" --jq '.conclusion')" = success || { echo "::error::verify run did not conclude success"; exit 1; }
+          workflow_id="$(gh api "$api" --jq '.workflow_id')"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}" --jq '.path')" = '.github/workflows/squad-release-verify.yml' || {
+            echo "::error::verify_run_id is not a Squad Release Verify run"; exit 1;
+          }
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"${EVIDENCE_ARTIFACT}\" and .expired == false)] | length")"
+          test "$count" = 1 || { echo "::error::expected one unexpired ${EVIDENCE_ARTIFACT} artifact on verify run ${VERIFY_RUN_ID}, found $count"; exit 1; }
+
+      - name: Download evidence from the orchestrated release run
+        if: inputs.verify_run_id == ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: ${{ inputs.evidence_artifact }}
+          path: verified-evidence
+
+      - name: Download evidence from the cited recovery run
+        if: inputs.verify_run_id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: ${{ inputs.evidence_artifact }}
+          path: verified-evidence
+          run-id: ${{ inputs.verify_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Recheck evidence hashes, manifests and privacy result
+        run: |
+          set -euo pipefail
+          mkdir -p "$PUBLISH_DIR"
           node <<'NODE'
-          const { readFileSync } = require('node:fs');
-          const version = process.env.VERSION;
-          const read = (p) => JSON.parse(readFileSync(p, 'utf8'));
-          const root = read('package.json'), sdk = read('packages/squad-sdk/package.json'), cli = read('packages/squad-cli/package.json'), lock = read('package-lock.json');
-          const checks = [
-            ['package.json', root.version], ['packages/squad-sdk/package.json', sdk.version], ['packages/squad-cli/package.json', cli.version],
-            ['package-lock.json version', lock.version], ['package-lock.json root workspace', lock.packages['']?.version],
-            ['package-lock.json SDK workspace', lock.packages['packages/squad-sdk']?.version], ['package-lock.json CLI workspace', lock.packages['packages/squad-cli']?.version],
-          ];
-          const bad = checks.filter(([, v]) => v !== version).map(([w, v]) => `${w}=${v}`);
-          if (bad.length) throw new Error(`version mismatch vs input ${version}: ${bad.join(', ')}`);
-          const dep = cli.dependencies['@bradygaster/squad-sdk'], lockDep = lock.packages['packages/squad-cli'].dependencies['@bradygaster/squad-sdk'];
-          if (version.includes('-') ? (dep !== `>=${version}` || lockDep !== `>=${version}`) : (dep.includes('-') || lockDep.includes('-'))) throw new Error(`CLI->SDK dependency pair invalid: package.json '${dep}', lockfile '${lockDep}'`);
-          if (!readFileSync('CHANGELOG.md', 'utf8').includes(`## [${version}]`)) throw new Error(`CHANGELOG.md lacks '## [${version}]'`);
-          for (const [, v] of Object.entries({ ...cli.dependencies, ...cli.devDependencies, ...sdk.dependencies })) if (String(v).startsWith('file:')) throw new Error(`file: dependency ${v}`);
-          console.log(`✅ root, SDK, CLI, lockfile entries, CLI->SDK pair and CHANGELOG all read ${version}`);
+          const { createHash } = require('node:crypto');
+          const { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } = require('node:fs');
+          const path = require('node:path');
+          const evidence = process.env.EVIDENCE_DIR, publish = process.env.PUBLISH_DIR, version = process.env.VERSION;
+          const report = JSON.parse(readFileSync(path.join(evidence, 'pack-evidence.json'), 'utf8'));
+          if (!report.ok) throw new Error('pack-evidence.json does not report ok=true');
+          const expected = ['@bradygaster/squad-sdk', '@bradygaster/squad-cli'];
+          const tgzs = readdirSync(evidence).filter((f) => f.endsWith('.tgz')).sort();
+          if (tgzs.length !== 2) throw new Error(`evidence must contain exactly two tarballs, found ${tgzs.join(', ')}`);
+          const local = {};
+          for (const name of expected) {
+            const entry = report.packages?.[name];
+            if (!entry) throw new Error(`missing evidence for ${name}`);
+            if (entry.manifest?.version !== version) throw new Error(`${name} evidence version ${entry.manifest?.version} != ${version}`);
+            if (name.endsWith('squad-cli') && entry.manifest?.sdkDependency !== version) throw new Error(`CLI evidence does not pin SDK exactly to ${version}`);
+            if (!entry.privacy?.denyPatterns?.includes('email-upn')) throw new Error(`${name} evidence lacks the email-upn privacy rule`);
+            if (entry.privacy?.hits?.length !== 0) throw new Error(`${name} evidence has privacy hits`);
+            const tarball = path.join(evidence, entry.filename);
+            if (!existsSync(tarball)) throw new Error(`missing ${entry.filename}`);
+            const actual = createHash('sha256').update(readFileSync(tarball)).digest('hex');
+            if (actual !== entry.sha256) throw new Error(`${name} sha256 ${actual} != evidence ${entry.sha256}`);
+            const sum = readFileSync(`${tarball}.sha256`, 'utf8').trim();
+            if (sum !== `${entry.sha256}  ${entry.filename}`) throw new Error(`${entry.filename}.sha256 does not match`);
+            copyFileSync(tarball, path.join(publish, entry.filename));
+            local[name] = {
+              filename: entry.filename, bytes: entry.bytes, sha256: entry.sha256,
+              integrity: entry.integrity, shasum: entry.shasum, files: entry.files,
+              sdkDependency: entry.manifest?.sdkDependency ?? null,
+            };
+          }
+          copyFileSync(path.join(evidence, 'pack-evidence.json'), path.join(publish, 'pack-evidence.json'));
+          writeFileSync(path.join(publish, 'local-packs.json'), JSON.stringify(local, null, 2) + '\n');
+          console.log(JSON.stringify(Object.fromEntries(expected.map((name) => [name, local[name].sha256])), null, 2));
           NODE
+          node scripts/release/assert-publish-identity.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG" \
+            --evidence-dir "$PUBLISH_DIR"
 
-      - name: "Gate: lockfiles resolve only to registry.npmjs.org"
-        run: node scripts/release/check-lockfile-registry.mjs
+      - name: Name verified publish artifact
+        id: publish-artifact
+        run: echo "name=verified-publish-packs-${SOURCE_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
-      - name: "Gate: release policy (allowlist = exactly squad-sdk + squad-cli, root private, no bypass)"
-        run: node scripts/release/policy-gates.mjs --mode=release
+      - name: Upload exact verified publish tarballs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: ${{ steps.publish-artifact.outputs.name }}
+          path: publish-evidence/
+          retention-days: 7
+          if-no-files-found: error
 
   publish:
-    name: Publish and reconcile the package pair
-    needs: preflight
+    name: Publish and reconcile exact verified tarballs
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
+      actions: read
       id-token: write
     outputs:
       outcome: ${{ steps.reconcile.outputs.outcome }}
-      stable_release: ${{ steps.mode.outputs.stable_release }}
     env:
       VERSION: ${{ inputs.version }}
       SOURCE_SHA: ${{ inputs.source_sha }}
-      SOURCE_BRANCH: ${{ inputs.source_branch }}
       DIST_TAG: ${{ inputs.dist_tag }}
       ADD_PREVIEW_ALIAS: ${{ inputs.add_preview_alias }}
+      TAG: v${{ inputs.version }}
       STAGING_TAG: staging-${{ github.run_id }}-${{ github.run_attempt }}
-      PACKS_DIR: ${{ github.workspace }}/release-packs
+      PACKS_DIR: ${{ github.workspace }}/publish-evidence
       RECON_DIR: ${{ github.workspace }}/npm-reconciliation
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -187,189 +270,167 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Validate npm token
-        run: |
-          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::NPM_TOKEN secret is not configured"; exit 1; }
-          mkdir -p "$PACKS_DIR" "$RECON_DIR"
-
-      - name: Exact-SHA guard immediately before publish (checkout, workflow definition, tag target, live branch tip)
-        id: mode
-        env:
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
-        run: |
-          set -euo pipefail
-          TAG="v${VERSION}"
-          head="$(git rev-parse HEAD)"
-          test "$head" = "$SOURCE_SHA" || { echo "::error::checkout HEAD $head != $SOURCE_SHA"; exit 1; }
-          git fetch origin "+refs/tags/${TAG}:refs/tags/${TAG}" --no-tags 2>/dev/null || true
-          tag_target="$(git rev-list -n 1 "refs/tags/${TAG}" 2>/dev/null || echo none)"
-          tip="$(git ls-remote --exit-code origin "refs/heads/${SOURCE_BRANCH}" | cut -f1)"
-          mode=strict
-          if [ "$tag_target" = "$SOURCE_SHA" ] && [ "$tip" != "$SOURCE_SHA" ]; then
-            mode=reconcile
-            echo "::notice::Tag $TAG already targets $SOURCE_SHA and origin/$SOURCE_BRANCH moved to $tip: reconciliation run (publishing only what is genuinely missing)."
-          fi
-          if [ "$tag_target" != none ] && [ "$tag_target" != "$SOURCE_SHA" ]; then
-            echo "::error::Tag $TAG targets $tag_target, not $SOURCE_SHA; refusing to publish."; exit 1
-          fi
-          if [ "$mode" = strict ]; then
-            test "$tip" = "$SOURCE_SHA" || { echo "::error::origin/$SOURCE_BRANCH is $tip, not $SOURCE_SHA; branch moved before publish."; exit 1; }
-            test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition $WORKFLOW_SHA != $SOURCE_SHA"; exit 1; }
-          fi
-          stable_release=false
-          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] && stable_release=true
-          { echo "mode=$mode"; echo "stable_release=$stable_release"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
-
-      - name: Download verified evidence bundle
-        if: inputs.evidence_artifact != ''
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
         with:
-          name: ${{ inputs.evidence_artifact }}
-          path: evidence-verified
+          name: ${{ needs.prepare.outputs.publish_artifact }}
+          path: publish-evidence
 
-      - name: Install dependencies (committed lockfile, public registry, no repair)
-        run: |
-          set -euo pipefail
-          npm ci --registry="$PUBLIC_REGISTRY"
-          git diff --quiet -- package-lock.json || { echo "::error::npm ci modified package-lock.json"; exit 1; }
-
-      - name: Build squad-sdk and squad-cli
-        run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
-
-      - name: "Pin squad-sdk dependency to the exact published version (#1588)"
-        run: |
-          node -e '
-            const fs = require("fs"); const p = "packages/squad-cli/package.json";
-            const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
-            pkg.dependencies["@bradygaster/squad-sdk"] = process.env.VERSION;
-            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
-            console.log("Pinned @bradygaster/squad-sdk to " + process.env.VERSION);
-          '
-
-      - name: Pack both packages and assert the tarball manifests
-        id: pack
-        run: |
-          set -euo pipefail
-          npm -w packages/squad-sdk pack --json --ignore-scripts --pack-destination "$PACKS_DIR" > "$RECON_DIR/pack-sdk.json"
-          npm -w packages/squad-cli pack --json --ignore-scripts --pack-destination "$PACKS_DIR" > "$RECON_DIR/pack-cli.json"
-          node <<'NODE'
-          const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto'), cp = require('node:child_process'), os = require('node:os');
-          const V = process.env.VERSION, dir = process.env.PACKS_DIR, recon = process.env.RECON_DIR;
-          const out = {};
-          for (const [name, file] of [['@bradygaster/squad-sdk', 'pack-sdk.json'], ['@bradygaster/squad-cli', 'pack-cli.json']]) {
-            const info = JSON.parse(fs.readFileSync(path.join(recon, file), 'utf8'))[0];
-            const tgz = path.join(dir, info.filename);
-            const bytes = fs.readFileSync(tgz);
-            const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-'));
-            cp.execFileSync('tar', ['-xzf', tgz, '-C', tmp]);
-            const manifest = JSON.parse(fs.readFileSync(path.join(tmp, 'package', 'package.json'), 'utf8'));
-            if (manifest.name !== name) throw new Error(`${file}: tarball name ${manifest.name}`);
-            if (manifest.version !== V) throw new Error(`${name}: tarball version ${manifest.version} != ${V}`);
-            if (name.endsWith('squad-cli') && manifest.dependencies['@bradygaster/squad-sdk'] !== V) throw new Error(`CLI tarball SDK dependency ${manifest.dependencies['@bradygaster/squad-sdk']} is not the exact pin ${V}`);
-            out[name] = { filename: info.filename, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), integrity: info.integrity, shasum: info.shasum, files: info.files.map((f) => f.path).sort(), sdkDependency: manifest.dependencies?.['@bradygaster/squad-sdk'] ?? null };
-          }
-          // Compare with the verified evidence bundle when present: SDK must be byte-identical; the CLI differs
-          // only by the exact SDK pin (verify packs the committed floor), so compare its file list.
-          const evidenceFile = 'evidence-verified/pack-evidence.json';
-          if (fs.existsSync(evidenceFile)) {
-            const ev = JSON.parse(fs.readFileSync(evidenceFile, 'utf8')).packages;
-            const sdkEv = ev['@bradygaster/squad-sdk'], cliEv = ev['@bradygaster/squad-cli'];
-            if (sdkEv.sha256 !== out['@bradygaster/squad-sdk'].sha256) throw new Error(`SDK pack sha256 ${out['@bradygaster/squad-sdk'].sha256} != verified ${sdkEv.sha256}`);
-            if (JSON.stringify(cliEv.files) !== JSON.stringify(out['@bradygaster/squad-cli'].files)) throw new Error('CLI pack file list differs from the verified evidence bundle');
-            out.verifiedEvidence = { sdkSha256: sdkEv.sha256, cliSha256FloorDependency: cliEv.sha256, cliFileListIdentical: true };
-            console.log('✅ packs match the verified evidence bundle (SDK byte-identical; CLI file list identical, differs only by the exact SDK pin)');
-          } else {
-            out.verifiedEvidence = null;
-            console.log('::warning::no verified evidence bundle supplied; publishing packs built in this job');
-          }
-          fs.writeFileSync(path.join(recon, 'local-packs.json'), JSON.stringify(out, null, 2) + '\n');
-          console.log(JSON.stringify({ sdk: out['@bradygaster/squad-sdk'].sha256, cli: out['@bradygaster/squad-cli'].sha256 }));
-          NODE
-
-      - name: Reconcile existing registry state (existing version must match local integrity)
+      - name: Classify exact registry versions (only explicit 404 means missing)
         id: existing
         run: |
           set -euo pipefail
+          mkdir -p "$RECON_DIR"
           node <<'NODE' | tee -a "$GITHUB_OUTPUT"
           const cp = require('node:child_process'), fs = require('node:fs'), path = require('node:path');
-          const V = process.env.VERSION, local = JSON.parse(fs.readFileSync(path.join(process.env.RECON_DIR, 'local-packs.json'), 'utf8'));
-          const view = (spec, field) => { try { return cp.execFileSync('npm', ['view', spec, field, '--registry=' + process.env.PUBLIC_REGISTRY], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } };
+          const version = process.env.VERSION;
+          const local = JSON.parse(fs.readFileSync(path.join(process.env.PACKS_DIR, 'local-packs.json'), 'utf8'));
           const state = {};
           for (const name of ['@bradygaster/squad-sdk', '@bradygaster/squad-cli']) {
-            const version = view(`${name}@${V}`, 'version');
-            const integrity = version ? view(`${name}@${V}`, 'dist.integrity') : '';
-            state[name] = { exists: version === V, integrity, localIntegrity: local[name].integrity, integrityMatches: version === V ? integrity === local[name].integrity : null };
-            if (state[name].exists && !state[name].integrityMatches) { console.error(`::error::${name}@${V} already exists on the registry with integrity ${integrity}, but this tree packs to ${local[name].integrity}. A different tree was published under this version; refusing to continue.`); process.exit(1); }
+            const result = cp.spawnSync('npm', ['view', `${name}@${version}`, 'version', 'dist.integrity', '--json', `--registry=${process.env.PUBLIC_REGISTRY}`], { encoding: 'utf8' });
+            const diagnostic = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+            if (result.status !== 0) {
+              if (/\bE404\b|404 Not Found/i.test(diagnostic)) {
+                state[name] = { state: 'missing', diagnostic: diagnostic.trim().slice(-500) };
+                continue;
+              }
+              state[name] = { state: 'unknown', diagnostic: diagnostic.trim().slice(-500), exitCode: result.status };
+              continue;
+            }
+            let data;
+            try { data = JSON.parse(result.stdout || '{}'); } catch (error) {
+              state[name] = { state: 'unknown', diagnostic: `invalid npm view JSON: ${error}` };
+              continue;
+            }
+            if (data.version !== version || typeof data['dist.integrity'] !== 'string') {
+              state[name] = { state: 'unknown', diagnostic: `unexpected registry response ${JSON.stringify(data)}` };
+              continue;
+            }
+            const integrityMatches = data['dist.integrity'] === local[name].integrity;
+            state[name] = { state: 'present', version: data.version, integrity: data['dist.integrity'], localIntegrity: local[name].integrity, integrityMatches };
+            if (!integrityMatches) {
+              fs.writeFileSync(path.join(process.env.RECON_DIR, 'pre-publish-state.json'), JSON.stringify(state, null, 2) + '\n');
+              throw new Error(`${name}@${version} exists with different integrity`);
+            }
           }
           fs.writeFileSync(path.join(process.env.RECON_DIR, 'pre-publish-state.json'), JSON.stringify(state, null, 2) + '\n');
-          console.log(`sdk_exists=${state['@bradygaster/squad-sdk'].exists}`);
-          console.log(`cli_exists=${state['@bradygaster/squad-cli'].exists}`);
+          for (const [key, name] of [['sdk', '@bradygaster/squad-sdk'], ['cli', '@bradygaster/squad-cli']) {
+            console.log(`${key}_state=${state[name].state}`);
+          }
+          const unknown = Object.entries(state).filter(([, value]) => value.state === 'unknown');
+          if (unknown.length) {
+            for (const [name, value] of unknown) console.error(`::error::${name}@${version} registry state is UNKNOWN: ${value.diagnostic}`);
+            process.exit(1);
+          }
           NODE
 
-      - name: Stage the pair under the per-run staging dist-tag (publish only what is missing)
+      - name: Stage SDK from the exact verified tarball
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SDK_STATE: ${{ steps.existing.outputs.sdk_state }}
         run: |
           set -euo pipefail
-          if [ "${{ steps.existing.outputs.sdk_exists }}" = "true" ]; then
+          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::NPM_TOKEN is not configured"; exit 1; }
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          if [ "$SDK_STATE" = present ]; then
             npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$STAGING_TAG"
+          elif [ "$SDK_STATE" = missing ]; then
+            npm publish "$PACKS_DIR/bradygaster-squad-sdk-${VERSION}.tgz" --ignore-scripts --access public --provenance --tag "$STAGING_TAG"
           else
-            npm -w packages/squad-sdk publish --access public --provenance --tag "$STAGING_TAG"
+            echo "::error::SDK registry state must be present or missing, got '$SDK_STATE'"; exit 1
           fi
-          if [ "${{ steps.existing.outputs.cli_exists }}" = "true" ]; then
+
+      - name: Stage CLI from the exact verified tarball
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          CLI_STATE: ${{ steps.existing.outputs.cli_state }}
+        run: |
+          set -euo pipefail
+          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::NPM_TOKEN is not configured"; exit 1; }
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          if [ "$CLI_STATE" = present ]; then
             npm dist-tag add "@bradygaster/squad-cli@${VERSION}" "$STAGING_TAG"
+          elif [ "$CLI_STATE" = missing ]; then
+            npm publish "$PACKS_DIR/bradygaster-squad-cli-${VERSION}.tgz" --ignore-scripts --access public --provenance --tag "$STAGING_TAG"
           else
-            npm -w packages/squad-cli publish --access public --provenance --tag "$STAGING_TAG"
+            echo "::error::CLI registry state must be present or missing, got '$CLI_STATE'"; exit 1
           fi
 
-      - name: Verify the staged pair (version, integrity, tag, readability, isolated-prefix install)
-        run: |
-          set -euo pipefail
-          node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$STAGING_TAG" --local-packs "$RECON_DIR/local-packs.json" --out "$RECON_DIR/verify-staging.json" --install-check --max-wait-seconds 900
+      - name: Verify staged pair
+        run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$STAGING_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-staging.json" --install-check --max-wait-seconds 900
 
-      - name: Promote BOTH packages to the channel dist-tag and verify
+      - name: Promote SDK to the primary channel
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$DIST_TAG"
-          npm dist-tag add "@bradygaster/squad-cli@${VERSION}" "$DIST_TAG"
-          node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$DIST_TAG" --local-packs "$RECON_DIR/local-packs.json" --out "$RECON_DIR/verify-${DIST_TAG}.json" --max-wait-seconds 900
 
-      - name: Add the `preview` compatibility alias to BOTH packages and verify
-        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+      - name: Promote CLI to the primary channel
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" preview
-          npm dist-tag add "@bradygaster/squad-cli@${VERSION}" preview
-          node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag preview --local-packs "$RECON_DIR/local-packs.json" --out "$RECON_DIR/verify-preview.json" --max-wait-seconds 600
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          npm dist-tag add "@bradygaster/squad-cli@${VERSION}" "$DIST_TAG"
 
-      - name: Final two-package reconciliation (always runs; PARTIAL_PUBLISH or UNKNOWN fails the job)
+      - name: Verify primary channel
+        run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$DIST_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-${DIST_TAG}.json" --max-wait-seconds 900
+
+      - name: Add preview alias to SDK
+        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" preview
+
+      - name: Add preview alias to CLI
+        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          npm dist-tag add "@bradygaster/squad-cli@${VERSION}" preview
+
+      - name: Verify preview alias
+        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag preview --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-preview.json" --max-wait-seconds 600
+
+      - name: Final two-package reconciliation
         id: reconcile
         if: always()
         run: |
           set +e
-          node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$DIST_TAG" --local-packs "$RECON_DIR/local-packs.json" --out "$RECON_DIR/final-reconciliation.json" --max-wait-seconds 300 --classify
+          node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$DIST_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/final-reconciliation.json" --max-wait-seconds 300 --classify
           status=$?
           outcome="$(node -p 'require(process.env.RECON_DIR + "/final-reconciliation.json").outcome' 2>/dev/null || echo UNKNOWN)"
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
-          {
-            echo "## npm publication: $outcome"
-            echo
-            echo "Version \`$VERSION\` from \`$SOURCE_SHA\` on dist-tag \`$DIST_TAG\` (preview alias: $ADD_PREVIEW_ALIAS)."
-            echo
-            echo '```json'
-            cat "$RECON_DIR/final-reconciliation.json" 2>/dev/null || echo '{}'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
           if [ "$outcome" != COMPLETE ]; then
-            echo "::error::npm publication outcome is $outcome. Both packages must be readable at ${VERSION} on '${DIST_TAG}' with the local pack integrity. Re-dispatch this workflow with the same inputs to reconcile idempotently (only a genuinely missing package is published)."
+            echo "::error::npm publication outcome is $outcome. Re-dispatch recovery from the immutable tag with the same verify run and evidence artifact."
             exit 1
           fi
           exit "$status"
 
-      - name: Remove the staging dist-tag (success only)
+      - name: Remove SDK staging tag
         if: success()
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm dist-tag rm @bradygaster/squad-sdk "$STAGING_TAG" || echo "::warning::could not remove $STAGING_TAG from squad-sdk"
-          npm dist-tag rm @bradygaster/squad-cli "$STAGING_TAG" || echo "::warning::could not remove $STAGING_TAG from squad-cli"
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          npm dist-tag rm @bradygaster/squad-sdk "$STAGING_TAG"
+
+      - name: Remove CLI staging tag
+        if: success()
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          npm dist-tag rm @bradygaster/squad-cli "$STAGING_TAG"
 
       - name: Upload reconciliation evidence
         if: always()
@@ -378,34 +439,49 @@ jobs:
           name: npm-publish-reconciliation-${{ inputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             npm-reconciliation/
-            release-packs/*.tgz
+            publish-evidence/
           retention-days: 90
           if-no-files-found: error
 
-  # --- Issues #1491 / #1497 ---------------------------------------------
-  # After a stable release publishes to `latest`, ensure each package's `insider` dist-tag is
-  # not left semver-lower than `latest`. Runs only after the pair reconciled COMPLETE.
   promote-insider-tag:
     name: Promote insider dist-tags if behind latest
-    needs: publish
-    if: needs.publish.outputs.stable_release == 'true' && needs.publish.outputs.outcome == 'COMPLETE'
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.stable_release == 'true' && needs.publish.outputs.outcome == 'COMPLETE'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      TAG: v${{ inputs.version }}
+      PACKS_DIR: ${{ github.workspace }}/publish-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           ref: ${{ inputs.source_sha }}
-          fetch-depth: 1
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-      - name: Promote insider dist-tags
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: ${{ needs.prepare.outputs.publish_artifact }}
+          path: publish-evidence
+      - name: Promote SDK insider dist-tag
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NEW_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::NPM_TOKEN secret is not configured"; exit 1; }
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           node scripts/promote-insider-tag.mjs @bradygaster/squad-sdk "$NEW_VERSION"
+      - name: Promote CLI insider dist-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NEW_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           node scripts/promote-insider-tag.mjs @bradygaster/squad-cli "$NEW_VERSION"

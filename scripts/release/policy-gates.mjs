@@ -11,7 +11,8 @@
  *                         dependency floor is '>=<version>' for prereleases and has no
  *                         prerelease suffix for stable versions (package.json AND lockfile)
  *   prerelease-guard      every workspace version is X.Y.Z, X.Y.Z-preview.N or X.Y.Z-insider.N
- *   publish-policy        every `npm ... publish` in .github/workflows is workspace-scoped
+ *   publish-policy        every `npm ... publish` is workspace-scoped or one of the two exact
+ *                         verified tarball paths used by squad-npm-publish.yml
  *   publish-allowlist     the publishable workspaces are exactly @bradygaster/squad-sdk and
  *                         @bradygaster/squad-cli; the root stays private
  *   changelog-heading     CHANGELOG.md has `## [<version>]`; whatsnew has `## v<version>`
@@ -34,6 +35,7 @@ export const SANCTIONED_VERSION = /^\d+\.\d+\.\d+(-(preview|insider)(\.\d+)?)?$/
 // Mirrors test/publish-policy.test.ts and the awk program in squad-ci.yml.
 const NPM_PUBLISH_COMMAND = /(?:^|&&|\|\||;)\s*(?:(?:if|then)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*npm\s+[^#;&|]*\bpublish\b[^#;&|]*/;
 const WORKSPACE_FLAG = /(?:^|\s)(?:-w|--workspace)(?:=|\s|$)/;
+const VERIFIED_TARBALL = /npm\s+publish\s+"\$PACKS_DIR\/bradygaster-squad-(?:sdk|cli)-\$\{VERSION\}\.tgz"(?:\s|$)/;
 
 const readJson = (root, rel) => JSON.parse(readFileSync(path.join(root, rel), 'utf8'));
 
@@ -46,7 +48,7 @@ export function publishPolicyViolations(root = ROOT) {
       const command = raw.trimStart().replace(/^-\s*/, '').replace(/^run:\s*/, '');
       if (command.startsWith('#')) return;
       const m = command.match(NPM_PUBLISH_COMMAND)?.[0];
-      if (m !== undefined && !WORKSPACE_FLAG.test(m)) out.push({ file: `.github/workflows/${name}`, line: i + 1, text: raw.trim() });
+      if (m !== undefined && !WORKSPACE_FLAG.test(m) && !VERIFIED_TARBALL.test(m)) out.push({ file: `.github/workflows/${name}`, line: i + 1, text: raw.trim() });
     });
   }
   return out;
@@ -103,7 +105,7 @@ export function runPolicyGates({ root = ROOT, mode = 'ci' } = {}) {
   // publish-policy
   {
     const v = publishPolicyViolations(root);
-    gate('publish-policy', v.length === 0, v.length ? v.map((x) => `${x.file}:${x.line} ${x.text}`).join('; ') : 'every npm publish in .github/workflows is workspace-scoped');
+    gate('publish-policy', v.length === 0, v.length ? v.map((x) => `${x.file}:${x.line} ${x.text}`).join('; ') : 'every npm publish is workspace-scoped or one of the two exact verified tarball paths');
   }
 
   // publish-allowlist

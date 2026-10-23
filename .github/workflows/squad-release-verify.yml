@@ -50,7 +50,10 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'packages/*/package.json'
+      - 'packages/squad-sdk/src/platform/comms-teams.ts'
       - 'CHANGELOG.md'
+      - 'docs/src/content/docs/whatsnew.md'
+      - '.gitattributes'
       - '.changeset/**'
 
 permissions:
@@ -222,7 +225,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          node scripts/release/pack-evidence.mjs --out "$EVIDENCE_DIR" --expect-version "$VERSION" --expect-sdk-dep ">=$VERSION"
+          node scripts/release/pack-evidence.mjs --out "$EVIDENCE_DIR" --expect-version "$VERSION" --pin-sdk-dep-exact --expect-sdk-dep-exact
           node -e '
             const p = require(process.env.EVIDENCE_DIR + "/pack-evidence.json").packages;
             const out = require("fs"); out.appendFileSync(process.env.GITHUB_OUTPUT, "sdk_sha256=" + p["@bradygaster/squad-sdk"].sha256 + "\ncli_sha256=" + p["@bradygaster/squad-cli"].sha256 + "\n");

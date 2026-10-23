@@ -450,22 +450,24 @@ jobs:
                 command = $0
                 sub(/^[[:space:]]*-[[:space:]]*/, "", command)
                 sub(/^run:[[:space:]]*/, "", command)
-                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/) {
+                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ &&
+                    command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/ &&
+                    command !~ /npm publish "\$PACKS_DIR\/bradygaster-squad-(sdk|cli)-\$\{VERSION\}\.tgz"/) {
                   print NR ":" $0
                 }
               }
             ' "$wf")
             if [ -n "$BARE" ]; then
-              echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
+              echo "::error file=$wf::Unsanctioned npm publish found (requires -w/--workspace or an exact verified Squad tarball path):"
               echo "$BARE"
               VIOLATIONS=1
             fi
           done
           if [ "$VIOLATIONS" -eq 1 ]; then
-            echo "::error::PUBLISH POLICY VIOLATION — all npm publish commands must be workspace-scoped"
+            echo "::error::PUBLISH POLICY VIOLATION — npm publish must be workspace-scoped or use one of the two exact verified Squad tarball paths"
             exit 1
           fi
-          echo "✅ All npm publish commands are workspace-scoped"
+          echo "✅ All npm publish commands are workspace-scoped or exact verified Squad tarball paths"
 
       # ─── Release policy (shared with the release path; no bypass) ───────
       - name: "Gate: Release policy (workspace integrity, prerelease guard, publish allowlist, changelog heading)"

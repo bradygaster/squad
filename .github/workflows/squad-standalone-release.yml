@@ -34,6 +34,10 @@ on:
         required: false
         default: ''
         type: string
+      source_sha:
+        description: 'Full 40-hex commit SHA targeted by release_tag'
+        required: true
+        type: string
       package_version:
         description: 'Optional package version override for generated insider snapshots'
         required: false
@@ -73,6 +77,10 @@ on:
         required: false
         default: ''
         type: string
+      source_sha:
+        description: 'Full 40-hex commit SHA targeted by release_tag'
+        required: true
+        type: string
       package_version:
         description: 'Optional package version override for generated insider snapshots'
         required: false
@@ -95,8 +103,77 @@ env:
   NODE_VERSION: ${{ inputs.node_version || '22.20.0' }}
 
 jobs:
+  guard:
+    name: Validate standalone release inputs and tag identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Validate inputs
+        id: validate
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          NODE_VERSION_INPUT: ${{ inputs.node_version }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUN_REF_TYPE: ${{ github.ref_type }}
+          RUN_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full lowercase 40-hex SHA"; exit 1; }
+          [[ "$NODE_VERSION_INPUT" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "::error::node_version must be X.Y.Z"; exit 1; }
+          [ -z "$SOURCE_REF" ] || [ "$SOURCE_REF" = "$SOURCE_SHA" ] || { echo "::error::source_ref must be empty or equal source_sha"; exit 1; }
+          [ -z "$PACKAGE_VERSION" ] || [[ "$PACKAGE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-insider\.(0|[1-9][0-9]*)$ ]] || {
+            echo "::error::package_version must be empty or X.Y.Z-insider.N"; exit 1;
+          }
+          tag="$RELEASE_TAG"
+          if [ -z "$tag" ] && [ "$RUN_REF_TYPE" = tag ]; then tag="$RUN_REF_NAME"; fi
+          [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(preview|insider)\.(0|[1-9][0-9]*))?$ ]] || {
+            echo "::error::release_tag must be a stable, preview, or insider tag"; exit 1;
+          }
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout differs from source_sha"; exit 1; }
+          test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA differs from source_sha"; exit 1; }
+          test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition differs from source_sha"; exit 1; }
+          test "$(git ls-remote --exit-code origin "refs/tags/${tag}" | cut -f1)" = "$SOURCE_SHA" || { echo "::error::release tag does not target source_sha"; exit 1; }
+          if [ "${{ inputs.publish_package_managers }}" = true ] && [ "${{ inputs.upload }}" != true ]; then
+            echo "::error::publish_package_managers requires upload=true"; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  credential-preflight:
+    name: Preflight package-manager credentials
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify auth and push access before standalone publication effects
+        if: inputs.publish_package_managers
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::HOMEBREW_TAP_TOKEN is not configured"; exit 1; }
+          [ -n "$WINGET_CREATE_GITHUB_TOKEN" ] || { echo "::error::WINGET_CREATE_GITHUB_TOKEN is not configured"; exit 1; }
+          test "$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api repos/bradygaster/homebrew-squad --jq '.permissions.push // false')" = true || {
+            echo "::error::HOMEBREW_TAP_TOKEN lacks push access"; exit 1;
+          }
+          test "$(GH_TOKEN="$WINGET_CREATE_GITHUB_TOKEN" gh api repos/tamirdresher/winget-pkgs --jq '.permissions.push // false')" = true || {
+            echo "::error::WINGET_CREATE_GITHUB_TOKEN lacks push access"; exit 1;
+          }
+          GH_TOKEN="$WINGET_CREATE_GITHUB_TOKEN" gh api repos/microsoft/winget-pkgs --silent
+
   build:
     name: ${{ matrix.target }}
+    needs: [guard, credential-preflight]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -267,6 +344,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
         with:
           path: artifacts
@@ -323,6 +404,7 @@ jobs:
           rm -f ./*.sha256
 
           if [ "${#upload_paths[@]}" -gt 0 ]; then
+            node ../scripts/release/assert-publish-identity.mjs --repo .. --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
             gh release upload "${TAG}" "${upload_paths[@]}" --repo "${GITHUB_REPOSITORY}"
           fi
 
@@ -338,6 +420,7 @@ jobs:
             fi
           fi
           if [ "${checksum_changed}" = "true" ]; then
+            node ../scripts/release/assert-publish-identity.mjs --repo .. --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
             gh release upload "${TAG}" SHA256SUMS.txt --clobber --repo "${GITHUB_REPOSITORY}"
           fi
 
@@ -425,6 +508,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          path: release-source
       - name: Require Homebrew tap credential
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -563,6 +651,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "${target_cask}"
           git commit -m "chore: update Squad cask for ${TAG}"
+          node ../release-source/scripts/release/assert-publish-identity.mjs --repo ../release-source --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
           git push origin HEAD:main
 
           commit_sha="$(git rev-parse HEAD)"
@@ -590,6 +679,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          path: release-source
       - name: Require WinGet publication credential
         env:
           WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
@@ -871,6 +965,7 @@ jobs:
             git status --short
             exit 1
           fi
+          node ../release-source/scripts/release/assert-publish-identity.mjs --repo ../release-source --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
           git push origin "HEAD:refs/heads/${BRANCH}"
 
           pr_url="$(gh api \
@@ -880,6 +975,7 @@ jobs:
             -f "head=tamirdresher:${BRANCH}" \
             --jq '.[0].html_url // ""')"
           if [ -z "${pr_url}" ]; then
+            node ../release-source/scripts/release/assert-publish-identity.mjs --repo ../release-source --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
             pr_url="$(gh pr create \
               --repo microsoft/winget-pkgs \
               --base master \

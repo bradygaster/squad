@@ -36,21 +36,31 @@ if (!version || !tag) { console.error('usage: npm-pair-verify.mjs --version V --
 
 function view(spec, field) {
   const r = spawnSync(npm, ['view', spec, field, `--registry=${REGISTRY}`, '--json'], { encoding: 'utf8', shell: process.platform === 'win32' });
-  if (r.status !== 0) return { ok: false, value: null, error: (r.stderr || '').split('\n').find((l) => l.includes('code')) ?? `exit ${r.status}` };
+  if (r.status !== 0) {
+    const diagnostic = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim();
+    return { ok: false, value: null, error: diagnostic.slice(-1200) || `exit ${r.status}` };
+  }
   try { const v = JSON.parse(r.stdout || 'null'); return { ok: true, value: typeof v === 'object' && v !== null && !Array.isArray(v) ? (v[field] ?? v) : v, error: null }; } catch { return { ok: true, value: (r.stdout || '').trim(), error: null }; }
 }
 
 function readPackage(name) {
   const v = view(`${name}@${version}`, 'version');
-  if (!v.ok) return { name, state: /E404|404/.test(v.error ?? '') ? 'missing' : 'unknown', error: v.error };
+  if (!v.ok) return { name, state: /\bE404\b|404 Not Found/i.test(v.error ?? '') ? 'missing' : 'unknown', error: v.error };
+  if (v.value !== version) return { name, state: 'unknown', error: `registry returned version ${JSON.stringify(v.value)} for ${name}@${version}` };
   const integrity = view(`${name}@${version}`, 'dist.integrity');
   const shasum = view(`${name}@${version}`, 'dist.shasum');
   const tagged = view(name, `dist-tags.${tag}`);
+  if (!integrity.ok || !shasum.ok || !tagged.ok) {
+    return {
+      name, state: 'unknown',
+      error: [integrity.error, shasum.error, tagged.error].filter(Boolean).join('; '),
+    };
+  }
   const local = localPacks[name];
   return {
-    name, state: v.value === version ? 'present' : 'missing', version: v.value, integrity: integrity.value, shasum: shasum.value,
+    name, state: 'present', version: v.value, integrity: integrity.value, shasum: shasum.value,
     localIntegrity: local?.integrity ?? null, integrityMatches: local ? integrity.value === local.integrity : null,
-    tag, tagged: tagged.ok ? tagged.value : null, tagMatches: tagged.ok && tagged.value === version,
+    tag, tagged: tagged.value, tagMatches: tagged.value === version,
   };
 }
 
