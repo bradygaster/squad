@@ -39,7 +39,11 @@ function arg(k, dflt) { const i = process.argv.indexOf(k); return i >= 0 ? proce
 
 /** Backticked test titles in a locking-tests cell, trimmed at an ellipsis. */
 export function titlesOf(lockingTests) {
-  return [...String(lockingTests ?? '').matchAll(/`([^`]+)`/g)].map((m) => m[1].split('…')[0].trim()).filter((t) => t.length >= 8 && !/^\d+\.$/.test(t)).map((t) => t.split(' > ').pop().replace(/^(?:P[12]|G\d+|R3-\d+:|\d+\.|\d+\+\d+\.)\s*/, '').trim()).filter((t) => t.length >= 8);
+  return [...String(lockingTests ?? '').matchAll(/`([^`]+)`/g)]
+    .map((m) => m[1].split('…')[0].trim())
+    .filter((t) => t.length >= 8 && !/^\d+\.$/.test(t) && !/\b(?:skipIf|runIf|describe|it|test)\s*\(/.test(t))
+    .map((t) => t.split(' > ').pop().replace(/^(?:P[12]|G\d+|R3-\d+:|\d+\.|\d+\+\d+\.)\s*/, '').trim())
+    .filter((t) => t.length >= 8);
 }
 
 export function buildManifest(opts) {
@@ -187,7 +191,7 @@ export function renderMarkdown(m) {
 
 export function writeProvenance(outDir, manifestFile, manifest) {
   const bytes = readFileSync(manifestFile);
-  const schemaBytes = readFileSync(path.join(HERE, 'manifest.schema.json'));
+  const schemaBytes = Buffer.from(readFileSync(path.join(HERE, 'manifest.schema.json'), 'utf8').replace(/\r\n?/g, '\n'));
   const prov = {
     manifest: { file: path.basename(manifestFile), sha256: sha256(bytes), bytes: statSync(manifestFile).size },
     commit: manifest.target.commit, tree: manifest.target.tree, generatedAt: manifest.generatedAt,

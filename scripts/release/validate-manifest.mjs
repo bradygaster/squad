@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const SCHEMA_PATH = path.join(HERE, 'manifest.schema.json');
+const canonicalLfBytes = (file) => Buffer.from(readFileSync(file, 'utf8').replace(/\r\n?/g, '\n'));
 
 function typeOf(v) { return v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v; }
 
@@ -64,7 +65,7 @@ export function validateManifestFile(manifestPath, provenancePath) {
     if (prov.commit !== manifest.target?.commit) errors.push(`provenance: commit ${prov.commit} != manifest target ${manifest.target?.commit}`);
     if (prov.tree !== manifest.target?.tree) errors.push(`provenance: tree ${prov.tree} != manifest target ${manifest.target?.tree}`);
     if (prov.generatorScriptSha256 !== manifest.generator?.scriptSha256) errors.push('provenance: generator script hash differs from manifest');
-    const schemaSha = createHash('sha256').update(readFileSync(SCHEMA_PATH)).digest('hex');
+    const schemaSha = createHash('sha256').update(canonicalLfBytes(SCHEMA_PATH)).digest('hex');
     if (prov.schema?.sha256 !== schemaSha) errors.push(`provenance: schema sha256 ${prov.schema?.sha256} != shipped schema ${schemaSha}`);
     if (prov.schema?.version !== manifest.schemaVersion) errors.push('provenance: schemaVersion differs from manifest');
   }

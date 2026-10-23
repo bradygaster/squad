@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0-preview.1] - 2026-10-23
 
-First Squad 2.0 preview. Published to the npm `preview` dist-tag only; `latest` stays at 1.1.0. Upgrade guidance, the tested old-version × OS upgrade matrix and the full list of breaking changes live in [Upgrading to Squad 2.0](docs/src/content/docs/scenarios/upgrading.md).
+First Squad 2.0 preview. Published primarily to the npm `insider` dist-tag, which powers `squad upgrade --self --insider`, with `preview` retained as a compatibility alias; `latest` stays at 1.1.0. Upgrade guidance, the tested old-version × OS upgrade matrix and the full list of breaking changes live in [Upgrading to Squad 2.0](docs/src/content/docs/scenarios/upgrading.md).
 
 ### Breaking
 

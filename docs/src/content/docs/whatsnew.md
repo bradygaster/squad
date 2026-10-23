@@ -6,9 +6,9 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ## v2.0.0 — Multi-Host Clients & Experimental Backend Contract
 
-### v2.0.0-preview.1 — preview channel
+### v2.0.0-preview.1 — insider channel with preview alias
 
-`v2.0.0-preview.1` is the first Squad 2.0 build. It is published to the npm `preview` dist-tag (`npm install -g @bradygaster/squad-cli@preview`); `latest` stays at v1.1.0 until 2.0.0 ships stable. Before upgrading an existing project read [Upgrading to Squad 2.0](./scenarios/upgrading.md#upgrading-to-squad-20) and the [tested upgrade paths](./scenarios/upgrading.md#tested-upgrade-paths); the full list of breaking changes is in the [table below](#breaking--behavior-changes-v200).
+`v2.0.0-preview.1` is the first Squad 2.0 build. The canonical npm channel is `insider` (`squad upgrade --self --insider` or `npm install -g @bradygaster/squad-cli@insider`), with `preview` retained as a compatibility alias; `latest` stays at v1.1.0 until 2.0.0 ships stable. Before upgrading an existing project read [Upgrading to Squad 2.0](./scenarios/upgrading.md#upgrading-to-squad-20) and the [tested upgrade paths](./scenarios/upgrading.md#tested-upgrade-paths); the full list of breaking changes is in the [table below](#breaking--behavior-changes-v200).
 
 ### Highlights (v2.0.0)
 

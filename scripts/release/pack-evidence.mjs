@@ -9,7 +9,7 @@
  *   - the package.json inside the tarball (version, name, CLI->SDK dependency)
  *   - export-target validation: every `exports`/`bin`/`main`/`types` target is a file in the tarball
  *   - a privacy scan of the extracted tarball contents (user profile paths, private feed URLs,
- *     retired product concepts) with a narrow, reviewed allowlist
+ *     email addresses / UPNs, retired product concepts) with a narrow, reviewed allowlist
  *
  * Fails (exit 1) when a tarball version differs from --expect-version, when the CLI tarball does
  * not pin/float the SDK as expected, when an export target is missing, or when the privacy scan
@@ -40,6 +40,7 @@ export const PRIVACY_DENY = Object.freeze([
   { id: 'posix-home-path', re: /(?:^|[^\w./-])\/home\/[A-Za-z0-9._-]+(?:\/|\b)/ },
   { id: 'macos-user-path', re: /(?:^|[^\w./-])\/Users\/[A-Za-z0-9._-]+(?:\/|\b)/ },
   { id: 'private-feed-url', re: /pkgs\.visualstudio\.com|pkgs\.dev\.azure\.com|packagefeedproxy|ms-feed-\d+|vsblob\.vsassets\.io/i },
+  { id: 'email-upn', re: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i },
   { id: 'retired-profile-squad', re: frag('person', 'al[- ]squads?\\b') },
   { id: 'retired-ghost-feature', re: frag('gho', 'st[- ]?proto', 'col') },
   { id: 'retired-consult-feature', re: frag('\\bcons', 'ult[- ]mode\\b|\\bsquad cons', 'ult\\b') },
@@ -59,9 +60,23 @@ function breakingLineFrom(extractRoot) {
 
 /** Placeholder account names that documentation may use inside example paths. */
 const PLACEHOLDER_USERS = /^(?:user|username|johndoe|example|you|<[^>]+>|\$\{?[A-Z_]+\}?|%[A-Z_]+%)$/i;
+const TECHNICAL_EMAIL_LIKE_VALUES = new Set(['git@github.com', 'org@dev.azure.com', 'git@ssh.dev.azure.com']);
 function placeholderPath(match) {
   const user = match.replace(/^[^\\/]*[\\/]+(?:Users|home)[\\/]+/i, '').replace(/[\\/].*$/, '');
   return PLACEHOLDER_USERS.test(user);
+}
+
+function placeholderEmail(match) {
+  const normalized = match.toLowerCase();
+  const at = normalized.lastIndexOf('@');
+  const local = normalized.slice(0, at);
+  const domain = normalized.slice(at + 1);
+  return /(?:^|\.)example\.(?:com|org|net)$/.test(domain)
+    || normalized === 'noreply@github.com'
+    || domain === 'users.noreply.github.com'
+    || normalized === 'user@odata.bind'
+    || (domain === 'github.com' && (local === 'token' || /^ghp_x+$/.test(local)))
+    || TECHNICAL_EMAIL_LIKE_VALUES.has(normalized);
 }
 
 /**
@@ -71,6 +86,8 @@ function placeholderPath(match) {
 export const PRIVACY_ALLOW = Object.freeze([
   { file: 'package/CHANGELOG.md', reason: 'the single historical BREAKING sentence (test/retired-symbols.test.ts keeps it to exactly one line)', test: (line, _match, ctx) => ctx.breakingLine !== null && line.includes(ctx.breakingLine) && line.includes('**BREAKING:**') },
   { file: /^package\/(?:dist\/storage\/storage-error\.(?:js|d\.ts)|templates\/skills\/e2e-template-testing\/SKILL\.md)$/, reason: 'documentation example paths with placeholder account names (user, username, johndoe)', test: (_line, match) => placeholderPath(match) },
+  { file: /^package\//, reason: 'narrow placeholder or protocol identity (example domains, noreply@github.com, and SSH/URL user components)', test: (_line, match) => placeholderEmail(match) },
+  { file: 'package/package.json', reason: 'reviewed package metadata author/bugs email field', test: (line) => /"(?:author|bugs|email)"\s*:/.test(line) },
 ]);
 
 const TEXT_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.json', '.md', '.txt', '.yml', '.yaml', '.toml', '.mdc', '.html', '.css', '.sh', '.ps1', '.cmd', '']);
@@ -124,14 +141,26 @@ function exportTargets(pkg) {
   return [...targets].map((t) => t.replace(/^\.\//, ''));
 }
 
-export function packEvidence({ root = ROOT, outDir, expectVersion, expectSdkDep, expectSdkDepExact = false } = {}) {
+export function packEvidence({ root = ROOT, outDir, expectVersion, expectSdkDep, expectSdkDepExact = false, pinSdkDepExact = false } = {}) {
   mkdirSync(outDir, { recursive: true });
   const result = { generatedAt: new Date().toISOString(), node: process.version, npm: execFileSync(npm, ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' }).trim(), packages: {}, problems: [] };
   for (const [name, dir] of Object.entries(PACKAGES)) {
     const pkgDir = path.join(root, dir);
     if (!existsSync(path.join(pkgDir, 'dist'))) { result.problems.push(`${name}: dist/ missing; run npm run build first`); continue; }
-    const dry = JSON.parse(execFileSync(npm, ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: pkgDir, encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }))[0];
-    const packed = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', outDir], { cwd: pkgDir, encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }))[0];
+    const manifestPath = path.join(pkgDir, 'package.json');
+    const originalManifest = readFileSync(manifestPath, 'utf8');
+    if (pinSdkDepExact && name === '@bradygaster/squad-cli') {
+      const manifest = JSON.parse(originalManifest);
+      manifest.dependencies['@bradygaster/squad-sdk'] = manifest.version;
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    }
+    let dry; let packed;
+    try {
+      dry = JSON.parse(execFileSync(npm, ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: pkgDir, encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }))[0];
+      packed = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', outDir], { cwd: pkgDir, encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }))[0];
+    } finally {
+      if (pinSdkDepExact && name === '@bradygaster/squad-cli') writeFileSync(manifestPath, originalManifest);
+    }
     const tarball = path.join(outDir, packed.filename);
     const bytes = readFileSync(tarball);
     const files = dry.files.map((f) => f.path).sort();
@@ -177,7 +206,13 @@ export function packEvidence({ root = ROOT, outDir, expectVersion, expectSdkDep,
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
   const outDir = path.resolve(arg('--out') ?? 'evidence');
-  const res = packEvidence({ outDir, expectVersion: arg('--expect-version'), expectSdkDep: arg('--expect-sdk-dep'), expectSdkDepExact: process.argv.includes('--expect-sdk-dep-exact') });
+  const res = packEvidence({
+    outDir,
+    expectVersion: arg('--expect-version'),
+    expectSdkDep: arg('--expect-sdk-dep'),
+    expectSdkDepExact: process.argv.includes('--expect-sdk-dep-exact'),
+    pinSdkDepExact: process.argv.includes('--pin-sdk-dep-exact'),
+  });
   for (const [name, p] of Object.entries(res.packages)) {
     console.log(`${name}@${p.manifest.version}: ${p.filename} ${p.bytes} bytes sha256=${p.sha256} ${p.integrity} files=${p.fileCount} exports-ok=${p.exportTargets.missing.length === 0} privacy-hits=${p.privacy.hits.length} allowlisted=${p.privacy.allowlisted.length}`);
   }
