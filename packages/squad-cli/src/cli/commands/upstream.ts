@@ -17,7 +17,7 @@ import { isSafeUpstreamName } from '@bradygaster/squad-sdk/upstream';
 
 const storage = new FSStorageProvider();
 import { success, warn, info } from '../core/output.js';
-import { fatal } from '../core/errors.js';
+import { fatal, fatalNoSquad } from '../core/errors.js';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 
 /** Validate a git ref (branch/tag) — reject shell metacharacters. */
@@ -153,7 +153,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
   const squadDirInfo = detectSquadDir(process.cwd());
   if (!storage.existsSync(squadDirInfo.path)) {
-    fatal('No squad found — run init first.');
+    fatalNoSquad();
     return;
   }
 

@@ -22,7 +22,23 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 
+// 1. Fail-closed guard FIRST, from the ORIGINAL environment: any fs access under the real
+//    profile roots throws (sync, callback and promise APIs). Children inherit it through
+//    NODE_OPTIONS=--require and the SQUAD_TEST_FORBIDDEN_ROOTS list, so faking HOME/APPDATA
+//    for a subprocess still protects the real profile.
+const require = createRequire(import.meta.url);
+const guardModule = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), 'profile-fs-guard.cjs');
+require(guardModule);
+{
+  // NODE_OPTIONS strips backslashes inside quotes on Windows; forward slashes work everywhere.
+  const quoted = `--require "${guardModule.replace(/\\/g, '/')}"`;
+  const existing = process.env['NODE_OPTIONS'] ?? '';
+  if (!existing.includes('profile-fs-guard.cjs')) process.env['NODE_OPTIONS'] = existing ? `${existing} ${quoted}` : quoted;
+}
+
+// 2. Redirect every profile-level directory to a throw-away temp dir.
 const realTmp = fs.realpathSync(os.tmpdir());
 const guardRoot = fs.mkdtempSync(path.join(realTmp, 'squad-test-profile-'));
 

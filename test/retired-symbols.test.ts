@@ -53,13 +53,13 @@ const ALLOWLIST: Record<string, string> = {
 const BREAKING_LINE = 'Personal squads, consult mode and the global squad (`--global`) were removed; existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually.';
 
 /**
- * Files that may contain the BREAKING sentence verbatim (and nothing else about the retired
- * concepts): the 2.0 release notes and the upgrading guide. Lines containing the exact
- * sentence are exempt; every other line is scanned.
+ * The ONE documentation location that may contain the BREAKING sentence verbatim (and nothing
+ * else about the retired concepts): the v2.0.0 release notes. The line containing the exact
+ * sentence is exempt; every other line of the file is scanned. The upgrading guide only links
+ * here and must not name the removed concepts.
  */
 const BREAKING_LINE_ONLY = new Set<string>([
   'docs/src/content/docs/whatsnew.md',
-  'docs/src/content/docs/scenarios/upgrading.md',
 ]);
 
 /** Whatsnew: only the current (2.0) section is documentation; older sections are history. */
@@ -172,11 +172,14 @@ describe('retired-symbol gate: no trace of personal squads, consult mode, Ghost 
       if (rel.endsWith('CHANGELOG.md') || rel.startsWith('.changeset/')) continue;
       expect(existsSync(join(ROOT, rel)), `${rel} is allowlisted but missing — prune the allowlist`).toBe(true);
     }
-    // Durable: the release notes and upgrading guide repeat the exact sentence once each, and nothing more.
+    // Durable: the v2.0.0 release notes carry the exact sentence exactly once — the single historical record.
     for (const rel of BREAKING_LINE_ONLY) {
       const text = readFileSync(join(ROOT, rel), 'utf8');
       expect(text.split(BREAKING_LINE).length - 1, `${rel} must carry the BREAKING sentence exactly once`).toBe(1);
     }
+    const upgrading = readFileSync(join(ROOT, 'docs/src/content/docs/scenarios/upgrading.md'), 'utf8');
+    expect(upgrading, 'the upgrading guide links to the v2.0.0 breaking-changes record instead of repeating it').toContain('whatsnew.md#breaking--behavior-changes-v200');
+    expect(upgrading.includes(BREAKING_LINE)).toBe(false);
     // Pre-release: the pending fragment carries the sentence exactly once and nothing else retired.
     const fragment = join(ROOT, '.changeset/squad2-c-personal-removal-and-fixes.md');
     if (existsSync(fragment)) {

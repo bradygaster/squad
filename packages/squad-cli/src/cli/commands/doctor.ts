@@ -15,7 +15,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
 import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { resolveSquad, resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
-import { fatal } from '../core/errors.js';
+import { fatalNoSquad } from '../core/errors.js';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
 import { resolveUpstreams } from '@bradygaster/squad-sdk/upstream';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
@@ -914,7 +914,7 @@ export async function doctorCommand(cwd?: string): Promise<void> {
   // The resolver is the single admission check: it applies the profile boundary (a ~/.squad
   // in the home directory is never a project), so a bare existence check must not short-circuit it.
   if (!resolveSquad(resolvedCwd)) {
-    fatal(`No squad in this directory (searched from ${resolvedCwd}). Run "squad init" here, or use --team-root to point at the project.`);
+    fatalNoSquad();
   }
   const mode = getDoctorMode(resolvedCwd);
   const checks = await runDoctor(resolvedCwd);

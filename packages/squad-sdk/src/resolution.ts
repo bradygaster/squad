@@ -222,7 +222,10 @@ function platformSquadConfigDir(): string | null {
     } else {
       base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
     }
-    return canonicalDir(path.join(base, 'squad'));
+    // Canonicalize the PARENT only and append `squad` lexically: establishing the boundary must
+    // never stat/read the retired profile directory itself.
+    const canonicalBase = canonicalDir(base);
+    return canonicalBase === null ? null : path.join(canonicalBase, 'squad');
   } catch {
     return null;
   }
@@ -237,21 +240,40 @@ function platformSquadConfigDir(): string | null {
  */
 export function isRetiredProfileTeamRoot(teamDir: string): boolean {
   const target = canonicalDir(teamDir);
-  const { homeDir, squadHome } = profileBoundary();
-  const under = (root: string | null) => root !== null && (samePath(target, root) || isAncestorOf(root, target));
-  if (homeDir && samePath(target, homeDir)) return true;
-  if (homeDir && under(path.join(homeDir, '.squad'))) return true;
-  if (squadHome && under(squadHome)) return true;
-  return under(platformSquadConfigDir());
+  const b = profileBoundary();
+  // Fail closed: an unresolvable target or an unknown boundary is treated as retired (never followed).
+  if (target === null || !b.homeDir) return true;
+  if (isProfileOwned(target, b)) return true;
+  return isAncestorOf(path.join(b.homeDir, '.squad'), target) || samePath(target, path.join(b.homeDir, '.squad'));
 }
 
 /** Directories that are never project squads: the home dir and the roaming SQUAD_HOME root. */
-function profileBoundary(): { homeDir: string | null; squadHome: string | null } {
+interface ProfileBoundary {
+  /** Canonical home directory, or null when it cannot be established (callers then refuse). */
+  homeDir: string | null;
+  /** Canonical roaming squad home (`SQUAD_HOME` or `<home>/.squad`). */
+  squadHome: string | null;
+  /** Canonical platform config dir (`%APPDATA%\squad`, `~/.config/squad`, …), the retired global-squad location. */
+  configDir: string | null;
+}
+
+function profileBoundary(): ProfileBoundary {
   let homeDir: string | null = null;
   try { homeDir = canonicalDir(os.homedir()); } catch { homeDir = null; }
   const envHome = process.env['SQUAD_HOME'];
-  const squadHome = envHome ? canonicalDir(envHome) : (homeDir ? path.join(homeDir, '.squad') : null);
-  return { homeDir, squadHome };
+  // SQUAD_HOME: canonicalize its parent and append the leaf lexically, so the boundary is
+  // established without touching the roaming directory itself.
+  const squadHome = envHome
+    ? (() => { const parent = canonicalDir(path.dirname(path.resolve(envHome))); return parent === null ? null : path.join(parent, path.basename(path.resolve(envHome))); })()
+    : (homeDir ? path.join(homeDir, '.squad') : null);
+  return { homeDir, squadHome, configDir: platformSquadConfigDir() };
+}
+
+/** A canonical path is "profile-owned" when it is the home dir itself, SQUAD_HOME (or below), or the platform config dir (or below). */
+function isProfileOwned(canonical: string, b: ProfileBoundary): boolean {
+  const under = (root: string | null) => root !== null && (samePath(canonical, root) || isAncestorOf(root, canonical));
+  if (b.homeDir && samePath(canonical, b.homeDir)) return true;
+  return under(b.squadHome) || under(b.configDir);
 }
 
 /**
@@ -259,29 +281,64 @@ function profileBoundary(): { homeDir: string | null; squadHome: string | null }
  * names on Windows (`C:\Users\TAMIRD~1` vs `C:\Users\tamirdresher`) and symlinked homes.
  * Falls back to `path.resolve` when the path does not exist.
  */
-function canonicalDir(p: string): string {
+function canonicalDir(p: string): string | null {
   const resolved = path.resolve(p);
-  // Canonicalize the longest existing prefix, then re-append the missing tail.
+  // Find the longest EXISTING prefix lexically, canonicalize exactly that prefix, and re-append
+  // the non-existing tail (non-existing components cannot be links). If the existing prefix
+  // itself cannot be canonicalized (broken reparse point, permission denied), return null: the
+  // caller must refuse rather than fall back to a lexical comparison (fail closed).
   const tail: string[] = [];
   let cur = resolved;
   for (;;) {
-    try {
-      const real = fs.realpathSync.native(cur);
-      return tail.length ? path.join(real, ...tail.reverse()) : real;
-    } catch {
-      const parent = path.dirname(cur);
-      if (parent === cur) return resolved;
-      tail.push(path.basename(cur));
-      cur = parent;
+    let exists = false;
+    try { fs.lstatSync(cur); exists = true; } catch { exists = false; }
+    if (exists) {
+      try {
+        const real = fs.realpathSync.native(cur);
+        return tail.length ? path.join(real, ...tail.reverse()) : real;
+      } catch {
+        return null;
+      }
     }
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    tail.push(path.basename(cur));
+    cur = parent;
   }
 }
 
-/** True when `current` (any spelling) is the home directory or one of its ancestors. */
-function atOrAboveProfileRoot(current: string, homeDir: string | null): boolean {
-  if (!homeDir) return false;
+/**
+ * True when the walk must stop at `current`: it is the home directory or one of its ancestors,
+ * it lies inside the retired platform config dir, the boundary itself cannot be established, or
+ * `current` cannot be canonicalized (fail closed — never compare lexically).
+ */
+function atOrAboveProfileRoot(current: string, b: ProfileBoundary): string | null {
+  if (!b.homeDir) return null;
   const c = canonicalDir(current);
-  return samePath(c, homeDir) || isAncestorOf(c, homeDir);
+  if (c === null) return null;
+  if (samePath(c, b.homeDir) || isAncestorOf(c, b.homeDir)) return null;
+  if (b.configDir !== null && (samePath(c, b.configDir) || isAncestorOf(b.configDir, c))) return null;
+  return c;
+}
+
+/**
+ * Admit `candidate` (an existing `.squad`/`.ai-team` dir under canonical `canonicalParent`) only
+ * when it is not profile-owned — including when it is a link whose target is profile-owned.
+ * The candidate itself is only lstat'ed (and realpath'ed if it is a link); its contents are
+ * never read here.
+ */
+function admitCandidate(candidate: string, canonicalParent: string, b: ProfileBoundary): boolean {
+  const lexical = path.join(canonicalParent, path.basename(candidate));
+  if (isProfileOwned(lexical, b)) return false;
+  try {
+    if (fs.lstatSync(candidate).isSymbolicLink()) {
+      const real = canonicalDir(candidate);
+      return real !== null && !isProfileOwned(real, b);
+    }
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 /** True when `dir` is a strict ancestor of `descendant`. */
@@ -296,19 +353,20 @@ function samePath(a: string, b: string): boolean {
 
 function resolveSquadUncached(startDir: string): string | null {
   let current = startDir;
-  const { homeDir, squadHome } = profileBoundary();
+  const boundary = profileBoundary();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Profile boundary: the home directory (and anything above it) is never a project.
-    if (atOrAboveProfileRoot(current, homeDir)) {
+    // Profile boundary: the home directory (and anything above it) and the platform config dir
+    // are never a project; an unresolvable path refuses rather than guesses.
+    const canonicalCurrent = atOrAboveProfileRoot(current, boundary);
+    if (canonicalCurrent === null) {
       return null;
     }
 
     const candidate = path.join(current, '.squad');
 
-    if (!(squadHome && samePath(canonicalDir(candidate), squadHome))
-      && storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
+    if (storage.existsSync(candidate) && storage.isDirectorySync(candidate) && admitCandidate(candidate, canonicalCurrent, boundary)) {
       return candidate;
     }
 
@@ -369,18 +427,18 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
 
 function findSquadDirUncached(startDir: string): { dir: string; name: '.squad' | '.ai-team' } | null {
   let current = startDir;
-  const { homeDir, squadHome } = profileBoundary();
+  const boundary = profileBoundary();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Same profile boundary as resolveSquad(): the home directory is never a project.
-    if (atOrAboveProfileRoot(current, homeDir)) {
+    // Same profile boundary as resolveSquad().
+    const canonicalCurrent = atOrAboveProfileRoot(current, boundary);
+    if (canonicalCurrent === null) {
       return null;
     }
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
-      if (squadHome && samePath(canonicalDir(candidate), squadHome)) continue;
-      if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
+      if (storage.existsSync(candidate) && storage.isDirectorySync(candidate) && admitCandidate(candidate, canonicalCurrent, boundary)) {
         return { dir: candidate, name };
       }
     }

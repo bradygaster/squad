@@ -82,20 +82,47 @@ afterAll(() => {
 });
 
 describe.skipIf(!cliBuilt)('state commands outside a project fail clearly and never fall back to a profile squad', () => {
+  /** Q's canonical wording (LC-9): byte-identical across every project-scoped command. */
+  const CANONICAL = 'No squad in this directory. Run "squad init" first.';
   const cases: Array<[string, string[]]> = [
     ['status', ['status']],
     ['doctor', ['doctor']],
     ['cast', ['cast', '--name', 'Probe', '--role', 'developer']],
     ['cost', ['cost']],
+    ['upgrade', ['upgrade']],
+    ['nap', ['nap', '--dry-run']],
+    ['export', ['export']],
+    ['notes', ['notes', 'promote']],
+    ['upstream', ['upstream', 'list']],
+    ['economy', ['economy', 'status']],
+    ['config', ['config', 'get', 'defaultModel']],
   ];
 
-  for (const [name, args] of cases) {
-    it(`squad ${name}: non-zero exit, "No squad … squad init" message, profile squad untouched and unmentioned`, async () => {
+  it('every project-scoped command prints the identical canonical message, exits 1 and creates nothing (LC-9)', async () => {
+    const before = fingerprint(profileSquadRoot);
+    const entriesBefore = readdirSync(cwd).sort();
+    const messages = new Map<string, string>();
+    for (const [name, args] of cases) {
+      const r = await runSquad(args);
+      const output = `${r.stdout}\n${r.stderr}`;
+      expect(r.code, `squad ${name} must fail outside a project; output:\n${output}`).toBe(1);
+      const plain = output.replace(/\u001b\[[0-9;]*m/g, '');
+      const line = plain.split(/\r?\n/).map((l) => l.replace(/^[✗×x]\s*/, '').trim()).find((l) => l.startsWith('No squad'));
+      expect(line, `squad ${name} output:\n${plain}`).toBe(CANONICAL);
+      messages.set(name, line!);
+      expect(readdirSync(cwd).sort(), `squad ${name} must not create anything (no .squad mkdir before failing)`).toEqual(entriesBefore);
+    }
+    expect(new Set(messages.values()).size, `messages differ: ${JSON.stringify([...messages])}`).toBe(1);
+    expect(fingerprint(profileSquadRoot)).toBe(before);
+  }, 300_000);
+
+  for (const [name, args] of cases.slice(0, 4)) {
+    it(`squad ${name}: non-zero exit, canonical message, profile squad untouched and unmentioned`, async () => {
       const before = fingerprint(profileSquadRoot);
       const r = await runSquad(args);
       const output = `${r.stdout}\n${r.stderr}`;
       expect(r.code, `squad ${name} must fail outside a project; output:\n${output}`).not.toBe(0);
-      expect(output, `squad ${name} must name the problem and the fix`).toMatch(/No squad (in this directory|found)[\s\S]*squad init/i);
+      expect(output, `squad ${name} must print the canonical message`).toContain(CANONICAL);
       expect(output, `squad ${name} must not resolve or mention the profile squad`).not.toContain(profileSquadRoot);
       expect(output).not.toMatch(/Globetrotter|Active squad: *global/i);
       expect(existsSync(join(cwd, '.squad')), `squad ${name} must not create .squad/ as a side effect`).toBe(false);
@@ -124,7 +151,7 @@ describe.skipIf(!cliBuilt)('state commands outside a project fail clearly and ne
         const r = await runSquad(args, env, dir);
         const output = `${r.stdout}\n${r.stderr}`;
         expect(r.code, `squad ${args[0]} (cwd ${dir === fakeHome ? 'home' : 'below home'}) must fail; output:\n${output}`).not.toBe(0);
-        expect(output).toMatch(/No squad in this directory[\s\S]*squad init/i);
+        expect(output).toContain(CANONICAL);
         expect(output).not.toMatch(/Homebody|Mode: /);
       }
     }

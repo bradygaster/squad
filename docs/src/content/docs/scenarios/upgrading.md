@@ -115,9 +115,9 @@ Then remove the corresponding slug(s) from `clients` in `.squad/config.json`.
 
 ### Removed in 2.0
 
-Personal squads, consult mode and the global squad (`--global`) were removed; existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually. There is no migration tool; copy anything you still want into a project `.squad/` by hand. Outside a project, `squad status`, `squad doctor`, `squad cast` and `squad cost` now exit with `No squad in this directory` instead of falling back to a user-profile directory.
+Squad 2.0 removes some 1.x features outright; the single record of what was removed is the **BREAKING** row in [What's New → Breaking & Behavior Changes (v2.0.0)](../whatsnew.md#breaking--behavior-changes-v200). There is no migration tool for removed features. Squad now resolves a team only from the project `.squad/` (current directory and parents): outside a project, `squad status`, `squad doctor`, `squad cast` and `squad cost` exit with `No squad in this directory. Run "squad init" first.`
 
-Projects initialized by Squad 0.13–1.1 while a profile squad existed carry a `teamRoot` in `.squad/config.json` that points at the platform config directory. `squad upgrade` removes that key (one line: `Removed stale teamRoot pointing to <path>; project state is now local`); a `teamRoot` that points at another repository (dual-root mode) is left alone. `squad upgrade` also no longer treats its own version stamps in `squad.agent.md` as a local customization, so an existing `squad.agent.md.local-backup` survives repeated upgrades.
+`squad upgrade` removes an obsolete `teamRoot` setting that older versions could leave in `.squad/config.json` pointing outside the project (one line: `Removed obsolete "teamRoot" setting from .squad/config.json.`); a `teamRoot` that points at another repository (dual-root mode) is left alone. `squad upgrade` also no longer treats its own version stamps in `squad.agent.md` as a local customization, so an existing `squad.agent.md.local-backup` survives repeated upgrades.
 
 ### Downgrading and old CLIs
 

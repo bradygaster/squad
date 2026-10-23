@@ -125,7 +125,8 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
     const io = captureConsole();
     try { await runUpgrade(project, { force: true }); } finally { io.restore(); }
     const out = io.lines.join('\n');
-    expect(out).toMatch(/Removed stale teamRoot pointing to .*; project state is now local/);
+    expect(out).toContain('Removed obsolete "teamRoot" setting from .squad/config.json.');
+    expect(out, 'the message must not name the removed concept\'s location').not.toContain(profileRoot);
     const after = readJson(configPath);
     expect(after['teamRoot']).toBeUndefined();
     expect(after['customSetting'], 'only the teamRoot key is touched').toBe('kept');
@@ -140,7 +141,7 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
     // Idempotent: a second upgrade prints nothing about teamRoot and leaves config as is.
     const io2 = captureConsole();
     try { await runUpgrade(project, { force: true }); } finally { io2.restore(); }
-    expect(io2.lines.join('\n')).not.toMatch(/stale teamRoot/);
+    expect(io2.lines.join('\n')).not.toMatch(/obsolete "teamRoot"/);
     expect(readJson(configPath)['teamRoot']).toBeUndefined();
   }, 180_000);
 
@@ -152,7 +153,7 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
     const before = fs.readFileSync(configPath, 'utf8');
     const io = captureConsole();
     try { await runUpgrade(project, { force: true, dryRun: true }); } finally { io.restore(); }
-    expect(io.lines.join('\n')).toMatch(/Would remove stale teamRoot/);
+    expect(io.lines.join('\n')).toContain('Would remove obsolete "teamRoot" setting from .squad/config.json.');
     expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
   }, 180_000);
 
@@ -179,11 +180,43 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
     expect(resolveSquadPaths(satellite)!.mode).toBe('remote');
     const io = captureConsole();
     try { await runUpgrade(satellite, { force: true }); } finally { io.restore(); }
-    expect(io.lines.join('\n')).not.toMatch(/stale teamRoot/);
+    expect(io.lines.join('\n')).not.toMatch(/obsolete "teamRoot"/);
     expect(readJson(configPath)['teamRoot']).toBe(rel);
     clearResolveSquadCache();
     expect(resolveSquadPaths(satellite)!.mode).toBe('remote');
   }, 180_000);
+});
+
+describe('F4: a 0.9.x project (empty casting/) upgrades in ONE pass', () => {
+  it('first upgrade writes the capabilities block; the second upgrade is a byte-identical no-op', async () => {
+    const project = path.join(tmp, 'v091');
+    fs.mkdirSync(path.join(project, '.git'), { recursive: true });
+    // Faithful 0.9.1 shape: team.md + routing + agents, casting/ present but EMPTY, old stamps.
+    fs.mkdirSync(path.join(project, '.squad', 'casting'), { recursive: true });
+    fs.mkdirSync(path.join(project, '.squad', 'agents', 'data'), { recursive: true });
+    fs.writeFileSync(path.join(project, '.squad', 'config.json'), JSON.stringify({ version: '0.9.1' }, null, 2) + '\n');
+    fs.writeFileSync(path.join(project, '.squad', 'team.md'), '# Squad Team\n\n**Universe:** Star Trek\n\n## Members\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n| Data | Framework Expert | .squad/agents/data/charter.md | ✅ Active |\n');
+    fs.writeFileSync(path.join(project, '.squad', 'routing.md'), '# Routing Rules\n\n**Backend** → Data\n');
+    fs.writeFileSync(path.join(project, '.squad', 'decisions.md'), '# Decisions\n');
+    fs.writeFileSync(path.join(project, '.squad', 'agents', 'data', 'charter.md'), '# Data\n\n## Identity\n- **Name:** Data\n- **Role:** Framework Expert\n');
+    fs.mkdirSync(path.join(project, '.github', 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(project, '.github', 'agents', 'squad.agent.md'), '---\nname: squad\n---\n<!-- version: 0.9.1 -->\n\nOld coordinator.\n');
+
+    const io1 = captureConsole();
+    try { await runUpgrade(project, { force: true }); } finally { io1.restore(); }
+    const agent = path.join(project, '.github', 'agents', 'squad.agent.md');
+    const afterFirst = fs.readFileSync(agent, 'utf8');
+    expect(afterFirst, 'the FIRST upgrade must already carry the capabilities block').toContain('<!-- squad:capabilities');
+    expect(fs.existsSync(path.join(project, '.squad', 'casting', 'registry.json'))).toBe(true);
+    expect(fs.existsSync(path.join(project, '.squad', 'casting', 'history.json'))).toBe(true);
+    const treeAfterFirst = fingerprint(path.join(project, '.squad'));
+
+    const io2 = captureConsole();
+    try { await runUpgrade(project, { force: true }); } finally { io2.restore(); }
+    expect(fs.readFileSync(agent, 'utf8'), 'second upgrade must not change squad.agent.md').toBe(afterFirst);
+    expect(fingerprint(path.join(project, '.squad')), 'second upgrade must not change .squad/').toBe(treeAfterFirst);
+    expect(io1.lines.join('\n')).not.toMatch(/Cannot read a consistent casting registry/);
+  }, 240_000);
 });
 
 describe('UM-F2: version stamps are not customizations', () => {

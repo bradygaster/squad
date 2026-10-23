@@ -17,7 +17,7 @@ import {
   type RepairResult,
 } from '@bradygaster/squad-sdk/casting';
 import { success, warn, info, dim, bold } from './output.js';
-import { fatal } from './errors.js';
+import { fatal, fatalNoSquad } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
 import { TEMPLATE_MANIFEST, getTemplatesDir } from './templates.js';
 import { runMigrations } from './migrations.js';
@@ -272,13 +272,13 @@ function stripRetiredProfileTeamRoot(squadDir: string, dest: string, dryRun: boo
   const target = path.resolve(dest, teamRoot);
   if (!isRetiredProfileTeamRoot(target)) return;
   if (dryRun) {
-    info(`Would remove stale teamRoot pointing to ${target}; project state would be local`);
+    info('Would remove obsolete "teamRoot" setting from .squad/config.json.');
     return;
   }
   delete record['teamRoot'];
   storage.writeSync(configPath, JSON.stringify(record, null, 2) + '\n');
   clearResolveSquadCache();
-  info(`Removed stale teamRoot pointing to ${target}; project state is now local`);
+  info('Removed obsolete "teamRoot" setting from .squad/config.json.');
 }
 
 /**
@@ -974,6 +974,19 @@ export async function ensureEsmImportsPatched(dest: string): Promise<boolean> {
 /**
  * Run all ensure* checks and skill/template sync — shared by both code paths
  */
+/**
+ * Scaffold/repair the casting registry pair before the coordinator file is rendered, so one
+ * upgrade produces the final file (F4: a 0.9.x project with an empty casting/ used to need two).
+ * Idempotent; the later ensure pass finds nothing left to create.
+ */
+function preflightCastingPair(dest: string, templatesDir: string, filesUpdated: string[]): void {
+  const created = ensureCastingDefaults(dest, templatesDir);
+  if (created.length > 0) {
+    success(`scaffolded ${created.length} default casting files`);
+    filesUpdated.push(...created);
+  }
+}
+
 async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): Promise<void> {
   const attrAdded = ensureGitattributes(dest);
   if (attrAdded.length > 0) {
@@ -1349,7 +1362,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   // Verify squad exists
   if (!storage.existsSync(squadDirInfo.path)) {
-    fatal('No squad found — run init first.');
+    fatalNoSquad();
   }
 
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
@@ -1450,6 +1463,11 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       filesUpdated.push(`workflows (${wfFiles.length} files)`);
     }
 
+    // The casting pair must exist BEFORE the coordinator is written: syncTeamCapabilities reads it
+    // to render the <!-- squad:capabilities --> block, so a 0.9.x project (empty casting/) would
+    // otherwise get the block only on the SECOND upgrade (F4, upgrade matrix).
+    preflightCastingPair(dest, templatesDir, filesUpdated);
+
     // Refresh squad.agent.md
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (storage.existsSync(agentSrc)) {
@@ -1480,6 +1498,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   if (!storage.existsSync(agentSrc)) {
     fatal('squad.agent.md.template not found in templates — installation may be corrupted');
   }
+
+  // See preflightCastingPair: the capabilities block needs the casting pair first (F4).
+  preflightCastingPair(dest, templatesDir, filesUpdated);
 
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
   writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { squadDir: squadDirInfo.path });

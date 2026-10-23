@@ -23,7 +23,7 @@ import {
 import { LocalAgentSource } from '@bradygaster/squad-sdk/config/agent-source';
 import { resolveSquadPaths, resolveExternalStateDir } from '@bradygaster/squad-sdk/resolution';
 import { BOLD, RESET, info, success } from '../core/output.js';
-import { fatal } from '../core/errors.js';
+import { fatal, fatalNoSquad } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
 
@@ -316,7 +316,7 @@ export async function runCastAdd(cwd: string, options: CastAddOptions): Promise<
 
   const paths = resolveSquadPaths(cwd);
   if (!paths) {
-    fatal(`No squad in this directory (searched from ${cwd}). Run "squad init" here, or use --team-root to point at the project.`);
+    fatalNoSquad();
   }
 
   const externalSquadDir =
@@ -379,7 +379,7 @@ export async function runCast(cwd: string): Promise<void> {
   // Resolve squad paths
   const paths = resolveSquadPaths(cwd);
   if (!paths) {
-    fatal(`No squad in this directory (searched from ${cwd}). Run "squad init" here, or use --team-root to point at the project.`);
+    fatalNoSquad();
   }
   
   // Discover project agents.

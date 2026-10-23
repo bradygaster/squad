@@ -92,7 +92,7 @@ process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 import { FSStorageProvider, resolveSquadState } from '@bradygaster/squad-sdk';
 import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
 import path from 'node:path';
-import { fatal, SquadError } from './cli/core/errors.js';
+import { fatal, fatalNoSquad, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
 import { runInit } from './cli/core/init.js';
 import { runCost } from './cli/commands/cost.js';
@@ -902,7 +902,7 @@ async function main(): Promise<void> {
     const startDir = getSquadStartDir();
     const repoSquad = sdk.resolveSquad(startDir);
     if (!repoSquad) {
-      fatal(`No squad in this directory (searched from ${startDir}). Run "squad init" here, or use --team-root to point at the project.`);
+      fatalNoSquad();
     }
 
     console.log(`\n${BOLD}Squad Status${RESET}\n`);
@@ -931,7 +931,7 @@ async function main(): Promise<void> {
     const sdk = await lazySquadSdk();
     const localSquad = sdk.resolveSquad(getSquadStartDir());
     if (!localSquad) {
-      fatal('No squad in this directory. Run "squad init" first.');
+      fatalNoSquad();
     }
     await runCost(args.slice(1), path.resolve(localSquad, '..'));
     return;
@@ -975,7 +975,7 @@ async function main(): Promise<void> {
     // resolveSquad() returns the .squad/ directory itself — use it directly (#207)
     const squadDir = sdk.resolveSquad(startDir);
     if (!squadDir) {
-      fatal(`No squad found (searched from ${startDir}). Run "squad init" first, or use --team-root to specify the project directory.`);
+      fatalNoSquad();
     }
     const deep = args.includes('--deep');
     const dryRun = args.includes('--dry-run');
