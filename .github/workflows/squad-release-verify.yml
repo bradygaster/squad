@@ -108,9 +108,6 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Check extracted release scripts and workflow policy
-        run: node scripts/release/check-release-scripts.mjs
-
       - name: "Gate: lockfiles resolve only to registry.npmjs.org (fail closed)"
         run: |
           set -euo pipefail
@@ -135,6 +132,9 @@ jobs:
           test "$root_exit" -eq 0 || { echo "::error::root npm ci against the public registry failed (exit $root_exit)"; exit 1; }
           test "$docs_exit" -eq 0 || { echo "::error::docs npm ci against the public registry failed (exit $docs_exit)"; exit 1; }
           git diff --quiet -- package-lock.json docs/package-lock.json || { echo "::error::npm ci modified a committed lockfile"; git --no-pager diff --stat -- package-lock.json docs/package-lock.json; exit 1; }
+
+      - name: Check extracted release scripts and workflow policy
+        run: node scripts/release/check-release-scripts.mjs
 
       - name: Install gh-aw v0.91.5 (pinned; required by fail-closed test gates)
         run: gh extension install --force --pin v0.91.5 github/gh-aw

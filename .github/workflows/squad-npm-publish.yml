@@ -4,7 +4,7 @@ name: Squad npm Publish
 #
 # The workflow uses fail-closed reconciliation with idempotent partial-release
 # recovery. Direct dispatch is recovery-only: it must run from the live merged
-# dev/main workflow definition and cite the immutable release source, successful
+# dev workflow definition and cite the immutable release source, successful
 # Squad Release Verify run, and matching evidence artifact separately.
 
 on:
@@ -17,6 +17,11 @@ on:
       source_sha:
         description: 'Full 40-hex commit SHA targeted by the release tag'
         required: true
+        type: string
+      recovery_sha:
+        description: 'Empty for orchestrated release; exact merged dev workflow SHA for recovery'
+        required: false
+        default: ''
         type: string
       dist_tag:
         description: 'Primary npm dist-tag (insider, preview or latest)'
@@ -62,6 +67,10 @@ on:
         description: 'Full 40-hex commit SHA targeted by the existing release tag'
         required: true
         type: string
+      recovery_sha:
+        description: 'Full 40-hex merged dev SHA containing this recovery workflow'
+        required: true
+        type: string
       dist_tag:
         description: 'Primary npm dist-tag'
         required: true
@@ -98,6 +107,7 @@ env:
   PUBLIC_REGISTRY: https://registry.npmjs.org/
   SQUAD_RELEASE_RECOVERY: ${{ inputs.verify_run_id != '' }}
   SQUAD_RELEASE_CONTROL_REPO: ${{ github.workspace }}/release-control
+  RECOVERY_SHA: ${{ inputs.recovery_sha }}
   RELEASE_SCRIPTS_ROOT: ${{ inputs.verify_run_id != '' && format('{0}/release-control/scripts/release', github.workspace) || format('{0}/scripts/release', github.workspace) }}
 
 jobs:
@@ -129,7 +139,7 @@ jobs:
         if: inputs.verify_run_id != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ inputs.recovery_sha }}
           path: release-control
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
@@ -150,20 +160,25 @@ jobs:
           [ "$EVIDENCE_ARTIFACT" = "release-evidence-${SOURCE_SHA}" ] || { echo "::error::evidence_artifact must be release-evidence-${SOURCE_SHA}"; exit 1; }
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout HEAD differs from source_sha"; exit 1; }
           if [ -n "$VERIFY_RUN_ID" ]; then
-            case "$RUN_REF" in
-              refs/heads/dev|refs/heads/main) ;;
-              *) echo "::error::direct recovery must be dispatched from dev or main, not $RUN_REF"; exit 1 ;;
-            esac
-            test "$DISPATCH_SHA" = "$WORKFLOW_SHA" || {
-              echo "::error::recovery dispatch SHA $DISPATCH_SHA differs from workflow definition $WORKFLOW_SHA"; exit 1;
+            [[ "$RECOVERY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "::error::recovery_sha must be a full lowercase 40-hex SHA"; exit 1;
             }
-            test "$(git -C "$SQUAD_RELEASE_CONTROL_REPO" rev-parse HEAD)" = "$WORKFLOW_SHA" || {
-              echo "::error::recovery control checkout differs from workflow definition"; exit 1;
+            test "$RUN_REF" = refs/heads/dev || {
+              echo "::error::direct recovery must be dispatched from dev, not $RUN_REF"; exit 1;
             }
+            control_head="$(git -C "$SQUAD_RELEASE_CONTROL_REPO" rev-parse HEAD)"
             tip="$(git ls-remote --exit-code origin "$RUN_REF" | cut -f1)"
-            test "$tip" = "$WORKFLOW_SHA" || {
-              echo "::error::recovery workflow definition $WORKFLOW_SHA is not the live $RUN_REF tip $tip"; exit 1;
-            }
+            for identity in \
+              "dispatch SHA:$DISPATCH_SHA" \
+              "workflow definition SHA:$WORKFLOW_SHA" \
+              "recovery control checkout HEAD:$control_head" \
+              "live $RUN_REF tip:$tip"; do
+              name="${identity%%:*}"
+              value="${identity#*:}"
+              test "$value" = "$RECOVERY_SHA" || {
+                echo "::error::$name $value differs from recovery_sha $RECOVERY_SHA"; exit 1;
+              }
+            done
           else
             test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA $DISPATCH_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
             test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition $WORKFLOW_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
@@ -295,7 +310,7 @@ jobs:
         if: inputs.verify_run_id != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ inputs.recovery_sha }}
           path: release-control
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
@@ -307,7 +322,7 @@ jobs:
           name: ${{ needs.prepare.outputs.publish_artifact }}
           path: publish-evidence
 
-      - name: Classify exact registry versions (only explicit 404 means missing)
+      - name: Classify exact registry versions and dist-tags
         id: existing
         run: |
           set -euo pipefail
@@ -316,6 +331,7 @@ jobs:
           node "$RELEASE_SCRIPTS_ROOT/classify-npm-registry.mjs" | tee -a "$GITHUB_OUTPUT"
 
       - name: Stage SDK from the exact verified tarball
+        if: steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SDK_STATE: ${{ steps.existing.outputs.sdk_state }}
@@ -332,6 +348,7 @@ jobs:
           fi
 
       - name: Stage CLI from the exact verified tarball
+        if: steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           CLI_STATE: ${{ steps.existing.outputs.cli_state }}
@@ -348,9 +365,11 @@ jobs:
           fi
 
       - name: Verify staged pair
+        if: steps.existing.outputs.stage_pair == 'true'
         run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$STAGING_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-staging.json" --install-check --max-wait-seconds 900
 
       - name: Promote SDK to the primary channel
+        if: steps.existing.outputs.set_sdk_primary == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -359,6 +378,7 @@ jobs:
           npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$DIST_TAG"
 
       - name: Promote CLI to the primary channel
+        if: steps.existing.outputs.set_cli_primary == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -370,7 +390,7 @@ jobs:
         run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$DIST_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-${DIST_TAG}.json" --max-wait-seconds 900
 
       - name: Add preview alias to SDK
-        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        if: steps.existing.outputs.set_sdk_preview == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -379,7 +399,7 @@ jobs:
           npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" preview
 
       - name: Add preview alias to CLI
-        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        if: steps.existing.outputs.set_cli_preview == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -401,13 +421,13 @@ jobs:
           outcome="$(node -p 'require(process.env.RECON_DIR + "/final-reconciliation.json").outcome' 2>/dev/null || echo UNKNOWN)"
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
           if [ "$outcome" != COMPLETE ]; then
-            echo "::error::npm publication outcome is $outcome. Re-dispatch recovery from the immutable tag with the same verify run and evidence artifact."
+            echo "::error::npm publication outcome is $outcome. Re-dispatch from live dev with the same source SHA, verify run, evidence artifact, and recovery_sha set to the live merged workflow tip."
             exit 1
           fi
           exit "$status"
 
       - name: Remove SDK staging tag
-        if: success()
+        if: success() && steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -416,7 +436,7 @@ jobs:
           npm dist-tag rm @bradygaster/squad-sdk "$STAGING_TAG"
 
       - name: Remove CLI staging tag
-        if: success()
+        if: success() && steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -443,9 +463,14 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
+      actions: read
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       TAG: v${{ inputs.version }}
+      VERIFY_RUN_ID: ${{ inputs.verify_run_id }}
+      PACKS_DIR: ${{ github.workspace }}/publish-evidence
+      CHECKSUMS_DIR: ${{ github.workspace }}/immutable-standalone-checksums
+      DRAFT_ASSETS_DIR: ${{ github.workspace }}/draft-release-assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -454,12 +479,37 @@ jobs:
       - name: Check out the recovery workflow definition
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ inputs.recovery_sha }}
           path: release-control
           fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+      - name: Require the immutable standalone checksum artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}/artifacts")"
+          count="$(printf '%s' "$artifacts" | jq '[.artifacts[] | select(.name == "standalone-release-checksums" and .expired == false)] | length')"
+          test "$count" = 1 || {
+            echo "::error::expected exactly one unexpired standalone-release-checksums artifact on run $VERIFY_RUN_ID, found $count"; exit 1;
+          }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: standalone-release-checksums
+          path: immutable-standalone-checksums
+          run-id: ${{ inputs.verify_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: ${{ needs.prepare.outputs.publish_artifact }}
+          path: publish-evidence
       - name: Validate and publish the existing draft
         env:
           GH_TOKEN: ${{ github.token }}
+          IMMUTABLE_CHECKSUMS: ${{ github.workspace }}/immutable-standalone-checksums/SHA256SUMS.txt
+          PACK_EVIDENCE: ${{ github.workspace }}/publish-evidence/pack-evidence.json
         run: |
           set -euo pipefail
           node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" \
@@ -505,6 +555,14 @@ jobs:
             printf '::error::draft release %s has unexpected assets: %s\n' "$TAG" "${unexpected_assets[*]}"
             exit 1
           fi
+          mkdir -p "$DRAFT_ASSETS_DIR"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$DRAFT_ASSETS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/verify-draft-release-assets.mjs"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" \
+            --source-sha "$SOURCE_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG"
           gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
           actual="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')"
           test "$actual" = "false $expected_prerelease" || {
@@ -534,7 +592,7 @@ jobs:
         if: inputs.verify_run_id != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ inputs.recovery_sha }}
           path: release-control
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6

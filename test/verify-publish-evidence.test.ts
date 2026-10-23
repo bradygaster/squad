@@ -46,6 +46,7 @@ describe('verified publish evidence handoff', () => {
       tag: `v${VERSION}`,
       verifyRunId: '39996429914',
       evidenceArtifact: `release-evidence-${'1'.repeat(40)}`,
+      recoverySha: '2'.repeat(40),
       workflowSha: '2'.repeat(40),
       dispatchSha: '2'.repeat(40),
     };
@@ -57,10 +58,15 @@ describe('verified publish evidence handoff', () => {
         tag: args.tag,
         verifyRunId: args.verifyRunId,
         evidenceArtifact: args.evidenceArtifact,
+        recoverySha: args.recoverySha,
         workflowSha: args.workflowSha,
         dispatchSha: args.dispatchSha,
       });
 
+      expect(() => verifyPublishEvidence({ ...args, recoverySha: '' }))
+        .toThrow(/recoverySha must be a full lowercase 40-hex SHA/);
+      expect(() => verifyPublishEvidence({ ...args, recoverySha: '3'.repeat(40) }))
+        .toThrow(/recoverySha must equal workflowSha and dispatchSha/);
       writeFileSync(path.join(evidenceDir, 'sdk.tgz'), 'tampered');
       expect(() => verifyPublishEvidence(args)).toThrow(/sha256 .* != evidence/);
     } finally {

@@ -14,7 +14,14 @@ export function verifyPublishEvidence({
   evidenceArtifact,
   workflowSha,
   dispatchSha,
+  recoverySha = '',
 }) {
+  if (verifyRunId && !/^[0-9a-f]{40}$/.test(recoverySha)) {
+    throw new Error(`recoverySha must be a full lowercase 40-hex SHA, got '${recoverySha}'`);
+  }
+  if (verifyRunId && (recoverySha !== workflowSha || recoverySha !== dispatchSha)) {
+    throw new Error('recoverySha must equal workflowSha and dispatchSha');
+  }
   const report = JSON.parse(readFileSync(path.join(evidenceDir, 'pack-evidence.json'), 'utf8'));
   if (!report.ok) throw new Error('pack-evidence.json does not report ok=true');
   const expected = ['@bradygaster/squad-sdk', '@bradygaster/squad-cli'];
@@ -54,6 +61,7 @@ export function verifyPublishEvidence({
     tag,
     verifyRunId: verifyRunId || null,
     evidenceArtifact,
+    recoverySha: recoverySha || null,
     workflowSha,
     dispatchSha,
     packages: Object.fromEntries(expected.map((name) => [name, {
@@ -82,6 +90,7 @@ if (isMain) {
     tag: required('TAG'),
     verifyRunId: process.env.VERIFY_RUN_ID ?? '',
     evidenceArtifact: required('EVIDENCE_ARTIFACT'),
+    recoverySha: process.env.RECOVERY_SHA ?? '',
     workflowSha: required('WORKFLOW_SHA'),
     dispatchSha: required('DISPATCH_SHA'),
   });

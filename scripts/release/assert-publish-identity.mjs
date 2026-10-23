@@ -19,6 +19,8 @@ const evidenceDir = arg('--evidence-dir', false);
 const repo = arg('--repo', false) || process.cwd();
 const recovery = process.env.SQUAD_RELEASE_RECOVERY === 'true';
 const controlRepo = process.env.SQUAD_RELEASE_CONTROL_REPO ?? '';
+const recoverySha = process.env.RECOVERY_SHA ?? '';
+const recoveryRef = process.env.GITHUB_REF ?? '';
 
 if (!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error(`Invalid source SHA '${sourceSha}'`);
 if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(preview|insider)\.(0|[1-9]\d*))?$/.test(tag)) {
@@ -47,18 +49,29 @@ for (const [name, value] of [['checkout HEAD', head], [`remote tag ${tag}`, remo
 }
 if (recovery) {
   if (!controlRepo) throw new Error('SQUAD_RELEASE_CONTROL_REPO is required in recovery mode');
-  if (!/^[0-9a-f]{40}$/.test(dispatchSha) || dispatchSha !== workflowSha) {
-    throw new Error(`recovery dispatch SHA ${dispatchSha} must equal workflow definition SHA ${workflowSha}`);
+  if (!/^[0-9a-f]{40}$/.test(recoverySha)) throw new Error(`Invalid recovery SHA '${recoverySha}'`);
+  if (recoveryRef !== 'refs/heads/dev') {
+    throw new Error(`Recovery ref must be refs/heads/dev, got '${recoveryRef}'`);
   }
   const controlGit = (...args) => execFileSync('git', ['-C', controlRepo, ...args], { encoding: 'utf8' }).trim();
   const controlHead = controlGit('rev-parse', 'HEAD');
-  if (controlHead !== workflowSha) {
-    throw new Error(`recovery control checkout HEAD is ${controlHead}, expected workflow definition SHA ${workflowSha}`);
+  const liveRef = controlGit('ls-remote', '--exit-code', 'origin', recoveryRef);
+  const [liveTip, resolvedRef, ...extra] = liveRef.split(/\s+/);
+  if (!/^[0-9a-f]{40}$/.test(liveTip ?? '') || resolvedRef !== recoveryRef || extra.length) {
+    throw new Error(`Invalid git ls-remote output for recovery ref ${recoveryRef}: '${liveRef}'`);
+  }
+  for (const [name, value] of [
+    ['dispatch SHA', dispatchSha],
+    ['workflow definition SHA', workflowSha],
+    ['recovery control checkout HEAD', controlHead],
+    [`live ${recoveryRef} tip`, liveTip],
+  ]) {
+    if (value !== recoverySha) throw new Error(`${name} is ${value}, expected recovery SHA ${recoverySha}`);
   }
   try {
-    controlGit('merge-base', '--is-ancestor', sourceSha, workflowSha);
+    controlGit('merge-base', '--is-ancestor', sourceSha, recoverySha);
   } catch {
-    throw new Error(`recovery workflow definition ${workflowSha} is not a descendant of release source ${sourceSha}`);
+    throw new Error(`recovery SHA ${recoverySha} is not a descendant of release source ${sourceSha}`);
   }
 } else {
   for (const [name, value] of [

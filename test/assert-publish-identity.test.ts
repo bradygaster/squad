@@ -73,6 +73,7 @@ describe('assert-publish-identity tag resolution', () => {
     execFileSync('git', ['-C', controlRepo, 'add', 'workflow-fix.txt'], { env: GIT_ENV });
     execFileSync('git', ['-C', controlRepo, 'commit', '-m', 'workflow fix'], { env: GIT_ENV, stdio: 'ignore' });
     workflowSha = execFileSync('git', ['-C', controlRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+    execFileSync('git', ['-C', controlRepo, 'push', 'origin', 'HEAD:dev'], { env: GIT_ENV, stdio: 'ignore' });
   }, 60_000);
 
   afterAll(() => {
@@ -139,8 +140,51 @@ describe('assert-publish-identity tag resolution', () => {
         ...GIT_ENV,
         SQUAD_RELEASE_RECOVERY: 'true',
         SQUAD_RELEASE_CONTROL_REPO: controlRepo,
+        RECOVERY_SHA: workflowSha,
+        GITHUB_REF: 'refs/heads/dev',
       },
     });
     expect(output).toContain(`Release identity verified at ${sourceSha}`);
-  });
+  }, 30_000);
+
+  it('fails recovery when any control-plane identity differs from recoverySha', () => {
+    for (const [name, args, env, expected] of [
+      [
+        'dispatch',
+        ['--dispatch-sha', sourceSha, '--workflow-sha', workflowSha],
+        { RECOVERY_SHA: workflowSha, GITHUB_REF: 'refs/heads/dev' },
+        'dispatch SHA',
+      ],
+      [
+        'workflow',
+        ['--dispatch-sha', workflowSha, '--workflow-sha', sourceSha],
+        { RECOVERY_SHA: workflowSha, GITHUB_REF: 'refs/heads/dev' },
+        'workflow definition SHA',
+      ],
+      [
+        'input',
+        ['--dispatch-sha', workflowSha, '--workflow-sha', workflowSha],
+        { RECOVERY_SHA: sourceSha, GITHUB_REF: 'refs/heads/dev' },
+        'expected recovery SHA',
+      ],
+    ] as const) {
+      const result = spawnSync(process.execPath, [
+        SCRIPT,
+        '--repo', repo,
+        '--source-sha', sourceSha,
+        ...args,
+        '--tag', 'v9.9.1',
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...GIT_ENV,
+          ...env,
+          SQUAD_RELEASE_RECOVERY: 'true',
+          SQUAD_RELEASE_CONTROL_REPO: controlRepo,
+        },
+      });
+      expect(result.status, name).not.toBe(0);
+      expect(result.stderr, name).toContain(expected);
+    }
+  }, 30_000);
 });
