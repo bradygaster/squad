@@ -31,25 +31,6 @@ export function platformsOf(matrix) {
   return [...new Set(matrix.runs.map((r) => r.platform))].sort();
 }
 
-/** Numeric semver ordering for producer versions (0.9.1 < 0.13.1 < 1.0.0); prerelease tails sort before the release. */
-export function compareVersions(a, b) {
-  const pa = String(a).split('-'); const pb = String(b).split('-');
-  const na = pa[0].split('.').map(Number); const nb = pb[0].split('.').map(Number);
-  for (let i = 0; i < 3; i += 1) if ((na[i] ?? 0) !== (nb[i] ?? 0)) return (na[i] ?? 0) - (nb[i] ?? 0);
-  if (!!pa[1] !== !!pb[1]) return pa[1] ? -1 : 1;
-  return (pa[1] ?? '').localeCompare(pb[1] ?? '');
-}
-
-/** Rendered row order is deterministic regardless of fixture or merge order. */
-export function sortedRuns(matrix) {
-  return [...matrix.runs].sort((a, b) => a.platform.localeCompare(b.platform) || String(a.arch).localeCompare(String(b.arch)) || String(a.node).localeCompare(String(b.node)));
-}
-export function sortedProducers(matrix) {
-  return [...matrix.producers].sort((a, b) => compareVersions(a.version, b.version));
-}
-export function sortedInapplicable(matrix) {
-  return [...matrix.inapplicable].sort((a, b) => compareVersions(a.producer, b.producer) || a.shape.localeCompare(b.shape));
-}
 function resultFor(run, producer, shape) {
   return run?.results.find((r) => r.producer === producer && r.shape === shape) ?? null;
 }
@@ -170,7 +151,7 @@ export function renderSection(matrix) {
     lines.push('');
     lines.push('| Platform | Arch | Node | Target | Tree (targetSha) | Trigger | Recorded | Outcome |');
     lines.push('|----------|------|------|--------|------------------|---------|----------|---------|');
-    for (const run of sortedRuns(matrix)) {
+    for (const run of matrix.runs) {
       const s = sum[run.platform];
       const trigger = run.runUrl ? `[${run.event}](${run.runUrl})` : run.event;
       lines.push(`| ${PLATFORM_LABEL[run.platform] ?? run.platform} (\`${run.platform}\`) | ${run.arch} | ${run.node} | v${run.target} | \`${run.targetSha.slice(0, 12)}\` | ${trigger} | ${run.recordedAt.slice(0, 10)} | ${esc(summarySentence(s, matrix))} |`);
@@ -181,7 +162,7 @@ export function renderSection(matrix) {
   lines.push('');
   lines.push('| Version | Provenance | Artifact pins | Why it is in the matrix | `--state-backend` |');
   lines.push('|---------|------------|---------------|-------------------------|-------------------|');
-  for (const p of sortedProducers(matrix)) {
+  for (const p of matrix.producers) {
     lines.push(`| **${p.version}** | ${provenanceLabel(p.source)} | ${artifactCell(p)} | ${esc(p.why)} | ${p.supports.stateBackend ? 'yes' : 'no'} |`);
   }
   lines.push('');
@@ -198,7 +179,7 @@ export function renderSection(matrix) {
   const header = platforms.length ? platforms.map((p) => PLATFORM_LABEL[p] ?? p) : ['(no runs yet)'];
   lines.push(`| Producer | Provenance | Shape | ${header.join(' | ')} |`);
   lines.push(`|----------|------------|-------|${header.map(() => '---').join('|')}|`);
-  for (const p of sortedProducers(matrix)) {
+  for (const p of matrix.producers) {
     for (const shape of Object.keys(matrix.shapes)) {
       const cells = platforms.length
         ? platforms.map((pl) => cell(resultFor(matrix.runs.find((r) => r.platform === pl), p.version, shape), matrix))
@@ -213,7 +194,7 @@ export function renderSection(matrix) {
   lines.push('');
   lines.push('| Producer | Shape | Why it cannot apply |');
   lines.push('|----------|-------|---------------------|');
-  for (const x of sortedInapplicable(matrix)) lines.push(`| **${x.producer}** | \`${x.shape}\` | ${esc(x.reason)} |`);
+  for (const x of matrix.inapplicable) lines.push(`| **${x.producer}** | \`${x.shape}\` | ${esc(x.reason)} |`);
   lines.push('');
   if (matrix.expectedFailures.length) {
     lines.push('### Expected failures (pinned)');
