@@ -5,7 +5,7 @@ Squad has three automated release channels:
 | Channel | Source | Version | npm tag | Package managers |
 |---------|--------|---------|---------|------------------|
 | Insider | Manual insider dispatch from `dev` | `X.Y.Z-insider.N` | `insider` | Homebrew and WinGet |
-| Preview | Manual release dispatch from `dev` | `X.Y.Z-preview.N` | `preview` | Homebrew and WinGet |
+| Preview | Manual release dispatch from `dev` (exact SHA) | `X.Y.Z-preview.N` | `insider` (+ `preview` alias) | Opt-in |
 | Stable | Sanitized promotion to `main` | `X.Y.Z` | `latest` | Homebrew and WinGet |
 
 There is no staging `preview` branch. The word preview refers to a GitHub
@@ -45,36 +45,65 @@ Wait for `dev` CI to pass after the PR merges.
 
 ## Publish a preview
 
-Use a unique prerelease version such as `2.0.0-preview.1`:
+Use a unique prerelease version such as `2.0.0-preview.1`. The release trigger
+is human-only and pins the exact reviewed commit:
 
 ```bash
 VERSION=2.0.0-preview.1
+SHA=$(git rev-parse origin/dev)   # the reviewed dev tip, full 40-hex SHA
 gh workflow run squad-release.yml \
   --ref dev \
-  -f confirm_tag="v$VERSION"
+  -f confirm_tag="v$VERSION" \
+  -f expected_sha="$SHA"
 gh run watch
 ```
 
-The workflow validates that it is running on `dev` and that the version is not
-stable. It then:
+Optional inputs: `npm_dist_tag` (`insider`, the default, or `preview`),
+`add_preview_alias` (default `true`), `build_standalone` (default `true`),
+`publish_standalone` (default `false`) and `publish_package_managers`
+(default `false`).
 
-1. Creates the immutable tag.
-2. Creates a GitHub prerelease.
-3. Publishes the SDK and CLI to npm `preview`.
-4. Uploads standalone archives for macOS, Linux, and Windows.
-5. Updates `squad-preview` in Homebrew and
-   `bradygaster.Squad.Preview` in WinGet.
+The workflow refuses to run unless the dispatch SHA, the workflow definition
+SHA, the checkout and the live `dev` tip all equal `expected_sha`, and the
+version is not stable. It then:
+
+1. Runs the full verification bundle at that SHA
+   (`squad-release-verify.yml`: lockfile registry gate, clean external
+   `npm ci`, build, lint, full test suite with a JSON report and skip/todo/xfail
+   reconciliation, docs build, release policy gates, pack evidence with a
+   privacy scan, isolated-prefix install, verification manifest + provenance).
+2. Re-asserts the SHA, creates the immutable tag (an existing tag must already
+   target the SHA) and a **draft** GitHub prerelease.
+3. Publishes the SDK and CLI as a pair: both are staged under a per-run
+   dist-tag, verified (version, integrity, CLI→SDK pin, isolated install),
+   promoted together to `insider`, then `preview` is added as an alias; a final
+   two-package reconciliation fails the run as `PARTIAL_PUBLISH` or `UNKNOWN`
+   if either package is missing or unconfirmed.
+4. Publishes the GitHub prerelease only after npm reconciled `COMPLETE`.
+5. Builds standalone archives for macOS, Linux and Windows as workflow
+   artifacts. They are attached to the release, and `squad-preview` /
+   `bradygaster.Squad.Preview` are updated, only when `publish_standalone`
+   and `publish_package_managers` are set. Their outcome never gates npm.
+
+If a registry read times out the outcome is `UNKNOWN`, not a failure to
+publish: re-dispatch `squad-npm-publish.yml` with the same `version`,
+`source_sha`, `source_branch` and `dist_tag`; it publishes only a genuinely
+missing package and otherwise reconciles idempotently.
 
 Install the preview with:
 
 ```bash
-npm install -g @bradygaster/squad-cli@preview
-brew install --cask squad-preview
+npm install -g @bradygaster/squad-cli@insider   # canonical self-upgrade channel
+npm install -g @bradygaster/squad-cli@preview   # compatibility alias
+brew install --cask squad-preview               # only after publish_package_managers
 ```
 
 ```powershell
 winget install --id bradygaster.Squad.Preview --exact
 ```
+
+Do not dispatch `squad-insider-publish.yml` for a prepared preview version: it
+computes and publishes its own `X.Y.Z-insider.N` snapshot version.
 
 ## Publish an insider snapshot
 
@@ -140,9 +169,11 @@ Those paths remain on `dev`; no force push or staging branch is needed.
 
 ## Verify a release
 
-For preview:
+For preview (both tags must point at the version for both packages):
 
 ```bash
+npm view @bradygaster/squad-sdk dist-tags.insider
+npm view @bradygaster/squad-cli dist-tags.insider
 npm view @bradygaster/squad-sdk dist-tags.preview
 npm view @bradygaster/squad-cli dist-tags.preview
 ```
@@ -154,9 +185,13 @@ npm view @bradygaster/squad-sdk dist-tags.latest
 npm view @bradygaster/squad-cli dist-tags.latest
 ```
 
-The values must equal the release version. The GitHub Release must contain six
-archives and `SHA256SUMS.txt`. Every channel must update its Homebrew cask and
-create or reuse its WinGet PR:
+The values must equal the release version, and the `npm-publish-reconciliation-*`
+artifact of the run must report `"outcome": "COMPLETE"`. The
+`release-evidence-<sha>` artifact holds the exact tarballs, their sha256 and
+npm integrity, the verification manifest and its `provenance.json`. When
+standalone publication was requested, the GitHub Release must contain six
+archives and `SHA256SUMS.txt`, and the channel must update its Homebrew cask
+and create or reuse its WinGet PR:
 
 | Channel | Homebrew cask | WinGet identifier |
 |---------|---------------|-------------------|
@@ -166,19 +201,24 @@ create or reuse its WinGet PR:
 
 ## Recover a failed publication
 
-Do not recreate the tag or GitHub Release. Rerun the failed job. If a reusable
-workflow must be dispatched directly, build from the immutable tag:
+Do not recreate the tag or GitHub Release. npm publication is not atomic; the
+publish workflow reconciles fail-closed and recovers idempotently, so rerun it
+with the same exact inputs. A registry timeout is an `UNKNOWN` outcome, not
+proof that a package is missing; the rerun checks version and integrity first
+and publishes only what is genuinely absent:
 
 ```bash
-VERSION=1.2.0
+VERSION=2.0.0
+SHA=$(git rev-list -n 1 "v$VERSION")   # the tag target; the branch may have moved on
 gh workflow run squad-npm-publish.yml --ref main \
-  -f version="$VERSION" -f source_ref="v$VERSION"
+  -f version="$VERSION" -f source_sha="$SHA" -f source_branch=main -f dist_tag=latest
 gh workflow run squad-standalone-release.yml --ref main \
-  -f upload=true -f release_tag="v$VERSION" -f source_ref="v$VERSION"
+  -f upload=true -f release_tag="v$VERSION" -f source_ref="$SHA"
 ```
 
-Use `--ref dev` for preview-release recovery. Publication steps verify existing
-versions and assets instead of overwriting them.
+Use `--ref dev`, `-f source_branch=dev` and `-f dist_tag=insider` for
+preview-release recovery. A tag that points at a different commit than
+`source_sha` fails the run; tags are never moved.
 
 ## After stable
 
