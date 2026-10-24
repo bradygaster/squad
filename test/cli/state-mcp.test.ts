@@ -7,6 +7,7 @@ import { createStateMcpSession } from '../../packages/squad-cli/src/cli/commands
 import { clearResolveSquadCache } from '../../packages/squad-sdk/src/resolution.js';
 
 const TMP = join(process.cwd(), `.test-state-mcp-${randomBytes(4).toString('hex')}`);
+const COLD_GIT_BACKEND_TIMEOUT_MS = 15_000;
 
 type JsonRpcMessage = {
   jsonrpc: '2.0';
@@ -84,7 +85,11 @@ describe('state-mcp bridge', () => {
       .toEqual(['key', 'content']);
   });
 
-  it('health includes the squad-state version and resolved team directory without removing legacy lines', async () => {
+  it('health includes the squad-state version and resolved team directory without removing legacy lines', {
+    // This includes a real cold git-backed two-layer initialization. Keep the
+    // budget explicit and bounded above the observed five-second Windows start.
+    timeout: COLD_GIT_BACKEND_TIMEOUT_MS,
+  }, async () => {
     initSquad('two-layer');
     const messages: JsonRpcMessage[] = [];
     const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));

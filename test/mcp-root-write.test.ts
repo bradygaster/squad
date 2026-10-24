@@ -14,7 +14,7 @@
  *     (bradygaster/squad#1893).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -61,6 +61,7 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fs.rmSync(tmpProject, { recursive: true, force: true });
   });
 
@@ -436,6 +437,38 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
         .toBe('would-remove');
       expect(fs.readFileSync(configPath, 'utf8')).toBe(original);
       expect(fs.existsSync(`${configPath}.squad-backup`)).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the original user config parseable when atomic replacement fails', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-atomic-'));
+    try {
+      const configDir = path.join(home, '.copilot');
+      const configPath = path.join(configDir, 'mcp-config.json');
+      fs.mkdirSync(configDir, { recursive: true });
+      const key = legacySimpleKey(tmpProject);
+      const original = JSON.stringify({
+        mcpServers: {
+          [key]: {
+            command: 'npx',
+            args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+          },
+          custom: { command: 'custom-mcp', args: [] },
+        },
+      }, null, 2) + '\n';
+      fs.writeFileSync(configPath, original);
+      vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+        throw Object.assign(new Error('simulated atomic replace failure'), { code: 'EACCES' });
+      });
+
+      expect(() => reconcileSquadStateUserConfig(tmpProject, { homeDir: home }))
+        .toThrow(/simulated atomic replace failure/);
+      expect(fs.readFileSync(configPath, 'utf8')).toBe(original);
+      expect(JSON.parse(fs.readFileSync(configPath, 'utf8')).mcpServers[key]).toBeDefined();
+      expect(fs.readFileSync(`${configPath}.squad-backup`, 'utf8')).toBe(original);
+      expect(fs.readdirSync(configDir).some(file => file.includes('.squad-tmp-'))).toBe(false);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }

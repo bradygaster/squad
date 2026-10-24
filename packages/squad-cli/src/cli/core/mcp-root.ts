@@ -34,7 +34,7 @@ import { realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { projectSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
-import { writeManagedText } from './managed-file.js';
+import { writeManagedText, writeManagedTextAtomic } from './managed-file.js';
 
 const storage = new FSStorageProvider();
 
@@ -312,7 +312,7 @@ export function reconcileSquadStateUserConfig(
   const backupPath = `${cfgPath}.squad-backup`;
   storage.writeSync(backupPath, raw);
   for (const candidate of keys) delete parsed.mcpServers![candidate];
-  writeManagedText(cfgPath, JSON.stringify(parsed, null, 2) + '\n');
+  writeManagedTextAtomic(cfgPath, JSON.stringify(parsed, null, 2) + '\n');
   return { action: 'removed', key, keys, path: cfgPath, backupPath };
 }
 
