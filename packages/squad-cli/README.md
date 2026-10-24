@@ -108,7 +108,6 @@ For detailed documentation on each command, see the [CLI Reference](https://docs
 |---------|---------|
 | `squad` | Enter interactive shell (no arguments) |
 | `squad init` | Initialize Squad in current repo (idempotent) |
-| `squad init --global` | Create a personal squad in your home directory |
 | `squad status` | Show which squad is active and why |
 | `squad doctor` | Validate setup integrity and diagnose issues |
 | `squad upgrade` | Update Squad-owned files to latest version |
@@ -324,10 +323,11 @@ When Squad starts, it looks for `.squad/` in this order:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (walk up to project root)
-3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
-4. Global CLI default (fallback only)
 
-First match wins.
+First match wins. Squad never resolves a squad from your user profile: outside a
+project (no `.squad/` in the directory tree) state commands such as `squad status`,
+`squad doctor` and `squad cast` fail with `No squad in this directory` — run
+`squad init` in the project first.
 
 ## Troubleshooting
 

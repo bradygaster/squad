@@ -8,7 +8,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 import { success, warn, dim, bold, BOLD, RESET, DIM } from '../core/output.js';
-import { fatal, SquadError } from '../core/errors.js';
+import { fatal, fatalNoSquad, NO_SQUAD_MESSAGE, SquadError } from '../core/errors.js';
 import { migrateDirectory } from '../core/migrate-directory.js';
 import type {
   AgentDefinition,
@@ -440,7 +440,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
   // Handle --to sdk (markdown → SDK-First)
   if (options.to === 'sdk') {
     if (mode === 'none') {
-      fatal('No squad found. Run `squad init` first.');
+      fatalNoSquad();
     }
     if (mode === 'legacy') {
       fatal('Found .ai-team/ directory. Run `squad migrate --from ai-team` first.');
@@ -500,7 +500,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
   console.log(`\n${BOLD}Squad Migrate${RESET} — convert between formats\n`);
   
   if (mode === 'none') {
-    console.log('No squad found. Run `squad init` to create one.');
+    console.log(NO_SQUAD_MESSAGE);
   } else if (mode === 'legacy') {
     console.log(`Current mode: ${BOLD}.ai-team/${RESET} (legacy)`);
     console.log();

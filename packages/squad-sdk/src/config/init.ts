@@ -152,8 +152,6 @@ export interface InitOptions {
   version?: string;
   /** Project description prompt — stored for REPL auto-casting. */
   prompt?: string;
-  /** If true, disable extraction from consult sessions (read-only consultations) */
-  extractionDisabled?: boolean;
   /** Optional SubSquad definitions — generates .squad/workstreams.json when provided */
   streams?: SubSquadDefinition[];
   /** If true, use built-in base roles with useRole() in SDK config (default: false) */
@@ -1106,10 +1104,6 @@ All findings logged to \`.squad/fact-checker/audit-trail.md\` (append-only, succ
       if (introspectedTypes?.length) {
         adoSection._availableTypes = introspectedTypes;
       }
-    }
-    // Only include extractionDisabled if explicitly set
-    if (options.extractionDisabled) {
-      squadConfig.extractionDisabled = true;
     }
     if (mcpConfigMode === 'agent-frontmatter') {
       squadConfig.mcpConfigMode = mcpConfigMode;

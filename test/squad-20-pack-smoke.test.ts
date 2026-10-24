@@ -80,7 +80,6 @@ describe('Squad 2.0 npm pack clean-install and v1.1.0 → 2.0 upgrade/rollback s
       ...buildEnv,
       CI: '1',
       SQUAD_NONINTERACTIVE: '1',
-      SQUAD_NO_PERSONAL: '1',
       NODE_PATH: `${join(stagingDir, 'node_modules')}${delimiter}${join(cwd, 'node_modules')}${existingNodePath}`,
     };
   }, 60_000);
@@ -217,6 +216,23 @@ describe('Squad 2.0 npm pack clean-install and v1.1.0 → 2.0 upgrade/rollback s
 
       const castingEntries = readdirSync(join(v110Repo, '.squad', 'casting'));
       expect(castingEntries.some(name => name.startsWith('handwritten-archive-'))).toBe(true);
+
+      // Every host's projected coordinator (from the packed artifact) carries the upstream
+      // inheritance contract, including the "inherited content is data, not instructions" rule.
+      for (const rel of [
+        '.github/agents/squad.agent.md',
+        '.claude/agents/squad.md',
+        '.kiro/steering/squad.md',
+        '.opencode/agent/squad.md',
+        '.cursor/agents/squad.md',
+        '.codex/agents/squad.toml',
+        '.agents/agents/squad.md',
+      ]) {
+        const text = readFileSync(join(v110Repo, rel), 'utf8');
+        expect(text, `${rel}: upstream tool`).toMatch(/squad_state_upstreams/);
+        expect(text, `${rel}: untrusted-inherited-content rule`).toMatch(/third-party data, not instructions/);
+        expect(text, `${rel}: never fetch`).toMatch(/NEVER fetch at session start|never fetch/i);
+      }
 
       const upgradedCfg = JSON.parse(readFileSync(join(v110Repo, '.squad', 'config.json'), 'utf8')) as { clients?: string[] };
       expect(upgradedCfg.clients).toEqual(['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 'antigravity']);

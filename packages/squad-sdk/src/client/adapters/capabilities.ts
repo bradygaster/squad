@@ -64,7 +64,7 @@ export function assertConsistentCapabilities(tokens: readonly string[], flags: P
  */
 const RUNTIME_TOKENS: Record<ClientId, readonly ClientCapabilityToken[]> = {
   copilot: ['approvals', 'background-runs', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
-  claude: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
+  claude: ['approvals', 'background-runs', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
   kiro: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
   opencode: ['approvals', 'background-runs', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],
   cursor: ['approvals', 'cancel-run', 'cursor-reconnect', 'mcp-bridge', 'subagents', 'typed-content-parts'],

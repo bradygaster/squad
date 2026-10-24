@@ -6,7 +6,6 @@
  *   - explicit clearResolveSquadCache() invalidates immediately
  *   - SQUAD_NO_RESOLVE_CACHE=1 disables both caches
  *   - cache returns null for misses (and re-checks after invalidation)
- *   - multi-squad.resolveSquadPath() reads squads.json once per call
  *
  * NOTE: TTL-based expiry is tested by mocking Date.now() so the suite runs
  * fast even though the real TTL is 5 seconds.
@@ -141,99 +140,5 @@ describe('resolveSquad cache', () => {
     expect(typeof sdk.clearResolveSquadCache).toBe('function');
     // It should be the SAME function reference as the resolution module's export
     expect(sdk.clearResolveSquadCache).toBe(resolutionModule.clearResolveSquadCache);
-  });
-});
-
-// ============================================================================
-// multi-squad.resolveSquadPath() — verify squads.json is read once per call
-// ============================================================================
-
-describe('multi-squad.resolveSquadPath() — config read dedupe', () => {
-  // We assert dedupe behaviorally by counting how many times squads.json is
-  // parsed during a single call. Using vi.stubEnv() instead of direct
-  // process.env mutation keeps env isolated from parallel test files.
-
-  const HOME = join(tmpdir(), `squad-multi-${randomBytes(4).toString('hex')}`);
-
-  function getSquadsJsonPath(): string {
-    if (process.platform === 'win32') {
-      return join(HOME, 'squad', 'squads.json');
-    } else if (process.platform === 'darwin') {
-      return join(HOME, 'Library', 'Application Support', 'squad', 'squads.json');
-    }
-    return join(HOME, 'squad', 'squads.json');
-  }
-
-  beforeEach(() => {
-    if (existsSync(HOME)) rmSync(HOME, { recursive: true, force: true });
-    mkdirSync(HOME, { recursive: true });
-    vi.stubEnv('HOME', HOME);
-    vi.stubEnv('XDG_CONFIG_HOME', HOME);
-    vi.stubEnv('APPDATA', HOME);
-    // NOTE: do NOT stub SQUAD_NAME here. The resolution chain in
-    // resolveSquadPath() uses `??` which treats '' as a valid value (only
-    // null/undefined trigger the fallback). Setting it to '' would cause
-    // `resolved` to be the empty string instead of falling through to
-    // config?.active. We want it to remain undefined for these tests.
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    if (existsSync(HOME)) rmSync(HOME, { recursive: true, force: true });
-  });
-
-  it('reads squads.json exactly once per resolveSquadPath() call', async () => {
-    // Import the multi-squad module directly from the built dist; it isn't
-    // re-exported from the SDK barrel.
-    const distUrl = new URL(
-      '../packages/squad-sdk/dist/multi-squad.js',
-      import.meta.url,
-    ).href;
-    const multiSquad = (await import(/* @vite-ignore */ distUrl)) as {
-      resolveSquadPath: (name?: string) => string;
-    };
-    const { resolveSquadPath } = multiSquad;
-
-    // Manually scaffold a valid squads.json for the temp HOME
-    const squadsJson = getSquadsJsonPath();
-    mkdirSync(join(squadsJson, '..'), { recursive: true });
-    const expectedContent =
-      JSON.stringify(
-        {
-          squads: [
-            {
-              name: 'alpha',
-              path: join(HOME, 'squad', 'squads', 'alpha'),
-              created_at: new Date().toISOString(),
-            },
-          ],
-          active: 'alpha',
-        },
-        null,
-        2,
-      ) + '\n';
-    writeFileSync(squadsJson, expectedContent, 'utf-8');
-
-    // Count squads.json parses by spying on JSON.parse and matching content.
-    const originalParse = JSON.parse;
-    let reads = 0;
-    JSON.parse = function patchedParse(text: string, ...rest: unknown[]) {
-      if (typeof text === 'string' && text === expectedContent) {
-        reads++;
-      }
-      // @ts-expect-error variadic forward
-      return originalParse(text, ...rest);
-    };
-
-    try {
-      const resolved = resolveSquadPath();
-      expect(resolved).toBe(join(HOME, 'squad', 'squads', 'alpha'));
-    } finally {
-      JSON.parse = originalParse;
-    }
-
-    // Pre-fix: 2 reads (active fallback + entry lookup).
-    // Post-fix: exactly 1.
-    expect(reads).toBe(1);
   });
 });

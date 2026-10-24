@@ -1,6 +1,6 @@
 # GitLab Issues Mode
 
-> **🧪 Experimental.** GitLab Issues Mode is new. Commands, behavior, and integration details may change. [Feedback welcome.](https://github.com/bradygaster/squad/issues)
+> **🗺️ Planned, not shipped.** Squad 2.0 has no GitLab platform adapter: `PlatformType` is `github | azure-devops | planner`, `squad triage` / `squad watch` have no `glab` path, and neither the canonical coordinator nor the per-host digest contains a GitLab section. What follows describes the intended experience; today it only works if you ask the coordinator to use `glab` ad hoc and it improvises the flow described here. Track progress and vote in [issues](https://github.com/bradygaster/squad/issues).
 
 **Try this to connect to your backlog:**
 ```

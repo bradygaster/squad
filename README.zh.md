@@ -122,8 +122,8 @@ squad upgrade
 
 | 命令 | 功能描述 |
 |---------|-------------|
-| `squad init` | **初始化** — 在当前目录初始化 Squad（幂等操作 — 可安全运行多次）；别名：`hire`；使用 `--global` 在个人 squad 目录初始化，`--mode remote <path>` 开启双根模式 |
-| `squad upgrade` | 将 Squad 管理的文件更新至最新版；绝不会触动你的团队状态；使用 `--global` 升级个人 squad，`--migrate-directory` 将 `.ai-team/` 重命名为 `.squad/` |
+| `squad init` | **初始化** — 在当前目录初始化 Squad（幂等操作 — 可安全运行多次）；别名：`hire`；使用 `--mode remote <path>` 开启双根模式 |
+| `squad upgrade` | 将 Squad 管理的文件更新至最新版；绝不会触动你的团队状态；使用 `--migrate-directory` 将 `.ai-team/` 重命名为 `.squad/` |
 | `squad status` | 显示当前活跃的小队及其原因 |
 | `squad triage` | 监控 issue 并自动分发给团队（别名：`watch`、`loop`）；使用 `--interval <minutes>` 设置轮询频率（默认 10 分钟） |
 | `squad copilot` | 添加/移除 Copilot 编码智能体 (@copilot)；使用 `--off` 移除，`--auto-assign` 启用自动分配 |

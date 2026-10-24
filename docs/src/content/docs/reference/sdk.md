@@ -162,23 +162,21 @@ export default defineConfig({
 
 ## Resolution
 
-Resolution helpers locate project, personal, and shared Squad state.
+Resolution helpers locate project, global, and shared Squad state.
 
 ```typescript
 import {
   ensureSquadPath,
-  resolveGlobalSquadPath,
   resolveSquad,
   scratchDir,
 } from '@bradygaster/squad-sdk';
 
 const projectSquad = resolveSquad();
-const personalSquad = resolveGlobalSquadPath();
 const ensured = ensureSquadPath();
 const scratch = scratchDir();
 ```
 
-The root package also exports personal-state helpers, project-key helpers, preset/state resolution, directory config loading, and cache management. See the generated API reference for signatures.
+The root package also exports project-key helpers, preset/state resolution, directory config loading, and cache management. See the generated API reference for signatures.
 
 ## Client and Sessions
 

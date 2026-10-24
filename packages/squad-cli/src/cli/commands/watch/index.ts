@@ -12,7 +12,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { effectiveSquadDir } from '../../core/effective-squad-dir.js';
-import { fatal } from '../../core/errors.js';
+import { fatal, fatalNoSquad } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
 import { withAdditionalMcpConfig } from '../../core/copilot-invocation.js';
 import {
@@ -734,7 +734,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   const teamRoot = path.dirname(squadDirInfo.path);
 
   if (!storage.existsSync(teamMd)) {
-    fatal('No squad found — run init first.');
+    fatalNoSquad();
   }
 
   // Create platform adapter

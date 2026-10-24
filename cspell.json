@@ -35,6 +35,7 @@
     "booster",
     "bradygaster",
     "Breza",
+    "Bubu",
     "capcom",
     "chrislomonico",
     "Clemenza",
@@ -129,6 +130,7 @@
     "myrepo",
     "mysecret",
     "narratively",
+    "Noether",
     "nslookup",
     "OAuth",
     "orchestration",
@@ -232,6 +234,8 @@
     "worktree",
     "worktrees",
     "xarray",
+    "xfail",
+    "xpass",
     "ZUAER"
   ],
   "dictionaries": [

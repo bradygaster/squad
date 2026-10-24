@@ -549,7 +549,6 @@ Squad maintains a clear ownership model:
 |---------|-------------|
 | `squad init` | Initialize Squad in the current repo |
 | `squad init --sdk` | Initialize with SDK-first TypeScript config |
-| `squad init --global` | Initialize a personal squad (cross-project) |
 | `squad build` | Generate `.squad/` from `squad.config.ts` |
 | `squad build --check` | Validate generated files match disk (for CI) |
 | `squad doctor` | Run 9 setup validation checks |

@@ -14,8 +14,10 @@ import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
 import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
-import { resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquad, resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
+import { fatalNoSquad } from '../core/errors.js';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
+import { resolveUpstreams } from '@bradygaster/squad-sdk/upstream';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
@@ -768,6 +770,31 @@ export function checkWorktreeEol(cwd: string): DoctorCheck | undefined {
 // ── public API ──────────────────────────────────────────────────────
 
 /**
+ * Upstream inheritance (`.squad/upstream.json`): resolve from local snapshots only
+ * (never fetch) and surface every upstream that could not be read.
+ */
+export function checkUpstreams(squadDir: string): DoctorCheck | undefined {
+  const resolution = resolveUpstreams(squadDir);
+  if (!resolution) return undefined;
+  if (resolution.upstreams.length === 0) {
+    return { name: 'upstream inheritance', status: 'warn', severity: 'info', message: 'upstream.json declares no upstreams' };
+  }
+  const readable = resolution.upstreams.filter(u => u.status === 'ok' || u.status === 'stale');
+  const summary = `${readable.length}/${resolution.upstreams.length} upstream(s) readable: ${resolution.upstreams.map(u => `${u.name}=${u.status}`).join(', ')}`;
+  if (resolution.diagnostics.length === 0) {
+    return { name: 'upstream inheritance', status: 'pass', message: summary };
+  }
+  // `unavailable` is the normal state of a fresh clone before `squad upstream sync`; `stale` is read
+  // anyway. Only declarations that can never resolve as written (missing/invalid/cycle/depth) fail.
+  const hard = resolution.upstreams.some(u => u.status === 'missing' || u.status === 'invalid' || u.status === 'cycle' || u.status === 'depth-exceeded');
+  return {
+    name: 'upstream inheritance',
+    status: hard ? 'fail' : 'warn',
+    message: `${summary}\n   ${resolution.diagnostics.join('\n   ')}`,
+  };
+}
+
+/**
  * Run all doctor checks for the given working directory.
  * Returns an array of check results — never throws for check failures.
  */
@@ -808,6 +835,13 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     checks.push(checkDecisionsMd(resolvedCwd, squadDir, stateDir));
     const rateLimitCheck = checkRateLimitStatus(squadDir);
     if (rateLimitCheck) checks.push(rateLimitCheck);
+
+    // Upstream inheritance: declarations are project-local (`squad upstream add` writes them
+    // beside config.json and `squad externalize` keeps them in the working tree), so read
+    // the local .squad/, not the externalized/remote state dir. Never fetches.
+    const upstreamCheck = checkUpstreams(squadDir);
+    if (upstreamCheck) checks.push(upstreamCheck);
+
 
     // Hook presence check (only for two-layer / orphan backends)
     const hookCheck = checkGitSyncHooks(resolvedCwd, squadDir);
@@ -877,6 +911,11 @@ export function printDoctorReport(checks: DoctorCheck[], mode: DoctorMode): void
  */
 export async function doctorCommand(cwd?: string): Promise<void> {
   const resolvedCwd = cwd ?? process.cwd();
+  // The resolver is the single admission check: it applies the profile boundary (a ~/.squad
+  // in the home directory is never a project), so a bare existence check must not short-circuit it.
+  if (!resolveSquad(resolvedCwd)) {
+    fatalNoSquad();
+  }
   const mode = getDoctorMode(resolvedCwd);
   const checks = await runDoctor(resolvedCwd);
   printDoctorReport(checks, mode);

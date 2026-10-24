@@ -44,6 +44,7 @@
     "claude": {
       "clientCapabilities": [
         "approvals",
+        "background-runs",
         "cancel-run",
         "cursor-reconnect",
         "mcp-bridge",
@@ -52,6 +53,7 @@
       ],
       "effectiveCapabilities": [
         "approvals",
+        "background-runs",
         "cancel-run",
         "cursor-reconnect",
         "mcp-bridge",

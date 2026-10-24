@@ -39,7 +39,6 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Options:`);
     console.log(`  ${BOLD}--sdk${RESET}                       Use SDK builder syntax (squad.config.ts)`);
     console.log(`  ${BOLD}--roles${RESET}                     Seed the team with built-in base roles`);
-    console.log(`  ${BOLD}--global${RESET}                    Initialize in the personal (global) squad directory`);
     console.log(`  ${BOLD}--no-workflows${RESET}              Skip writing GitHub Actions workflows`);
     console.log(`  ${BOLD}--preset <name>${RESET}             Apply a curated preset after init`);
     console.log(`  ${BOLD}--state-backend <type>${RESET}      State backend (local|orphan|two-layer)`);
@@ -56,7 +55,6 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Use --dry-run to preview changes before applying.\n`);
     console.log(`Options:`);
     console.log(`  ${BOLD}--dry-run${RESET}                   Preview changes without writing`);
-    console.log(`  ${BOLD}--global${RESET}                    Upgrade the personal (global) squad`);
     console.log(`  ${BOLD}--migrate-directory${RESET}         Rename legacy .ai-team/ to .squad/`);
     console.log(`  ${BOLD}--state-backend <type>${RESET}      Migrate to a new backend (orphan|two-layer)`);
     console.log(`  ${BOLD}--client <list>${RESET}             Add client hosts (or "all"):`);
@@ -89,8 +87,8 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   status: (version) => {
     header('status', version, 'Show which squad is active and why');
     console.log(`Usage: squad status\n`);
-    console.log(`Reports the resolved squad directory, the resolution reason (repo vs.`);
-    console.log(`global), and the state of the personal squad path.\n`);
+    console.log(`Reports the resolved squad directory and any inherited upstreams.`);
+    console.log(`Fails with a clear message when run outside a project.\n`);
   },
 
   roles: (version) => {
@@ -145,7 +143,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     header('cast', version, 'Show roster or add a new agent to the team');
     console.log(`Usage: squad cast                        ${DIM}# show the current cast (roster)${RESET}`);
     console.log(`       squad cast --name <name> --role <role> [--force]  ${DIM}# add a new agent${RESET}\n`);
-    console.log(`With no flags, displays the current session cast (project + personal agents).`);
+    console.log(`With no flags, displays the current session cast (project agents).`);
     console.log(`With --name and --role (or via "squad hire --name <name> --role <role>"), adds a new specialist agent to the project squad.\n`);
     console.log(`Options:`);
     console.log(`  ${BOLD}--name <name>${RESET}               Name for the new agent (required when adding)`);
@@ -247,24 +245,6 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Exits non-zero if any required check fails.\n`);
   },
 
-  consult: (version) => {
-    header('consult', version, 'Enter consult mode with your personal squad');
-    console.log(`Usage: squad consult [--status] [--check]\n`);
-    console.log(`Options:`);
-    console.log(`  ${BOLD}--status${RESET}                    Show consult session status`);
-    console.log(`  ${BOLD}--check${RESET}                     Run consult-mode prerequisites check\n`);
-  },
-
-  extract: (version) => {
-    header('extract', version, 'Extract learnings from a consult-mode session');
-    console.log(`Usage: squad extract [options]\n`);
-    console.log(`Options:`);
-    console.log(`  ${BOLD}--dry-run${RESET}                   Preview the extracted learnings`);
-    console.log(`  ${BOLD}--clean${RESET}                     Remove transient session files after extract`);
-    console.log(`  ${BOLD}--yes${RESET}                       Skip interactive confirmations`);
-    console.log(`  ${BOLD}--accept-risks${RESET}              Acknowledge data-handling implications\n`);
-  },
-
   subsquads: (version) => {
     header('subsquads', version, 'Manage Squad SubSquads (multi-Codespace scaling)');
     console.log(`Usage: squad subsquads <list|status|activate <name>>\n`);
@@ -296,13 +276,6 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   schedule: (version) => {
     header('schedule', version, 'Manage scheduled Squad tasks');
     console.log(`Usage: squad schedule <list|run <id>|init|status>\n`);
-  },
-
-  personal: (version) => {
-    header('personal', version, 'Manage your personal squad (ambient agents)');
-    console.log(`Usage: squad personal <init|list|add <name>|remove <name>> [options]\n`);
-    console.log(`Options:`);
-    console.log(`  ${BOLD}--role <role>${RESET}               Built-in role to attach (see 'squad roles')\n`);
   },
 
   preset: (version) => {

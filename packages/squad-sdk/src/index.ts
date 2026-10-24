@@ -10,12 +10,10 @@ const pkg = require('../package.json');
 export const VERSION: string = pkg.version;
 
 // Export public API
-export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadHome, ensureSquadHome, resolvePresetsDir, resolveSquadState, clearResolveSquadCache } from './resolution.js';
+export { resolveSquad, resolveGlobalSquadPath, isRetiredProfileTeamRoot, ensureSquadPath, loadDirConfig, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadHome, ensureSquadHome, resolvePresetsDir, resolveSquadState, clearResolveSquadCache } from './resolution.js';
 export type { ResolvedSquadPaths, SquadDirConfig, SquadStateContext } from './resolution.js';
 export * from './config/index.js';
 export * from './agents/onboarding.js';
-export { resolvePersonalAgents, mergeSessionCast } from './agents/personal.js';
-export type { PersonalAgentMeta, PersonalAgentManifest } from './agents/personal.js';
 export * from './casting/index.js';
 export * from './skills/index.js';
 export { selectResponseTier, getTier } from './coordinator/response-tiers.js';

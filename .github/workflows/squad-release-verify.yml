@@ -1,0 +1,248 @@
+name: Squad Release Verify
+
+# Fail-closed verification at an EXACT commit, run before any release side effect
+# (tag, GitHub release, npm publish, standalone bundles) and on release-prep PRs.
+#
+# It produces the immutable evidence bundle (`release-evidence-<sha>` artifact):
+#   - npm-ci.json             clean external `npm ci` on the COMMITTED lockfiles (no repair),
+#                             public registry only, isolated HOME and empty user npmrc
+#   - lockfile-registry.json  every tracked package-lock.json resolves to registry.npmjs.org (sha512)
+#   - policy-gates.json       workspace integrity, prerelease guard, publish policy + allowlist,
+#                             changelog heading, changeset drain — no label/variable bypass
+#   - vitest-report.json + test-reconciliation.json  every test bucketed; counts must sum
+#   - pack-evidence.json + both .tgz + .sha256         exact packs, integrity, file lists,
+#                             export-target validation, privacy scan
+#   - squad-2.0-verification-manifest-<sha>.json/.md + provenance.json + manifest.schema.json
+#
+# No skip labels and no SQUAD_*_CHECK repository variables are consulted here.
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: 'Full 40-hex commit SHA to verify (checkout must resolve to exactly this)'
+        required: true
+        type: string
+      expected_version:
+        description: 'If set, package.json at source_sha must read exactly this version'
+        required: false
+        default: ''
+        type: string
+    outputs:
+      version:
+        description: 'Root package.json version at source_sha'
+        value: ${{ jobs.verify.outputs.version }}
+      evidence_artifact:
+        description: 'Name of the uploaded evidence artifact'
+        value: ${{ jobs.verify.outputs.evidence_artifact }}
+      sdk_sha256:
+        description: 'sha256 of the packed @bradygaster/squad-sdk tarball'
+        value: ${{ jobs.verify.outputs.sdk_sha256 }}
+      cli_sha256:
+        description: 'sha256 of the packed @bradygaster/squad-cli tarball'
+        value: ${{ jobs.verify.outputs.cli_sha256 }}
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/squad-release*.yml'
+      - '.github/workflows/squad-npm-publish.yml'
+      - 'scripts/release/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/*/package.json'
+      - 'packages/squad-sdk/src/platform/comms-teams.ts'
+      - 'CHANGELOG.md'
+      - 'docs/src/content/docs/whatsnew.md'
+      - '.gitattributes'
+      - '.changeset/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.source_sha || github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify exact SHA and build evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      evidence_artifact: ${{ steps.artifact.outputs.name }}
+      sdk_sha256: ${{ steps.pack.outputs.sdk_sha256 }}
+      cli_sha256: ${{ steps.pack.outputs.cli_sha256 }}
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+      EVIDENCE_DIR: ${{ github.workspace }}/evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Assert checkout is exactly the requested SHA
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full lowercase 40-hex SHA, got '$SOURCE_SHA'"; exit 1; }
+          head="$(git rev-parse HEAD)"
+          test "$head" = "$SOURCE_SHA" || { echo "::error::checkout HEAD $head != requested $SOURCE_SHA"; exit 1; }
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          echo "Verifying $SOURCE_SHA (tree $(git rev-parse 'HEAD^{tree}'))"
+          mkdir -p "$EVIDENCE_DIR"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+
+      - name: Resolve version
+        id: version
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./package.json").version')"
+          if [ -n "$EXPECTED_VERSION" ] && [ "$version" != "$EXPECTED_VERSION" ]; then
+            echo "::error::package.json version '$version' != expected '$EXPECTED_VERSION'"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: "Gate: lockfiles resolve only to registry.npmjs.org (fail closed)"
+        run: |
+          set -euo pipefail
+          node scripts/release/check-lockfile-registry.mjs --json > "$EVIDENCE_DIR/lockfile-registry.json"
+          node scripts/release/check-lockfile-registry.mjs
+
+      - name: "Proof: clean external npm ci on the committed lockfiles (no repair)"
+        run: |
+          set -euo pipefail
+          iso="$RUNNER_TEMP/npm-ci-proof"
+          mkdir -p "$iso/home" "$iso/cache"
+          : > "$iso/empty.npmrc"
+          cmd='npm ci --registry=https://registry.npmjs.org/'
+          set +e
+          HOME="$iso/home" NPM_CONFIG_USERCONFIG="$iso/empty.npmrc" NPM_CONFIG_CACHE="$iso/cache" npm ci --registry=https://registry.npmjs.org/
+          root_exit=$?
+          ( cd docs && HOME="$iso/home" NPM_CONFIG_USERCONFIG="$iso/empty.npmrc" NPM_CONFIG_CACHE="$iso/cache" npm ci --registry=https://registry.npmjs.org/ )
+          docs_exit=$?
+          set -e
+          node scripts/release/write-npm-ci-evidence.mjs "$cmd" "$root_exit" "$docs_exit" "$SOURCE_SHA"
+          cat "$EVIDENCE_DIR/npm-ci.json"
+          test "$root_exit" -eq 0 || { echo "::error::root npm ci against the public registry failed (exit $root_exit)"; exit 1; }
+          test "$docs_exit" -eq 0 || { echo "::error::docs npm ci against the public registry failed (exit $docs_exit)"; exit 1; }
+          git diff --quiet -- package-lock.json docs/package-lock.json || { echo "::error::npm ci modified a committed lockfile"; git --no-pager diff --stat -- package-lock.json docs/package-lock.json; exit 1; }
+
+      - name: Check extracted release scripts and workflow policy
+        run: node scripts/release/check-release-scripts.mjs
+
+      - name: Install gh-aw v0.91.5 (pinned; required by fail-closed test gates)
+        run: gh extension install --force --pin v0.91.5 github/gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browsers
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install chromium --with-deps
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: "Gate: release policy (no label or variable bypass)"
+        run: |
+          set -euo pipefail
+          node scripts/release/policy-gates.mjs --mode=release --json > "$EVIDENCE_DIR/policy-gates.json" || true
+          node scripts/release/policy-gates.mjs --mode=release
+
+      - name: "Gate: changeset drift (fail mode)"
+        run: node scripts/check-changeset-drift.mjs --mode=fail
+
+      - name: "Gate: shebang EOL"
+        run: node scripts/check-shebang-eol.mjs
+
+      - name: "Gate: exports map matches barrel files"
+        run: node scripts/check-exports-map.mjs
+
+      - name: "Gate: every SDK subpath export imports"
+        run: node scripts/release/smoke-sdk-exports.mjs
+
+      - name: Verify product/team isolation
+        run: npm run verify:team-isolation
+      - name: Type-check
+        run: npm run lint
+      - name: Lint source and tests
+        run: npm run lint:eslint
+      - name: Lint docs
+        run: npm run lint:docs
+
+      - name: Run full vitest suite with JSON report
+        run: npx vitest run --reporter=default --reporter=json --outputFile="$EVIDENCE_DIR/vitest-report.json"
+      - name: Run node:test suites
+        run: node --test test/*.test.cjs
+
+      - name: Reconcile skip / todo / xfail buckets (counts must sum)
+        if: always()
+        run: node scripts/release/test-reconciliation.mjs --report "$EVIDENCE_DIR/vitest-report.json" --out "$EVIDENCE_DIR" --fail-on-unexplained
+
+      - name: Build docs site
+        run: npm run docs:build
+
+      - name: Pack evidence (exact tarballs, hashes, file lists, export targets, privacy scan)
+        id: pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/release/pack-evidence.mjs --out "$EVIDENCE_DIR" --expect-version "$VERSION" --pin-sdk-dep-exact --expect-sdk-dep-exact
+          node scripts/release/emit-pack-evidence-hashes.mjs
+
+      - name: Isolated-prefix install of the exact packed pair (self-upgrade shape)
+        env:
+          SQUAD_RELEASE_PACK_INSTALL: '1'
+          SQUAD_RELEASE_EVIDENCE_DIR: ${{ env.EVIDENCE_DIR }}
+        run: npx vitest run test/release-pack-install.test.ts
+
+      - name: Build verification manifest, provenance sidecar and validate against the shipped schema
+        env:
+          BRANCH: ${{ github.base_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          node scripts/release/build-manifest.mjs --out "$EVIDENCE_DIR" --sha "$SOURCE_SHA" --branch "$BRANCH" --vitest-report "$EVIDENCE_DIR/vitest-report.json" --baseline-commit f22847a9898d5c90d70a679ee63d9d5f49cd5fed
+          manifest="$(ls "$EVIDENCE_DIR"/squad-2.0-verification-manifest-*.json)"
+          node scripts/release/validate-manifest.mjs "$manifest" --provenance "$EVIDENCE_DIR/provenance.json"
+          {
+            echo "## Release evidence at \`$SOURCE_SHA\`"
+            echo
+            echo '```'
+            cat "$EVIDENCE_DIR/provenance.json"
+            echo '```'
+            echo
+            sha256sum "$EVIDENCE_DIR"/*.tgz
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Name evidence artifact
+        id: artifact
+        if: always()
+        run: echo "name=release-evidence-${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload evidence bundle (also on failure, for diagnosis)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: evidence/
+          retention-days: 90
+          if-no-files-found: warn

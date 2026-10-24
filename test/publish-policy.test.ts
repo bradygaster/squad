@@ -2,8 +2,9 @@
  * Publish Policy Lint Test (#557)
  *
  * Validates that all npm publish commands in workflow files are
- * workspace-scoped (-w or --workspace). Bare npm publish would
- * publish the root package.json — a critical incident vector.
+ * workspace-scoped (-w or --workspace), except for the two exact verified
+ * tarball paths in squad-npm-publish.yml. Bare npm publish would publish the
+ * root package.json — a critical incident vector.
  *
  * Also tests the grep logic itself with known good/bad inputs.
  */
@@ -17,6 +18,8 @@ import { join } from 'node:path';
 const NPM_PUBLISH_COMMAND =
   /(?:^|&&|\|\||;)\s*(?:(?:if|then)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*npm\s+[^#;&|]*\bpublish\b[^#;&|]*/;
 const WORKSPACE_FLAG = /(?:^|\s)(?:-w|--workspace)(?:=|\s|$)/;
+const VERIFIED_TARBALL =
+  /npm\s+publish\s+"\$PACKS_DIR\/bradygaster-squad-(?:sdk|cli)-\$\{VERSION\}\.tgz"(?:\s|$)/;
 
 /**
  * Returns true if the line contains a workspace-scoped npm publish
@@ -30,7 +33,9 @@ function isCompliant(line: string): boolean {
   if (command.startsWith('#')) return true;
 
   const publishCommand = command.match(NPM_PUBLISH_COMMAND)?.[0];
-  return publishCommand === undefined || WORKSPACE_FLAG.test(publishCommand);
+  return publishCommand === undefined ||
+    WORKSPACE_FLAG.test(publishCommand) ||
+    VERIFIED_TARBALL.test(publishCommand);
 }
 
 /**
@@ -60,6 +65,8 @@ describe('publish-policy lint logic', () => {
       'npm --workspace packages/squad-cli publish --tag insider',
       'cd packages/sdk && npm --workspace=packages/squad-sdk publish',
       'run: npm publish --workspace packages/squad-cli',
+      'npm publish "$PACKS_DIR/bradygaster-squad-sdk-${VERSION}.tgz" --ignore-scripts --access public --provenance',
+      'npm publish "$PACKS_DIR/bradygaster-squad-cli-${VERSION}.tgz" --ignore-scripts --access public --provenance',
     ];
 
     for (const line of goodLines) {
@@ -78,6 +85,7 @@ describe('publish-policy lint logic', () => {
       'npm publish --tag insider --access public',
       'cd packages/sdk && npm publish --access public',
       'run: if NODE_AUTH_TOKEN=token npm publish; then echo done; fi',
+      'npm publish "$PACKS_DIR/other-${VERSION}.tgz" --ignore-scripts',
     ];
 
     for (const line of badLines) {

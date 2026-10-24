@@ -3,7 +3,7 @@
  *
  * resolveSquad()            — find .squad/ by walking up from startDir to .git boundary
  * resolveSquadPaths()       — dual-root resolution (projectDir / teamDir) for remote squad mode
- * resolveGlobalSquadPath()  — platform-specific global config directory
+ * resolveGlobalSquadPath()  — platform-specific config directory (externalized project state only)
  *
  * Dual-root resolution and remote mode design ported from @spboyer (Shayne Boyer)'s
  * PR bradygaster/squad#131. Original concept: resolveSquadPaths() with config.json
@@ -13,6 +13,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -111,10 +112,6 @@ export interface SquadDirConfig {
   version: number;
   teamRoot: string;
   projectKey: string | null;
-  /** True when in consult mode (personal squad consulting on external project) */
-  consult?: boolean;
-  /** True when extraction is disabled for consult sessions (read-only consultation) */
-  extractionDisabled?: boolean;
   /** Where state is stored: 'external' when moved out of the working tree */
   stateLocation?: string;
   /** State storage backend: local | external | git-notes | orphan */
@@ -145,8 +142,6 @@ export interface ResolvedSquadPaths {
    * `teamRoot` uses. Equals projectDir in local mode.
    */
   teamSquadDir: string;
-  /** User's personal squad dir, null if not found or disabled */
-  personalDir: string | null;
   config: SquadDirConfig | null;
   name: '.squad' | '.ai-team';
   isLegacy: boolean;
@@ -196,6 +191,10 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
  * 1. Walk up from `startDir` checking for `.squad/` — stops at `.git` directory boundary
  * 2. If `.git` is a file (worktree), check the main checkout for `.squad/`
  *
+ * The walk never reaches the user profile: it stops at the home directory (so `~/.squad`,
+ * the roaming `SQUAD_HOME` root, is never treated as a project squad) and a candidate equal
+ * to `SQUAD_HOME` is ignored. Outside a project the result is `null`.
+ *
  * @param startDir - Directory to start searching from. Defaults to `process.cwd()`.
  * @returns Absolute path to `.squad/` or `null`.
  */
@@ -209,14 +208,165 @@ export function resolveSquad(startDir?: string): string | null {
   return result;
 }
 
+/**
+ * Platform config directory for Squad WITHOUT creating it (see {@link resolveGlobalSquadPath}).
+ */
+function platformSquadConfigDir(): string | null {
+  try {
+    const platform = process.platform;
+    let base: string;
+    if (platform === 'win32') {
+      base = process.env['APPDATA'] ?? process.env['LOCALAPPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming');
+    } else if (platform === 'darwin') {
+      base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), 'Library', 'Application Support');
+    } else {
+      base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
+    }
+    // Canonicalize the PARENT only and append `squad` lexically: establishing the boundary must
+    // never stat/read the retired profile directory itself.
+    const canonicalBase = canonicalDir(base);
+    return canonicalBase === null ? null : path.join(canonicalBase, 'squad');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when `teamDir` (absolute) is a location Squad 1.x used for the removed profile-level
+ * squads: the platform config `squad/` dir (or anything beneath it), `~/.squad` / `SQUAD_HOME`,
+ * or the home directory itself. Squad 2.0 never resolves a team from these; a project
+ * `config.json` still carrying such a `teamRoot` is treated as local and `squad upgrade`
+ * removes the key.
+ */
+export function isRetiredProfileTeamRoot(teamDir: string): boolean {
+  const target = canonicalDir(teamDir);
+  const b = profileBoundary();
+  // Fail closed: an unresolvable target or an unknown boundary is treated as retired (never followed).
+  if (target === null || !b.homeDir) return true;
+  if (isProfileOwned(target, b)) return true;
+  return isAncestorOf(path.join(b.homeDir, '.squad'), target) || samePath(target, path.join(b.homeDir, '.squad'));
+}
+
+/** Directories that are never project squads: the home dir and the roaming SQUAD_HOME root. */
+interface ProfileBoundary {
+  /** Canonical home directory, or null when it cannot be established (callers then refuse). */
+  homeDir: string | null;
+  /** Canonical roaming squad home (`SQUAD_HOME` or `<home>/.squad`). */
+  squadHome: string | null;
+  /** Canonical platform config dir (`%APPDATA%\squad`, `~/.config/squad`, …), the retired global-squad location. */
+  configDir: string | null;
+}
+
+function profileBoundary(): ProfileBoundary {
+  let homeDir: string | null = null;
+  try { homeDir = canonicalDir(os.homedir()); } catch { homeDir = null; }
+  const envHome = process.env['SQUAD_HOME'];
+  // SQUAD_HOME: canonicalize its parent and append the leaf lexically, so the boundary is
+  // established without touching the roaming directory itself.
+  const squadHome = envHome
+    ? (() => { const parent = canonicalDir(path.dirname(path.resolve(envHome))); return parent === null ? null : path.join(parent, path.basename(path.resolve(envHome))); })()
+    : (homeDir ? path.join(homeDir, '.squad') : null);
+  return { homeDir, squadHome, configDir: platformSquadConfigDir() };
+}
+
+/** A canonical path is "profile-owned" when it is the home dir itself, SQUAD_HOME (or below), or the platform config dir (or below). */
+function isProfileOwned(canonical: string, b: ProfileBoundary): boolean {
+  const under = (root: string | null) => root !== null && (samePath(canonical, root) || isAncestorOf(root, canonical));
+  if (b.homeDir && samePath(canonical, b.homeDir)) return true;
+  return under(b.squadHome) || under(b.configDir);
+}
+
+/**
+ * Canonical absolute form of a directory for boundary comparisons: resolves 8.3 short
+ * names on Windows (`C:\PROGRA~1` vs `C:\Program Files`) and symlinked homes.
+ * Falls back to `path.resolve` when the path does not exist.
+ */
+function canonicalDir(p: string): string | null {
+  const resolved = path.resolve(p);
+  // Find the longest EXISTING prefix lexically, canonicalize exactly that prefix, and re-append
+  // the non-existing tail (non-existing components cannot be links). If the existing prefix
+  // itself cannot be canonicalized (broken reparse point, permission denied), return null: the
+  // caller must refuse rather than fall back to a lexical comparison (fail closed).
+  const tail: string[] = [];
+  let cur = resolved;
+  for (;;) {
+    let exists = false;
+    try { fs.lstatSync(cur); exists = true; } catch { exists = false; }
+    if (exists) {
+      try {
+        const real = fs.realpathSync.native(cur);
+        return tail.length ? path.join(real, ...tail.reverse()) : real;
+      } catch {
+        return null;
+      }
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    tail.push(path.basename(cur));
+    cur = parent;
+  }
+}
+
+/**
+ * True when the walk must stop at `current`: it is the home directory or one of its ancestors,
+ * it lies inside the retired platform config dir, the boundary itself cannot be established, or
+ * `current` cannot be canonicalized (fail closed — never compare lexically).
+ */
+function atOrAboveProfileRoot(current: string, b: ProfileBoundary): string | null {
+  if (!b.homeDir) return null;
+  const c = canonicalDir(current);
+  if (c === null) return null;
+  if (samePath(c, b.homeDir) || isAncestorOf(c, b.homeDir)) return null;
+  if (b.configDir !== null && (samePath(c, b.configDir) || isAncestorOf(b.configDir, c))) return null;
+  return c;
+}
+
+/**
+ * Admit `candidate` (an existing `.squad`/`.ai-team` dir under canonical `canonicalParent`) only
+ * when it is not profile-owned — including when it is a link whose target is profile-owned.
+ * The candidate itself is only lstat'ed (and realpath'ed if it is a link); its contents are
+ * never read here.
+ */
+function admitCandidate(candidate: string, canonicalParent: string, b: ProfileBoundary): boolean {
+  const lexical = path.join(canonicalParent, path.basename(candidate));
+  if (isProfileOwned(lexical, b)) return false;
+  try {
+    if (fs.lstatSync(candidate).isSymbolicLink()) {
+      const real = canonicalDir(candidate);
+      return real !== null && !isProfileOwned(real, b);
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/** True when `dir` is a strict ancestor of `descendant`. */
+function isAncestorOf(dir: string, descendant: string): boolean {
+  const rel = path.relative(dir, descendant);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+function samePath(a: string, b: string): boolean {
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 function resolveSquadUncached(startDir: string): string | null {
   let current = startDir;
+  const boundary = profileBoundary();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Profile boundary: the home directory (and anything above it) and the platform config dir
+    // are never a project; an unresolvable path refuses rather than guesses.
+    const canonicalCurrent = atOrAboveProfileRoot(current, boundary);
+    if (canonicalCurrent === null) {
+      return null;
+    }
+
     const candidate = path.join(current, '.squad');
 
-    if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
+    if (storage.existsSync(candidate) && storage.isDirectorySync(candidate) && admitCandidate(candidate, canonicalCurrent, boundary)) {
       return candidate;
     }
 
@@ -277,12 +427,18 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
 
 function findSquadDirUncached(startDir: string): { dir: string; name: '.squad' | '.ai-team' } | null {
   let current = startDir;
+  const boundary = profileBoundary();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Same profile boundary as resolveSquad().
+    const canonicalCurrent = atOrAboveProfileRoot(current, boundary);
+    if (canonicalCurrent === null) {
+      return null;
+    }
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
-      if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
+      if (storage.existsSync(candidate) && storage.isDirectorySync(candidate) && admitCandidate(candidate, canonicalCurrent, boundary)) {
         return { dir: candidate, name };
       }
     }
@@ -336,8 +492,6 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         version: parsed.version,
         teamRoot: parsed.teamRoot,
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
-        consult: parsed.consult === true ? true : undefined,
-        extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
         stateLocation: typeof parsed.stateLocation === 'string' ? parsed.stateLocation : undefined,
         stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
       };
@@ -346,13 +500,6 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Check if a config represents consult mode (personal squad consulting on external project).
- */
-export function isConsultMode(config: SquadDirConfig | null): boolean {
-  return config?.consult === true;
 }
 
 /**
@@ -404,12 +551,24 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     // too high).
     const projectRoot = path.resolve(projectDir, '..');
     const teamDir = path.resolve(projectRoot, config.teamRoot);
+    // A 1.x init linked projects to the (removed) profile squad; such a teamRoot is stale,
+    // never followed, and `squad upgrade` removes it. Genuine dual-root targets are kept.
+    if (isRetiredProfileTeamRoot(teamDir)) {
+      return {
+        mode: 'local',
+        projectDir,
+        teamDir: projectRoot,
+        teamSquadDir: projectDir,
+        config: { ...config, teamRoot: '.' },
+        name,
+        isLegacy,
+      };
+    }
     return {
       mode: 'remote',
       projectDir,
       teamDir,
       teamSquadDir: resolveTeamSquadDir(teamDir, name),
-      personalDir: resolvePersonalSquadDir(),
       config,
       name,
       isLegacy,
@@ -422,7 +581,6 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     projectDir,
     teamDir: projectDir,
     teamSquadDir: projectDir,
-    personalDir: resolvePersonalSquadDir(),
     config,
     name,
     isLegacy,
@@ -430,17 +588,19 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
 }
 
 /**
- * Return the platform-specific global Squad configuration directory.
+ * Return the platform-specific Squad configuration directory. Squad 2.0 keeps only
+ * externalized project state here (`projects/<projectKey>/`, see `squad externalize`);
+ * no squad is ever initialized, read or resolved from this directory itself.
  *
  * | Platform | Path                                       |
  * |----------|--------------------------------------------|
  * | Windows  | `%APPDATA%/squad/`                         |
- * | macOS    | `~/Library/Application Support/squad/`      |
+ * | macOS    | `$XDG_CONFIG_HOME/squad/` if set, else `~/Library/Application Support/squad/` |
  * | Linux    | `$XDG_CONFIG_HOME/squad/` (default `~/.config/squad/`) |
  *
  * The directory is created (recursively) if it does not already exist.
  *
- * @returns Absolute path to the global squad config directory.
+ * @returns Absolute path to the Squad config directory.
  */
 export function resolveGlobalSquadPath(): string {
   const platform = process.platform;
@@ -452,7 +612,8 @@ export function resolveGlobalSquadPath(): string {
       ?? process.env['LOCALAPPDATA']
       ?? path.join(os.homedir(), 'AppData', 'Roaming');
   } else if (platform === 'darwin') {
-    base = path.join(os.homedir(), 'Library', 'Application Support');
+    // macOS: an explicit XDG_CONFIG_HOME overrides the Library location (same override as Linux).
+    base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), 'Library', 'Application Support');
   } else {
     // Linux / other POSIX — respect XDG_CONFIG_HOME
     base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
@@ -465,59 +626,6 @@ export function resolveGlobalSquadPath(): string {
   }
 
   return globalDir;
-}
-
-/**
- * Resolves the user's personal squad directory.
- * Returns null if SQUAD_NO_PERSONAL is set or directory doesn't exist.
- * 
- * Platform paths:
- * - Windows: %APPDATA%/squad/personal-squad
- * - macOS: ~/Library/Application Support/squad/personal-squad
- * - Linux: $XDG_CONFIG_HOME/squad/personal-squad or ~/.config/squad/personal-squad
- */
-export function resolvePersonalSquadDir(): string | null {
-  if (process.env['SQUAD_NO_PERSONAL']) return null;
-  
-  // Honor SQUAD_PERSONAL_DIR env var override
-  const envDir = process.env['SQUAD_PERSONAL_DIR'];
-  if (envDir) {
-    const resolved = path.resolve(envDir);
-    if (storage.existsSync(resolved) && storage.isDirectorySync(resolved)) return resolved;
-    return null;
-  }
-
-  const globalDir = resolveGlobalSquadPath();
-  const personalDir = path.join(globalDir, 'personal-squad');
-  
-  if (!storage.existsSync(personalDir)) return null;
-  return personalDir;
-}
-
-/**
- * Ensure the user's personal squad directory exists with the expected structure.
- * Creates `personal-squad/agents/` and `personal-squad/config.json` if missing.
- *
- * Idempotent — safe to call multiple times.
- *
- * @returns Absolute path to the personal squad directory.
- */
-export function ensurePersonalSquadDir(): string {
-  const globalDir = resolveGlobalSquadPath();
-  const personalDir = path.join(globalDir, 'personal-squad');
-  const agentsDir = path.join(personalDir, 'agents');
-
-  if (!storage.existsSync(agentsDir)) {
-    storage.mkdirSync(agentsDir, { recursive: true });
-  }
-
-  const configPath = path.join(personalDir, 'config.json');
-  if (!storage.existsSync(configPath)) {
-    const config = { defaultModel: 'auto', ghostProtocol: true };
-    storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
-  }
-
-  return personalDir;
 }
 
 /**
@@ -586,33 +694,6 @@ export function ensureSquadPathDual(filePath: string, projectDir: string, teamDi
   throw new Error(
     `Path "${resolved}" is outside both squad roots ("${resolvedProject}", "${resolvedTeam}"). ` +
     'All squad scratch/temp/state files must be written inside a squad directory or the system temp directory.'
-  );
-}
-
-/**
- * Validates a file path is inside one of three allowed directories:
- * projectDir, teamDir, personalDir, or system temp.
- * Extends ensureSquadPathDual() for triple-root (project + team + personal).
- */
-export function ensureSquadPathTriple(
-  filePath: string,
-  projectDir: string,
-  teamDir: string,
-  personalDir: string | null
-): string {
-  const resolved = path.resolve(filePath);
-  const tmpDir = os.tmpdir();
-  
-  const allowed = [projectDir, teamDir, personalDir, tmpDir].filter(Boolean) as string[];
-  
-  for (const dir of allowed) {
-    if (resolved.startsWith(path.resolve(dir) + path.sep) || resolved === path.resolve(dir)) {
-      return resolved;
-    }
-  }
-  
-  throw new Error(
-    `Path "${resolved}" is outside all allowed directories: ${allowed.join(', ')}`
   );
 }
 
@@ -750,15 +831,16 @@ export function resolveExternalStateDir(projectKey: string, create: boolean = tr
 // ============================================================================
 
 /**
- * Resolve the squad home directory — a roaming squad root for personal agents
- * and presets that follows the user across machines.
+ * Resolve the squad home directory — a roaming root for presets and
+ * machine-independent configuration that follows the user across machines.
  *
  * Resolution order:
  * 1. `SQUAD_HOME` env var (explicit override, e.g. a synced folder)
  * 2. `~/.squad/` (conventional default — user's home dir)
  *
  * Unlike `resolveGlobalSquadPath()` (which returns platform-specific app config),
- * squad home is a **squad root** — it can contain `agents/`, `presets/`, etc.
+ * squad home holds `presets/` and similar roaming configuration. It is never
+ * resolved as a project squad (see {@link resolveSquad}).
  *
  * @param create - Whether to create the directory if missing (default: false).
  * @returns Absolute path to the squad home directory, or null if it doesn't

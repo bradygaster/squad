@@ -43,12 +43,6 @@ async function scaffold(root: string): Promise<void> {
   );
 }
 
-// Mock personal agents to isolate project agent discovery
-vi.mock('@bradygaster/squad-sdk/agents/personal', () => ({
-  resolvePersonalAgents: vi.fn(async () => [] as unknown[]),
-  mergeSessionCast: vi.fn((project: unknown[], personal: unknown[]) => [...(project as unknown[]), ...(personal as unknown[])]),
-}));
-
 describe('squad cast', () => {
   beforeEach(async () => {
     if (existsSync(TEST_ROOT)) {

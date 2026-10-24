@@ -57,3 +57,8 @@ artifacts/
 /run-artifacts/
 # Local MCP configuration (machine-specific, not committed)
 /.mcp.json
+
+evidence/
+.evidence-tmp/
+release-packs/
+npm-reconciliation/

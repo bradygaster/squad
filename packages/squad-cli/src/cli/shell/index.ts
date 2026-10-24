@@ -21,7 +21,7 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
-import { DEFAULT_CONTEXT_WARNING_THRESHOLD, FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, UsageLedger, estimateCost, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveSquadState, resolveGlobalSquadPath, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
+import { DEFAULT_CONTEXT_WARNING_THRESHOLD, FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, UsageLedger, estimateCost, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveSquadState, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
 import type { ContextUsageEvent, ContextUtilizationSnapshot, UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { parseAgentFromDescription } from './agent-name-parser.js';
@@ -158,10 +158,8 @@ export async function runShell(): Promise<void> {
   // contexts (pipes, tests, CI) see useful guidance rather than a TTY error.
   const cwd = process.cwd();
   const localSquad = resolveSquad(cwd);
-  const globalSquadDir = join(resolveGlobalSquadPath(), '.squad');
-  const hasAnySquad = !!localSquad || storage.existsSync(globalSquadDir);
 
-  if (!hasAnySquad && !process.stdin.isTTY) {
+  if (!localSquad && !process.stdin.isTTY) {
     console.log('Welcome to Squad\n');
     console.log('Get started by initializing your squad:');
     console.log('  squad init "describe what you want to build"\n');
@@ -197,7 +195,7 @@ export async function runShell(): Promise<void> {
   const registry = new SessionRegistry();
   const renderer = new ShellRenderer();
 
-  // Resolve teamRoot: local .squad/ → global squad → cwd (init mode)
+  // Resolve teamRoot: local .squad/ → cwd (init mode)
   const teamRoot = (() => {
     const cwd = process.cwd();
     // 1. Walk up from cwd looking for a local .squad/
@@ -205,13 +203,7 @@ export async function runShell(): Promise<void> {
     if (localSquad) {
       return pathResolve(localSquad, '..');
     }
-    // 2. Fall back to global (personal) squad path
-    const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
-    if (storage.existsSync(globalSquadDir)) {
-      return globalPath;
-    }
-    // 3. No squad found — use cwd (triggers init mode)
+    // 2. No squad found — use cwd (triggers init mode)
     return cwd;
   })();
 
@@ -1448,29 +1440,6 @@ export async function runShell(): Promise<void> {
 
   // Final session save before cleanup
   autoSave();
-
-  // Consult mode reminder: prompt user to extract learnings before exiting
-  try {
-    // Use the resolved teamRoot instead of cwd so this works from subdirectories (#207)
-    const squadDir = join(teamRoot, '.squad');
-    const configPath = join(squadDir, 'config.json');
-    if (storage.existsSync(configPath)) {
-      const raw = storage.readSync(configPath) ?? '';
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed && typeof parsed === 'object' && (parsed as { consult?: boolean }).consult === true) {
-        const nc = process.env['NO_COLOR'] != null && process.env['NO_COLOR'] !== '';
-        const highlight = nc ? '' : '\x1b[33m';
-        const reset = nc ? '' : '\x1b[0m';
-        console.log('');
-        console.log(`${highlight}📤 You're in consult mode.${reset}`);
-        console.log(`   Run ${highlight}squad extract${reset} to bring learnings home.`);
-        console.log(`   Run ${highlight}squad extract --clean${reset} to extract and remove project .squad/`);
-        console.log('');
-      }
-    }
-  } catch {
-    // Silently ignore — consult mode check is optional
-  }
 
   // Cleanup: close all sessions and disconnect
   for (const [name, session] of agentSessions) {

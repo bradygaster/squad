@@ -90,7 +90,9 @@ jobs:
           || needs.changes.result != 'success'
           || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Setup alone (npm installs + Playwright browser download) has taken 10-12 min on slow
+    # runners, cancelling the test run mid-way; the suite itself needs ~6 min.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
@@ -98,22 +100,7 @@ jobs:
           node-version: 22
           cache: 'npm'
       - name: Fix stale lockfile entries
-        run: |
-          node -e "
-            const fs = require('fs');
-            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-            const pkgs = lock.packages || {};
-            const stale = Object.keys(pkgs).filter(k =>
-              k.includes('/node_modules/@bradygaster/squad-') &&
-              pkgs[k].resolved && pkgs[k].resolved.startsWith('https://')
-            );
-            if (stale.length) {
-              stale.forEach(k => { console.log('Removing: ' + k); delete pkgs[k]; });
-              fs.writeFileSync('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
-            } else {
-              console.log('Lockfile clean');
-            }
-          "
+        run: node scripts/release/workspace-lockfile.mjs fix
       - name: Install dependencies
         run: |
           success=false
@@ -131,8 +118,23 @@ jobs:
           done
           [ "$success" = true ] || { echo "::error::npm ci failed after 3 attempts"; exit 1; }
         working-directory: docs
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        # Browser download is the slow part; with a cache hit only the OS deps are installed.
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install chromium --with-deps
+          fi
       - name: "🔒 Source tree canary check"
         run: |
           MISSING=0
@@ -229,16 +231,20 @@ jobs:
 
   # ── Consolidated policy gates ───────────────────────────────────────────
   # Runs changelog, changelog-protection, workspace-integrity,
-  # prerelease-version-guard, publish-policy, and scope-check on one runner.
+  # prerelease-version-guard, publish-policy, publish-allowlist and scope-check on
+  # one runner. PR-diff gates (changelog, write protection, scope) are PR-only; the
+  # tree-level gates also run on every dev push through scripts/release/policy-gates.mjs,
+  # which the release path (squad-release-verify.yml) executes again at the exact
+  # release SHA with no label or variable bypass.
   policy-gates:
     name: Policy Gates
     needs: changes
     if: >-
-      github.event_name == 'pull_request'
-      && !cancelled()
-      && (needs.changes.outputs.code == 'true'
-          || needs.changes.outputs.workflows == 'true'
-          || needs.changes.result == 'failure')
+      !cancelled()
+      && (github.event_name == 'push'
+          || needs.changes.result != 'success'
+          || needs.changes.outputs.code == 'true'
+          || needs.changes.outputs.workflows == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -250,6 +256,7 @@ jobs:
           node-version: 22
       - name: Fetch PR labels
         id: labels
+        if: github.event_name == 'pull_request'
         run: |
           LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
           echo "all<<EOF" >> "$GITHUB_OUTPUT"
@@ -265,6 +272,7 @@ jobs:
       - name: "Gate: Changelog"
         if: >-
           always()
+          && github.event_name == 'pull_request'
           && steps.labels.outputs.skip_changelog != 'true'
           && vars.SQUAD_CHANGELOG_CHECK != 'false'
         run: |
@@ -303,7 +311,7 @@ jobs:
 
       # ─── CHANGELOG Write Protection ────────────────────────────────────
       - name: "Gate: CHANGELOG Write Protection"
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         env:
           APPROVED_AUTHORS: 'bradygaster tamirdresher github-actions[bot] copilot-swe-agent[bot]'
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -330,48 +338,7 @@ jobs:
           && vars.SQUAD_WORKSPACE_CHECK != 'false'
         run: |
           echo "## 🔗 Workspace Integrity" >> "$GITHUB_STEP_SUMMARY"
-          node -e "
-            const fs = require('fs');
-            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-            const pkgs = lock.packages || {};
-            const problems = [];
-            for (const [key, val] of Object.entries(pkgs)) {
-              if (!key.includes('node_modules/@bradygaster/squad-')) continue;
-              if (val.resolved && val.resolved.startsWith('https://')) {
-                problems.push({ path: key, resolved: val.resolved });
-              }
-            }
-            if (problems.length > 0) {
-              console.error('::error::WORKSPACE INTEGRITY FAILURE — stale registry packages in lockfile.');
-              problems.forEach(p => console.error('  STALE: ' + p.path + ' → ' + p.resolved));
-              console.error('Fix: ensure workspace versions match, then npm install at repo root.');
-              process.exit(1);
-            }
-            const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            const sdk = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
-            const cli = JSON.parse(fs.readFileSync('packages/squad-cli/package.json', 'utf8'));
-            const versions = new Set([root.version, sdk.version, cli.version]);
-            if (versions.size !== 1) {
-              console.error('::error::Root, SDK, and CLI versions must match.');
-              process.exit(1);
-            }
-            const dependency = cli.dependencies?.['@bradygaster/squad-sdk'];
-            const lockDependency =
-              lock.packages?.['packages/squad-cli']?.dependencies?.['@bradygaster/squad-sdk'];
-            if (sdk.version.includes('-')) {
-              const expected = '>=' + sdk.version;
-              if (dependency !== expected || lockDependency !== expected) {
-                console.error(
-                  '::error::Preview versions require the CLI SDK dependency and lockfile entry to be ' + expected,
-                );
-                process.exit(1);
-              }
-            } else if (dependency?.includes('-') || lockDependency?.includes('-')) {
-              console.error('::error::Stable versions cannot retain a prerelease SDK dependency floor.');
-              process.exit(1);
-            }
-            console.log('✅ All workspace packages resolve to local file: links');
-          "
+          node scripts/release/workspace-lockfile.mjs check
           echo "✅ All workspace packages resolve to local links" >> "$GITHUB_STEP_SUMMARY"
 
       # ─── Prerelease Version Guard ──────────────────────────────────────
@@ -383,36 +350,7 @@ jobs:
           && true
         run: |
           echo "## 🏷️ Prerelease Version Guard" >> "$GITHUB_STEP_SUMMARY"
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const pkgDirs = fs.readdirSync('packages', { withFileTypes: true })
-              .filter(d => d.isDirectory()).map(d => d.name);
-            const violations = [];
-            for (const dir of pkgDirs) {
-              const pkgPath = path.join('packages', dir, 'package.json');
-              if (!fs.existsSync(pkgPath)) continue;
-              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-              // Allow x.y.z, x.y.z-preview, x.y.z-preview.N, x.y.z-insider.N; block all other prerelease tags
-              if (pkg.version && !/^\d+\.\d+\.\d+(-(preview|insider)(\.\d+)?)?$/.test(pkg.version)) {
-                violations.push({ name: pkg.name, version: pkg.version, path: pkgPath });
-              }
-            }
-            if (violations.length > 0) {
-              console.error('::error::UNSANCTIONED PRERELEASE VERSION DETECTED — cannot merge to dev/main.');
-              violations.forEach(v => console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')'));
-              console.error('Fix: use X.Y.Z, X.Y.Z-preview, X.Y.Z-preview.N, or X.Y.Z-insider.N. Skip: add \"skip-version-check\" label.');
-              process.exit(1);
-            }
-            console.log('✅ All package versions are release versions');
-            pkgDirs.forEach(dir => {
-              const pkgPath = path.join('packages', dir, 'package.json');
-              if (fs.existsSync(pkgPath)) {
-                const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-                if (pkg.version) console.log('  ' + pkg.name + '@' + pkg.version);
-              }
-            });
-          "
+          node scripts/release/check-prerelease-versions.mjs
           echo "✅ All versions are release versions" >> "$GITHUB_STEP_SUMMARY"
 
       # ─── Publish Policy ────────────────────────────────────────────────
@@ -427,27 +365,42 @@ jobs:
                 command = $0
                 sub(/^[[:space:]]*-[[:space:]]*/, "", command)
                 sub(/^run:[[:space:]]*/, "", command)
-                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ && command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/) {
+                if (command ~ /(^|&&|\|\||;)[[:space:]]*((if|then)[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*npm[[:space:]][^#;&|]*publish([[:space:]]|$)/ &&
+                    command !~ /(^|[[:space:]])(-w|--workspace)(=|[[:space:]]|$)/ &&
+                    command !~ /npm publish "\$PACKS_DIR\/bradygaster-squad-(sdk|cli)-\$\{VERSION\}\.tgz"/) {
                   print NR ":" $0
                 }
               }
             ' "$wf")
             if [ -n "$BARE" ]; then
-              echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
+              echo "::error file=$wf::Unsanctioned npm publish found (requires -w/--workspace or an exact verified Squad tarball path):"
               echo "$BARE"
               VIOLATIONS=1
             fi
           done
           if [ "$VIOLATIONS" -eq 1 ]; then
-            echo "::error::PUBLISH POLICY VIOLATION — all npm publish commands must be workspace-scoped"
+            echo "::error::PUBLISH POLICY VIOLATION — npm publish must be workspace-scoped or use one of the two exact verified Squad tarball paths"
             exit 1
           fi
-          echo "✅ All npm publish commands are workspace-scoped"
+          echo "✅ All npm publish commands are workspace-scoped or exact verified Squad tarball paths"
+
+      # ─── Release policy (shared with the release path; no bypass) ───────
+      - name: "Gate: Release policy (workspace integrity, prerelease guard, publish allowlist, changelog heading)"
+        if: always()
+        run: |
+          set -o pipefail
+          echo "## 🛡️ Release policy" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/release/policy-gates.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: "Gate: Lockfiles resolve only to registry.npmjs.org"
+        if: always()
+        run: node scripts/release/check-lockfile-registry.mjs
 
       # ─── Scope Check (repo-health PRs only) ────────────────────────────
       - name: "Gate: Repo-health scope boundary"
         if: >-
           always()
+          && github.event_name == 'pull_request'
           && contains(github.event.pull_request.labels.*.name, 'repo-health')
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
@@ -551,50 +504,7 @@ jobs:
           steps.gate.outputs.skip != 'true'
           && steps.gate.outputs.skip_smoke != 'true'
           && steps.sdk.outputs.skip != 'true'
-        run: |
-          node --input-type=module -e "
-            import fs from 'fs';
-            import path from 'path';
-            import { pathToFileURL } from 'url';
-
-            const pkg = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
-            const exportsMap = pkg.exports || {};
-            const failures = [];
-            let passed = 0;
-
-            for (const [subpath, targets] of Object.entries(exportsMap)) {
-              const importPath = subpath === '.'
-                ? '@bradygaster/squad-sdk'
-                : '@bradygaster/squad-sdk/' + subpath.slice(2);
-              const filePath = typeof targets === 'string'
-                ? targets
-                : (targets.import || targets.default);
-              if (!filePath) {
-                failures.push({ subpath, importPath, error: 'No import target defined' });
-                continue;
-              }
-              const resolvedPath = path.resolve('packages/squad-sdk', filePath);
-              if (!fs.existsSync(resolvedPath)) {
-                failures.push({ subpath, importPath, filePath, error: 'File not found: ' + resolvedPath });
-                continue;
-              }
-              try {
-                await import(pathToFileURL(resolvedPath).href);
-                passed++;
-                console.log('  ✅ ' + importPath + ' → ' + filePath);
-              } catch (e) {
-                failures.push({ subpath, importPath, filePath, error: 'import() failed: ' + e.message });
-              }
-            }
-
-            if (failures.length > 0) {
-              console.error('::error::EXPORT SMOKE TEST FAILED — ' + failures.length + ' subpath export(s) broken.');
-              failures.forEach(f => console.error('  ❌ ' + (f.importPath || f.subpath) + ': ' + f.error));
-              console.error('Fix: ensure build produces all files in package.json exports. Skip: add \\\"skip-export-smoke\\\" label.');
-              process.exit(1);
-            }
-            console.log('✅ All ' + passed + ' subpath exports resolve and import successfully');
-          "
+        run: node scripts/release/smoke-sdk-exports.mjs
 
   samples-build:
     needs: changes
@@ -792,10 +702,7 @@ jobs:
             test "$(find .github/workflows/shared -type f ! -name 'squad-bootstrap-trigger-probe.json' | wc -l | tr -d ' ')" = 20
             test -f .github/workflows/squad-agent-binding-check.yml
             test "$(find .github/skills/gh-aw-enlistment -type f | wc -l | tr -d ' ')" = 1
-            node --input-type=module -e '
-              import { compileWithPinnedActions } from "./.github/workflows/shared/squad-install-verifier.mjs";
-              compileWithPinnedActions(process.cwd());
-            '
+            node "$GITHUB_WORKSPACE/scripts/release/compile-pinned-actions.mjs"
             gh aw compile --strict --approve --no-check-update
             for workflow in squad squad-implement-worker squad-review squad-deps-worker squad-retro squad-improvement-worker squad-bootstrap squad-command-router; do
               gh aw compile "$workflow" --strict --no-check-update

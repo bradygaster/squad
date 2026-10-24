@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "1.2.0-preview.1",
+  "version": "2.0.0-preview.1",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -40,10 +40,6 @@
     "./shell/stream-bridge": {
       "types": "./dist/cli/shell/stream-bridge.d.ts",
       "import": "./dist/cli/shell/stream-bridge.js"
-    },
-    "./shell/sdk-bridge": {
-      "types": "./dist/cli/shell/sdk-bridge.d.ts",
-      "import": "./dist/cli/shell/sdk-bridge.js"
     },
     "./shell/router": {
       "types": "./dist/cli/shell/router.d.ts",
@@ -145,10 +141,6 @@
       "types": "./dist/cli/commands/rc.d.ts",
       "import": "./dist/cli/commands/rc.js"
     },
-    "./commands/extract": {
-      "types": "./dist/cli/commands/extract.d.ts",
-      "import": "./dist/cli/commands/extract.js"
-    },
     "./commands/copilot": {
       "types": "./dist/cli/commands/copilot.d.ts",
       "import": "./dist/cli/commands/copilot.js"
@@ -164,10 +156,6 @@
     "./commands/copilot-bridge": {
       "types": "./dist/cli/commands/copilot-bridge.d.ts",
       "import": "./dist/cli/commands/copilot-bridge.js"
-    },
-    "./commands/personal": {
-      "types": "./dist/cli/commands/personal.d.ts",
-      "import": "./dist/cli/commands/personal.js"
     },
     "./commands/cast": {
       "types": "./dist/cli/commands/cast.d.ts",
@@ -191,7 +179,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@bradygaster/squad-sdk": ">=1.2.0-preview.1",
+    "@bradygaster/squad-sdk": ">=2.0.0-preview.1",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "ink": "^7.1.1",
     "react": "^19.3.0",

@@ -22,17 +22,25 @@ releases from `main`. Channel names identify release streams, not branches.
 ## Preview release
 
 - [ ] Version is `X.Y.Z-preview.N`, not stable `X.Y.Z`.
+- [ ] `SHA` is the full 40-hex reviewed `dev` tip (`git rev-parse origin/dev`).
 - [ ] Dispatch:
 
   ```bash
-  gh workflow run squad-release.yml --ref dev -f confirm_tag=vX.Y.Z-preview.N
+  gh workflow run squad-release.yml --ref dev \
+    -f confirm_tag=vX.Y.Z-preview.N -f expected_sha="$SHA"
   ```
 
-- [ ] GitHub marks `vX.Y.Z-preview.N` as a prerelease.
-- [ ] npm `preview` points to the version for both packages.
-- [ ] The release has six standalone archives and `SHA256SUMS.txt`.
-- [ ] `squad-preview` references the new Homebrew version.
-- [ ] A `bradygaster.Squad.Preview` WinGet PR exists or is already upstream.
+- [ ] The `guard` and `verify` jobs pass at exactly `$SHA` and the
+      `release-evidence-<sha>` artifact exists (tarballs, hashes, manifest,
+      `provenance.json`).
+- [ ] npm reconciliation reports `COMPLETE`: `insider` (and the `preview`
+      alias) point to the version for both packages.
+- [ ] GitHub marks `vX.Y.Z-preview.N` as a prerelease (published after npm).
+- [ ] Standalone archives were built as artifacts. Only when
+      `publish_standalone` / `publish_package_managers` were set: six archives
+      and `SHA256SUMS.txt` on the release, `squad-preview` updated, a
+      `bradygaster.Squad.Preview` WinGet PR exists or is already upstream.
+- [ ] `squad-insider-publish.yml` was NOT dispatched for this version.
 
 ## Insider release
 

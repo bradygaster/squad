@@ -8,6 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } from '@bradygaster/squad-sdk';
+import { clearResolveSquadCache, isRetiredProfileTeamRoot } from '@bradygaster/squad-sdk/resolution';
 import {
   backfillCastingRegistryFromTeam,
   ensureCastingRegistryPair,
@@ -16,7 +17,7 @@ import {
   type RepairResult,
 } from '@bradygaster/squad-sdk/casting';
 import { success, warn, info, dim, bold } from './output.js';
-import { fatal } from './errors.js';
+import { fatal, fatalNoSquad } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
 import { TEMPLATE_MANIFEST, getTemplatesDir } from './templates.js';
 import { runMigrations } from './migrations.js';
@@ -249,6 +250,51 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
   return true;
 }
 
+/**
+ * Squad 1.x `init` pointed a project's `teamRoot` at the user-profile squad that 2.0 removed.
+ * Such a project would resolve in remote mode against a directory Squad no longer reads.
+ * Remove the key (nothing else in config.json changes); genuine dual-root targets stay.
+ */
+function stripRetiredProfileTeamRoot(squadDir: string, dest: string, dryRun: boolean): void {
+  const configPath = path.join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(storage.readSync(configPath) ?? '');
+  } catch {
+    return;
+  }
+  // readSquadConfig() tolerates null/non-object config.json; so must this preflight.
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+  const record = parsed as Record<string, unknown>;
+  const teamRoot = record['teamRoot'];
+  if (typeof teamRoot !== 'string' || teamRoot.length === 0 || teamRoot === '.') return;
+  const target = path.resolve(dest, teamRoot);
+  if (!isRetiredProfileTeamRoot(target)) return;
+  if (dryRun) {
+    info('Would remove obsolete "teamRoot" setting from .squad/config.json.');
+    return;
+  }
+  delete record['teamRoot'];
+  storage.writeSync(configPath, JSON.stringify(record, null, 2) + '\n');
+  clearResolveSquadCache();
+  info('Removed obsolete "teamRoot" setting from .squad/config.json.');
+}
+
+/**
+ * Remove every machine-written stamp from a coordinator file so two copies that differ only
+ * by version/package-spec markers compare equal (an upgrade must not read its own stamps as
+ * a user customization).
+ */
+export function stripAgentStamps(s: string): string {
+  return s
+    .replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '')
+    .replace(/<!-- version: [^>]+ -->/g, '<!-- version: X -->')
+    .replace(/- \*\*Version:\*\* \S+/g, '- **Version:** X')
+    .replace(/`Squad v[^`]+`/g, '`Squad vX`')
+    .replace(/@bradygaster\/squad-cli@[^\s"'\]]+/g, '@bradygaster/squad-cli@X');
+}
+
 function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean, options?: { dryRun?: boolean; squadDir?: string }): void {
   let agentContent = storage.readSync(agentSrc) ?? '';
   if (mcpConfigMode === 'agent-frontmatter') {
@@ -258,11 +304,9 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
   // Back up locally-customized squad.agent.md before overwriting (#1052)
   if (storage.existsSync(agentDest)) {
     const existing = storage.readSync(agentDest) ?? '';
-    // Strip the version stamp before comparing (version line changes every upgrade)
-    const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
-    // Strip the generated Team Capabilities block too (#1608) — it is machine
-    // written on every cast change and must not read as a user customization.
-    const normalize = (s: string) => stripTeamCapabilitiesBlock(stripVersion(s));
+    // Strip every stamp form before comparing (they change on every upgrade), and the
+    // generated Team Capabilities block (#1608) — machine written on every cast change.
+    const normalize = (s: string) => stripTeamCapabilitiesBlock(stripAgentStamps(s));
     const normalizedExisting = normalize(existing.replace(/\r\n/g, '\n'));
     const normalizedTemplate = normalize(agentContent.replace(/\r\n/g, '\n'));
 
@@ -272,7 +316,10 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
         warn(`squad.agent.md has local customizations — would back up to ${path.basename(backupPath)}`);
         return;
       }
-      storage.writeSync(backupPath, existing);
+      // Keep an existing backup when it already holds this exact content.
+      if ((storage.existsSync(backupPath) ? storage.readSync(backupPath) : null) !== existing) {
+        storage.writeSync(backupPath, existing);
+      }
       warn(`squad.agent.md has local customizations — backed up to ${path.basename(backupPath)}`);
       info(`  To restore: copy ${path.basename(backupPath)} → ${path.basename(agentDest)}`);
     } else if (options?.dryRun) {
@@ -927,6 +974,19 @@ export async function ensureEsmImportsPatched(dest: string): Promise<boolean> {
 /**
  * Run all ensure* checks and skill/template sync — shared by both code paths
  */
+/**
+ * Scaffold/repair the casting registry pair before the coordinator file is rendered, so one
+ * upgrade produces the final file (F4: a 0.9.x project with an empty casting/ used to need two).
+ * Idempotent; the later ensure pass finds nothing left to create.
+ */
+function preflightCastingPair(dest: string, templatesDir: string, filesUpdated: string[]): void {
+  const created = ensureCastingDefaults(dest, templatesDir);
+  if (created.length > 0) {
+    success(`scaffolded ${created.length} default casting files`);
+    filesUpdated.push(...created);
+  }
+}
+
 async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): Promise<void> {
   const attrAdded = ensureGitattributes(dest);
   if (attrAdded.length > 0) {
@@ -1302,11 +1362,12 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   // Verify squad exists
   if (!storage.existsSync(squadDirInfo.path)) {
-    fatal('No squad found — run init first.');
+    fatalNoSquad();
   }
 
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
   const oldVersion = readInstalledVersion(agentDest) ?? '0.0.0';
+  stripRetiredProfileTeamRoot(squadDirInfo.path, dest, options.dryRun === true);
   const squadConfig = readSquadConfig(squadDirInfo.path);
   const mcpConfigMode = detectMcpConfigMode(squadConfig, agentDest);
   const isGitHubForMcp = detectIsGitHubForMcp(dest, squadConfig);
@@ -1402,6 +1463,11 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       filesUpdated.push(`workflows (${wfFiles.length} files)`);
     }
 
+    // The casting pair must exist BEFORE the coordinator is written: syncTeamCapabilities reads it
+    // to render the <!-- squad:capabilities --> block, so a 0.9.x project (empty casting/) would
+    // otherwise get the block only on the SECOND upgrade (F4, upgrade matrix).
+    preflightCastingPair(dest, templatesDir, filesUpdated);
+
     // Refresh squad.agent.md
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (storage.existsSync(agentSrc)) {
@@ -1432,6 +1498,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   if (!storage.existsSync(agentSrc)) {
     fatal('squad.agent.md.template not found in templates — installation may be corrupted');
   }
+
+  // See preflightCastingPair: the capabilities block needs the casting pair first (F4).
+  preflightCastingPair(dest, templatesDir, filesUpdated);
 
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
   writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { squadDir: squadDirInfo.path });
@@ -1524,16 +1593,35 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 // Self-upgrade: upgrade the CLI package itself
 // ============================================================================
 
+export type SelfUpgradePackageManager = 'npm' | 'pnpm' | 'yarn';
+
+/** Minimal shape of `child_process.execSync` used by the self-upgrade; injectable for tests. */
+export type SelfUpgradeExec = (command: string, options: { stdio: 'inherit' }) => unknown;
+
 export interface SelfUpgradeOptions {
   insider?: boolean;
   force?: boolean;
+  /** Override the detected package manager (tests, or a future `--pm` flag). */
+  packageManager?: SelfUpgradePackageManager;
+  /** Override the shell-out; defaults to `child_process.execSync`. */
+  exec?: SelfUpgradeExec;
+}
+
+/** The exact command `selfUpgradeCli` runs for a package manager and dist-tag. */
+export function selfUpgradeCommand(packageManager: SelfUpgradePackageManager, insider: boolean): string {
+  const pkg = `@bradygaster/squad-cli@${insider ? 'insider' : 'latest'}`;
+  switch (packageManager) {
+    case 'pnpm': return `pnpm add -g ${pkg}`;
+    case 'yarn': return `yarn global add ${pkg}`;
+    default: return `npm install -g ${pkg}`;
+  }
 }
 
 /**
  * Detect the package manager that installed the CLI.
  * Returns 'npm', 'pnpm', 'yarn', or 'npm' as fallback.
  */
-function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
+export function detectPackageManager(): SelfUpgradePackageManager {
   const execPath = process.env['npm_execpath'] ?? '';
   if (execPath.includes('pnpm')) return 'pnpm';
   if (execPath.includes('yarn')) return 'yarn';
@@ -1552,28 +1640,14 @@ function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
  * the detected installer name.
  */
 export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
-  const { execSync } = await import('node:child_process');
-  const tag = options.insider ? 'insider' : 'latest';
-  const pkg = `@bradygaster/squad-cli@${tag}`;
-  const pm = detectPackageManager();
-
-  let cmd: string;
-  switch (pm) {
-    case 'pnpm':
-      cmd = `pnpm add -g ${pkg}`;
-      break;
-    case 'yarn':
-      cmd = `yarn global add ${pkg}`;
-      break;
-    default:
-      cmd = `npm install -g ${pkg}`;
-      break;
-  }
+  const exec: SelfUpgradeExec = options.exec ?? (await import('node:child_process')).execSync;
+  const pm = options.packageManager ?? detectPackageManager();
+  const cmd = selfUpgradeCommand(pm, options.insider === true);
 
   info(`Self-upgrading via ${pm}: ${cmd}`);
 
   try {
-    execSync(cmd, { stdio: 'inherit' });
+    exec(cmd, { stdio: 'inherit' });
   } catch (err: unknown) {
     // UPGRADE-EPERM-FALSE-SUCCESS fix: do NOT swallow self-upgrade failures.
     // Previously this only printed a warning and returned, causing the caller

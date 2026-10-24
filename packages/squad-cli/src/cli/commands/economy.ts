@@ -9,31 +9,23 @@
 
 import { join } from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { writeEconomyMode, readEconomyMode } from '@bradygaster/squad-sdk/config';
 
 const storage = new FSStorageProvider();
-import { fatal } from '../core/errors.js';
+import { fatal, fatalNoSquad } from '../core/errors.js';
 import { BOLD, RESET, GREEN, DIM } from '../core/output.js';
 
+// The SDK resolver is the only squad locator: it stops at the repository root and never
+// treats the user profile (~/.squad, SQUAD_HOME, platform config dir) as a project.
 function resolveSquadDir(cwd: string): string | null {
-  // Walk up to find .squad/
-  let dir = cwd;
-  for (let i = 0; i < 10; i++) {
-    const candidate = join(dir, '.squad');
-    if (storage.existsSync(candidate)) {
-      return candidate;
-    }
-    const parent = join(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
+  return resolveSquad(cwd);
 }
 
 export async function runEconomy(cwd: string, subArgs: string[]): Promise<void> {
   const squadDir = resolveSquadDir(cwd);
   if (!squadDir) {
-    fatal('No squad found. Run "squad init" first.');
+    fatalNoSquad();
     return;
   }
 
