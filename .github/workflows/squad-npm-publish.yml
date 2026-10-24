@@ -3,9 +3,9 @@ name: Squad npm Publish
 # Publishes exactly the two tarballs produced by Squad Release Verify.
 #
 # The workflow uses fail-closed reconciliation with idempotent partial-release
-# recovery. Direct dispatch is recovery-only: it must run from the immutable
-# release tag and cite a successful Squad Release Verify run plus its matching
-# evidence artifact at the same SHA.
+# recovery. Direct dispatch is recovery-only: it must run from the live merged
+# dev workflow definition and cite the immutable release source, successful
+# Squad Release Verify run, and matching evidence artifact separately.
 
 on:
   workflow_call:
@@ -17,6 +17,11 @@ on:
       source_sha:
         description: 'Full 40-hex commit SHA targeted by the release tag'
         required: true
+        type: string
+      recovery_sha:
+        description: 'Empty for orchestrated release; exact merged dev workflow SHA for recovery'
+        required: false
+        default: ''
         type: string
       dist_tag:
         description: 'Primary npm dist-tag (insider, preview or latest)'
@@ -36,6 +41,11 @@ on:
         required: false
         default: ''
         type: string
+      publish_draft_release:
+        description: 'Recovery only: publish the existing validated draft GitHub release after npm reconciles COMPLETE'
+        required: false
+        default: false
+        type: boolean
     secrets:
       NPM_TOKEN:
         description: 'npm automation token used only by registry mutation steps'
@@ -57,6 +67,10 @@ on:
         description: 'Full 40-hex commit SHA targeted by the existing release tag'
         required: true
         type: string
+      recovery_sha:
+        description: 'Full 40-hex merged dev SHA containing this recovery workflow'
+        required: true
+        type: string
       dist_tag:
         description: 'Primary npm dist-tag'
         required: true
@@ -76,6 +90,11 @@ on:
         description: 'Exact release-evidence-<source_sha> artifact from that run'
         required: true
         type: string
+      publish_draft_release:
+        description: 'Publish the existing draft release only after npm reconciliation completes'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: squad-npm-publication
@@ -86,6 +105,10 @@ permissions:
 
 env:
   PUBLIC_REGISTRY: https://registry.npmjs.org/
+  SQUAD_RELEASE_RECOVERY: ${{ inputs.verify_run_id != '' }}
+  SQUAD_RELEASE_CONTROL_REPO: ${{ github.workspace }}/release-control
+  RECOVERY_SHA: ${{ inputs.recovery_sha }}
+  RELEASE_SCRIPTS_ROOT: ${{ inputs.verify_run_id != '' && format('{0}/release-control/scripts/release', github.workspace) || format('{0}/scripts/release', github.workspace) }}
 
 jobs:
   prepare:
@@ -112,6 +135,13 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
+      - name: Check out the recovery workflow definition
+        if: inputs.verify_run_id != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.recovery_sha }}
+          path: release-control
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
@@ -129,9 +159,31 @@ jobs:
           [[ "$VERSION" =~ $semver_re ]] || { echo "::error::Invalid version '$VERSION'"; exit 1; }
           [ "$EVIDENCE_ARTIFACT" = "release-evidence-${SOURCE_SHA}" ] || { echo "::error::evidence_artifact must be release-evidence-${SOURCE_SHA}"; exit 1; }
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout HEAD differs from source_sha"; exit 1; }
-          test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA $DISPATCH_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
-          test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition $WORKFLOW_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
-          node scripts/release/assert-publish-identity.mjs \
+          if [ -n "$VERIFY_RUN_ID" ]; then
+            [[ "$RECOVERY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "::error::recovery_sha must be a full lowercase 40-hex SHA"; exit 1;
+            }
+            test "$RUN_REF" = refs/heads/dev || {
+              echo "::error::direct recovery must be dispatched from dev, not $RUN_REF"; exit 1;
+            }
+            control_head="$(git -C "$SQUAD_RELEASE_CONTROL_REPO" rev-parse HEAD)"
+            tip="$(git ls-remote --exit-code origin "$RUN_REF" | cut -f1)"
+            for identity in \
+              "dispatch SHA:$DISPATCH_SHA" \
+              "workflow definition SHA:$WORKFLOW_SHA" \
+              "recovery control checkout HEAD:$control_head" \
+              "live $RUN_REF tip:$tip"; do
+              name="${identity%%:*}"
+              value="${identity#*:}"
+              test "$value" = "$RECOVERY_SHA" || {
+                echo "::error::$name $value differs from recovery_sha $RECOVERY_SHA"; exit 1;
+              }
+            done
+          else
+            test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA $DISPATCH_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
+            test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition $WORKFLOW_SHA differs from source_sha $SOURCE_SHA"; exit 1; }
+          fi
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" \
             --source-sha "$SOURCE_SHA" \
             --dispatch-sha "$DISPATCH_SHA" \
             --workflow-sha "$WORKFLOW_SHA" \
@@ -148,7 +200,6 @@ jobs:
 
           if [ -n "$VERIFY_RUN_ID" ]; then
             [[ "$VERIFY_RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::verify_run_id must contain digits only"; exit 1; }
-            [ "$RUN_REF" = "refs/tags/${TAG}" ] || { echo "::error::direct recovery must be dispatched from refs/tags/${TAG}, not $RUN_REF"; exit 1; }
           fi
           echo "stable_release=$stable_release" >> "$GITHUB_OUTPUT"
 
@@ -159,16 +210,33 @@ jobs:
         run: |
           set -euo pipefail
           api="repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}"
-          test "$(gh api "$api" --jq '.head_sha')" = "$SOURCE_SHA" || { echo "::error::verify run head_sha does not match source_sha"; exit 1; }
-          test "$(gh api "$api" --jq '.status')" = completed || { echo "::error::verify run is not completed"; exit 1; }
-          test "$(gh api "$api" --jq '.conclusion')" = success || { echo "::error::verify run did not conclude success"; exit 1; }
-          workflow_id="$(gh api "$api" --jq '.workflow_id')"
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}" --jq '.path')" = '.github/workflows/squad-release-verify.yml' || {
-            echo "::error::verify_run_id is not a Squad Release Verify run"; exit 1;
-          }
-          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}/artifacts" \
-            --jq "[.artifacts[] | select(.name == \"${EVIDENCE_ARTIFACT}\" and .expired == false)] | length")"
+          run_json="$(gh api "$api")"
+          test "$(printf '%s' "$run_json" | jq -r '.head_sha')" = "$SOURCE_SHA" || { echo "::error::verify run head_sha does not match source_sha"; exit 1; }
+          test "$(printf '%s' "$run_json" | jq -r '.status')" = completed || { echo "::error::verify run is not completed"; exit 1; }
+          workflow_path="$(printf '%s' "$run_json" | jq -r '.path')"
+          case "$workflow_path" in
+            .github/workflows/squad-release-verify.yml)
+              test "$(printf '%s' "$run_json" | jq -r '.conclusion')" = success || {
+                echo "::error::standalone Squad Release Verify run did not conclude success"; exit 1;
+              }
+              ;;
+            .github/workflows/squad-release.yml)
+              verify_jobs="$(gh api --paginate "${api}/jobs" --jq '[.jobs[] | select((.name == "Verify exact SHA and build evidence" or (.name | endswith("/ Verify exact SHA and build evidence"))) and .status == "completed" and .conclusion == "success")] | length' | awk '{sum += $1} END {print sum + 0}')"
+              test "$verify_jobs" = 1 || {
+                echo "::error::release orchestrator run must contain exactly one successful exact-SHA verify job, found $verify_jobs"; exit 1;
+              }
+              ;;
+            *)
+              echo "::error::verify_run_id belongs to unexpected workflow $workflow_path"; exit 1 ;;
+          esac
+          artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}/artifacts")"
+          count="$(printf '%s' "$artifacts" | jq "[.artifacts[] | select(.name == \"${EVIDENCE_ARTIFACT}\" and .expired == false)] | length")"
           test "$count" = 1 || { echo "::error::expected one unexpired ${EVIDENCE_ARTIFACT} artifact on verify run ${VERIFY_RUN_ID}, found $count"; exit 1; }
+          expires_at="$(printf '%s' "$artifacts" | jq -r ".artifacts[] | select(.name == \"${EVIDENCE_ARTIFACT}\" and .expired == false) | .expires_at")"
+          remaining=$(( $(date -d "$expires_at" +%s) - $(date +%s) ))
+          if [ "$remaining" -lt 604800 ]; then
+            echo "::warning::${EVIDENCE_ARTIFACT} expires at ${expires_at}; complete recovery before it expires."
+          fi
 
       - name: Download evidence from the orchestrated release run
         if: inputs.verify_run_id == ''
@@ -187,45 +255,14 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Recheck evidence hashes, manifests and privacy result
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
           mkdir -p "$PUBLISH_DIR"
-          node <<'NODE'
-          const { createHash } = require('node:crypto');
-          const { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } = require('node:fs');
-          const path = require('node:path');
-          const evidence = process.env.EVIDENCE_DIR, publish = process.env.PUBLISH_DIR, version = process.env.VERSION;
-          const report = JSON.parse(readFileSync(path.join(evidence, 'pack-evidence.json'), 'utf8'));
-          if (!report.ok) throw new Error('pack-evidence.json does not report ok=true');
-          const expected = ['@bradygaster/squad-sdk', '@bradygaster/squad-cli'];
-          const tgzs = readdirSync(evidence).filter((f) => f.endsWith('.tgz')).sort();
-          if (tgzs.length !== 2) throw new Error(`evidence must contain exactly two tarballs, found ${tgzs.join(', ')}`);
-          const local = {};
-          for (const name of expected) {
-            const entry = report.packages?.[name];
-            if (!entry) throw new Error(`missing evidence for ${name}`);
-            if (entry.manifest?.version !== version) throw new Error(`${name} evidence version ${entry.manifest?.version} != ${version}`);
-            if (name.endsWith('squad-cli') && entry.manifest?.sdkDependency !== version) throw new Error(`CLI evidence does not pin SDK exactly to ${version}`);
-            if (!entry.privacy?.denyPatterns?.includes('email-upn')) throw new Error(`${name} evidence lacks the email-upn privacy rule`);
-            if (entry.privacy?.hits?.length !== 0) throw new Error(`${name} evidence has privacy hits`);
-            const tarball = path.join(evidence, entry.filename);
-            if (!existsSync(tarball)) throw new Error(`missing ${entry.filename}`);
-            const actual = createHash('sha256').update(readFileSync(tarball)).digest('hex');
-            if (actual !== entry.sha256) throw new Error(`${name} sha256 ${actual} != evidence ${entry.sha256}`);
-            const sum = readFileSync(`${tarball}.sha256`, 'utf8').trim();
-            if (sum !== `${entry.sha256}  ${entry.filename}`) throw new Error(`${entry.filename}.sha256 does not match`);
-            copyFileSync(tarball, path.join(publish, entry.filename));
-            local[name] = {
-              filename: entry.filename, bytes: entry.bytes, sha256: entry.sha256,
-              integrity: entry.integrity, shasum: entry.shasum, files: entry.files,
-              sdkDependency: entry.manifest?.sdkDependency ?? null,
-            };
-          }
-          copyFileSync(path.join(evidence, 'pack-evidence.json'), path.join(publish, 'pack-evidence.json'));
-          writeFileSync(path.join(publish, 'local-packs.json'), JSON.stringify(local, null, 2) + '\n');
-          console.log(JSON.stringify(Object.fromEntries(expected.map((name) => [name, local[name].sha256])), null, 2));
-          NODE
-          node scripts/release/assert-publish-identity.mjs \
+          node "$RELEASE_SCRIPTS_ROOT/verify-publish-evidence.mjs"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" \
             --source-sha "$SOURCE_SHA" \
             --dispatch-sha "${{ github.sha }}" \
             --workflow-sha "${{ github.workflow_sha }}" \
@@ -269,6 +306,13 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
+      - name: Check out the recovery workflow definition
+        if: inputs.verify_run_id != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.recovery_sha }}
+          path: release-control
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
@@ -278,62 +322,23 @@ jobs:
           name: ${{ needs.prepare.outputs.publish_artifact }}
           path: publish-evidence
 
-      - name: Classify exact registry versions (only explicit 404 means missing)
+      - name: Classify exact registry versions and dist-tags
         id: existing
         run: |
           set -euo pipefail
           mkdir -p "$RECON_DIR"
-          node <<'NODE' | tee -a "$GITHUB_OUTPUT"
-          const cp = require('node:child_process'), fs = require('node:fs'), path = require('node:path');
-          const version = process.env.VERSION;
-          const local = JSON.parse(fs.readFileSync(path.join(process.env.PACKS_DIR, 'local-packs.json'), 'utf8'));
-          const state = {};
-          for (const name of ['@bradygaster/squad-sdk', '@bradygaster/squad-cli']) {
-            const result = cp.spawnSync('npm', ['view', `${name}@${version}`, 'version', 'dist.integrity', '--json', `--registry=${process.env.PUBLIC_REGISTRY}`], { encoding: 'utf8' });
-            const diagnostic = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-            if (result.status !== 0) {
-              if (/\bE404\b|404 Not Found/i.test(diagnostic)) {
-                state[name] = { state: 'missing', diagnostic: diagnostic.trim().slice(-500) };
-                continue;
-              }
-              state[name] = { state: 'unknown', diagnostic: diagnostic.trim().slice(-500), exitCode: result.status };
-              continue;
-            }
-            let data;
-            try { data = JSON.parse(result.stdout || '{}'); } catch (error) {
-              state[name] = { state: 'unknown', diagnostic: `invalid npm view JSON: ${error}` };
-              continue;
-            }
-            if (data.version !== version || typeof data['dist.integrity'] !== 'string') {
-              state[name] = { state: 'unknown', diagnostic: `unexpected registry response ${JSON.stringify(data)}` };
-              continue;
-            }
-            const integrityMatches = data['dist.integrity'] === local[name].integrity;
-            state[name] = { state: 'present', version: data.version, integrity: data['dist.integrity'], localIntegrity: local[name].integrity, integrityMatches };
-            if (!integrityMatches) {
-              fs.writeFileSync(path.join(process.env.RECON_DIR, 'pre-publish-state.json'), JSON.stringify(state, null, 2) + '\n');
-              throw new Error(`${name}@${version} exists with different integrity`);
-            }
-          }
-          fs.writeFileSync(path.join(process.env.RECON_DIR, 'pre-publish-state.json'), JSON.stringify(state, null, 2) + '\n');
-          for (const [key, name] of [['sdk', '@bradygaster/squad-sdk'], ['cli', '@bradygaster/squad-cli']) {
-            console.log(`${key}_state=${state[name].state}`);
-          }
-          const unknown = Object.entries(state).filter(([, value]) => value.state === 'unknown');
-          if (unknown.length) {
-            for (const [name, value] of unknown) console.error(`::error::${name}@${version} registry state is UNKNOWN: ${value.diagnostic}`);
-            process.exit(1);
-          }
-          NODE
+          cp "$PACKS_DIR/release-identity.json" "$RECON_DIR/release-identity.json"
+          node "$RELEASE_SCRIPTS_ROOT/classify-npm-registry.mjs" | tee -a "$GITHUB_OUTPUT"
 
       - name: Stage SDK from the exact verified tarball
+        if: steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SDK_STATE: ${{ steps.existing.outputs.sdk_state }}
         run: |
           set -euo pipefail
           [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::NPM_TOKEN is not configured"; exit 1; }
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           if [ "$SDK_STATE" = present ]; then
             npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$STAGING_TAG"
           elif [ "$SDK_STATE" = missing ]; then
@@ -343,13 +348,14 @@ jobs:
           fi
 
       - name: Stage CLI from the exact verified tarball
+        if: steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           CLI_STATE: ${{ steps.existing.outputs.cli_state }}
         run: |
           set -euo pipefail
           [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::NPM_TOKEN is not configured"; exit 1; }
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           if [ "$CLI_STATE" = present ]; then
             npm dist-tag add "@bradygaster/squad-cli@${VERSION}" "$STAGING_TAG"
           elif [ "$CLI_STATE" = missing ]; then
@@ -359,43 +365,46 @@ jobs:
           fi
 
       - name: Verify staged pair
+        if: steps.existing.outputs.stage_pair == 'true'
         run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$STAGING_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-staging.json" --install-check --max-wait-seconds 900
 
       - name: Promote SDK to the primary channel
+        if: steps.existing.outputs.set_sdk_primary == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" "$DIST_TAG"
 
       - name: Promote CLI to the primary channel
+        if: steps.existing.outputs.set_cli_primary == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag add "@bradygaster/squad-cli@${VERSION}" "$DIST_TAG"
 
       - name: Verify primary channel
         run: node scripts/release/npm-pair-verify.mjs --version "$VERSION" --tag "$DIST_TAG" --local-packs "$PACKS_DIR/local-packs.json" --out "$RECON_DIR/verify-${DIST_TAG}.json" --max-wait-seconds 900
 
       - name: Add preview alias to SDK
-        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        if: steps.existing.outputs.set_sdk_preview == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag add "@bradygaster/squad-sdk@${VERSION}" preview
 
       - name: Add preview alias to CLI
-        if: inputs.add_preview_alias && inputs.dist_tag != 'preview'
+        if: steps.existing.outputs.set_cli_preview == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag add "@bradygaster/squad-cli@${VERSION}" preview
 
       - name: Verify preview alias
@@ -412,27 +421,27 @@ jobs:
           outcome="$(node -p 'require(process.env.RECON_DIR + "/final-reconciliation.json").outcome' 2>/dev/null || echo UNKNOWN)"
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
           if [ "$outcome" != COMPLETE ]; then
-            echo "::error::npm publication outcome is $outcome. Re-dispatch recovery from the immutable tag with the same verify run and evidence artifact."
+            echo "::error::npm publication outcome is $outcome. Re-dispatch from live dev with the same source SHA, verify run, evidence artifact, and recovery_sha set to the live merged workflow tip."
             exit 1
           fi
           exit "$status"
 
       - name: Remove SDK staging tag
-        if: success()
+        if: success() && steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag rm @bradygaster/squad-sdk "$STAGING_TAG"
 
       - name: Remove CLI staging tag
-        if: success()
+        if: success() && steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           npm dist-tag rm @bradygaster/squad-cli "$STAGING_TAG"
 
       - name: Upload reconciliation evidence
@@ -445,6 +454,98 @@ jobs:
             publish-evidence/
           retention-days: 90
           if-no-files-found: error
+
+  publish-draft-release:
+    name: Publish the existing draft after recovery reconciliation
+    needs: [prepare, publish]
+    if: inputs.verify_run_id != '' && inputs.publish_draft_release && needs.publish.outputs.outcome == 'COMPLETE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      TAG: v${{ inputs.version }}
+      VERIFY_RUN_ID: ${{ inputs.verify_run_id }}
+      PACKS_DIR: ${{ github.workspace }}/publish-evidence
+      CHECKSUMS_DIR: ${{ github.workspace }}/immutable-standalone-checksums
+      DRAFT_ASSETS_DIR: ${{ github.workspace }}/draft-release-assets
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Check out the recovery workflow definition
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.recovery_sha }}
+          path: release-control
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+      - name: Require the immutable standalone checksum artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFY_RUN_ID}/artifacts")"
+          count="$(printf '%s' "$artifacts" | jq '[.artifacts[] | select(.name == "standalone-release-checksums" and .expired == false)] | length')"
+          test "$count" = 1 || {
+            echo "::error::expected exactly one unexpired standalone-release-checksums artifact on run $VERIFY_RUN_ID, found $count"; exit 1;
+          }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: standalone-release-checksums
+          path: immutable-standalone-checksums
+          run-id: ${{ inputs.verify_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
+        with:
+          name: ${{ needs.prepare.outputs.publish_artifact }}
+          path: publish-evidence
+      - name: Validate and publish the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMMUTABLE_CHECKSUMS: ${{ github.workspace }}/immutable-standalone-checksums/SHA256SUMS.txt
+          PACK_EVIDENCE: ${{ github.workspace }}/publish-evidence/pack-evidence.json
+        run: |
+          set -euo pipefail
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" \
+            --source-sha "$SOURCE_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG"
+          release_json="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,targetCommitish,assets)"
+          test "$(printf '%s' "$release_json" | jq -r '.isDraft')" = true || {
+            echo "::error::release $TAG must already exist as a draft; recovery never recreates a release"; exit 1;
+          }
+          test "$(printf '%s' "$release_json" | jq -r '.targetCommitish')" = "$SOURCE_SHA" || {
+            echo "::error::draft release target does not match source_sha"; exit 1;
+          }
+          expected_prerelease=true
+          [[ "${{ inputs.version }}" =~ - ]] || expected_prerelease=false
+          test "$(printf '%s' "$release_json" | jq -r '.isPrerelease')" = "$expected_prerelease" || {
+            echo "::error::draft release prerelease state is unexpected"; exit 1;
+          }
+          release_json_path="$RUNNER_TEMP/draft-release.json"
+          printf '%s' "$release_json" > "$release_json_path"
+          node "$RELEASE_SCRIPTS_ROOT/verify-draft-release-assets.mjs" --release-json "$release_json_path"
+          mkdir -p "$DRAFT_ASSETS_DIR"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$DRAFT_ASSETS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/verify-draft-release-assets.mjs"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" \
+            --source-sha "$SOURCE_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          actual="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')"
+          test "$actual" = "false $expected_prerelease" || {
+            echo "::error::release $TAG final state is '$actual'"; exit 1;
+          }
+          echo "✅ Existing draft $TAG published only after npm reconciliation COMPLETE."
 
   promote-insider-tag:
     name: Promote insider dist-tags if behind latest
@@ -464,6 +565,13 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
+      - name: Check out the recovery workflow definition
+        if: inputs.verify_run_id != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.recovery_sha }}
+          path: release-control
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
@@ -478,7 +586,7 @@ jobs:
           NEW_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           node scripts/promote-insider-tag.mjs @bradygaster/squad-sdk "$NEW_VERSION"
       - name: Promote CLI insider dist-tag
         env:
@@ -486,5 +594,5 @@ jobs:
           NEW_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          node scripts/release/assert-publish-identity.mjs --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
+          node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
           node scripts/promote-insider-tag.mjs @bradygaster/squad-cli "$NEW_VERSION"

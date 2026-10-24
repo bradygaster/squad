@@ -127,19 +127,14 @@ jobs:
           ( cd docs && HOME="$iso/home" NPM_CONFIG_USERCONFIG="$iso/empty.npmrc" NPM_CONFIG_CACHE="$iso/cache" npm ci --registry=https://registry.npmjs.org/ )
           docs_exit=$?
           set -e
-          node -e '
-            const [cmd, rootExit, docsExit, sha] = process.argv.slice(1);
-            require("fs").writeFileSync(process.env.EVIDENCE_DIR + "/npm-ci.json", JSON.stringify({
-              command: cmd, env: { HOME: "<isolated temp>", NPM_CONFIG_USERCONFIG: "<empty file>", NPM_CONFIG_CACHE: "<fresh temp>" },
-              lockfileRepair: "none (committed lockfiles used as-is)", commit: sha,
-              root: { cwd: ".", exitCode: Number(rootExit) }, docs: { cwd: "docs", exitCode: Number(docsExit) },
-              node: process.version, npm: require("child_process").execSync("npm --version").toString().trim(), recordedAt: new Date().toISOString(),
-            }, null, 2) + "\n");
-          ' "$cmd" "$root_exit" "$docs_exit" "$SOURCE_SHA"
+          node scripts/release/write-npm-ci-evidence.mjs "$cmd" "$root_exit" "$docs_exit" "$SOURCE_SHA"
           cat "$EVIDENCE_DIR/npm-ci.json"
           test "$root_exit" -eq 0 || { echo "::error::root npm ci against the public registry failed (exit $root_exit)"; exit 1; }
           test "$docs_exit" -eq 0 || { echo "::error::docs npm ci against the public registry failed (exit $docs_exit)"; exit 1; }
           git diff --quiet -- package-lock.json docs/package-lock.json || { echo "::error::npm ci modified a committed lockfile"; git --no-pager diff --stat -- package-lock.json docs/package-lock.json; exit 1; }
+
+      - name: Check extracted release scripts and workflow policy
+        run: node scripts/release/check-release-scripts.mjs
 
       - name: Install gh-aw v0.91.5 (pinned; required by fail-closed test gates)
         run: gh extension install --force --pin v0.91.5 github/gh-aw
@@ -182,21 +177,7 @@ jobs:
         run: node scripts/check-exports-map.mjs
 
       - name: "Gate: every SDK subpath export imports"
-        run: |
-          node --input-type=module -e "
-            import fs from 'fs'; import path from 'path'; import { pathToFileURL } from 'url';
-            const pkg = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
-            const failures = []; let passed = 0;
-            for (const [subpath, targets] of Object.entries(pkg.exports || {})) {
-              const filePath = typeof targets === 'string' ? targets : (targets.import || targets.default);
-              if (!filePath) { failures.push(subpath + ': no import target'); continue; }
-              const resolved = path.resolve('packages/squad-sdk', filePath);
-              if (!fs.existsSync(resolved)) { failures.push(subpath + ': missing ' + filePath); continue; }
-              try { await import(pathToFileURL(resolved).href); passed++; } catch (e) { failures.push(subpath + ': ' + e.message); }
-            }
-            if (failures.length) { console.error('::error::export smoke failed:\n' + failures.join('\n')); process.exit(1); }
-            console.log('All ' + passed + ' SDK subpath exports import');
-          "
+        run: node scripts/release/smoke-sdk-exports.mjs
 
       - name: Verify product/team isolation
         run: npm run verify:team-isolation
@@ -226,10 +207,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/release/pack-evidence.mjs --out "$EVIDENCE_DIR" --expect-version "$VERSION" --pin-sdk-dep-exact --expect-sdk-dep-exact
-          node -e '
-            const p = require(process.env.EVIDENCE_DIR + "/pack-evidence.json").packages;
-            const out = require("fs"); out.appendFileSync(process.env.GITHUB_OUTPUT, "sdk_sha256=" + p["@bradygaster/squad-sdk"].sha256 + "\ncli_sha256=" + p["@bradygaster/squad-cli"].sha256 + "\n");
-          '
+          node scripts/release/emit-pack-evidence-hashes.mjs
 
       - name: Isolated-prefix install of the exact packed pair (self-upgrade shape)
         env:

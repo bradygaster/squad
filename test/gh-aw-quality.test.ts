@@ -4425,9 +4425,12 @@ describe('gh-aw: canonical package integrity contract', () => {
     const step = workflow.jobs['gh-aw-compile'].steps.find(
       (candidate: { name?: string }) => candidate.name === 'Verify a clean native package consumer',
     );
-    const seed = step.run.match(/node --input-type=module -e '([\s\S]*?)'/)?.[1];
-    expect(seed, 'native consumer must execute the version-bound pin helper').toBeDefined();
-    expect(step.run.indexOf('compileWithPinnedActions(process.cwd())'))
+    const helper = 'node "$GITHUB_WORKSPACE/scripts/release/compile-pinned-actions.mjs"';
+    const helperPath = join(process.cwd(), 'scripts/release/compile-pinned-actions.mjs');
+    expect(step.run, 'native consumer must execute the version-bound pin helper').toContain(helper);
+    expect(readText(helperPath))
+      .toContain('compileWithPinnedActions(process.cwd())');
+    expect(step.run.indexOf(helper))
       .toBeLessThan(step.run.indexOf('gh aw compile --strict --approve'));
     expect(step.run).toContain('--verify-install');
     expect(step.run).toContain('--strict-compile');
@@ -4448,7 +4451,7 @@ describe('gh-aw: canonical package integrity contract', () => {
         .find((entry: { name: string }) => entry.name === 'squad').package_lock_sha256);
     expect(verifyInstall(root).failures.join('\n')).toContain('Installed digest mismatch');
 
-    const seedPins = () => spawnSync(process.execPath, ['--input-type=module', '-e', seed!], {
+    const seedPins = () => spawnSync(process.execPath, [helperPath], {
       cwd: root, env, encoding: 'utf8', timeout: 120_000,
     });
     const seeded = seedPins();
