@@ -14,7 +14,7 @@ import {
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { hostname } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { resolveSquadHome, ensureSquadHome, resolvePresetsDir } from '@bradygaster/squad-sdk/resolution';
 import {
   listPresets,
@@ -37,7 +37,7 @@ import {
 } from '../packages/squad-sdk/src/presets/scaffold.js';
 import { applyPreset as applyPresetSource } from '../packages/squad-sdk/src/presets/index.js';
 
-const TMP = join(process.cwd(), `.test-presets-${randomBytes(4).toString('hex')}`);
+const TMP = join(tmpdir(), `.test-presets-${randomBytes(4).toString('hex')}`);
 
 function scaffold(...dirs: string[]): void {
   for (const d of dirs) {

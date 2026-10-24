@@ -5,23 +5,20 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, readFile, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { tmpdir } from 'node:os';
 import { initSquad, MANIFEST_SKILL_NAMES } from '@bradygaster/squad-sdk/config';
 import { onboardAgent, addAgentToConfig } from '@bradygaster/squad-sdk/agents';
 import type { InitOptions, InitAgentSpec } from '@bradygaster/squad-sdk/config';
 import type { OnboardOptions } from '@bradygaster/squad-sdk/agents';
 
-const TEST_ROOT = join(process.cwd(), 'test-fixtures', 'init-test');
+let TEST_ROOT: string;
 
 describe('Squad Initialization', () => {
   beforeEach(async () => {
-    // Clean up test directory
-    if (existsSync(TEST_ROOT)) {
-      await rm(TEST_ROOT, { recursive: true, force: true });
-    }
-    await mkdir(TEST_ROOT, { recursive: true });
+    TEST_ROOT = await mkdtemp(join(tmpdir(), 'squad-sdk-init-test-'));
   });
 
   afterEach(async () => {
