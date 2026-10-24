@@ -14,6 +14,7 @@ import path from 'node:path';
 import {
   resolveSquadStateMcpSpec,
   projectSquadStateMcpSpec,
+  detectInstalledCliEntry,
   detectStandaloneLauncher,
   STANDALONE_HOME_ENV,
   _resetMcpSpecCache,
@@ -22,6 +23,12 @@ import { describeMcpSpec } from '../packages/squad-cli/src/cli/core/upgrade.js';
 describe('resolveSquadStateMcpSpec', () => {
   beforeEach(() => {
     _resetMcpSpecCache();
+  });
+
+  it('detects the in-repo built cli entry for source-driven init and doctor runs', () => {
+    expect(detectInstalledCliEntry()).toBe(
+      path.resolve('packages/squad-cli/dist/cli-entry.js'),
+    );
   });
 
   it('returns an exact pinned npx fallback when no installed entry is available', async () => {

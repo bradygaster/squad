@@ -68,24 +68,27 @@ export function detectStandaloneLauncher(): string | null {
 /**
  * Locate the installed JavaScript entry point that launched this CLI.
  *
- * Source checkouts are excluded because their TypeScript entry cannot be
- * launched by plain Node from a generated MCP declaration.
+ * Source checkouts use their built `dist/cli-entry.js` when present. This
+ * keeps init/doctor fixtures and contributor builds offline-safe without
+ * teaching Node to execute the TypeScript entry directly.
  */
 export function detectInstalledCliEntry(): string | null {
   const invoked = process.argv[1] ? path.resolve(process.argv[1]) : '';
   if (
     invoked &&
     path.basename(invoked).toLowerCase() === 'cli-entry.js' &&
-    invoked.includes(`${path.sep}node_modules${path.sep}`) &&
     existsSync(invoked)
   ) {
     return invoked;
   }
 
   const currentFile = fileURLToPath(import.meta.url);
-  if (!currentFile.includes(`${path.sep}node_modules${path.sep}`)) return null;
-  const candidate = path.resolve(path.dirname(currentFile), '..', '..', 'cli-entry.js');
-  return existsSync(candidate) ? candidate : null;
+  const moduleDir = path.dirname(currentFile);
+  const candidates = [
+    path.resolve(moduleDir, '..', '..', 'cli-entry.js'),
+    path.resolve(moduleDir, '..', '..', '..', 'dist', 'cli-entry.js'),
+  ];
+  return candidates.find(candidate => existsSync(candidate)) ?? null;
 }
 
 /** Resolve the squad_state launch spec for the running CLI version. */
