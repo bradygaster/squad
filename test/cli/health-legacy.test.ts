@@ -306,6 +306,50 @@ describe('legacy routing table compatibility (preview.2 INT-1)', () => {
     expect(routing.diagnostics).toEqual(['unknown agent: Ghost']);
   });
 
+  it('merges a flattened legacy section with an appended canonical table and fails for any unknown target', () => {
+    configureRoster([
+      { id: 'alpha', name: 'Alpha', role: 'Lead' },
+      { id: 'beta', name: 'Beta', role: 'Developer' },
+      { id: 'gamma', name: 'Gamma', role: 'Researcher' },
+      { id: 'delta', name: 'Delta', role: 'Operator' },
+      { id: 'scribe', name: 'Scribe', role: 'Historian' },
+    ]);
+    const flattened = routingFixture('health-routing-tamresearch1.md').replace(
+      '| Runtime build failures and dependency blockers | Beta | Skill: `build-diagnosis` |',
+      '| Runtime build failures and dependency blockers | Ghost | Skill: `build-diagnosis` |',
+    );
+    const mixed = `${flattened}
+
+## Canonical Routing
+
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| documentation | Scribe | Release notes |
+`;
+    const parsed = parseRoutingRulesMarkdown(mixed);
+    expect(parsed.routingTableCount).toBe(2);
+    expect(parsed.rules).toHaveLength(6);
+    expect(parsed.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workType: 'Runtime build failures and dependency blockers',
+          agents: ['Ghost'],
+        }),
+        expect.objectContaining({
+          workType: 'documentation',
+          agents: ['Scribe'],
+        }),
+      ]),
+    );
+    writeSquad('routing.md', mixed);
+
+    const report = runSquadHealth(path.join(repoRoot, '.squad'), repoRoot);
+    const routing = check(report, 'routing');
+    expect(routing.status).toBe('fail');
+    expect(routing.diagnostics).toContain('unknown agent: Ghost');
+    expect(report.status).toBe('fail');
+  });
+
   it.each([
     ['empty', ''],
     ['absent', undefined],

@@ -319,6 +319,11 @@ export function parseRoutingRulesMarkdown(
   const rules: ParsedRoutingRule[] = [];
   const warnings: string[] = [];
   const agentReferences: string[] = [];
+  const locatedRules: Array<{
+    rule: ParsedRoutingRule;
+    lineIndex: number;
+  }> = [];
+  const parsedRoutingLines = new Set<number>();
   let markdownTableCount = 0;
   let routingTableCount = 0;
 
@@ -361,7 +366,11 @@ export function parseRoutingRulesMarkdown(
       .filter((columnIndex) => columnIndex >= 0);
     const examplesIndex = headerColumns.findIndex(isRoutingExamplesHeader);
     const isRoutingTable = workTypeIndex >= 0 && agentIndexes.length > 0;
-    if (isRoutingTable) routingTableCount++;
+    if (isRoutingTable) {
+      routingTableCount++;
+      parsedRoutingLines.add(index);
+      parsedRoutingLines.add(index + 1);
+    }
 
     let rowIndex = index + 2;
     for (; rowIndex < lines.length; rowIndex++) {
@@ -371,6 +380,7 @@ export function parseRoutingRulesMarkdown(
       const cells = parseMarkdownTableCells(rowLine);
       if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
       if (!isRoutingTable) continue;
+      parsedRoutingLines.add(rowIndex);
 
       const workType = cells[workTypeIndex];
       const agents = agentIndexes.flatMap((columnIndex) =>
@@ -397,23 +407,27 @@ export function parseRoutingRulesMarkdown(
           : undefined;
 
       if (workType && !PLACEHOLDER.test(workType) && agents.length > 0) {
-        rules.push({ workType, agents, examples });
-        agentReferences.push(...agents);
+        locatedRules.push({
+          rule: { workType, agents, examples },
+          lineIndex: rowIndex,
+        });
       }
     }
 
     index = rowIndex - 1;
   }
 
-  if (routingTableCount === 0) {
-    const flattenedRules = parseFlattenedLegacyRoutingRules(lines);
-    if (flattenedRules.length > 0) {
-      routingTableCount = 1;
-      for (const rule of flattenedRules) {
-        rules.push(rule);
-        agentReferences.push(...rule.agents);
-      }
-    }
+  const flattened = parseFlattenedLegacyRoutingRules(
+    lines,
+    parsedRoutingLines,
+  );
+  routingTableCount += flattened.sectionCount;
+  locatedRules.push(...flattened.rules);
+
+  locatedRules.sort((left, right) => left.lineIndex - right.lineIndex);
+  for (const { rule } of locatedRules) {
+    rules.push(rule);
+    agentReferences.push(...rule.agents);
   }
 
   if (rules.length === 0) {
@@ -456,64 +470,98 @@ function isRoutingExamplesHeader(value: string): boolean {
 
 function parseFlattenedLegacyRoutingRules(
   lines: string[],
-): ParsedRoutingRule[] {
+  parsedRoutingLines: ReadonlySet<number>,
+): {
+  rules: Array<{ rule: ParsedRoutingRule; lineIndex: number }>;
+  sectionCount: number;
+} {
   const hasRoutingTableHeading = lines.some((line) =>
     /^##\s+routing\s+table\s*$/i.test(line.trim()),
   );
-  const hasWorkTypeAgentHeading = lines.some((line) =>
-    /^##\s+work\s+type\s*(?:→|->|to)\s*agent\s*$/i.test(line.trim()),
-  );
-  const tableRows = lines
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('|'))
-    .map(parseMarkdownTableCells);
-  const hasKnownHeader = tableRows.some((cells) => {
-    const normalized = cells.map(normalizeRoutingHeader);
-    return (
-      normalized.join('|') === 'work type|route to|examples' ||
-      normalized.join('|') === 'work type|primary|secondary'
-    );
-  });
-  const hasThreeColumnSeparator = tableRows.some(
-    (cells) =>
-      cells.length === 3 &&
-      cells.every((cell) => /^:?-{3,}:?$/.test(cell)),
-  );
+  if (!hasRoutingTableHeading) return { rules: [], sectionCount: 0 };
 
-  if (
-    !hasRoutingTableHeading ||
-    !hasWorkTypeAgentHeading ||
-    !hasKnownHeader ||
-    !hasThreeColumnSeparator
-  ) {
-    return [];
-  }
+  const rules: Array<{ rule: ParsedRoutingRule; lineIndex: number }> = [];
+  let sectionCount = 0;
 
-  const rules: ParsedRoutingRule[] = [];
-  for (const cells of tableRows) {
-    if (cells.length !== 3) continue;
-    if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
-
-    const workType = cells[0]!;
-    const normalizedWorkType = normalizeRoutingHeader(workType);
+  for (let headingIndex = 0; headingIndex < lines.length; headingIndex++) {
     if (
-      !workType ||
-      workType.includes('`') ||
-      /^(?:role|tier \d+|hot|cold|season|wiki|label|layer|file|event|task type|work type|status(?: .*)?|area(?: .*)?|needs(?: .*)?|squad(?: .*)?)$/.test(
-        normalizedWorkType,
+      !/^##\s+work\s+type\s*(?:→|->|to)\s*agent\s*$/i.test(
+        lines[headingIndex]!.trim(),
       )
     ) {
       continue;
     }
 
-    const agents = parseLegacyAgentCell(cells[1] ?? '');
-    if (agents.length === 0) continue;
-    const examples = cells[2]?.trim()
-      ? cells[2]!.split(',').map((example) => example.trim()).filter(Boolean)
-      : undefined;
-    rules.push({ workType, agents, examples });
+    let sectionEnd = lines.length;
+    for (let index = headingIndex + 1; index < lines.length; index++) {
+      if (/^#{1,2}\s+/.test(lines[index]!.trim())) {
+        sectionEnd = index;
+        break;
+      }
+    }
+
+    const tableRows = lines
+      .slice(headingIndex + 1, sectionEnd)
+      .map((line, offset) => ({
+        cells: parseMarkdownTableCells(line.trim()),
+        lineIndex: headingIndex + 1 + offset,
+        isTableLine: line.trim().startsWith('|'),
+      }))
+      .filter(
+        ({ lineIndex, isTableLine }) =>
+          isTableLine && !parsedRoutingLines.has(lineIndex),
+      );
+    const hasKnownHeader = tableRows.some(({ cells }) => {
+      const normalized = cells.map(normalizeRoutingHeader);
+      return (
+        normalized.join('|') === 'work type|route to|examples' ||
+        normalized.join('|') === 'work type|primary|secondary'
+      );
+    });
+    const hasThreeColumnSeparator = tableRows.some(
+      ({ cells }) =>
+        cells.length === 3 &&
+        cells.every((cell) => /^:?-{3,}:?$/.test(cell)),
+    );
+    if (!hasKnownHeader || !hasThreeColumnSeparator) continue;
+
+    const sectionRules: Array<{
+      rule: ParsedRoutingRule;
+      lineIndex: number;
+    }> = [];
+    for (const { cells, lineIndex } of tableRows) {
+      if (cells.length !== 3) continue;
+      if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+
+      const workType = cells[0]!;
+      const normalizedWorkType = normalizeRoutingHeader(workType);
+      if (
+        !workType ||
+        workType.includes('`') ||
+        /^(?:role|tier \d+|hot|cold|season|wiki|label|layer|file|event|task type|work type|status(?: .*)?|area(?: .*)?|needs(?: .*)?|squad(?: .*)?)$/.test(
+          normalizedWorkType,
+        )
+      ) {
+        continue;
+      }
+
+      const agents = parseLegacyAgentCell(cells[1] ?? '');
+      if (agents.length === 0) continue;
+      const examples = cells[2]?.trim()
+        ? cells[2]!.split(',').map((example) => example.trim()).filter(Boolean)
+        : undefined;
+      sectionRules.push({
+        rule: { workType, agents, examples },
+        lineIndex,
+      });
+    }
+    if (sectionRules.length > 0) {
+      sectionCount++;
+      rules.push(...sectionRules);
+    }
   }
-  return rules;
+
+  return { rules, sectionCount };
 }
 
 function parseLegacyAgentCell(value: string): string[] {
