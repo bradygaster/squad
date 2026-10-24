@@ -1734,7 +1734,9 @@ describe('client adapter contract is exposed canonically and through the depreca
     }
     expect(CAPABILITY_TOKENS_BY_HOST.copilot).toContain('background-runs');
     expect(CAPABILITY_TOKENS_BY_HOST.opencode).toContain('background-runs');
-    expect(CAPABILITY_TOKENS_BY_HOST.claude).not.toContain('background-runs');
+    // F7: Claude Code runs Agent spawns in the background (live run 2026-10-22, subagent_stats.started_in_background).
+    expect(CAPABILITY_TOKENS_BY_HOST.claude).toContain('background-runs');
+    expect(CAPABILITY_TOKENS_BY_HOST.kiro).not.toContain('background-runs');
   });
 
   it('every host declares tokens that map onto the capability flags consistently', async () => {

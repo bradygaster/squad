@@ -1,0 +1,204 @@
+name: Squad Upgrade Matrix
+
+# Old published Squad releases × OS × project state shape, upgraded with the CLI packed from this
+# tree. See test/squad-20-upgrade-matrix.test.ts and docs/src/content/docs/scenarios/upgrading.md
+# ("Tested upgrade paths"). Producers come from the registry npm is configured for on the runner
+# (set NPM_CONFIG_REGISTRY to point elsewhere) and from GitHub Release standalone bundles; a producer
+# that cannot be obtained is skipped loudly and recorded in the results artifact — never silently
+# passed. Known product defects are pinned in test-fixtures/spec/suite-v0.2/upgrade-matrix.json.
+
+on:
+  pull_request:
+    branches: [dev, main, 'squad2-*']
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      producers:
+        description: 'Comma-separated producer versions to run (default: all declared in upgrade-matrix.json)'
+        required: false
+        default: ''
+      # PREVIEW-TARBALL-ATTESTATION:START
+      mode:
+        description: 'Run mode (empty for the established matrix; preview-tarballs for exact release evidence)'
+        required: false
+        default: ''
+      evidence_run_id:
+        description: 'Actions run containing the release-evidence artifact'
+        required: false
+        default: ''
+      evidence_artifact:
+        description: 'Exact release-evidence artifact name'
+        required: false
+        default: ''
+      target_sha:
+        description: 'Commit whose exact tarballs are in the evidence artifact'
+        required: false
+        default: ''
+      cli_sha256:
+        description: 'Expected SHA-256 of the preview CLI tarball'
+        required: false
+        default: ''
+      sdk_sha256:
+        description: 'Expected SHA-256 of the preview SDK tarball'
+        required: false
+        default: ''
+      # PREVIEW-TARBALL-ATTESTATION:END
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade-matrix:
+    # PREVIEW-TARBALL-ATTESTATION:START
+    if: inputs.mode != 'preview-tarballs'
+    # PREVIEW-TARBALL-ATTESTATION:END
+    name: upgrade-matrix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install dependencies
+        shell: bash
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm install; then success=true; break; fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
+          done
+          [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
+      - name: Build (no version bump)
+        shell: bash
+        run: npm run build
+        env:
+          SKIP_BUILD_BUMP: '1'
+      - name: Registry in use for old producers
+        shell: bash
+        run: |
+          echo "NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY:-<unset>}"
+          echo "npm config get registry → $(npm config get registry)"
+      - name: Run upgrade matrix
+        shell: bash
+        run: npx vitest run test/squad-20-upgrade-matrix.test.ts --reporter=default
+        env:
+          SQUAD_UPGRADE_MATRIX: '1'
+          SQUAD_UPGRADE_MATRIX_PRODUCERS: ${{ github.event.inputs.producers }}
+          SQUAD_UPGRADE_MATRIX_OUT: ${{ github.workspace }}/upgrade-matrix-results/results-${{ runner.os }}.json
+          # The tree under test: the PR head (a PR checkout is a merge ref), or the dispatched/pushed commit.
+          SQUAD_UPGRADE_MATRIX_TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Read-only; lets release-asset downloads by id use the authenticated rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: upgrade-matrix-results-${{ runner.os }}
+          path: upgrade-matrix-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+  docs-in-sync:
+    # PREVIEW-TARBALL-ATTESTATION:START
+    if: inputs.mode != 'preview-tarballs'
+    # PREVIEW-TARBALL-ATTESTATION:END
+    name: upgrade-matrix docs in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+      - name: Rendered "Tested upgrade paths" section matches upgrade-matrix.json
+        run: node scripts/render-upgrade-matrix.mjs --check
+
+  # PREVIEW-TARBALL-ATTESTATION:START
+  preview-tarball-matrix:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview-tarballs'
+    name: preview-tarball-matrix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Validate immutable evidence inputs
+        shell: bash
+        run: |
+          [[ "${{ inputs.evidence_run_id }}" =~ ^[0-9]+$ ]]
+          case "${{ inputs.evidence_artifact }}" in
+            release-evidence-*) ;;
+            *) echo "::error::evidence_artifact must begin with release-evidence-"; exit 1 ;;
+          esac
+          [[ "${{ inputs.target_sha }}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.cli_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${{ inputs.sdk_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
+      - name: Download exact release-evidence artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-evidence
+          gh run download "${{ inputs.evidence_run_id }}" \
+            --repo "${{ github.repository }}" \
+            --name "${{ inputs.evidence_artifact }}" \
+            --dir release-evidence
+          cli="$(find release-evidence -type f -name 'bradygaster-squad-cli-*.tgz' -print -quit)"
+          sdk="$(find release-evidence -type f -name 'bradygaster-squad-sdk-*.tgz' -print -quit)"
+          test -n "$cli" && test -n "$sdk"
+          test "$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "$cli")" = "${{ inputs.cli_sha256 }}"
+          test "$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "$sdk")" = "${{ inputs.sdk_sha256 }}"
+          echo "SQUAD_PREVIEW_CLI_TARBALL=$(cd "$(dirname "$cli")" && pwd)/$(basename "$cli")" >> "$GITHUB_ENV"
+          echo "SQUAD_PREVIEW_SDK_TARBALL=$(cd "$(dirname "$sdk")" && pwd)/$(basename "$sdk")" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        shell: bash
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm install; then success=true; break; fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
+          done
+          [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
+      - name: Run exact preview-tarball matrix
+        shell: bash
+        run: npx vitest run test/squad-20-preview-tarball-matrix.test.ts --reporter=default
+        env:
+          SQUAD_PREVIEW_TARBALL_MATRIX: '1'
+          SQUAD_PREVIEW_MATRIX_PRODUCERS: ${{ inputs.producers }}
+          SQUAD_PREVIEW_MATRIX_OUT: ${{ github.workspace }}/preview-tarball-matrix-results/results-${{ runner.os }}.json
+          SQUAD_PREVIEW_TARGET_SHA: ${{ inputs.target_sha }}
+          SQUAD_PREVIEW_CLI_SHA256: ${{ inputs.cli_sha256 }}
+          SQUAD_PREVIEW_SDK_SHA256: ${{ inputs.sdk_sha256 }}
+          SQUAD_PREVIEW_EXPECTED_VERSION: '2.0.0-preview.1'
+          SQUAD_PREVIEW_EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
+          SQUAD_PREVIEW_EVIDENCE_ARTIFACT: ${{ inputs.evidence_artifact }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload preview tarball results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: preview-tarball-matrix-results-${{ runner.os }}
+          path: preview-tarball-matrix-results/
+          if-no-files-found: warn
+          retention-days: 30
+  # PREVIEW-TARBALL-ATTESTATION:END

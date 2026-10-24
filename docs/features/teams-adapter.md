@@ -88,7 +88,7 @@ All configuration lives in `.squad/config.json` under `communications.adapterCon
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `recipientUpn` | For 1:1 chat | — | UPN of the person to chat with (e.g., `bradyg@microsoft.com`). Use `"me"` to message yourself. |
+| `recipientUpn` | For 1:1 chat | — | UPN of the person to chat with (e.g., `user@example.com`). Use `"me"` to message yourself. |
 | `chatId` | No | — | Existing chat ID. If omitted, the adapter creates a new 1:1 chat with the recipient. |
 | `teamId` | For channels | — | Team ID (required when using `channelId`). |
 | `channelId` | For channels | — | Channel ID. When set with `teamId`, posts go to the team channel instead of a 1:1 chat. |

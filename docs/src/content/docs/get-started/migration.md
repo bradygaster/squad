@@ -44,6 +44,7 @@ squad upgrade
 - **Multi-host projections:** Pass `--client claude,kiro,opencode,cursor,codex,antigravity` (or `--client all`) to `squad init` or `squad upgrade` to project your team across all 7 supported hosts; use `uninstallClients()` from `@bradygaster/squad-sdk/client` for byte-preserving rollback.
 - **SDK imports:** `@bradygaster/squad-sdk/client` is the canonical subpath for client and host-adapter APIs (`@bradygaster/squad-sdk/clients` is retained as a deprecated alias). Experimental backend APIs live under `@bradygaster/squad-sdk/backend`.
 - **Full details:** See [Upgrading to Squad 2.0](../scenarios/upgrading.md#upgrading-to-squad-20) and [Using Squad across clients](../scenarios/using-squad-across-clients.md).
+- **Which old versions are verified:** [Tested upgrade paths](../scenarios/upgrading.md#tested-upgrade-paths) lists every published release (0.9.1 through 1.1.0, pinned npm tarball or GitHub Release bundle) that the CI matrix upgrades on Windows and Linux under each project state shape, with per-row results, every not-applicable cell explained, and the known findings. There is no supported downgrade — see [There is no supported downgrade](../scenarios/upgrading.md#there-is-no-supported-downgrade).
 
 ---
 

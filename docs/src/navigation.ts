@@ -58,7 +58,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Ceremonies', slug: 'features/ceremonies' },
       { title: 'Reviewer Protocol', slug: 'features/reviewer-protocol' },
       { title: 'Human Team Members', slug: 'features/human-team-members' },
-      { title: 'Consult Mode', slug: 'features/consult-mode' },
       { title: 'Labels & Triage', slug: 'features/labels' },
       { title: 'PRD Mode', slug: 'features/prd-mode' },
       { title: 'Project Boards', slug: 'features/project-boards' },
@@ -93,7 +92,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: 'GitHub Agentic Workflows', slug: 'guide/gh-aw' },
       { title: 'Choose Your Interface', slug: 'get-started/choose-your-interface' },
-      { title: 'Your Personal Squad', slug: 'guide/personal-squad' },
       { title: 'Interactive Shell Guide', slug: 'guide/shell' },
       { title: 'Tips & Tricks', slug: 'guide/tips-and-tricks' },
       { title: 'Sample Prompts', slug: 'guide/sample-prompts' },
@@ -164,6 +162,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Config', slug: 'reference/config' },
       { title: 'Container Image', slug: 'reference/container-image' },
       { title: 'State Backend Selection', slug: 'reference/state-backend-selection' },
+      { title: 'Host Feature Matrix', slug: 'reference/host-feature-matrix' },
       { title: 'Glossary', slug: 'reference/glossary' },
     ],
   },

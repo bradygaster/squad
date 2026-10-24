@@ -459,13 +459,18 @@ const BINARIES: Array<{ client: RealClient; names: string[]; configChecks: Array
 
 // Opt-in only: these spawn whatever third-party binaries happen to be on PATH, which is slow and
 // environment-dependent. Set SQUAD_REAL_CLI_TESTS=1 to run them.
-const realCli = process.env['SQUAD_REAL_CLI_TESTS'] === '1' ? describe : describe.skip;
+//
+// The skip decision is made once per binary and never nested: a `describe.skip` inside an
+// already-skipped `describe` leaves its tests in vitest's `pending` state, which the console
+// summary does not count (12142 + 35 + 56 + 47 = 12280 of 12286 at f22847a9; the 6 ghosts were
+// these). `describe.skipIf` at one level reports every test as `skipped`.
+const REAL_CLI = process.env['SQUAD_REAL_CLI_TESTS'] === '1';
 
-realCli('live client binaries (SQUAD_REAL_CLI_TESTS=1; executed when present on PATH)', () => {
+describe('live client binaries (SQUAD_REAL_CLI_TESTS=1; executed when present on PATH)', () => {
   for (const b of BINARIES) {
-    const bin = which(...b.names);
-    const d = bin ? describe : describe.skip;
-    d(`${b.client} (${bin ?? 'not installed'})`, () => {
+    const bin = REAL_CLI ? which(...b.names) : null;
+    const reason = !REAL_CLI ? 'SQUAD_REAL_CLI_TESTS unset' : bin ?? 'not installed';
+    describe.skipIf(!bin)(`${b.client} (${reason})`, () => {
       it('reports a version', () => {
         const r = runBinary(bin!, ['--version'], workspaces.get(b.client)!);
         expect(r.error).toBeUndefined();

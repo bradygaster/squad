@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-preview.1] - 2026-10-23
+
+First Squad 2.0 preview. Published primarily to the npm `insider` dist-tag, which powers `squad upgrade --self --insider`, with `preview` retained as a compatibility alias; `latest` stays at 1.1.0. Upgrade guidance, the tested old-version × OS upgrade matrix and the full list of breaking changes live in [Upgrading to Squad 2.0](docs/src/content/docs/scenarios/upgrading.md).
+
+### Breaking
+
+- **Personal squads, consult mode and the global squad (`--global`) were removed.** Existing `personal-squad/` and global `.squad/` directories under the user profile are no longer read or written and may be deleted manually. Squad resolves `.squad/` only from the current directory and its parents; `squad status`, `squad doctor`, `squad cast` and `squad cost` outside a project now fail with "No squad in this directory … run `squad init`", and `squad init` / `squad upgrade` only ever write inside the project `.squad/`. The SDK exports, CLI subcommands, flags, environment switches, templates and coordinator sections that backed the removed features are gone; `resolveGlobalSquadPath()` remains only as the base of externalized project state (`squad externalize`). A retired-symbol gate (`test/retired-symbols.test.ts`) keeps the removed concepts out of source, templates, skills, docs, help text, schemas and the built package output (#2279).
+- `@bradygaster/squad-sdk/clients` is now a deprecated alias for the canonical `@bradygaster/squad-sdk/client` subpath, and `@bradygaster/squad-sdk/backend` is exported only from the `./backend` subpath, not from the root barrel (#2251, #2253).
+- Plain `squad init` and `squad upgrade` (without `--client`) remain Copilot-only and no longer add `.claude/worktrees/` or `NUL` to `.gitignore` unless `--client claude` is enabled; `.squad/backend/` is added to `.gitignore` on upgrade (#2251).
+- `SQUAD_BACKEND_URL` alone no longer enables the `squad_backend_*` MCP tools (pass `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`). `createSquadBackend({ kind: 'durable-http', ... })` and `DurableHttpSquadBackend` require an explicit `baseUrl` (`https://`, or `http://` only for localhost) and optional `token` (#2253).
+- Coordinator instructions and `squad_state_*` tools separate mutable runtime state from static team configuration (`team.md`, `routing.md`, `config.json`, `charter.md`) and forbid hand-editing `.squad/casting/` or killing processes by image name (#2254).
+- Upstream precedence is clarified: **earlier** entries in `upstream.json` win conflicts (the 1.x docs said later-wins; the code implemented neither) (#2278).
+- The dangling `./shell/sdk-bridge` CLI subpath export, which pointed at a module that does not exist in the package, was removed (#2285).
+
+### Added
+
+- Seven AI hosts via `squad init --client <list>` and `squad upgrade [--dry-run] --client <list>`: GitHub Copilot, Claude Code, Kiro, OpenCode, Cursor, OpenAI Codex and Google Antigravity (or `all`), each receiving a native coordinator projection and `squad_state` MCP wiring; configured hosts persist as portable slugs in `.squad/config.json` `clients[]` (#2251).
+- Shared charters and capability negotiation in `@bradygaster/squad-sdk/client` (`HostProjection`, `createClientAdapter`, `installClients`, `uninstallClients`, `CAPABILITY_TOKENS_BY_HOST`, `capabilityFlagsFromTokens`, `resolveEffectiveCapabilityTokens`), with `effectiveCapabilities = client ∩ backend ∩ policy` (#2251, #2277).
+- Transactional casting repair in `@bradygaster/squad-sdk/casting`: `squad upgrade` (including `--dry-run`) normalizes handwritten `.squad/casting/registry.json` per record, backfills empty registries from `.squad/team.md` using provable `.squad/agents/<id>/charter.md` folder IDs, archives pre-repair originals under `.squad/casting/handwritten-archive-<sha256>/`, never rolls back a durable commit, and fails closed with an actionable `dropped` list (#2252).
+- Experimental backend and harness SPI in `@bradygaster/squad-sdk/backend` (`BACKEND_CONTRACT_STAGE = 'experimental'`): `SquadBackend`, `createSquadBackend`, `LocalSquadBackend`, `DurableHttpSquadBackend`, `createFileStateStore`, `createStateBackendStore`, `HarnessAdapter`, `DefaultHarnessRegistry`, `validateExtensions`, plus 11 opt-in `squad_backend_*` tools in `squad state-mcp`, validated against the `squad-protocol-v2.0-rc1` golden conformance trace (`G1`–`G9`) (#2253).
+- Runtime upstream inheritance (F1): the `squad_state_upstreams` tool resolves every declared upstream from its locally synced snapshot with `upstream:<name>@<ref>` provenance, deterministic precedence, diamond de-duplication, cycle detection and `missing` / `invalid` / `unavailable` / `stale` diagnostics, never fetching at session start; snapshot reads are confined and race-safe (`lstat` walk, size budgets, `O_NOFOLLOW` + `fstat` verification); git sources are allow-listed to `https://`, `ssh://` and `git@host:path` with remote helpers and the file protocol disabled; inherited content is labelled `UNTRUSTED`; `squad doctor` and `squad status` report upstream state (#2278).
+- Squad feature × host matrix documentation with live Claude Code and OpenCode runs and bridge tests (#2277).
+- Attested old-version × OS upgrade matrix (0.9.1 through 1.1.0 on Windows and Linux) rendered into the upgrading guide from `test-fixtures/spec/suite-v0.2/upgrade-matrix.json` (#2282).
+- `test/package-exports-targets.test.ts` verifies every `exports` target of both packages exists in the built `dist/` (#2285).
+
+### Fixed
+
+- `squad_state_health` reports `State backend: local|orphan|two-layer` plus storage class and team squad dir (F6); `squad_state_list` without `dir` lists the root on git-backed backends instead of failing (F8); Claude Code declares `background-runs` in `capability-matrix.json` and `CAPABILITY_TOKENS_BY_HOST` (F7) (#2279).
+- Shared JSON, TOML, `.gitignore` and markdown marker merges preserve existing line endings, indentation and user entries atomically, refuse malformed JSON or commented `opencode.jsonc`, and restore preexisting files byte-for-byte via `uninstallClients` (#2251).
+- When a non-local state backend is configured, `createStateBackendStore` places lock files in a deterministic machine-local directory derived from the shared `.git` common dir so `.squad/backend/` is never materialized in the working tree (#2253).
+
+### Known limitations
+
+- Squad ships the backend interfaces, the local backend and the `durable-http` client; it does not bundle a remote DurableSquad server. Server-side DurableSquad Phase 2 integration (remote durable approvals and lease-epoch coordination) is pending, and `squad state-mcp` bundles no execution harness (`executionAvailable: false` until a `HarnessAdapter` is registered).
+- Squad 0.9.1's `squad upgrade --dry-run` is not dry (finding F3 in the upgrade matrix); no older CLI has a newer-version guard, so never run an older CLI against an upgraded repository. There is no supported downgrade.
+
 ## [1.1.0] - 2026-10-19
 
 ### Added

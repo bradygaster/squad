@@ -78,7 +78,8 @@ describe('upgrade portability and destination newlines', () => {
     const agent = path.join('.github', 'agents', 'squad.agent.md');
     const existingAgent = readFileSync(path.join(root, agent), 'utf8')
       .replace(/<!-- version: [^>]+ -->/, `<!-- version: ${version === 'old' ? '0.13.0' : getPackageVersion()} -->`);
-    write(agent, existingAgent.replace(/\r?\n/g, '\r\n'));
+    // A genuine local edit (not just version stamps / CRLF) so the upgrade must take a backup (UM-F2).
+    write(agent, (existingAgent + '\n## Local rule\n\nAlways say hi.\n').replace(/\r?\n/g, '\r\n'));
     const agentBefore = readFileSync(path.join(root, agent), 'utf8');
     const managed = [
       path.join('.github', 'workflows', 'squad-ci.yml'),

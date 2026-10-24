@@ -332,7 +332,7 @@ When agents complete work, record decisions, or hit errors — Ralph knows. If a
 
 | Module | Key Exports | Purpose |
 |--------|------------|---------|
-| `resolution` | `resolveSquad()`, `resolveGlobalSquadPath()`, `ensureSquadPath()` | Find `.squad/` directory; platform-specific global path; path validation |
+| `resolution` | `resolveSquad()`, `ensureSquadPath()`, `resolveExternalStateDir()` | Find `.squad/` directory; externalized state location; path validation |
 | `config` | `loadConfig()`, `loadConfigSync()` | Load and parse squad configuration from disk |
 | `agents` | Agent onboarding utilities | Register and initialize agents; manage team discovery |
 | `casting` | `CastingEngine` | Universe selection, name allocation, persistent registry |

@@ -53,6 +53,9 @@ const EXPECTED_IGNORES: Record<string, string[]> = {
   ],
   // gh-aw code-generator output: an intentional empty `choice` option.
   '**/agentics-maintenance.yml': ['string should not be empty'],
+  // Immutable preview-matrix attestation block: GitHub expands the required
+  // input before bash evaluates it, but shellcheck sees only the template.
+  '.github/workflows/squad-upgrade-matrix.yml': ['SC2193'],
 };
 
 interface ActionlintConfig {

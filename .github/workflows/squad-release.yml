@@ -1,244 +1,365 @@
 name: Squad Release
 
+# Human-only release trigger. Nothing here is automatic: a maintainer dispatches with the exact
+# reviewed commit SHA and the confirming tag, and every side effect (tag, GitHub release, npm
+# publication, standalone bundles) happens only after the exact-SHA gates and the full
+# verification bundle (squad-release-verify.yml) pass at that SHA.
+#
+# Preview releases (X.Y.Z-preview.N from dev) publish to the npm `insider` dist-tag by default
+# because `squad upgrade --self --insider` resolves `@bradygaster/squad-cli@insider`; `preview`
+# is added as a compatibility alias once both packages verify. Both are inputs so the channel
+# decision is a one-line change at dispatch time.
+#
+# Standalone bundles are built and retained as artifacts by default. When the
+# operator selects standalone or package-manager publication, the public GitHub
+# release waits for every selected channel to complete.
+
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       confirm_tag:
-        description: 'Confirm the release tag (for example v0.14.0-preview.1 or v0.14.0)'
+        description: 'Confirm the release tag (for example v2.0.0-preview.1 or v2.0.0)'
         required: true
         type: string
+      expected_sha:
+        description: 'Full 40-hex commit SHA that was reviewed; must equal the selected branch tip, the dispatch SHA and the workflow definition SHA'
+        required: true
+        type: string
+      npm_dist_tag:
+        description: 'Primary npm dist-tag for a prerelease (stable releases always use latest)'
+        required: false
+        default: insider
+        type: choice
+        options: [insider, preview]
+      add_preview_alias:
+        description: 'After both packages verify on the primary tag, also point the `preview` dist-tag at this version (prereleases only)'
+        required: false
+        default: true
+        type: boolean
+      build_standalone:
+        description: 'Build the standalone bundles and keep them as workflow artifacts (no publication)'
+        required: false
+        default: true
+        type: boolean
+      publish_standalone:
+        description: 'Attach standalone bundles to the GitHub release (requires build_standalone)'
+        required: false
+        default: false
+        type: boolean
+      publish_package_managers:
+        description: 'Also publish Homebrew cask / WinGet manifests (opt-in; runs a no-side-effect token preflight first)'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  guard:
+    name: Exact-SHA and channel guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
-      created: ${{ steps.check_tag.outputs.exists == 'false' }}
-      stable_release: ${{ steps.version.outputs.stable_release }}
-      tag: ${{ steps.version.outputs.tag }}
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.channel.outputs.version }}
+      tag: ${{ steps.channel.outputs.tag }}
+      stable_release: ${{ steps.channel.outputs.stable_release }}
+      branch: ${{ steps.channel.outputs.branch }}
+      dist_tag: ${{ steps.channel.outputs.dist_tag }}
+      add_preview_alias: ${{ steps.channel.outputs.add_preview_alias }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
+          ref: ${{ inputs.expected_sha }}
           fetch-depth: 0
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
-        with:
-          node-version: 22
-
-      - name: Resolve release channel
-        id: version
+      - name: Assert dispatch SHA, workflow SHA, checkout HEAD and live branch tip all equal expected_sha
         env:
-          CONFIRM_TAG: ${{ inputs.confirm_tag }}
-          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
           RELEASE_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-
-          version="$(node -p 'require("./package.json").version')"
-          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
-          if [[ ! "$version" =~ $semver_re ]]; then
-            echo "::error::package.json version '$version' is not valid strict SemVer."
-            exit 1
-          fi
-
-          stable_release=false
-          if [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            stable_release=true
-          fi
-          preview_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$'
-
-          expected_tag="v${version}"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if [ "$CONFIRM_TAG" != "$expected_tag" ]; then
-              echo "::error::confirm_tag must be $expected_tag, got $CONFIRM_TAG."
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::expected_sha must be a full lowercase 40-hex commit SHA, got '$EXPECTED_SHA'"; exit 1; }
+          case "$RELEASE_REF" in
+            refs/heads/dev|refs/heads/main) branch="${RELEASE_REF#refs/heads/}" ;;
+            *) echo "::error::Release dispatches must select dev or main, not $RELEASE_REF."; exit 1 ;;
+          esac
+          head="$(git rev-parse HEAD)"
+          tip="$(git ls-remote --exit-code origin "refs/heads/${branch}" | cut -f1)"
+          for pair in "dispatch:$DISPATCH_SHA" "workflow-definition:$WORKFLOW_SHA" "checkout-HEAD:$head" "live-${branch}-tip:$tip"; do
+            name="${pair%%:*}"; value="${pair#*:}"
+            if [ "$value" != "$EXPECTED_SHA" ]; then
+              echo "::error::$name is $value but expected_sha is $EXPECTED_SHA; refusing release (branch moved or stale dispatch)."
               exit 1
             fi
-            if [ "$RELEASE_REF" = "refs/heads/dev" ]; then
-              if [[ ! "$version" =~ $preview_re ]]; then
-                echo "::error::Manual dev releases require a prerelease version such as 0.14.0-preview.1."
-                exit 1
-              fi
-            elif [ "$RELEASE_REF" = "refs/heads/main" ]; then
-              if [ "$stable_release" != "true" ]; then
-                echo "::error::Manual main releases require a stable MAJOR.MINOR.PATCH version."
-                exit 1
-              fi
-            else
-              echo "::error::Release dispatches must run from dev or main, not $RELEASE_REF."
-              exit 1
-            fi
-          else
-            if [ "$RELEASE_REF" != "refs/heads/main" ]; then
-              echo "::error::Automatic stable releases must run from main, not $RELEASE_REF."
-              exit 1
-            fi
-            if [ "$stable_release" != "true" ]; then
-              echo "::error::The main branch requires a stable MAJOR.MINOR.PATCH version."
-              exit 1
-            fi
-          fi
+          done
+          echo "✅ dispatch, workflow definition, checkout and origin/$branch all resolve to $EXPECTED_SHA"
 
-          echo "stable_release=$stable_release" >> "$GITHUB_OUTPUT"
-          echo "tag=$expected_tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Resolved $expected_tag (stable: $stable_release)."
-
-      - name: Run tests
-        run: node --test test/*.test.cjs
-
-      - name: Validate version consistency
+      - name: Resolve release channel
+        id: channel
+        env:
+          CONFIRM_TAG: ${{ inputs.confirm_tag }}
+          INPUT_DIST_TAG: ${{ inputs.npm_dist_tag }}
+          INPUT_PREVIEW_ALIAS: ${{ inputs.add_preview_alias }}
+          RELEASE_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          VERSION="$(node -p 'require("./package.json").version')"
-          node - "$VERSION" <<'NODE'
-          const { readFileSync } = require('node:fs');
-
-          const version = process.argv[2];
-          const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
-          const sdk = readJson('packages/squad-sdk/package.json');
-          const cli = readJson('packages/squad-cli/package.json');
-          const lock = readJson('package-lock.json');
-          const dependency = cli.dependencies?.['@bradygaster/squad-sdk'];
-          const lockDependency =
-            lock.packages?.['packages/squad-cli']?.dependencies?.['@bradygaster/squad-sdk'];
-
-          for (const [path, actual] of [
-            ['package-lock.json root workspace', lock.packages?.['']?.version],
-            ['packages/squad-sdk/package.json', sdk.version],
-            ['packages/squad-cli/package.json', cli.version],
-            ['package-lock.json SDK workspace', lock.packages?.['packages/squad-sdk']?.version],
-            ['package-lock.json CLI workspace', lock.packages?.['packages/squad-cli']?.version],
-          ]) {
-            if (actual !== version) {
-              throw new Error(`${path} version '${actual}' does not match root version '${version}'.`);
-            }
-          }
-
-          if (version.includes('-')) {
-            const expected = `>=${version}`;
-            if (dependency !== expected || lockDependency !== expected) {
-              throw new Error(
-                `Preview releases require the CLI SDK dependency and lockfile entry to be '${expected}'.`,
-              );
-            }
-          } else if (dependency?.includes('-') || lockDependency?.includes('-')) {
-            throw new Error('Stable releases cannot retain a prerelease SDK dependency floor.');
-          }
-          NODE
-
-          if ! grep -q "## \[$VERSION\]" CHANGELOG.md 2>/dev/null; then
-            echo "::error::Version $VERSION not found in CHANGELOG.md — update CHANGELOG.md before release"
-            exit 1
-          fi
-          echo "✅ Version $VERSION validated in CHANGELOG.md"
-
-      - name: Check if tag already exists
-        id: check_tag
-        run: |
-          if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "⏭️ Tag ${{ steps.version.outputs.tag }} already exists — skipping release."
+          branch="${RELEASE_REF#refs/heads/}"
+          version="$(node -p 'require("./package.json").version')"
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          preview_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-preview\.(0|[1-9][0-9]*)$'
+          [[ "$version" =~ $semver_re ]] || { echo "::error::package.json version '$version' is not valid strict SemVer."; exit 1; }
+          stable_release=false
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] && stable_release=true
+          expected_tag="v${version}"
+          [ "$CONFIRM_TAG" = "$expected_tag" ] || { echo "::error::confirm_tag must be $expected_tag, got $CONFIRM_TAG."; exit 1; }
+          if [ "$branch" = dev ]; then
+            [[ "$version" =~ $preview_re ]] || { echo "::error::Releases from dev require X.Y.Z-preview.N, got $version."; exit 1; }
+            dist_tag="$INPUT_DIST_TAG"
+            add_preview_alias="$INPUT_PREVIEW_ALIAS"
+            [ "$dist_tag" = preview ] && add_preview_alias=false
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "🆕 Tag ${{ steps.version.outputs.tag }} does not exist — creating release."
+            [ "$stable_release" = true ] || { echo "::error::Releases from main require a stable MAJOR.MINOR.PATCH version, got $version."; exit 1; }
+            dist_tag=latest
+            add_preview_alias=false
           fi
+          if [ "${{ inputs.publish_standalone }}" = true ] && [ "${{ inputs.build_standalone }}" != true ]; then
+            echo "::error::publish_standalone requires build_standalone=true."; exit 1
+          fi
+          if [ "${{ inputs.publish_package_managers }}" = true ] && { [ "${{ inputs.build_standalone }}" != true ] || [ "${{ inputs.publish_standalone }}" != true ]; }; then
+            echo "::error::publish_package_managers requires build_standalone=true and publish_standalone=true."; exit 1
+          fi
+          {
+            echo "version=$version"; echo "tag=$expected_tag"; echo "stable_release=$stable_release"; echo "branch=$branch"
+            echo "dist_tag=$dist_tag"; echo "add_preview_alias=$add_preview_alias"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved $expected_tag from $branch → npm dist-tag '$dist_tag' (preview alias: $add_preview_alias, stable: $stable_release)."
 
-      - name: Create git tag
-        if: steps.check_tag.outputs.exists == 'false'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+  verify:
+    name: Verify at exact SHA (full CI, policy gates, pack, privacy, manifest)
+    needs: guard
+    permissions:
+      contents: read
+    uses: ./.github/workflows/squad-release-verify.yml
+    with:
+      source_sha: ${{ inputs.expected_sha }}
+      expected_version: ${{ needs.guard.outputs.version }}
 
-      - name: Create GitHub Release
-        if: steps.check_tag.outputs.exists == 'false'
+  package-manager-preflight:
+    name: Preflight selected package-manager credentials
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Verify Homebrew and WinGet auth plus push access before release effects
+        if: inputs.publish_package_managers
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STABLE_RELEASE: ${{ steps.version.outputs.stable_release }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
         run: |
-          if [ "$STABLE_RELEASE" = "true" ]; then
-            gh release create "${{ steps.version.outputs.tag }}" \
-              --title "${{ steps.version.outputs.tag }}" \
-              --generate-notes \
-              --latest=false
-          else
-            gh release create "${{ steps.version.outputs.tag }}" \
-              --title "${{ steps.version.outputs.tag }}" \
-              --generate-notes \
-              --prerelease
-          fi
+          set -euo pipefail
+          [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::HOMEBREW_TAP_TOKEN is not configured"; exit 1; }
+          [ -n "$WINGET_CREATE_GITHUB_TOKEN" ] || { echo "::error::WINGET_CREATE_GITHUB_TOKEN is not configured"; exit 1; }
 
-      - name: Verify release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STABLE_RELEASE: ${{ steps.version.outputs.stable_release }}
-        run: |
-          expected_prerelease=true
-          if [ "$STABLE_RELEASE" = "true" ]; then
-            expected_prerelease=false
-          fi
+          homebrew_login="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api user --jq '.login')" || {
+            echo "::error::HOMEBREW_TAP_TOKEN failed authentication"; exit 1;
+          }
+          homebrew_push="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api repos/bradygaster/homebrew-squad --jq '.permissions.push // false')"
+          [ "$homebrew_push" = true ] || { echo "::error::HOMEBREW_TAP_TOKEN ($homebrew_login) lacks push access to bradygaster/homebrew-squad"; exit 1; }
 
-          actual_prerelease="$(gh release view "${{ steps.version.outputs.tag }}" --json isPrerelease --jq '.isPrerelease')"
-          if [ "$actual_prerelease" != "$expected_prerelease" ]; then
-            echo "::error::Release ${{ steps.version.outputs.tag }} prerelease state is $actual_prerelease; expected $expected_prerelease."
-            exit 1
-          fi
+          winget_login="$(GH_TOKEN="$WINGET_CREATE_GITHUB_TOKEN" gh api user --jq '.login')" || {
+            echo "::error::WINGET_CREATE_GITHUB_TOKEN failed authentication"; exit 1;
+          }
+          winget_push="$(GH_TOKEN="$WINGET_CREATE_GITHUB_TOKEN" gh api repos/tamirdresher/winget-pkgs --jq '.permissions.push // false')"
+          [ "$winget_push" = true ] || { echo "::error::WINGET_CREATE_GITHUB_TOKEN ($winget_login) lacks push access to tamirdresher/winget-pkgs"; exit 1; }
+          GH_TOKEN="$WINGET_CREATE_GITHUB_TOKEN" gh api repos/microsoft/winget-pkgs --silent
+          echo "✅ Homebrew ($homebrew_login) and WinGet ($winget_login) credentials authenticate and have required push access."
 
-          gh release view "${{ steps.version.outputs.tag }}"
-          echo "✅ Release ${{ steps.version.outputs.tag }} created and verified."
-
-  npm:
-    name: Publish npm packages
-    needs: release
-    if: needs.release.outputs.created == 'true'
+  release:
+    name: Tag and draft GitHub release
+    needs: [guard, verify, package-manager-preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
+    outputs:
+      created: ${{ steps.tag.outputs.created }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
+
+      - name: Re-assert identity and create or reconcile the release tag
+        id: tag
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          BRANCH: ${{ needs.guard.outputs.branch }}
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          tip="$(git ls-remote --exit-code origin "refs/heads/${BRANCH}" | cut -f1)"
+          for pair in "dispatch:$DISPATCH_SHA" "workflow:$WORKFLOW_SHA" "checkout:$head" "branch-tip:$tip"; do
+            name="${pair%%:*}"; value="${pair#*:}"
+            test "$value" = "$EXPECTED_SHA" || { echo "::error::$name is $value, expected $EXPECTED_SHA"; exit 1; }
+          done
+          git fetch origin "+refs/tags/${TAG}:refs/tags/${TAG}" --no-tags 2>/dev/null || true
+          if git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            target="$(git rev-list -n 1 "refs/tags/${TAG}")"
+            test "$target" = "$EXPECTED_SHA" || { echo "::error::Tag $TAG already exists and points at $target, not $EXPECTED_SHA. A tag must never be moved; pick a new version."; exit 1; }
+            echo "Tag $TAG already targets $EXPECTED_SHA (reconciliation run)."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG" "$EXPECTED_SHA"
+            git push origin "refs/tags/${TAG}"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-assert tag identity and create the GitHub release as a draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          STABLE_RELEASE: ${{ needs.guard.outputs.stable_release }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs \
+            --source-sha "$EXPECTED_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG"
+          if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving its state for the publish job to reconcile."
+            exit 0
+          fi
+          flags=(--draft --title "$TAG" --generate-notes --target "$EXPECTED_SHA")
+          if [ "$STABLE_RELEASE" = true ]; then flags+=(--latest=false); else flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}"
+          echo "Draft release $TAG created."
+
+  npm:
+    name: Publish npm packages (staged pair, fail-closed reconciliation)
+    needs: [guard, verify, release]
+    permissions:
+      contents: read
+      actions: read
       id-token: write
-      pull-requests: write
     uses: ./.github/workflows/squad-npm-publish.yml
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     with:
-      version: ${{ needs.release.outputs.version }}
-      source_ref: ${{ needs.release.outputs.tag }}
+      version: ${{ needs.guard.outputs.version }}
+      source_sha: ${{ inputs.expected_sha }}
+      dist_tag: ${{ needs.guard.outputs.dist_tag }}
+      add_preview_alias: ${{ needs.guard.outputs.add_preview_alias == 'true' }}
+      evidence_artifact: ${{ needs.verify.outputs.evidence_artifact }}
 
   standalone:
-    name: Publish standalone bundles
-    needs: release
-    if: needs.release.outputs.created == 'true'
+    name: Standalone bundles (artifacts; publication opt-in)
+    needs: [guard, verify, release]
+    if: inputs.build_standalone
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/squad-standalone-release.yml
     secrets:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
     with:
-      upload: true
-      release_tag: ${{ needs.release.outputs.tag }}
-      source_ref: ${{ needs.release.outputs.tag }}
+      upload: ${{ inputs.publish_standalone }}
+      publish_package_managers: ${{ inputs.publish_standalone && inputs.publish_package_managers }}
+      release_tag: ${{ needs.guard.outputs.tag }}
+      source_ref: ${{ inputs.expected_sha }}
+      source_sha: ${{ inputs.expected_sha }}
+
+  release-completion:
+    name: Require every selected publication channel
+    needs: [guard, npm, standalone]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check selected channel outcomes
+        env:
+          NPM_RESULT: ${{ needs.npm.result }}
+          NPM_OUTCOME: ${{ needs.npm.outputs.outcome }}
+          STANDALONE_RESULT: ${{ needs.standalone.result }}
+          BUILD_STANDALONE: ${{ inputs.build_standalone }}
+          PUBLISH_STANDALONE: ${{ inputs.publish_standalone }}
+          PUBLISH_PACKAGE_MANAGERS: ${{ inputs.publish_package_managers }}
+        run: |
+          set -euo pipefail
+          if [ "$NPM_RESULT" != success ] || [ "$NPM_OUTCOME" != COMPLETE ]; then
+            echo "::error::npm did not reconcile COMPLETE (job=$NPM_RESULT outcome=$NPM_OUTCOME)"
+            exit 1
+          fi
+          if [ "$BUILD_STANDALONE" = true ] || [ "$PUBLISH_STANDALONE" = true ] || [ "$PUBLISH_PACKAGE_MANAGERS" = true ]; then
+            [ "$STANDALONE_RESULT" = success ] || {
+              echo "::error::selected standalone/package-manager channels did not complete (job=$STANDALONE_RESULT)"; exit 1;
+            }
+          fi
+
+  publish-release:
+    name: Publish GitHub release after selected channels complete
+    needs: [guard, release-completion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
+      - name: Re-assert tag identity, publish and verify the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          STABLE_RELEASE: ${{ needs.guard.outputs.stable_release }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/release/assert-publish-identity.mjs \
+            --source-sha "$EXPECTED_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG"
+          gh release edit "$TAG" --draft=false
+          expected_prerelease=true; [ "$STABLE_RELEASE" = true ] && expected_prerelease=false
+          actual="$(gh release view "$TAG" --json isPrerelease,isDraft --jq '"\(.isPrerelease) \(.isDraft)"')"
+          test "$actual" = "$expected_prerelease false" || { echo "::error::Release $TAG state is '$actual'; expected prerelease=$expected_prerelease draft=false."; exit 1; }
+          gh release view "$TAG"
+          echo "✅ Release $TAG published after every selected channel completed."
 
   promote-latest:
     name: Promote complete stable release to latest
-    needs: [release, npm, standalone]
-    if: needs.release.outputs.created == 'true' && needs.release.outputs.stable_release == 'true'
+    needs: [guard, publish-release, standalone]
+    if: needs.guard.outputs.stable_release == 'true' && inputs.publish_standalone
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
       - name: Verify standalone assets and promote latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release.outputs.tag }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
           required_assets=(
@@ -250,29 +371,21 @@ jobs:
             squad-win32-arm64.zip
             SHA256SUMS.txt
           )
-          mapfile -t published_assets < <(
-            gh release view "${TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --json assets \
-              --jq '.assets[].name'
-          )
-
+          mapfile -t published_assets < <(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')
           missing_assets=()
           for asset in "${required_assets[@]}"; do
-            if ! printf '%s\n' "${published_assets[@]}" | grep -Fxq "${asset}"; then
-              missing_assets+=("${asset}")
-            fi
+            printf '%s\n' "${published_assets[@]}" | grep -Fxq "${asset}" || missing_assets+=("${asset}")
           done
           if [ "${#missing_assets[@]}" -gt 0 ]; then
-            printf '::error::Release %s is incomplete; refusing latest promotion. Missing: %s\n' \
-              "${TAG}" "${missing_assets[*]}"
+            printf '::error::Release %s is incomplete; refusing latest promotion. Missing: %s\n' "${TAG}" "${missing_assets[*]}"
             exit 1
           fi
-
+          node scripts/release/assert-publish-identity.mjs \
+            --source-sha "$EXPECTED_SHA" \
+            --dispatch-sha "${{ github.sha }}" \
+            --workflow-sha "${{ github.workflow_sha }}" \
+            --tag "$TAG"
           gh release edit "${TAG}" --latest --repo "${GITHUB_REPOSITORY}"
           latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
-          if [ "${latest_tag}" != "${TAG}" ]; then
-            echo "::error::Latest release is ${latest_tag}; expected ${TAG}."
-            exit 1
-          fi
+          test "${latest_tag}" = "${TAG}" || { echo "::error::Latest release is ${latest_tag}; expected ${TAG}."; exit 1; }
           echo "✅ Complete stable release ${TAG} promoted to latest."

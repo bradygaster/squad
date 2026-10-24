@@ -28,21 +28,14 @@ import {
   VALID_CONTEXT_TIERS,
   MODEL_CATALOG,
 } from '@bradygaster/squad-sdk/config';
-import { fatal } from '../core/errors.js';
+import { fatal, fatalNoSquad } from '../core/errors.js';
+import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { BOLD, RESET, GREEN, DIM, RED, YELLOW } from '../core/output.js';
 
+// The SDK resolver is the only squad locator: it stops at the repository root and never
+// treats the user profile (~/.squad, SQUAD_HOME, platform config dir) as a project.
 function resolveSquadDir(cwd: string): string | null {
-  let dir = cwd;
-  for (let i = 0; i < 10; i++) {
-    const candidate = join(dir, '.squad');
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-    const parent = join(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
+  return resolveSquad(cwd);
 }
 
 function listAgents(squadDir: string): string[] {
@@ -245,7 +238,7 @@ async function runContextTierSubcommand(squadDir: string, subArgs: string[]): Pr
 export async function runConfig(cwd: string, subArgs: string[]): Promise<void> {
   const squadDir = resolveSquadDir(cwd);
   if (!squadDir) {
-    fatal('No squad found. Run "squad init" first.');
+    fatalNoSquad();
     return;
   }
 

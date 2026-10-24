@@ -60,3 +60,4 @@ Dockerfile.* text eol=lf
 
 # Charter conformance binds exact document bytes across platform checkouts.
 docs/specification/charter-v0.1.md text eol=lf
+scripts/release/manifest.schema.json text eol=lf

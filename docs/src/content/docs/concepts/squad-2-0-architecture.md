@@ -63,7 +63,7 @@ Each host adapter declares canonical capability tokens (`@bradygaster/squad-sdk/
 | Host (`ClientId`) | Runtime capability tokens (`capability-matrix.json`) | Projection tokens | Transport modes |
 |---|---|---|---|
 | `copilot` | `approvals`, `background-runs`, `cancel-run`, `cursor-reconnect`, `mcp-bridge`, `subagents`, `typed-content-parts` | `native-hooks`, `steering-files` | `mcp-bridge`, `http-backend`, `in-process` |
-| `claude` | `approvals`, `cancel-run`, `cursor-reconnect`, `mcp-bridge`, `subagents`, `typed-content-parts` | `native-hooks`, `steering-files` | `mcp-bridge`, `http-backend` |
+| `claude` | `approvals`, `background-runs`, `cancel-run`, `cursor-reconnect`, `mcp-bridge`, `subagents`, `typed-content-parts` | `native-hooks`, `steering-files` | `mcp-bridge`, `http-backend` |
 | `kiro` | `approvals`, `cancel-run`, `cursor-reconnect`, `mcp-bridge`, `subagents`, `typed-content-parts` | `native-hooks`, `steering-files` | `mcp-bridge`, `http-backend` |
 | `opencode` | `approvals`, `background-runs`, `cancel-run`, `cursor-reconnect`, `mcp-bridge`, `subagents`, `typed-content-parts` | `native-hooks` | `mcp-bridge`, `http-backend` |
 | `cursor` | `approvals`, `cancel-run`, `cursor-reconnect`, `mcp-bridge`, `subagents`, `typed-content-parts` | `steering-files` | `mcp-bridge`, `http-backend` |

@@ -116,7 +116,7 @@ describe('REPL UX E2E — What Users Actually See', { timeout: 30_000 }, () => {
   // Test 1: First Run — No Team Exists
   // ────────────────────────────────────────────────────────────────────────
   describe('First Run — No Team Exists', () => {
-    // Isolate from any real global squad on the host machine so the CLI
+    // Isolate from any real user-profile state on the host machine so the CLI
     // takes the "no squad anywhere" code-path (welcome banner, exit 0).
     const noGlobalSquadEnv = () => ({
       APPDATA: tempDir,
@@ -129,7 +129,7 @@ describe('REPL UX E2E — What Users Actually See', { timeout: 30_000 }, () => {
       const output = stripAnsi(result.combined);
 
       // Non-TTY: CLI shows either "Welcome to Squad" (no squad found)
-      // or "requires an interactive terminal" (if a global squad is detected)
+      // or "requires an interactive terminal"
       expect(output).toMatch(/Welcome to Squad|requires an interactive terminal/);
     });
 
@@ -244,7 +244,7 @@ describe('REPL UX E2E — What Users Actually See', { timeout: 30_000 }, () => {
     });
 
     it('first-run welcome appears exactly once', async () => {
-      // Isolate from host global squad so CLI takes the first-run path
+      // Isolate from host profile state so CLI takes the first-run path
       const noGlobalEnv = { APPDATA: tempDir, LOCALAPPDATA: tempDir, XDG_CONFIG_HOME: tempDir };
       const result = await runCli([], { cwd: tempDir, env: noGlobalEnv });
       const output = stripAnsi(result.combined);
@@ -259,7 +259,7 @@ describe('REPL UX E2E — What Users Actually See', { timeout: 30_000 }, () => {
     });
 
     it('no duplicate "Your AI agent team" tagline', async () => {
-      // Isolate from host global squad so CLI takes the first-run path
+      // Isolate from host profile state so CLI takes the first-run path
       const noGlobalEnv = { APPDATA: tempDir, LOCALAPPDATA: tempDir, XDG_CONFIG_HOME: tempDir };
       const result = await runCli([], { cwd: tempDir, env: noGlobalEnv });
       const output = stripAnsi(result.combined);

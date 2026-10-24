@@ -124,14 +124,6 @@ export {
   type OnboardResult,
 } from './onboarding.js';
 
-// --- Personal Squad Agents ---
-export {
-  resolvePersonalAgents,
-  mergeSessionCast,
-  type PersonalAgentMeta,
-  type PersonalAgentManifest,
-} from './personal.js';
-
 // --- Charter Types ---
 
 export interface AgentCharter {

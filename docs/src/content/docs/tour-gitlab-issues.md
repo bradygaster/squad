@@ -1,6 +1,6 @@
 # GitLab Issues Walkthrough
 
-> **🧪 Experimental.** GitLab Issues Mode is new. Commands, behavior, and integration details may change. [Feedback welcome.](https://github.com/bradygaster/squad/issues)
+> **🗺️ Planned, not shipped.** Squad 2.0 has no GitLab platform adapter (see [GitLab Issues Mode](features/gitlab-issues.md)). This walkthrough describes the intended experience; today it only works if you ask the coordinator to use `glab` ad hoc.
 
 A step-by-step tour of Squad's GitLab Issues workflow. This connects your team to a GitLab repository's issue tracker so agents can pick up issues, create branches, open Merge Requests, and handle review feedback.
 

@@ -49,7 +49,7 @@ const squadPath = resolveSquad('/home/user/project/src');
 
 ### `resolveGlobalSquadPath(): string`
 
-Get path to global personal squad. Returns platform-specific path: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows.
+Get the platform-specific Squad config directory (`~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows). Squad 2.0 keeps only externalized project state there (`projects/<projectKey>/`, see `squad externalize`); no squad is resolved from it.
 
 ### `ensureSquadPath(startPath?: string): string`
 
@@ -400,7 +400,7 @@ Build a human-readable display of upstream sources (for `squad status`).
 | Export | Type | Module | Purpose |
 |--------|------|--------|---------|
 | `resolveSquad` | function | resolution | Find .squad directory |
-| `resolveGlobalSquadPath` | function | resolution | Get ~/.squad path |
+| `resolveGlobalSquadPath` | function | resolution | Platform config dir (externalized project state only) |
 | `ensureSquadPath` | function | resolution | Find or create .squad |
 | `MODELS` | constant | runtime/constants | Model catalog |
 | `TIMEOUTS` | constant | runtime/constants | Standard timeouts |

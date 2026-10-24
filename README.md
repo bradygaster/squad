@@ -174,8 +174,8 @@ Say **"squad commands"** in chat to see a categorized menu of common operations 
 
 | Command | What it does |
 |---------|-------------|
-| `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `cast`; `--client <list>` also projects Claude Code, Kiro, OpenCode, Cursor, Codex and Antigravity; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
-| `squad upgrade` | Update Squad-owned files to latest; never touches your team state; `--client <list>` adds hosts and refreshes every configured projection; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
+| `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `cast`; `--client <list>` also projects Claude Code, Kiro, OpenCode, Cursor, Codex and Antigravity; use `--mode remote <path>` for dual-root mode |
+| `squad upgrade` | Update Squad-owned files to latest; never touches your team state; `--client <list>` adds hosts and refreshes every configured projection; use `--migrate-directory` to rename `.ai-team/` → `.squad/` |
 | `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for dev-channel prerelease builds |
 | `squad update-check` | Report cached CLI update status for tooling/CI; use `--json` for structured output, `--refresh` to bypass the cache |
 | `squad status` | Show which squad is active and why |

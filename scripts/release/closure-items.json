@@ -1,0 +1,614 @@
+{
+  "$comment": "Squad 2.0 closure matrix inputs: the 46 reviewer findings (expanded to 49 logical items by splitting BRADY-05/08 and the three R2 ids) with the evidence locations, source anchors and locking-test titles reviewers accepted. scripts/release/build-manifest.mjs re-verifies every row against the tree at the release SHA; nothing here is trusted without that re-verification.",
+  "source": "squad-2.0-closure-matrix.md (reviewer closure matrix for Stack #2281), carried from the f22847a9 re-verification",
+  "stack": {
+    "id": 2281,
+    "repo": "bradygaster/squad",
+    "base": "559e0f98e611b6006cf5da716dcb75fc3f5000b5",
+    "mergedDev": "f22847a9898d5c90d70a679ee63d9d5f49cd5fed",
+    "layers": [
+      {
+        "layer": "A",
+        "pr": 2277,
+        "topic": "host feature matrix and live Claude/OpenCode evidence",
+        "head": "86402cce6b5d28b4e86841ad11e3c8b69fe2f011",
+        "squash": "894e3c46e7eb760f8c883b61e761af304d93a5f4"
+      },
+      {
+        "layer": "B",
+        "pr": 2278,
+        "topic": "runtime upstream inheritance and confined/race-safe source reads",
+        "head": "e4c7ee16aec971a6242145fee8536791a76af3db",
+        "squash": "e3de47a1383019819205ff4034977301d42f8171"
+      },
+      {
+        "layer": "C",
+        "pr": 2279,
+        "topic": "retirement of the 1.x profile-level features plus F6/F7/F8",
+        "head": "94e76757811555184c2feb55c812cb163d927ec4",
+        "squash": "f15496877dd9066371d10c5ddc522e94b61a8a35"
+      },
+      {
+        "layer": "D",
+        "pr": 2282,
+        "topic": "old-version by OS upgrade matrix",
+        "head": "d4c15779ffedf6642f0e4881d2901df349ba91e8",
+        "squash": "f22847a9898d5c90d70a679ee63d9d5f49cd5fed"
+      }
+    ],
+    "citedCiRun": {
+      "id": 39907736729,
+      "url": "https://github.com/bradygaster/squad/actions/runs/39907736729",
+      "workflow": "Squad CI",
+      "headSha": "f22847a9898d5c90d70a679ee63d9d5f49cd5fed",
+      "consoleSummary": {
+        "testFilesPassed": 349,
+        "testFilesSkipped": 1,
+        "testsPassed": 12142,
+        "expectedFailures": 35,
+        "testsSkipped": 56,
+        "todos": 47,
+        "testsTotal": 12286
+      }
+    }
+  },
+  "items": [
+    {
+      "id": "2238-T01",
+      "finding": "Lexical prefix check; symlinked `.squad/backend` escapes state dir",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "lstatSync",
+      "sourceEvidence": "`squad-sdk/src/backend/local-backend.ts` (`lstatSync`/`isSymbolicLink` guard)",
+      "lockingTests": "backend `1. rejects symlinked/junctioned state paths`; `2. a missing leaf under a symlinked parent cannot escape…`; `G1 … refuses to follow a symlink/junction…`"
+    },
+    {
+      "id": "2238-T02",
+      "finding": "`cancelRun` reuses stale snapshot across awaited cancels",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "cancelRun",
+      "sourceEvidence": "`local-backend.ts` (locked `tx()`)",
+      "lockingTests": "`2+6. concurrent writers on one file store never lose an update`; `1. interleaved writers from two instances serialize…`"
+    },
+    {
+      "id": "2238-T03",
+      "finding": "Terminal harness event leaves `pendingApproval`; late approval revives turn",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "pendingApproval",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`3. a terminal harness event cancels the pending approval…`; `5. cancel / approval / terminal event in every order never revives…`; `G6 … a late harness state event cannot revive a terminal run`"
+    },
+    {
+      "id": "2238-T04",
+      "finding": "Harness events bypass epoch fencing",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "harness.epoch-rejected",
+      "sourceEvidence": "`local-backend.ts` (`harness.epoch-rejected`)",
+      "lockingTests": "`4. harness events from a superseded epoch are dropped`; `a stale-epoch harness event leaves an auditable control event`; `G5 … auditable control event`"
+    },
+    {
+      "id": "2238-T05",
+      "finding": "Omitted `epoch` bypasses fencing",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "epoch",
+      "sourceEvidence": "`local-backend.ts` (`stale-epoch`)",
+      "lockingTests": "`5. omitting the epoch on a fenced conversation is rejected for every write`; `3. stale or missing epoch fails closed…`; `G5 rejects a stale epoch and, once fenced, an omitted epoch`"
+    },
+    {
+      "id": "2238-T06",
+      "finding": "No cross-process lock / CAS on snapshot save",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "${lockPath}.recover",
+      "sourceEvidence": "`local-backend.ts` (per-conversation lock, `${lockPath}.recover`)",
+      "lockingTests": "`lock: recovers an abandoned lock exactly once and never steals a live one`; round-4 `A/B/C with a REAL second reclaimer…`"
+    },
+    {
+      "id": "2238-T07",
+      "finding": "Projection install/rollback use unchecked paths",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "resolveInsideRoot",
+      "sourceEvidence": "`squad-sdk/src/client/adapters/apply.ts` (`resolveInsideRoot`)",
+      "lockingTests": "clients `rejects ../ and symlinked path components instead of writing outside the workspace`; `G1 path containment: client projections (resolveInsideRoot)` ×15"
+    },
+    {
+      "id": "2238-T08",
+      "finding": "`--client` parsed after remote-init branch returns",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-cli/src/cli-entry.ts"
+      ],
+      "anchor": "--client",
+      "sourceEvidence": "`squad-cli/src/cli-entry.ts`",
+      "lockingTests": "`clients.ts: imports from @bradygaster/squad-sdk/client, merges repeated --client flags…`; Brady `2. every --client help line fits 80 columns`"
+    },
+    {
+      "id": "2238-T09",
+      "finding": "Malformed `.squad/config.json` treated as empty and overwritten",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        ".squad/config.json",
+        "packages/squad-cli/src/cli/core/clients.ts"
+      ],
+      "anchor": "persistClients",
+      "sourceEvidence": "`squad-cli/src/cli/core/clients.ts`",
+      "lockingTests": "`persistClients refuses to overwrite a malformed config.json`; `G2 … leaves a malformed .mcp.json untouched…`"
+    },
+    {
+      "id": "2238-T10",
+      "finding": "`createConversation` retry duplicates (no stable id / idempotency key)",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/durable-http-backend.ts"
+      ],
+      "anchor": "createConversation",
+      "sourceEvidence": "`backend/durable-http-backend.ts` (`Idempotency-Key create:<id>`)",
+      "lockingTests": "`10. createConversation retries reuse one conversation id and idempotency key`; `7. … keeps one Idempotency-Key when the response is lost`; `G3 createConversation is idempotent…`"
+    },
+    {
+      "id": "2238-T11",
+      "finding": "Learned epoch backend-wide, not per conversation",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/durable-http-backend.ts"
+      ],
+      "anchor": "epochs = new Map<string, LeaseEpoch>()",
+      "sourceEvidence": "`durable-http-backend.ts` (`epochs = new Map<string, LeaseEpoch>()`)",
+      "lockingTests": "`11. a learned epoch is scoped to its conversation`; `8. two conversations advance independent epochs without cross-talk`"
+    },
+    {
+      "id": "2238-T12",
+      "finding": "Decision persisted before delivery; failed delivery unretryable",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "operationId",
+      "sourceEvidence": "`local-backend.ts` (outbox, stable `operationId`)",
+      "lockingTests": "`7. a failed approval delivery is retryable and clears once the harness acknowledges`; `4. a failed delivery rolls forward as retryable…`; `approval outbox keeps one stable operationId across retries and restart`"
+    },
+    {
+      "id": "2238-T13",
+      "finding": "Reload loses approval run identity (seq-only lookup)",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "(runId, seq)",
+      "sourceEvidence": "`local-backend.ts` (`(runId, seq)`)",
+      "lockingTests": "`8. run identity (runId, seq) survives reload…`; `6. restart preserves (runId, seq), approval version and terminal state`"
+    },
+    {
+      "id": "2238-T14",
+      "finding": "Cancelling pending approval leaves v1 / no `decidedAt`",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "decidedAt",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`9. cancelling a pending approval bumps version and timestamp`; `approval version is monotonic (prev + 1), not hardcoded`"
+    },
+    {
+      "id": "2238-T15",
+      "finding": "Wrong-typed MCP containers silently replaced",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts",
+        "packages/squad-sdk/src/client/adapters/adapters.ts"
+      ],
+      "anchor": "refuses wrong-typed MCP containers and squad_state entries per file",
+      "sourceEvidence": "`apply.ts` / `adapters.ts`",
+      "lockingTests": "`refuses wrong-typed MCP containers and squad_state entries per file`; `G2 refuses to overwrite a container or entry of the wrong type`"
+    },
+    {
+      "id": "2238-T16",
+      "finding": "TOML updater replaces only first line of multiline `args = [`",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "args = [",
+      "sourceEvidence": "`apply.ts` (`assignmentEnd`)",
+      "lockingTests": "`TOML: replaces multiline arrays whole, tolerates header spacing, removes child tables`; Brady `11. TOML [[array_table]] boundaries and quoted keys survive upsert/remove`"
+    },
+    {
+      "id": "2238-T17",
+      "finding": "Codex removal leaves `[mcp_servers.squad_state.env]` child table",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "[mcp_servers.squad_state.env]",
+      "sourceEvidence": "`apply.ts` `removeTomlTable` (`startsWith(\\`${table}.\\`)`)",
+      "lockingTests": "same as T16; `removeTomlTable removes only the managed table and keeps the array tables`; #2251 `Thread 1: quoted-dot TOML server names … remain untouched`"
+    },
+    {
+      "id": "2238-T18",
+      "finding": "Uninstalling one host removes shared `.mcp.json` `squad_state`",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "squad_state",
+      "sourceEvidence": "`apply.ts`",
+      "lockingTests": "`uninstalling one host keeps the shared .mcp.json entry while another host still uses it`"
+    },
+    {
+      "id": "2238-T19",
+      "finding": "`squadDir` not applied to dispatch section",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/coordinator.ts"
+      ],
+      "anchor": "squadDir",
+      "sourceEvidence": "`client/adapters/coordinator.ts`",
+      "lockingTests": "`applies a custom squadDir to the dispatch section too`"
+    },
+    {
+      "id": "2239-T01",
+      "finding": "`persistClients` writes through symlinked `config.json`",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-cli/src/cli/core/clients.ts"
+      ],
+      "anchor": "persistClients",
+      "sourceEvidence": "`clients.ts` (`resolveInsideRoot`)",
+      "lockingTests": "e2e `Open review threads on #2239 > persistClients refuses to write through a symlinked config.json`"
+    },
+    {
+      "id": "2239-T02",
+      "finding": "Manifest-only mismatch sent through genesis",
+      "originalLayer": "L2 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/casting/handwritten-registry.ts"
+      ],
+      "anchor": "R3-13: a manifest-only mismatch keeps the existing history and bumps the revision by one",
+      "sourceEvidence": "`squad-sdk/src/casting/handwritten-registry.ts`",
+      "lockingTests": "e2e `R3-13: a manifest-only mismatch keeps the existing history and bumps the revision by one`; `R3-13: preserves retired agents…`; #2252 `Thread 4: refuses to recommit a mixed-generation pair…`"
+    },
+    {
+      "id": "2239-T03",
+      "finding": "Repair/backfill write without casting lock / journal",
+      "originalLayer": "L2 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/casting/handwritten-registry.ts"
+      ],
+      "anchor": "acquireCastingRegistryLock",
+      "sourceEvidence": "`handwritten-registry.ts` (`acquireCastingRegistryLock`, `commitCastingRegistryPair`)",
+      "lockingTests": "casting `acquires registry.lock BEFORE reading registry.json, history.json, or commit manifest`; `backfillCastingRegistryFromTeam acquires registry.lock BEFORE…`; rollback describe ×7"
+    },
+    {
+      "id": "2239-T04",
+      "finding": "`[[array_table]]` headers not section boundaries",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "[[array_table]]",
+      "sourceEvidence": "`apply.ts`",
+      "lockingTests": "`upsertTomlTable stops at [[array_table]] and rewrites quoted managed keys in place`; `inserts a missing key before the next [[array_table]], not after it`"
+    },
+    {
+      "id": "2239-T05",
+      "finding": "`createMcpBackend` discards configured storage provider",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-cli/src/cli/core/backend-mcp.ts",
+        "packages/squad-sdk/src/backend/state-backend-store.ts"
+      ],
+      "anchor": "createMcpBackend",
+      "sourceEvidence": "`cli/core/backend-mcp.ts` (`createStateBackendStore`), `backend/state-backend-store.ts`",
+      "lockingTests": "e2e `R3-9: createMcpBackend honors a configured (non-local) state backend…`; Brady `9.`; #2253 `8. createStateBackendStore derives shared lock identity across linked git worktrees…`"
+    },
+    {
+      "id": "2239-T06",
+      "finding": "`runUpgrade` preflight rejects before repair",
+      "originalLayer": "L2 ✔ (+L3 `b7313abd`)",
+      "evidenceLocations": [
+        "packages/squad-cli/src/cli/core/upgrade.ts"
+      ],
+      "anchor": "runUpgrade",
+      "sourceEvidence": "`cli/core/upgrade.ts`",
+      "lockingTests": "e2e `runUpgrade repairs a handwritten casting registry instead of failing the strict preflight`; casting `runUpgrade(..., { dryRun: true }) succeeds on a handwritten registry…`"
+    },
+    {
+      "id": "2239-T07",
+      "finding": "`res.text()` failure outside retry catch",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/durable-http-backend.ts"
+      ],
+      "anchor": "res.text()",
+      "sourceEvidence": "`durable-http-backend.ts`",
+      "lockingTests": "`P2 an HTTP body-read failure is retried like any other transient failure`; Brady `10.`; #2253 `3. … health probe fails when response-body read rejects after HTTP 200 headers`"
+    },
+    {
+      "id": "2239-T08",
+      "finding": "Quoted TOML keys → duplicate keys",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "upsertTomlTable",
+      "sourceEvidence": "`apply.ts`",
+      "lockingTests": "`… rewrites quoted managed keys in place`; Brady `11.`"
+    },
+    {
+      "id": "2239-T09",
+      "finding": "Capability tokens disagree with `capability-matrix.json`",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "test-fixtures/spec/suite-v0.2/capability-matrix.json",
+        "packages/squad-sdk/src/client/adapters/capabilities.ts"
+      ],
+      "anchor": "R3-12: CAPABILITY_TOKENS_BY_HOST carries the full capability-matrix baseline for all 7 hosts",
+      "sourceEvidence": "`client/adapters/capabilities.ts`",
+      "lockingTests": "e2e `R3-12: CAPABILITY_TOKENS_BY_HOST carries the full capability-matrix baseline for all 7 hosts`; Brady `12.`"
+    },
+    {
+      "id": "BRADY-01",
+      "finding": "`vitest.config.ts` SDK source alias",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "vitest.config.ts"
+      ],
+      "anchor": "vitest.config.ts has no SDK source alias",
+      "sourceEvidence": "`vitest.config.ts`",
+      "lockingTests": "`Brady re-review 13 defect repros > 1. vitest.config.ts has no SDK source alias`"
+    },
+    {
+      "id": "BRADY-02",
+      "finding": "`--client` help > 80 cols",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-cli/src/cli-entry.ts",
+        "packages/squad-cli/src/cli/core/command-help.ts"
+      ],
+      "anchor": "--client",
+      "sourceEvidence": "`cli-entry.ts`, `command-help.ts`",
+      "lockingTests": "`2. every --client help line fits 80 columns`"
+    },
+    {
+      "id": "BRADY-03",
+      "finding": "Legacy outbox entries drop each other",
+      "originalLayer": "L3 ✔ (`legacy:<kind>:…`)",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "P1 legacy outbox entries (id, no operationId): acknowledging one never drops another",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`P1 legacy outbox entries (id, no operationId): acknowledging one never drops another`; round-4 `legacy outbox normalization is written through under the lock BEFORE harness delivery…`"
+    },
+    {
+      "id": "BRADY-04",
+      "finding": "A/B/C stale-lock recovery → two owners",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "recoverStaleLock",
+      "sourceEvidence": "`local-backend.ts` (`recoverStaleLock`, `reclaimAbandonedMutex`)",
+      "lockingTests": "`P1 overlapping stale-lock recovery (A observes, B takes over, C waits) never yields two owners`; round-4 ×3"
+    },
+    {
+      "id": "BRADY-05",
+      "groupedFrom": "BRADY-05/08",
+      "finding": "Retry returns ORIGINAL cursor; payload mismatch = `conflict`",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "an admission retry returns the ORIGINAL admission cursor",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`P1 an admission retry returns the ORIGINAL admission cursor…`; `P2 the same (runId, seq) with a different payload is a conflict…`; `G3 a verbatim retry is a duplicate…`; #2253 `4. sendMessage deduplicates concurrent in-flight adapter.submit calls…`"
+    },
+    {
+      "id": "BRADY-08",
+      "groupedFrom": "BRADY-05/08",
+      "finding": "Retry returns ORIGINAL cursor; payload mismatch = `conflict`",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "the same (runId, seq) with a different payload is a conflict",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`P1 an admission retry returns the ORIGINAL admission cursor…`; `P2 the same (runId, seq) with a different payload is a conflict…`; `G3 a verbatim retry is a duplicate…`; #2253 `4. sendMessage deduplicates concurrent in-flight adapter.submit calls…`"
+    },
+    {
+      "id": "BRADY-06",
+      "finding": "Missing harness keeps durable delivery, fails retryably",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "P1 a missing harness keeps the durable delivery and reports a retryable error",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`P1 a missing harness keeps the durable delivery and reports a retryable error`"
+    },
+    {
+      "id": "BRADY-07",
+      "finding": "Synchronous `subscribe` replay recursion in `load()`",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "subscribe",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "`P2 synchronous replay during restart recovery does not re-enter load() or deadlock the lock`; #2253 `6. harness event callbacks verify the publishing harnessId…`"
+    },
+    {
+      "id": "BRADY-09",
+      "finding": "MCP broker ignores configured state backend",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-cli/src/cli/core/backend-mcp.ts"
+      ],
+      "anchor": "createMcpBackend",
+      "sourceEvidence": "`backend-mcp.ts`",
+      "lockingTests": "= 2239-T05"
+    },
+    {
+      "id": "BRADY-10",
+      "finding": "HTTP body read inside retry",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/durable-http-backend.ts"
+      ],
+      "anchor": "res.text()",
+      "sourceEvidence": "`durable-http-backend.ts`",
+      "lockingTests": "= 2239-T07"
+    },
+    {
+      "id": "BRADY-11",
+      "finding": "TOML `[[array_table]]` + quoted keys",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/apply.ts"
+      ],
+      "anchor": "[[array_table]]",
+      "sourceEvidence": "`apply.ts`",
+      "lockingTests": "= 2239-T04/T08; #2251 `Thread 2: TOML-looking headers … inside multiline strings are untouched`"
+    },
+    {
+      "id": "BRADY-12",
+      "finding": "Capability tokens vs matrix",
+      "originalLayer": "L1 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/client/adapters/capabilities.ts"
+      ],
+      "anchor": "R3-12: CAPABILITY_TOKENS_BY_HOST carries the full capability-matrix baseline for all 7 hosts",
+      "sourceEvidence": "`capabilities.ts`",
+      "lockingTests": "= 2239-T09"
+    },
+    {
+      "id": "BRADY-13",
+      "finding": "Casting repair keeps retired agents + valid manifest",
+      "originalLayer": "L2 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/casting/handwritten-registry.ts"
+      ],
+      "anchor": "13. casting repair keeps retired agents and commits a valid manifest",
+      "sourceEvidence": "`handwritten-registry.ts`",
+      "lockingTests": "`13. casting repair keeps retired agents and commits a valid manifest`; casting `preserves retired and inactive agents…`; #2252 `Thread 2: normalizes legacy-shaped retired records…`"
+    },
+    {
+      "id": "QB-LOCK-RECOVER",
+      "finding": "Gate: `${lockPath}.recover` owner-token + `recoverStaleMs`, deadline, dead reclaimer",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "${lockPath}.recover",
+      "sourceEvidence": "`local-backend.ts` (`recoverStaleMs`, `lockTimeoutMs`)",
+      "lockingTests": "round-4 `a reclaimer that died while holding ${lockPath}.recover cannot wedge recovery forever`; `a LIVE ${lockPath}.recover mutex is never taken…`; L3 `times out cleanly after lockTimeoutMs…`"
+    },
+    {
+      "id": "QB-OUTBOX-WT",
+      "finding": "Gate: legacy outbox write-through under lock before delivery",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts"
+      ],
+      "anchor": "legacy outbox normalization is written through under the lock BEFORE harness delivery and stays stable across a crash",
+      "sourceEvidence": "`local-backend.ts`",
+      "lockingTests": "round-4 `legacy outbox normalization is written through under the lock BEFORE harness delivery and stays stable across a crash`; #2253 `5. cancelling a turn removes queued approval deliveries…`"
+    },
+    {
+      "id": "QB-NONBYPASS",
+      "finding": "Gate: non-bypass journey adapter→broker→harness→approval→restart/reconnect",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "test/squad-20-all-scenarios.e2e.test.ts"
+      ],
+      "anchor": "Full non-bypass journey",
+      "sourceEvidence": "`test/squad-20-all-scenarios.e2e.test.ts`",
+      "lockingTests": "`Full non-bypass journey … > MCP broker (state-mcp tools over a file store)`; `… > HTTP broker (DurableSquad /v1 surface over a file store)`"
+    },
+    {
+      "id": "QB-17SKIPS",
+      "finding": "Gate: every skip accounted",
+      "originalLayer": "L1/L3",
+      "evidenceLocations": [
+        "test/docs-build.test.ts",
+        "test/clients-real-cli.test.ts",
+        "test/squad-20-real-clients-stdio.e2e.test.ts"
+      ],
+      "anchor": "skipIf",
+      "sourceEvidence": "`docs-build.test.ts`, `clients-real-cli.test.ts`, `squad-20-real-clients-stdio.e2e.test.ts`",
+      "lockingTests": "§2 skip table: 16 docs-build (docs deps) + 12 real-CLI `skipIf(!SQUAD_REAL_CLI_TESTS)` — none silent"
+    },
+    {
+      "id": "QB-MERGE-REF-CI",
+      "finding": "Gate: CI on PR merge ref",
+      "originalLayer": "all",
+      "evidenceLocations": [
+        ".github/workflows/squad-ci.yml"
+      ],
+      "anchor": "pull_request",
+      "sourceEvidence": "`.github/workflows/squad-ci.yml` (`pull_request` default checkout = merge ref)",
+      "lockingTests": "#2251 16✓ CLEAN · #2252 15✓ CLEAN · #2253 16✓ CLEAN · #2254 15✓ + 1 running (01:02)"
+    },
+    {
+      "id": "R2-RUNID",
+      "groupedFrom": "R2-RUNID / R2-CAPS / R2-APPROVALS-HEALTH-TRACE",
+      "finding": "Round-2: runId cancel, capability ∩, versioned approvals, `/health/*`, golden trace",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts",
+        "packages/squad-sdk/src/backend/durable-http-backend.ts",
+        "packages/squad-sdk/src/backend/types.ts"
+      ],
+      "anchor": "cancelRun",
+      "sourceEvidence": "`local-backend.ts`, `durable-http-backend.ts`, `types.ts`",
+      "lockingTests": "backend `squad 2.0 wire lock-in` ×5 incl. `golden trace > keeps identical canonical history across disconnect/reconnect…`; `probes /health/live and /health/ready, falls back to /health…`; `G4`, `G6`, `G7`"
+    },
+    {
+      "id": "R2-CAPS",
+      "groupedFrom": "R2-RUNID / R2-CAPS / R2-APPROVALS-HEALTH-TRACE",
+      "finding": "Round-2: runId cancel, capability ∩, versioned approvals, `/health/*`, golden trace",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts",
+        "packages/squad-sdk/src/backend/durable-http-backend.ts",
+        "packages/squad-sdk/src/backend/types.ts"
+      ],
+      "anchor": "negotiate",
+      "sourceEvidence": "`local-backend.ts`, `durable-http-backend.ts`, `types.ts`",
+      "lockingTests": "backend `squad 2.0 wire lock-in` ×5 incl. `golden trace > keeps identical canonical history across disconnect/reconnect…`; `probes /health/live and /health/ready, falls back to /health…`; `G4`, `G6`, `G7`"
+    },
+    {
+      "id": "R2-APPROVALS-HEALTH-TRACE",
+      "groupedFrom": "R2-RUNID / R2-CAPS / R2-APPROVALS-HEALTH-TRACE",
+      "finding": "Round-2: runId cancel, capability ∩, versioned approvals, `/health/*`, golden trace",
+      "originalLayer": "L3 ✔",
+      "evidenceLocations": [
+        "packages/squad-sdk/src/backend/local-backend.ts",
+        "packages/squad-sdk/src/backend/durable-http-backend.ts",
+        "packages/squad-sdk/src/backend/types.ts"
+      ],
+      "anchor": "ApprovalRecord",
+      "sourceEvidence": "`local-backend.ts`, `durable-http-backend.ts`, `types.ts`",
+      "lockingTests": "backend `squad 2.0 wire lock-in` ×5 incl. `golden trace > keeps identical canonical history across disconnect/reconnect…`; `probes /health/live and /health/ready, falls back to /health…`; `G4`, `G6`, `G7`"
+    }
+  ]
+}

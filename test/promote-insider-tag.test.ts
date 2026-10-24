@@ -114,19 +114,17 @@ describe('shouldPromote (Issue #1491 decision matrix)', () => {
   });
 });
 
-describe('publish workflow insider promotion graph (Issue #1497)', () => {
-  it('promotes squad-sdk independently of squad-cli publish success', () => {
-    const sdkPromotion = workflowJobBlock('promote-insider-tag-sdk');
+describe('publish workflow insider promotion graph (Issue #1497, superseded by pair-wise reconciliation)', () => {
+  it('promotes squad-sdk and squad-cli insider tags together, only after the pair reconciled COMPLETE', () => {
+    // #1497 asked for SDK promotion independent of CLI publish success. Squad 2.0 release policy
+    // forbids exposing half a pair on any channel, so insider promotion is one job that runs
+    // only when both packages are readable at the version on the channel tag.
+    const promotion = workflowJobBlock('promote-insider-tag');
 
-    expect(sdkPromotion).toContain('needs: publish-sdk');
-    expect(sdkPromotion).not.toContain('publish-cli');
-    expect(sdkPromotion).toContain('@bradygaster/squad-sdk');
-  });
-
-  it('promotes squad-cli after its own publish succeeds', () => {
-    const cliPromotion = workflowJobBlock('promote-insider-tag-cli');
-
-    expect(cliPromotion).toContain('needs: publish-cli');
-    expect(cliPromotion).toContain('@bradygaster/squad-cli');
+    expect(promotion).toContain('needs: [prepare, publish]');
+    expect(promotion).toContain("needs.prepare.outputs.stable_release == 'true'");
+    expect(promotion).toContain("needs.publish.outputs.outcome == 'COMPLETE'");
+    expect(promotion).toContain('@bradygaster/squad-sdk');
+    expect(promotion).toContain('@bradygaster/squad-cli');
   });
 });

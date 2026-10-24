@@ -73,13 +73,11 @@ describe('cross-package exports — CLI → SDK', () => {
       ], '@bradygaster/squad-sdk');
     });
 
-    it('exports init / personal-squad helpers', async () => {
+    it('exports init helpers', async () => {
       const sdk = await import('@bradygaster/squad-sdk');
       expectExports(sdk, [
         'initSquad',
         'cleanupOrphanInitPrompt',
-        'ensurePersonalSquadDir',
-        'resolvePersonalSquadDir',
       ], '@bradygaster/squad-sdk');
     });
 
@@ -88,20 +86,6 @@ describe('cross-package exports — CLI → SDK', () => {
       expectExports(sdk, [
         'resolveExternalStateDir',
         'deriveProjectKey',
-      ], '@bradygaster/squad-sdk');
-    });
-
-    it('exports consult-mode helpers', async () => {
-      const sdk = await import('@bradygaster/squad-sdk');
-      expectExports(sdk, [
-        'setupConsultMode',
-        'isConsultMode',
-        'PersonalSquadNotFoundError',
-        'detectLicense',
-        'loadStagedLearnings',
-        'logConsultation',
-        'mergeToPersonalSquad',
-        'getPersonalSquadRoot',
       ], '@bradygaster/squad-sdk');
     });
 
@@ -155,8 +139,6 @@ describe('cross-package exports — CLI → SDK', () => {
         'resolveSquad',
         'resolveSquadPaths',
         'resolveGlobalSquadPath',
-        'resolvePersonalSquadDir',
-        'ensurePersonalSquadDir',
       ], '@bradygaster/squad-sdk/resolution');
     });
   });
@@ -176,18 +158,6 @@ describe('cross-package exports — CLI → SDK', () => {
     it('exports RateLimitError', async () => {
       const mod = await import('@bradygaster/squad-sdk/adapter/errors');
       expectExports(mod, ['RateLimitError'], '@bradygaster/squad-sdk/adapter/errors');
-    });
-  });
-
-  // ─── Subpath: /agents/personal ─────────────────────────────────────────
-
-  describe('@bradygaster/squad-sdk/agents/personal', () => {
-    it('exports personal-agent helpers', async () => {
-      const mod = await import('@bradygaster/squad-sdk/agents/personal');
-      expectExports(mod, [
-        'resolvePersonalAgents',
-        'mergeSessionCast',
-      ], '@bradygaster/squad-sdk/agents/personal');
     });
   });
 

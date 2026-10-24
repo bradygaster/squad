@@ -12,16 +12,19 @@ Feature: Hostile — Missing .squad/ configuration
     Then the output contains "Usage"
     And the exit code is 0
 
-  Scenario: Status reports no squad without .squad/ directory
+  Scenario: Status fails clearly without .squad/ directory (no user-profile fallback)
     Given a directory without a ".squad" directory
     When I run "squad status" in the temp directory
-    Then the output contains "Squad Status"
-    And the exit code is 0
+    Then the output contains "No squad in this directory"
+    And the output contains "squad init"
+    And the exit code is 1
 
-  Scenario: Doctor runs without .squad/ directory
+  Scenario: Doctor fails clearly without .squad/ directory (no user-profile fallback)
     Given a directory without a ".squad" directory
     When I run "squad doctor" in the temp directory
-    Then the exit code is 0
+    Then the output contains "No squad in this directory"
+    And the output contains "squad init"
+    And the exit code is 1
 
   Scenario: Unknown command without .squad/ still errors cleanly
     Given a directory without a ".squad" directory

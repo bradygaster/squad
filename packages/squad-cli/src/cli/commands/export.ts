@@ -9,7 +9,7 @@ import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import type { RepoSpec } from '@bradygaster/squad-sdk';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
-import { fatal } from '../core/errors.js';
+import { fatal, fatalNoSquad } from '../core/errors.js';
 import { getPackageVersion } from '../core/version.js';
 import { ghAvailable, ghAuthenticated } from '../core/gh-cli.js';
 
@@ -135,7 +135,7 @@ export async function runExport(dest: string, outPath?: string, repoOptions?: Ex
   const teamMd = path.join(stateDir, 'team.md');
   
   if (!storage.existsSync(teamMd)) {
-    fatal('No squad found — run init first');
+    fatalNoSquad();
   }
 
   const manifest = buildManifest(dest, storage, { path: stateDir });

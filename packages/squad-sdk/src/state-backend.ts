@@ -1200,7 +1200,9 @@ export class StateBackendStorageAdapter implements StorageProvider {
       return resolvedFile.slice(resolvedSquad.length + 1).replace(/\\/g, '/');
     }
     if (fileCmp === squadCmp) {
-      return '.';
+      // Root of the state tree: the empty key, which list() treats as "everything"
+      // (`.` would be rejected by validateStateKey).
+      return '';
     }
     // If the path is already relative (no drive letter or leading sep), normalise and return.
     if (!path.isAbsolute(filePath)) {
