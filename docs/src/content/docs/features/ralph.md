@@ -163,7 +163,7 @@ squad watch --execute --max-concurrent 2        # work on 2 issues in parallel
 ```
 When `--execute` is enabled, Ralph spawns Copilot CLI sessions for actionable issues (assigned to a squad member, not blocked, not already assigned to a human). Squad automatically injects `--yolo --additional-mcp-config @.mcp.json` into every spawned Copilot invocation so that MCP tools are available in non-interactive (`-p`) mode — see [Copilot CLI MCP Trust Gate](./copilot-mcp-trust.md) for details.
 #### Custom instructions with `.squad/ralph-instructions.md`
-If `.squad/ralph-instructions.md` exists, `squad watch --execute` tells the spawned Ralph session to read that file first and follow **all** of its sections. This is the escape hatch for repo-specific Ralph behavior.
+If `.squad/ralph-instructions.md` exists, `squad watch --execute` tells the spawned Ralph session to read that file first and follow **all** of its sections. This is the escape hatch for repo-specific Ralph behavior. In interactive sessions the coordinator also reads the file before dispatching issue work and applies it on top of its own rules; there it does not widen the requested scope or replace Ralph's monitor-only role.
 Use it when you want Ralph to consistently apply local operating rules such as:
 - preferred execution order or escalation rules
 - custom branch/PR conventions
