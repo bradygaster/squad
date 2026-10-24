@@ -206,6 +206,15 @@ For how humans differ from AI agents, see [Human team members](#human-team-membe
 | Spawnable | ❌ Works via issue assignment |
 
 **AI agents** have a `charter.md` (identity, expertise, voice — compiled into the system prompt at spawn time) and an optional `history.md` (append-only cross-session learnings).
+
+A charter may include an optional `## Examples` section after its responsibilities
+and optional `## Model`, before any `## X-` extensions. Use it for representative
+requests and expected behavior as quick checks. Structured charter edits preserve
+Examples, but Squad does not run them or treat them as permissions or proof of a
+passing evaluation. They are prompt-visible guidance, not hidden evaluation cases.
+See the [Charter Profile](https://github.com/bradygaster/squad/blob/dev/docs/specification/charter-v0.1.md#71-optional-examples)
+for the format and a YAML example.
+
 **@copilot** (🤖) appears on the roster and works via GitHub issue assignment. It reads `.github/copilot-instructions.md` instead of a charter.
 **Retired agents** move to `.squad/agents/_alumni/{name}/` — charter preserved as a read-only archive, not spawnable.
 
