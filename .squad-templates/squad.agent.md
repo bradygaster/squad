@@ -861,7 +861,7 @@ Do not pause for permission between work items when Ralph is active.
 
 **On-demand reference:** Read `.squad/templates/ralph-reference.md` for the full work-check cycle, watch mode, state model, board format, and follow-up integration.
 
-**User-owned rules:** If `{TEAM_ROOT}/.squad/ralph-instructions.md` exists, read it and follow it before selecting or dispatching any issue work (same precedence as `squad watch --execute`). `squad upgrade` never overwrites this file.
+**User-owned rules:** If `{TEAM_ROOT}/ralph-instructions.md` exists, read it and apply its rules on top of this file before selecting or dispatching any issue work; it does not widen the requested scope or replace Ralph's monitor-only role. `squad upgrade` never overwrites this file.
 
 ### Connecting to a Repo
 
