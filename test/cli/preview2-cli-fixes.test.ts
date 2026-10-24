@@ -1,6 +1,5 @@
 /**
  * Smaller 2.0.0-preview.2 CLI fixes (#2298, #2299):
- *  - team.md built-in roster rows (idempotent, EOL-preserving, respects existing table layout);
  *  - `squad client list` / `client add --dry-run`;
  *  - `squad doctor` mode detection for a relative `teamRoot` that is this project;
  *  - `squad update-check` stale-cache handling;
@@ -12,105 +11,12 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-import {
-  ensureBuiltinRosterRows,
-  insertBuiltinRosterRows,
-  missingBuiltinRosterRows,
-  BUILTIN_ROSTER_ROWS,
-} from '../../packages/squad-cli/src/cli/core/team-md.js';
 import { teamRootIsThisProject, getDoctorMode } from '@bradygaster/squad-cli/commands/doctor';
 import { runClientCommand, listClients } from '../../packages/squad-cli/src/cli/commands/client.js';
 import { runUpdateCheck, UPDATE_CHECK_MAX_CACHE_AGE_MS } from '@bradygaster/squad-cli/commands/update-check';
 import { getCachePath } from '../../packages/squad-cli/src/cli/self-update.js';
 import { readProjectLabel, runUpgrade } from '@bradygaster/squad-cli/core/upgrade';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-
-const SQUAD_SQUAD_TEAM = `# Team
-
-## Coordinator
-
-| Name | Role | Notes |
-|------|------|-------|
-| Squad | Coordinator | Routes work. |
-
-## Members
-
-| Name | Role | Charter | Status |
-|------|------|---------|--------|
-| Picard | Lead | \`.squad/agents/picard/charter.md\` | ✅ Active |
-| Scribe | Session Logger | \`.squad/agents/scribe/charter.md\` | 📋 Silent |
-| Ralph | Work Monitor | \`.squad/agents/ralph/charter.md\` | 🔄 Monitor |
-
-## Human Members
-
-| Name | Role | Interaction Channel | Notes |
-|------|------|---------------------|-------|
-| Tamir | Owner | CLI | — |
-`;
-
-describe('team.md built-in roster rows (#2298)', () => {
-  let squadDir: string;
-  beforeEach(() => {
-    squadDir = mkdtempSync(join(tmpdir(), 'squad-roster-'));
-    for (const dir of ['picard', 'scribe', 'ralph', 'rai', 'fact-checker']) mkdirSync(join(squadDir, 'agents', dir), { recursive: true });
-  });
-  afterEach(() => rmSync(squadDir, { recursive: true, force: true }));
-
-  it('reports exactly the built-ins whose directory exists and whose row is missing', () => {
-    const missing = missingBuiltinRosterRows(SQUAD_SQUAD_TEAM, join(squadDir, 'agents'));
-    expect(missing.map((r) => r.name)).toEqual(['Rai', 'Fact Checker']);
-    rmSync(join(squadDir, 'agents', 'fact-checker'), { recursive: true });
-    expect(missingBuiltinRosterRows(SQUAD_SQUAD_TEAM, join(squadDir, 'agents')).map((r) => r.name)).toEqual(['Rai']);
-  });
-
-  it('a legacy capitalized Rai/ directory still counts as present', () => {
-    rmSync(join(squadDir, 'agents', 'rai'), { recursive: true });
-    mkdirSync(join(squadDir, 'agents', 'Rai'));
-    expect(missingBuiltinRosterRows(SQUAD_SQUAD_TEAM, join(squadDir, 'agents')).map((r) => r.name)).toContain('Rai');
-  });
-
-  it('appends rows at the end of the Members table using its column layout, preserving every other line and the EOL', () => {
-    const crlf = SQUAD_SQUAD_TEAM.replace(/\n/g, '\r\n');
-    writeFileSync(join(squadDir, 'team.md'), crlf);
-    const added = ensureBuiltinRosterRows(squadDir);
-    expect(added).toEqual(['Rai', 'Fact Checker']);
-    const after = readFileSync(join(squadDir, 'team.md'), 'utf8');
-    expect(after).not.toMatch(/(?<!\r)\n/);
-    const lines = after.split('\r\n');
-    const ralph = lines.findIndex((l) => l.startsWith('| Ralph'));
-    expect(lines[ralph + 1]).toBe('| Rai | RAI Reviewer | `.squad/agents/rai/charter.md` | 🛡️ RAI |');
-    expect(lines[ralph + 2]).toBe("| Fact Checker | Devil's Advocate & Verification Agent | `.squad/agents/fact-checker/charter.md` | 🔍 Verifier |");
-    expect(lines[ralph + 3]).toBe('');
-    expect(lines[ralph + 4]).toBe('## Human Members');
-    // Everything that was there before is still there, in order.
-    const originalLines = crlf.split('\r\n');
-    expect(lines.filter((l) => !l.startsWith('| Rai ') && !l.startsWith('| Fact Checker '))).toEqual(originalLines);
-    // Idempotent.
-    expect(ensureBuiltinRosterRows(squadDir)).toEqual([]);
-    expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toBe(after);
-  });
-
-  it('prefers an existing "## Built-in Support Agents" table and fills unknown columns with —', () => {
-    const content = '# T\n\n## Members\n\n| Name | Role | Charter | Status |\n|---|---|---|---|\n| Picard | Lead | x | ✅ |\n\n## Built-in Support Agents\n\n| Name | Role | Status | Notes |\n|---|---|---|---|\n| Scribe | Session Logger | 📋 | — |\n';
-    const out = insertBuiltinRosterRows(content, BUILTIN_ROSTER_ROWS.filter((r) => r.dirName === 'rai'));
-    expect(out).toContain('| Scribe | Session Logger | 📋 | — |\n| Rai | RAI Reviewer | 🛡️ RAI | — |\n');
-    expect(out.split('\n').filter((l) => l.startsWith('| Picard'))).toHaveLength(1);
-  });
-
-  it('leaves a team.md without any roster table untouched (never invents a table)', () => {
-    const content = '# T\n\nprose only\n';
-    expect(insertBuiltinRosterRows(content, BUILTIN_ROSTER_ROWS.filter((r) => r.dirName === 'fact-checker'))).toBe(content);
-    writeFileSync(join(squadDir, 'team.md'), content);
-    expect(ensureBuiltinRosterRows(squadDir)).toEqual([]);
-    expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toBe(content);
-  });
-
-  it('dryRun reports without writing', () => {
-    writeFileSync(join(squadDir, 'team.md'), SQUAD_SQUAD_TEAM);
-    expect(ensureBuiltinRosterRows(squadDir, { dryRun: true })).toEqual(['Rai', 'Fact Checker']);
-    expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toBe(SQUAD_SQUAD_TEAM);
-  });
-});
 
 describe('squad doctor mode for a relative teamRoot pointing at this project (#2299)', () => {
   let cwd: string;
@@ -255,7 +161,7 @@ describe('upgrade dry-run header (#2299)', () => {
   });
 
   it('uses the project name from config or the repository directory name, never "undefined"', async () => {
-    expect(readProjectLabel('C:\\repos\\my-squad', {})).toBe('my-squad');
+    expect(readProjectLabel(path.join(tmpdir(), 'repos', 'my-squad'), {})).toBe('my-squad');
     expect(readProjectLabel('/repos/my-squad', { projectName: 'Squad Squad' })).toBe('Squad Squad');
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => { logs.push(a.map(String).join(' ')); });

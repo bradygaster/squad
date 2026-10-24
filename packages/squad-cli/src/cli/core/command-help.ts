@@ -83,6 +83,18 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--dry-run${RESET}                   With add: show what would be projected, write nothing\n`);
   },
 
+  roster: (version) => {
+    header('roster', version, 'Explicitly configure optional built-in agents');
+    console.log(`Usage: squad roster add <rai|fact-checker|all> [--dry-run]`);
+    console.log(`       squad roster remove <rai|fact-checker|all> [--dry-run]\n`);
+    console.log(`Prints the exact team.md diff before applying it. The first add writes a`);
+    console.log(`byte-exact verified backup and records provenance. Remove deletes only rows`);
+    console.log(`added by this command and restores the original bytes when no later edits exist.\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   Preview the exact diff without writing\n`);
+    console.log(`Aliases for remove: disable, uninstall.\n`);
+  },
+
   'update-check': (version) => {
     header('update-check', version, 'Report cached CLI update status');
     console.log(`Usage: squad update-check [options]\n`);

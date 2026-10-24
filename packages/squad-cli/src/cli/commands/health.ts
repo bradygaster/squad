@@ -26,7 +26,7 @@ const storage = new FSStorageProvider();
 
 export const HEALTH_SCHEMA = 'squad-health/v1' as const;
 
-export type HealthCheckStatus = 'pass' | 'warn' | 'fail' | 'skip';
+export type HealthCheckStatus = 'pass' | 'info' | 'warn' | 'fail' | 'skip';
 export type HealthCheckId =
   | 'team'
   | 'registry-charters'
@@ -43,7 +43,7 @@ export interface HealthCheckItem {
 
 export interface HealthReport {
   schema: typeof HEALTH_SCHEMA;
-  /** `fail` when any check failed; warnings never fail the report. */
+  /** `fail` when any check failed; informational items and warnings never fail the report. */
   status: 'pass' | 'fail';
   checks: HealthCheckItem[];
 }
@@ -53,8 +53,8 @@ interface CastingRegistry {
 }
 
 /**
- * Always-on built-ins. They are not cast registry agents, but routing rows may name them
- * (#1785) and the coordinator contract says they always appear in team.md (#2298).
+ * Built-ins are not cast registry agents. Rai and Fact Checker are available after upgrade but
+ * remain explicit roster opt-ins for existing squads.
  */
 const BUILTIN_AGENTS: ReadonlyArray<{ id: string; name: string }> = [
   { id: 'scribe', name: 'Scribe' },
@@ -65,6 +65,12 @@ const BUILTIN_AGENTS: ReadonlyArray<{ id: string; name: string }> = [
 
 function pass(id: HealthCheckId, message: string): HealthCheckItem {
   return { id, status: 'pass', message };
+}
+
+function infoItem(id: HealthCheckId, message: string, diagnostics?: string[]): HealthCheckItem {
+  return diagnostics && diagnostics.length > 0
+    ? { id, status: 'info', message, diagnostics }
+    : { id, status: 'info', message };
 }
 
 function warnItem(id: HealthCheckId, message: string, diagnostics?: string[]): HealthCheckItem {
@@ -200,15 +206,16 @@ function checkTeam(squadDir: string): HealthCheckItem {
       .filter((line) => line.trim().startsWith('|'))
       .map((line) => line.toLowerCase());
     const missingBuiltins = BUILTIN_AGENTS.filter(({ id, name }) =>
+      (id === 'rai' || id === 'fact-checker') &&
       present.has(id) &&
       !rows.some((row) => row.includes(`agents/${id}/charter.md`) || row.split('|').map((c) => c.replace(/[`*_]/g, '').trim())[1] === name.toLowerCase()),
     );
     if (missingBuiltins.length > 0) {
-      return warnItem(
+      return infoItem(
         'team',
-        `team.md is valid (${parsed.agents.length} members) but ${missingBuiltins.length} built-in agent${missingBuiltins.length === 1 ? ' is' : 's are'} missing from the roster`,
+        `team.md is valid (${parsed.agents.length} members); ${missingBuiltins.length} optional built-in agent${missingBuiltins.length === 1 ? ' is' : 's are'} available but not configured`,
         missingBuiltins
-          .map(({ id, name }) => `built-in ${name} (.squad/agents/${id}/) has no team.md row — run \`squad upgrade\` to add it`)
+          .map(({ id, name }) => `${name} is available but not configured — run \`squad roster add ${id}\` to opt in`)
           .sort((a, b) => a.localeCompare(b)),
       );
     }
@@ -357,8 +364,10 @@ function loadKnownRoutingAgentKeys(squadDir: string): Set<string> {
     const key = normalizeAgentRef(agent.name);
     if (key.startsWith('@')) keys.add(key);
   }
-  // Built-in support agents are legitimate routing targets even though they are not cast (#1785).
+  // Built-ins are legitimate routing targets only while their installed charter exists. A route
+  // to an unavailable built-in is a real configuration inconsistency and must fail health.
   for (const { id, name } of BUILTIN_AGENTS) {
+    if (!storage.existsSync(path.join(squadDir, 'agents', id, 'charter.md'))) continue;
     keys.add(normalizeAgentRef(id));
     keys.add(normalizeAgentRef(name));
   }

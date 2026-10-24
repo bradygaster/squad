@@ -6,7 +6,8 @@
  *  - display names resolve against persistent_name;
  *  - a charter with a BOM or a one-line `**Role:** … | **Expertise:** …` identity parses;
  *  - a charter without any identity is a WARN with a hint, not a FAIL;
- *  - built-in agent directories without a team.md row are a WARN (roster drift);
+ *  - optional built-ins without a team.md row are INFO (available but not configured);
+ *  - routing to an unavailable built-in is a real failure;
  *  - output ordering is deterministic.
  */
 
@@ -93,6 +94,8 @@ beforeEach(() => {
   registry({ 'nick-fury': { name: 'Nick Fury', role: 'Lead' }, alpha: { name: 'Alpha', role: 'Developer' } });
   writeSquad('agents/nick-fury/charter.md', '# Nick Fury — Lead\n\n## Identity\n\n- **Name:** Nick Fury\n- **Role:** Lead\n');
   writeSquad('agents/alpha/charter.md', '# Alpha — Developer\n\n## Identity\n\n- **Name:** Alpha\n- **Role:** Developer\n');
+  writeSquad('agents/rai/charter.md', '# Rai\n');
+  writeSquad('agents/fact-checker/charter.md', '# Fact Checker\n');
   writeSquad('routing.md', MULTI_TABLE_ROUTING);
 });
 
@@ -170,15 +173,14 @@ describe('legacy charters (#2298)', () => {
 });
 
 describe('built-in roster drift (#2298)', () => {
-  it('warns when rai/ and fact-checker/ exist without team.md rows and passes once rows exist', () => {
-    mkdirSync(path.join(repoRoot, '.squad', 'agents', 'rai'), { recursive: true });
-    mkdirSync(path.join(repoRoot, '.squad', 'agents', 'fact-checker'), { recursive: true });
+  it('reports INFO when optional built-ins are available but not configured and passes once rows exist', () => {
     const report = runSquadHealth(path.join(repoRoot, '.squad'), repoRoot);
     const team = check(report, 'team');
-    expect(team.status).toBe('warn');
+    expect(team.status).toBe('info');
+    expect(team.message).toContain('available but not configured');
     expect(team.diagnostics).toEqual([
-      'built-in Fact Checker (.squad/agents/fact-checker/) has no team.md row — run `squad upgrade` to add it',
-      'built-in Rai (.squad/agents/rai/) has no team.md row — run `squad upgrade` to add it',
+      'Fact Checker is available but not configured — run `squad roster add fact-checker` to opt in',
+      'Rai is available but not configured — run `squad roster add rai` to opt in',
     ]);
     expect(report.status).toBe('pass');
 
@@ -186,8 +188,14 @@ describe('built-in roster drift (#2298)', () => {
     expect(check(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot), 'team').status).toBe('pass');
   });
 
+  it('fails when routing references a built-in whose charter is missing', () => {
+    rmSync(path.join(repoRoot, '.squad', 'agents', 'rai'), { recursive: true });
+    const routing = check(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot), 'routing');
+    expect(routing.status).toBe('fail');
+    expect(routing.diagnostics).toContain('unknown agent: Rai');
+  });
+
   it('is deterministic across runs', () => {
-    mkdirSync(path.join(repoRoot, '.squad', 'agents', 'rai'), { recursive: true });
     writeSquad('agents/alpha/charter.md', '# Alpha\n\nno identity\n');
     const a = JSON.stringify(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot));
     const b = JSON.stringify(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot));

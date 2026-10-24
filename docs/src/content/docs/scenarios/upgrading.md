@@ -49,9 +49,35 @@ Shared `.mcp.json` entries never contain a standalone installation's absolute
 path. Packaged installs use `squad.exe` on Windows or `squad` on Unix from the
 MCP host's PATH; npm installs retain their version-pinned `npx` entry.
 
-Agent identities, charters, histories, decisions, and session logs are preserved.
+Agent identities, charters, histories, decisions, session logs, and
+`.squad/team.md` are preserved byte-for-byte. Upgrade can install optional
+built-in charters, but it never adds those agents to the roster.
 Supported legacy casting state is migrated as described below; built-in skills
 may be refreshed as Squad-owned files.
+
+### Opting optional built-ins into the roster
+
+Rai and Fact Checker remain opt-in for existing squads. Use the explicit roster
+command instead of upgrade:
+
+```bash
+# Preview the exact team.md diff without writing
+squad roster add rai --dry-run
+
+# Add one or both optional built-ins
+squad roster add rai
+squad roster add fact-checker
+squad roster add all
+
+# Remove only rows previously added by this command
+squad roster remove rai
+```
+
+The first add writes and verifies `.squad/team.md.roster-backup` before changing
+`team.md`, then records row ownership in `.squad/.roster-provenance.json`.
+Repeated adds do not create duplicates, including when an equivalent or
+case-only row already exists. Removing the last tool-owned row restores the
+original bytes when the file has not otherwise changed.
 
 ---
 

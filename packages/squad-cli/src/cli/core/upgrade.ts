@@ -46,7 +46,6 @@ import {
   type SquadOwnedPlan,
 } from './squad-owned-files.js';
 import { compareVersions } from '../upgrade.js';
-import { ensureBuiltinRosterRows } from './team-md.js';
 
 const storage = new FSStorageProvider();
 
@@ -653,7 +652,7 @@ function applyUpgradeFiles(dest: string, plan: SquadOwnedPlan, cliVersion: strin
   const result = applySquadOwnedFiles(plan, { warn });
   for (const rel of result.backedUp) info(`  To restore: copy ${path.basename(rel)}.local-backup → ${path.basename(rel)}`);
   if (result.written.length > 0) {
-    success(`upgraded ${result.written.length} squad-owned file(s)${result.backedUp.length > 0 ? ` (${result.backedUp.length} customized file(s) backed up to .local-backup)` : ''}`);
+    success(`upgraded ${result.written.length} squad-owned file(s)${result.backedUp.length > 0 ? ` (${result.backedUp.length} file(s) backed up to .local-backup)` : ''}`);
     filesUpdated.push(...result.written);
   } else {
     info(`squad-owned files already up to date (${plan.files.length} checked)`);
@@ -1111,9 +1110,9 @@ function preflightCastingPair(dest: string, templatesDir: string, filesUpdated: 
 }
 
 /**
- * Built-in agent housekeeping that must happen BEFORE the coordinator file is rendered, so a
- * single upgrade advertises the final roster: migrate `agents/Rai/` → `agents/rai/`, scaffold
- * missing built-in charters, and add their rows to team.md (#2298, #2299).
+ * Built-in agent housekeeping that must happen BEFORE the coordinator file is rendered:
+ * migrate `agents/Rai/` → `agents/rai/` and scaffold missing built-in charters. team.md is
+ * user-owned and is changed only by the explicit `squad roster` command.
  */
 function prepareBuiltinAgents(dest: string, templatesDir: string, filesUpdated: string[]): void {
   const raiMigration = migrateLegacyRaiAgent(dest);
@@ -1132,11 +1131,6 @@ function prepareBuiltinAgents(dest: string, templatesDir: string, filesUpdated: 
     filesUpdated.push(...builtinAgents);
   }
 
-  const rosterRows = ensureBuiltinRosterRows(path.join(dest, '.squad'));
-  if (rosterRows.length > 0) {
-    success(`added ${rosterRows.length} built-in agent row(s) to team.md: ${rosterRows.join(', ')}`);
-    filesUpdated.push('.squad/team.md');
-  }
 }
 
 /**
@@ -1617,8 +1611,6 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     if (attrs.length > 0) info(`Would append ${attrs.length} rule(s) to .gitattributes (existing lines untouched).`);
     const ignores = ensureGitignore(dest, { dryRun: true });
     if (ignores.length > 0) info(`Would append ${ignores.length} entr${ignores.length === 1 ? 'y' : 'ies'} to .gitignore (existing lines untouched): ${ignores.join(', ')}`);
-    const rosterRows = ensureBuiltinRosterRows(squadDirInfo.path, { dryRun: true });
-    if (rosterRows.length > 0) info(`Would add built-in agent row(s) to .squad/team.md: ${rosterRows.join(', ')}`);
     try {
       const userConfig = reconcileSquadStateUserConfig(dest, { dryRun: true });
       if (userConfig.action === 'would-remove') {

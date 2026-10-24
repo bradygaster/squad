@@ -182,6 +182,8 @@ async function main(): Promise<void> {
     console.log(`                    --force (with --self: allow a downgrade)`);
     console.log(`  ${BOLD}client${RESET}     Manage client host projections (Copilot, Claude, Kiro, …)`);
     console.log(`             Usage: client list [--json] | client add <list> [--dry-run]`);
+    console.log(`  ${BOLD}roster${RESET}     Explicitly opt optional built-ins into team.md`);
+    console.log(`             Usage: roster add|remove <rai|fact-checker|all> [--dry-run]`);
     console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
     console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
@@ -858,6 +860,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'roster') {
+    const { runRosterCommand } = await import('./cli/commands/roster.js');
+    const exitCode = await runRosterCommand(getSquadStartDir(), args.slice(1));
+    process.exitCode = exitCode;
+    return;
+  }
+
   if (cmd === 'export') {
     const { runExport } = await import('./cli/commands/export.js');
     const outIdx = args.indexOf('--out');
@@ -1177,4 +1186,3 @@ main().catch(err => {
   }
   process.exit(1);
 });
-

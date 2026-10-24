@@ -115,13 +115,16 @@ export interface BuiltinRosterRow {
   status: string;
 }
 
-/** The always-on built-ins the coordinator contract says "always appear in team.md". */
+/** Built-ins available to a squad. Rai and Fact Checker remain explicit roster opt-ins. */
 export const BUILTIN_ROSTER_ROWS: readonly BuiltinRosterRow[] = [
   { name: 'Scribe', role: 'Session Logger', dirName: 'scribe', status: '📋 Silent' },
   { name: 'Ralph', role: 'Work Monitor', dirName: 'ralph', status: '🔄 Monitor' },
   { name: 'Rai', role: 'RAI Reviewer', dirName: 'rai', status: '🛡️ RAI' },
   { name: 'Fact Checker', role: "Devil's Advocate & Verification Agent", dirName: 'fact-checker', status: '🔍 Verifier' },
 ];
+
+export const OPTIONAL_BUILTIN_ROSTER_ROWS: readonly BuiltinRosterRow[] =
+  BUILTIN_ROSTER_ROWS.filter((row) => row.dirName === 'rai' || row.dirName === 'fact-checker');
 
 function cellText(cell: string): string {
   return cell.replace(/[`*_]/g, '').trim().toLowerCase();
@@ -139,21 +142,11 @@ export function rosterHasBuiltin(content: string, row: BuiltinRosterRow): boolea
   const wanted = row.name.toLowerCase();
   for (const line of content.split(/\r?\n/)) {
     if (!line.trim().startsWith('|')) continue;
-    if (line.includes(charterRef)) return true;
+    if (line.toLowerCase().includes(charterRef)) return true;
     const cells = splitRow(line);
     if (cells.length > 0 && cellText(cells[0]!) === wanted) return true;
   }
   return false;
-}
-
-/**
- * Built-ins whose agent directory exists under `agentsDir` but have no row in team.md.
- * Directory presence is checked case-insensitively so a not-yet-migrated `Rai/` still counts.
- */
-export function missingBuiltinRosterRows(content: string, agentsDir: string): BuiltinRosterRow[] {
-  if (!storage.existsSync(agentsDir)) return [];
-  const present = new Set(storage.listSync(agentsDir).map(e => e.toLowerCase()));
-  return BUILTIN_ROSTER_ROWS.filter(row => present.has(row.dirName) && !rosterHasBuiltin(content, row));
 }
 
 function renderRow(headerCells: string[], row: BuiltinRosterRow): string {
@@ -197,25 +190,4 @@ export function insertBuiltinRosterRows(content: string, rows: readonly BuiltinR
   const rendered = rows.map(r => renderRow(table.headerCells, r));
   lines.splice(table.insertAt, 0, ...rendered);
   return lines.join(eol);
-}
-
-/**
- * Make sure every built-in whose agent directory exists has a roster row in team.md.
- * Idempotent: a built-in already named anywhere in a table is left alone; a team.md without a
- * roster table is left untouched (health reports the drift instead). Returns the display names
- * that were (or, with `dryRun`, would be) added.
- */
-export function ensureBuiltinRosterRows(squadDir: string, options: { dryRun?: boolean } = {}): string[] {
-  const teamMdPath = path.join(squadDir, 'team.md');
-  if (!storage.existsSync(teamMdPath)) return [];
-  const content = storage.readSync(teamMdPath);
-  if (content === undefined || content.trim().length === 0) return [];
-  const missing = missingBuiltinRosterRows(content, path.join(squadDir, 'agents'));
-  if (missing.length === 0) return [];
-  const next = insertBuiltinRosterRows(content, missing);
-  if (next === content) return [];
-  if (!options.dryRun) {
-    storage.writeSync(teamMdPath, next);
-  }
-  return missing.map(r => r.name);
 }

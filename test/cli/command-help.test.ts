@@ -124,6 +124,7 @@ describe('printCommandHelp', () => {
       'rc-tunnel',
       'remote-control',
       'roles',
+      'roster',
       'schedule',
       'scrub-emails',
       'start',
