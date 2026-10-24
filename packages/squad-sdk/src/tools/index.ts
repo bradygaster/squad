@@ -264,6 +264,7 @@ function normalizeStateToolDir(dir?: string): string {
     .replace(/^\/+/, '')
     .replace(/^\.squad(?:\/|$)/, '')
     .replace(/\/+$/, '');
+  if (normalized === '.') return '';
   if (normalized.length > 0) {
     validateStateKey(normalized);
   }

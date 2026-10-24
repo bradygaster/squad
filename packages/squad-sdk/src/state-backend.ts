@@ -1101,59 +1101,75 @@ export class StateBackendStorageAdapter implements StorageProvider {
 
   // ── Async operations ─────────────────────────────────────────────────────
   async createIfAbsent(filePath: string, data: string): Promise<void> {
-    this.backend.createIfAbsent(this.toRelative(filePath), data);
+    this.backend.createIfAbsent(this.toRelative(filePath, { operation: 'createIfAbsent' }), data);
   }
   async read(filePath: string): Promise<string | undefined> {
-    return this.backend.read(this.toRelative(filePath));
+    return this.backend.read(this.toRelative(filePath, { operation: 'read' }));
   }
   async write(filePath: string, data: string): Promise<void> {
-    this.backend.write(this.toRelative(filePath), data);
+    this.backend.write(this.toRelative(filePath, { operation: 'write' }), data);
   }
   async append(filePath: string, data: string): Promise<void> {
-    this.backend.append(this.toRelative(filePath), data);
+    this.backend.append(this.toRelative(filePath, { operation: 'append' }), data);
   }
   async exists(filePath: string): Promise<boolean> {
-    return this.backend.exists(this.toRelative(filePath));
+    return this.backend.exists(this.toRelative(filePath, { operation: 'exists' }));
   }
   async list(dirPath: string): Promise<string[]> {
-    return this.backend.list(this.toRelative(dirPath));
+    return this.backend.list(this.toRelative(dirPath, { allowRoot: true, operation: 'list' }));
   }
   async delete(filePath: string): Promise<void> {
-    this.backend.delete(this.toRelative(filePath));
+    this.backend.delete(this.toRelative(filePath, { operation: 'delete' }));
   }
   async deleteDir(dirPath: string): Promise<void> {
-    this.deleteDirRecursive(this.toRelative(dirPath));
+    this.deleteDirRecursive(this.toRelative(dirPath, { operation: 'deleteDir' }));
   }
   async isDirectory(targetPath: string): Promise<boolean> {
-    return this.backend.list(this.toRelative(targetPath)).length > 0;
+    return this.backend.list(this.toRelative(targetPath, { allowRoot: true, operation: 'isDirectory' })).length > 0;
   }
   async mkdir(_dirPath: string, _options?: { recursive?: boolean }): Promise<void> { /* no-op for git backends */ }
   async rename(oldPath: string, newPath: string): Promise<void> {
-    const content = this.backend.read(this.toRelative(oldPath));
-    if (content !== undefined) { this.backend.write(this.toRelative(newPath), content); this.backend.delete(this.toRelative(oldPath)); }
+    const oldKey = this.toRelative(oldPath, { operation: 'rename source' });
+    const newKey = this.toRelative(newPath, { operation: 'rename destination' });
+    const content = this.backend.read(oldKey);
+    if (content !== undefined) { this.backend.write(newKey, content); this.backend.delete(oldKey); }
   }
   async copy(srcPath: string, destPath: string): Promise<void> {
-    const content = this.backend.read(this.toRelative(srcPath));
-    if (content !== undefined) { this.backend.write(this.toRelative(destPath), content); }
+    const sourceKey = this.toRelative(srcPath, { operation: 'copy source' });
+    const destinationKey = this.toRelative(destPath, { operation: 'copy destination' });
+    const content = this.backend.read(sourceKey);
+    if (content !== undefined) { this.backend.write(destinationKey, content); }
   }
   async stat(targetPath: string): Promise<StorageStats | undefined> {
-    const content = this.backend.read(this.toRelative(targetPath));
+    const content = this.backend.read(this.toRelative(targetPath, { operation: 'stat' }));
     if (content === undefined) return undefined;
     return { size: content.length, mtimeMs: Date.now(), isDirectory: false };
   }
 
   // ── Sync variants ────────────────────────────────────────────────────────
-  readSync(filePath: string): string | undefined { return this.backend.read(this.toRelative(filePath)); }
-  writeSync(filePath: string, data: string): void { this.backend.write(this.toRelative(filePath), data); }
-  appendSync(filePath: string, data: string): void { this.backend.append(this.toRelative(filePath), data); }
-  existsSync(filePath: string): boolean { return this.backend.exists(this.toRelative(filePath)); }
-  listSync(dirPath: string): string[] { return this.backend.list(this.toRelative(dirPath)); }
-  deleteSync(filePath: string): void { this.backend.delete(this.toRelative(filePath)); }
+  readSync(filePath: string): string | undefined {
+    return this.backend.read(this.toRelative(filePath, { operation: 'readSync' }));
+  }
+  writeSync(filePath: string, data: string): void {
+    this.backend.write(this.toRelative(filePath, { operation: 'writeSync' }), data);
+  }
+  appendSync(filePath: string, data: string): void {
+    this.backend.append(this.toRelative(filePath, { operation: 'appendSync' }), data);
+  }
+  existsSync(filePath: string): boolean {
+    return this.backend.exists(this.toRelative(filePath, { operation: 'existsSync' }));
+  }
+  listSync(dirPath: string): string[] {
+    return this.backend.list(this.toRelative(dirPath, { allowRoot: true, operation: 'listSync' }));
+  }
+  deleteSync(filePath: string): void {
+    this.backend.delete(this.toRelative(filePath, { operation: 'deleteSync' }));
+  }
   deleteDirSync(dirPath: string): void {
-    this.deleteDirRecursive(this.toRelative(dirPath));
+    this.deleteDirRecursive(this.toRelative(dirPath, { operation: 'deleteDirSync' }));
   }
   isDirectorySync(targetPath: string): boolean {
-    return this.backend.list(this.toRelative(targetPath)).length > 0;
+    return this.backend.list(this.toRelative(targetPath, { allowRoot: true, operation: 'isDirectorySync' })).length > 0;
   }
   /**
    * Delete every key under `rel`, including nested subtrees. A single-level
@@ -1171,21 +1187,44 @@ export class StateBackendStorageAdapter implements StorageProvider {
   }
   mkdirSync(_dirPath: string, _options?: { recursive?: boolean }): void { /* no-op */ }
   renameSync(oldPath: string, newPath: string): void {
-    const content = this.backend.read(this.toRelative(oldPath));
-    if (content !== undefined) { this.backend.write(this.toRelative(newPath), content); this.backend.delete(this.toRelative(oldPath)); }
+    const oldKey = this.toRelative(oldPath, { operation: 'renameSync source' });
+    const newKey = this.toRelative(newPath, { operation: 'renameSync destination' });
+    const content = this.backend.read(oldKey);
+    if (content !== undefined) { this.backend.write(newKey, content); this.backend.delete(oldKey); }
   }
   copySync(srcPath: string, destPath: string): void {
-    const content = this.backend.read(this.toRelative(srcPath));
-    if (content !== undefined) { this.backend.write(this.toRelative(destPath), content); }
+    const sourceKey = this.toRelative(srcPath, { operation: 'copySync source' });
+    const destinationKey = this.toRelative(destPath, { operation: 'copySync destination' });
+    const content = this.backend.read(sourceKey);
+    if (content !== undefined) { this.backend.write(destinationKey, content); }
   }
   statSync(targetPath: string): StorageStats | undefined {
-    const content = this.backend.read(this.toRelative(targetPath));
+    const content = this.backend.read(this.toRelative(targetPath, { operation: 'statSync' }));
     if (content === undefined) return undefined;
     return { size: content.length, mtimeMs: Date.now(), isDirectory: false };
   }
 
-  /** Convert absolute path to relative path for the backend. */
-  private toRelative(filePath: string): string {
+  /** Convert a storage path to a backend key with operation-specific root handling. */
+  private toRelative(
+    filePath: string,
+    options: { allowRoot?: boolean; operation?: string } = {},
+  ): string {
+    const slashPath = filePath.replace(/\\/g, '/');
+    const isRelativeRoot =
+      slashPath === '' ||
+      slashPath === '.' ||
+      /^\.\/+$/.test(slashPath);
+    if (isRelativeRoot) {
+      return this.resolveRoot(options);
+    }
+
+    if (!path.isAbsolute(filePath)) {
+      const relative = slashPath
+        .replace(/^(?:\.\/)+/, '')
+        .replace(/\/+$/, '');
+      return relative.length === 0 ? this.resolveRoot(options) : relative;
+    }
+
     // Use path.resolve() so drive-letter casing differences on Windows are
     // normalised before comparison, preventing corrupt git-notes keys.
     const resolvedFile = path.resolve(filePath);
@@ -1200,13 +1239,7 @@ export class StateBackendStorageAdapter implements StorageProvider {
       return resolvedFile.slice(resolvedSquad.length + 1).replace(/\\/g, '/');
     }
     if (fileCmp === squadCmp) {
-      // Root of the state tree: the empty key, which list() treats as "everything"
-      // (`.` would be rejected by validateStateKey).
-      return '';
-    }
-    // If the path is already relative (no drive letter or leading sep), normalise and return.
-    if (!path.isAbsolute(filePath)) {
-      return filePath.replace(/\\/g, '/');
+      return this.resolveRoot(options);
     }
     // Absolute path that doesn't live under squadDir — this would produce a
     // corrupt git-notes key (absolute path leaking into the ref namespace).
@@ -1214,6 +1247,14 @@ export class StateBackendStorageAdapter implements StorageProvider {
       `[squad] toRelative: path is outside squadDir and cannot be used as a state key.\n` +
       `  path:     ${resolvedFile}\n` +
       `  squadDir: ${resolvedSquad}`
+    );
+  }
+
+  private resolveRoot(options: { allowRoot?: boolean; operation?: string }): string {
+    if (options.allowRoot) return '';
+    throw new Error(
+      `[squad] ${options.operation ?? 'state operation'}: the Squad state root is not a file and cannot be modified or deleted. ` +
+      'Only list and directory-inspection operations may target the root.',
     );
   }
 }

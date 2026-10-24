@@ -106,6 +106,28 @@ describe('state-mcp bridge', () => {
     expect(content[0]!.text).toContain(`Team squad dir: ${join(TMP, '.squad')}`);
   });
 
+  it('lists the adapter-backed state root through every supported relative root alias', { timeout: 60_000 }, async () => {
+    initSquad('two-layer');
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+
+    for (const dir of [undefined, '', '.', './', '.\\']) {
+      const index = messages.length;
+      await session.handleRequest({
+        jsonrpc: '2.0',
+        id: `list-${String(dir)}`,
+        method: 'tools/call',
+        params: {
+          name: 'squad_state_list',
+          arguments: dir === undefined ? {} : { dir },
+        },
+      });
+      const result = resultAsRecord(messages[index]!);
+      expect(result['isError'], `dir=${String(dir)}`).not.toBe(true);
+      expect(result['content'], `dir=${String(dir)}`).toBeDefined();
+    }
+  });
+
   it.each(['orphan', 'two-layer'] as const)(
     'exposes squad_state_create_if_absent so exactly one caller creates a canonical key through the %s backend',
     async (stateBackend) => {
