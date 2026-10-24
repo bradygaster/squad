@@ -76,14 +76,14 @@
         "specification": {
           "artifact": "docs/specification/charter-v0.1.md",
           "algorithm": "sha256",
-          "digest": "sha256:9bdc6440b83fbd087d7ac01129146dda067d86501b7d3ecf2e81134d5b7ce7c2"
+          "digest": "sha256:0a99be56da3602b3b71dd07410792922b8c658b707db6686f786b8dff0523158"
         },
         "evidence": {
           "artifact": "test-fixtures/spec/charter-v0.1/manifest.json",
           "algorithm": "sha256",
           "canonicalization": "rfc8785",
           "scope": "manifest-excluding-revision",
-          "digest": "sha256:1f09c1954e056ea2072e3c79e286869790ae69751cba0ca4cfd58fd2fa0a92bb"
+          "digest": "sha256:993f14232e2f8afe0a1b0c9a777f9f30a7f6567574d655d8668abeb12ae49dda"
         }
       },
       "dialect": "charter-v0-1",
