@@ -379,6 +379,7 @@ describe('CLI: upgrade command', () => {
     const content = readFileSync(join(dir, '.gitattributes'), 'utf8');
     expect(content).toContain('.squad/decisions.md merge=union');
     expect(content).toContain('.squad/log/** merge=union');
+    expect(content).toContain('.squad/casting/*.json text eol=lf');
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -394,6 +395,26 @@ describe('CLI: upgrade command', () => {
     expect(content).toContain('.squad/orchestration-log/** merge=union');
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it('upgrade accepts CRLF manifest-backed casting files and normalizes every casting JSON file to LF (#2266)', async () => {
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    const names = readdirSync(castingDir).filter(name => name.endsWith('.json'));
+    expect(names).toContain('registry-history.commit.json');
+    for (const name of names) {
+      const filePath = join(castingDir, name);
+      writeFileSync(filePath, readFileSync(filePath, 'utf8').replace(/\r?\n/g, '\r\n'));
+      expect(readFileSync(filePath, 'utf8')).toContain('\r\n');
+    }
+
+    const result = await runUpgrade(TEST_ROOT);
+
+    expect(readFileSync(join(TEST_ROOT, '.gitattributes'), 'utf8'))
+      .toContain('.squad/casting/*.json text eol=lf');
+    for (const name of names) {
+      expect(readFileSync(join(castingDir, name), 'utf8')).not.toContain('\r\n');
+      expect(result.filesUpdated).toContain(`.squad/casting/${name}`);
+    }
+  }, 20_000);
 
   it('ensureGitattributes is idempotent', () => {
     const dir = join(TEST_ROOT, 'gitattr-test-idempotent');

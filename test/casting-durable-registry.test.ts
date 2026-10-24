@@ -19,8 +19,10 @@ import {
   CastingCommitInDoubtError,
   commitCastingRegistryPair,
   ensureCastingRegistryPair,
+  preflightCastingRegistryPair,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
+  validateCastingRegistryPairRaw,
   type CastingDurabilityBoundary,
 } from '../packages/squad-sdk/src/casting/durable-registry.js';
 
@@ -807,6 +809,41 @@ describe('casting registry/history roll-forward transaction', () => {
     expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(
       /do not match the stable commit manifest/,
     );
+  });
+
+  it('accepts a stable manifest when Git converts all casting JSON files to CRLF (#2266)', () => {
+    const castingDir = temporaryCastingDir('crlf-manifest');
+    const old = initialPair();
+    writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+    commitCastingRegistryPair(
+      castingDir,
+      old.registryRaw,
+      { ...old.registry, revision: 2 },
+      old.historyRaw,
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
+      2,
+    );
+
+    for (const name of ['registry.json', 'history.json', 'registry-history.commit.json']) {
+      const filePath = join(castingDir, name);
+      writeFileSync(filePath, readFileSync(filePath, 'utf8').replace(/\r?\n/g, '\r\n'));
+    }
+
+    const registryRaw = readFileSync(join(castingDir, 'registry.json'), 'utf8');
+    const historyRaw = readFileSync(join(castingDir, 'history.json'), 'utf8');
+    const manifestRaw = readFileSync(join(castingDir, 'registry-history.commit.json'), 'utf8');
+    expect(() => validateCastingRegistryPairRaw(
+      registryRaw,
+      historyRaw,
+      undefined,
+      manifestRaw,
+    )).not.toThrow();
+    expect(preflightCastingRegistryPair(castingDir)).toBe(false);
+    expect(readCastingRegistryPair(castingDir, 1)).toMatchObject({
+      registry: { revision: 2 },
+      history: { registry_revision: 2 },
+    });
   });
 
   it('fails before journal publication when an external writer mutates the pair', () => {
