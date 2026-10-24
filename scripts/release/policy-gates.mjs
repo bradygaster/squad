@@ -16,11 +16,16 @@
  *   publish-allowlist     the publishable workspaces are exactly @bradygaster/squad-sdk and
  *                         @bradygaster/squad-cli; the root stays private
  *   changelog-heading     CHANGELOG.md has `## [<version>]`; whatsnew has `## v<version>`
- *   changeset-drain       (release mode) no pending .changeset fragments remain
+ *   changeset-drain       release mode: no pending .changeset fragments remain;
+ *                         ci mode (pull_request): pending fragments are allowed and must be
+ *                         well-formed (allowlisted package, patch|minor|major, non-empty summary)
  *
  *   node scripts/release/policy-gates.mjs                 # PR/CI mode
  *   node scripts/release/policy-gates.mjs --mode=release  # also requires changesets drained
  *   node scripts/release/policy-gates.mjs --json
+ *
+ * The mode is chosen by the caller from the triggering event: squad-release-verify.yml passes
+ * `--mode=ci` on `pull_request` and `--mode=release` when called from the release workflow.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -137,13 +142,58 @@ export function runPolicyGates({ root = ROOT, mode = 'ci' } = {}) {
     gate('changelog-heading', problems.length === 0, problems.length ? problems.join('; ') : `CHANGELOG.md has '## [${version}]' and whatsnew has '## v${version}'`);
   }
 
-  // changeset-drain (release mode only)
-  if (mode === 'release') {
-    const pending = readdirSync(path.join(root, '.changeset')).filter((f) => f.endsWith('.md') && f !== 'README.md');
-    gate('changeset-drain', pending.length === 0, pending.length ? `pending changesets: ${pending.join(', ')}` : 'no pending changeset fragments');
+  // changeset-drain: enforced on the release path; on a pull request pending fragments are
+  // expected (that is how changes are declared) and only need to be well-formed.
+  {
+    const pending = listPendingChangesets(root);
+    if (mode === 'release') {
+      gate('changeset-drain', pending.length === 0, pending.length ? `pending changesets: ${pending.join(', ')}` : 'no pending changeset fragments');
+    } else {
+      const problems = pending.flatMap((f) => validateChangeset(root, f).map((p) => `${f}: ${p}`));
+      gate(
+        'changeset-drain',
+        problems.length === 0,
+        problems.length
+          ? `malformed changesets: ${problems.join('; ')}`
+          : `${pending.length} pending changeset${pending.length === 1 ? '' : 's'} allowed in ${mode} mode (drain is enforced on the release path)`,
+      );
+    }
   }
 
   return { version, mode, gates };
+}
+
+/** Pending `.changeset/*.md` fragments (README excluded), sorted for stable output. */
+export function listPendingChangesets(root = ROOT) {
+  const dir = path.join(root, '.changeset');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md').sort();
+}
+
+const CHANGESET_BUMPS = new Set(['patch', 'minor', 'major']);
+
+/**
+ * Structural validation of one changeset fragment: a YAML-ish frontmatter block whose keys are
+ * allowlisted package names mapping to patch|minor|major, followed by a non-empty summary.
+ * @returns {string[]} problems (empty when well-formed)
+ */
+export function validateChangeset(root, file) {
+  const text = readFileSync(path.join(root, '.changeset', file), 'utf8').replace(/^\uFEFF/, '');
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!m) return ['missing frontmatter block (--- ... ---)'];
+  const problems = [];
+  const entries = m[1].split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (entries.length === 0) problems.push('frontmatter declares no package');
+  for (const line of entries) {
+    const kv = line.match(/^\s*(?:"([^"]+)"|'([^']+)'|([^\s:]+))\s*:\s*(\S+)\s*$/);
+    if (!kv) { problems.push(`unparseable frontmatter line '${line.trim()}'`); continue; }
+    const name = kv[1] ?? kv[2] ?? kv[3];
+    const bump = kv[4];
+    if (!PUBLISH_ALLOWLIST.includes(name)) problems.push(`package '${name}' is not publishable (${PUBLISH_ALLOWLIST.join(', ')})`);
+    if (!CHANGESET_BUMPS.has(bump)) problems.push(`bump '${bump}' for ${name} is not patch|minor|major`);
+  }
+  if (m[2].trim().length === 0) problems.push('empty summary');
+  return problems;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
