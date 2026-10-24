@@ -479,11 +479,8 @@ async function main(): Promise<void> {
           process.exit(1);
         }
       }
-      if (dryRun && !upgradeStateBackend) {
-        // --self --dry-run previews the install command only; nothing else to preview.
-        return;
-      }
       if (!selfUpgradeFailed && !upgradeStateBackend) {
+        // --dry-run previews the install command only (performed=false): nothing else to do.
         if (performed) console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
         return;
       }

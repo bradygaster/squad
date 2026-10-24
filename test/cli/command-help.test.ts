@@ -98,6 +98,7 @@ describe('printCommandHelp', () => {
       'aspire',
       'build',
       'cast',
+      'client',
       'config',
       'copilot',
       'copilot-bridge',

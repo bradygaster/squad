@@ -170,7 +170,8 @@ function renderRow(headerCells: string[], row: BuiltinRosterRow): string {
 
 /**
  * Insert `rows` into team.md content. Target table: `## Built-in Support Agents` when present,
- * else `## Members`; without either a new Built-in Support Agents section is appended.
+ * else `## Members`. A team.md without either table is returned unchanged — the roster is the
+ * user's file and upgrade only completes an existing table, never invents one.
  * Preserves the file's EOL and every existing line; the rows go after the last existing row of
  * the target table so hand-ordered rosters keep their order.
  */
@@ -192,29 +193,17 @@ export function insertBuiltinRosterRows(content: string, rows: readonly BuiltinR
   };
 
   const table = findTable(/^##\s+built-in support agents\s*$/i) ?? findTable(/^##\s+members\s*$/i);
-  if (table) {
-    const rendered = rows.map(r => renderRow(table.headerCells, r));
-    lines.splice(table.insertAt, 0, ...rendered);
-    return lines.join(eol);
-  }
-
-  const section = [
-    '',
-    '## Built-in Support Agents',
-    '',
-    '| Name | Role | Charter | Status |',
-    '|------|------|---------|--------|',
-    ...rows.map(r => renderRow(['Name', 'Role', 'Charter', 'Status'], r)),
-    '',
-  ];
-  const trimmed = content.replace(/(\r?\n)+$/, '');
-  return trimmed + eol + section.join(eol);
+  if (!table) return content;
+  const rendered = rows.map(r => renderRow(table.headerCells, r));
+  lines.splice(table.insertAt, 0, ...rendered);
+  return lines.join(eol);
 }
 
 /**
  * Make sure every built-in whose agent directory exists has a roster row in team.md.
- * Idempotent: a built-in already named anywhere in a table is left alone. Returns the display
- * names that were (or, with `dryRun`, would be) added.
+ * Idempotent: a built-in already named anywhere in a table is left alone; a team.md without a
+ * roster table is left untouched (health reports the drift instead). Returns the display names
+ * that were (or, with `dryRun`, would be) added.
  */
 export function ensureBuiltinRosterRows(squadDir: string, options: { dryRun?: boolean } = {}): string[] {
   const teamMdPath = path.join(squadDir, 'team.md');
@@ -223,8 +212,10 @@ export function ensureBuiltinRosterRows(squadDir: string, options: { dryRun?: bo
   if (content === undefined || content.trim().length === 0) return [];
   const missing = missingBuiltinRosterRows(content, path.join(squadDir, 'agents'));
   if (missing.length === 0) return [];
+  const next = insertBuiltinRosterRows(content, missing);
+  if (next === content) return [];
   if (!options.dryRun) {
-    storage.writeSync(teamMdPath, insertBuiltinRosterRows(content, missing));
+    storage.writeSync(teamMdPath, next);
   }
   return missing.map(r => r.name);
 }

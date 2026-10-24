@@ -97,9 +97,12 @@ describe('team.md built-in roster rows (#2298)', () => {
     expect(out.split('\n').filter((l) => l.startsWith('| Picard'))).toHaveLength(1);
   });
 
-  it('creates a Built-in Support Agents section when team.md has no roster table', () => {
-    const out = insertBuiltinRosterRows('# T\n\nprose only\n', BUILTIN_ROSTER_ROWS.filter((r) => r.dirName === 'fact-checker'));
-    expect(out).toBe('# T\n\nprose only\n\n## Built-in Support Agents\n\n| Name | Role | Charter | Status |\n|------|------|---------|--------|\n| Fact Checker | Devil\'s Advocate & Verification Agent | `.squad/agents/fact-checker/charter.md` | 🔍 Verifier |\n');
+  it('leaves a team.md without any roster table untouched (never invents a table)', () => {
+    const content = '# T\n\nprose only\n';
+    expect(insertBuiltinRosterRows(content, BUILTIN_ROSTER_ROWS.filter((r) => r.dirName === 'fact-checker'))).toBe(content);
+    writeFileSync(join(squadDir, 'team.md'), content);
+    expect(ensureBuiltinRosterRows(squadDir)).toEqual([]);
+    expect(readFileSync(join(squadDir, 'team.md'), 'utf8')).toBe(content);
   });
 
   it('dryRun reports without writing', () => {
