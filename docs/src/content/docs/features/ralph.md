@@ -153,7 +153,10 @@ This runs as a standalone local process (not inside Copilot) that:
 - Checks GitHub every N minutes for untriaged squad work
 - Auto-triages issues based on team roles and keywords
 - Assigns @copilot to `squad:copilot` issues (if auto-assign is enabled)
-- Runs until Ctrl+C
+- Runs until Ctrl+C by default
+
+For unattended runs, `--max-rounds 20` stops after 20 completed rounds, while `--max-duration 8h` stops after eight hours. Both are optional and can be combined; the first limit reached ends the run after any active round finishes. Duration units are `ms`, `s`, `m`, `h`, and `d`. The same settings can be placed under `watch` in `.squad/config.json` as `maxRounds` (positive integer) and `maxDuration` (duration string); CLI flags take precedence.
+
 ### Full Work Monitor Mode (`--execute`)
 Add `--execute` to transform Ralph from a triage bot into a full work monitor that spawns Copilot sessions and moves approved work forward:
 ```bash
@@ -191,6 +194,8 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--execute` | Enable work execution (spawn Copilot to work on issues) | `squad watch --execute` |
 | `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
+| `--max-rounds N` | Stop after N completed rounds | `squad watch --max-rounds 20` |
+| `--max-duration D` | Stop after elapsed time; finish an active round first | `squad watch --max-duration 8h` |
 | `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-5.6-luna"` |
 
 #### Issue Scanning
