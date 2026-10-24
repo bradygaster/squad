@@ -64,6 +64,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-windows-platform:
+    name: Verify Windows-only release tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+      EVIDENCE_DIR: ${{ github.workspace }}\evidence-windows
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Assert checkout is exactly the requested SHA
+        shell: pwsh
+        run: |
+          if ($env:SOURCE_SHA -notmatch '^[0-9a-f]{40}$') { throw "source_sha must be a full lowercase 40-hex SHA, got '$env:SOURCE_SHA'" }
+          $head = git rev-parse HEAD
+          if ($head -ne $env:SOURCE_SHA) { throw "checkout HEAD $head != requested $env:SOURCE_SHA" }
+          New-Item -ItemType Directory -Force -Path $env:EVIDENCE_DIR | Out-Null
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Windows platform suite with JSON report
+        run: npx vitest run test/mcp-root-write.test.ts --reporter=default --reporter=json --outputFile="$env:EVIDENCE_DIR\vitest-report.json"
+
+      - name: Require the Windows-only test to execute
+        if: always()
+        run: node scripts/release/test-reconciliation.mjs --report "$env:EVIDENCE_DIR\vitest-report.json" --out "$env:EVIDENCE_DIR" --platform win32 --require-platform-executions --fail-on-unexplained
+
+      - name: Upload Windows platform evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: release-windows-platform-evidence-${{ env.SOURCE_SHA }}
+          path: evidence-windows/
+          retention-days: 90
+          if-no-files-found: warn
+
   verify:
     name: Verify exact SHA and build evidence
     runs-on: ubuntu-latest

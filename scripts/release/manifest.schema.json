@@ -48,7 +48,7 @@
     },
     "tests": {
       "type": "object", "additionalProperties": false, "required": ["source", "numTotalTests", "byStatus", "byCategory", "countsSum", "unlistedTests", "skippedFiles"],
-      "properties": { "source": { "type": "string" }, "numTotalTests": { "type": "integer" }, "byStatus": { "type": "object" }, "byCategory": { "type": "object" }, "countsSum": { "type": "boolean" }, "unlistedTests": { "type": "integer" }, "skippedFiles": { "type": "array", "items": { "type": "string" } }, "reconciliationFile": { "type": ["string", "null"] } }
+      "properties": { "source": { "type": "string" }, "platform": { "type": "string" }, "numTotalTests": { "type": "integer" }, "byStatus": { "type": "object" }, "byCategory": { "type": "object" }, "countsSum": { "type": "boolean" }, "unlistedTests": { "type": "integer" }, "skippedFiles": { "type": "array", "items": { "type": "string" } }, "reconciliationFile": { "type": ["string", "null"] } }
     },
     "closure": {
       "type": "object", "additionalProperties": false,
