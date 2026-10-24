@@ -327,7 +327,7 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
   });
 
   it.runIf(process.platform === 'win32')(
-    'removes the legacy raw uppercase Windows drive hash while preserving unrelated entries',
+    '[platform: win32] removes the legacy raw uppercase Windows drive hash while preserving unrelated entries',
     () => {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-win-legacy-'));
       try {
@@ -363,7 +363,7 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
   );
 
   it.runIf(process.platform !== 'win32')(
-    'removes the legacy raw POSIX symlink hash while preserving unrelated entries',
+    '[platform: non-win32] removes the legacy raw POSIX symlink hash while preserving unrelated entries',
     () => {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-posix-legacy-'));
       const links = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-links-posix-legacy-'));

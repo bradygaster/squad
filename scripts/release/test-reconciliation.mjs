@@ -37,6 +37,8 @@ export const CATEGORY_RULES = Object.freeze([
   { category: 'env-gated', file: /squad-20-real-clients-stdio\.e2e\.test\.ts$/, reason: 'SQUAD_REAL_CLI_TESTS=1 not set / host CLI binaries absent' },
   { category: 'env-gated', file: /squad-20-host-feature-matrix\.test\.ts$/, reason: 'live host evidence requires the real CLI binaries' },
   { category: 'env-gated', file: /mcp-spec-init\.test\.ts$/, title: /squad\.exe/, reason: 'it.runIf(win32): Windows-only PATH/.exe resolution' },
+  { category: 'env-gated', file: /mcp-root-write\.test\.ts$/, title: /(?:\[platform: win32\]\s+)?removes the legacy raw uppercase Windows drive hash while preserving unrelated entries$/i, reason: "it.runIf(process.platform === 'win32'): Windows-only legacy drive-hash reconciliation" },
+  { category: 'env-gated', file: /mcp-root-write\.test\.ts$/, title: /(?:\[platform: non-win32\]\s+)?removes the legacy raw POSIX symlink hash while preserving unrelated entries$/i, reason: "it.runIf(process.platform !== 'win32'): POSIX-only legacy symlink-hash reconciliation" },
   { category: 'env-gated', file: /profile-boundary\.test\.ts$/, reason: 'host lacks 8.3 short names or symlink/junction privilege' },
   { category: 'env-gated', file: /state-backend\.test\.ts$/, reason: 'platform-gated state backend case' },
   { category: 'env-gated', file: /docs-build\.test\.ts$/, reason: 'docs dependencies not installed' },
@@ -118,6 +120,11 @@ export function reconcile(report, { baseline } = {}) {
   return { generatedAt: new Date().toISOString(), summary, nonPassing: categorized.sort((a, b) => a.file.localeCompare(b.file) || a.fullName.localeCompare(b.fullName)), diffVsBaseline: diff };
 }
 
+export function shouldFail(result, { failOnUnexplained = false } = {}) {
+  const s = result.summary;
+  return failOnUnexplained ? !s.ok : (s.numTotalTests > 0 && (s.byStatus.failed ?? 0) > 0);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
   const reportPath = path.resolve(arg('--report') ?? 'vitest-report.json');
@@ -131,7 +138,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   console.log(`tests=${s.numTotalTests} listed=${s.listed} byStatus=${JSON.stringify(s.byStatus)} byCategory=${JSON.stringify(s.byCategory)} unlisted=${s.unlistedTests} skippedFiles=${s.skippedFiles.join(',') || '-'}`);
   for (const t of result.nonPassing.filter((t) => t.category === 'unexplained' || t.category === 'failed' || t.category === 'todo-blocking')) console.error(`::warning::${t.category}: ${t.file} :: ${t.fullName} [${t.status}]`);
   if (!s.countsSum || s.unlistedTests !== 0) console.error(`::error::${s.unlistedTests} test(s) are counted in numTotalTests but have no listed result (never reached a terminal state); see ${path.join(outDir, 'test-reconciliation.json')}`);
-  const fail = process.argv.includes('--fail-on-unexplained') ? !s.ok : (s.numTotalTests > 0 && (s.byStatus.failed ?? 0) > 0);
+  const fail = shouldFail(result, { failOnUnexplained: process.argv.includes('--fail-on-unexplained') });
   console.log(`${s.ok ? '✅' : '⚠️'} reconciliation written to ${outDir}`);
   process.exit(fail ? 1 : 0);
 }
