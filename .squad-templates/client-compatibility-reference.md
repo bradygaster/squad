@@ -8,13 +8,15 @@ Squad runs on multiple Copilot surfaces. The coordinator MUST detect its platfor
 
 Before spawning agents, determine the platform by checking available tools:
 
-1. **CLI mode** — `task` tool is available → full spawning control. Use `task` with `agent_type`, `mode`, `model`, `description`, `prompt` parameters. Collect results via `read_agent`.
+1. **Copilot App mode** — `create_session` tool is available → persistent sub-sessions with isolated worktrees for commit-producing work. Use `create_session` and collect results through the session's report-back.
 
-2. **VS Code mode** — `runSubagent` or `agent` tool is available → conditional behavior. Use `runSubagent` with the task prompt. Drop `agent_type`, `mode`, and `model` parameters. Multiple subagents in one turn run concurrently (equivalent to background mode). Results return automatically — no `read_agent` needed.
+2. **CLI mode** — `task` tool is available → full spawning control. Use `task` with `agent_type`, `mode`, `model`, `description`, `prompt` parameters. Collect results via `read_agent`.
 
-3. **Fallback mode** — neither `task` nor `runSubagent`/`agent` available → work inline. Do not apologize or explain the limitation. Execute the task directly.
+3. **VS Code mode** — `runSubagent` or `agent` tool is available → conditional behavior. Use `runSubagent` with the task prompt. Drop `agent_type`, `mode`, and `model` parameters. Multiple subagents in one turn run concurrently (equivalent to background mode). Results return automatically — no `read_agent` needed.
 
-If both `task` and `runSubagent` are available, prefer `task` (richer parameter surface).
+4. **No dispatch tool available** — refuse domain work. Direct Mode remains available only for brief answers already supported by the current context; missing tools never authorize inline domain work.
+
+If multiple dispatch tools are available, prefer `create_session` for commit-producing work, then `task` for richer ephemeral spawning control, then `runSubagent`.
 
 #### VS Code Spawn Adaptations
 
