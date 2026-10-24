@@ -74,7 +74,7 @@ Reviewers see squad metadata mixed with your actual code changes.
 **Result:**
 - Squad state persists across branch switches
 - PRs never contain `.squad/` files
-- State is isolated per repository (based on repo name)
+- State is keyed per project; use `--key` when projects resolve to the same default key
 
 ---
 
@@ -106,6 +106,14 @@ squad externalize
 - Working tree has only `.squad/config.json` (gitignored marker)
 - All squad state lives in global directory
 - Branch switches don't affect squad data
+
+External state directories are keyed by the project directory name by default. Squad records the owning project in an `.owner.json` file in the global directory. If a different project resolves to a key that is already owned, `squad externalize` refuses before moving state. Choose a unique key to keep both projects' state separate:
+
+```bash
+squad externalize --key acme-api
+```
+
+A populated directory from an older Squad version can be adopted when this project's `.squad/config.json` already points to that key. An occupied directory without matching project configuration is left untouched and refused rather than overwritten.
 
 ---
 
@@ -172,7 +180,7 @@ The thin marker file `.squad/config.json` tracks state location:
     skills/
 ```
 
-Each repo gets its own isolated directory based on repository name. State is never shared across repos.
+Each project key gets its own directory. The default key comes from the project directory name, so projects with the same name should use distinct keys with `squad externalize --key <name>`.
 
 ---
 
@@ -193,7 +201,7 @@ Each repo gets its own isolated directory based on repository name. State is nev
 
 ## Multi-Repo Workflows
 
-External state is **isolated per repository** — each repo gets its own global directory. If you work on multiple repos, each maintains separate squad state:
+External state is **keyed per project**. If you work on multiple repos with different directory names, each gets a separate global directory. If two project directories resolve to the same key, choose a distinct key with `--key`:
 
 ```
 ~/Library/Application Support/squad/projects/

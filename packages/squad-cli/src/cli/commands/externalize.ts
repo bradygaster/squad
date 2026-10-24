@@ -15,10 +15,12 @@
  */
 
 import path from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { FSStorageProvider, resolveExternalStateDir, deriveProjectKey } from '@bradygaster/squad-sdk';
 import { fatal } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
+const EXTERNAL_OWNER_FILE = '.owner.json';
 
 /** Entries under .squad/ that must NOT be externalized (they stay in the repo).
  *  All of these are read from the working tree by runtime code that does not
@@ -37,6 +39,7 @@ const KEEP_LOCAL = new Set([
   'upstream.json',
   'squad-registry.json',
   '_upstream_repos',
+  EXTERNAL_OWNER_FILE,
 ]);
 
 /**
@@ -53,7 +56,25 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
 
   // Derive project key
   const key = projectKey || deriveProjectKey(projectDir);
-  const externalDir = resolveExternalStateDir(key, true);
+  const externalDir = resolveExternalStateDir(key, false);
+
+  // Read the local config before moving anything. It can identify an existing
+  // external directory created by an older Squad version that had no owner file.
+  const configPath = path.join(squadDir, 'config.json');
+  let existingConfig: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      if (raw != null) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          existingConfig = parsed as Record<string, unknown>;
+        }
+      }
+    } catch { /* start fresh if config is malformed */ }
+  }
+
+  ensureExternalStateOwnership(projectDir, key, externalDir, existingConfig);
 
   console.log(`📦 Externalizing .squad/ state to: ${externalDir}`);
 
@@ -79,20 +100,6 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
   }
 
   // Write thin config.json marker, preserving any existing config fields
-  const configPath = path.join(squadDir, 'config.json');
-  let existingConfig: Record<string, unknown> = {};
-  if (storage.existsSync(configPath)) {
-    try {
-      const raw = storage.readSync(configPath);
-      if (raw != null) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          existingConfig = parsed as Record<string, unknown>;
-        }
-      }
-    } catch { /* start fresh if config is malformed */ }
-  }
-
   const config = {
     ...existingConfig,
     version: 1,
@@ -111,6 +118,71 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
   console.log(`✅ Externalized ${movedCount} items. State now at: ${externalDir}`);
   console.log(`   .squad/config.json marker left in repo (gitignored).`);
   console.log(`   Run \`squad internalize\` to move state back.`);
+}
+
+function ensureExternalStateOwnership(
+  projectDir: string,
+  projectKey: string,
+  externalDir: string,
+  existingConfig: Record<string, unknown>,
+): void {
+  const ownerPath = path.join(externalDir, EXTERNAL_OWNER_FILE);
+  const projectPath = path.resolve(projectDir);
+  const normalizedProjectPath = normalizeProjectPath(projectPath);
+
+  const assertOwner = (): void => {
+    let ownerProjectPath: unknown;
+    try {
+      const raw = storage.readSync(ownerPath);
+      const owner = JSON.parse(raw ?? '') as { projectPath?: unknown };
+      ownerProjectPath = owner?.projectPath;
+    } catch {
+      fatal(`External state directory has an invalid ownership marker: ${ownerPath}. Refusing to move state.`);
+    }
+
+    if (typeof ownerProjectPath !== 'string') {
+      fatal(`External state directory has an invalid ownership marker: ${ownerPath}. Refusing to move state.`);
+    }
+    if (normalizeProjectPath(ownerProjectPath) !== normalizedProjectPath) {
+      fatal(`External state directory "${externalDir}" already belongs to "${ownerProjectPath}". Choose a different project key with --key before externalizing.`);
+    }
+  };
+
+  if (storage.existsSync(ownerPath)) {
+    assertOwner();
+    return;
+  }
+
+  const existingEntries = storage.existsSync(externalDir)
+    ? storage.listSync?.(externalDir) ?? []
+    : [];
+  if (existingEntries.includes(EXTERNAL_OWNER_FILE)) {
+    assertOwner();
+    return;
+  }
+
+  const canAdoptLegacyDirectory = existingConfig['stateLocation'] === 'external'
+    && existingConfig['projectKey'] === projectKey;
+  if (existingEntries.length > 0 && !canAdoptLegacyDirectory) {
+    fatal(`External state directory "${externalDir}" already contains data but has no ownership marker. Refusing to move state. Choose a different project key with --key, or run externalize from the project whose config.json points to this key.`);
+  }
+
+  storage.mkdirSync(externalDir, { recursive: true });
+  try {
+    writeFileSync(
+      ownerPath,
+      JSON.stringify({ version: 1, projectPath }, null, 2) + '\n',
+      { flag: 'wx' },
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    assertOwner();
+  }
+}
+
+function normalizeProjectPath(projectPath: string): string {
+  const resolved = path.resolve(projectPath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 /**
@@ -150,7 +222,7 @@ export function runInternalize(projectDir: string): void {
   // Dynamically discover everything in the external dir and copy it back.
   const entries = storage.listSync?.(externalDir) ?? [];
   for (const entry of entries) {
-    if (KEEP_LOCAL.has(entry)) continue;
+    if (KEEP_LOCAL.has(entry) || entry === EXTERNAL_OWNER_FILE) continue;
     const src = path.join(externalDir, entry);
     const dest = path.join(squadDir, entry);
     if (storage.isDirectorySync(src)) {
