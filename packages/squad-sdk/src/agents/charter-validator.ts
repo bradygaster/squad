@@ -126,6 +126,7 @@ const STANDARD_SECTION_GROUPS = [
     names: ['Collaboration and Review Authority', 'Collaboration'],
   },
   { semantic: 'Model', names: ['Model'] },
+  { semantic: 'Examples', names: ['Examples'] },
 ] as const;
 const UNIQUE_MACHINE_FIELDS: readonly FieldDefinition[] = [
   { name: 'ID', section: 'Identity' },
@@ -368,6 +369,7 @@ function validateCharter(
     'Identity',
     ...CANONICAL_RESPONSIBILITY_SECTIONS,
     'Model',
+    'Examples',
   ];
   const standardSections = scan.sections.filter(section => !section.isExtension);
   const unknownSection = standardSections.find(section =>

@@ -203,6 +203,7 @@
         "ownership",
         "boundaries",
         "collaboration",
+        "examples",
         "modelPreference",
         "modelRationale",
         "modelFallback",
@@ -254,6 +255,9 @@
           "type": ["string", "null"]
         },
         "collaboration": {
+          "type": ["string", "null"]
+        },
+        "examples": {
           "type": ["string", "null"]
         },
         "modelPreference": {

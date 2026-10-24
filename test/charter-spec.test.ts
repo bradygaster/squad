@@ -44,6 +44,7 @@ interface ParsedSemantics {
   ownership: string | null;
   boundaries: string | null;
   collaboration: string | null;
+  examples: string | null;
   modelPreference: string | null;
   modelRationale: string | null;
   modelFallback: string | null;
@@ -214,6 +215,7 @@ function normalizeParsed(parsed: ParsedCharter): ParsedSemantics {
     ownership: parsed.ownership ?? null,
     boundaries: parsed.boundaries ?? null,
     collaboration: parsed.collaboration ?? null,
+    examples: parsed.examples ?? null,
     modelPreference: parsed.modelPreference ?? null,
     modelRationale: parsed.modelRationale ?? null,
     modelFallback: parsed.modelFallback ?? null,
@@ -592,6 +594,98 @@ describe('Squad Charter Profile v0.1 portable conformance manifest', () => {
         }
       }
     }
+  });
+});
+
+describe('optional charter Examples', () => {
+  const examples = [
+    '```yaml',
+    'examples:',
+    '  - id: greeting',
+    '    input: Ada',
+    '    assertions:',
+    '      - id: greeting-text',
+    '        type: contains',
+    '        value: Hello, Ada',
+    '```',
+  ].join('\n');
+
+  async function charter(model = false): Promise<string> {
+    const canonical = (await readFile(path.join(FIXTURE_ROOT, 'positive', 'canonical.md'), 'utf8'))
+      .replaceAll('\r\n', '\n');
+    const prefix = canonical.split('## Model')[0]!.trimEnd();
+    return `${prefix}\n\n${model ? '## Model\n**Preferred:** auto\n\n' : ''}## Examples\n\n${examples}\n`;
+  }
+
+  it.each([false, true])('accepts Examples with Model=%s and preserves a canonical no-op', async model => {
+    const markdown = await charter(model);
+    expect(validateCharterMarkdown(markdown).diagnostics).toEqual([]);
+    const parsed = parseCharterMarkdown(markdown);
+    expect(parsed).toHaveProperty('examples', examples);
+    expect(serializeCharter(parsed)).toBe(markdown);
+  });
+
+  it.each(['\n', '\r\n'])('keeps Examples before opaque extensions through an unrelated edit (%j)', async eol => {
+    const extension = '## X-demo-policy\n\nOpaque.\n## Examples\nNot a standard section.\n'.replaceAll('\n', eol);
+    const markdown = (await charter(true)).replaceAll('\n', eol) + eol + extension;
+    const parsed = parseCharterMarkdown(markdown);
+    parsed.identity.purpose = 'Return a short greeting.';
+    const edited = serializeCharter(parsed);
+    expect(edited).toContain(`## Examples${eol}${eol}${examples}${eol}`);
+    expect(edited.endsWith(extension)).toBe(true);
+    expect(validateCharterMarkdown(edited).diagnostics).toEqual([]);
+    expect(serializeCharter(parsed, { format: 'legacy' })).toContain(examples);
+  });
+
+  it('invalidates the no-op cache when Examples change or are removed', async () => {
+    const parsed = parseCharterMarkdown(await charter());
+    Object.assign(parsed, { examples: 'A new example.' });
+    expect(serializeCharter(parsed)).toContain('## Examples\n\nA new example.');
+    Object.assign(parsed, { examples: undefined });
+    expect(serializeCharter(parsed)).not.toContain('## Examples');
+  });
+
+  it('diagnoses duplicate Examples case-insensitively and noncanonical ordering', async () => {
+    const markdown = await charter();
+    expect(validateCharterMarkdown(`${markdown}\n## examples\nAgain.\n`).diagnostics.map(d => d.code))
+      .toEqual(['SQC011']);
+    expect(validateCharterMarkdown(`${markdown}\n## Model\n**Preferred:** auto\n`).diagnostics.map(d => d.code))
+      .toEqual(['SQC108']);
+  });
+
+  it('preserves a no-op when Examples contain field-like prose', async () => {
+    const markdown = (await charter()).replace(examples,
+      '- **Name:** Ada\n- **Role:** caller\n- **Expertise:** greetings\n- **Style:** concise\n- **Fallback:** none');
+    expect(validateCharterMarkdown(markdown).diagnostics).toEqual([]);
+    expect(serializeCharter(parseCharterMarkdown(markdown))).toBe(markdown);
+  });
+
+  it.each([
+    ['Identity', '\n'],
+    ['Model', '\n'],
+    ['Identity', '\r\n'],
+    ['Model', '\r\n'],
+  ])('preserves indented %s example headings through an unrelated edit (%j)', async (heading, eol) => {
+    const indented = `    ## ${heading}\n    This is example code, not a charter section.`;
+    const markdown = (await charter())
+      .replace(examples, ` \t\n${indented}\n \t\n`)
+      .replaceAll('\n', eol);
+    expect(validateCharterMarkdown(markdown).diagnostics).toEqual([]);
+    const parsed = parseCharterMarkdown(markdown);
+    expect(serializeCharter(parsed)).toBe(markdown);
+    expect(parsed.examples).toBe(indented);
+
+    parsed.identity.purpose = 'An unrelated purpose edit.';
+    const edited = serializeCharter(parsed);
+    expect(edited).toContain(indented);
+    expect(validateCharterMarkdown(edited).diagnostics).toEqual([]);
+    expect(parseCharterMarkdown(edited).examples).toBe(indented);
+  });
+
+  it('ignores fake standard headings inside fenced Examples', async () => {
+    const markdown = (await charter()).replace(examples, '```markdown\n## Examples\n## Model\n**Preferred:** fake\n```');
+    expect(validateCharterMarkdown(markdown).diagnostics).toEqual([]);
+    expect(parseCharterMarkdown(markdown).modelPreference).toBeUndefined();
   });
 });
 

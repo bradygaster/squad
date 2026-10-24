@@ -169,6 +169,13 @@ export function serializeCharter(
     lines.push('');
   }
 
+  if (charter.examples !== undefined) {
+    lines.push('## Examples');
+    lines.push('');
+    lines.push(charter.examples);
+    lines.push('');
+  }
+
   const canonical = lines.join(eol).trimEnd() + eol;
   const extensions = charter.source?.extensions.join('') ?? '';
   return extensions
