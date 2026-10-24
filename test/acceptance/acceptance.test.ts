@@ -5,9 +5,8 @@
 
 import { afterEach } from 'vitest';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
 import { createRegistry, runFeature } from './support/runner.js';
-import { registerCLISteps } from './steps/cli-steps.js';
+import { cleanupAcceptanceTempDirs, registerCLISteps } from './steps/cli-steps.js';
 import { TerminalHarness } from './harness.js';
 
 // Create step definition registry
@@ -20,6 +19,7 @@ afterEach(async (context) => {
   if (harness) {
     await harness.close();
   }
+  cleanupAcceptanceTempDirs();
 });
 
 // Run all feature files
