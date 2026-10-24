@@ -15,7 +15,7 @@ import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, clearResolveSquadCa
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
-import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
+import { describeMcpSpec, ensureUserOwnedTemplates, recordShippedFilesAfterInit } from './upgrade.js';
 import { syncCopilotInstructionsFile } from './managed-file.js';
 import { getTemplatesDir } from './templates.js';
 import {
@@ -291,8 +291,8 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         displayName: 'Ralph',
       },
       {
-        name: 'Rai',
-        role: 'Rai',
+        name: 'rai',
+        role: 'rai',
         displayName: 'Rai',
       },
       {
@@ -352,6 +352,8 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   try {
     const templatesDir = getTemplatesDir();
     ensureUserOwnedTemplates(dest, templatesDir);
+    // Baseline for `squad upgrade`: hashes of every squad-owned file as shipped by this init.
+    recordShippedFilesAfterInit(dest, squadDir, templatesDir, version);
   } catch {
     // Non-fatal: if templates dir is not found (unusual install), skip silently.
   }

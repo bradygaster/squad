@@ -5,6 +5,7 @@
  */
 
 import path from 'node:path';
+import { readdirSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import {
   FSStorageProvider,
@@ -25,7 +26,7 @@ const storage = new FSStorageProvider();
 
 export const HEALTH_SCHEMA = 'squad-health/v1' as const;
 
-export type HealthCheckStatus = 'pass' | 'fail' | 'skip';
+export type HealthCheckStatus = 'pass' | 'info' | 'warn' | 'fail' | 'skip';
 export type HealthCheckId =
   | 'team'
   | 'registry-charters'
@@ -42,6 +43,7 @@ export interface HealthCheckItem {
 
 export interface HealthReport {
   schema: typeof HEALTH_SCHEMA;
+  /** `fail` when any check failed; informational items and warnings never fail the report. */
   status: 'pass' | 'fail';
   checks: HealthCheckItem[];
 }
@@ -50,8 +52,31 @@ interface CastingRegistry {
   agents: Record<string, unknown>;
 }
 
+/**
+ * Built-ins are not cast registry agents. Rai and Fact Checker are available after upgrade but
+ * remain explicit roster opt-ins for existing squads.
+ */
+const BUILTIN_AGENTS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'scribe', name: 'Scribe' },
+  { id: 'ralph', name: 'Ralph' },
+  { id: 'rai', name: 'Rai' },
+  { id: 'fact-checker', name: 'Fact Checker' },
+];
+
 function pass(id: HealthCheckId, message: string): HealthCheckItem {
   return { id, status: 'pass', message };
+}
+
+function infoItem(id: HealthCheckId, message: string, diagnostics?: string[]): HealthCheckItem {
+  return diagnostics && diagnostics.length > 0
+    ? { id, status: 'info', message, diagnostics }
+    : { id, status: 'info', message };
+}
+
+function warnItem(id: HealthCheckId, message: string, diagnostics?: string[]): HealthCheckItem {
+  return diagnostics && diagnostics.length > 0
+    ? { id, status: 'warn', message, diagnostics }
+    : { id, status: 'warn', message };
 }
 
 function fail(
@@ -168,6 +193,33 @@ function checkTeam(squadDir: string): HealthCheckItem {
       );
     }
 
+    // Built-ins whose agent directory exists but have no row anywhere in team.md (#2298).
+    const agentsDir = path.join(squadDir, 'agents');
+    let present = new Set<string>();
+    try {
+      present = new Set(readdirSync(agentsDir).map((e) => e.toLowerCase()));
+    } catch {
+      // no agents directory — nothing to cross-check
+    }
+    const rows = content
+      .split(/\r?\n/)
+      .filter((line) => line.trim().startsWith('|'))
+      .map((line) => line.toLowerCase());
+    const missingBuiltins = BUILTIN_AGENTS.filter(({ id, name }) =>
+      (id === 'rai' || id === 'fact-checker') &&
+      present.has(id) &&
+      !rows.some((row) => row.includes(`agents/${id}/charter.md`) || row.split('|').map((c) => c.replace(/[`*_]/g, '').trim())[1] === name.toLowerCase()),
+    );
+    if (missingBuiltins.length > 0) {
+      return infoItem(
+        'team',
+        `team.md is valid (${parsed.agents.length} members); ${missingBuiltins.length} optional built-in agent${missingBuiltins.length === 1 ? ' is' : 's are'} available but not configured`,
+        missingBuiltins
+          .map(({ id, name }) => `${name} is available but not configured — run \`squad roster add ${id}\` to opt in`)
+          .sort((a, b) => a.localeCompare(b)),
+      );
+    }
+
     return pass('team', `team.md is valid (${parsed.agents.length} members)`);
   } catch (error) {
     return fail('team', errorMessage(error));
@@ -183,6 +235,7 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
   }
 
   const diagnostics: string[] = [];
+  const legacyCharters: string[] = [];
   const normalizedIds = new Map<string, string>();
   const persistentNames = new Map<string, string>();
   const agentIds = Object.keys(registry.agents).sort((a, b) =>
@@ -249,8 +302,10 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
         readRequiredFile(path.join(squadDir, displayPath), displayPath),
       );
       if (!charter.identity.name || !charter.identity.role) {
-        diagnostics.push(
-          `${agentId}: charter must declare identity name and role`,
+        // A charter written before the 2.0 `## Identity` block is a warning with a hint, not a
+        // failure: the squad keeps working, the author just has not adopted the new shape (#2298).
+        legacyCharters.push(
+          `${agentId}: legacy charter — add "## Identity" with "- **Name:** ${entry.persistent_name}" and "- **Role:** <role>" (see .squad/templates/charter.md)`,
         );
       } else if (
         normalizeAgentRef(charter.identity.name) !== persistentName
@@ -268,7 +323,15 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
     return fail(
       'registry-charters',
       `${diagnostics.length} registry or charter validation failure${diagnostics.length === 1 ? '' : 's'}`,
-      diagnostics.sort((a, b) => a.localeCompare(b)),
+      [...diagnostics, ...legacyCharters].sort((a, b) => a.localeCompare(b)),
+    );
+  }
+
+  if (legacyCharters.length > 0) {
+    return warnItem(
+      'registry-charters',
+      `${agentIds.length} registry agent${agentIds.length === 1 ? '' : 's'} have charters; ${legacyCharters.length} legacy charter${legacyCharters.length === 1 ? '' : 's'} without a 2.0 identity block`,
+      legacyCharters.sort((a, b) => a.localeCompare(b)),
     );
   }
 
@@ -300,6 +363,13 @@ function loadKnownRoutingAgentKeys(squadDir: string): Set<string> {
   for (const agent of team.agents) {
     const key = normalizeAgentRef(agent.name);
     if (key.startsWith('@')) keys.add(key);
+  }
+  // Built-ins are legitimate routing targets only while their installed charter exists. A route
+  // to an unavailable built-in is a real configuration inconsistency and must fail health.
+  for (const { id, name } of BUILTIN_AGENTS) {
+    if (!storage.existsSync(path.join(squadDir, 'agents', id, 'charter.md'))) continue;
+    keys.add(normalizeAgentRef(id));
+    keys.add(normalizeAgentRef(name));
   }
   return keys;
 }

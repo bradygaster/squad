@@ -24,8 +24,13 @@ export interface UpdateCheckResult {
   updateAvailable: boolean;
   cacheAge: string | null;
   checkedAt: string | null;
+  /** True when the cached result is older than the max age and should not be trusted (#2299). */
+  stale?: boolean;
   error?: string;
 }
+
+/** A cache older than this is reported as stale; `--refresh` is required to trust it. */
+export const UPDATE_CHECK_MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Detect release channel from a version's prerelease tag (e.g. "insider.2" → "insider"). */
 export function detectChannel(version: string): ReleaseChannel {
@@ -109,13 +114,17 @@ export async function runUpdateCheck(
     };
   }
 
+  const ageMs = Date.now() - cached.checkedAt;
+  const stale = ageMs > UPDATE_CHECK_MAX_CACHE_AGE_MS;
   return {
     current: currentVersion,
     channel,
     latest: cached.latestVersion,
-    updateAvailable: isNewer(currentVersion, cached.latestVersion),
-    cacheAge: formatCacheAge(Date.now() - cached.checkedAt),
+    // A stale cache cannot claim an update exists: the newer version may already be installed.
+    updateAvailable: stale ? false : isNewer(currentVersion, cached.latestVersion),
+    cacheAge: formatCacheAge(ageMs),
     checkedAt: new Date(cached.checkedAt).toISOString(),
+    stale,
   };
 }
 
@@ -130,7 +139,12 @@ function printHuman(result: UpdateCheckResult): void {
     console.log('No cached update status yet. Run `squad update-check --refresh` to check now.');
     return;
   }
-  console.log(`Latest:  ${result.latest}`);
+  const checked = result.checkedAt ? ` (cached ${result.checkedAt.slice(0, 10)}, age ${result.cacheAge})` : '';
+  console.log(`Latest:  ${result.latest}${checked}`);
+  if (result.stale) {
+    console.log('⚠️ Cached result is older than 24h and may be out of date. Run `squad update-check --refresh` to check now.');
+    return;
+  }
   if (result.updateAvailable) {
     console.log('Update available. Run `squad upgrade --self` to install.');
   } else {

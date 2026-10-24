@@ -225,6 +225,11 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
     displayName: 'Ralph',
     description: 'Persistent memory agent that maintains context across sessions.'
   },
+  'rai': {
+    displayName: 'Rai',
+    description: 'Responsible AI reviewer ensuring content safety, bias detection, and ethical standards.'
+  },
+  // Legacy capitalized role id (pre-2.0 init passed `Rai`); canonical id is `rai`.
   'Rai': {
     displayName: 'Rai',
     description: 'Responsible AI reviewer ensuring content safety, bias detection, and ethical standards.'

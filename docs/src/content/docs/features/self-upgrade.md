@@ -15,22 +15,38 @@ squad upgrade --self --insider
 squad upgrade --self && squad upgrade
 ```
 
-Squad can upgrade itself to the latest stable or insider release, then automatically refresh your repo templates. Insider builds are published from the `dev` branch to the npm `insider` dist-tag.
+Squad can upgrade itself to the latest release on its own channel, then you refresh your repo templates with `squad upgrade`. Prerelease builds (`X.Y.Z-preview.N`, `X.Y.Z-insider.N`) are published to the npm `insider` dist-tag (`preview` is an alias of it).
 
 ---
 
 ## What It Does
 
-`squad upgrade --self` upgrades the Squad CLI package to the latest stable release:
+`squad upgrade --self` upgrades the Squad CLI package:
 
-1. **Detects package manager** — auto-detects npm, pnpm, or yarn based on lock files
-2. **Upgrades package** — runs `npm install -g @bradygaster/squad@latest` (or pnpm/yarn equivalent)
-3. **Runs repo upgrade** — automatically runs `squad upgrade` to apply new templates
+1. **Detects package manager** — auto-detects npm, pnpm, or yarn
+2. **Picks the channel** — a prerelease install follows `@insider`, a stable install follows `@latest`; `--insider` forces `@insider`
+3. **Guards against downgrades** — the dist-tag is resolved first; if it points at a version older than the one you run, the upgrade is refused unless you pass `--force`
+4. **Upgrades package** — runs `npm install -g @bradygaster/squad-cli@<tag>` (or pnpm/yarn equivalent)
 
-**Result:**
-- Squad CLI upgraded to latest stable
-- Your repo's `.squad/` templates refreshed with latest version
-- All in one command
+**Preview first:**
+
+```bash
+squad upgrade --self --dry-run
+```
+
+prints the exact command and installs nothing:
+
+```
+Dry run — would self-upgrade via npm (insider → 2.0.0-preview.2):
+  npm install -g @bradygaster/squad-cli@insider
+Nothing was installed. Run without --dry-run to apply.
+```
+
+**Downgrade refused:**
+
+```
+❌ Self-upgrade failed: Refusing to downgrade: @latest currently resolves to 1.1.0, older than the installed 2.0.0-preview.1. Pass --force to install it anyway, or --insider to stay on the prerelease channel.
+```
 
 ---
 
@@ -99,35 +115,25 @@ Squad auto-detects your package manager based on lock files in the current direc
 
 ---
 
-## Auto-Refresh Repo Templates
+## Refresh Repo Templates
 
-After upgrading the CLI, `squad upgrade --self` automatically runs `squad upgrade` to refresh your repo's `.squad/` templates. This ensures:
+`squad upgrade --self` only replaces the CLI package. Run `squad upgrade` afterwards (from the new CLI) to refresh your repo's Squad-owned files:
 
 - Built-in skills updated to latest versions
 - Charter templates refreshed
 - Routing/team file patterns updated
 - New features added (e.g., cleanup config, scratch dir, external state)
 
-**Skip auto-refresh:**
-
-If you want to upgrade the CLI without refreshing repo templates:
-
-```bash
-squad upgrade --self --skip-repo-upgrade
-```
-
-*(This flag may not exist yet — just showing the pattern. For now, self-upgrade always runs repo upgrade.)*
-
 ### Your Customizations Are Backed Up
 
-`squad upgrade` overwrites Squad-owned files with the latest templates. Before it overwrites a file you've edited locally, it saves your version alongside it as `<file>.local-backup` and prints a warning.
+`squad upgrade` overwrites Squad-owned files with the latest templates. Before it overwrites a file you've edited locally, it saves your version alongside it as `<file>.local-backup`, reads the backup back to verify it, and only then overwrites; if the backup cannot be verified the file is left untouched and reported.
 
-This covers `.github/agents/squad.agent.md` and the Squad-managed workflow files in `.github/workflows/`.
+This covers every Squad-owned file: `.github/agents/squad.agent.md`, `.github/skills/*/SKILL.md`, the Squad-managed workflow files in `.github/workflows/`, the flat `.squad/casting-*.json` template copies and everything under `.squad/templates/` (including its `skills/` and `workflows/` snapshots, which older releases never refreshed).
 
 ```text
 ⚠  squad.agent.md has local customizations — backed up to squad.agent.md.local-backup
    To restore: copy squad.agent.md.local-backup → squad.agent.md
-⚠  squad-ci.yml has local customizations — backed up to squad-ci.yml.local-backup
+⚠  .squad/templates/model-selection-reference.md has local customizations — backed up to model-selection-reference.md.local-backup
 ```
 
 To restore your version, copy the backup back over the refreshed file:
@@ -136,13 +142,17 @@ To restore your version, copy the backup back over the refreshed file:
 cp .github/agents/squad.agent.md.local-backup .github/agents/squad.agent.md
 ```
 
-Three things worth knowing:
+Things worth knowing:
 
-- **Version stamps don't count as customizations.** The `<!-- squad-cli vX.Y.Z -->` line in `squad.agent.md` changes on every release, so it's stripped before comparing. A file that differs only by its version stamp is refreshed silently, with no backup.
+- **"Customized" means you changed it.** Squad records the hash of every file it ships in `.squad/templates/.shipped-manifest.json`. A file that still matches what Squad shipped is refreshed silently when a new release changes the template; only a file that differs from both the shipped version and the new template is backed up. (Projects upgraded from a release without the manifest get a one-time backup of every differing file.)
+- **Line endings don't count as customizations.** A CRLF checkout on Windows compares equal to the LF template, so a second `squad upgrade` right after the first changes nothing and `squad upgrade --dry-run` reports nothing to overwrite.
+- **Version stamps don't count as customizations.** The `<!-- version: X.Y.Z -->` line in `squad.agent.md` changes on every release, so it's stripped before comparing.
 - **Only the most recent backup is kept.** Backups are written to a fixed path, so re-customizing a file and upgrading again overwrites the previous `.local-backup`. Move anything you want to keep somewhere safe before your next upgrade.
 - **Backups aren't gitignored.** They show up as untracked files in `git status`. Delete them once you've merged back what you need.
+- **`.gitignore` and `.gitattributes` are appended to, never rewritten.** Missing Squad entries are added in the file's own line-ending style; a one-line addition never produces a whole-file diff.
+- **Retired files are cleaned up.** A file Squad shipped in an earlier release but no longer ships is removed when it still matches what was shipped, and left in place (with a warning) when you modified it.
 
-`squad upgrade --dry-run` previews the upgrade and will tell you if `squad.agent.md` would be backed up. It stops short of the workflow files, so it won't flag customized workflows — check those yourself before upgrading if you've edited them.
+`squad upgrade --dry-run` previews the whole upgrade without writing anything: it lists every file that would be created or overwritten (marking the ones that would be backed up), retired files that would be removed, and `.gitignore`/`.gitattributes` entries that would be appended.
 
 ---
 
@@ -219,11 +229,12 @@ Reads the same cache the background startup check maintains and prints it as str
   "latest": "1.1.0-insider.3",
   "updateAvailable": true,
   "cacheAge": "PT2H15M",
-  "checkedAt": "2026-05-26T12:00:00.000Z"
+  "checkedAt": "2026-05-26T12:00:00.000Z",
+  "stale": false
 }
 ```
 
-This gives editor extensions, coordinator instructions, and CI scripts a stable interface to query update status without replicating the OS-specific cache path or TTL-freshness logic themselves.
+This gives editor extensions, coordinator instructions, and CI scripts a stable interface to query update status without replicating the OS-specific cache path or TTL-freshness logic themselves. A cache older than 24 hours is reported with `"stale": true` and `"updateAvailable": false` — run `--refresh` to trust it again.
 
 **Flags:**
 - `--json` — structured output (shown above)
@@ -235,7 +246,7 @@ This gives editor extensions, coordinator instructions, and CI scripts a stable 
 
 ```
 Current: 1.1.0-insider.2 (insider channel)
-Latest:  1.1.0-insider.3
+Latest:  1.1.0-insider.3 (cached 2026-05-26, age PT2H15M)
 Update available. Run `squad upgrade --self` to install.
 ```
 

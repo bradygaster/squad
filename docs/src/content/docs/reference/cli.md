@@ -44,6 +44,8 @@ prerequisites, all supported methods, and update commands.
 | `squad upgrade --client <list>` | Add hosts to the configured set and refresh every configured host projection; user settings in `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json` and `.codex/config.toml` are preserved | Yes |
 | `squad upgrade --state-backend <type>` | Migrate state backend (`orphan`, `two-layer`); installs git hooks automatically | Yes |
 | `squad upgrade --migrate-directory` | Rename legacy `.ai-team/` directory to `.squad/` | Yes |
+| `squad roster add <rai\|fact-checker\|all> [--dry-run]` | Explicitly add optional built-ins to `team.md`; previews the exact diff, verifies a byte-exact backup, and records provenance | Yes |
+| `squad roster remove <rai\|fact-checker\|all> [--dry-run]` | Remove only provenance-owned rows and restore prior bytes when otherwise unchanged (`disable` and `uninstall` are aliases) | Yes |
 | `squad triage` | Auto-triage issues and assign to team (primary name; `watch` is an alias) | Yes |
 | `squad triage --interval <min>` | Continuous triage (default: every 10 min) | Yes |
 | `squad watch --execute` | Enable work execution (spawn Copilot to work on issues) | Yes |

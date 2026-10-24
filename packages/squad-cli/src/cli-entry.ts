@@ -168,11 +168,22 @@ async function main(): Promise<void> {
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
-    console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
-    console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
+    console.log(`             Overwrites (content-compared, customized copies backed up to`);
+    console.log(`             <file>.local-backup first): .github/agents/squad.agent.md,`);
+    console.log(`             .github/skills/*, .github/workflows/squad-*.yml, .squad/templates/`);
+    console.log(`             Never touches: team.md, routing.md, decisions, agents/*/history.md,`);
+    console.log(`             casting registry/history, config.json, .ai-team/ (your team state)`);
+    console.log(`                    --dry-run (preview; writes nothing, installs nothing)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
     console.log(`                    --client <list> (add client hosts; refresh configured)`);
+    console.log(`                    --self (upgrade the CLI itself on its own channel)`);
+    console.log(`                    --insider (with --self: force the insider channel)`);
+    console.log(`                    --force (with --self: allow a downgrade)`);
+    console.log(`  ${BOLD}client${RESET}     Manage client host projections (Copilot, Claude, Kiro, …)`);
+    console.log(`             Usage: client list [--json] | client add <list> [--dry-run]`);
+    console.log(`  ${BOLD}roster${RESET}     Explicitly opt optional built-ins into team.md`);
+    console.log(`             Usage: roster add|remove <rai|fact-checker|all> [--dry-run]`);
     console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
     console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
@@ -245,6 +256,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}link${RESET}       Link project to a remote team root`);
     console.log(`             Usage: link <team-repo-path>`);
     console.log(`  ${BOLD}externalize${RESET}  Move local squad state to an external team root`);
+    console.log(`             Stores state in platform-local storage`);
+    console.log(`             Flags: --key <name> (explicit project key)`);
     console.log(`  ${BOLD}internalize${RESET}  Pull an external team root back into the project`);
     console.log(`  ${BOLD}build${RESET}      Compile squad.config.ts into .squad/ markdown`);
     console.log(`             Flags: --check (validate only), --dry-run (preview)`);
@@ -277,10 +290,6 @@ async function main(): Promise<void> {
     console.log(`                    upstream sync [name]`);
     console.log(`  ${BOLD}economy${RESET}    Toggle economy mode (cost-conscious model selection)`);
     console.log(`             Usage: economy [on|off]`);
-    console.log(`  ${BOLD}externalize${RESET}  Move .squad/ state out of the working tree`);
-    console.log(`             Stores state in platform-local storage`);
-    console.log(`             Flags: --key <name> (explicit project key)`);
-    console.log(`  ${BOLD}internalize${RESET}  Restore externalized state into the working tree`);
 
     console.log(`  ${BOLD}version${RESET}    Print installed version`);
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
@@ -455,12 +464,14 @@ async function main(): Promise<void> {
     // end if either step failed.
     let selfUpgradeFailed: string | null = null;
     if (selfUpgrade) {
+      let performed = false;
       try {
-        await selfUpgradeCli({ insider, force: forceUpgrade });
+        const selfResult = await selfUpgradeCli({ insider, force: forceUpgrade, dryRun });
+        performed = selfResult.performed;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         selfUpgradeFailed = msg;
-        if (upgradeStateBackend) {
+        if (upgradeStateBackend && !dryRun) {
           // Defer the failure: still attempt the state-backend migration so
           // the user gets at least one of the two operations they asked for.
           console.error(`⚠️ Self-upgrade failed: ${msg}`);
@@ -471,10 +482,11 @@ async function main(): Promise<void> {
         }
       }
       if (!selfUpgradeFailed && !upgradeStateBackend) {
-        console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
+        // --dry-run previews the install command only (performed=false): nothing else to do.
+        if (performed) console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
         return;
       }
-      if (!selfUpgradeFailed) {
+      if (!selfUpgradeFailed && performed) {
         console.log('✅ Self-upgrade complete. Running --state-backend migration next…');
       }
     }
@@ -494,15 +506,19 @@ async function main(): Promise<void> {
 
     // Handle --state-backend: migrate backend after upgrade
     if (upgradeStateBackend) {
-      const { migrateStateBackend } = await import('./cli/commands/migrate-backend.js');
-      try {
-        await migrateStateBackend(dest, upgradeStateBackend);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`❌ State-backend migration failed: ${msg}`);
-        process.exit(1);
+      if (dryRun) {
+        console.log(`Would migrate the state backend to '${upgradeStateBackend}' (skipped: --dry-run).`);
+      } else {
+        const { migrateStateBackend } = await import('./cli/commands/migrate-backend.js');
+        try {
+          await migrateStateBackend(dest, upgradeStateBackend);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`❌ State-backend migration failed: ${msg}`);
+          process.exit(1);
+        }
       }
-    } else {
+    } else if (!dryRun) {
       // Ensure hooks are installed for existing orphan/two-layer backends
       const { ensureHooksForBackend } = await import('./cli/commands/install-hooks.js');
       ensureHooksForBackend(dest);
@@ -522,6 +538,12 @@ async function main(): Promise<void> {
   if (cmd === 'update-check') {
     const { runUpdateCheckCommand } = await import('./cli/commands/update-check.js');
     const exitCode = await runUpdateCheckCommand(args.slice(1));
+    process.exit(exitCode);
+  }
+
+  if (cmd === 'client' || cmd === 'clients') {
+    const { runClientCommand } = await import('./cli/commands/client.js');
+    const exitCode = await runClientCommand(getSquadStartDir(), args.slice(1));
     process.exit(exitCode);
   }
 
@@ -835,6 +857,13 @@ async function main(): Promise<void> {
     // `squad cast` with no wizard flags shows the roster
     const { runCast } = await import('./cli/commands/cast.js');
     await runCast(getSquadStartDir());
+    return;
+  }
+
+  if (cmd === 'roster') {
+    const { runRosterCommand } = await import('./cli/commands/roster.js');
+    const exitCode = await runRosterCommand(getSquadStartDir(), args.slice(1));
+    process.exitCode = exitCode;
     return;
   }
 
@@ -1157,4 +1186,3 @@ main().catch(err => {
   }
   process.exit(1);
 });
-

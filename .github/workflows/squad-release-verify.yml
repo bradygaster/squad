@@ -162,10 +162,14 @@ jobs:
         run: npm run build
 
       - name: "Gate: release policy (no label or variable bypass)"
+        env:
+          # pull_request: pending changesets are how a PR declares its changes — they must be
+          # well-formed, not drained. workflow_call from squad-release.yml: drain is enforced.
+          POLICY_MODE: ${{ github.event_name == 'pull_request' && 'ci' || 'release' }}
         run: |
           set -euo pipefail
-          node scripts/release/policy-gates.mjs --mode=release --json > "$EVIDENCE_DIR/policy-gates.json" || true
-          node scripts/release/policy-gates.mjs --mode=release
+          node scripts/release/policy-gates.mjs "--mode=$POLICY_MODE" --json > "$EVIDENCE_DIR/policy-gates.json" || true
+          node scripts/release/policy-gates.mjs "--mode=$POLICY_MODE"
 
       - name: "Gate: changeset drift (fail mode)"
         run: node scripts/check-changeset-drift.mjs --mode=fail

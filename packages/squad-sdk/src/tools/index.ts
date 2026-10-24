@@ -279,6 +279,9 @@ function normalizeStateToolDir(dir?: string): string {
 export const MUTABLE_STATE_PATHS: ReadonlyArray<{ readonly root: string; readonly kind: 'file' | 'dir'; readonly pattern?: RegExp }> = [
   { root: 'decisions.md', kind: 'file' },
   { root: 'decisions/inbox', kind: 'dir' },
+  // Per-workstream decision inboxes (`.squad/workstreams/active/<slug>/decisions/inbox/`), the
+  // convention squad_decide targets when a workstream is active (#2299).
+  { root: 'workstreams', kind: 'dir', pattern: /^workstreams\/active\/[A-Za-z0-9._-]+\/decisions\/inbox\/[^/]+$/ },
   { root: 'casting/policy.json', kind: 'file' },
   { root: 'agents', kind: 'dir', pattern: /^agents\/[a-zA-Z0-9_-]+\/history\.md$/ },
   { root: 'log', kind: 'dir' },
@@ -287,6 +290,43 @@ export const MUTABLE_STATE_PATHS: ReadonlyArray<{ readonly root: string; readonl
   { root: '.scratch', kind: 'dir' },
   { root: 'identity', kind: 'dir' },
 ];
+
+const WORKSTREAM_SLUG = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Where `squad_decide` drops a note, relative to the squad dir:
+ *  1. `SQUAD_WORKSTREAM=<slug>` when `workstreams/active/<slug>/` exists;
+ *  2. the slug in the project's `.squad-workstream` activation file, same condition;
+ *  3. the single entry under `workstreams/active/` when there is exactly one;
+ *  4. otherwise the root `decisions/inbox`.
+ * Pure: never creates directories.
+ */
+export function resolveDecisionInboxDir(
+  squadRoot: string,
+  storage: Pick<StorageProvider, 'existsSync' | 'readSync' | 'listSync' | 'isDirectorySync'>,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const activeDir = path.join(squadRoot, 'workstreams', 'active');
+  const inboxFor = (slug: string) => path.join(activeDir, slug, 'decisions', 'inbox');
+  const isActive = (slug: string | undefined): slug is string =>
+    !!slug && WORKSTREAM_SLUG.test(slug) && storage.existsSync(path.join(activeDir, slug)) && storage.isDirectorySync(path.join(activeDir, slug));
+
+  const fromEnv = env['SQUAD_WORKSTREAM']?.trim();
+  if (isActive(fromEnv)) return inboxFor(fromEnv);
+
+  const activationFile = path.join(path.dirname(squadRoot), '.squad-workstream');
+  if (storage.existsSync(activationFile)) {
+    const fromFile = (storage.readSync(activationFile) ?? '').split(/\r?\n/)[0]?.trim();
+    if (isActive(fromFile)) return inboxFor(fromFile);
+  }
+
+  if (storage.existsSync(activeDir) && storage.isDirectorySync(activeDir)) {
+    const streams = storage.listSync(activeDir).filter((e) => WORKSTREAM_SLUG.test(e) && storage.isDirectorySync(path.join(activeDir, e)));
+    if (streams.length === 1) return inboxFor(streams[0]!);
+  }
+
+  return path.join(squadRoot, 'decisions', 'inbox');
+}
 
 /** True when the state tools may write `key` (a normalized, `/`-separated state key). */
 export function isMutableStateKey(key: string): boolean {
@@ -532,15 +572,21 @@ export class ToolRegistry {
           return { textResultForLlm: 'Invalid author name: must contain only printable ASCII characters and be at most 200 characters long', resultType: 'failure', error: 'Invalid author' };
         }
         try {
-          const inboxDir = path.join(this.squadRoot, 'decisions', 'inbox');
+          // Workstream layout lives in the working tree, so probe it with the plain FS
+          // provider even when decisions themselves go to an orphan/two-layer backend.
+          const inboxDir = resolveDecisionInboxDir(this.squadRoot, new FSStorageProvider());
+          const inboxRel = path.relative(this.squadRoot, inboxDir).split(path.sep).join('/');
 
           const decisionId = randomUUID();
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          // Lowercase agent slug + summary slug; the summary keeps up to 80 characters so a
+          // note is not cut mid-word at 50 (#2299).
           const slug = args.summary
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
-            .slice(0, 50);
+            .slice(0, 80)
+            .replace(/-$/, '');
           const authorSlug = args.author
             .toLowerCase()
             .replace(/[^a-z0-9_-]+/g, '-')
@@ -568,9 +614,9 @@ export class ToolRegistry {
           this.storage.writeSync(filename, content);
 
           return {
-            textResultForLlm: `Decision written: ${authorSlug}-${slug}.md (ID: ${decisionId})`,
+            textResultForLlm: `Decision written: ${inboxRel}/${authorSlug}-${slug}.md (ID: ${decisionId})`,
             resultType: 'success',
-            toolTelemetry: { decisionId, filename, slug },
+            toolTelemetry: { decisionId, filename, slug, inbox: inboxRel },
           };
         } catch (error) {
           return {
