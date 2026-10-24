@@ -1,5 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   _setCastingDurabilityHooksForTesting,
@@ -25,7 +26,7 @@ function fixture() {
 }
 
 function castingDir(): string {
-  const root = mkdtempSync(join(process.cwd(), '.test-legacy-migration-'));
+  const root = mkdtempSync(join(tmpdir(), '.test-legacy-migration-'));
   roots.push(root);
   const dir = join(root, 'casting');
   mkdirSync(dir);
