@@ -18,7 +18,11 @@ import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.j
 import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
 import { syncCopilotInstructionsFile } from './managed-file.js';
 import { getTemplatesDir } from './templates.js';
-import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import {
+  ensureSquadStateMcpInRoot,
+  reconcileSquadStateUserConfig,
+  tombstoneStaleSquadStateInProjectMcp,
+} from './mcp-root.js';
 import { applyClientProjectionsForInit, reportClientResults, type ClientId } from './clients.js';
 import {
   readTeamMd,
@@ -454,6 +458,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
           if (tomb.removed) {
             success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
           }
+          const userConfig = reconcileSquadStateUserConfig(dest);
+          if (userConfig.action === 'removed') {
+            success(`removed duplicate ${(userConfig.keys ?? [userConfig.key]).join(', ')} from ${userConfig.path} (.mcp.json takes precedence)`);
+            console.log(`${DIM}  backup: ${userConfig.backupPath}${RESET}`);
+          }
         } catch (err) {
           console.warn(`${YELLOW}⚠ Could not install squad_state MCP entry in .mcp.json: ${err instanceof Error ? err.message : err}${RESET}`);
         }
@@ -482,6 +491,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
     if (tomb.removed) {
       success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+    }
+    const userConfig = reconcileSquadStateUserConfig(dest);
+    if (userConfig.action === 'removed') {
+      success(`removed duplicate ${(userConfig.keys ?? [userConfig.key]).join(', ')} from ${userConfig.path} (.mcp.json takes precedence)`);
+      console.log(`${DIM}  backup: ${userConfig.backupPath}${RESET}`);
     }
   } catch {
     // best-effort: .mcp.json write failure does not block init

@@ -84,6 +84,28 @@ describe('state-mcp bridge', () => {
       .toEqual(['key', 'content']);
   });
 
+  it('health includes the squad-state version and resolved team directory without removing legacy lines', async () => {
+    initSquad('two-layer');
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+    const version = JSON.parse(
+      readFileSync(join(process.cwd(), 'packages/squad-cli/package.json'), 'utf8'),
+    ).version as string;
+
+    await session.handleRequest({
+      jsonrpc: '2.0',
+      id: 'health',
+      method: 'tools/call',
+      params: { name: 'squad_state_health', arguments: {} },
+    });
+
+    const content = resultAsRecord(messages[0]!)['content'] as Array<{ text: string }>;
+    expect(content[0]!.text).toContain(`squad-state ${version}`);
+    expect(content[0]!.text).toContain('State backend: two-layer');
+    expect(content[0]!.text).toContain('State backend storage: StateBackendStorageAdapter');
+    expect(content[0]!.text).toContain(`Team squad dir: ${join(TMP, '.squad')}`);
+  });
+
   it.each(['orphan', 'two-layer'] as const)(
     'exposes squad_state_create_if_absent so exactly one caller creates a canonical key through the %s backend',
     async (stateBackend) => {

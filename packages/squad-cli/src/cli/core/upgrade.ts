@@ -26,7 +26,11 @@ import { getPackageVersion, stampVersion, readInstalledVersion } from './version
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
 import { copyManagedFile, syncCopilotInstructionsFile, writeManagedText } from './managed-file.js';
 export { resolveSquadStateMcpSpec } from './mcp-spec.js';
-import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import {
+  ensureSquadStateMcpInRoot,
+  reconcileSquadStateUserConfig,
+  tombstoneStaleSquadStateInProjectMcp,
+} from './mcp-root.js';
 import { applyClientProjectionsForUpgrade, reportClientResults, type ClientId } from './clients.js';
 
 const storage = new FSStorageProvider();
@@ -1084,6 +1088,11 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
     filesUpdated.push('.copilot/mcp-config.json (tombstoned)');
   }
+  const userConfig = reconcileSquadStateUserConfig(dest);
+  if (userConfig.action === 'removed') {
+    success(`removed duplicate ${(userConfig.keys ?? [userConfig.key]).join(', ')} from ${userConfig.path} (.mcp.json takes precedence)`);
+    info(`  Backup: ${userConfig.backupPath}`);
+  }
 
   // #1190: patch ESM imports in the repo-local node_modules — postinstall only
   // ever runs against the installed package's own directory tree.
@@ -1095,14 +1104,14 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
 
 /** Human-readable single-line description of an McpSpec for success() messages. */
 export function describeMcpSpec(spec: SquadStateMcpSpec): string {
-  // Standalone bundles spawn their own launcher by absolute path rather than
-  // going through npx, so there is no package spec in args to report.
   if (spec.source === 'standalone') {
-    return `${spec.command} (standalone bundle)`;
+    return `${spec.command} (machine-specific standalone bundle; exact-version fallback recorded)`;
   }
-  // Every other spec is `npx -y <pkg@version-or-tag> state-mcp`.
+  if (spec.source === 'local-entry') {
+    return `${spec.command} ${spec.args[0]} (machine-specific installed CLI; exact-version fallback recorded)`;
+  }
   const pkg = spec.args[1] ?? '<unknown>';
-  return spec.source === 'insider' ? `${pkg} (@insider fallback)` : pkg;
+  return pkg;
 }
 
 export function ensureMemoryGovernanceUpgradeDefaults(dest: string): string[] {
@@ -1428,6 +1437,10 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       }
     }
     try {
+      const userConfig = reconcileSquadStateUserConfig(dest, { dryRun: true });
+      if (userConfig.action === 'would-remove') {
+        info(`Would remove duplicate ${(userConfig.keys ?? [userConfig.key]).join(', ')} from ${userConfig.path} after backing it up (.mcp.json takes precedence).`);
+      }
       const planned = await applyClientProjectionsForUpgrade(dest, squadDirInfo.path, {
         clients: options.clients,
         dryRun: true,

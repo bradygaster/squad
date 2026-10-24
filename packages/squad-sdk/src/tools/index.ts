@@ -12,6 +12,7 @@
 
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import type { SquadTool, SquadToolResult } from '../adapter/types.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
@@ -24,6 +25,8 @@ import { LocalMemoryStore, type CopilotMemoryProviderClient, type MemoryClass } 
 import { resolveUpstreams, buildEffectiveUpstreamContext, formatUpstreamReport } from '../upstream/resolver.js';
 
 const tracer = trace.getTracer('squad-sdk');
+const require = createRequire(import.meta.url);
+const SQUAD_STATE_VERSION = (require('../../package.json') as { version?: string }).version ?? 'unknown';
 
 // --- Argument Sanitization ---
 
@@ -318,6 +321,7 @@ export class ToolRegistry {
   private fanOutDepsGetter?: () => FanOutDependencies | undefined;
   private memoryStore: LocalMemoryStore;
   private backendName: string;
+  private runtimeVersion: string;
   /**
    * Where `upstream.json` and `_upstream_repos/` live. Upstream declarations are project-local:
    * `squad upstream add|sync` writes them beside the project's `.squad/config.json` and
@@ -333,7 +337,7 @@ export class ToolRegistry {
     state?: SquadState,
     fanOutDepsGetter?: () => FanOutDependencies | undefined,
     hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient,
-    options: { backendName?: string; upstreamDir?: string } = {},
+    options: { backendName?: string; upstreamDir?: string; runtimeVersion?: string } = {},
   ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
@@ -342,6 +346,7 @@ export class ToolRegistry {
     this.fanOutDepsGetter = fanOutDepsGetter;
     // Plain FS storage is the `local` backend; adapters wrap a named git backend.
     this.backendName = options.backendName ?? (storage instanceof FSStorageProvider ? 'local' : 'unknown');
+    this.runtimeVersion = options.runtimeVersion ?? SQUAD_STATE_VERSION;
     this.upstreamDir = options.upstreamDir ?? squadRoot;
     this.memoryStore = new LocalMemoryStore(storage, squadRoot, {
       rootKind: 'squad',
@@ -860,9 +865,9 @@ export class ToolRegistry {
       description: 'Report the active Squad state backend (local, orphan, two-layer, ...) and storage layer so agents can verify they are using runtime-owned state instead of manual git/file choreography.',
       parameters: { type: 'object', properties: {} },
       handler: async () => ({
-        textResultForLlm: `State backend: ${this.backendName}\nState backend storage: ${this.storage.constructor.name}\nTeam squad dir: ${this.squadRoot}`,
+        textResultForLlm: `squad-state ${this.runtimeVersion}\nState backend: ${this.backendName}\nState backend storage: ${this.storage.constructor.name}\nTeam squad dir: ${this.squadRoot}`,
         resultType: 'success',
-        toolTelemetry: { backend: this.backendName, storage: this.storage.constructor.name },
+        toolTelemetry: { version: this.runtimeVersion, backend: this.backendName, storage: this.storage.constructor.name },
       }),
     });
 

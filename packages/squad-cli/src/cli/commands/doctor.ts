@@ -19,6 +19,11 @@ import { fatalNoSquad } from '../core/errors.js';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
 import { resolveUpstreams } from '@bradygaster/squad-sdk/upstream';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
+import { getPackageVersion } from '../core/version.js';
+import {
+  probeSquadStateBridge,
+  resolveConfiguredSquadStateMcp,
+} from '../core/mcp-probe.js';
 
 const storage = new FSStorageProvider();
 
@@ -595,6 +600,80 @@ function checkCopilotCli(): Promise<DoctorCheck> {
   });
 }
 
+export async function checkSquadStateBridge(cwd: string): Promise<DoctorCheck> {
+        const name = 'squad_state bridge';
+        const expectedVersion = getPackageVersion();
+        const configured = resolveConfiguredSquadStateMcp(cwd);
+        const fix = "Run 'squad upgrade --force' to rewrite the bridge declaration.";
+        if (!configured) {
+          return {
+            name,
+            status: 'warn',
+            message: `no squad_state declaration found in .mcp.json or the project-scoped user config. ${fix}`,
+          };
+        }
+
+        try {
+          const probe = await probeSquadStateBridge(cwd, configured);
+          if (probe.version !== expectedVersion) {
+            return {
+              name,
+              status: 'fail',
+              message: `version mismatch: configured bridge reports ${probe.version || 'unknown'}, running CLI is ${expectedVersion}. ${fix}`,
+            };
+          }
+          if (!probe.tools.includes('squad_state_health')) {
+            return {
+              name,
+              status: 'fail',
+              message: `bridge ${expectedVersion} exposes ${probe.tools.length} tool(s) but not squad_state_health. ${fix}`,
+            };
+          }
+
+          const expectedTeamDir = path.resolve(effectiveSquadDir(cwd).stateDir);
+          const healthVersion = `squad-state ${expectedVersion}`;
+          const teamLine = probe.healthText.match(/^Team squad dir:\s*(.+)$/m)?.[1]?.trim();
+          if (!probe.healthText.includes(healthVersion) || !teamLine) {
+            return {
+              name,
+              status: 'fail',
+              message: `bridge health is missing "${healthVersion}" or the resolved team directory. ${fix}`,
+            };
+          }
+          const reportedTeamDir = path.resolve(teamLine);
+          const sameTeamDir = process.platform === 'win32'
+            ? reportedTeamDir.toLowerCase() === expectedTeamDir.toLowerCase()
+            : reportedTeamDir === expectedTeamDir;
+          if (!sameTeamDir) {
+            return {
+              name,
+              status: 'fail',
+              message: `bridge resolved ${reportedTeamDir}, expected ${expectedTeamDir}. ${fix}`,
+            };
+          }
+
+          return {
+            name,
+            status: 'pass',
+            message: `${probe.version}; ${probe.tools.length} tools; ${configured.precedence} config ${configured.configPath}`,
+          };
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          if (/ETARGET|No matching version found/i.test(detail)) {
+            return {
+              name,
+              status: 'fail',
+              message: `registry mirror cannot resolve the configured dist-tag. Pin @bradygaster/squad-cli@${expectedVersion} exactly, or ${fix.toLowerCase()}`,
+            };
+          }
+          return {
+            name,
+            status: 'fail',
+            message: `unreachable: ${detail}. ${fix}`,
+          };
+        }
+}
+
 // ── git sync hooks check ─────────────────────────────────────────────
 
 const SQUAD_SYNC_HOOK_MARKER = '# --- squad-sync-hook ---';
@@ -842,6 +921,7 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     const upstreamCheck = checkUpstreams(squadDir);
     if (upstreamCheck) checks.push(upstreamCheck);
 
+    checks.push(await checkSquadStateBridge(resolvedCwd));
 
     // Hook presence check (only for two-layer / orphan backends)
     const hookCheck = checkGitSyncHooks(resolvedCwd, squadDir);
