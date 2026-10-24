@@ -60,6 +60,10 @@ export type CastingDurabilityBoundary =
   | 'registry:file-fsync'
   | 'registry:rename'
   | 'registry:parent-fsync'
+  | 'normalization:write'
+  | 'normalization:file-fsync'
+  | 'normalization:rename'
+  | 'normalization:parent-fsync'
   | 'cleanup:journal-unlink'
   | 'cleanup:journal-parent-fsync'
   | 'cleanup:payload-remove'
@@ -226,7 +230,7 @@ function writeDurableFile(
 function durableReplace(
   filePath: string,
   content: string,
-  stage: 'journal' | 'history' | 'manifest' | 'registry',
+  stage: 'journal' | 'history' | 'manifest' | 'registry' | 'normalization',
   transactionId: string,
 ): void {
   const tempPath = `${filePath}.tmp-${transactionId}-${randomUUID()}`;
@@ -1725,6 +1729,40 @@ export function preflightCastingRegistryPair(castingDir: string, dryRun = false)
   try {
     recoverCastingRegistryTransaction(castingDir);
     return migrateHistoricalCastingPairLocked(castingDir, false);
+  } finally {
+    release();
+  }
+}
+
+/**
+ * Normalize casting JSON to LF while holding the shared writer lock.
+ * Each live file is replaced atomically after recovery and pair validation.
+ */
+export function normalizeCastingJsonLineEndings(castingDir: string): string[] {
+  if (!existsSync(castingDir)) return [];
+  const release = acquireCastingRegistryLock(castingDir, 'casting JSON line-ending normalization');
+  try {
+    recoverCastingRegistryTransaction(castingDir);
+    readCastingRegistryPair(castingDir);
+
+    const normalized: string[] = [];
+    const transactionId = randomUUID();
+    const entries = readdirSync(castingDir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const filePath = path.join(castingDir, entry.name);
+      const content = readText(filePath);
+      if (content === undefined || !content.includes('\r\n')) continue;
+      durableReplace(
+        filePath,
+        content.replace(/\r\n/g, '\n'),
+        'normalization',
+        transactionId,
+      );
+      normalized.push(entry.name);
+    }
+    return normalized;
   } finally {
     release();
   }

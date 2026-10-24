@@ -12,6 +12,7 @@ import { clearResolveSquadCache, isRetiredProfileTeamRoot } from '@bradygaster/s
 import {
   backfillCastingRegistryFromTeam,
   ensureCastingRegistryPair,
+  normalizeCastingJsonLineEndings as normalizeCastingJsonFiles,
   preflightCastingRegistryPair,
   repairHandwrittenCastingRegistry,
   type RepairResult,
@@ -752,18 +753,8 @@ export function ensureGitattributes(dest: string, options: { dryRun?: boolean } 
 
 export function normalizeCastingJsonLineEndings(dest: string): string[] {
   const castingDir = path.join(dest, '.squad', 'casting');
-  if (!storage.existsSync(castingDir) || !storage.isDirectorySync(castingDir)) return [];
-  const normalized: string[] = [];
-  for (const name of storage.listSync(castingDir)) {
-    if (!name.endsWith('.json')) continue;
-    const filePath = path.join(castingDir, name);
-    if (storage.isDirectorySync(filePath)) continue;
-    const content = storage.readSync(filePath);
-    if (content === undefined || !content.includes('\r\n')) continue;
-    storage.writeSync(filePath, content.replace(/\r\n/g, '\n'));
-    normalized.push(`.squad/casting/${name}`);
-  }
-  return normalized;
+  return normalizeCastingJsonFiles(castingDir)
+    .map(name => `.squad/casting/${name}`);
 }
 
 /**

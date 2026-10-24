@@ -60,6 +60,7 @@ export {
   commitCastingRegistryPair,
   ensureCastingRegistryPair,
   ensureCastingRegistryPairLocked,
+  normalizeCastingJsonLineEndings,
   prepareCastingRegistryPairLocked,
   preflightCastingRegistryPair,
   readCastingRegistryPair,

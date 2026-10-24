@@ -19,6 +19,7 @@ import {
   CastingCommitInDoubtError,
   commitCastingRegistryPair,
   ensureCastingRegistryPair,
+  normalizeCastingJsonLineEndings,
   preflightCastingRegistryPair,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
@@ -844,6 +845,41 @@ describe('casting registry/history roll-forward transaction', () => {
       registry: { revision: 2 },
       history: { registry_revision: 2 },
     });
+  });
+
+  it('holds the writer lock and leaves the live file intact when normalization fails before rename', () => {
+    const castingDir = temporaryCastingDir('normalization-atomic');
+    const old = initialPair();
+    writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+    commitCastingRegistryPair(
+      castingDir,
+      old.registryRaw,
+      { ...old.registry, revision: 2 },
+      old.historyRaw,
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
+      2,
+    );
+    const policyPath = join(castingDir, 'policy.json');
+    const crlfPolicy = '{\r\n  "version": 1\r\n}\r\n';
+    writeFileSync(policyPath, crlfPolicy);
+
+    let observedLock = false;
+    _setCastingDurabilityHooksForTesting({
+      boundary: ({ boundary, path }) => {
+        if (boundary === 'normalization:rename' && path === policyPath) {
+          observedLock = existsSync(join(castingDir, 'registry.lock'));
+          throw new Error('injected normalization failure');
+        }
+      },
+    });
+
+    expect(() => normalizeCastingJsonLineEndings(castingDir))
+      .toThrow(/injected normalization failure/);
+    expect(observedLock).toBe(true);
+    expect(readFileSync(policyPath, 'utf8')).toBe(crlfPolicy);
+    expect(readdirSync(castingDir).some(name => name.includes('.tmp-'))).toBe(false);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
   });
 
   it('fails before journal publication when an external writer mutates the pair', () => {
