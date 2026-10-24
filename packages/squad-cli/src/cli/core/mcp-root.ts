@@ -31,6 +31,7 @@
 
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { projectSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
 import { writeManagedText } from './managed-file.js';
@@ -320,8 +321,17 @@ export function getSquadStateUserConfigKey(dest: string): string {
 }
 
 export function getSquadStateUserConfigKeys(dest: string): string[] {
-  const paths = [normalizeSquadProjectPath(dest), normalizeDriveLetter(path.resolve(dest))];
-  return [...new Set(paths.map(value => `squad_state_${simpleHash(value)}`))];
+  const resolved = path.resolve(dest);
+  const simpleHashPaths = [
+    normalizeSquadProjectPath(dest),
+    resolved,
+    normalizeDriveLetter(resolved),
+  ];
+  const keys = simpleHashPaths.map(value => `squad_state_${simpleHash(value)}`);
+
+  // iter-7 used the raw resolved path with an eight-character SHA-256 prefix.
+  keys.push(`squad_state_${createHash('sha256').update(resolved).digest('hex').slice(0, 8)}`);
+  return [...new Set(keys)];
 }
 
 export function normalizeSquadProjectPath(dest: string): string {
