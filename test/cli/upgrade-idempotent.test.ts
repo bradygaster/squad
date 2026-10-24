@@ -139,6 +139,9 @@ describe('squad upgrade: idempotent, backed up, dry-run writes nothing (#2297, #
 
   it('a CRLF checkout (Windows autocrlf) is not treated as customized: zero overwrites, zero backups (#2266)', async () => {
     await runUpgrade(TEST_ROOT);
+    const lfPlan = planUpgradeFiles(TEST_ROOT, join(TEST_ROOT, '.squad'), getTemplatesDir());
+    expect(lfPlan.changed.map(f => f.relPath), 'Linux-style LF checkout must already be a no-op').toEqual([]);
+
     for (const dir of ['.squad/templates', '.github/skills', '.github/workflows']) {
       for (const f of walkFiles(join(TEST_ROOT, dir))) toCrlf(f);
     }
@@ -147,6 +150,11 @@ describe('squad upgrade: idempotent, backed up, dry-run writes nothing (#2297, #
 
     const plan = planUpgradeFiles(TEST_ROOT, join(TEST_ROOT, '.squad'), getTemplatesDir());
     expect(plan.changed.map(f => f.relPath)).toEqual([]);
+    const compoundExample = plan.files.find((file) => file.relPath.endsWith('mesh.json.example'));
+    expect(compoundExample).toMatchObject({ action: 'unchanged' });
+    expect(compoundExample?.content, 'compound .example templates must be classified as text').not.toBeNull();
+    const compoundBytes = readFileSync(compoundExample!.absPath);
+    expect(compoundBytes.toString('utf8')).toContain('\r\n');
 
     const before = snapshot(TEST_ROOT);
     await runUpgrade(TEST_ROOT);
@@ -154,6 +162,7 @@ describe('squad upgrade: idempotent, backed up, dry-run writes nothing (#2297, #
     expect(changed.filter(p => p.endsWith('.local-backup'))).toEqual([]);
     // Nothing squad-owned is rewritten just because of line endings.
     expect(changed.filter(p => p.startsWith('.squad/templates/') || p.startsWith('.github/skills/') || p.startsWith('.github/workflows/'))).toEqual([]);
+    expect(readFileSync(compoundExample!.absPath)).toEqual(compoundBytes);
     expect(readFileSync(join(TEST_ROOT, '.gitignore'), 'utf8')).toContain('\r\n');
   });
 
@@ -207,6 +216,21 @@ describe('squad upgrade: idempotent, backed up, dry-run writes nothing (#2297, #
     expect(readFileSync(live, 'utf8')).not.toContain('older template');
     expect(readFileSync(edited + '.local-backup', 'utf8')).toContain('My local rule.');
     expect(readFileSync(edited, 'utf8')).not.toContain('My local rule.');
+  });
+
+  it('uses provenance-neutral wording when a first upgrade cannot prove whether a differing file was customized', async () => {
+    rmSync(join(TEST_ROOT, ...SHIPPED_MANIFEST_RELATIVE_PATH.split('/')));
+    const file = join(TEST_ROOT, '.squad', 'templates', 'model-selection-reference.md');
+    writeFileSync(file, readFileSync(file, 'utf8') + '\nunknown prior source\n');
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => output.push(args.map(String).join(' ')));
+
+    await runUpgrade(TEST_ROOT);
+
+    const warning = output.find((line) => line.includes('model-selection-reference.md') && line.includes('provenance')) ?? '';
+    expect(warning).toContain('prior provenance unavailable');
+    expect(warning).not.toContain('has local customizations');
+    expect(existsSync(file + '.local-backup')).toBe(true);
   });
 
   it('writeVerifiedBackup keeps an identical existing backup and holds the original bytes', () => {

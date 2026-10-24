@@ -54,6 +54,8 @@ export interface SquadOwnedFilePlan {
   action: SquadOwnedAction;
   /** Existing content differs from the new template AND from the last shipped version. */
   customized: boolean;
+  /** Why a conservative backup is required. */
+  backupReason?: 'customized' | 'provenance-unavailable';
   /** Text content to write; `null` means a byte copy from `src`. */
   content: string | null;
   src: string;
@@ -101,7 +103,8 @@ export function toRelPosix(root: string, absPath: string): string {
 }
 
 function readTextIfText(src: string): string | null {
-  if (!TEXT_EXTENSIONS.has(path.extname(src).toLowerCase())) return null;
+  const lower = src.toLowerCase();
+  if (!TEXT_EXTENSIONS.has(path.extname(lower)) && !lower.endsWith('.example')) return null;
   const bytes = readFileSync(src);
   if (bytes.includes(0)) return null;
   const text = bytes.toString('utf8');
@@ -194,15 +197,18 @@ export function planSquadOwnedFiles(dest: string, candidates: readonly SquadOwne
     }
 
     let customized: boolean;
+    let backupReason: SquadOwnedFilePlan['backupReason'];
     if (existing.trim().length === 0) {
       customized = false;
     } else if (manifest?.files[relPath]) {
       customized = contentHash(existing) !== manifest.files[relPath];
+      if (customized) backupReason = 'customized';
     } else {
       const prior = priorShippedSnapshot(dest, relPath);
       customized = prior === undefined ? true : normalizeEol(prior) !== normalizeEol(existing);
+      if (customized) backupReason = prior === undefined ? 'provenance-unavailable' : 'customized';
     }
-    files.push({ relPath, absPath, action: 'overwrite', customized, content, src: candidate.src });
+    files.push({ relPath, absPath, action: 'overwrite', customized, backupReason, content, src: candidate.src });
   }
 
   const changed = files.filter(f => f.action !== 'unchanged');
@@ -246,7 +252,9 @@ export function applySquadOwnedFiles(
       try {
         const backupPath = writeVerifiedBackup(file.absPath);
         result.backedUp.push(file.relPath);
-        log.warn(`${file.relPath} has local customizations — backed up to ${path.basename(backupPath)}`);
+        log.warn(file.backupReason === 'provenance-unavailable'
+          ? `${file.relPath}: prior provenance unavailable — backed up before overwrite to ${path.basename(backupPath)}`
+          : `${file.relPath} has local customizations — backed up to ${path.basename(backupPath)}`);
       } catch (err) {
         result.aborted.push(file.relPath);
         log.warn(`${file.relPath}: NOT overwritten — ${err instanceof Error ? err.message : String(err)}`);
@@ -346,7 +354,11 @@ export function formatSquadOwnedPlan(plan: SquadOwnedPlan): string[] {
     + ` (${overwrites} overwrite, ${creates} create, ${plan.backups.length} backed up to .local-backup first):`,
   );
   for (const file of [...plan.changed].sort((a, b) => a.relPath.localeCompare(b.relPath))) {
-    const suffix = file.customized ? `  (customized → ${path.basename(file.relPath)}.local-backup)` : '';
+    const suffix = file.backupReason === 'provenance-unavailable'
+      ? `  (prior provenance unavailable → ${path.basename(file.relPath)}.local-backup)`
+      : file.customized
+        ? `  (customized → ${path.basename(file.relPath)}.local-backup)`
+        : '';
     lines.push(`  ${file.action.padEnd(9)} ${file.relPath}${suffix}`);
   }
   if (plan.unchanged.length > 0) {
