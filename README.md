@@ -121,7 +121,7 @@ Use the same channel you installed from:
 squad upgrade
 ```
 
-`squad upgrade` updates `squad.agent.md`, templates, and GitHub workflows to the latest versions. It never touches your `.squad/` team state — your agents, decisions, and history are always preserved.
+`squad upgrade` updates `squad.agent.md`, `.github/skills`, Squad workflows and `.squad/templates/` to the latest versions, comparing content first so a re-run (or a CRLF checkout) changes nothing, and backing up any file you customized to `<file>.local-backup` before overwriting it. It never touches your `.squad/` team state — your agents, decisions, and history are always preserved.
 
 Use `--force` to re-apply updates even when your installed version already matches the latest.
 
@@ -176,7 +176,8 @@ Say **"squad commands"** in chat to see a categorized menu of common operations 
 |---------|-------------|
 | `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `cast`; `--client <list>` also projects Claude Code, Kiro, OpenCode, Cursor, Codex and Antigravity; use `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; `--client <list>` adds hosts and refreshes every configured projection; use `--migrate-directory` to rename `.ai-team/` → `.squad/` |
-| `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for dev-channel prerelease builds |
+| `squad upgrade --self` | Update the Squad CLI package itself on its own channel (prerelease installs follow `@insider`, stable follows `@latest`); `--dry-run` prints the command without installing; `--insider` forces the prerelease channel; a downgrade is refused unless `--force` |
+| `squad client list` | Show the client hosts configured in `.squad/config.json` and whether their projected files are present; `squad client add <list>` projects more hosts |
 | `squad update-check` | Report cached CLI update status for tooling/CI; use `--json` for structured output, `--refresh` to bypass the cache |
 | `squad status` | Show which squad is active and why |
 | `squad triage` | **Watch mode** — poll for issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10); with `--execute` dispatch Copilot agents; use `--agent-cmd`, `--copilot-flags`, `--auth-user` to customize agent execution; `--health` shows watch status; `--log-file` for diagnostics |

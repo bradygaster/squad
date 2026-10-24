@@ -320,8 +320,13 @@ export function parseRoutingRulesMarkdown(
   const lines = content.split('\n');
   let inTable = false;
   let headerColumns: string[] = [];
+  // Cells that only ever appear in header rows of routing-related tables.
+  const HEADER_CELL = /^(work\s*type|pattern|route\s*to|agents?|primary|secondary|owner|examples?|notes?|skills?|tier|label|action|who|when|why)$/i;
+  // `{Name}` / `{example tasks}` placeholders copied from templates are not agent references.
+  const PLACEHOLDER = /^\{[^}]*\}$/;
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
     const trimmed = line.trim();
 
     // Detect routing table section (also accepts "## Work Type → Agent" used by this project's routing.md)
@@ -337,13 +342,29 @@ export function parseRoutingRulesMarkdown(
       continue;
     }
 
+    if (inTable && !trimmed.startsWith('|')) {
+      // A blank/prose line ends the current table; the next `|` block needs its own header,
+      // otherwise a second table's header row is read as a routing rule (#2298).
+      headerColumns = [];
+      continue;
+    }
+
     if (inTable && trimmed.startsWith('|')) {
       const cells = parseMarkdownTableCells(trimmed);
-      if (
-        headerColumns.length === 0 &&
-        cells.some((cell) => /^(work\s*type|pattern)$/i.test(cell))
-      ) {
-        headerColumns = cells.map((cell) => cell.toLowerCase());
+      const nextIsSeparator = (() => {
+        const next = lines[index + 1]?.trim() ?? '';
+        return next.startsWith('|') && parseMarkdownTableCells(next).every((cell) => /^[-:]+$/.test(cell));
+      })();
+      const looksLikeHeader = nextIsSeparator || (cells.length > 0 && cells.every((cell) => HEADER_CELL.test(cell)));
+      if (looksLikeHeader) {
+        // Only tables with a work-type/pattern column carry routing rules; others are skipped.
+        headerColumns = cells.some((cell) => /^(work\s*type|pattern)$/i.test(cell))
+          ? cells.map((cell) => cell.toLowerCase())
+          : [];
+        if (headerColumns.length === 0) {
+          // Skip the whole non-routing table so its rows are not misread under stale headers.
+          while (lines[index + 1]?.trim().startsWith('|')) index++;
+        }
         continue;
       }
       if (cells.every((cell) => /^[-:]+$/.test(cell))) continue;
@@ -367,7 +388,7 @@ export function parseRoutingRulesMarkdown(
         (cells[index] ?? '')
           .split(',')
           .map((agent) => agent.trim())
-          .filter((agent) => agent.length > 0 && !/^[—-]+$/.test(agent)),
+          .filter((agent) => agent.length > 0 && !/^[—-]+$/.test(agent) && !PLACEHOLDER.test(agent)),
       );
       const parsedExamples =
         examplesIndex >= 0

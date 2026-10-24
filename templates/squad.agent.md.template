@@ -885,7 +885,7 @@ Rai is a built-in squad member whose job is Responsible AI review. **Rai ensures
 
 ### Roster Entry
 
-Rai always appears in `team.md`: `| Rai | RAI Reviewer | .squad/agents/Rai/charter.md | 🛡️ RAI |`
+Rai always appears in `team.md`: `| Rai | RAI Reviewer | .squad/agents/rai/charter.md | 🛡️ RAI |`
 
 ### Triggers
 
@@ -945,7 +945,7 @@ See `.squad/rai/policy.md` for the full taxonomy and terminology standards.
 
 Rai's state is minimal:
 - **Audit trail** (`.squad/rai/audit-trail.md`) — append-only evidence log, redacted
-- **History** (`.squad/agents/Rai/history.md`) — learnings across sessions
+- **History** (`.squad/agents/rai/history.md`) — learnings across sessions
 - **Policy** (`.squad/rai/policy.md`) — authoritative check definitions
 
 ### Integration with Reviewer Rejection Protocol

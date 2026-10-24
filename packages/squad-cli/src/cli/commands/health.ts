@@ -5,6 +5,7 @@
  */
 
 import path from 'node:path';
+import { readdirSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import {
   FSStorageProvider,
@@ -25,7 +26,7 @@ const storage = new FSStorageProvider();
 
 export const HEALTH_SCHEMA = 'squad-health/v1' as const;
 
-export type HealthCheckStatus = 'pass' | 'fail' | 'skip';
+export type HealthCheckStatus = 'pass' | 'warn' | 'fail' | 'skip';
 export type HealthCheckId =
   | 'team'
   | 'registry-charters'
@@ -42,6 +43,7 @@ export interface HealthCheckItem {
 
 export interface HealthReport {
   schema: typeof HEALTH_SCHEMA;
+  /** `fail` when any check failed; warnings never fail the report. */
   status: 'pass' | 'fail';
   checks: HealthCheckItem[];
 }
@@ -50,8 +52,25 @@ interface CastingRegistry {
   agents: Record<string, unknown>;
 }
 
+/**
+ * Always-on built-ins. They are not cast registry agents, but routing rows may name them
+ * (#1785) and the coordinator contract says they always appear in team.md (#2298).
+ */
+const BUILTIN_AGENTS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'scribe', name: 'Scribe' },
+  { id: 'ralph', name: 'Ralph' },
+  { id: 'rai', name: 'Rai' },
+  { id: 'fact-checker', name: 'Fact Checker' },
+];
+
 function pass(id: HealthCheckId, message: string): HealthCheckItem {
   return { id, status: 'pass', message };
+}
+
+function warnItem(id: HealthCheckId, message: string, diagnostics?: string[]): HealthCheckItem {
+  return diagnostics && diagnostics.length > 0
+    ? { id, status: 'warn', message, diagnostics }
+    : { id, status: 'warn', message };
 }
 
 function fail(
@@ -168,6 +187,32 @@ function checkTeam(squadDir: string): HealthCheckItem {
       );
     }
 
+    // Built-ins whose agent directory exists but have no row anywhere in team.md (#2298).
+    const agentsDir = path.join(squadDir, 'agents');
+    let present = new Set<string>();
+    try {
+      present = new Set(readdirSync(agentsDir).map((e) => e.toLowerCase()));
+    } catch {
+      // no agents directory — nothing to cross-check
+    }
+    const rows = content
+      .split(/\r?\n/)
+      .filter((line) => line.trim().startsWith('|'))
+      .map((line) => line.toLowerCase());
+    const missingBuiltins = BUILTIN_AGENTS.filter(({ id, name }) =>
+      present.has(id) &&
+      !rows.some((row) => row.includes(`agents/${id}/charter.md`) || row.split('|').map((c) => c.replace(/[`*_]/g, '').trim())[1] === name.toLowerCase()),
+    );
+    if (missingBuiltins.length > 0) {
+      return warnItem(
+        'team',
+        `team.md is valid (${parsed.agents.length} members) but ${missingBuiltins.length} built-in agent${missingBuiltins.length === 1 ? ' is' : 's are'} missing from the roster`,
+        missingBuiltins
+          .map(({ id, name }) => `built-in ${name} (.squad/agents/${id}/) has no team.md row — run \`squad upgrade\` to add it`)
+          .sort((a, b) => a.localeCompare(b)),
+      );
+    }
+
     return pass('team', `team.md is valid (${parsed.agents.length} members)`);
   } catch (error) {
     return fail('team', errorMessage(error));
@@ -183,6 +228,7 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
   }
 
   const diagnostics: string[] = [];
+  const legacyCharters: string[] = [];
   const normalizedIds = new Map<string, string>();
   const persistentNames = new Map<string, string>();
   const agentIds = Object.keys(registry.agents).sort((a, b) =>
@@ -249,8 +295,10 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
         readRequiredFile(path.join(squadDir, displayPath), displayPath),
       );
       if (!charter.identity.name || !charter.identity.role) {
-        diagnostics.push(
-          `${agentId}: charter must declare identity name and role`,
+        // A charter written before the 2.0 `## Identity` block is a warning with a hint, not a
+        // failure: the squad keeps working, the author just has not adopted the new shape (#2298).
+        legacyCharters.push(
+          `${agentId}: legacy charter — add "## Identity" with "- **Name:** ${entry.persistent_name}" and "- **Role:** <role>" (see .squad/templates/charter.md)`,
         );
       } else if (
         normalizeAgentRef(charter.identity.name) !== persistentName
@@ -268,7 +316,15 @@ function checkRegistryAndCharters(squadDir: string): HealthCheckItem {
     return fail(
       'registry-charters',
       `${diagnostics.length} registry or charter validation failure${diagnostics.length === 1 ? '' : 's'}`,
-      diagnostics.sort((a, b) => a.localeCompare(b)),
+      [...diagnostics, ...legacyCharters].sort((a, b) => a.localeCompare(b)),
+    );
+  }
+
+  if (legacyCharters.length > 0) {
+    return warnItem(
+      'registry-charters',
+      `${agentIds.length} registry agent${agentIds.length === 1 ? '' : 's'} have charters; ${legacyCharters.length} legacy charter${legacyCharters.length === 1 ? '' : 's'} without a 2.0 identity block`,
+      legacyCharters.sort((a, b) => a.localeCompare(b)),
     );
   }
 
@@ -300,6 +356,11 @@ function loadKnownRoutingAgentKeys(squadDir: string): Set<string> {
   for (const agent of team.agents) {
     const key = normalizeAgentRef(agent.name);
     if (key.startsWith('@')) keys.add(key);
+  }
+  // Built-in support agents are legitimate routing targets even though they are not cast (#1785).
+  for (const { id, name } of BUILTIN_AGENTS) {
+    keys.add(normalizeAgentRef(id));
+    keys.add(normalizeAgentRef(name));
   }
   return keys;
 }
