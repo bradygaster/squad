@@ -215,6 +215,32 @@ Body only.`;
 
 // --- parseSkillFile ---
 
+describe('parseFrontmatter triggers', () => {
+  const trig = (fm: string) => parseFrontmatter(`---\n${fm}\n---\nbody`).meta.triggers;
+
+  it('parses block sequences into an array', () => {
+    expect(trig('triggers:\n  - "a phrase"\n  - b: c\nname: x')).toEqual(['a phrase', 'b: c']);
+  });
+
+  it('strips quotes from inline arrays and scalars', () => {
+    expect(trig('triggers: ["a phrase", \'b\', c]')).toEqual(['a phrase', 'b', 'c']);
+    expect(parseFrontmatter('---\nname: "My Skill"\n---\n').meta.name).toBe('My Skill');
+  });
+
+  it('every shipped skill template that declares triggers parses to a non-empty array', () => {
+    const root = path.resolve(__dirname, '../packages/squad-sdk/templates/skills');
+    for (const dir of fs.readdirSync(root)) {
+      const file = path.join(root, dir, 'SKILL.md');
+      if (!fs.existsSync(file)) continue;
+      const raw = fs.readFileSync(file, 'utf8');
+      if (!/^triggers:/m.test(raw)) continue;
+      const triggers = parseFrontmatter(raw).meta.triggers;
+      expect(Array.isArray(triggers) && triggers.length > 0, dir).toBe(true);
+      for (const t of triggers as string[]) expect(t, dir).not.toMatch(/^["']|["']$/);
+    }
+  });
+});
+
 describe('parseSkillFile', () => {
   it('should parse a well-formed SKILL.md', () => {
     const raw = `---
