@@ -9,6 +9,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 const storage = new FSStorageProvider();
 import { success, dim, bold, info, BOLD, RESET, DIM } from '../core/output.js';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
+import { NO_SQUAD_MESSAGE } from '../core/errors.js';
 import { removeCopilotInstructionsBlock, syncCopilotInstructionsFile, writeManagedText } from '../core/managed-file.js';
 import {
   readTeamMd,
@@ -33,7 +34,7 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
 
   // Ensure squad state exists
   if (!storage.existsSync(stateDir)) {
-    throw new Error('No squad found — run init first, then add the copilot agent.');
+    throw new Error(NO_SQUAD_MESSAGE);
   }
 
   let content = readTeamMd(stateDir);

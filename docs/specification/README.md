@@ -84,6 +84,8 @@ deviations are summarized here and expanded in the
 | `squad-automation/v0.1` | `requirements-draft` / requirements | Core, Interop, Coordination | None | None | Local and GitHub schedulers exist | Time, retry, and drift evidence differ | [Automation](automation-v0.1.md) |
 | `squad-state-memory-requirements/v0.1` | `informative-draft` / informative | Core, Interop | None | None | Several state and memory providers exist | No common authority, recovery, or privacy corpus | [State authority, then memory classification](state-memory-requirements-v0.1.md) |
 | `squad-portable-bundle/v1.0` | `informative-draft` / observed implementation surface | Core and Interop rules apply conceptually | None | Tested JSON shape; no published schema or manifest | `squad export` and `squad import` round-trip team, routing, decisions, casting, agents, and skills | Bundle `1.0` does not use Core profile grammar; histories, decisions, skills, and casting policy can contain sensitive data | [Coverage and promotion requirements](artifact-inventory.md#portable-export-and-import-bundle) |
+| `squad-client-backend-decoupling/v0.2` | `requirements-draft` / requirements | Core, Interop, Coordination, State/Memory Requirements | None | None | Experimental `@bradygaster/squad-sdk/backend` (`LocalSquadBackend`, `DurableHttpSquadBackend`) and the `squad state-mcp --experimental-backend` bridge; no execution harness ships | Opaque harness-supplied approval hashes, client-asserted epochs, unsigned cursors, whole-file JSON snapshots | [Client/backend decoupling](client-backend-decoupling-v0.2.md) |
+| `squad-client-harness-adapters/v0.2` | `requirements-draft` / requirements | Core, Interop, Client/Backend Decoupling | None | None | Seven host projections and the `HarnessAdapter` SPI exist in the SDK; no `HarnessAdapter` implementation ships | Host discovery, approvals, and background execution differ | [Client/harness adapters](client-harness-adapters-v0.2.md) |
 
 The machine-readable registry is
 [`test-fixtures/spec/suite-v0.1/index.json`](../../test-fixtures/spec/suite-v0.1/index.json).
@@ -111,6 +113,8 @@ squad-coordination-handoff/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-t
 squad-automation/v0.1 -> [squad-core/v0.1, squad-interop/v0.1, squad-coordination-handoff/v0.1]
 squad-state-memory-requirements/v0.1 -> [squad-core/v0.1, squad-interop/v0.1]
 squad-portable-bundle/v1.0 -> [conceptual Core and Interop constraints; no profile claim]
+squad-client-backend-decoupling/v0.2 -> [squad-core/v0.1, squad-interop/v0.1, squad-coordination-handoff/v0.1, squad-state-memory-requirements/v0.1]
+squad-client-harness-adapters/v0.2 -> [squad-core/v0.1, squad-interop/v0.1, squad-client-backend-decoupling/v0.2]
 ```
 
 DAG reading order:
@@ -129,6 +133,8 @@ Core
 │   │   ├── Ceremony
 │   │   └── Coordination
 │   │       └── Automation
+│   │   └── Client/Backend Decoupling v0.2 (also builds on State/Memory)
+│   │       └── Client/Harness Adapters v0.2
 │   └── State/Memory Requirements
 └── Portable Bundle observation (applies Core/Interop constraints without a claim)
 ```

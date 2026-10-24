@@ -121,6 +121,17 @@ npm run test:watch
 npm run lint
 ```
 
+### Adding or changing a client host adapter
+
+Host adapters live in `packages/squad-sdk/src/client/adapters/` (the `squad-sdk/clients` export is a deprecated alias for the same symbols).
+
+1. Add the host id to `CLIENT_IDS` and a `HostProjection` in `adapters.ts`: it returns declarative `ProjectionFile`s (`managed`, `json`, `block`, `text`) and never owns routing, durable state or authorization.
+2. Declare its capability tokens in `capabilities.ts` (tokens are authoritative; boolean flags are derived) and add its anchor/MCP paths to `client/adapter-contract.ts`.
+3. Add its dispatch section in `coordinator.ts` (how the host spawns a specialist) and keep the shared prompt host-agnostic.
+4. Merge shared config (JSON/TOML) additively: only Squad's own keys, preserve everything else, refuse malformed input.
+5. Add unit tests in `test/clients.test.ts` and, if the host has a real CLI, a skipped-when-absent check in `test/clients-real-cli.test.ts`.
+6. Update `docs/src/content/docs/scenarios/using-squad-across-clients.md`, `docs/tutorials/multi-client-quickstart.md`, the CLI reference and add a changeset.
+
 ### 5. Keeping Your Fork in Sync
 
 Before opening or updating a PR, rebase your branch on the latest upstream dev:

@@ -1,8 +1,5 @@
 # Accessibility Guidelines
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 Squad CLI is designed to be usable by everyone, including users of screen readers, high-contrast terminals, and monochrome displays.
 
 ## Keyboard Shortcuts

@@ -1,0 +1,63 @@
+{
+  "protocol": "squad-protocol-v2.0-rc1",
+  "traceId": "golden-conformance-trace",
+  "description": "Canonical Squad 2.0 protocol recovery and cancellation trace. Event names are the real BackendEnvelope.type values emitted by the SDK backend; `client.*` entries are client-side steps that produce no backend event.",
+  "conversationId": "conv-demo-001",
+  "runId": "run-demo-001",
+  "expectedTerminalState": "cancelled",
+  "events": [
+    {
+      "seq": 11,
+      "event": "message.accepted",
+      "runId": "run-demo-001",
+      "turnSeq": 11,
+      "state": "running"
+    },
+    {
+      "seq": 12,
+      "event": "approval.requested",
+      "runId": "run-demo-001",
+      "approvalId": "approval-demo-001",
+      "version": 1,
+      "scope": "turn",
+      "state": "pending",
+      "hash": "approvalpayloadv1"
+    },
+    {
+      "seq": 13,
+      "event": "client.disconnected",
+      "runId": "run-demo-001",
+      "cursor": "cursor-13"
+    },
+    {
+      "seq": 14,
+      "event": "client.reconnected",
+      "runId": "run-demo-001",
+      "cursor": "cursor-13",
+      "lastAcceptedSeq": 12,
+      "resumable": true
+    },
+    {
+      "seq": 15,
+      "event": "approval.resolved",
+      "runId": "run-demo-001",
+      "approvalId": "approval-demo-001",
+      "version": 2,
+      "decision": "approve",
+      "state": "approved",
+      "hash": "approvalpayloadv1"
+    },
+    {
+      "seq": 16,
+      "event": "cancellation.requested",
+      "runId": "run-demo-001",
+      "reason": "user-requested"
+    },
+    {
+      "seq": 17,
+      "event": "turn.state",
+      "runId": "run-demo-001",
+      "state": "cancelled"
+    }
+  ]
+}

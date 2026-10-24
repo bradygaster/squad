@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "1.0.0",
+  "version": "2.0.0-preview.1",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,6 +18,10 @@
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
     },
+    "./clients": {
+      "types": "./dist/clients/index.d.ts",
+      "import": "./dist/clients/index.js"
+    },
     "./config": {
       "types": "./dist/config/index.d.ts",
       "import": "./dist/config/index.js"
@@ -34,10 +38,6 @@
       "types": "./dist/agents/index.d.ts",
       "import": "./dist/agents/index.js"
     },
-    "./agents/personal": {
-      "types": "./dist/agents/personal.d.ts",
-      "import": "./dist/agents/personal.js"
-    },
     "./adapter": {
       "types": "./dist/adapter/types.d.ts",
       "import": "./dist/adapter/types.js"
@@ -53,6 +53,10 @@
     "./hooks": {
       "types": "./dist/hooks/index.d.ts",
       "import": "./dist/hooks/index.js"
+    },
+    "./backend": {
+      "types": "./dist/backend/index.d.ts",
+      "import": "./dist/backend/index.js"
     },
     "./tools": {
       "types": "./dist/tools/index.d.ts",

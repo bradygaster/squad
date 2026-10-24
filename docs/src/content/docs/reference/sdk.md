@@ -15,7 +15,8 @@ The package uses ESM and exposes a root entrypoint plus focused subpath entrypoi
 | Import path | Use for |
 |-------------|---------|
 | `@bradygaster/squad-sdk` | Resolution, configuration, builders, models, roles, storage, telemetry, and shared types |
-| `@bradygaster/squad-sdk/client` | `SquadClient`, `SquadClientWithPool`, `SessionPool`, and client events |
+| `@bradygaster/squad-sdk/client` | `SquadClient`, `SquadClientWithPool`, `SessionPool`, client events, and multi-host `HostProjection` / `ClientAdapter` APIs (`@bradygaster/squad-sdk/clients` is a deprecated alias) |
+| `@bradygaster/squad-sdk/backend` | Experimental `SquadBackend` (`local`, `mcp`, `durable-http`), `HarnessAdapter`, and capability/extension helpers |
 | `@bradygaster/squad-sdk/coordinator` | `SquadCoordinator`, fan-out, and response-tier orchestration |
 | `@bradygaster/squad-sdk/tools` | `defineTool` and `ToolRegistry` |
 | `@bradygaster/squad-sdk/hooks` | `HookPipeline` and hook policy types |
@@ -161,23 +162,21 @@ export default defineConfig({
 
 ## Resolution
 
-Resolution helpers locate project, personal, and shared Squad state.
+Resolution helpers locate project, global, and shared Squad state.
 
 ```typescript
 import {
   ensureSquadPath,
-  resolveGlobalSquadPath,
   resolveSquad,
   scratchDir,
 } from '@bradygaster/squad-sdk';
 
 const projectSquad = resolveSquad();
-const personalSquad = resolveGlobalSquadPath();
 const ensured = ensureSquadPath();
 const scratch = scratchDir();
 ```
 
-The root package also exports personal-state helpers, project-key helpers, preset/state resolution, directory config loading, and cache management. See the generated API reference for signatures.
+The root package also exports project-key helpers, preset/state resolution, directory config loading, and cache management. See the generated API reference for signatures.
 
 ## Client and Sessions
 
@@ -339,6 +338,24 @@ pipeline.onContextUtilization(snapshot => {
 Every accepted sample is also emitted as a typed `context:utilization` event and recorded in the `squad.context.utilization` OpenTelemetry gauge. Exact runtime samples take precedence over later estimates for the same session.
 
 The root package also exports cost tracking, offline mode, runtime events, OpenTelemetry metrics, and internationalization helpers.
+
+## Client host adapters
+
+`@bradygaster/squad-sdk/client` (and the deprecated alias `@bradygaster/squad-sdk/clients`) projects the host-agnostic Squad coordinator into the files each AI host loads natively across all 7 supported hosts (`GitHub Copilot`, `Claude Code`, `Kiro`, `OpenCode`, `Cursor`, `OpenAI Codex`, and `Google Antigravity`).
+
+- `HostProjection` is a pure workspace projection (`project(ctx)`) for `copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, and `antigravity`. Get one with `getHostProjection(id)`; apply with `installClients(ids, ctx)` or remove with `uninstallClients(ids, ctx)`.
+- `createClientAdapter({ host, ctx, runtime? })` returns the spec-level `ClientAdapter` facade: `describe()`, `projectWorkspace()` and `getCapabilities()` work locally; `submit`, `subscribe`, `cancel` and `respondApproval` delegate to a bound `RuntimeBinding` and otherwise throw `AdapterUnboundError`.
+- Capabilities are canonical string tokens (`CAPABILITY_TOKENS_BY_HOST`); the boolean `ClientCapabilities` flags are a derived view, and passing conflicting flags throws. Advertised capabilities stay separate from negotiated `effectiveCapabilities` (client ∩ backend ∩ policy).
+- JSON and TOML config merges only touch Squad's own keys; `normalizeClientIds()` / `assertPortableClients()` keep `clients[]` free of credentials and paths.
+
+## Experimental backend and harness SPI (`@bradygaster/squad-sdk/backend`)
+
+> **Experimental Preview — Bring Your Own Server:** `@bradygaster/squad-sdk/backend` is an experimental extension contract (`BACKEND_CONTRACT_STAGE = 'experimental'`). Squad ships the `SquadBackend` / `HarnessAdapter` interfaces, the local file/state-store backend, and the outbound `durable-http` client — it does **not** bundle a remote DurableSquad server, and server-side DurableSquad Phase 2 integration (remote durable approvals and lease-epoch coordination) is pending. Use `durable-http` when connecting to your own external or managed `/v1/conversations` server.
+
+- `createSquadBackend(options)` builds a `SquadBackend` for `kind: 'local'`, `kind: 'mcp'`, or `kind: 'durable-http'`. SDK callers using `kind: 'durable-http'` (or `new DurableHttpSquadBackend(options)`) must explicitly pass an `https://` `baseUrl` (plain `http://` is allowed only for `localhost` / `127.0.0.1` / `::1`) and, when needed, an optional bearer `token`; redirects are never followed. Neither `createSquadBackend` nor `DurableHttpSquadBackend` reads `SQUAD_BACKEND_URL` or `SQUAD_BACKEND_TOKEN` from the environment — automatic environment-variable lookup applies only to the CLI's `squad state-mcp` bridge (`createMcpBackend()`) when the experimental backend tools are enabled.
+- `SquadBackend` exposes `negotiate`, `createConversation`, `sendMessage`, `getTranscript`, `getTurn`, `readEvents`, `getApprovals`, `respondApproval`, `cancelTurn`, `cancelRun`, and `health`.
+- `HarnessAdapter` and `DefaultHarnessRegistry` let custom execution runtimes plug into the broker (`submit`, `subscribe`, `cancel`, `respondApproval`, `describe`), with `validateExtensions()` enforcing `x-<harness>.*` extension namespaces.
+- In `squad state-mcp`, the 11 `squad_backend_*` MCP conversation tools are opt-in via `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`. `SQUAD_BACKEND_URL` alone does not enable them. The bridge ships no execution harness: `squad_backend_health` / `squad_backend_negotiate` report `executionAvailable: false`, and `squad_backend_send_message` refuses instead of queueing (`unavailable` when no harness is registered; auto-selects a single registered in-process harness when `harness` is omitted, or refuses with `invalid-request` when multiple harnesses are registered), so over MCP the bundled backend is a transcript and event-log surface.
 
 ## Other Public Modules
 

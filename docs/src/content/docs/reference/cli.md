@@ -30,7 +30,7 @@ prerequisites, all supported methods, and update commands.
 | `squad` | **Deprecated** — Enter interactive shell (no args). Use `copilot --agent squad` instead. | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --state-backend <type>` | Initialize with a specific state backend (`local`, `orphan`, `two-layer`) | No |
-| `squad init --global` | Create a personal squad in your platform-specific directory | No |
+| `squad init --client <list>` | Also project Squad into other AI hosts: comma-separated `copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`, or `all`; persisted in `.squad/config.json` `clients[]` | No |
 | `squad init --no-vscode-default` | Skip writing `chat.newSession.defaultMode` to `.vscode/settings.json` | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
 | `squad link <team-repo-path>` | Link project to a remote team root | Yes |
@@ -41,6 +41,7 @@ prerequisites, all supported methods, and update commands.
 | `squad status` | Show which squad is active and why | Yes |
 | `squad doctor` | Validate squad setup integrity and diagnose issues (alias: `heartbeat`) | Yes |
 | `squad upgrade` | Upgrade Squad-owned files to latest version; locally customized files are saved as `<file>.local-backup` | Yes |
+| `squad upgrade --client <list>` | Add hosts to the configured set and refresh every configured host projection; user settings in `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json` and `.codex/config.toml` are preserved | Yes |
 | `squad upgrade --state-backend <type>` | Migrate state backend (`orphan`, `two-layer`); installs git hooks automatically | Yes |
 | `squad upgrade --migrate-directory` | Rename legacy `.ai-team/` directory to `.squad/` | Yes |
 | `squad triage` | Auto-triage issues and assign to team (primary name; `watch` is an alias) | Yes |
@@ -73,6 +74,7 @@ prerequisites, all supported methods, and update commands.
 | `squad nap --deep` | Thorough cleanup with recursive descent | Yes |
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) | No |
+| `squad state-mcp [--experimental-backend]` | Run the `squad_state` stdio MCP server; pass `--experimental-backend` (or `SQUAD_EXPERIMENTAL_BACKEND=1`) to also expose the 11 experimental `squad_backend_*` conversation tools (transcript/event-log only until a harness is registered) | Yes |
 | `squad --version` | Print installed version | No |
 
 ### Remote Init Mode
@@ -341,10 +343,11 @@ When Squad starts, it looks for `.squad/` in this order:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (walk up to project root)
-3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
-4. Global CLI default (fallback only)
 
-First match wins.
+First match wins. Squad never resolves a squad from your user profile: outside a
+project (no `.squad/` in the directory tree) state commands such as `squad status`,
+`squad doctor` and `squad cast` fail with `No squad in this directory` — run
+`squad init` in the project first.
 
 ---
 
@@ -355,6 +358,9 @@ First match wins.
 | `SQUAD_CLIENT` | Detected client platform | `cli`, `vscode` |
 | `COPILOT_TOKEN` | Copilot auth token (SDK usage) | Token string |
 | `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context utilization warning threshold | Fraction greater than `0` and at most `1` (default: `0.8`) |
+| `SQUAD_EXPERIMENTAL_BACKEND` | Opt in to the 11 experimental `squad_backend_*` MCP tools in `squad state-mcp` | `1` |
+| `SQUAD_BACKEND_URL` | External `/v1/conversations` server URL read by `squad state-mcp` when experimental backend tools are enabled (does not by itself enable the `squad_backend_*` tools; SDK callers must pass `baseUrl` explicitly to `createSquadBackend` / `DurableHttpSquadBackend`) | `https://` URL (`http://` only for localhost) |
+| `SQUAD_BACKEND_TOKEN` | Optional bearer token read by `squad state-mcp` alongside `SQUAD_BACKEND_URL` (SDK callers must pass `token` explicitly) | Token string |
 
 ---
 

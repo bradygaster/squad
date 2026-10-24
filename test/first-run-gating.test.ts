@@ -643,6 +643,13 @@ describe('Banner simplification (#626, #627)', () => {
     expect(lineText).not.toContain('Just type what you need');
   });
 
+  it('Header does not label stable releases as experimental', async () => {
+    const source = await readAppSource();
+    const headerBlock = source.match(/const headerElement[\s\S]*?(?=const firstRunElement)/);
+    expect(headerBlock).not.toBeNull();
+    expect(headerBlock![0]).not.toMatch(/\b(?:alpha|experimental preview)\b/i);
+  });
+
   it('Ctrl+C formatting — "Ctrl+C again to exit" in system message', async () => {
     const source = await readAppSource();
 

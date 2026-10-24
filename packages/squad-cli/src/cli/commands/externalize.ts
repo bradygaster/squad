@@ -164,7 +164,7 @@ export function runInternalize(projectDir: string): void {
 
   // Remove external-state fields from config.json (stateLocation, teamRoot,
   // projectKey) to restore true local mode. Preserve any other settings
-  // (e.g. consult, stateBackend). If nothing meaningful remains, delete the file
+  // (e.g. stateBackend). If nothing meaningful remains, delete the file
   // so loadDirConfig() returns null and resolveSquadPaths() falls through to
   // local mode.
   let fullConfig: Record<string, unknown> = {};

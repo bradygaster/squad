@@ -103,17 +103,7 @@ jobs:
           RELEASED="${{ steps.released.outputs.version }}"
 
           # Bump is needed only when dev version <= released version
-          NEEDS_BUMP=$(node -e "
-            const semver = (v) => v.split('.').map(Number);
-            const cmp = (a, b) => {
-              const [aMaj, aMin, aPat] = semver(a);
-              const [bMaj, bMin, bPat] = semver(b);
-              if (aMaj !== bMaj) return aMaj - bMaj;
-              if (aMin !== bMin) return aMin - bMin;
-              return aPat - bPat;
-            };
-            console.log(cmp('$DEV', '$RELEASED') <= 0 ? 'true' : 'false');
-          ")
+          NEEDS_BUMP=$(node scripts/release/version-compare.mjs "$DEV" "$RELEASED")
 
           echo "needs_bump=$NEEDS_BUMP" >> "$GITHUB_OUTPUT"
 
@@ -126,24 +116,11 @@ jobs:
       # ── Update all package.json files ───────────────────────────────────────
       - name: Bump version in all package.json files
         if: steps.check.outputs.needs_bump == 'true'
+        env:
+          PACKAGE_VERSION: ${{ steps.next.outputs.version }}
         run: |
-          NEW_VERSION="${{ steps.next.outputs.version }}"
-          echo "Bumping all package.json files to $NEW_VERSION"
-
-          update_version() {
-            local FILE="$1"
-            node -e "
-              const fs = require('fs');
-              const pkg = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
-              pkg.version = '$NEW_VERSION';
-              fs.writeFileSync('$FILE', JSON.stringify(pkg, null, 2) + '\n');
-              console.log('Updated $FILE → ' + pkg.version);
-            "
-          }
-
-          update_version "package.json"
-          update_version "packages/squad-cli/package.json"
-          update_version "packages/squad-sdk/package.json"
+          echo "Bumping all package.json files to $PACKAGE_VERSION"
+          node scripts/release/set-package-versions.mjs
 
       - name: Show diff
         if: steps.check.outputs.needs_bump == 'true'

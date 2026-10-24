@@ -93,18 +93,6 @@ prompt: |
   Use the literal CURRENT_DATETIME value from your prompt for dated file content:
   `<literal CURRENT_DATETIME value from your prompt>`. Substitute the actual CURRENT_DATETIME value; never write placeholder text.
 
-  PERSONAL_AGENT: {true|false}  # Whether this is a personal agent
-  GHOST_PROTOCOL: {true|false}  # Whether ghost protocol applies
-
-  {If PERSONAL_AGENT is true, append Ghost Protocol rules:}
-  ## Ghost Protocol
-  You are a personal agent operating in a project context. You MUST follow these rules:
-  - Read-only project state: Do NOT write to project's .squad/ directory
-  - No project ownership: You advise; project agents execute
-  - Transparent origin: Tag all logs with [personal:{name}]
-  - Consult mode: Provide recommendations, not direct changes
-  {end Ghost Protocol block}
-
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
 

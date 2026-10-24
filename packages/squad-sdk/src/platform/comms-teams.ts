@@ -31,7 +31,7 @@ const DEFAULT_TENANT_ID = 'organizations';
 export interface TeamsCommsConfig {
   tenantId?: string;
   clientId?: string;
-  /** User to message — UPN like "bradyg@microsoft.com" or "me" for self-chat */
+  /** User to message — UPN like "user@example.com" or "me" for self-chat */
   recipientUpn?: string;
   /** Existing chat ID (skip chat creation if known) */
   chatId?: string;

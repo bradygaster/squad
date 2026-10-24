@@ -11,7 +11,6 @@
  *  4. File has comments and trailing commas → both preserved after edit.
  *  5. --no-vscode-default passed → file not created or modified.
  *  6. Idempotent rerun → second run produces no further diff.
- *  7. isGlobal:true passed → .vscode/settings.json not created (global skips vscode).
  *  8. Malformed file → init does not crash; warning shown; file unchanged.
  */
 
@@ -178,14 +177,6 @@ describe('runInit — VS Code default chat session mode', () => {
 
     const afterSecond = fs.readFileSync(sp, 'utf-8');
     expect(afterSecond).toBe(afterFirst);
-  });
-
-  // ── Case 7 (regression): isGlobal:true skips .vscode entirely ────────
-  it('does not create .vscode/settings.json when isGlobal is true', async () => {
-    await runInit(tmpDir, { ...INIT_OPTS, isGlobal: true });
-
-    const sp = settingsPath(tmpDir);
-    expect(fs.existsSync(sp), '.vscode/settings.json must NOT be created for global init').toBe(false);
   });
 
   // ── Case 8: malformed / unparseable settings.json ─────────────────────

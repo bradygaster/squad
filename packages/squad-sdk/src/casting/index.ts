@@ -75,6 +75,22 @@ export {
   type CastingRecoveryPathState,
 } from './durable-registry.js';
 
+export {
+  backfillCastingRegistryFromTeam,
+  hasExistingCastHistory,
+  normalizeHandwrittenCastingRegistry,
+  parseTeamRoster,
+  repairHandwrittenCastingRegistry,
+  resolveRosterAgentIds,
+  toAgentId,
+  type DroppedRecord,
+  type NormalizeHandwrittenResult,
+  type PreservedProvenanceRecord,
+  type RepairHandwrittenOptions,
+  type RepairResult,
+  type TeamRosterMember,
+} from './handwritten-registry.js';
+
 // --- Legacy Types (kept for backward compat) ---
 
 export interface CastingUniverse {

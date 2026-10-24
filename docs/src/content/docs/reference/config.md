@@ -78,6 +78,8 @@ Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates 
 └── orchestration-log/   # Coordinator state
 ```
 
+`.squad/config.json` may also carry `clients`: the portable list of host projections to keep fresh (`copilot`, `claude`, `kiro`, `opencode`, `cursor`, `codex`, `antigravity`). It never holds credentials, paths, URLs or session ids. See [Using Squad across clients](../scenarios/using-squad-across-clients.md).
+
 Commit this directory. It's your team's brain. Anyone who clones the repo gets the full team with all their knowledge.
 
 ---
@@ -181,11 +183,12 @@ Resolution order: user override → charter → task auto-select → config defa
 Squad finds `.squad/` by walking up:
 
 1. Current directory (`./.squad/`)
-2. Parent directories (up to project root)
-3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
-4. Global CLI default (fallback)
+2. Parent directories (walk up to project root)
 
-First match wins.
+First match wins. Squad never resolves a squad from your user profile: outside a
+project (no `.squad/` in the directory tree) state commands such as `squad status`,
+`squad doctor` and `squad cast` fail with `No squad in this directory` — run
+`squad init` in the project first.
 
 ---
 
@@ -196,6 +199,9 @@ First match wins.
 | `SQUAD_CLIENT` | Detected client (`cli` or `vscode`) |
 | `COPILOT_TOKEN` | Auth token for SDK usage |
 | `SQUAD_CONTEXT_WARNING_THRESHOLD` | Interactive-shell context warning threshold as a fraction greater than `0` and at most `1` (default: `0.8`) |
+| `SQUAD_EXPERIMENTAL_BACKEND` | Set to `1` to enable the 11 opt-in `squad_backend_*` MCP tools in `squad state-mcp` |
+| `SQUAD_BACKEND_URL` | Read automatically by `squad state-mcp` (when enabled with `--experimental-backend` or `SQUAD_EXPERIMENTAL_BACKEND=1`) to connect its MCP bridge to your own external `/v1/conversations` server over `https://` (`http://` only for localhost). SDK callers using `createSquadBackend({ kind: 'durable-http', ... })` or `DurableHttpSquadBackend` must pass `baseUrl` (and optional `token`) explicitly |
+| `SQUAD_BACKEND_TOKEN` | Optional bearer token read by `squad state-mcp` alongside `SQUAD_BACKEND_URL` (pass `token` explicitly when calling `createSquadBackend` or `DurableHttpSquadBackend` in SDK code) |
 
 ---
 

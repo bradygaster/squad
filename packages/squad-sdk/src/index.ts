@@ -10,12 +10,10 @@ const pkg = require('../package.json');
 export const VERSION: string = pkg.version;
 
 // Export public API
-export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadHome, ensureSquadHome, resolvePresetsDir, resolveSquadState, clearResolveSquadCache } from './resolution.js';
+export { resolveSquad, resolveGlobalSquadPath, isRetiredProfileTeamRoot, ensureSquadPath, loadDirConfig, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadHome, ensureSquadHome, resolvePresetsDir, resolveSquadState, clearResolveSquadCache } from './resolution.js';
 export type { ResolvedSquadPaths, SquadDirConfig, SquadStateContext } from './resolution.js';
 export * from './config/index.js';
 export * from './agents/onboarding.js';
-export { resolvePersonalAgents, mergeSessionCast } from './agents/personal.js';
-export type { PersonalAgentMeta, PersonalAgentManifest } from './agents/personal.js';
 export * from './casting/index.js';
 export * from './skills/index.js';
 export { selectResponseTier, getTier } from './coordinator/response-tiers.js';
@@ -181,3 +179,25 @@ export type {
   DecisionEntry,
   GitRunner,
 } from './state/io/index.js';
+
+// Multi-host client adapters (spec: client-harness-adapters/v0.2)
+export * from './client/adapter-contract.js';
+export * from './client/adapters/index.js';
+
+// Handwritten casting registry repair & team.md backfill
+export {
+  backfillCastingRegistryFromTeam,
+  hasExistingCastHistory,
+  normalizeHandwrittenCastingRegistry,
+  parseTeamRoster,
+  repairHandwrittenCastingRegistry,
+  resolveRosterAgentIds,
+  toAgentId,
+  type DroppedRecord,
+  type NormalizeHandwrittenResult,
+  type PreservedProvenanceRecord,
+  type RepairHandwrittenOptions,
+  type RepairResult,
+  type TeamRosterMember,
+} from './casting/handwritten-registry.js';
+

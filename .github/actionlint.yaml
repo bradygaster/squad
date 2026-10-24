@@ -54,3 +54,12 @@ paths:
       # Emitted by gh-aw's pkg/workflow/maintenance_workflow.go, so it cannot be
       # fixed here. Scoped to this filename so the check still applies elsewhere.
       - "string should not be empty"
+
+  ".github/workflows/squad-upgrade-matrix.yml":
+    ignore:
+      # The immutable preview attestation block compares a required workflow
+      # input against a literal glob-shaped artifact-name policy. Shellcheck
+      # treats the expression interpolation as a compile-time string and emits
+      # SC2193, but GitHub substitutes the runtime input before bash executes.
+      # Keep this path-scoped so the attested workflow bytes remain unchanged.
+      - "SC2193"

@@ -167,10 +167,17 @@ describe('upstream resolver', () => {
 
   it('shows warning for unreachable source', () => {
     const display = buildSessionDisplay({
-      upstreams: [{ name: 'dead', type: 'git', skills: [], decisions: null, wisdom: null, castingPolicy: null, routing: null }],
+      maxDepth: 3,
+      diagnostics: ['dead: git upstream is not materialized locally'],
+      upstreams: [{
+        name: 'dead', type: 'git', provenance: 'upstream:dead@main', origin: 'https://example.invalid/dead.git', ref: 'main',
+        depth: 1, via: [], status: 'unavailable', diagnostic: 'dead: git upstream is not materialized locally', squadDir: null, lastSynced: null,
+        skills: [], decisions: null, wisdom: null, castingPolicy: null, routing: null,
+      }],
     });
     expect(display).toContain('⚠️');
     expect(display).toContain('dead');
+    expect(display).toContain('not materialized locally');
   });
 
   it('returns null when no upstream.json', () => {

@@ -22,7 +22,7 @@ import * as path from 'node:path';
 import { resolveStateBackend, TwoLayerBackend, type PromoteNotesResult } from '@bradygaster/squad-sdk';
 import { resolveSquadPaths } from '@bradygaster/squad-sdk/resolution';
 import { BOLD, RESET, DIM, GREEN, YELLOW, RED } from '../core/output.js';
-import { fatal } from '../core/errors.js';
+import { fatal, fatalNoSquad } from '../core/errors.js';
 
 /** Parsed args for `squad notes promote`. */
 interface PromoteArgs {
@@ -150,7 +150,7 @@ export async function runNotesPromote(cwd: string, args: string[]): Promise<numb
 
   const paths = resolveSquadPaths(cwd);
   if (!paths) {
-    fatal('No squad found. Run "squad init" first.');
+    fatalNoSquad();
   }
 
   const squadDir = paths.projectDir;
