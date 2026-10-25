@@ -39,6 +39,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { parse as tomlParse } from 'smol-toml';
 import { parse as yamlParse } from 'yaml';
+import { selfUpgradeCli, selfUpgradeCommand } from '../packages/squad-cli/src/cli/core/upgrade.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -123,6 +124,47 @@ const CHECK_IDS = Object.keys(matrix.checks);
 const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 'antigravity'];
 const WORKFLOW_PATH = path.join(ROOT, '.github', 'workflows', 'squad-upgrade-matrix.yml');
 const FS_HOOK = path.join(ROOT, 'test', 'fixtures', 'upgrade-matrix', 'fs-access-log.cjs');
+
+describe('preview self-upgrade registry-state harness', () => {
+  it('resolves a prerelease through insider and executes the insider command when the candidate is published there', async () => {
+    for (const packageManager of ['npm', 'pnpm', 'yarn'] as const) {
+      const resolved: string[] = [];
+      const executed: string[] = [];
+      const result = await selfUpgradeCli({
+        packageManager,
+        currentVersion: '2.0.0-preview.2',
+        resolveTagVersion: async (tag) => {
+          resolved.push(tag);
+          return '2.0.0-preview.2';
+        },
+        exec: (command) => { executed.push(command); },
+      });
+      expect(resolved).toEqual(['insider']);
+      expect(executed).toEqual([selfUpgradeCommand(packageManager, 'insider')]);
+      expect(result).toMatchObject({ tag: 'insider', targetVersion: '2.0.0-preview.2', performed: true });
+      expect(selfUpgradeCommand(packageManager, 'latest')).toContain('@latest');
+      expect(selfUpgradeCommand(packageManager, 'insider')).toContain('@insider');
+    }
+  });
+
+  it('resolves a prerelease through insider and refuses a downgrade before exec when the candidate is not published there', async () => {
+    for (const packageManager of ['npm', 'pnpm', 'yarn'] as const) {
+      const resolved: string[] = [];
+      const executed: string[] = [];
+      await expect(selfUpgradeCli({
+        packageManager,
+        currentVersion: '2.0.0-preview.2',
+        resolveTagVersion: async (tag) => {
+          resolved.push(tag);
+          return '2.0.0-preview.1';
+        },
+        exec: (command) => { executed.push(command); },
+      })).rejects.toMatchObject({ code: 'EDOWNGRADE' });
+      expect(resolved).toEqual(['insider']);
+      expect(executed).toEqual([]);
+    }
+  });
+});
 
 /**
  * Why a producer × shape cell cannot be exercised, derived from the producers' capabilities.
@@ -804,7 +846,8 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     const sdkManifest = readJson<{ version: string; exports?: Record<string, unknown> }>(path.join(sdkDir, 'package.json'))!;
     const cliManifest = readJson<{ version: string; exports?: Record<string, unknown> }>(path.join(cliDir, 'package.json'))!;
     newVersion = cliManifest.version;
-    const expectedVersion = cliManifest.version;
+    const expectedVersion = process.env['SQUAD_PREVIEW_EXPECTED_VERSION'];
+    if (!expectedVersion) throw new Error('SQUAD_PREVIEW_EXPECTED_VERSION is required');
     const cliEntry = path.join(cliDir, 'dist', 'cli-entry.js');
     newCli = {
       file: process.execPath,
@@ -820,39 +863,67 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     const version = await run(newCli.file, [...newCli.args, '--version'], { cwd: staging, env: { ...process.env, ...newCli.env }, timeout: 30_000 });
     const selfUpgradeScript = [
       'import { selfUpgradeCli, selfUpgradeCommand } from "@bradygaster/squad-cli/core/upgrade";',
+      `const currentVersion = ${JSON.stringify(expectedVersion)};`,
+      `const insiderVersion = ${JSON.stringify(insiderVersion)};`,
       'const got = [];',
-      'for (const pm of ["npm","pnpm","yarn"]) for (const insider of [false,true]) {',
-      '  let executed = null; await selfUpgradeCli({ packageManager: pm, insider, exec: (cmd) => { executed = cmd; } });',
-      '  got.push({ pm, insider, command: selfUpgradeCommand(pm, insider), executed });',
+      'for (const pm of ["npm","pnpm","yarn"]) {',
+      '  const resolutions = []; const executed = []; let result = null; let error = null;',
+      '  try { result = await selfUpgradeCli({ packageManager: pm, currentVersion, resolveTagVersion: async (tag) => { resolutions.push(tag); return insiderVersion; }, exec: (cmd) => { executed.push(cmd); } }); }',
+      '  catch (err) { error = { code: err?.code ?? null, message: err?.message ?? String(err) }; }',
+      '  got.push({ pm, explicit: { latest: selfUpgradeCommand(pm, "latest"), insider: selfUpgradeCommand(pm, "insider") }, resolutions, executed, result, error });',
       '}',
       'console.log(JSON.stringify(got));',
     ].join(' ');
     const selfUpgrade = await run(process.execPath, ['--input-type=module', '-e', selfUpgradeScript], { cwd: staging, env: { ...process.env, ...newCli.env }, timeout: 30_000 });
-    const expectedCommands = [
-      'npm install -g @bradygaster/squad-cli@latest', 'npm install -g @bradygaster/squad-cli@insider',
-      'pnpm add -g @bradygaster/squad-cli@latest', 'pnpm add -g @bradygaster/squad-cli@insider',
-      'yarn global add @bradygaster/squad-cli@latest', 'yarn global add @bradygaster/squad-cli@insider',
-    ];
-    let resolvedCommands: string[] = [];
+    const expectedCommands = new Map([
+      ['npm', { latest: 'npm install -g @bradygaster/squad-cli@latest', insider: 'npm install -g @bradygaster/squad-cli@insider' }],
+      ['pnpm', { latest: 'pnpm add -g @bradygaster/squad-cli@latest', insider: 'pnpm add -g @bradygaster/squad-cli@insider' }],
+      ['yarn', { latest: 'yarn global add @bradygaster/squad-cli@latest', insider: 'yarn global add @bradygaster/squad-cli@insider' }],
+    ]);
+    type SelfUpgradeProbe = {
+      pm: string;
+      explicit: { latest: string; insider: string };
+      resolutions: string[];
+      executed: string[];
+      result: { tag: string; targetVersion: string | null; performed: boolean } | null;
+      error: { code: string | null; message: string } | null;
+    };
+    let selfUpgradeProbes: SelfUpgradeProbe[] = [];
     try {
-      resolvedCommands = (JSON.parse(selfUpgrade.stdout.trim().split(/\r?\n/).pop() ?? '[]') as Array<{ command: string; executed: string }>).flatMap((x) => [x.command, x.executed]);
+      selfUpgradeProbes = JSON.parse(selfUpgrade.stdout.trim().split(/\r?\n/).pop() ?? '[]') as SelfUpgradeProbe[];
     } catch { /* recorded as a failed target check */ }
     const selfUpgradeOutput = `${selfUpgrade.stdout}\n${selfUpgrade.stderr}`;
-    const selfUpgradeOk = registryState === 'published'
-      ? selfUpgrade.code === 0 && expectedCommands.every((cmd) => resolvedCommands.filter((x) => x === cmd).length === 2)
-      : registryState === 'unpublished'
-        ? insiderVersion !== null
-          && insiderVersion !== expectedVersion
-          && selfUpgrade.code !== 0
-          && /\bEDOWNGRADE\b|refus(?:e|ed|al)|newer than/i.test(selfUpgradeOutput)
-        : false;
+    const commandsMatch = selfUpgradeProbes.length === expectedCommands.size
+      && new Set(selfUpgradeProbes.map((probe) => probe.pm)).size === expectedCommands.size
+      && selfUpgradeProbes.every((probe) => {
+        const expected = expectedCommands.get(probe.pm);
+        return expected?.latest === probe.explicit.latest && expected.insider === probe.explicit.insider;
+      });
+    const publishedResolution = registryState === 'published'
+      && insiderVersion !== null
+      && selfUpgradeProbes.every((probe) => probe.resolutions.join(',') === 'insider'
+        && probe.executed.length === 1
+        && probe.executed[0] === probe.explicit.insider
+        && probe.result?.tag === 'insider'
+        && probe.result.targetVersion === insiderVersion
+        && probe.result.performed === true
+        && probe.error === null);
+    const unpublishedRefusal = registryState === 'unpublished'
+      && insiderVersion !== null
+      && insiderVersion !== expectedVersion
+      && selfUpgradeProbes.every((probe) => probe.resolutions.join(',') === 'insider'
+        && probe.executed.length === 0
+        && probe.result === null
+        && probe.error?.code === 'EDOWNGRADE'
+        && /refus(?:e|ed|al)|downgrade/i.test(probe.error.message));
+    const selfUpgradeOk = selfUpgrade.code === 0 && commandsMatch && (publishedResolution || unpublishedRefusal);
     targetChecks = [
       { id: 'target-tarballs-verified', ok: true },
       { id: 'target-version-smoke', ok: version.code === 0 && version.stdout.includes(expectedVersion) && cliManifest.version === expectedVersion && sdkManifest.version === expectedVersion,
         detail: `cli=${cliManifest.version}, sdk=${sdkManifest.version}, --version exit ${version.code}: ${tail(version.stdout || version.stderr, 1)}` },
       { id: 'target-exports-resolve', ok: exportProblems.length === 0, detail: exportProblems.join('; ') || undefined },
       { id: 'self-upgrade-resolution', ok: selfUpgradeOk,
-        detail: `registry=${registryState}; insider=${insiderVersion ?? 'UNKNOWN'}; ${selfUpgrade.code !== 0 ? `exit ${selfUpgrade.code}: ${tail(selfUpgradeOutput)}` : `resolved=${JSON.stringify(resolvedCommands)}`}` },
+        detail: `registry=${registryState}; insider=${insiderVersion ?? 'UNKNOWN'}; ${selfUpgrade.code !== 0 ? `exit ${selfUpgrade.code}: ${tail(selfUpgradeOutput)}` : `probes=${JSON.stringify(selfUpgradeProbes)}`}` },
     ];
 
     const only = process.env['SQUAD_PREVIEW_MATRIX_PRODUCERS']?.split(',').map((s) => s.trim()).filter(Boolean);

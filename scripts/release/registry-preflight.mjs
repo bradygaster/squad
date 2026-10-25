@@ -119,6 +119,61 @@ export function classifyGithubRelease({ repository, tag, spawn = spawnSync }) {
   }
 }
 
+export function classifyGitRemoteTag({ tag, spawn = spawnSync }) {
+  const ref = `refs/tags/${tag}`;
+  const result = spawn('git', ['ls-remote', '--tags', 'origin', ref], { encoding: 'utf8' });
+  const detail = diagnostic(result);
+  if (result.status !== 0) {
+    return { state: 'UNKNOWN', tag, ref, diagnostic: detail.slice(-500) || `git ls-remote exited ${String(result.status)}` };
+  }
+  const lines = (result.stdout ?? '').trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) return { state: 'absent', tag, ref };
+  if (lines.length !== 1) return { state: 'UNKNOWN', tag, ref, diagnostic: `unexpected git ls-remote response ${JSON.stringify(lines)}` };
+  const match = lines[0].match(/^([0-9a-f]{40})\s+(.+)$/);
+  if (!match || match[2] !== ref) {
+    return { state: 'UNKNOWN', tag, ref, diagnostic: `unexpected git ls-remote response ${JSON.stringify(lines[0])}` };
+  }
+  return { state: 'present', tag, ref, oid: match[1] };
+}
+
+export function classifyGithubTagRef({ repository, tag, spawn = spawnSync }) {
+  const ref = `refs/tags/${tag}`;
+  const result = spawn('gh', [
+    'api',
+    '--method',
+    'GET',
+    `repos/${repository}/git/ref/tags/${tag}`,
+  ], { encoding: 'utf8' });
+  const detail = diagnostic(result);
+  if (result.status !== 0) {
+    return isNotFound(detail)
+      ? { state: '404', tag, ref, diagnostic: detail.slice(-500) }
+      : { state: 'UNKNOWN', tag, ref, diagnostic: detail.slice(-500) || `gh api exited ${String(result.status)}` };
+  }
+  try {
+    const data = JSON.parse(result.stdout || '{}');
+    if (data.ref !== ref || typeof data.object?.sha !== 'string') {
+      return { state: 'UNKNOWN', tag, ref, diagnostic: `unexpected GitHub tag-ref response ${JSON.stringify(data)}` };
+    }
+    return { state: 'present', tag, ref, oid: data.object.sha, objectType: data.object.type ?? null };
+  } catch (error) {
+    return { state: 'UNKNOWN', tag, ref, diagnostic: `invalid GitHub tag-ref JSON: ${error}` };
+  }
+}
+
+export function classifyGitTag({ repository, tag, spawn = spawnSync }) {
+  const remote = classifyGitRemoteTag({ tag, spawn });
+  const githubRef = classifyGithubTagRef({ repository, tag, spawn });
+  const state = remote.state === 'absent' && githubRef.state === '404'
+    ? 'absent'
+    : remote.state === 'UNKNOWN' || githubRef.state === 'UNKNOWN'
+      ? 'UNKNOWN'
+      : remote.state === 'present' || githubRef.state === 'present'
+        ? 'present'
+        : 'UNKNOWN';
+  return { state, tag, remote, githubRef };
+}
+
 function tarExecutable() {
   if (process.platform !== 'win32') return 'tar';
   const systemTar = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
@@ -181,6 +236,7 @@ export function runRegistryPreflight({
     proposedTag,
     packages,
     aggregate: { versionState },
+    gitTag: classifyGitTag({ repository, tag: proposedTag, spawn }),
     githubRelease: classifyGithubRelease({ repository, tag: proposedTag, spawn }),
   };
   writeFileSync(out, `${JSON.stringify(evidence, null, 2)}\n`);
@@ -188,9 +244,28 @@ export function runRegistryPreflight({
     const item = packages[name];
     console.log(`${name}@${version}: ${item.version.state}; insider=${item.distTags.values.insider ?? 'null'} preview=${item.distTags.values.preview ?? 'null'} latest=${item.distTags.values.latest ?? 'null'}`);
   }
+  console.log(`Git tag ${proposedTag}: ${evidence.gitTag.state} (ls-remote=${evidence.gitTag.remote.state}; GitHub ref=${evidence.gitTag.githubRef.state})`);
   console.log(`GitHub release ${proposedTag}: ${evidence.githubRelease.state}`);
   console.log(`Candidate registry state: ${versionState}`);
   return evidence;
+}
+
+export function assertRegistryPreflight(evidence, { requireAbsence = false } = {}) {
+  const unknown = [];
+  for (const [, name] of PACKAGE_KEYS) {
+    if (evidence.packages[name].version.state === 'UNKNOWN') unknown.push(`${name} version`);
+    if (evidence.packages[name].distTags.state === 'UNKNOWN') unknown.push(`${name} dist-tags`);
+  }
+  if (evidence.gitTag.state === 'UNKNOWN') unknown.push(`Git tag ${evidence.proposedTag}`);
+  if (evidence.githubRelease.state === 'UNKNOWN') unknown.push(`GitHub release ${evidence.proposedTag}`);
+  if (unknown.length) throw new Error(`Registry preflight UNKNOWN: ${unknown.join(', ')}`);
+  if (requireAbsence) {
+    const present = [];
+    if (evidence.aggregate.versionState !== 'unpublished') present.push(`npm packages=${evidence.aggregate.versionState}`);
+    if (evidence.gitTag.state !== 'absent') present.push(`Git tag=${evidence.gitTag.state}`);
+    if (evidence.githubRelease.state !== '404') present.push(`GitHub release=${evidence.githubRelease.state}`);
+    if (present.length) throw new Error(`Release identity is not absent: ${present.join(', ')}`);
+  }
 }
 
 function argument(name) {
@@ -230,7 +305,7 @@ if (isMain) {
   }
   if (!version) throw new Error('Missing --version, --pack-evidence, or exact tarball pair');
 
-  runRegistryPreflight({
+  const evidence = runRegistryPreflight({
     version,
     registry,
     repository,
@@ -238,4 +313,5 @@ if (isMain) {
     local,
     out,
   });
+  assertRegistryPreflight(evidence, { requireAbsence: process.argv.includes('--require-absence') });
 }
