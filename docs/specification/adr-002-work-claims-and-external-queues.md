@@ -291,6 +291,36 @@ Work on a gh-aw dispatcher or worker integration starts only when all pass:
 - gh-aw stays decoupled: its protocol can break without touching the claim
   seam.
 
+Accepted risks from the claim security review:
+
+- **Writers are trusted.** Anyone with push access to the claim remote can
+  forge, delete, or flood claim refs. Deleting a live claim lets another
+  executor dispatch the same issue until the holder's next renewal fences
+  it (at most one renew interval of duplicate work). A forged, unexpired,
+  plausible record starves its issue until it expires or someone deletes
+  it. This matches gh-aw's trust model.
+- **Writers include agent sessions.** Every agent session spawned with the
+  watcher's credential can write claim refs, and those sessions read
+  untrusted issue text. Claims arbitrate between honest executors; they are
+  not a prompt-injection defense. Idempotent effects bound the damage.
+- **Least privilege depends on the host.** GitHub write tokens cover every
+  ref, not just the claim namespace. Operators who need isolation point
+  `remote` at a dedicated claims-only repository, or give each pod a GitHub
+  App token without `workflows` or administration permissions.
+- **Overlap is possible.** Clock skew larger than `skewMarginMs`, or a
+  suspended holder, can overlap with a takeover until the holder's next
+  renewal.
+- **Kills do not roll back.** Killing a fenced agent does not undo pushes,
+  pull requests, or comments it already made; delivery is at-least-once.
+- **Claim records are visible.** `machineId`, `actor`, and timestamps are
+  readable by anyone who can fetch the remote, and claim commits stay
+  fetchable by SHA after release. Public repositories should set
+  `SQUAD_MACHINE_ID` to a pseudonym.
+- **No janitor.** Claims orphaned by crashes, and claim history, accumulate
+  until pruned. In the fallback `refs/heads/squad-claims/` namespace every
+  acquire and release creates or deletes a branch, and those events can
+  trigger workflows.
+
 ## Risks
 
 - Hosts or rulesets may reject custom ref namespaces; mitigated by the fallback

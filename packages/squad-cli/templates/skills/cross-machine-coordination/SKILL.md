@@ -1,8 +1,8 @@
 ---
 name: "cross-machine-coordination"
-description: "Enables squad agents on different machines to share work via git-based task queuing"
+description: "Design proposal, not implemented: git-based task queuing between squad machines. For competing watchers, use squad watch work claims (ADR-002)."
 domain: "orchestration"
-confidence: "medium"
+confidence: "low"
 source: "manual"
 ---
 
@@ -11,7 +11,26 @@ source: "manual"
 **Skill ID:** `cross-machine-coordination`
 **Owner:** Ralph (Work Monitor)
 **Squad Integration:** All agents
-**Status:** Specification (ready for implementation)
+**Status:** Design proposal — NOT implemented
+
+> ⚠️ **Not implemented.** No Squad release reads `.squad/cross-machine/`,
+> the `cross_machine` config block, or `squad:machine-{name}` labels. Ralph
+> and `squad watch` do not poll task files, run whitelisted commands, or
+> write result files. Everything below describes a proposed design, not
+> current behavior. Do not tell users it works, and do not create task files
+> expecting another machine to pick them up.
+>
+> **Use these instead:**
+>
+> - **Several machines or pods running `squad watch --execute` on one
+>   repository:** enable work claims (`squad watch --execute --claims
+>   git-ref`, or `watch.claims` in `.squad/config.json`). Claims are Git-ref
+>   leases that make sure only one watcher works on each issue. See ADR-002
+>   (`docs/specification/adr-002-work-claims-and-external-queues.md`) and the
+>   "Multi-Machine Watch with Work Claims" docs scenario
+>   (`docs/src/content/docs/scenarios/multi-machine-watch.md`).
+> - **Sending work to a machine with specific hardware:** use capability
+>   routing with `needs:*` issue labels and a machine capabilities file.
 
 ---
 
@@ -53,7 +72,7 @@ git commit -m "Cross-machine task: GPU voice cloning [squad:machine-devbox]"
 git push origin main
 ```
 
-Ralph on DevBox will:
+In this proposal (not implemented), Ralph on DevBox would:
 1. Pull the task on next cycle (5-10 min)
 2. Validate schema & command whitelist
 3. Execute the GPU workload
@@ -64,12 +83,12 @@ Ralph on DevBox will:
 
 ### For Task Executors (DevBox, Azure VMs)
 
-Ralph automatically watches `.squad/cross-machine/tasks/` for work targeted at this machine.
+In this proposal (not implemented), Ralph would watch `.squad/cross-machine/tasks/` for work targeted at this machine. Ralph does not do this today.
 
-**On each cycle (5-10 min):**
+**On each cycle (5-10 min), as proposed:**
 
 ```python
-# Pseudo-code (Ralph implementation)
+# Pseudo-code (proposed Ralph implementation; does not exist)
 1. git pull origin main
 2. Load all .yaml files in .squad/cross-machine/tasks/
 3. Filter for status=pending AND target_machine=HOSTNAME
@@ -96,7 +115,7 @@ gh issue create \
   --label "urgent"
 ```
 
-Ralph on DevBox will:
+In this proposal (not implemented), Ralph on DevBox would:
 1. Detect issue with `squad:machine-devbox` label
 2. Parse task from issue body
 3. Execute task
@@ -204,7 +223,7 @@ All tasks go through:
 
 ## Configuration
 
-Ralph reads config from `.squad/config.json`:
+Proposed `.squad/config.json` block. No Squad release reads it:
 
 ```json
 {
@@ -387,10 +406,10 @@ tail -f .squad/log/ralph-watch.log | grep "cross-machine"
 
 ## Integration with Ralph Watch
 
-Ralph automatically includes this pattern in its watch loop:
+Not implemented: `squad watch` does not include this pattern. The proposed watch loop was:
 
 ```
-Ralph Watch Cycle (every 5-10 min):
+Proposed Ralph Watch Cycle (every 5-10 min):
 1. Fetch GitHub issues with squad:machine-* labels
 2. Poll .squad/cross-machine/tasks/
 3. For each matching task:
@@ -402,7 +421,7 @@ Ralph Watch Cycle (every 5-10 min):
 5. Sleep until next cycle
 ```
 
-No manual Ralph configuration needed — just create task files or issues with the right labels.
+Until this is built, task files and `squad:machine-*` labels do nothing. To stop several watchers from picking the same issue, use work claims (`--claims git-ref`, ADR-002).
 
 ---
 
@@ -414,7 +433,7 @@ No manual Ralph configuration needed — just create task files or issues with t
 - user copies output back
 - user pastes result manually
 
-**After (with this pattern):**
+**After (if this proposal is built):**
 - Laptop Ralph writes task file → git push
 - DevBox Ralph auto-executes → git push result
 - Laptop Ralph auto-reads result
