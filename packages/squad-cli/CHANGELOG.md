@@ -8,7 +8,7 @@
 
 - Generate resolvable versioned state bridge declarations, probe them in `squad doctor`, report bridge identity in health output, and terminate stdio servers when their host transport closes.
 
-- `squad health` no longer reports markdown table headers, separator rows or `{placeholder}` cells as unknown routing agents, accepts built-in support agents (Scribe, Ralph, Rai, Fact Checker) as routing targets, parses legacy charters with a UTF-8 BOM or a one-line `**Role:** … | **Expertise:** …` identity, reports charters without an identity block as a warning with a hint instead of a failure, and warns when a built-in agent directory has no `team.md` row. `squad upgrade` adds missing built-in rows to the roster idempotently (#2298, #2234, #1785).
+- `squad health` no longer reports markdown table headers, separator rows or `{placeholder}` cells as unknown routing agents, accepts built-in support agents (Scribe, Ralph, Rai, Fact Checker) as routing targets, parses legacy charters with a UTF-8 BOM or a one-line `**Role:** … | **Expertise:** …` identity, reports charters without an identity block as a warning with a hint instead of a failure, and reports optional Rai/Fact Checker charters absent from `team.md` as INFO (`available but not configured`). `squad upgrade` never modifies `team.md`; opt in explicitly with `squad roster add <rai|fact-checker|all>` (#2298, #2234, #1785).
 
 - Accept documented legacy routing table headers, column orders, and the historical flattened long-table layout. `squad health` validates every parsed target against the team or casting registry, fails for missing targets and zero rules, and reports duplicate or conflicting work types as deterministic warnings.
 

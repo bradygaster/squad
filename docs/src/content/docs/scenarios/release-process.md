@@ -58,9 +58,15 @@ gh workflow run squad-release.yml \
   -f npm_dist_tag=insider \
   -f add_preview_alias=true \
   -f publish_standalone=true \
-  -f publish_package_managers=true
+  -f publish_package_managers=false
 gh run watch
 ```
+
+For `2.0.0-preview.2`, reviewers and release owners explicitly hold Homebrew,
+WinGet, and stable promotion. This dispatch publishes the npm pair (`insider`
+canonical plus the `preview` alias) and standalone artifacts only. Keep
+`publish_package_managers=false` until those channels receive separate
+authorization after attestation and receipt review.
 
 Optional inputs: `npm_dist_tag` (`insider`, the default, or `preview`),
 `add_preview_alias` (default `true`), `build_standalone` (default `true`),

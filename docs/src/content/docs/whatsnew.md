@@ -8,7 +8,7 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ### v2.0.0-preview.2 — upgrade safety and bridge reliability
 
-`v2.0.0-preview.2` keeps `insider` as the canonical npm channel and `preview` as its compatibility alias; `latest` remains on v1.1.0. It incorporates the preview.1 dogfood fixes: content-aware idempotent upgrades with verified backups, safe self-upgrade dry runs and downgrade refusal, resolvable versioned state bridges with bounded lifecycle cleanup, root-safe state operations, legacy charter/routing compatibility with fail-closed roster validation, fixed client and migration commands, optional charter Examples support, and improved skill frontmatter parsing.
+`v2.0.0-preview.2` keeps `insider` as the canonical npm channel and `preview` as its compatibility alias; `latest` remains on v1.1.0. It incorporates the preview.1 dogfood fixes: content-aware idempotent upgrades with verified backups, safe self-upgrade dry runs and downgrade refusal, resolvable versioned state bridges with bounded lifecycle cleanup, root-safe state operations, legacy charter/routing compatibility with fail-closed routing validation, INFO-only `available but not configured` notices for optional built-ins until users opt in with `squad roster add <rai|fact-checker|all>` (`squad upgrade` preserves `team.md`), fixed client and migration commands, optional charter Examples support, and improved skill frontmatter parsing.
 
 ### v2.0.0-preview.1 — insider channel with preview alias
 
