@@ -8,17 +8,28 @@
  * analysis tracks inside one Copilot invocation.
  */
 
-import { execSync, execFileSync } from 'node:child_process';
+import { execSync, execFile } from 'node:child_process';
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import type { DispatchMode } from '../config.js';
+import { killProcessTree } from '../agent-spawn.js';
+import { createVerboseLogger } from '../verbose.js';
+import {
+  acquireClaims,
+  claimProviderFor,
+  claimSummary,
+  excludeDispatchedThisRound,
+  holdClaimsWhile,
+  markDispatchedThisRound,
+} from '../claims.js';
 import {
   type ExecutableWorkItem,
   findExecutableIssues,
   classifyIssue,
+  createClaimLogger,
 } from './execute.js';
 
 /** Map a roster member label to a display-friendly agent name. */
@@ -58,22 +69,36 @@ function buildFleetPrompt(
   ].join('\n');
 }
 
-/** Invoke a fleet prompt via the Copilot CLI. */
-function invokeFleet(
+/** Invoke a fleet prompt via the Copilot CLI; aborting `signal` kills the session. */
+export type FleetInvoker = (
   prompt: string,
   cwd: string,
   timeoutMs: number,
-): { success: boolean; output?: string; error?: string } {
+  signal?: AbortSignal,
+) => Promise<{ success: boolean; output?: string; error?: string; cancelled?: boolean }>;
+
+/** Invoke a fleet prompt via the Copilot CLI. */
+const invokeFleet: FleetInvoker = (prompt, cwd, timeoutMs, signal) => {
   const promptFile = join(tmpdir(), `fleet-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt, 'utf-8');
+  const cleanupPromptFile = (): void => {
+    try { unlinkSync(promptFile); } catch { /* best-effort cleanup */ }
+  };
 
+  let promptContent: string;
   try {
     // Read the prompt from file
-    const promptContent = readFileSync(promptFile, 'utf-8');
+    promptContent = readFileSync(promptFile, 'utf-8');
+  } catch (e) {
+    cleanupPromptFile();
+    return Promise.resolve({ success: false, error: (e as Error).message });
+  }
 
-    // Use execFileSync with args array — no shell, no injection risk
+  return new Promise((resolve) => {
+    let onAbort: (() => void) | undefined;
+    // Use execFile with args array — no shell, no injection risk
     const copilotBin = process.platform === 'win32' ? 'copilot.cmd' : 'copilot';
-    const result = execFileSync(copilotBin, [
+    const child = execFile(copilotBin, [
       '-p', promptContent,
       '--allow-all',
       '--no-ask-user',
@@ -81,19 +106,35 @@ function invokeFleet(
     ], {
       cwd,
       timeout: timeoutMs,
-      encoding: 'utf-8' as BufferEncoding,
+      encoding: 'utf-8',
+    }, (err, stdout, stderr) => {
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
+      cleanupPromptFile();
+      if (signal?.aborted) {
+        resolve({ success: false, cancelled: true, error: 'Fleet dispatch cancelled' });
+        return;
+      }
+      if (err) {
+        const e = err as Error & { killed?: boolean };
+        const msg = e.killed
+          ? `Fleet dispatch timed out after ${Math.round(timeoutMs / 60_000)}m`
+          : stderr || e.message;
+        resolve({ success: false, error: msg });
+        return;
+      }
+      resolve({ success: true, output: String(stdout) });
     });
+    if (signal) {
+      onAbort = () => killProcessTree(child);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+};
 
-    return { success: true, output: String(result) };
-  } catch (e) {
-    const err = e as Error & { killed?: boolean; stderr?: string };
-    const msg = err.killed
-      ? `Fleet dispatch timed out after ${Math.round(timeoutMs / 60_000)}m`
-      : err.stderr || err.message;
-    return { success: false, error: msg };
-  } finally {
-    try { unlinkSync(promptFile); } catch { /* best-effort cleanup */ }
-  }
+export interface FleetDispatchOptions {
+  /** Override how the fleet session is launched (tests). */
+  invoke?: FleetInvoker;
 }
 
 export class FleetDispatchCapability implements WatchCapability {
@@ -102,6 +143,12 @@ export class FleetDispatchCapability implements WatchCapability {
   readonly configShape = 'boolean' as const;
   readonly requires = ['gh', 'copilot'];
   readonly phase = 'post-execute' as const;
+
+  private readonly invoke: FleetInvoker;
+
+  constructor(options: FleetDispatchOptions = {}) {
+    this.invoke = options.invoke ?? invokeFleet;
+  }
 
   async preflight(_context: WatchContext): Promise<PreflightResult> {
     // Fleet dispatch requires the copilot CLI — quick sanity check
@@ -131,13 +178,18 @@ export class FleetDispatchCapability implements WatchCapability {
         title: wi.title,
         labels: wi.tags.map(t => ({ name: t })),
         assignees: wi.assignedTo ? [{ login: wi.assignedTo }] : [],
+        ...(wi.url ? { url: wi.url } : {}),
       }));
 
       const { filterByCapabilities, loadCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
       const capabilities: MachineCapabilities | null = await loadCapabilities(context.teamRoot);
       const { handled } = filterByCapabilities(issues, capabilities);
 
-      const executable = findExecutableIssues(context.roster, capabilities, handled);
+      // Skip anything another capability (execute in hybrid mode) already dispatched this round
+      const executable = excludeDispatchedThisRound(
+        context,
+        findExecutableIssues(context.roster, capabilities, handled),
+      );
 
       // Pick only read-heavy issues (or all in pure fleet mode)
       const readIssues = dispatchMode === 'fleet'
@@ -148,23 +200,45 @@ export class FleetDispatchCapability implements WatchCapability {
         return { success: true, summary: 'fleet-dispatch: no read-heavy issues to batch' };
       }
 
+      // Claim before dispatch (ADR-002): only issues this executor won are sent.
+      const claimLog = createClaimLogger('fleet-dispatch', createVerboseLogger(context.verbose ?? false));
+      const provider = claimProviderFor(context);
+      const acquisition = await acquireClaims(context, readIssues, claimLog);
+      const claimed = acquisition.won.map(w => w.item);
+      const claimsData = claimSummary(provider, acquisition);
+      if (claimed.length === 0) {
+        return {
+          success: true,
+          summary: `fleet-dispatch: no claimable issues (${acquisition.held.length} held elsewhere, ${acquisition.unavailable.length} unavailable)`,
+          data: { dispatched: 0, issues: [], claims: claimsData },
+        };
+      }
+      markDispatchedThisRound(context, claimed);
+
       // Build and invoke fleet prompt
-      const prompt = buildFleetPrompt(readIssues, context.roster);
+      const prompt = buildFleetPrompt(claimed, context.roster);
       const fleetTimeout = Math.max(timeoutMs, 300_000); // at least 5 min for fleet
-      const result = invokeFleet(prompt, context.teamRoot, fleetTimeout);
+      const { result, fencedReason } = await holdClaimsWhile(
+        context,
+        acquisition.won.map(w => w.claim),
+        (signal) => this.invoke(prompt, context.teamRoot, fleetTimeout, signal),
+        (r, fenced) => fenced || r?.cancelled ? 'cancelled' : r?.success ? 'completed' : 'abandoned',
+        claimLog,
+      );
 
       if (result.success) {
         return {
           success: true,
-          summary: `fleet-dispatch: ${readIssues.length} issues analyzed in parallel`,
-          data: { dispatched: readIssues.length, issues: readIssues.map(i => i.number) },
+          summary: `fleet-dispatch: ${claimed.length} issues analyzed in parallel`,
+          data: { dispatched: claimed.length, issues: claimed.map(i => i.number), claims: claimsData },
         };
       }
 
+      const error = fencedReason ?? result.error;
       return {
         success: false,
-        summary: `fleet-dispatch: failed — ${result.error}`,
-        data: { dispatched: 0, error: result.error },
+        summary: `fleet-dispatch: failed — ${error}`,
+        data: { dispatched: 0, error, claims: { ...claimsData, ...(fencedReason ? { fenced: fencedReason } : {}) } },
       };
     } catch (e) {
       return { success: false, summary: `fleet-dispatch error: ${(e as Error).message}` };

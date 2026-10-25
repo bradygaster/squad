@@ -13,6 +13,89 @@ const storage = new FSStorageProvider();
 /** Dispatch strategy for issue execution. */
 export type DispatchMode = 'task' | 'fleet' | 'hybrid';
 
+/** Work claim providers selectable for `squad watch` (ADR-002). */
+export const WATCH_CLAIM_PROVIDERS = ['none', 'git-ref'] as const;
+export type WatchClaimProviderName = typeof WATCH_CLAIM_PROVIDERS[number];
+
+/** Invalid watch configuration that must not silently fall back to defaults. */
+export class WatchConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WatchConfigError';
+  }
+}
+
+/**
+ * `watch.claims` in `.squad/config.json`: either a provider name or an object
+ * with tuning options. `--claims <none|git-ref>` overrides `provider` only.
+ */
+export interface WatchClaimsConfig {
+  provider: WatchClaimProviderName;
+  ttlMs?: number;
+  skewMarginMs?: number;
+  /** Shared remote for `git-ref` claims. Default `origin`. */
+  remote?: string;
+  /** Claim ref namespace for `git-ref`. */
+  refPrefix?: string;
+}
+
+export function isWatchClaimProviderName(value: unknown): value is WatchClaimProviderName {
+  return typeof value === 'string' && (WATCH_CLAIM_PROVIDERS as readonly string[]).includes(value);
+}
+
+/**
+ * Parse a raw `watch.claims` value. Returns an error string instead of
+ * silently falling back, so a typo never quietly disables claims.
+ */
+export function parseWatchClaimsConfig(raw: unknown): { config?: WatchClaimsConfig; error?: string } {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw === 'string') {
+    return isWatchClaimProviderName(raw)
+      ? { config: { provider: raw } }
+      : { error: `unknown provider "${raw}" (valid: ${WATCH_CLAIM_PROVIDERS.join(', ')})` };
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return { error: 'must be a provider name or an object with a "provider" field' };
+  }
+  const obj = raw as Record<string, unknown>;
+  if (!isWatchClaimProviderName(obj['provider'])) {
+    return { error: `unknown provider "${String(obj['provider'])}" (valid: ${WATCH_CLAIM_PROVIDERS.join(', ')})` };
+  }
+  const config: WatchClaimsConfig = { provider: obj['provider'] };
+  if (obj['ttlMs'] !== undefined) {
+    const ttl = obj['ttlMs'];
+    if (typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl <= 0) {
+      return { error: 'ttlMs must be a positive number of milliseconds' };
+    }
+    config.ttlMs = ttl;
+  }
+  if (obj['skewMarginMs'] !== undefined) {
+    const skew = obj['skewMarginMs'];
+    if (typeof skew !== 'number' || !Number.isFinite(skew) || skew < 0) {
+      return { error: 'skewMarginMs must be a non-negative number of milliseconds' };
+    }
+    config.skewMarginMs = skew;
+  }
+  for (const field of ['remote', 'refPrefix'] as const) {
+    if (obj[field] === undefined) continue;
+    const value = obj[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      return { error: `${field} must be a non-empty string` };
+    }
+    config[field] = value;
+  }
+  return { config };
+}
+
+/** Merge file and CLI claim settings: the CLI provider wins; file tuning is kept. */
+export function mergeWatchClaimsConfig(
+  file: WatchClaimsConfig | undefined,
+  cli: WatchClaimsConfig | undefined,
+): WatchClaimsConfig | undefined {
+  if (!cli) return file;
+  return { ...(file ?? {}), ...cli };
+}
+
 /** Fully-resolved watch configuration. */
 export interface WatchConfig {
   interval: number;
@@ -48,6 +131,8 @@ export interface WatchConfig {
   stateBackend?: StateBackendType;
   /** Pre-resolved state context from CLI entry (avoids redundant resolution). */
   stateContext?: SquadStateContext | null;
+  /** Work claim provider for execute/fleet-dispatch (ADR-002). Default: none. */
+  claims?: WatchClaimsConfig;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -79,7 +164,8 @@ export function loadWatchConfig(
       const parsed = JSON.parse(raw) as { watch?: Record<string, unknown> };
       rawWatchConfig = parsed.watch;
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof WatchConfigError) throw err;
     // No config file or parse error — use defaults
   }
   if (rawWatchConfig) fileConfig = normalizeFileConfig(rawWatchConfig);
@@ -109,6 +195,7 @@ export function loadWatchConfig(
     sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
     stateBackend: cliOverrides.stateBackend ?? fileConfig.stateBackend,
     stateContext: cliOverrides.stateContext,
+    claims: mergeWatchClaimsConfig(fileConfig.claims, cliOverrides.claims),
   };
 
   // Default to --yolo when execute mode is active and no flags were set.
@@ -164,9 +251,17 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
     }
   }
 
+  if (raw['claims'] !== undefined) {
+    const parsed = parseWatchClaimsConfig(raw['claims']);
+    if (parsed.error) {
+      throw new WatchConfigError(`.squad/config.json watch.claims: ${parsed.error}`);
+    }
+    if (parsed.config) result.claims = parsed.config;
+  }
+
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'maxRounds', 'maxDuration', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
+  const reserved = new Set(['interval', 'maxRounds', 'maxDuration', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend', 'claims']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

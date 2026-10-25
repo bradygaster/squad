@@ -196,6 +196,7 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
 | `--max-rounds N` | Stop after N completed rounds | `squad watch --max-rounds 20` |
 | `--max-duration D` | Stop after elapsed time; finish an active round first | `squad watch --max-duration 8h` |
+| `--claims <none\|git-ref>` | Claim each issue before dispatch (Git ref compare-and-swap on `origin`) so several watchers never work on the same issue. Default `none`. Config: `watch.claims` (`"git-ref"` or `{ "provider": "git-ref", "ttlMs", "skewMarginMs", "remote", "refPrefix" }`); the flag wins. See ADR-002. | `squad watch --execute --claims git-ref` |
 | `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-5.6-luna"` |
 
 #### Issue Scanning

@@ -863,6 +863,27 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   // Register exit handlers for graceful cleanup
   pidTracker.registerExitHandlers();
 
+  // Work claims (ADR-002): flag > config.json watch.claims > none
+  const { resolveExecutorIdentity, DEFAULT_CLAIM_TTL_MS, DEFAULT_CLAIM_SKEW_MARGIN_MS } =
+    await import('@bradygaster/squad-sdk/ralph/claims');
+  const { createWatchClaimProvider, describeClaimProvider, resolveWorkRepo } = await import('./claims.js');
+  const executor = resolveExecutorIdentity({ capabilities, actor: config.authUser });
+  const claimTiming = {
+    ttlMs: config.claims?.ttlMs ?? DEFAULT_CLAIM_TTL_MS,
+    skewMarginMs: config.claims?.skewMarginMs ?? DEFAULT_CLAIM_SKEW_MARGIN_MS,
+  };
+  let claimProvider: Awaited<ReturnType<typeof createWatchClaimProvider>>;
+  try {
+    claimProvider = await createWatchClaimProvider(config.claims, { teamRoot, identity: executor });
+  } catch (err) {
+    return fatal(`Invalid claims configuration: ${(err as Error).message}`);
+  }
+  const workRepo = resolveWorkRepo(teamRoot);
+  console.log(`${DIM}🔒 ${describeClaimProvider(claimProvider, claimTiming, {
+    remote: config.claims?.provider === 'git-ref' ? (config.claims.remote ?? 'origin') : undefined,
+  })}${RESET}`);
+  vlog.log(`Claim holder: ${executor.machineId}/${executor.instanceId}; work repo: ${workRepo ?? '(unknown)'}`);
+
   const baseContext: WatchContext = {
     teamRoot,
     stateRoot: stateDir,
@@ -874,6 +895,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     copilotFlags: config.copilotFlags,
     verbose: config.verbose,
     pidTracker,
+    claims: claimProvider,
+    executor,
+    claimTiming,
+    ...(workRepo ? { workRepo } : {}),
   };
 
   const enabledCapabilities = await preflightCapabilities(registry, config, baseContext);
@@ -1044,7 +1069,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     round++;
-    const roundContext: WatchContext = { ...baseContext, round };
+    const roundContext: WatchContext = { ...baseContext, round, dispatchedThisRound: new Set<number>() };
 
     // Fix 1: Print round start marker
     console.log(`\n${DIM}Starting round ${round}...${RESET}`);

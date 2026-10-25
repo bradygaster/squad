@@ -396,6 +396,7 @@ function printWatchHelp(name: 'triage' | 'watch', version: string): void {
   console.log(`  ${BOLD}--copilot-flags "..."${RESET}       Extra flags for Copilot CLI`);
   console.log(`  ${BOLD}--max-concurrent N${RESET}          Parallel issue limit (default 1)`);
   console.log(`  ${BOLD}--timeout N${RESET}                 Max minutes per issue (default 30)`);
+  console.log(`  ${BOLD}--claims <none|git-ref>${RESET}     Claim issues across watchers (default none)`);
   console.log(`  ${BOLD}--interval <minutes>${RESET}        Polling interval (default 10)`);
   console.log(`  ${BOLD}--max-rounds N${RESET}              Stop after N completed rounds`);
   console.log(`  ${BOLD}--max-duration 8h${RESET}           Stop after elapsed time (ms, s, m, h, d)`);

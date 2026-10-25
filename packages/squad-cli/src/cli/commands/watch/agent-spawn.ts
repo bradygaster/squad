@@ -34,6 +34,12 @@ export interface AgentSpawnResult {
   error?: string;
   usage?: CopilotUsageOutput;
   usageError?: string;
+  /** True when the caller aborted the run (for example, a fenced work claim). */
+  cancelled?: boolean;
+  /** True when the run was killed for exceeding its timeout. */
+  timedOut?: boolean;
+  /** Signal that terminated the child, when any. */
+  signal?: string;
 }
 
 export interface CopilotUsageCapture {
@@ -335,6 +341,26 @@ export function spawnWithTimeout(
 }
 
 /**
+ * Kill a child and, on Windows, its whole process tree (agents run through
+ * `cmd.exe` there, so killing only the shell would orphan the agent).
+ */
+export function killProcessTree(child: { pid?: number; kill(signal?: NodeJS.Signals): boolean }): void {
+  if (IS_WINDOWS && child.pid) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5_000 });
+      return;
+    } catch {
+      // Fall through to a direct kill
+    }
+  }
+  try {
+    child.kill('SIGKILL');
+  } catch {
+    // Already exited
+  }
+}
+
+/**
  * Spawn an agent command with a timeout, resolving with success/error
  * instead of rejecting.  Used by execute and wave-dispatch where the
  * caller wants to handle failure without try/catch.
@@ -342,6 +368,9 @@ export function spawnWithTimeout(
  * Pass `pidTracking` when the caller wants the child process registered
  * with a {@link WatchContext.pidTracker} for cleanup on exit/crash (e.g.
  * the `execute` capability, which spawns long-running sessions).
+ *
+ * Pass `signal` to kill the child (process tree on Windows) on abort — used
+ * when a work claim is fenced while the agent runs.
  */
 export function spawnAgent(
   cmd: string,
@@ -350,9 +379,11 @@ export function spawnAgent(
   timeoutMs: number,
   pidTracking?: { tracker: NonNullable<WatchContext['pidTracker']>; label: string },
   usageOutputFile?: string,
+  signal?: AbortSignal,
 ): Promise<AgentSpawnResult> {
   const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
   return new Promise<AgentSpawnResult>((resolve) => {
+    let onAbort: (() => void) | undefined;
     const cp = execFile(
       cmd,
       safeArgs,
@@ -363,6 +394,7 @@ export function spawnAgent(
         shell: IS_WINDOWS,
       },
       (err) => {
+        if (onAbort) signal?.removeEventListener('abort', onAbort);
         cleanup();
         const usageResult = usageOutputFile
           ? readCopilotUsageOutput(usageOutputFile)
@@ -374,18 +406,25 @@ export function spawnAgent(
             usageResult.error ??= `Could not remove Copilot usage output: ${(cleanupError as Error).message}`;
           }
         }
+        const cancelled = signal?.aborted === true;
         if (err) {
-          const execErr = err as Error & { killed?: boolean };
-          const msg = execErr.killed ? 'Timed out' : execErr.message;
+          const execErr = err as Error & { killed?: boolean; signal?: NodeJS.Signals | null };
+          const timedOut = !cancelled && execErr.killed === true;
+          const reason = signal?.reason instanceof Error ? signal.reason.message : String(signal?.reason ?? 'aborted');
+          const msg = cancelled ? `Cancelled: ${reason}` : timedOut ? 'Timed out' : execErr.message;
           resolve({
             success: false,
             error: msg,
             usage: usageResult.usage,
             usageError: usageResult.error,
+            ...(cancelled ? { cancelled: true } : {}),
+            ...(timedOut ? { timedOut: true } : {}),
+            ...(execErr.signal ? { signal: execErr.signal } : {}),
           });
         } else {
           resolve({
-            success: true,
+            success: !cancelled,
+            ...(cancelled ? { error: 'Cancelled', cancelled: true } : {}),
             usage: usageResult.usage,
             usageError: usageResult.error,
           });
@@ -396,6 +435,12 @@ export function spawnAgent(
     if (pidTracking && cp.pid) {
       pidTracking.tracker.track(cp.pid, pidTracking.label);
       cp.on('exit', () => pidTracking.tracker.untrack(cp.pid!));
+    }
+
+    if (signal) {
+      onAbort = () => killProcessTree(cp);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
     }
   });
 }

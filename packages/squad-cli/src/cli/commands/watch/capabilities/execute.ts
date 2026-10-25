@@ -16,6 +16,17 @@ import {
   withCopilotUsageOutput,
 } from '../agent-spawn.js';
 import type { AgentSpawnResult, CopilotUsageOutput } from '../agent-spawn.js';
+import { YELLOW, RESET } from '../../../core/output.js';
+import {
+  acquireClaims,
+  claimProviderFor,
+  claimSummary,
+  excludeDispatchedThisRound,
+  holdClaimsWhile,
+  markDispatchedThisRound,
+  outcomeForSpawn,
+  type ClaimLogger,
+} from '../claims.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -24,6 +35,16 @@ export interface ExecutableWorkItem {
   body?: string;
   labels: Array<{ name: string }>;
   assignees: Array<{ login: string }>;
+  /** Platform URL; used to derive a stable claim work key. */
+  url?: string;
+}
+
+/** Claim logger that routes routine detail to verbose output and problems to the console. */
+export function createClaimLogger(capability: string, verbose: ReturnType<typeof createVerboseLogger>): ClaimLogger {
+  return {
+    debug: (message) => verbose.log(`${capability}: ${message}`),
+    warn: (message) => console.log(`${YELLOW}⚠${RESET} ${capability}: ${message}`),
+  };
 }
 
 /** Check whether an issue carries a squad or squad:* label. */
@@ -99,6 +120,11 @@ function formatIssueList(issues: ExecutableWorkItem[]): string {
 /**
  * Build the rich agent prompt matching PS1 ralph-watch design.
  *
+ * `issues` is exactly the set this session holds claims for (ADR-002); the
+ * caller never passes issues it did not win. Wording that tells the agent to
+ * work only on these claimed issues is owned by the Ralph prompt contract
+ * (`ralph-instructions.md`) and is intentionally not changed here.
+ *
  * `stateDir` — where to look for ralph-instructions.md — defaults to
  * `{teamRoot}/.squad` when omitted; pass the effective state dir directly
  * to follow externalized state (#1490).
@@ -139,11 +165,12 @@ export function buildAgentPrompt(
   ].join('\n');
 }
 
-/** Spawn a single agent session for all eligible issues. */
+/** Spawn a single agent session for all claimed issues. */
 async function executeAll(
   issues: ExecutableWorkItem[],
   context: WatchContext,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<AgentSpawnResult> {
   const prompt = buildAgentPrompt(issues, context.teamRoot, context.stateRoot);
 
@@ -182,6 +209,7 @@ async function executeAll(
     timeoutMs,
     pidTracking,
     usageCapture?.filePath,
+    signal,
   );
   return usageSetupError ? { ...result, usageError: usageSetupError } : result;
 }
@@ -250,10 +278,27 @@ export class ExecuteCapability implements WatchCapability {
         title: wi.title,
         labels: wi.tags.map(t => ({ name: t })),
         assignees: wi.assignedTo ? [{ login: wi.assignedTo }] : [],
+        ...(wi.url ? { url: wi.url } : {}),
       }));
 
+      // `needs:*` routing: only issues this machine can handle (no manifest = all pass)
+      const { filterByCapabilities, loadCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
+      let capabilities: MachineCapabilities | null = null;
+      try {
+        capabilities = await loadCapabilities(context.teamRoot);
+      } catch (e) {
+        vlog.log(`Execute: machine capabilities unavailable (${(e as Error).message}) — needs:* routing off`);
+      }
+      const { handled, skipped } = filterByCapabilities(issues, capabilities);
+      for (const s of skipped) {
+        vlog.log(`Execute: skip #${s.issue.number} — machine lacks needs:${s.missing.join(', needs:')}`);
+      }
+
       // Minimal filter: must have squad or squad:* label (agent decides the rest)
-      const eligible = findExecutableIssues(context.roster, null, issues);
+      const eligible = excludeDispatchedThisRound(
+        context,
+        findExecutableIssues(context.roster, capabilities, handled),
+      );
 
       vlog.log(`Execute: ${issues.length} total issues, ${eligible.length} eligible`);
       for (const issue of eligible.slice(0, 5)) {
@@ -265,8 +310,29 @@ export class ExecuteCapability implements WatchCapability {
         return { success: true, summary: 'no squad-labeled issues found' };
       }
 
-      // Single agent invocation with all issues — agent reads ralph-instructions.md
-      const result = await executeAll(eligible, context, timeout);
+      // Claim before dispatch (ADR-002): only issues this executor won are sent.
+      const claimLog = createClaimLogger('execute', vlog);
+      const provider = claimProviderFor(context);
+      const acquisition = await acquireClaims(context, eligible, claimLog);
+      const claimed = acquisition.won.map(w => w.item);
+      const claimsData = claimSummary(provider, acquisition);
+      if (claimed.length === 0) {
+        return {
+          success: true,
+          summary: `no claimable issues (${acquisition.held.length} held elsewhere, ${acquisition.unavailable.length} unavailable)`,
+          data: { dispatched: 0, executed: 0, claims: claimsData },
+        };
+      }
+      markDispatchedThisRound(context, claimed);
+
+      // Single agent invocation with all claimed issues — agent reads ralph-instructions.md
+      const { result, fencedReason } = await holdClaimsWhile(
+        context,
+        acquisition.won.map(w => w.claim),
+        (signal) => executeAll(claimed, context, timeout, signal),
+        (r, fenced) => outcomeForSpawn(r ?? { success: false }, fenced),
+        claimLog,
+      );
       let contextUtilization: EstimatedContextUtilization | undefined;
       let contextTelemetryError = result.usageError;
       if (result.usage) {
@@ -297,12 +363,14 @@ export class ExecuteCapability implements WatchCapability {
       return {
         success: result.success,
         summary: result.success
-          ? `agent dispatched with ${eligible.length} issues${contextSummary}`
-          : `agent failed: ${result.error}${contextSummary}`,
+          ? `agent dispatched with ${claimed.length} issues${contextSummary}`
+          : `agent failed: ${fencedReason ?? result.error}${contextSummary}`,
         data: {
-          dispatched: eligible.length,
-          executed: result.success ? eligible.length : 0,
+          dispatched: claimed.length,
+          executed: result.success ? claimed.length : 0,
           success: result.success,
+          issues: claimed.map(i => i.number),
+          claims: { ...claimsData, ...(fencedReason ? { fenced: fencedReason } : {}) },
           ...(contextUtilization ? { contextUtilization } : {}),
           ...(contextTelemetryError ? { contextTelemetryError } : {}),
         },
