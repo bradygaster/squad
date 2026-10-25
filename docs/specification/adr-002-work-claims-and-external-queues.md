@@ -82,7 +82,9 @@ same remote.
   lower-cased (for example `github:bradygaster/squad#123`).
 - **Ref:** `refs/squad/claims/<sha1-hex(work key string)>`.
 - **Commit:** empty tree; message is the JSON claim record below; parent is the
-  previous claim commit for renew and takeover, none for acquire.
+  previous claim commit for renew and takeover, none for acquire. Author and
+  committer are always `squad-claims <squad-claims@invalid>` with a `+0000`
+  date from the provider clock, never the local Git identity or time zone.
 - **Handle:** the commit SHA the caller last observed or wrote. It is the
   expected old value for every later compare-and-swap.
 
@@ -103,11 +105,20 @@ one holder at the same instant never produce the same commit SHA. The server's
 atomic ref update decides every race; wall-clock time only decides when
 takeover may be attempted.
 
+**Plausibility.** Anyone who can push can write any record, so a reader treats
+a claim commit as implausible, and takes it over as if expired (epoch restarts
+at 1, compare-and-swap on the observed SHA, with an operator-visible warning
+naming the ref), when it is larger than 64 KiB, its tree is not the empty tree,
+it has more than one parent, its `epoch` exceeds 2^52, its `acquiredAt` is more
+than 1 hour ahead of the reader's clock, or its `expiresAt` is more than
+25 hours (maximum `ttlMs` plus 1 hour) ahead. A record that fails to parse
+stays `unavailable`, so a newer schema is never overwritten.
+
 | Operation | Transport | Result on CAS rejection |
 |---|---|---|
 | Acquire | Root commit, epoch 1; `git push --force-with-lease=<ref>: <remote> <sha>:<ref>` (ref must not exist) | Fetch the ref; `held` with the observed record |
 | Renew | Child of `handle`, same holder, epoch + 1, new `expiresAt`; push with `--force-with-lease=<ref>:<handle>` | `fenced` with the observed record |
-| Takeover | Only when observed `expiresAt + skewMarginMs < now`; child of the observed SHA, new holder, epoch + 1; push with lease on the observed SHA | `held` with the new observed record |
+| Takeover | Only when observed `expiresAt + skewMarginMs < now`, or the record is implausible (below); child of the observed SHA, new holder, epoch + 1; push with lease on the observed SHA | `held` with the new observed record |
 | Release | `git push --force-with-lease=<ref>:<handle> <remote> :<ref>` | Ref missing: `already-released`; ref moved: `fenced` |
 
 Renew and takeover are fast-forwards, so hosts that block non-fast-forward
@@ -144,7 +155,10 @@ ownership, the same stance gh-aw takes for its Issue mirror.
   This is a bug fix, not opt-in behavior.
 
 Initial defaults, tunable per provider: `ttlMs` 15 minutes, renew every 5
-minutes, `skewMarginMs` 2 minutes.
+minutes, `skewMarginMs` 2 minutes. Configured values must satisfy
+30 seconds ≤ `ttlMs` ≤ 24 hours, `skewMarginMs` ≤ 1 hour, and
+`ttlMs` > 2 × `skewMarginMs`; otherwise watch refuses to start, because the
+renew timer would fire back to back.
 
 ### Default and opt-in
 
@@ -155,7 +169,9 @@ cross-process behavior. Executors opt in with:
 - `.squad/config.json` `watch.claims`: either `"git-ref"` or
   `{ "provider": "git-ref", "ttlMs", "skewMarginMs", "remote", "refPrefix" }`.
 
-The flag overrides the config. `claims` becomes a reserved watch config key.
+The flag overrides the config. `claims` becomes a reserved watch config key;
+unknown keys under it are warned about, and a `.squad/config.json` that does
+not parse stops watch instead of silently running without claims.
 Whether a later major version makes `git-ref` the default is decided after
 gate G7.
 
@@ -235,9 +251,13 @@ Provider obligations:
 - `renew` and `release` compare-and-swap on `handle`. Renew increments `epoch`.
   Releasing a missing claim returns `already-released`.
 - `resolveExecutorIdentity` takes `machineId` from the first value set, in
-  order: `SQUAD_MACHINE_ID`, `capabilities.machine`, `SQUAD_POD_ID`,
-  `os.hostname()`. `instanceId` is generated once per process, so two watchers
-  on one machine are distinct holders.
+  order: `SQUAD_MACHINE_ID`, `capabilities.machine`, `SQUAD_POD_ID` (each used
+  verbatim), then `h-` plus the first 12 hex digits of
+  `sha256(os.hostname() + "\0" + salt)`, because claim records are readable by
+  everyone who can fetch the remote. Watch salts with the absolute team root
+  path, which is never published; the SDK default is the working directory.
+  `instanceId` is generated once per process, so two watchers on one machine
+  are distinct holders.
 
 | Provider | `exclusion` | `leases` | `fencing` | Behavior |
 |---|---|---|---|---|
